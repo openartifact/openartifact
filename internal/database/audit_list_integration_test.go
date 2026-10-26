@@ -9,7 +9,6 @@ package database
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -299,8 +298,8 @@ func TestInsertAuditLogStoresAddressesAndToleratesGarbage(t *testing.T) {
 	ctx := context.Background()
 	pg := newQuotaTestDB(t, 4)
 
-	for i, ip := range []*string{ptr("203.0.113.7"), ptr("2001:db8::1"), ptr("not-an-ip"), nil} {
-		ev := &models.AuditLog{Action: fmt.Sprintf("user.%s", []string{"created", "updated", "deleted", "disabled"}[i]), IPAddress: ip, DetailsJSON: []byte(`{}`)}
+	for i, ip := range []*string{new("203.0.113.7"), new("2001:db8::1"), new("not-an-ip"), nil} {
+		ev := &models.AuditLog{Action: "user." + []string{"created", "updated", "deleted", "disabled"}[i], IPAddress: ip, DetailsJSON: []byte(`{}`)}
 		if err := pg.InsertAuditLog(ctx, ev); err != nil {
 			t.Fatalf("InsertAuditLog(%v): %v", ip, err)
 		}
@@ -329,5 +328,3 @@ func TestInsertAuditLogStoresAddressesAndToleratesGarbage(t *testing.T) {
 		}
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

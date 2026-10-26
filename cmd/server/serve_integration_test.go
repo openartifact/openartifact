@@ -153,12 +153,16 @@ func TestServeBootstrapFailures(t *testing.T) {
 		{
 			name: "password file does not exist",
 			setup: func(t *testing.T) map[string]string {
+				t.Helper()
+
 				return map[string]string{"OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE": filepath.Join(t.TempDir(), "absent")}
 			},
 		},
 		{
 			name: "password file holds a too-short password",
 			setup: func(t *testing.T) map[string]string {
+				t.Helper()
+
 				return map[string]string{"OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE": writeFile(t, "pw", "tiny\n")}
 			},
 			leak: "tiny",
@@ -166,6 +170,8 @@ func TestServeBootstrapFailures(t *testing.T) {
 		{
 			name: "token file holds a malformed token",
 			setup: func(t *testing.T) map[string]string {
+				t.Helper()
+
 				return map[string]string{
 					"OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD":   strongPassword,
 					"OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE": writeFile(t, "tok", "not-a-token-"+leakProbe),

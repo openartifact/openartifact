@@ -181,8 +181,7 @@ func TestSetupStorageFailureLeavesNothingStartedAndLeaksNoSecret(t *testing.T) {
 				t.Fatal("setupStorage succeeded, want an error")
 			}
 
-			var re reportedError
-			if !errors.As(err, &re) {
+			if _, ok := errors.AsType[reportedError](err); !ok {
 				t.Errorf("error %T is not a reportedError; main would print it twice or not at all", err)
 			}
 
