@@ -264,9 +264,9 @@ OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
 The server only speaks OTLP. Batching, retries, queueing, redaction and routing to one or more backends belong in an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (the `otelcol-contrib` distribution) running next to it, so only the Collector needs egress.
 
-[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`), the `memory_limiter` and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
+[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`; `OTELCOL_LISTEN_HOST` changes the bind address), the `memory_limiter` and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
 
-The compose file runs it as the opt-in `otel-collector` profile. The Collector joins the `openartifact` container's network namespace, like a pod sidecar, so the server's default endpoint `http://localhost:4317` reaches it. In `docker/.env`:
+The compose file runs it as the opt-in `otel-collector` profile: a separate service on the compose network, listening on `0.0.0.0` there with no published ports, so the server's default endpoint `http://otel-collector:4317` reaches it and either container can restart on its own. In `docker/.env`:
 
 ```sh
 OPENARTIFACT_OTLP_ENABLED=true

@@ -90,11 +90,11 @@ services:
       OPENARTIFACT_GRYPE_DB_URL: ${OPENARTIFACT_GRYPE_DB_URL:-}
       LOG_LEVEL: info
       LOG_FORMAT: json
-      # OpenTelemetry, off by default. With the otel-collector profile the
-      # Collector shares this container's network, so the default endpoint is
-      # localhost. Set in docker/.env; see docs/operations/monitoring.md.
+      # OpenTelemetry, off by default. The default endpoint is the Collector of
+      # the otel-collector profile. Set in docker/.env; see
+      # docs/operations/monitoring.md.
       OPENARTIFACT_OTLP_ENABLED: ${OPENARTIFACT_OTLP_ENABLED:-false}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
       OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
       OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
       OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
@@ -126,18 +126,18 @@ services:
       retries: 3
       start_period: 5s
 
-  # Opt-in local OpenTelemetry Collector: `--profile otel-collector`. It joins
-  # the openartifact container's network namespace (like a pod sidecar), so
-  # the server exports to localhost and only the Collector reaches the
-  # backend set by OTELCOL_EXPORT_ENDPOINT. Config: docker/otel-collector.yaml.
+  # Opt-in local OpenTelemetry Collector: `--profile otel-collector`. It
+  # listens on the compose network only (no published ports) and is the only
+  # service that reaches the backend set by OTELCOL_EXPORT_ENDPOINT.
+  # Config: docker/otel-collector.yaml.
   otel-collector:
     image: docker.io/otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
     profiles: [otel-collector]
     restart: unless-stopped
-    depends_on:
-      - openartifact
-    network_mode: service:openartifact
+    networks:
+      - artifact-repo-network
     environment:
+      OTELCOL_LISTEN_HOST: 0.0.0.0
       OTELCOL_EXPORT_ENDPOINT: ${OTELCOL_EXPORT_ENDPOINT:-}
       OTELCOL_EXPORT_AUTHORIZATION: ${OTELCOL_EXPORT_AUTHORIZATION:-}
     volumes:
