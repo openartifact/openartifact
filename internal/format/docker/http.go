@@ -2032,6 +2032,25 @@ func (h *HTTPHandler) handleListTags(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Link", fmt.Sprintf("</v2/%s/tags/list?%s>; rel=\"next\"", name, next.Encode()))
 	}
 
+	// A listing without a single tag is only a valid answer for an image the
+	// registry knows (one with a manifest); otherwise, like any registry, the
+	// name is unknown. Groups rely on this to tell an empty hosted member from
+	// one that holds the image.
+	if len(tags) == 0 && lastStr == "" {
+		known, err := h.db.DockerImageExists(r.Context(), repo.ID, image)
+		if err != nil {
+			h.log.Errorw("failed to check image", "error", err)
+			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+			return
+		}
+
+		if !known {
+			h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+			return
+		}
+	}
+
 	// Build tag names list
 	tagNames := make([]string, 0)
 	for _, tag := range tags {

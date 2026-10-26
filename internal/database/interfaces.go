@@ -182,6 +182,8 @@ type Database interface {
 
 	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error
 	GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error)
+	// DockerImageExists reports whether the image holds a live manifest.
+	DockerImageExists(ctx context.Context, repoID, image string) (bool, error)
 	DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error
 
 	// ListDockerManifestsByRepo is a bulk-list-by-repo method used only by

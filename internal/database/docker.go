@@ -374,6 +374,15 @@ func (p *PostgresDB) TouchDockerBlob(ctx context.Context, repoID, digest string)
 	return true, nil
 }
 
+func (p *PostgresDB) DockerImageExists(ctx context.Context, repoID, image string) (bool, error) {
+	exists, err := p.q.DockerImageExists(ctx, dbsqlc.DockerImageExistsParams{RepositoryID: repoID, Image: image})
+	if err != nil {
+		return false, fmt.Errorf("failed to check docker image: %w", err)
+	}
+
+	return exists, nil
+}
+
 func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
 	row, err := p.q.GetDockerManifest(ctx, dbsqlc.GetDockerManifestParams{
 		RepositoryID: repoID,
