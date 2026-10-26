@@ -110,6 +110,7 @@ Trigger a new backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `202` | Backup started | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `202` response (`application/json`):
@@ -157,6 +158,7 @@ Download a backup file (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup file | `application/octet-stream`: string (binary) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/gpg/keys`
@@ -303,6 +305,7 @@ Stops the key signing globally, or for the repository named in the `repository` 
 | Status | Description | Body |
 |---|---|---|
 | `204` | Deactivated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Key or repository not found | - |
 | `409` | The key was not active there, or it is the read-only config key | - |
@@ -354,6 +357,7 @@ Create a global license policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/admin/quotas`
 
@@ -424,8 +428,14 @@ List all SSO providers (admin only)
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of SSO providers | `application/json`: array of [SSOProvider](schemas.md#ssoprovider) |
+| `200` | List of SSO providers | `application/json`: object |
 | `403` | Admin access required | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `providers` | array of [SSOProvider](schemas.md#ssoprovider) | yes | - |
 
 ### `POST /api/v1/admin/sso-providers`
 
@@ -450,6 +460,7 @@ Create a new SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | SSO provider created | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/sso-providers/{slug}`
@@ -589,6 +600,7 @@ Create a new storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Storage backend created | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/storage/replication`
@@ -670,6 +682,7 @@ Update a storage backend (admin only). Changing kind or config is refused with 4
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend updated | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 | `409` | The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move | - |
 
@@ -690,6 +703,7 @@ Delete a storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Storage backend deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 ### `POST /api/v1/admin/storage/{name}/test`

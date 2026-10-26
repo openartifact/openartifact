@@ -74,6 +74,7 @@ Like the admin restore, for callers with the repository-scoped delete permission
 | Status | Description | Body |
 |---|---|---|
 | `200` | The restored item | `application/json`: [TrashItem](schemas.md#trashitem) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Delete permission on the repository required (restoring a repository needs an admin) | - |
 | `404` | Trash item not found (never deleted, already restored or purged, or not in this repository) | `application/json`: [Error](schemas.md#error) |
 | `409` | trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first. | `application/json`: [Error](schemas.md#error) |
@@ -118,6 +119,7 @@ Permanently removes the item before its retention window ends: frees its blobs (
 | Status | Description | Body |
 |---|---|---|
 | `204` | Purged | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Trash item not found | `application/json`: [Error](schemas.md#error) |
 | `409` | The repository is still referenced (for example by a release bundle or promotion) | `application/json`: [Error](schemas.md#error) |
@@ -140,6 +142,7 @@ Brings the item back, refreshes the repository's generated metadata and emits ar
 | Status | Description | Body |
 |---|---|---|
 | `200` | The restored item | `application/json`: [TrashItem](schemas.md#trashitem) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Trash item not found (never deleted, already restored or purged, or not in this repository) | `application/json`: [Error](schemas.md#error) |
 | `409` | trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first. | `application/json`: [Error](schemas.md#error) |

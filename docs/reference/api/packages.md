@@ -57,12 +57,15 @@ Search artifacts by properties
 | Status | Description | Body |
 |---|---|---|
 | `200` | Search results | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
 List artifact properties
 
 List properties for a specific artifact
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -76,6 +79,8 @@ List properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Artifact properties | `application/json`: map of string |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -99,6 +104,8 @@ Replace all properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Properties updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PATCH /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -122,6 +129,8 @@ Patch properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Properties updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/artifacts/{artifact_id}/properties/{key}`
 
@@ -142,6 +151,7 @@ Delete a specific property from an artifact
 | Status | Description | Body |
 |---|---|---|
 | `204` | Property deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Property not found | - |
 
 ### `GET /api/v1/repositories/{name}/packages`
@@ -149,6 +159,8 @@ Delete a specific property from an artifact
 List packages in repository
 
 List all packages in a specific repository
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -248,6 +260,7 @@ Discards an upload that will not be completed: the staging object, the parts upl
 | Status | Description | Body |
 |---|---|---|
 | `204` | The upload was discarded | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `401` | Authentication required | - |
 | `403` | Write permission denied, or the caller is neither the creator of the upload nor an administrator | - |
 | `404` | Repository or upload not found (or expired and swept) | - |

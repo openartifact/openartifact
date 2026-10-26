@@ -161,7 +161,7 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
                     id: `user:${u.username}`,
                     group: 'users',
                     title: u.username,
-                    description: u.email,
+                    description: u.email ?? undefined,
                     icon: 'user',
                     to: `/settings/users?q=${enc(u.username)}`,
                   }]

@@ -67,6 +67,7 @@ Create a new storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Storage backend created | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/storage/replication`
@@ -148,6 +149,7 @@ Update a storage backend (admin only). Changing kind or config is refused with 4
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend updated | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 | `409` | The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move | - |
 
@@ -168,6 +170,7 @@ Delete a storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Storage backend deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 ### `POST /api/v1/admin/storage/{name}/test`

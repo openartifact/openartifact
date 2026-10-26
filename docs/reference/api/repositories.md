@@ -63,6 +63,7 @@ List all repositories with optional filtering
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of repositories | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -113,6 +114,7 @@ Create a new repository (admin only)
 | `201` | Repository created | `application/json`: [Repository](schemas.md#repository) |
 | `400` | Invalid request | - |
 | `403` | Admin access required | - |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 | `409` | A repository with this name already exists, or the name is reserved by a repository in the trash until it is purged or restored (error codes conflict, name_reserved) | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/activity`
@@ -161,12 +163,15 @@ Search artifacts by properties
 | Status | Description | Body |
 |---|---|---|
 | `200` | Search results | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
 List artifact properties
 
 List properties for a specific artifact
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -180,6 +185,8 @@ List properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Artifact properties | `application/json`: map of string |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -203,6 +210,8 @@ Replace all properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Properties updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PATCH /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -226,6 +235,8 @@ Patch properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Properties updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/artifacts/{artifact_id}/properties/{key}`
 
@@ -246,6 +257,7 @@ Delete a specific property from an artifact
 | Status | Description | Body |
 |---|---|---|
 | `204` | Property deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Property not found | - |
 
 ### `PUT /api/v1/repositories/{name}/comps`
@@ -346,6 +358,7 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/policies`
 
@@ -368,6 +381,8 @@ Create a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/license/policies/{id}`
 
@@ -391,6 +406,7 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/license/policies/{id}`
 
@@ -410,6 +426,7 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/scan`
 
@@ -458,6 +475,7 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -532,6 +550,7 @@ List the member repositories of a group repository in resolution order
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of members | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -565,6 +584,7 @@ Replace the ordered member repositories of a group repository. Members must be h
 | Status | Description | Body |
 |---|---|---|
 | `200` | Members updated | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -578,6 +598,8 @@ Fields of the `200` response (`application/json`):
 List packages in repository
 
 List all packages in a specific repository
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -787,6 +809,8 @@ Set quota configuration for a repository. Requires global admin, or the maintain
 | Status | Description | Body |
 |---|---|---|
 | `200` | Quota updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/quota`
 
@@ -805,6 +829,7 @@ Remove quota configuration for a repository. Requires global admin, or the maint
 | Status | Description | Body |
 |---|---|---|
 | `204` | Quota deleted | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/quota/reconcile`
 
@@ -843,6 +868,7 @@ List SBOM reports for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of SBOM reports | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -878,6 +904,8 @@ Generate a Software Bill of Materials for a repository artifact. Components are 
 | Status | Description | Body |
 |---|---|---|
 | `201` | SBOM generation started | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 | `422` | The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`) | - |
 
 ### `GET /api/v1/repositories/{name}/sbom/{id}`
@@ -960,6 +988,8 @@ Trigger a secrets scan for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | Secrets scan started | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans`
 
@@ -978,6 +1008,7 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -1043,6 +1074,8 @@ Quarantine an artifact found in a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Artifact quarantined | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/uploads`
 
@@ -1090,6 +1123,7 @@ Discards an upload that will not be completed: the staging object, the parts upl
 | Status | Description | Body |
 |---|---|---|
 | `204` | The upload was discarded | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `401` | Authentication required | - |
 | `403` | Write permission denied, or the caller is neither the creator of the upload nor an administrator | - |
 | `404` | Repository or upload not found (or expired and swept) | - |
@@ -1347,6 +1381,7 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -1483,12 +1518,16 @@ Create a new webhook for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | Webhook created | `application/json`: [Webhook](schemas.md#webhook) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repository/{name}`
 
 Get repository
 
 Get details of a specific repository
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 

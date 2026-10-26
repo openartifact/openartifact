@@ -39,6 +39,7 @@ Create a global license policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/license/policies`
 
@@ -57,6 +58,7 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/policies`
 
@@ -79,6 +81,8 @@ Create a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/license/policies/{id}`
 
@@ -102,6 +106,7 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/license/policies/{id}`
 
@@ -121,6 +126,7 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/scan`
 
@@ -169,6 +175,7 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -243,6 +250,8 @@ Trigger a secrets scan for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | Secrets scan started | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans`
 
@@ -261,6 +270,7 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -372,12 +382,16 @@ Quarantine an artifact found in a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Artifact quarantined | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/security/summary`
 
 Security summary of a repository, package or version
 
 Counts only: vulnerabilities by severity, license violations, secret findings, AI flags and whether a result is quarantined. It carries no finding ids, titles or other details, so it needs only read access to the repository: it is what viewers, developers and tokens that cannot list findings show. Narrow it to a package with `package_name` and to one version with `version`.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -463,6 +477,7 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 

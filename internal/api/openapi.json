@@ -494,10 +494,12 @@
           },
           "email": {
             "type": "string",
-            "format": "email"
+            "format": "email",
+            "nullable": true
           },
           "full_name": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "disabled": {
             "type": "boolean"
@@ -507,7 +509,8 @@
           },
           "last_login_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -559,7 +562,8 @@
             "type": "string"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -957,10 +961,12 @@
             "type": "boolean"
           },
           "keep_since_days": {
-            "type": "integer"
+            "type": "integer",
+            "nullable": true
           },
           "keep_downloaded_since_days": {
-            "type": "integer"
+            "type": "integer",
+            "nullable": true
           },
           "name_pattern": {
             "type": "string"
@@ -991,7 +997,8 @@
             "nullable": true
           },
           "last_run_error": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "repo_id": {
             "type": "string",
@@ -1014,7 +1021,8 @@
           },
           "repository_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "name": {
             "type": "string"
@@ -1144,11 +1152,13 @@
           },
           "expires_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
           },
           "last_used_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -1235,7 +1245,8 @@
           },
           "completed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
           },
           "size_bytes": {
             "type": "integer"
@@ -1743,11 +1754,7 @@
           },
           "read_fallback": {
             "type": "string",
-            "enum": [
-              "notfound",
-              "error",
-              "off"
-            ]
+            "enum": ["", "notfound", "error", "off"]
           },
           "backlog_copy": {
             "type": "integer",
@@ -1987,11 +1994,13 @@
             ]
           },
           "status_message": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "last_checked_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -2832,7 +2841,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid"
+              "description": "Membership id: the project id and the user id joined by a colon"
             },
             "project_id": {
               "type": "string",
@@ -5988,7 +5997,7 @@
             }
           },
           "401": {
-            "description": "Unauthorized (if METRICS_AUTH_TOKEN is set)"
+            "description": "Unauthorized: the endpoint needs the METRICS_AUTH_TOKEN bearer token and answers 401 for every caller while none is configured"
           }
         }
       }
@@ -6056,8 +6065,38 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Invalid credentials"
+          },
+          "415": {
+            "description": "Unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -6244,6 +6283,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -6271,6 +6320,16 @@
           "204": {
             "description": "Token revoked"
           },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Token not found"
           }
@@ -6292,22 +6351,25 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "slug": {
-                        "type": "string"
-                      },
-                      "display_name": {
-                        "type": "string"
-                      },
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "oidc",
-                          "saml"
-                        ]
+                  "type": "object",
+                  "required": ["providers"],
+                  "properties": {
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": ["oidc", "saml"]
+                          }
+                        }
                       }
                     }
                   }
@@ -6444,6 +6506,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -6590,6 +6662,16 @@
           },
           "403": {
             "description": "Admin access required"
+          },
+          "404": {
+            "description": "The addressed resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
             "description": "A repository with this name already exists, or the name is reserved by a repository in the trash until it is purged or restored (error codes conflict, name_reserved)",
@@ -6825,7 +6907,16 @@
           "404": {
             "description": "Repository not found"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       }
     },
     "/api/v1/repositories/{name}/members": {
@@ -6860,6 +6951,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -6926,6 +7027,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Repository not found"
           }
@@ -6964,6 +7075,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -7027,6 +7148,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CleanupPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -7174,6 +7315,26 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -7232,6 +7393,26 @@
           "201": {
             "description": "SBOM generation started"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`)"
           }
@@ -7271,6 +7452,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -7785,6 +7976,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -7922,6 +8123,16 @@
         "responses": {
           "200": {
             "description": "List of license policies"
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -7955,6 +8166,26 @@
         "responses": {
           "201": {
             "description": "License policy created"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -7999,6 +8230,16 @@
         "responses": {
           "200": {
             "description": "License policy updated"
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -8031,6 +8272,16 @@
         "responses": {
           "204": {
             "description": "License policy deleted"
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -8069,6 +8320,16 @@
         "responses": {
           "201": {
             "description": "License policy created"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -8094,6 +8355,26 @@
         "responses": {
           "201": {
             "description": "Secrets scan started"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -8131,6 +8412,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -8384,6 +8675,26 @@
         "responses": {
           "200": {
             "description": "Artifact quarantined"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -8868,7 +9179,16 @@
           "404": {
             "description": "Repository not found"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       }
     },
     "/api/v1/vuln/scans/export": {
@@ -9145,6 +9465,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -9434,6 +9764,26 @@
         "responses": {
           "200": {
             "description": "Quota updated"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -9456,6 +9806,16 @@
         "responses": {
           "204": {
             "description": "Quota deleted"
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -9537,8 +9897,37 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       },
       "put": {
         "summary": "Set artifact properties",
@@ -9582,6 +9971,26 @@
         "responses": {
           "200": {
             "description": "Properties updated"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -9627,6 +10036,26 @@
         "responses": {
           "200": {
             "description": "Properties updated"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or addressed resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -9669,6 +10098,16 @@
         "responses": {
           "204": {
             "description": "Property deleted"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
             "description": "Property not found"
@@ -9713,6 +10152,16 @@
         "responses": {
           "200": {
             "description": "Search results"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -9798,9 +10247,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    { "$ref": "#/components/schemas/SearchResult" },
-                    { "$ref": "#/components/schemas/ChecksumResult" }
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SearchResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ChecksumResult"
+                    }
                   ]
                 }
               }
@@ -9924,6 +10377,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -10292,8 +10755,28 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
+          },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -10577,6 +11060,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "The addressed resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -10681,6 +11174,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Group"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -10882,7 +11385,7 @@
           }
         },
         "responses": {
-          "200": {
+          "204": {
             "description": "Members updated"
           },
           "404": {
@@ -11122,9 +11625,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PermissionTarget"
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PermissionTarget"
+                      }
+                    }
                   }
                 }
               }
@@ -11182,6 +11691,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PermissionTarget"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11281,6 +11810,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PermissionTarget"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11405,6 +11944,26 @@
         "responses": {
           "200": {
             "description": "Permission assigned"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The addressed resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -11448,6 +12007,26 @@
         "responses": {
           "204": {
             "description": "Permission unassigned"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The addressed resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -11930,6 +12509,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           }
@@ -11999,6 +12588,16 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -12137,6 +12736,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           }
@@ -12223,6 +12832,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Storage backend not found"
           },
@@ -12251,6 +12870,16 @@
         "responses": {
           "204": {
             "description": "Storage backend deleted"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
             "description": "Storage backend not found"
@@ -13378,6 +14007,16 @@
           "204": {
             "description": "Deactivated"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           },
@@ -13443,9 +14082,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SSOProvider"
+                  "type": "object",
+                  "required": ["providers"],
+                  "properties": {
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SSOProvider"
+                      }
+                    }
                   }
                 }
               }
@@ -13506,6 +14151,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SSOProvider"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -15143,6 +15798,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           }
@@ -15341,7 +16006,16 @@
           "404": {
             "description": "Repository not found"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       },
       "patch": {
         "summary": "Update repository",
@@ -17423,7 +18097,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     },
     "/api/v1/auth/sso/saml/{slug}/login": {
@@ -17866,6 +18541,16 @@
           "204": {
             "description": "The upload was discarded"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required"
           },
@@ -18038,6 +18723,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Trash item not found (never deleted, already restored or purged, or not in this repository)",
             "content": {
@@ -18115,6 +18810,16 @@
         "responses": {
           "204": {
             "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Admin access required"
@@ -18328,6 +19033,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Trash item not found (never deleted, already restored or purged, or not in this repository)",
             "content": {
@@ -18396,7 +19111,17 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
           },
           "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository not found" }
+          "404": { "description": "Repository not found" },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -18477,7 +19202,17 @@
         "responses": {
           "204": { "description": "Peer deleted" },
           "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" }
+          "404": { "description": "Repository or peer not found" },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -18498,7 +19233,17 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
           },
           "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" }
+          "404": { "description": "Repository or peer not found" },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -18519,7 +19264,17 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationDeferredList" } } }
           },
           "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" }
+          "404": { "description": "Repository or peer not found" },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -18569,7 +19324,17 @@
         "responses": {
           "204": { "description": "Token revoked" },
           "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or token not found" }
+          "404": { "description": "Repository or token not found" },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -20083,6 +20848,16 @@
               }
             }
           },
+          "404": {
+            "description": "The addressed resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "413": {
             "description": "Image larger than 512 KiB",
             "content": {
@@ -20129,6 +20904,16 @@
           },
           "403": {
             "description": "Admin access required"
+          },
+          "404": {
+            "description": "The addressed resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

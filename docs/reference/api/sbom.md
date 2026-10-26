@@ -104,6 +104,7 @@ List SBOM reports for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of SBOM reports | `application/json`: object |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -139,6 +140,8 @@ Generate a Software Bill of Materials for a repository artifact. Components are 
 | Status | Description | Body |
 |---|---|---|
 | `201` | SBOM generation started | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 | `422` | The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`) | - |
 
 ### `GET /api/v1/repositories/{name}/sbom/{id}`

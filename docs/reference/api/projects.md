@@ -40,6 +40,7 @@ Global admins only. Turning self_create on lets any human user create projects (
 | Status | Description | Body |
 |---|---|---|
 | `200` | Settings saved | `application/json`: [ProjectSettings](schemas.md#projectsettings) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/projects`

@@ -22,8 +22,14 @@ List all SSO providers (admin only)
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of SSO providers | `application/json`: array of [SSOProvider](schemas.md#ssoprovider) |
+| `200` | List of SSO providers | `application/json`: object |
 | `403` | Admin access required | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `providers` | array of [SSOProvider](schemas.md#ssoprovider) | yes | - |
 
 ### `POST /api/v1/admin/sso-providers`
 
@@ -48,6 +54,7 @@ Create a new SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | SSO provider created | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/sso-providers/{slug}`
@@ -187,6 +194,8 @@ OIDC logout
 
 Ends the local session (the request body is ignored; same-origin only). When the session was created by this provider and its IdP advertises an end_session_endpoint, responds 200 with the RP-initiated logout URL the browser must navigate to; otherwise 204.
 
+**Authentication:** none (public endpoint).
+
 **Parameters**
 
 | Name | In | Type | Required | Description |
@@ -213,15 +222,16 @@ List available SSO providers (public)
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of SSO providers | `application/json`: array of object |
+| `200` | List of SSO providers | `application/json`: object |
 
 Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `[].display_name` | string | no | - |
-| `[].kind` | string | no | One of: `oidc`, `saml`. |
-| `[].slug` | string | no | - |
+| `providers` | array of object | yes | - |
+| `providers[].display_name` | string | no | - |
+| `providers[].kind` | string | no | One of: `oidc`, `saml`. |
+| `providers[].slug` | string | no | - |
 
 ### `POST /api/v1/auth/sso/saml/{slug}/acs`
 

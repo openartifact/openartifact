@@ -50,6 +50,7 @@ Create a new group
 | Status | Description | Body |
 |---|---|---|
 | `201` | Group created | `application/json`: [Group](schemas.md#group) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/groups/{id}`
 
@@ -166,7 +167,7 @@ Replace all members of a group
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | Members updated | - |
+| `204` | Members updated | - |
 | `404` | Group not found | - |
 
 ### `POST /api/v1/groups/{id}/members/{userId}`

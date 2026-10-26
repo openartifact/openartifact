@@ -66,7 +66,9 @@ Create a new user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | User created | `application/json`: [User](schemas.md#user) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/users/{id}`
 
@@ -217,6 +219,7 @@ Create an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/users/{id}/tokens/{tokenId}`
 

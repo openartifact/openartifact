@@ -57,7 +57,10 @@ Authenticate with username and password
 | Status | Description | Body |
 |---|---|---|
 | `200` | Login successful, returns user object | `application/json`: [User](schemas.md#user) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `401` | Invalid credentials | - |
+| `415` | Unsupported media type | `application/json`: [Error](schemas.md#error) |
+| `429` | Too many requests | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/auth/logout`
 
@@ -98,15 +101,16 @@ List available SSO providers (public)
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of SSO providers | `application/json`: array of object |
+| `200` | List of SSO providers | `application/json`: object |
 
 Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `[].display_name` | string | no | - |
-| `[].kind` | string | no | One of: `oidc`, `saml`. |
-| `[].slug` | string | no | - |
+| `providers` | array of object | yes | - |
+| `providers[].display_name` | string | no | - |
+| `providers[].kind` | string | no | One of: `oidc`, `saml`. |
+| `providers[].slug` | string | no | - |
 
 ### `GET /api/v1/auth/tokens`
 
@@ -148,6 +152,7 @@ Create a new API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/auth/tokens/{id}`
 
@@ -166,5 +171,6 @@ Revoke an API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

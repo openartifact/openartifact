@@ -81,6 +81,7 @@ Global admins only. The raw request body is the image: Content-Type image/png or
 | `200` | Branding state | `application/json`: [BrandingAdmin](schemas.md#brandingadmin) |
 | `400` | Not a valid PNG or SVG, or the SVG is unsafe | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 | `413` | Image larger than 512 KiB | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/admin/branding/{asset}`
@@ -101,6 +102,7 @@ Global admins only. Falls back to the configured file, else the built-in image.
 |---|---|---|
 | `200` | Branding state | `application/json`: [BrandingAdmin](schemas.md#brandingadmin) |
 | `403` | Admin access required | - |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/branding`
 

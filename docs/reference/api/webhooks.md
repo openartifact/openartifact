@@ -71,6 +71,8 @@ Create a new webhook for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | Webhook created | `application/json`: [Webhook](schemas.md#webhook) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/webhooks`
 
@@ -118,6 +120,7 @@ Create a new webhook
 | Status | Description | Body |
 |---|---|---|
 | `201` | Webhook created | `application/json`: [Webhook](schemas.md#webhook) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/webhooks/{id}`
 

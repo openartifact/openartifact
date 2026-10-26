@@ -100,6 +100,7 @@ Create a new API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/auth/tokens/{id}`
 
@@ -118,6 +119,7 @@ Revoke an API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 
 ### `GET /api/v1/tokens`
@@ -199,6 +201,7 @@ Create an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/users/{id}/tokens/{tokenId}`
 

@@ -156,6 +156,7 @@ Stops the key signing globally, or for the repository named in the `repository` 
 | Status | Description | Body |
 |---|---|---|
 | `204` | Deactivated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Key or repository not found | - |
 | `409` | The key was not active there, or it is the read-only config key | - |

@@ -159,11 +159,11 @@ export type SystemInfo = {
 export type User = {
     id?: string;
     username?: string;
-    email?: string;
-    full_name?: string;
+    email?: string | null;
+    full_name?: string | null;
     disabled?: boolean;
     must_change_password?: boolean;
-    last_login_at?: string;
+    last_login_at?: string | null;
     created_at?: string;
     updated_at?: string;
 };
@@ -183,7 +183,7 @@ export type UserExtended = User & {
 export type Group = {
     id?: string;
     name?: string;
-    description?: string;
+    description?: string | null;
     created_at?: string;
     updated_at?: string;
 };
@@ -539,8 +539,8 @@ export type CleanupPolicy = {
     id?: string;
     name?: string;
     enabled?: boolean;
-    keep_since_days?: number;
-    keep_downloaded_since_days?: number;
+    keep_since_days?: number | null;
+    keep_downloaded_since_days?: number | null;
     name_pattern?: string;
     schedule_cron?: string;
     created_at?: string;
@@ -548,7 +548,7 @@ export type CleanupPolicy = {
     keep_last_n?: number | null;
     last_run_at?: string | null;
     last_run_deleted?: number | null;
-    last_run_error?: string;
+    last_run_error?: string | null;
     /**
      * Empty for a project default policy.
      */
@@ -561,7 +561,7 @@ export type CleanupPolicy = {
 
 export type Webhook = {
     id?: string;
-    repository_id?: string;
+    repository_id?: string | null;
     name?: string;
     url?: string;
     events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
@@ -600,8 +600,8 @@ export type Token = {
     name?: string;
     kind?: 'access' | 'deploy';
     scopes?: Array<string>;
-    expires_at?: string;
-    last_used_at?: string;
+    expires_at?: string | null;
+    last_used_at?: string | null;
     created_at?: string;
 };
 
@@ -630,7 +630,7 @@ export type Backup = {
     status?: 'pending' | 'in_progress' | 'completed' | 'failed';
     type?: 'full' | 'metadata-only';
     started_at?: string;
-    completed_at?: string;
+    completed_at?: string | null;
     size_bytes?: number;
     error_message?: string;
     created_at?: string;
@@ -857,7 +857,7 @@ export type ReplicationStatus = {
          */
         location?: string;
     } | null;
-    read_fallback?: 'notfound' | 'error' | 'off';
+    read_fallback?: '' | 'notfound' | 'error' | 'off';
     /**
      * Queued copies to the replica.
      */
@@ -958,8 +958,8 @@ export type StorageBackend = {
         [key: string]: unknown;
     };
     status?: 'ok' | 'degraded' | 'error' | 'unknown';
-    status_message?: string;
-    last_checked_at?: string;
+    status_message?: string | null;
+    last_checked_at?: string | null;
     created_at?: string;
     updated_at?: string;
     /**
@@ -1389,6 +1389,9 @@ export type ProjectTokenCreateRequest = {
 };
 
 export type ProjectMember = {
+    /**
+     * Membership id: the project id and the user id joined by a colon
+     */
     id?: string;
     project_id?: string;
     user_id?: string;
@@ -3027,7 +3030,7 @@ export type GetMetricsData = {
 
 export type GetMetricsErrors = {
     /**
-     * Unauthorized (if METRICS_AUTH_TOKEN is set)
+     * Unauthorized: the endpoint needs the METRICS_AUTH_TOKEN bearer token and answers 401 for every caller while none is configured
      */
     401: unknown;
 };
@@ -3069,10 +3072,24 @@ export type PostApiV1AuthLoginData = {
 
 export type PostApiV1AuthLoginErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Invalid credentials
      */
     401: unknown;
+    /**
+     * Unsupported media type
+     */
+    415: Error;
+    /**
+     * Too many requests
+     */
+    429: Error;
 };
+
+export type PostApiV1AuthLoginError = PostApiV1AuthLoginErrors[keyof PostApiV1AuthLoginErrors];
 
 export type PostApiV1AuthLoginResponses = {
     /**
@@ -3195,6 +3212,15 @@ export type PostApiV1AuthTokensData = {
     url: '/api/v1/auth/tokens';
 };
 
+export type PostApiV1AuthTokensErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type PostApiV1AuthTokensError = PostApiV1AuthTokensErrors[keyof PostApiV1AuthTokensErrors];
+
 export type PostApiV1AuthTokensResponses = {
     /**
      * Token created
@@ -3215,10 +3241,16 @@ export type DeleteApiV1AuthTokensByIdData = {
 
 export type DeleteApiV1AuthTokensByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Token not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1AuthTokensByIdError = DeleteApiV1AuthTokensByIdErrors[keyof DeleteApiV1AuthTokensByIdErrors];
 
 export type DeleteApiV1AuthTokensByIdResponses = {
     /**
@@ -3240,11 +3272,13 @@ export type GetApiV1AuthSsoProvidersResponses = {
     /**
      * List of SSO providers
      */
-    200: Array<{
-        slug?: string;
-        display_name?: string;
-        kind?: 'oidc' | 'saml';
-    }>;
+    200: {
+        providers: Array<{
+            slug?: string;
+            display_name?: string;
+            kind?: 'oidc' | 'saml';
+        }>;
+    };
 };
 
 export type GetApiV1AuthSsoProvidersResponse = GetApiV1AuthSsoProvidersResponses[keyof GetApiV1AuthSsoProvidersResponses];
@@ -3300,6 +3334,15 @@ export type GetApiV1RepositoriesData = {
     };
     url: '/api/v1/repositories';
 };
+
+export type GetApiV1RepositoriesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+};
+
+export type GetApiV1RepositoriesError = GetApiV1RepositoriesErrors[keyof GetApiV1RepositoriesErrors];
 
 export type GetApiV1RepositoriesResponses = {
     /**
@@ -3388,6 +3431,10 @@ export type PostApiV1RepositoriesErrors = {
      * Admin access required
      */
     403: unknown;
+    /**
+     * The addressed resource was not found
+     */
+    404: Error;
     /**
      * A repository with this name already exists, or the name is reserved by a repository in the trash until it is purged or restored (error codes conflict, name_reserved)
      */
@@ -3528,10 +3575,16 @@ export type GetApiV1RepositoriesByNameMembersData = {
 
 export type GetApiV1RepositoriesByNameMembersErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameMembersError = GetApiV1RepositoriesByNameMembersErrors[keyof GetApiV1RepositoriesByNameMembersErrors];
 
 export type GetApiV1RepositoriesByNameMembersResponses = {
     /**
@@ -3560,10 +3613,16 @@ export type PutApiV1RepositoriesByNameMembersData = {
 
 export type PutApiV1RepositoriesByNameMembersErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type PutApiV1RepositoriesByNameMembersError = PutApiV1RepositoriesByNameMembersErrors[keyof PutApiV1RepositoriesByNameMembersErrors];
 
 export type PutApiV1RepositoriesByNameMembersResponses = {
     /**
@@ -3584,6 +3643,15 @@ export type GetApiV1RepositoriesByNameCleanupPoliciesData = {
     query?: never;
     url: '/api/v1/repositories/{name}/cleanup-policies';
 };
+
+export type GetApiV1RepositoriesByNameCleanupPoliciesErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameCleanupPoliciesError = GetApiV1RepositoriesByNameCleanupPoliciesErrors[keyof GetApiV1RepositoriesByNameCleanupPoliciesErrors];
 
 export type GetApiV1RepositoriesByNameCleanupPoliciesResponses = {
     /**
@@ -3611,6 +3679,19 @@ export type PostApiV1RepositoriesByNameCleanupPoliciesData = {
     query?: never;
     url: '/api/v1/repositories/{name}/cleanup-policies';
 };
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesError = PostApiV1RepositoriesByNameCleanupPoliciesErrors[keyof PostApiV1RepositoriesByNameCleanupPoliciesErrors];
 
 export type PostApiV1RepositoriesByNameCleanupPoliciesResponses = {
     /**
@@ -3671,6 +3752,19 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
     url: '/api/v1/repositories/{name}/webhooks';
 };
 
+export type PostApiV1RepositoriesByNameWebhooksErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameWebhooksError = PostApiV1RepositoriesByNameWebhooksErrors[keyof PostApiV1RepositoriesByNameWebhooksErrors];
+
 export type PostApiV1RepositoriesByNameWebhooksResponses = {
     /**
      * Webhook created
@@ -3704,10 +3798,20 @@ export type PostApiV1RepositoriesByNameSbomGenerateData = {
 
 export type PostApiV1RepositoriesByNameSbomGenerateErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+    /**
      * The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`)
      */
     422: unknown;
 };
+
+export type PostApiV1RepositoriesByNameSbomGenerateError = PostApiV1RepositoriesByNameSbomGenerateErrors[keyof PostApiV1RepositoriesByNameSbomGenerateErrors];
 
 export type PostApiV1RepositoriesByNameSbomGenerateResponses = {
     /**
@@ -3724,6 +3828,15 @@ export type GetApiV1RepositoriesByNameSbomData = {
     query?: never;
     url: '/api/v1/repositories/{name}/sbom';
 };
+
+export type GetApiV1RepositoriesByNameSbomErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameSbomError = GetApiV1RepositoriesByNameSbomErrors[keyof GetApiV1RepositoriesByNameSbomErrors];
 
 export type GetApiV1RepositoriesByNameSbomResponses = {
     /**
@@ -4020,6 +4133,15 @@ export type GetApiV1RepositoriesByNameLicenseScansData = {
     url: '/api/v1/repositories/{name}/license/scans';
 };
 
+export type GetApiV1RepositoriesByNameLicenseScansErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameLicenseScansError = GetApiV1RepositoriesByNameLicenseScansErrors[keyof GetApiV1RepositoriesByNameLicenseScansErrors];
+
 export type GetApiV1RepositoriesByNameLicenseScansResponses = {
     /**
      * List of license scans
@@ -4102,6 +4224,15 @@ export type GetApiV1RepositoriesByNameLicensePoliciesData = {
     url: '/api/v1/repositories/{name}/license/policies';
 };
 
+export type GetApiV1RepositoriesByNameLicensePoliciesErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameLicensePoliciesError = GetApiV1RepositoriesByNameLicensePoliciesErrors[keyof GetApiV1RepositoriesByNameLicensePoliciesErrors];
+
 export type GetApiV1RepositoriesByNameLicensePoliciesResponses = {
     /**
      * List of license policies
@@ -4117,6 +4248,19 @@ export type PostApiV1RepositoriesByNameLicensePoliciesData = {
     query?: never;
     url: '/api/v1/repositories/{name}/license/policies';
 };
+
+export type PostApiV1RepositoriesByNameLicensePoliciesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameLicensePoliciesError = PostApiV1RepositoriesByNameLicensePoliciesErrors[keyof PostApiV1RepositoriesByNameLicensePoliciesErrors];
 
 export type PostApiV1RepositoriesByNameLicensePoliciesResponses = {
     /**
@@ -4134,6 +4278,15 @@ export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdData = {
     query?: never;
     url: '/api/v1/repositories/{name}/license/policies/{id}';
 };
+
+export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdError = DeleteApiV1RepositoriesByNameLicensePoliciesByIdErrors[keyof DeleteApiV1RepositoriesByNameLicensePoliciesByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdResponses = {
     /**
@@ -4153,6 +4306,15 @@ export type PutApiV1RepositoriesByNameLicensePoliciesByIdData = {
     query?: never;
     url: '/api/v1/repositories/{name}/license/policies/{id}';
 };
+
+export type PutApiV1RepositoriesByNameLicensePoliciesByIdErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PutApiV1RepositoriesByNameLicensePoliciesByIdError = PutApiV1RepositoriesByNameLicensePoliciesByIdErrors[keyof PutApiV1RepositoriesByNameLicensePoliciesByIdErrors];
 
 export type PutApiV1RepositoriesByNameLicensePoliciesByIdResponses = {
     /**
@@ -4182,6 +4344,15 @@ export type PostApiV1AdminLicensePoliciesData = {
     url: '/api/v1/admin/license/policies';
 };
 
+export type PostApiV1AdminLicensePoliciesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+};
+
+export type PostApiV1AdminLicensePoliciesError = PostApiV1AdminLicensePoliciesErrors[keyof PostApiV1AdminLicensePoliciesErrors];
+
 export type PostApiV1AdminLicensePoliciesResponses = {
     /**
      * License policy created
@@ -4198,6 +4369,19 @@ export type PostApiV1RepositoriesByNameSecretsScanData = {
     url: '/api/v1/repositories/{name}/secrets/scan';
 };
 
+export type PostApiV1RepositoriesByNameSecretsScanErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameSecretsScanError = PostApiV1RepositoriesByNameSecretsScanErrors[keyof PostApiV1RepositoriesByNameSecretsScanErrors];
+
 export type PostApiV1RepositoriesByNameSecretsScanResponses = {
     /**
      * Secrets scan started
@@ -4213,6 +4397,15 @@ export type GetApiV1RepositoriesByNameSecretsScansData = {
     query?: never;
     url: '/api/v1/repositories/{name}/secrets/scans';
 };
+
+export type GetApiV1RepositoriesByNameSecretsScansErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansError = GetApiV1RepositoriesByNameSecretsScansErrors[keyof GetApiV1RepositoriesByNameSecretsScansErrors];
 
 export type GetApiV1RepositoriesByNameSecretsScansResponses = {
     /**
@@ -4366,6 +4559,19 @@ export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineData = {
     query?: never;
     url: '/api/v1/repositories/{name}/secrets/scans/{id}/quarantine';
 };
+
+export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineError = PostApiV1RepositoriesByNameSecretsScansByIdQuarantineErrors[keyof PostApiV1RepositoriesByNameSecretsScansByIdQuarantineErrors];
 
 export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineResponses = {
     /**
@@ -4815,6 +5021,15 @@ export type GetApiV1RepositoriesByNameVulnScansData = {
     url: '/api/v1/repositories/{name}/vuln/scans';
 };
 
+export type GetApiV1RepositoriesByNameVulnScansErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameVulnScansError = GetApiV1RepositoriesByNameVulnScansErrors[keyof GetApiV1RepositoriesByNameVulnScansErrors];
+
 export type GetApiV1RepositoriesByNameVulnScansResponses = {
     /**
      * List of vulnerability scans
@@ -4964,6 +5179,15 @@ export type DeleteApiV1RepositoriesByNameQuotaData = {
     url: '/api/v1/repositories/{name}/quota';
 };
 
+export type DeleteApiV1RepositoriesByNameQuotaErrors = {
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type DeleteApiV1RepositoriesByNameQuotaError = DeleteApiV1RepositoriesByNameQuotaErrors[keyof DeleteApiV1RepositoriesByNameQuotaErrors];
+
 export type DeleteApiV1RepositoriesByNameQuotaResponses = {
     /**
      * Quota deleted
@@ -5006,6 +5230,19 @@ export type PutApiV1RepositoriesByNameQuotaData = {
     query?: never;
     url: '/api/v1/repositories/{name}/quota';
 };
+
+export type PutApiV1RepositoriesByNameQuotaErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PutApiV1RepositoriesByNameQuotaError = PutApiV1RepositoriesByNameQuotaErrors[keyof PutApiV1RepositoriesByNameQuotaErrors];
 
 export type PutApiV1RepositoriesByNameQuotaResponses = {
     /**
@@ -5053,6 +5290,19 @@ export type GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesData = {
     url: '/api/v1/repositories/{name}/artifacts/{artifact_id}/properties';
 };
 
+export type GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesError = GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors[keyof GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors];
+
 export type GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesResponses = {
     /**
      * Artifact properties
@@ -5076,6 +5326,19 @@ export type PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesData = {
     url: '/api/v1/repositories/{name}/artifacts/{artifact_id}/properties';
 };
 
+export type PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesError = PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors[keyof PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors];
+
 export type PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesResponses = {
     /**
      * Properties updated
@@ -5094,6 +5357,19 @@ export type PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesData = {
     query?: never;
     url: '/api/v1/repositories/{name}/artifacts/{artifact_id}/properties';
 };
+
+export type PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
+};
+
+export type PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesError = PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors[keyof PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors];
 
 export type PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesResponses = {
     /**
@@ -5115,10 +5391,16 @@ export type DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyDat
 
 export type DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Property not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyError = DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyErrors[keyof DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyErrors];
 
 export type DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyResponses = {
     /**
@@ -5140,6 +5422,15 @@ export type GetApiV1RepositoriesByNameArtifactsSearchData = {
     };
     url: '/api/v1/repositories/{name}/artifacts/search';
 };
+
+export type GetApiV1RepositoriesByNameArtifactsSearchErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+};
+
+export type GetApiV1RepositoriesByNameArtifactsSearchError = GetApiV1RepositoriesByNameArtifactsSearchErrors[keyof GetApiV1RepositoriesByNameArtifactsSearchErrors];
 
 export type GetApiV1RepositoriesByNameArtifactsSearchResponses = {
     /**
@@ -5242,6 +5533,15 @@ export type PostApiV1WebhooksData = {
     query?: never;
     url: '/api/v1/webhooks';
 };
+
+export type PostApiV1WebhooksErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+};
+
+export type PostApiV1WebhooksError = PostApiV1WebhooksErrors[keyof PostApiV1WebhooksErrors];
 
 export type PostApiV1WebhooksResponses = {
     /**
@@ -5446,10 +5746,20 @@ export type PostApiV1UsersData = {
 
 export type PostApiV1UsersErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
+
+export type PostApiV1UsersError = PostApiV1UsersErrors[keyof PostApiV1UsersErrors];
 
 export type PostApiV1UsersResponses = {
     /**
@@ -5617,6 +5927,15 @@ export type PostApiV1UsersByIdTokensData = {
     url: '/api/v1/users/{id}/tokens';
 };
 
+export type PostApiV1UsersByIdTokensErrors = {
+    /**
+     * The addressed resource was not found
+     */
+    404: Error;
+};
+
+export type PostApiV1UsersByIdTokensError = PostApiV1UsersByIdTokensErrors[keyof PostApiV1UsersByIdTokensErrors];
+
 export type PostApiV1UsersByIdTokensResponses = {
     /**
      * Token created
@@ -5679,6 +5998,15 @@ export type PostApiV1GroupsData = {
     query?: never;
     url: '/api/v1/groups';
 };
+
+export type PostApiV1GroupsErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+};
+
+export type PostApiV1GroupsError = PostApiV1GroupsErrors[keyof PostApiV1GroupsErrors];
 
 export type PostApiV1GroupsResponses = {
     /**
@@ -5816,8 +6144,10 @@ export type PutApiV1GroupsByIdMembersResponses = {
     /**
      * Members updated
      */
-    200: unknown;
+    204: void;
 };
+
+export type PutApiV1GroupsByIdMembersResponse = PutApiV1GroupsByIdMembersResponses[keyof PutApiV1GroupsByIdMembersResponses];
 
 export type DeleteApiV1GroupsByIdMembersByUserIdData = {
     body?: never;
@@ -5974,7 +6304,9 @@ export type GetApiV1PermissionTargetsResponses = {
     /**
      * List of permission targets
      */
-    200: Array<PermissionTarget>;
+    200: {
+        data: Array<PermissionTarget>;
+    };
 };
 
 export type GetApiV1PermissionTargetsResponse = GetApiV1PermissionTargetsResponses[keyof GetApiV1PermissionTargetsResponses];
@@ -5990,6 +6322,19 @@ export type PostApiV1PermissionTargetsData = {
     query?: never;
     url: '/api/v1/permission-targets';
 };
+
+export type PostApiV1PermissionTargetsErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
+};
+
+export type PostApiV1PermissionTargetsError = PostApiV1PermissionTargetsErrors[keyof PostApiV1PermissionTargetsErrors];
 
 export type PostApiV1PermissionTargetsResponses = {
     /**
@@ -6066,10 +6411,16 @@ export type PatchApiV1PermissionTargetsByIdData = {
 
 export type PatchApiV1PermissionTargetsByIdErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Permission target not found
      */
     404: unknown;
 };
+
+export type PatchApiV1PermissionTargetsByIdError = PatchApiV1PermissionTargetsByIdErrors[keyof PatchApiV1PermissionTargetsByIdErrors];
 
 export type PatchApiV1PermissionTargetsByIdResponses = {
     /**
@@ -6091,6 +6442,19 @@ export type DeleteApiV1PermissionTargetsByIdAssignmentsData = {
     query?: never;
     url: '/api/v1/permission-targets/{id}/assignments';
 };
+
+export type DeleteApiV1PermissionTargetsByIdAssignmentsErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * The addressed resource was not found
+     */
+    404: Error;
+};
+
+export type DeleteApiV1PermissionTargetsByIdAssignmentsError = DeleteApiV1PermissionTargetsByIdAssignmentsErrors[keyof DeleteApiV1PermissionTargetsByIdAssignmentsErrors];
 
 export type DeleteApiV1PermissionTargetsByIdAssignmentsResponses = {
     /**
@@ -6143,6 +6507,19 @@ export type PostApiV1PermissionTargetsByIdAssignmentsData = {
     query?: never;
     url: '/api/v1/permission-targets/{id}/assignments';
 };
+
+export type PostApiV1PermissionTargetsByIdAssignmentsErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * The addressed resource was not found
+     */
+    404: Error;
+};
+
+export type PostApiV1PermissionTargetsByIdAssignmentsError = PostApiV1PermissionTargetsByIdAssignmentsErrors[keyof PostApiV1PermissionTargetsByIdAssignmentsErrors];
 
 export type PostApiV1PermissionTargetsByIdAssignmentsResponses = {
     /**
@@ -6413,10 +6790,16 @@ export type PostApiV1AdminBackupData = {
 
 export type PostApiV1AdminBackupErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type PostApiV1AdminBackupError = PostApiV1AdminBackupErrors[keyof PostApiV1AdminBackupErrors];
 
 export type PostApiV1AdminBackupResponses = {
     /**
@@ -6468,10 +6851,16 @@ export type GetApiV1AdminBackupByIdDownloadData = {
 
 export type GetApiV1AdminBackupByIdDownloadErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Backup not found
      */
     404: unknown;
 };
+
+export type GetApiV1AdminBackupByIdDownloadError = GetApiV1AdminBackupByIdDownloadErrors[keyof GetApiV1AdminBackupByIdDownloadErrors];
 
 export type GetApiV1AdminBackupByIdDownloadResponses = {
     /**
@@ -6554,10 +6943,16 @@ export type PostApiV1AdminStorageData = {
 
 export type PostApiV1AdminStorageErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type PostApiV1AdminStorageError = PostApiV1AdminStorageErrors[keyof PostApiV1AdminStorageErrors];
 
 export type PostApiV1AdminStorageResponses = {
     /**
@@ -6579,10 +6974,16 @@ export type DeleteApiV1AdminStorageByNameData = {
 
 export type DeleteApiV1AdminStorageByNameErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Storage backend not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1AdminStorageByNameError = DeleteApiV1AdminStorageByNameErrors[keyof DeleteApiV1AdminStorageByNameErrors];
 
 export type DeleteApiV1AdminStorageByNameResponses = {
     /**
@@ -6634,6 +7035,10 @@ export type PatchApiV1AdminStorageByNameData = {
 
 export type PatchApiV1AdminStorageByNameErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Storage backend not found
      */
     404: unknown;
@@ -6642,6 +7047,8 @@ export type PatchApiV1AdminStorageByNameErrors = {
      */
     409: unknown;
 };
+
+export type PatchApiV1AdminStorageByNameError = PatchApiV1AdminStorageByNameErrors[keyof PatchApiV1AdminStorageByNameErrors];
 
 export type PatchApiV1AdminStorageByNameResponses = {
     /**
@@ -7437,6 +7844,10 @@ export type DeleteApiV1AdminGpgKeysByIdActivateData = {
 
 export type DeleteApiV1AdminGpgKeysByIdActivateErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -7449,6 +7860,8 @@ export type DeleteApiV1AdminGpgKeysByIdActivateErrors = {
      */
     409: unknown;
 };
+
+export type DeleteApiV1AdminGpgKeysByIdActivateError = DeleteApiV1AdminGpgKeysByIdActivateErrors[keyof DeleteApiV1AdminGpgKeysByIdActivateErrors];
 
 export type DeleteApiV1AdminGpgKeysByIdActivateResponses = {
     /**
@@ -7554,7 +7967,9 @@ export type GetApiV1AdminSsoProvidersResponses = {
     /**
      * List of SSO providers
      */
-    200: Array<SsoProvider>;
+    200: {
+        providers: Array<SsoProvider>;
+    };
 };
 
 export type GetApiV1AdminSsoProvidersResponse = GetApiV1AdminSsoProvidersResponses[keyof GetApiV1AdminSsoProvidersResponses];
@@ -7576,10 +7991,16 @@ export type PostApiV1AdminSsoProvidersData = {
 
 export type PostApiV1AdminSsoProvidersErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type PostApiV1AdminSsoProvidersError = PostApiV1AdminSsoProvidersErrors[keyof PostApiV1AdminSsoProvidersErrors];
 
 export type PostApiV1AdminSsoProvidersResponses = {
     /**
@@ -8702,10 +9123,16 @@ export type PutApiV1AdminProjectsSettingsData = {
 
 export type PutApiV1AdminProjectsSettingsErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type PutApiV1AdminProjectsSettingsError = PutApiV1AdminProjectsSettingsErrors[keyof PutApiV1AdminProjectsSettingsErrors];
 
 export type PutApiV1AdminProjectsSettingsResponses = {
     /**
@@ -10376,6 +10803,10 @@ export type PostApiV1RepositoriesByNameUploadsByIdAbortData = {
 
 export type PostApiV1RepositoriesByNameUploadsByIdAbortErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Authentication required
      */
     401: unknown;
@@ -10466,6 +10897,10 @@ export type PostApiV1TrashByKindByIdRestoreData = {
 
 export type PostApiV1TrashByKindByIdRestoreErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -10507,6 +10942,10 @@ export type DeleteApiV1TrashByKindByIdData = {
 };
 
 export type DeleteApiV1TrashByKindByIdErrors = {
+    /**
+     * Invalid request
+     */
+    400: Error;
     /**
      * Admin access required
      */
@@ -10622,6 +11061,10 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreData = {
 
 export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Delete permission on the repository required (restoring a repository needs an admin)
      */
     403: unknown;
@@ -10697,6 +11140,10 @@ export type PutApiV1RepositoriesByNameFederationErrors = {
      * Repository not found
      */
     404: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
 
 export type PutApiV1RepositoriesByNameFederationError = PutApiV1RepositoriesByNameFederationErrors[keyof PutApiV1RepositoriesByNameFederationErrors];
@@ -10771,7 +11218,13 @@ export type DeleteApiV1RepositoriesByNameFederationPeersByIdErrors = {
      * Repository or peer not found
      */
     404: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
+
+export type DeleteApiV1RepositoriesByNameFederationPeersByIdError = DeleteApiV1RepositoriesByNameFederationPeersByIdErrors[keyof DeleteApiV1RepositoriesByNameFederationPeersByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameFederationPeersByIdResponses = {
     /**
@@ -10847,7 +11300,13 @@ export type PostApiV1RepositoriesByNameFederationPeersByIdResyncErrors = {
      * Repository or peer not found
      */
     404: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
+
+export type PostApiV1RepositoriesByNameFederationPeersByIdResyncError = PostApiV1RepositoriesByNameFederationPeersByIdResyncErrors[keyof PostApiV1RepositoriesByNameFederationPeersByIdResyncErrors];
 
 export type PostApiV1RepositoriesByNameFederationPeersByIdResyncResponses = {
     /**
@@ -10880,7 +11339,13 @@ export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredErrors = {
      * Repository or peer not found
      */
     404: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
+
+export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredError = GetApiV1RepositoriesByNameFederationPeersByIdDeferredErrors[keyof GetApiV1RepositoriesByNameFederationPeersByIdDeferredErrors];
 
 export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredResponses = {
     /**
@@ -10952,7 +11417,13 @@ export type DeleteApiV1RepositoriesByNameFederationTokensByIdErrors = {
      * Repository or token not found
      */
     404: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
+
+export type DeleteApiV1RepositoriesByNameFederationTokensByIdError = DeleteApiV1RepositoriesByNameFederationTokensByIdErrors[keyof DeleteApiV1RepositoriesByNameFederationTokensByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameFederationTokensByIdResponses = {
     /**
@@ -11922,7 +12393,13 @@ export type DeleteApiV1AdminBrandingByAssetErrors = {
      * Admin access required
      */
     403: unknown;
+    /**
+     * The addressed resource was not found
+     */
+    404: Error;
 };
+
+export type DeleteApiV1AdminBrandingByAssetError = DeleteApiV1AdminBrandingByAssetErrors[keyof DeleteApiV1AdminBrandingByAssetErrors];
 
 export type DeleteApiV1AdminBrandingByAssetResponses = {
     /**
@@ -11951,6 +12428,10 @@ export type PutApiV1AdminBrandingByAssetErrors = {
      * Admin access required
      */
     403: unknown;
+    /**
+     * The addressed resource was not found
+     */
+    404: Error;
     /**
      * Image larger than 512 KiB
      */
