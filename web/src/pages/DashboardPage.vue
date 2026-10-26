@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <PageHeader :title="isAdmin ? t('dashboard.title') : tp('dashboard.welcome', { name: username })" :description="isAdmin ? t('dashboard.description.admin') : t('dashboard.description.member')">
+    <PageHeader :crumbs="[{ label: t('dashboard.title') }]" :title="isAdmin ? t('dashboard.title') : tp('dashboard.welcome', { name: username })" :description="isAdmin ? t('dashboard.description.admin') : t('dashboard.description.member')">
       <template #actions>
         <AppButton variant="secondary" :loading="refreshing" @click="refresh">
           <ArrowPathIcon v-if="!refreshing" class="h-4 w-4" aria-hidden="true" />

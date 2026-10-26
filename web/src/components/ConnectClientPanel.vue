@@ -7,8 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <section class="rounded-lg border border-border bg-surface">
     <div class="px-4 py-3 border-b border-border">
-      <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.connect.title') }}</h2>
-      <p class="text-xs text-muted mt-0.5">
+      <h2 v-if="!titled" class="text-sm font-semibold text-foreground">{{ t('repoDetail.connect.title') }}</h2>
+      <p class="text-xs text-muted" :class="titled ? '' : 'mt-0.5'">
         {{ t('repoDetail.connect.hint') }}
         <a
           v-if="docsUrl"
@@ -68,7 +68,12 @@ import { clientSetup } from '../lib/installCommands'
 import { useDocsLink } from '../composables/useDocsLink'
 import { t } from '../i18n/en'
 
-const props = defineProps<{ format: string; repo: string }>()
+const props = defineProps<{
+  format: string
+  repo: string
+  /** The host already shows the "Connect a client" heading above the panel. */
+  titled?: boolean
+}>()
 
 // The client-setup page lists the configure and publish commands of every client.
 const docsUrl = useDocsLink('repo-detail')
