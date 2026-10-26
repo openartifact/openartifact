@@ -83,7 +83,7 @@ func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		policies = []*models.CleanupPolicy{}
 	}
 
-	var result []responses.CleanupPolicyResponse
+	result := []responses.CleanupPolicyResponse{}
 	for _, policy := range policies {
 		result = append(result, policyToMap(policy))
 	}

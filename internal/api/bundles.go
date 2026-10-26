@@ -195,7 +195,7 @@ func (h *BundlesHandler) handleListPipelines(w http.ResponseWriter, r *http.Requ
 		pipelines = []*models.PromotionPipeline{}
 	}
 
-	var result []map[string]any
+	result := []map[string]any{}
 	for _, pipeline := range pipelines {
 		result = append(result, pipelineToMap(pipeline))
 	}
@@ -460,7 +460,7 @@ func (h *BundlesHandler) handleListBundles(w http.ResponseWriter, r *http.Reques
 		bundles = []*models.ReleaseBundle{}
 	}
 
-	var result []map[string]any
+	result := []map[string]any{}
 	for _, bundle := range bundles {
 		result = append(result, bundleToMap(bundle))
 	}
@@ -637,7 +637,7 @@ func (h *BundlesHandler) handleListItems(w http.ResponseWriter, r *http.Request)
 		items = []*models.ReleaseBundleItem{}
 	}
 
-	var result []map[string]any
+	result := []map[string]any{}
 	for _, item := range items {
 		result = append(result, itemToMap(item))
 	}
@@ -1186,7 +1186,7 @@ func (h *BundlesHandler) handleListPromotions(w http.ResponseWriter, r *http.Req
 		promotions = []*models.BundlePromotion{}
 	}
 
-	var result []map[string]any
+	result := []map[string]any{}
 	for _, promotion := range promotions {
 		result = append(result, promotionToMap(promotion))
 	}

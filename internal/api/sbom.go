@@ -292,7 +292,7 @@ func (h *SBOMHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		reports = []*models.SBOMReport{}
 	}
 
-	var result []responses.SBOMReportResponse
+	result := []responses.SBOMReportResponse{}
 	for _, report := range reports {
 		result = append(result, reportToMap(report))
 	}

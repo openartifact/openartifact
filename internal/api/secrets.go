@@ -165,7 +165,7 @@ func (h *SecretsHandler) handleListScans(w http.ResponseWriter, r *http.Request)
 		results = []*models.SecretScanResult{}
 	}
 
-	var resultMaps []responses.SecretScanResultResponse
+	resultMaps := []responses.SecretScanResultResponse{}
 	for _, result := range results {
 		resultMaps = append(resultMaps, secretScanResultToMap(result))
 	}

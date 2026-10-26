@@ -259,7 +259,7 @@ func (h *LicenseHandler) handleListScans(w http.ResponseWriter, r *http.Request)
 		results = []*models.LicenseScanResult{}
 	}
 
-	var resultMaps []responses.LicenseScanResultResponse
+	resultMaps := []responses.LicenseScanResultResponse{}
 	for _, result := range results {
 		resultMaps = append(resultMaps, scanResultToMap(result))
 	}
@@ -359,7 +359,7 @@ func (h *LicenseHandler) handleListPolicies(w http.ResponseWriter, r *http.Reque
 		policies = []*models.LicensePolicy{}
 	}
 
-	var policyMaps []responses.LicensePolicyResponse
+	policyMaps := []responses.LicensePolicyResponse{}
 	for _, policy := range policies {
 		policyMaps = append(policyMaps, licensePolicyToMap(policy))
 	}
@@ -647,7 +647,7 @@ func (h *LicenseHandler) handleListGlobalPolicies(w http.ResponseWriter, r *http
 		policies = []*models.LicensePolicy{}
 	}
 
-	var policyMaps []responses.LicensePolicyResponse
+	policyMaps := []responses.LicensePolicyResponse{}
 	for _, policy := range policies {
 		policyMaps = append(policyMaps, licensePolicyToMap(policy))
 	}

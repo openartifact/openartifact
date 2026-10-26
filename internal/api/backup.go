@@ -143,7 +143,7 @@ func (h *BackupHandler) handleListBackups(w http.ResponseWriter, r *http.Request
 		jobs = []*models.BackupJob{}
 	}
 
-	var result []responses.BackupJobResponse
+	result := []responses.BackupJobResponse{}
 	for _, job := range jobs {
 		result = append(result, backupJobToMap(job))
 	}
