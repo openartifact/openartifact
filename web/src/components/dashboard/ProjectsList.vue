@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <DashSection :title="t('dashboard.projects.title')" heading-id="dash-projects" state="ready" :empty="projects.length === 0">
     <template #actions>
-      <router-link to="/projects" class="text-xs text-primary hover:underline">{{ t('dashboard.projects.all') }}</router-link>
+      <router-link to="/projects" class="text-xs text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center">{{ t('dashboard.projects.all') }}</router-link>
     </template>
     <template #empty>
       <StateBlock variant="empty" :title="t('dashboard.projects.empty')" :hint="t('dashboard.projects.emptyHint')" />

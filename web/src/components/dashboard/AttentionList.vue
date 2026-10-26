@@ -19,6 +19,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         :aria-label="tpn('dashboard.attention.count', items.length)"
       >{{ items.length }}</span>
     </template>
+    <template #actions>
+      <router-link to="/security" class="text-xs text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center" data-testid="attention-security">{{ t('dashboard.attention.openSecurity') }}</router-link>
+    </template>
     <template #empty>
       <StateBlock variant="empty" :title="t('dashboard.attention.allClear')" :hint="t('dashboard.attention.allClearHint')" />
     </template>
@@ -32,7 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ tDynamic(`dashboard.attention.severity.${item.severity}`) }}<template v-if="item.params.message"> · {{ item.params.message }}</template>
           </div>
         </div>
-        <router-link :to="item.to" class="shrink-0 text-xs text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center">{{ t('dashboard.attention.open') }}</router-link>
+        <router-link :to="item.to" :aria-label="`${t('dashboard.attention.open')}: ${text(item)}`" class="shrink-0 text-xs text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center">{{ t('dashboard.attention.open') }}</router-link>
       </li>
       <li v-if="items.length === 0" class="px-4 py-3 text-sm text-muted">{{ t('dashboard.attention.allClear') }}</li>
     </ul>

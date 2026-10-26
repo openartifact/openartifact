@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     @retry="emit('retry')"
   >
     <template #actions>
-      <router-link v-if="isAdmin" to="/settings/audit" class="text-xs text-primary hover:underline">{{ t('dashboard.activity.viewAudit') }}</router-link>
+      <router-link v-if="isAdmin" to="/settings/audit" class="text-xs text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center">{{ t('dashboard.activity.viewAudit') }}</router-link>
     </template>
     <template #empty>
       <StateBlock

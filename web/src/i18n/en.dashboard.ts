@@ -57,6 +57,7 @@ export const enDashboard = {
   'dashboard.attention.showFewer': 'Show fewer',
   'dashboard.attention.incomplete': 'Some checks could not be loaded, so this list may be incomplete.',
   'dashboard.attention.open': 'Open',
+  'dashboard.attention.openSecurity': 'Open Security',
   'dashboard.attention.severity.critical': 'Critical',
   'dashboard.attention.severity.high': 'High',
   'dashboard.attention.severity.medium': 'Medium',
