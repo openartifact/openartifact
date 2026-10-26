@@ -31,7 +31,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </select>
         <FormatBadge v-if="current" :format="current.format" size="sm" />
       </div>
-      <ConnectClientPanel v-if="current" :format="current.format" :repo="current.name" titled />
+      <ConnectClientPanel
+        v-if="current"
+        :format="current.format"
+        :repo="current.name"
+        :read-only="current.repo_type === 'proxy' || current.repo_type === 'group'"
+        titled
+      />
       <p class="text-xs text-muted">
         {{ t('dashboard.connect.tokenHint') }}
         <router-link to="/settings/tokens?new=1" class="text-primary hover:underline">{{ t('dashboard.connect.createToken') }}</router-link>
