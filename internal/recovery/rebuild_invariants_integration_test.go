@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/openartifact/openartifact/internal/storage"
 )
 
 // TestRebuildIsMergeOnly: a rebuild into a database that already holds rows
@@ -152,7 +154,7 @@ func TestRebuildOrphanIsUnrecoverable(t *testing.T) {
 // by a different live row is left out and the existing row stays.
 func TestRebuildCollidingRowIsUnrecoverable(t *testing.T) {
 	store := newFSStore(t)
-	_, _, a, _ := seedSource(t, store)
+	a := seedFirst(t, store)
 
 	dst := newTestDB(t)
 	runRebuild(t, dst, store, RebuildOptions{})
@@ -180,7 +182,7 @@ func TestRebuildCollidingRowIsUnrecoverable(t *testing.T) {
 // columns the image lacks keep their defaults.
 func TestRebuildIgnoresUnknownColumns(t *testing.T) {
 	store := newFSStore(t)
-	_, _, a, _ := seedSource(t, store)
+	a := seedFirst(t, store)
 
 	dst := newTestDB(t)
 	runRebuild(t, dst, store, RebuildOptions{})
@@ -312,4 +314,16 @@ func TestRebuildStopsWhenCancelled(t *testing.T) {
 	if _, err := NewRebuilder(newTestDB(t), store, testLog(t), RebuildOptions{Concurrency: 2}, Hooks{}).Run(ctx); err == nil {
 		t.Fatal("Run on a cancelled context succeeded")
 	}
+}
+
+// seedFirst seeds a source and returns only its first repository's rows.
+func seedFirst(t *testing.T, store storage.BlobStore) seededRaw {
+	t.Helper()
+
+	db, j, a, b := seedSource(t, store)
+	if db == nil || j == nil || b.repoID == "" {
+		t.Fatal("seedSource returned an incomplete seed")
+	}
+
+	return a
 }
