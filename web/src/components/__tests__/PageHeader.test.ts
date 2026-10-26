@@ -40,19 +40,14 @@ const trail: CrumbSpec[] = [
 ]
 
 describe('PageHeader', () => {
-  it('renders a labelled breadcrumb nav with links and aria-current on the last crumb', async () => {
+  it('shows only the pages above the current one, as links, under a labelled nav', async () => {
     const w = await mountAt('/repos/demo', trail)
     const nav = w.get('nav')
     expect(nav.attributes('aria-label')).toBe('Breadcrumbs')
-    const items = nav.findAll('li')
-    expect(items.map((i) => i.text())).toEqual(['Repositories', 'demo', 'Edit'])
-    const links = nav.findAll('a')
-    expect(links.map((a) => a.attributes('href'))).toEqual(['/repos', '/repos/demo'])
-    // The last crumb is plain text marked as the current page, not a link.
-    const current = nav.findAll('span[aria-current="page"]')
-    expect(current).toHaveLength(1)
-    expect(current[0].text()).toBe('Edit')
-    expect(nav.findAll('a').some((a) => a.text() === 'Edit')).toBe(false)
+    expect(nav.findAll('li').map((i) => i.text())).toEqual(['Repositories', 'demo'])
+    expect(nav.findAll('a').map((a) => a.attributes('href'))).toEqual(['/repos', '/repos/demo'])
+    // The current page is named by the h1, not repeated in the trail.
+    expect(nav.text()).not.toContain('Edit')
   })
 
   it('renders the title as the page h1 with description, meta and actions slots', async () => {
@@ -66,22 +61,18 @@ describe('PageHeader', () => {
     expect(w.find('#a').exists()).toBe(true)
   })
 
-  it('shows the page itself as the only crumb when the route declares none', async () => {
-    const w = await mountAt('/repos/demo', undefined)
-    expect(w.findAll('nav li').map((i) => i.text())).toEqual(['Page title'])
-    expect(w.get('nav span[aria-current="page"]').text()).toBe('Page title')
+  it.each([
+    ['the route declares no trail', undefined],
+    ['the trail is the page itself', [{ key: 'nav.repositories' }]],
+  ])('renders no breadcrumb when %s', async (_, crumbs) => {
+    const w = await mountAt('/repos/demo', crumbs as CrumbSpec[] | undefined)
+    expect(w.find('nav').exists()).toBe(false)
     expect(w.get('h1').text()).toBe('Page title')
-  })
-
-  it('renders the breadcrumb on a top-level page with a single crumb', async () => {
-    const w = await mountAt('/repos/demo', [{ key: 'nav.repositories' }])
-    expect(w.findAll('nav li').map((i) => i.text())).toEqual(['Repositories'])
   })
 
   it('lets the crumbs prop override the route trail', async () => {
     const w = await mountAt('/repos/demo', trail, { crumbs: [{ label: 'A', to: '/' }, { label: 'B' }] })
-    expect(w.findAll('li').map((i) => i.text())).toEqual(['A', 'B'])
-    expect(w.get('span[aria-current="page"]').text()).toBe('B')
+    expect(w.findAll('li').map((i) => i.text())).toEqual(['A'])
   })
 
   describe('documentation link', () => {
