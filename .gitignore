@@ -49,6 +49,7 @@ web/.env*.local
 # Web (frontend) build & tooling
 web/node_modules/
 web/.vite/
+__pycache__/
 web/coverage/
 # Vite build output. Only the empty .gitkeep is tracked so `//go:embed all:dist`
 # compiles on a fresh clone without building the UI (vite.config.ts restores it
