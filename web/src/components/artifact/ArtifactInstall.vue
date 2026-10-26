@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p v-if="critical > 0" role="alert" class="flex items-start gap-2 text-sm text-danger" data-testid="install-critical">
         <XCircleIcon class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <span>
-          {{ tp('artifact.install.critical', { count: String(critical) }) }}
+          {{ tpn('artifact.install.critical', critical) }}
           <router-link :to="{ query: { tab: 'security' } }" class="underline underline-offset-2">{{ t('artifact.install.openSecurity') }}</router-link>
         </span>
       </p>
@@ -81,7 +81,7 @@ import { computed, ref, useId } from 'vue'
 import { LockClosedIcon, XCircleIcon } from '@heroicons/vue/20/solid'
 import CopyButton from '../ui/CopyButton.vue'
 import { installBlock } from '../../lib/artifactInstall'
-import { t, tp } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n/en'
 
 const props = defineProps<{
   format: string

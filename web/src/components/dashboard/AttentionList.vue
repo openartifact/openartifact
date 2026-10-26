@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         v-if="items.length > 0"
         class="rounded-full px-2 py-0.5 text-xs font-medium"
         :class="items.some((i) => i.severity === 'critical') ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'"
-        :aria-label="tp('dashboard.attention.count', { count: String(items.length) })"
+        :aria-label="tpn('dashboard.attention.count', items.length)"
       >{{ items.length }}</span>
     </template>
     <template #empty>
@@ -49,7 +49,7 @@ import { ExclamationTriangleIcon, InformationCircleIcon, XCircleIcon } from '@he
 import AppButton from '../AppButton.vue'
 import StateBlock from '../ui/StateBlock.vue'
 import DashSection from './DashSection.vue'
-import { t, tDynamic, tp, type TranslationKey } from '../../i18n/en'
+import { t, tDynamic, tp, tpn, type TranslationKey } from '../../i18n/en'
 import type { AttentionItem } from '../../lib/attention'
 
 const LIMIT = 5

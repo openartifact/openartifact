@@ -12,7 +12,7 @@ import type { FormatId } from './formats'
 import { toBytes, splitBytes, formatBytes, type SizeUnit } from './quota'
 import { parseRetentionInput } from './trash'
 import { federationAvailable, type RepoType } from './repoTypes'
-import { t, tp } from '../i18n/en'
+import { t, tp, tpn } from '../i18n/en'
 
 export interface RepoForm {
   name: string
@@ -195,7 +195,7 @@ export function retentionSummary(form: Pick<RepoForm, 'retentionDays' | 'quotaVa
       ? t('rl.retention.default')
       : days === 0
         ? t('rl.retention.none')
-        : tp('rl.retention.days', { n: String(days) })
+        : tpn('rl.retention.days', days)
   if (!showQuota) return retention
   const bytes = quotaBytesOf(form)
   const quota = bytes > 0 ? tp('rl.quota.limit', { size: formatBytes(bytes) }) : t('rl.quota.unlimited')
@@ -216,7 +216,7 @@ export function upstreamSummary(form: Pick<RepoForm, 'upstreamUrl' | 'upstreamUs
 }
 
 export function membersSummary(form: Pick<RepoForm, 'members'>): string {
-  return form.members.length === 0 ? t('rl.members.none') : tp('rl.members.count', { n: String(form.members.length) })
+  return form.members.length === 0 ? t('rl.members.none') : tpn('rl.members.count', form.members.length)
 }
 
 /** Quota seeded into an input pair from a byte limit (settings quota editor). */

@@ -50,6 +50,7 @@ export const enDashboard = {
 
   'dashboard.attention.title': 'Needs attention',
   'dashboard.attention.count': '{count} items need attention',
+  'dashboard.attention.count.one': '1 item needs attention',
   'dashboard.attention.allClear': 'All clear',
   'dashboard.attention.allClearHint': 'No critical findings, no failing services and nothing close to a limit.',
   'dashboard.attention.showMore': 'Show {count} more',

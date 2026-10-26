@@ -33,8 +33,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div>
               <dt class="text-xs text-muted">{{ t('artifact.security.license') }}</dt>
               <dd class="mt-0.5 tabular-nums" data-testid="sec-license">
-                <router-link v-if="summary.license.violations > 0 && ctx.caps.value.maintain" :to="scanLink('license')" class="text-primary hover:underline">{{ tp('artifact.security.violations', { count: String(summary.license.violations) }) }}</router-link>
-                <template v-else>{{ tp('artifact.security.violations', { count: String(summary.license.violations) }) }}</template>
+                <router-link v-if="summary.license.violations > 0 && ctx.caps.value.maintain" :to="scanLink('license')" class="text-primary hover:underline">{{ tpn('artifact.security.violations', summary.license.violations) }}</router-link>
+                <template v-else>{{ tpn('artifact.security.violations', summary.license.violations) }}</template>
               </dd>
             </div>
             <div>
@@ -103,7 +103,7 @@ import { useArtifactContext } from '../../composables/useArtifact'
 import { securityLevel } from '../../lib/artifactSecurity'
 import { formatDateTime } from '../../lib/datetime'
 import { vexByVulnId } from '../../lib/vex'
-import { t, tp } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n/en'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 

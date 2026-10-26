@@ -70,6 +70,7 @@ export const enArtifact = {
   'artifact.install.createToken': 'Create an access token',
   'artifact.install.quarantined': 'This version is quarantined: clients cannot download it until it is released.',
   'artifact.install.critical': 'This version has {count} critical vulnerabilities.',
+  'artifact.install.critical.one': 'This version has 1 critical vulnerability.',
   'artifact.install.openSecurity': 'Review findings',
 
   'artifact.aside.title': 'Details',
@@ -155,6 +156,7 @@ export const enArtifact = {
   'artifact.security.lastScanned': 'Last scanned {when}.',
   'artifact.security.license': 'License policy',
   'artifact.security.violations': '{count} violations',
+  'artifact.security.violations.one': '1 violation',
   'artifact.security.secrets': 'Secrets',
   'artifact.security.secretCount': '{count} found',
   'artifact.security.ai': 'AI analysis',

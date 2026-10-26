@@ -202,6 +202,7 @@ export const enProjects = {
   'projects.usage.notMeteredHint': 'Proxy and group repositories do not count against quotas.',
   'projects.usage.noRepoLimit': 'No limit',
   'projects.usage.countLimit': '{n} artifacts',
+  'projects.usage.countLimit.one': '1 artifact',
 
   // Project quota editor (settings)
   'projects.quota.title': 'Project quota',

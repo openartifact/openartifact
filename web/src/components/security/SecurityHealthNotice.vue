@@ -32,10 +32,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </p>
     </div>
     <p v-if="health.scans_failed_24h > 0" class="text-sm text-warning" role="status" data-testid="scans-failed">
-      {{ tp('security.health.failed', { count: String(health.scans_failed_24h) }) }}
+      {{ tpn('security.health.failed', health.scans_failed_24h) }}
     </p>
     <p v-if="health.scans_pending > 0" class="text-sm text-muted" role="status" data-testid="scans-pending">
-      {{ tp('security.health.pending', { count: String(health.scans_pending) }) }}
+      {{ tpn('security.health.pending', health.scans_pending) }}
     </p>
   </div>
 </template>
@@ -45,7 +45,7 @@ import { computed } from 'vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import type { SecurityHealth } from '../../api/security'
 import { safeDocsUrl, vulnScannerLabel } from '../../lib/vulnScanners'
-import { t, tp } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n/en'
 
 const props = defineProps<{ health: SecurityHealth }>()
 

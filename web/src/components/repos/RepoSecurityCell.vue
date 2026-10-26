@@ -17,8 +17,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <SeverityBadge v-if="state.security.high" severity="high" :count="state.security.high" />
     <SeverityBadge v-if="state.security.medium" severity="medium" :count="state.security.medium" />
     <SeverityBadge v-if="state.security.low" severity="low" :count="state.security.low" />
-    <span v-if="state.security.secrets" class="text-xs font-medium text-danger">{{ tp('rl.security.secrets', { n: String(state.security.secrets) }) }}</span>
-    <span v-if="state.security.license_violations" class="text-xs font-medium text-warning">{{ tp('rl.security.licenses', { n: String(state.security.license_violations) }) }}</span>
+    <span v-if="state.security.secrets" class="text-xs font-medium text-danger">{{ tpn('rl.security.secrets', state.security.secrets) }}</span>
+    <span v-if="state.security.license_violations" class="text-xs font-medium text-warning">{{ tpn('rl.security.licenses', state.security.license_violations) }}</span>
   </span>
 </template>
 
@@ -28,7 +28,7 @@ import { CheckCircleIcon } from '@heroicons/vue/20/solid'
 import SeverityBadge from '../ui/SeverityBadge.vue'
 import { securityState } from '../../lib/repoList'
 import type { RepositoryListItem } from '../../api/repositories'
-import { t, tp } from '../../i18n/en'
+import { t, tpn } from '../../i18n/en'
 
 const props = defineProps<{ item: Pick<RepositoryListItem, 'stats'> }>()
 const state = computed(() => securityState(props.item))
