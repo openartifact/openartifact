@@ -144,7 +144,7 @@ func (p *PostgresDB) ListSecurityFindings(ctx context.Context, params models.Fin
 		return nil, fmt.Errorf("list security findings: %w", err)
 	}
 
-	page := &models.FindingPage{Findings: make([]*models.Finding, 0, min(len(rows), params.Limit))}
+	page := &models.FindingPage{Findings: make([]*models.Finding, 0, len(rows))}
 
 	for i, r := range rows {
 		if i == params.Limit {
