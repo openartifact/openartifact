@@ -1,0 +1,13 @@
+go test fuzz v1
+string("rails")
+string("7.0.0")
+string("ruby")
+string("Full-stack web framework")
+string("Rails is a web application framework.")
+string("https://rubyonrails.org")
+string("core@rubyonrails.org")
+string("David Heinemeier Hansson")
+string("MIT")
+string("activesupport")
+string("= 7.0.0")
+string("runtime")

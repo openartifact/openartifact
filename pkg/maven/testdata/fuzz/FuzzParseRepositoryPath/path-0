@@ -1,0 +1,2 @@
+go test fuzz v1
+string("org/apache/maven/maven-core/3.9.6/maven-core-3.9.6.jar")

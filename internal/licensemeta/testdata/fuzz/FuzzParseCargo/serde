@@ -1,0 +1,2 @@
+go test fuzz v1
+string("[package]\nname = \"serde\"\nversion = \"1.0.197\"\nedition = \"2018\"\nlicense = \"MIT OR Apache-2.0\"\ndescription = \"A generic serialization framework\"\nrepository = \"https://github.com/serde-rs/serde\"\n\n[dependencies]\nserde_derive = { version = \"=1.0.197\", optional = true, path = \"../serde_derive\" }\nlibc = \"0.2\"\n\n[dev-dependencies]\nserde_derive = \"1\"\n\n[target.'cfg(unix)'.dependencies]\nnix = { version = \"0.27\", default-features = false }\n\n[features]\ndefault = [\"std\"]\nstd = []\nderive = [\"serde_derive\"]\n")

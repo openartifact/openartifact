@@ -1,0 +1,4 @@
+go test fuzz v1
+string("v0.0.0-20240102150405-0123456789ab")
+string("v2.0.0+incompatible")
+string("v0.1.0")

@@ -1,0 +1,5 @@
+go test fuzz v1
+string("maven")
+string("")
+string("org.apache.logging.log4j:log4j-core")
+string("2.17.1")

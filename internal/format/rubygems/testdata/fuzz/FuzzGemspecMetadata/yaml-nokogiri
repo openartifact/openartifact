@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("--- !ruby/object:Gem::Specification\nname: nokogiri\nversion: !ruby/object:Gem::Version\n  version: 1.16.2\nplatform: x86_64-linux\nauthors:\n- Mike Dalessio\nsummary: HTML parser\nlicenses:\n- MIT\ndependencies:\n- !ruby/object:Gem::Dependency\n  name: racc\n  requirement: !ruby/object:Gem::Requirement\n    requirements:\n    - - \"~>\"\n      - !ruby/object:Gem::Version\n        version: '1.4'\n  type: :runtime\n  prerelease: false\n")

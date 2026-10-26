@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# extensions
+".tar.bz2"
+".conda"
+".tar.bz2.conda"
+".conda.tar.bz2"
+".json"
+
+# name parts
+"demo-1.0-py_0"
+"scikit-learn-1.0-py39_0"
+"numpy-1.26.4-py311h64a7726_0"
+"ca-certificates-2024.2.2-hbcca054_0"
+"libgcc_ng-13.2.0-h807b86a_5"
+"python-dateutil-2.9.0-pyhd8ed1ab_0"
+"-"
+"--"
+"_"
+"py_0"
+"h5eee18b_0"
+"1.0"
+"1.0.post1"
+"2024.2.2"
+"repodata.json"
+".."
+"a\x00"
+"\xc3\xbf"

@@ -1,0 +1,5 @@
+go test fuzz v1
+string("GPL-2.0-or-later")
+string("")
+string("GPL-2.0-or-later")
+bool(true)

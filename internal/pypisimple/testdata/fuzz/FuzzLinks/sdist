@@ -1,0 +1,4 @@
+go test fuzz v1
+string("py-hosted")
+string("zope.interface")
+string("zope.interface-6.1.tar.gz")

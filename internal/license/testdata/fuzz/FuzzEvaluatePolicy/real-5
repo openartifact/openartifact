@@ -1,0 +1,5 @@
+go test fuzz v1
+string("BSD License")
+string("BSD-3-Clause")
+string("GPL-3.0-only")
+bool(true)

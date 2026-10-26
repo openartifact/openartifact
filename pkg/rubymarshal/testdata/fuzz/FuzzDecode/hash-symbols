@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\x04\b{\a:\tnameI\"\trake\x06:\x06ET:\tdeps[\vI\"\x06a\x06:\x06ETi\x02,\x01i\xff\x7fT0f\b1.5")

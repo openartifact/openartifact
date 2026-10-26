@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Apache-2.0 WITH LLVM-exception")

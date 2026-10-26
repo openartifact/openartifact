@@ -1,0 +1,5 @@
+go test fuzz v1
+string("npm")
+string("lodash@4.17.20")
+string("[{\"id\":\"GHSA-35jh-r3h4-6jhm\",\"severity\":\"CRITICAL\",\"cvss\":9.1,\"fixed_in\":\"4.17.21\",\"cwes\":[\"CWE-77\"]},{\"id\":\"CVE-2020-8203\",\"severity\":\"HIGH\",\"cvss\":7.4,\"fixed_in\":\"4.17.19\"}]")
+uint8(1)

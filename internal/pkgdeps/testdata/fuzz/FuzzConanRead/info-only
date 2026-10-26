@@ -1,0 +1,4 @@
+go test fuzz v1
+string("")
+string("")
+string("[settings]\n    arch=x86_64\n    build_type=Release\n    compiler=gcc\n    compiler.version=12\n    os=Linux\n\n[requires]\n    bzip2/1.0.8\n    openssl/3.2.1\n\n[options]\n    fPIC=True\n    shared=False\n\n[full_settings]\n    arch=x86_64\n\n[recipe_hash]\n    0123456789abcdef\n")

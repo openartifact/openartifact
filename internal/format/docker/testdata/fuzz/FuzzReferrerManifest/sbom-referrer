@@ -1,0 +1,9 @@
+go test fuzz v1
+string("application/spdx+json")
+string("sha256:9d48c3bd43c520dc2784e868a780e976b207cbf493eaff8c6596eb871cbd9609")
+string("application/vnd.oci.image.manifest.v1+json")
+string("sha256:b5d2b2c507a0944348e0303114d8d93aaaa081732b86451d9bce1f432a537bc7")
+int64(1480)
+string("org.opencontainers.image.created")
+string("2024-01-02T15:04:05Z")
+[]byte("{\"spdxVersion\":\"SPDX-2.3\",\"SPDXID\":\"SPDXRef-DOCUMENT\",\"name\":\"app\"}")

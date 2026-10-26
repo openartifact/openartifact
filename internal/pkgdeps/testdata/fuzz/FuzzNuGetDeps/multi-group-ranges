@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<?xml version=\"1.0\"?><package xmlns=\"http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd\"><metadata><id>X</id><version>1.0.0</version><dependencies><group targetFramework=\"net462\"><dependency id=\"A\" version=\"(,1.0]\"/></group><group targetFramework=\"netstandard2.1\"><dependency id=\"A\" version=\"[1.0,)\"/><dependency id=\"B\" version=\"(1.0,2.0)\"/></group></dependencies></metadata></package>")

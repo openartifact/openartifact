@@ -3,10 +3,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Code-change fuzzing: builds every native Go fuzz target (see
-# .clusterfuzzlite/build.sh) and fuzzes them for 10 minutes on pull requests
-# that touch Go code. A crash fails the check and is uploaded as an artifact;
-# SARIF goes to code scanning. Batch fuzzing and corpus pruning:
-# clusterfuzzlite-batch.yml. Local runs: docs/development/fuzzing.md.
+# .clusterfuzzlite/build.sh), drops the targets whose coverage does not include a
+# changed file and fuzzes the rest for 10 minutes, starting from the corpus of
+# the daily batch runs. Corpus and coverage report come from the public
+# openartifact/openartifact-fuzz-storage repository, read anonymously: this job
+# needs no secret, so it behaves the same for pull requests from forks. Until the
+# first coverage report exists every target runs. A crash fails the check and is
+# uploaded as an artifact; SARIF goes to code scanning. Batch fuzzing, pruning
+# and coverage: clusterfuzzlite-batch.yml. Local runs:
+# docs/development/README.md.
 name: ClusterFuzzLite PR
 
 on:
@@ -29,10 +34,10 @@ jobs:
   fuzz:
     name: fuzz (code change)
     runs-on: ubuntu-latest
-    timeout-minutes: 60 # building the ~150 targets takes ~20 minutes, fuzzing 10
+    timeout-minutes: 45 # building the ~150 targets in parallel, then 10 minutes of fuzzing
     permissions:
       contents: read
-      actions: read # download the corpus of the last batch run
+      actions: read # find the latest main build to tell new crashes from old ones
       security-events: write # upload SARIF to code scanning
     steps:
       - name: Build fuzzers
@@ -42,6 +47,10 @@ jobs:
           language: go
           sanitizer: address # the only sanitizer ClusterFuzzLite supports for Go
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Remove the fuzz targets a change does not affect (needs the coverage report).
+          storage-repo: https://github.com/openartifact/openartifact-fuzz-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
 
       - name: Run fuzzers
         id: run
@@ -54,6 +63,9 @@ jobs:
           sanitizer: address
           output-sarif: true
           parallel-fuzzing: true
+          storage-repo: https://github.com/openartifact/openartifact-fuzz-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
 
       - name: Upload SARIF
         # A fork's token cannot write code scanning alerts.

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("com/example/lib/1.0-SNAPSHOT/lib-1.0-20240101.120000-1.pom")

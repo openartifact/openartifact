@@ -1,0 +1,2 @@
+go test fuzz v1
+string("https://licenses.nuget.org/(MIT%20OR%20Apache-2.0)")

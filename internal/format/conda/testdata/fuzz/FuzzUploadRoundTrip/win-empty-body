@@ -1,0 +1,4 @@
+go test fuzz v1
+string("win-64")
+string("vc-14.3-h2a7c6d1_0.tar.bz2")
+[]byte("")

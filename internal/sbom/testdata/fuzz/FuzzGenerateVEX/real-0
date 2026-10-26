@@ -1,0 +1,5 @@
+go test fuzz v1
+string("pypi")
+string("django@4.2.1")
+string("[{\"id\":\"CVE-2023-36053\",\"summary\":\"ReDoS in EmailValidator\",\"severity\":\"HIGH\",\"cvss\":7.5,\"fixed_in\":\"4.2.3\",\"references\":[\"https://nvd.nist.gov/vuln/detail/CVE-2023-36053\"],\"published_at\":\"2023-07-03T20:15:00Z\",\"cwes\":[\"CWE-1333\"]}]")
+uint8(0)

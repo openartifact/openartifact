@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# range
+"0-"
+"-"
+"0-0"
+"0-99"
+"100-199"
+"bytes "
+"bytes 0-1/2"
+"/"
+"9223372036854775807"
+"9223372036854775808"
+"-1"
+"+1"
+" "
+"  5 - 10 "
+"--"
+"0--0"

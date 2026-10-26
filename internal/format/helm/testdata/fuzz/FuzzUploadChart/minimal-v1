@@ -1,0 +1,2 @@
+go test fuzz v1
+string("name: tiny\nversion: 0.1.0\n")

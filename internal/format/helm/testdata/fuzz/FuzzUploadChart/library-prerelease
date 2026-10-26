@@ -1,0 +1,2 @@
+go test fuzz v1
+string("apiVersion: v2\nname: lib-common\nversion: 1.0.0-alpha.1+build.7\ntype: library\n")

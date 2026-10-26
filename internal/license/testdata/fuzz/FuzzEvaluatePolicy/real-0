@@ -1,0 +1,5 @@
+go test fuzz v1
+string("MIT|Apache-2.0")
+string("MIT,Apache-2.0,BSD-3-Clause")
+string("GPL-3.0-only,AGPL-3.0-only")
+bool(true)

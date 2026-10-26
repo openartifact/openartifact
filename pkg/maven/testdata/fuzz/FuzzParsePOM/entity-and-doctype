@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<!DOCTYPE project [<!ENTITY e \"x\">]><project><groupId>g&amp;h</groupId><artifactId>&e;</artifactId><version>1</version></project>")

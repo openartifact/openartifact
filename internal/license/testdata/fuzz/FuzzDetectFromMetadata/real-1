@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"name\":\"left-pad\",\"license\":{\"type\":\"MIT\",\"url\":\"https://opensource.org/licenses/MIT\"}}")

@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# formats
+"npm"
+"maven"
+"pypi"
+"cargo"
+"rubygems"
+"helm"
+"nuget"
+"docker"
+"deb"
+"rpm"
+"go"
+"conan"
+"conda"
+# purl
+"pkg:"
+"golang"
+"debian"
+"fedora"
+"@babel/core"
+"org.example:lib"
+"sha256:"
+"@"
+"/"
+"%40"
+"%2F"
+"?arch=amd64"
+"#subpath"

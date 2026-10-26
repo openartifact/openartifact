@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<https://registry-1.docker.io/v2/library/alpine/tags/list?n=50&last=latest>; rel=\"next\", <https://x/>; rel=\"prev\"")

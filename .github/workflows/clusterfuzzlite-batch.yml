@@ -2,20 +2,27 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Weekly batch fuzzing of main (builds up the corpus PR fuzzing starts from)
-# followed by corpus pruning. The corpus lives in GitHub Actions artifacts.
-# Pull-request fuzzing: clusterfuzzlite-pr.yml. Local runs:
-# docs/development/fuzzing.md.
+# Daily fuzzing of main, in this order: batch fuzzing (grows the corpus), corpus
+# pruning, coverage report. The corpus and the coverage report live in the
+# openartifact/openartifact-fuzz-storage repository (branches main and gh-pages),
+# which pull-request fuzzing reads to start from the corpus and to run only the
+# fuzz targets a change affects. FUZZ_STORAGE_TOKEN is a fine-grained personal
+# access token with Contents: read and write on that repository only (the
+# workflow token cannot write to another repository).
+# Pull-request fuzzing: clusterfuzzlite-pr.yml. Local runs and storage
+# setup: docs/development/README.md.
 name: ClusterFuzzLite batch
 
 on:
   schedule:
-    - cron: "41 2 * * 0" # weekly, Sunday 02:41 UTC
+    - cron: "41 2 * * *" # daily, 02:41 UTC
   workflow_dispatch:
 
+# Every job writes to the storage repository: never run two of them at once
+# (a dispatch during a scheduled run waits instead of pruning under the batch).
 concurrency:
-  group: clusterfuzzlite-batch
-  cancel-in-progress: false # never prune while a batch run writes the corpus
+  group: clusterfuzzlite-storage
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -27,9 +34,18 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
-      actions: read # download the previous corpus
+      actions: read # find the previous crash artifacts
       security-events: write # upload SARIF to code scanning
     steps:
+      - name: Require the storage token
+        env:
+          FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
+        run: |
+          if [ -z "$FUZZ_STORAGE_TOKEN" ]; then
+            echo "::error::secret FUZZ_STORAGE_TOKEN is not set (docs/development/README.md#fuzzing)"
+            exit 1
+          fi
+
       - name: Build fuzzers
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
@@ -47,6 +63,9 @@ jobs:
           sanitizer: address
           output-sarif: true
           parallel-fuzzing: true
+          storage-repo: https://x-access-token:${{ secrets.FUZZ_STORAGE_TOKEN }}@github.com/openartifact/openartifact-fuzz-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
 
       - name: Upload SARIF
         if: ${{ !cancelled() && hashFiles('cifuzz-sarif/results.sarif') != '' }}
@@ -58,13 +77,22 @@ jobs:
   prune:
     name: corpus pruning
     needs: batch
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() }} # a crash found by the batch run must not skip pruning
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
       actions: read
     steps:
+      - name: Require the storage token
+        env:
+          FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
+        run: |
+          if [ -z "$FUZZ_STORAGE_TOKEN" ]; then
+            echo "::error::secret FUZZ_STORAGE_TOKEN is not set (docs/development/README.md#fuzzing)"
+            exit 1
+          fi
+
       - name: Build fuzzers
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
@@ -80,3 +108,44 @@ jobs:
           fuzz-seconds: 1200
           mode: prune
           sanitizer: address
+          storage-repo: https://x-access-token:${{ secrets.FUZZ_STORAGE_TOKEN }}@github.com/openartifact/openartifact-fuzz-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+
+  coverage:
+    name: coverage report
+    needs: prune
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require the storage token
+        env:
+          FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
+        run: |
+          if [ -z "$FUZZ_STORAGE_TOKEN" ]; then
+            echo "::error::secret FUZZ_STORAGE_TOKEN is not set (docs/development/README.md#fuzzing)"
+            exit 1
+          fi
+
+      - name: Build fuzzers (coverage)
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: go
+          sanitizer: coverage
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate coverage report
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: go
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: coverage
+          sanitizer: coverage
+          storage-repo: https://x-access-token:${{ secrets.FUZZ_STORAGE_TOKEN }}@github.com/openartifact/openartifact-fuzz-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages

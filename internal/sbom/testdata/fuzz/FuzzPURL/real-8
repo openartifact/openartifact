@@ -1,0 +1,5 @@
+go test fuzz v1
+string("docker")
+string("")
+string("library/alpine")
+string("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")

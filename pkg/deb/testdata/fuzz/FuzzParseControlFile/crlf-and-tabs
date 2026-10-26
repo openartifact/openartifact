@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Package: x\r\nVersion: 1\r\nDescription:\ttab\r\n\tcont\r\n")

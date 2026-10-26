@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Bearer realm=\"https://quay.io/v2/auth\",service=\"quay.io\"")

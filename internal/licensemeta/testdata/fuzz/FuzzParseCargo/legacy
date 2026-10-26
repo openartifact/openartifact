@@ -1,0 +1,2 @@
+go test fuzz v1
+string("[package]\nname = \"rand\"\nversion = \"0.8.5\"\nlicense = \"MIT/Apache-2.0\"\n\n[dependencies.rand_core]\nversion = \"0.6.0\"\n\n[build-dependencies]\nautocfg = \"1\"\n")

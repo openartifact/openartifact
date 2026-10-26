@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"dl\":\"https://static.crates.io/crates\",\"api\":\"https://crates.io\"}")

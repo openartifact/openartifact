@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"manifests/"
+"blobs/"
+"blobs/uploads/"
+"tags/list"
+"referrers/"
+"_catalog"
+"/manifests/latest"
+"sha256:"
+"sha512:"
+"uploads/"
+"library/"
+".."
+"//"
+"%2e%2e"
+"%2f"
+"\\"
+"\x00"
+"?digest="
+"&mount="

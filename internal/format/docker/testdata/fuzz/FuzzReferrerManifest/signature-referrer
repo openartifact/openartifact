@@ -1,0 +1,9 @@
+go test fuzz v1
+string("application/vnd.dev.cosign.simplesigning.v1+json")
+string("sha256:3c3a4604a545cdc127456d94e421cd355bca5b528f4a9c1905b15da2eb4a4c6b")
+string("application/vnd.oci.image.index.v1+json")
+string("sha256:b5d2b2c507a0944348e0303114d8d93aaaa081732b86451d9bce1f432a537bc7")
+int64(491)
+string("dev.sigstore.cosign/signature")
+string("MEUCIQ==")
+[]byte("{\"critical\":{\"identity\":{\"docker-reference\":\"example.com/app\"},\"type\":\"cosign container image signature\"}}")

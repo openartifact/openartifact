@@ -1,0 +1,4 @@
+go test fuzz v1
+string("Zope.Interface")
+string("typing_extensions")
+string("/repos/py/simple/zope-interface/")

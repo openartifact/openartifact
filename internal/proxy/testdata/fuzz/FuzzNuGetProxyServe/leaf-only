@@ -1,0 +1,5 @@
+go test fuzz v1
+[]byte("{\"version\":\"3.0.0\",\"resources\":[{\"@id\":\"UPSTREAM/flat/\",\"@type\":\"PackageBaseAddress/3.0.0\",\"comment\":\"Base URL of where NuGet packages are stored\"},{\"@id\":\"UPSTREAM/reg/\",\"@type\":\"RegistrationsBaseUrl/Versioned\",\"clientVersion\":\"4.3.0-alpha\"},{\"@id\":\"UPSTREAM/search/query\",\"@type\":\"SearchQueryService\"},{\"@id\":\"UPSTREAM/catalog/index.json\",\"@type\":\"Catalog/3.0.0\"}],\"@context\":{\"@vocab\":\"http://schema.nuget.org/services#\",\"comment\":\"http://www.w3.org/2000/01/rdf-schema#comment\"}}")
+[]byte("{\"@id\":\"UPSTREAM/reg/lib/1.0.0.json\",\"packageContent\":\"UPSTREAM/flat/lib/1.0.0/lib.1.0.0.nupkg\",\"catalogEntry\":{\"id\":\"lib\",\"version\":\"1.0.0\"}}")
+[]byte("{\"versions\":[\"1.0.0\"]}")
+bool(false)

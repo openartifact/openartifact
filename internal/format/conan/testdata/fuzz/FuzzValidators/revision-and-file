@@ -1,0 +1,5 @@
+go test fuzz v1
+string("conan_sources.tgz")
+string("e2f8ad45d1e0a98b9a8a9fd4d8e5c2b1")
+string("openssl")
+string("3.2.0+1")

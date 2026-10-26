@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<package><metadata><id>Old.Pkg</id><version>1.0.0.0</version><licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl><dependencies><dependency id=\"Dep\" version=\"(,1.0]\"/></dependencies></metadata></package>")

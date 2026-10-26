@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"simple/"
+"files/"
+".metadata"
+".whl"
+".tar.gz"
+"/"
+".."
+"//"
+"%2e%2e"
+"%2f"
+"\\"
+"\x00"
+"zope.interface"
+"Foo_Bar"

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("demo-1.0-py_0.tar.bz2")

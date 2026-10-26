@@ -1,0 +1,2 @@
+go test fuzz v1
+string("[{\"name\":\"rand\",\"explicit_name_in_toml\":\"random\",\"version_req\":\">=0.8, <0.9\",\"features\":[],\"optional\":true,\"default_features\":true,\"registry\":\"https://example.com/index\"}]")

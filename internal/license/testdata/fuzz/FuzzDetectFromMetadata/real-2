@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"licenses\":[{\"type\":\"MIT\"},{\"type\":\"Apache-2.0\"}],\"version\":\"1.0.0\"}")

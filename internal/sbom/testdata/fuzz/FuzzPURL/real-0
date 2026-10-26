@@ -1,0 +1,5 @@
+go test fuzz v1
+string("cargo")
+string("")
+string("serde_json")
+string("1.0.114")

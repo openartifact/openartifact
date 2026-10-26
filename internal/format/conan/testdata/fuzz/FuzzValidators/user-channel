@@ -1,0 +1,5 @@
+go test fuzz v1
+string("fmt")
+string("10.2.1")
+string("acme")
+string("stable")

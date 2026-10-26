@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Basic realm=\"Registry Realm\", charset=\"UTF-8\"")

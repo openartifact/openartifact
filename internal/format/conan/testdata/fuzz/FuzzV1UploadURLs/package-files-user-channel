@@ -1,0 +1,8 @@
+go test fuzz v1
+string("fmt")
+string("10.2.1")
+string("acme")
+string("stable")
+bool(true)
+bool(true)
+[]byte("{\"conaninfo.txt\":501,\"conanmanifest.txt\":96,\"conan_package.tgz\":98211}")

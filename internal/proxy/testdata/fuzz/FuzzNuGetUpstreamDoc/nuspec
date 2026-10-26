@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd\"><metadata><id>Lib</id><version>1.0.0</version><authors>me</authors><description>d</description><dependencies><group targetFramework=\"net6.0\"><dependency id=\"Other\" version=\"[1.0.0, )\"/></group></dependencies></metadata></package>")

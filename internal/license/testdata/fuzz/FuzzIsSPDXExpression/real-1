@@ -1,0 +1,2 @@
+go test fuzz v1
+string("GPL-3.0-or-later OR LGPL-2.1-only")

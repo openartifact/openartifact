@@ -1,0 +1,4 @@
+go test fuzz v1
+string("{\"tags\":[\"a\"]}\x00{\"tags\":[\"b\"]}")
+string("<http://registry.example.com/v2/x/tags/list?last=a&n=1>; rel=\"next\"\x00")
+[]byte("\x00\x00")

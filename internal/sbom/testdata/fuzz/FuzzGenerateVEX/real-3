@@ -1,0 +1,5 @@
+go test fuzz v1
+string("cargo")
+string("hyper@0.14.10")
+string("[{\"id\":\"RUSTSEC-2021-0078\",\"severity\":\"HIGH\",\"fixed_in\":\"0.14.10\"}]")
+uint8(1)

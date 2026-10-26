@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Source: hello\nSection: devel\nPriority: optional\nBuild-Depends: debhelper-compat (= 13), gcc (>= 4:10)\nStandards-Version: 4.6.2\n\nPackage: hello\nArchitecture: any\nDepends: ${shlibs:Depends}, ${misc:Depends}\nProvides: greeter\nConflicts: hello-traditional\nReplaces: hello-traditional (<< 2.0)\nDescription: example\n long text\n .\n more\n")

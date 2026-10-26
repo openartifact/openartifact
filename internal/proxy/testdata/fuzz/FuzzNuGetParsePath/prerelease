@@ -1,0 +1,2 @@
+go test fuzz v1
+string("v3/package/serilog/3.1.0-beta.1/serilog.3.1.0-beta.1.nupkg")

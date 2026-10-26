@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"info\":{\"license\":\"BSD-3-Clause\",\"classifiers\":[\"License :: OSI Approved :: BSD License\",\"Programming Language :: Python :: 3\"]}}")

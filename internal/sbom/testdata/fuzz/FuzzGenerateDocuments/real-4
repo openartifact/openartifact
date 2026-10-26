@@ -1,0 +1,5 @@
+go test fuzz v1
+string("helm")
+string("nginx@15.0.0")
+string("{\"dependencies\":[{\"name\":\"common\",\"version\":\"2.x.x\"}]}")
+uint8(0)

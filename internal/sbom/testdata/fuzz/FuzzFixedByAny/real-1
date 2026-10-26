@@ -1,0 +1,4 @@
+go test fuzz v1
+string("deb")
+string("2.36-9+deb12u4")
+string("2.36-9+deb12u5")

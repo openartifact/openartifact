@@ -1,0 +1,5 @@
+go test fuzz v1
+string("maven")
+string("log4j-core@2.14.1")
+string("[{\"id\":\"CVE-2021-44228\",\"severity\":\"CRITICAL\",\"cvss\":10,\"fixed_in\":\"2.15.0\",\"references\":[\"https://logging.apache.org/log4j/2.x/security.html\"],\"cwes\":[\"CWE-502\",\"CWE-20\"]}]")
+uint8(0)

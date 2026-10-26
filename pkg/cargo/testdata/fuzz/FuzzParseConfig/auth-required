@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"dl\":\"https://oa.example/cargo/crates/api/v1/crates\",\"api\":\"https://oa.example/cargo/crates\",\"auth-required\":true}")

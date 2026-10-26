@@ -1,0 +1,5 @@
+go test fuzz v1
+string("MIT OR Apache-2.0")
+string("")
+string("License :: OSI Approved :: MIT License\nProgramming Language :: Python :: 3")
+string("Operating System :: OS Independent")
