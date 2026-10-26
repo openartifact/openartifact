@@ -26,7 +26,15 @@ DOCKER_CONTAINER=openartifact
 VERSION   ?= $(if $(CI_VERSION),$(CI_VERSION),$(shell cat VERSION 2>/dev/null || echo dev))
 COMMIT    ?= $(if $(CI_COMMIT),$(CI_COMMIT),$(shell git rev-parse --short=7 HEAD 2>/dev/null || echo unknown))
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS   = -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)"
+# Release-shaped binaries in every build path (Makefile, docker/Dockerfile,
+# .goreleaser.yml): static (CGO off), -trimpath, symbol and DWARF tables
+# stripped (-s -w), and the server built with the grpcnotrace tag, which drops
+# gRPC's net/trace debug pages (EnableTracing, off and unused here) and with
+# them html/template and the linker's keep-every-method fallback.
+BUILD_ENV   = CGO_ENABLED=0
+BUILD_FLAGS = -trimpath
+SERVER_TAGS = grpcnotrace
+LDFLAGS   = -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)"
 
 help:
 	@echo "Available targets:"
@@ -67,12 +75,12 @@ web-dev:
 
 build: web-build
 	@echo "Building $(BINARY_NAME)..."
-	$(GO) build $(LDFLAGS) -o bin/$(BINARY_NAME) $(MAIN_PATH)
+	$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) -tags $(SERVER_TAGS) $(LDFLAGS) -o bin/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Build complete: bin/$(BINARY_NAME)"
 
 build-cli:
 	@echo "Building CLI tool..."
-	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/oa ./cmd/oa
+	$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) -ldflags "-s -w -X main.version=$(VERSION)" -o bin/oa ./cmd/oa
 	@echo "Build complete: bin/oa"
 
 run: build

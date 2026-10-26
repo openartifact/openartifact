@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -106,7 +108,7 @@ func TestAdminUsers_CreateRejectsShortPassword(t *testing.T) {
 		t.Errorf("expected code invalid_request, got %q", code)
 	}
 
-	if !strings.Contains(rw.Body.String(), auth.ErrPasswordTooShort.Error()) {
+	if !strings.Contains(rw.Body.String(), passwd.ErrPasswordTooShort.Error()) {
 		t.Errorf("expected the policy message in the body, got %s", rw.Body.String())
 	}
 
@@ -144,7 +146,7 @@ func TestAdminUsers_PatchPasswordPolicyAndSessionRevocation(t *testing.T) {
 	}
 
 	updated, _ := db.GetUserByID(context.Background(), target.ID)
-	if ok, err := auth.VerifyPassword("a-much-better-password-9", *updated.PasswordHash); err != nil || !ok {
+	if ok, err := passwd.VerifyPassword("a-much-better-password-9", *updated.PasswordHash); err != nil || !ok {
 		t.Error("new password must verify")
 	}
 }
@@ -446,7 +448,7 @@ func TestHandlerChangePassword_PolicyAndTokenPrincipal(t *testing.T) {
 	}
 
 	updated, _ := db.GetUserByID(context.Background(), user.ID)
-	if ok, _ := auth.VerifyPassword("old-password-123", *updated.PasswordHash); !ok {
+	if ok, _ := passwd.VerifyPassword("old-password-123", *updated.PasswordHash); !ok {
 		t.Error("password must be unchanged after a rejected change")
 	}
 }

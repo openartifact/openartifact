@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -110,6 +111,22 @@ func gzipBytes(body []byte) []byte {
 	return buf.Bytes()
 }
 
+// precompressedExt marks a file whose content is the gzip of the asset named
+// without it (scripts/precompress.js). The server embeds only that gzip, so a
+// built UI is stored once; the plain bytes are expanded when the assets load.
+const precompressedExt = ".gz"
+
+func gunzipBytes(gz []byte) ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(gz))
+	if err != nil {
+		return nil, err //nolint:wrapcheck // the caller skips the file
+	}
+
+	defer func() { _ = zr.Close() }()
+
+	return io.ReadAll(zr)
+}
+
 func loadAssets(sub fs.FS) map[string]*asset {
 	assets := make(map[string]*asset)
 
@@ -126,16 +143,30 @@ func loadAssets(sub fs.FS) map[string]*asset {
 			return nil //nolint:nilerr // an unreadable embedded file is simply not served
 		}
 
-		ctyp := contentTypes[path.Ext(p)]
+		name, gz := p, []byte(nil)
+
+		if trimmed, ok := strings.CutSuffix(p, precompressedExt); ok {
+			plain, gunzipErr := gunzipBytes(body)
+			if gunzipErr != nil {
+				return nil //nolint:nilerr // a corrupt precompressed file is simply not served
+			}
+
+			name, gz, body = trimmed, body, plain
+		}
+
+		ctyp := contentTypes[path.Ext(name)]
 		if ctyp == "" {
-			ctyp = mime.TypeByExtension(path.Ext(p))
+			ctyp = mime.TypeByExtension(path.Ext(name))
 		}
 
 		if ctyp == "" {
 			ctyp = http.DetectContentType(body)
 		}
 
-		assets[p] = newAsset(ctyp, body, strings.HasPrefix(p, "assets/") && hashedName.MatchString(p))
+		immutable := strings.HasPrefix(name, "assets/") && hashedName.MatchString(name)
+
+		a := newAsset(ctyp, body, immutable, gz)
+		assets[name] = a
 
 		return nil
 	})
@@ -143,18 +174,21 @@ func loadAssets(sub fs.FS) map[string]*asset {
 	return assets
 }
 
-// newAsset hashes body and precompresses it when worthwhile.
-func newAsset(ctyp string, body []byte, immutable bool) *asset {
+// newAsset hashes body and attaches its gzip representation: gz when the build
+// already compressed it, otherwise a fresh compression when worthwhile.
+func newAsset(ctyp string, body []byte, immutable bool, gz []byte) *asset {
 	a := &asset{
 		ctyp:      ctyp,
 		immutable: immutable,
 		plain:     variant{body: body, etag: etagOf(body, "")},
 	}
 
-	if compressible(ctyp) {
-		if gz := gzipBytes(body); gz != nil && len(gz) < len(body) {
-			a.gzip = &variant{body: gz, etag: etagOf(body, "-gzip")}
-		}
+	if gz == nil && compressible(ctyp) {
+		gz = gzipBytes(body)
+	}
+
+	if gz != nil && len(gz) < len(body) {
+		a.gzip = &variant{body: gz, etag: etagOf(body, "-gzip")}
 	}
 
 	return a

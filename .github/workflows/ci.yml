@@ -299,6 +299,21 @@ jobs:
           cache-from: type=gha,scope=security
           cache-to: type=gha,scope=security,mode=max
 
+      - name: Report image and binary sizes
+        run: |
+          {
+            echo "### Image size (linux/amd64)"
+            echo
+            echo "- uncompressed: $(docker image inspect --format '{{.Size}}' "$IMAGE_TAG" | numfmt --to=iec --format=%.1f)"
+            echo "- docker save | gzip -9: $(docker save "$IMAGE_TAG" | gzip -9 | wc -c | numfmt --to=iec --format=%.1f)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cid="$(docker create "$IMAGE_TAG")"
+          trap 'docker rm "$cid" >/dev/null' EXIT
+          for f in /app/openartifact /usr/local/bin/oa; do
+            docker cp "$cid:$f" "$RUNNER_TEMP/size-probe"
+            echo "- $f: $(stat -c %s "$RUNNER_TEMP/size-probe" | numfmt --to=iec --format=%.1f)" >> "$GITHUB_STEP_SUMMARY"
+          done
+
       # --- image ---------------------------------------------------------
       - name: Trivy image scan (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

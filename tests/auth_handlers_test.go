@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api"
@@ -52,7 +54,7 @@ func createLoginUser(t *testing.T, db *MockDatabase, username, password string, 
 
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword(password)
+	hash, err := passwd.HashPassword(password)
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -309,7 +311,7 @@ func TestHandlerChangePassword_Success(t *testing.T) {
 		t.Fatalf("GetUserByID: %v", err)
 	}
 
-	ok, err := auth.VerifyPassword("new-password-xyz-456", *updated.PasswordHash)
+	ok, err := passwd.VerifyPassword("new-password-xyz-456", *updated.PasswordHash)
 	if err != nil || !ok {
 		t.Error("expected new password to verify correctly")
 	}

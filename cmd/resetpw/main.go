@@ -30,8 +30,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/openartifact/openartifact/internal/auth"
 )
 
 const (
@@ -167,7 +168,7 @@ func run() error {
 		return err
 	}
 
-	if err := auth.ValidatePassword(pw); err != nil {
+	if err := passwd.ValidatePassword(pw); err != nil {
 		return err
 	}
 
@@ -183,7 +184,7 @@ func run() error {
 		return err
 	}
 
-	hash, err := auth.HashPassword(pw)
+	hash, err := passwd.HashPassword(pw)
 	if err != nil {
 		return err
 	}

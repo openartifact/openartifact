@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package auth
+// Package passwd is the local-password policy and Argon2id hashing. It has no
+// dependency on the rest of the server so the break-glass resetpw binary can
+// use it without linking the database, telemetry and storage stacks.
+package passwd
 
 import (
 	"crypto/rand"

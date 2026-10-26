@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -66,7 +68,7 @@ const (
 
 	// maxLoginFieldBytes caps username/password sizes accepted by login so a
 	// huge value never reaches the hasher or the limiter key space.
-	maxLoginFieldBytes = auth.MaxPasswordLength
+	maxLoginFieldBytes = passwd.MaxPasswordLength
 )
 
 // slidingWindowLimiter counts events per key inside a sliding time window.
@@ -400,13 +402,13 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// time does not reveal whether the username exists, is disabled, or is
 	// SSO-only.
 	if user == nil || user.Disabled || user.IsService() || user.PasswordHash == nil {
-		auth.BurnPasswordVerification(password)
+		passwd.BurnPasswordVerification(password)
 		invalid()
 
 		return
 	}
 
-	verified, err := auth.VerifyPassword(password, *user.PasswordHash)
+	verified, err := passwd.VerifyPassword(password, *user.PasswordHash)
 	if err != nil || !verified {
 		invalid()
 		return
@@ -614,7 +616,7 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	ok, err := auth.VerifyPassword(body.CurrentPassword, *user.PasswordHash)
+	ok, err := passwd.VerifyPassword(body.CurrentPassword, *user.PasswordHash)
 	if err != nil || !ok {
 		h.loginUserLimiter.record(guessKey)
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
@@ -628,7 +630,7 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	newHash, err := auth.HashPassword(body.NewPassword)
+	newHash, err := passwd.HashPassword(body.NewPassword)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "password hashing failed")
 		return

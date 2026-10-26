@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -85,7 +87,7 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		hashed, hashErr := auth.HashPassword(*body.Password)
+		hashed, hashErr := passwd.HashPassword(*body.Password)
 		if hashErr != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "password hashing failed")
 			return
@@ -264,7 +266,7 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		}
 
 		if body.Password != nil {
-			newHash, err := auth.HashPassword(*body.Password)
+			newHash, err := passwd.HashPassword(*body.Password)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "internal_error", "password hashing failed")
 				return

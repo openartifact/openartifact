@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -134,7 +136,7 @@ func createBootstrapAdmin(ctx context.Context, db database.Database, log *logger
 		spec.PasswordExpiresAt = &exp
 	}
 
-	if spec.PasswordHash, err = HashPassword(password); err != nil {
+	if spec.PasswordHash, err = passwd.HashPassword(password); err != nil {
 		return fmt.Errorf("hash bootstrap password: %w", err)
 	}
 
@@ -203,7 +205,7 @@ func bootstrapPassword(opts BootstrapOptions) (string, bool, error) {
 		return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(raw), false, nil
 	}
 
-	if err := ValidatePassword(password); err != nil {
+	if err := passwd.ValidatePassword(password); err != nil {
 		return "", false, fmt.Errorf("%w: bootstrap admin password: %w", ErrBootstrapSecret, err)
 	}
 

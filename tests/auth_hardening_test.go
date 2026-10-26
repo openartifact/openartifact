@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -564,14 +566,14 @@ func TestValidatePassword(t *testing.T) {
 		pw   string
 		want error
 	}{
-		{"empty", "", auth.ErrPasswordTooShort},
-		{"short", "elevenchars", auth.ErrPasswordTooShort},
+		{"empty", "", passwd.ErrPasswordTooShort},
+		{"short", "elevenchars", passwd.ErrPasswordTooShort},
 		{"exactly the minimum", "twelve-chars", nil},
 		{"long passphrase", "correct horse battery staple", nil},
 		{"multibyte counts runes", "пароль-пароль", nil},
-		{"oversized", strings.Repeat("a", auth.MaxPasswordLength+1), auth.ErrPasswordTooLong},
+		{"oversized", strings.Repeat("a", passwd.MaxPasswordLength+1), passwd.ErrPasswordTooLong},
 	} {
-		if got := auth.ValidatePassword(tc.pw); !errors.Is(got, tc.want) {
+		if got := passwd.ValidatePassword(tc.pw); !errors.Is(got, tc.want) {
 			t.Errorf("%s: ValidatePassword = %v, want %v", tc.name, got, tc.want)
 		}
 	}
