@@ -62,6 +62,8 @@ start() {
 		export OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE="$dir/admin-password"
 		export OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE="$dir/admin-token"
 		export OPENARTIFACT_RATE_LIMIT_RPS=0
+		# Generated links (npm tarball URLs, ...) must point back at this server.
+		export BASE_URL="$url"
 		for kv in ${OA_EXTRA_ENV:-}; do export "${kv?}"; done
 		setsid nohup "$bin" >"$dir/server.log" 2>&1 &
 		echo $! >"$dir/server.pid"
