@@ -16,10 +16,14 @@ All routes are under `/api/v1`. Administrators can do everything; other authenti
 
 Administrators find **Bundles** in the main navigation (`/bundles`); the pages need an administrator, whereas the API and `oa` also serve non-admin callers ([Permissions](#permissions)).
 
-- **List**: filter by name and state; **New bundle** creates a draft (name, version, description, optional pipeline); **New pipeline** defines the ordered stages, each optionally bound to a repository.
-- **Detail** (`/bundles/{name}/{version}`): summary, the pipeline as a stage trail with the bundle's current stage, the items (format, SHA-256, size, source repository), the vulnerability scan totals of the source repositories (linking to the filtered [security findings](../security/findings.md)) and the promotion history.
-- **Draft**: *Add items* (source repository, SHA-256, artifact path, optional format and size), remove items, *Seal* and *Delete*. Sealing offers the registered GPG keys; choosing one signs the manifest.
-- **Sealed**: *Promote* (target stage among the stages after the current one, target repository, notes; a stage bound to a repository fixes the target; *Replace conflicting content (force)* sends `?force=true`, see [Promoting a bundle](#promoting-a-bundle)), *Archive*, and downloads of the *Manifest* and, for a signed bundle, the *Signature*.
+- **List**: search by name and filter by state (all, draft, sealed, archived); each row shows the state, whether the bundle is signed, its current stage and who created it. **New bundle** opens a drawer that creates a draft (name, version, description, optional pipeline); **Pipelines** lists the pipelines with their stages and defines new ones (ordered stages, each optionally bound to a repository).
+- **Detail** (`/bundles/{name}/{version}`): a trail shows where the bundle is: created, sealed, signed, then each stage of its pipeline with when and by whom it was reached. A notice above it explains what blocks the next step (for example a draft without items). The page has one primary action at a time, further actions (downloads, *Archive*, *Delete draft*) are in the **More** menu. Tabs:
+  - **Items**: path, source repository, format, SHA-256 and size.
+  - **Promotions**: the promotion history with status, who, how many items and the notes.
+  - **Security**: the vulnerability scan totals of the source repositories, linking to the filtered [security findings](../security/findings.md).
+  - **Verification**: the signing key, who sealed and archived the bundle and when, and the downloads of the manifest and, for a signed bundle, the signature.
+- **Draft**: *Add items* searches the stored files you can read (by name, or `sha256:<digest>`) and adds the ticked ones; removing an item can be undone from the notification. The primary action is *Seal and sign*: it needs at least one item and offers the registered GPG keys (the globally active one is preselected; *Do not sign* seals without a signature, which cannot be added later). Sealing cannot be undone.
+- **Sealed**: the primary action is *Promote to* the next stage. The drawer shows the open findings of the source repositories (they do not block the promotion), the target stage, the target repository (a stage bound to a repository fixes it), notes, and *Replace conflicting content (force)*, which sends `?force=true` (see [Promoting a bundle](#promoting-a-bundle)). Once there is no next stage, or the bundle has no pipeline, *Archive* takes its place; until then it is in the **More** menu.
 
 ## Lifecycle
 
