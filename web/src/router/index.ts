@@ -5,6 +5,8 @@
 import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded, type RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useBrandingStore } from '../stores/branding'
+import { useToastStore } from '../stores/toast'
+import { t } from '../i18n/en'
 import { safeNextPath } from '../lib/safeRedirect'
 import { resolveCrumbs } from '../lib/crumbs'
 import { findSettingsSection } from '../lib/settingsSections'
@@ -50,6 +52,12 @@ installLegacyArtifactRedirect(router)
 function landingPath(next: unknown): string {
   const path = safeNextPath(next)
   return router.resolve(path).name === 'login' ? '/' : path
+}
+
+/** Sends the user home and says why, instead of dropping them there silently. */
+function denied(reasonKey: 'shell.denied.admin' | 'shell.denied.repoCreate') {
+  useToastStore().push({ level: 'info', title: t(reasonKey), description: t('shell.denied.hint') })
+  return { name: 'dashboard' }
 }
 
 router.beforeEach(async (to, from) => {
@@ -104,13 +112,13 @@ router.beforeEach(async (to, from) => {
   }
 
   if (to.meta.requiresAdmin && !session.isAdmin) {
-    return { name: 'dashboard' }
+    return denied('shell.denied.admin')
   }
 
   if (to.name === 'settings-section') {
     const section = findSettingsSection(to.params.section)
     // Admin-only settings sections gate like requiresAdmin routes.
-    if (section?.adminOnly && !session.isAdmin) return { name: 'dashboard' }
+    if (section?.adminOnly && !session.isAdmin) return denied('shell.denied.admin')
     // The access-token list opens on the caller's own tokens unless a type is chosen.
     if (section?.id === 'tokens' && to.query.type === undefined) {
       return { path: to.path, query: { ...to.query, type: 'personal' }, hash: to.hash, replace: true }
@@ -120,7 +128,7 @@ router.beforeEach(async (to, from) => {
   // Creating a repository needs admin or maintainer in some project; the server
   // still checks the chosen project.
   if (to.meta.requiresRepoCreate && !session.canCreateRepo) {
-    return { name: 'dashboard' }
+    return denied('shell.denied.repoCreate')
   }
 })
 

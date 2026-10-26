@@ -17,6 +17,7 @@ import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import type { RouteRecordNormalized } from 'vue-router'
 import router from '../index'
 import { useSessionStore, type User } from '../../stores/session'
+import { useToastStore } from '../../stores/toast'
 
 // Every route lazy-loads its page, which drags in API clients, stores and
 // sub-components that have nothing to do with the guards. Swap them for a stub.
@@ -191,6 +192,18 @@ describe('router beforeEach guards', () => {
       expect(router.currentRoute.value.path).toBe('/')
       await push('/admin/users')
       expect(router.currentRoute.value.path).toBe('/')
+    })
+
+    it('says why a non-admin was sent home, for settings sections and admin pages', async () => {
+      signIn({ is_admin: false })
+      for (const path of ['/settings/users', '/bundles']) {
+        const toasts = useToastStore()
+        const before = toasts.queue.length
+        await push(path)
+        expect(router.currentRoute.value.path).toBe('/')
+        expect(toasts.queue.length).toBe(before + 1)
+        expect(toasts.queue[before]?.title).toContain('administrators')
+      }
     })
 
     it('non-admin can open the personal settings sections', async () => {

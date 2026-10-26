@@ -18,6 +18,11 @@ export const enShell = {
   'shell.requiresAdmin': 'Requires administrator',
   'shell.settingsManagedByAdmins': 'Instance settings are managed by administrators',
 
+  // Shown after the router sends a user away from a page they may not open
+  'shell.denied.admin': 'That page is only available to administrators',
+  'shell.denied.repoCreate': 'Creating a repository needs the maintainer role in a project',
+  'shell.denied.hint': 'Ask an administrator for access.',
+
   // Header and user menu
   'shell.searchPill': 'Search or jump to…',
   'shell.userMenu': 'Account menu for {name}',
