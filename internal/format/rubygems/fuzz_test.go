@@ -446,9 +446,17 @@ func newFuzzGemHandler() (*HTTPHandler, *fuzzGemsDB, *formattest.BlobStore) {
 
 // fuzzGemRequest sends one request to the gem routes with the path set
 // verbatim (no client-side escaping), so hostile names reach the router.
+// The tail is cut at "?" into path and query.
 func fuzzGemRequest(h *HTTPHandler, method, tail string, body []byte) *httptest.ResponseRecorder {
 	path, query, _ := strings.Cut(tail, "?")
 
+	return fuzzGemPathRequest(h, method, path, query, body)
+}
+
+// fuzzGemPathRequest is fuzzGemRequest for a path that is known not to hold a
+// query: a stored gem name or version may hold "?", which a client escapes to
+// %3F and so is part of the path.
+func fuzzGemPathRequest(h *HTTPHandler, method, path, query string, body []byte) *httptest.ResponseRecorder {
 	req := formattest.Request(method, "/", bytes.NewReader(body))
 	req.URL.Path = "/repos/myrepo/" + path
 	req.URL.RawQuery = query
@@ -506,7 +514,7 @@ func checkAcceptedGem(t *testing.T, h *HTTPHandler, db *fuzzGemsDB, gem []byte) 
 
 	file := strings.TrimSuffix(gemFilename(g), ".gem")
 
-	if w := fuzzGemRequest(h, http.MethodGet, "gems/"+file+".gem", nil); w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), gem) {
+	if w := fuzzGemPathRequest(h, http.MethodGet, "gems/"+file+".gem", "", nil); w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), gem) {
 		t.Fatalf("download of %q = %d (%d bytes, want %d)", file, w.Code, w.Body.Len(), len(gem))
 	}
 
@@ -521,7 +529,7 @@ func checkAcceptedGem(t *testing.T, h *HTTPHandler, db *fuzzGemsDB, gem []byte) 
 func checkServedGemspec(t *testing.T, h *HTTPHandler, g *models.RubyGem, file string) {
 	t.Helper()
 
-	w := fuzzGemRequest(h, http.MethodGet, "quick/Marshal.4.8/"+file+".gemspec.rz", nil)
+	w := fuzzGemPathRequest(h, http.MethodGet, "quick/Marshal.4.8/"+file+".gemspec.rz", "", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("gemspec of %q = %d: %s", file, w.Code, w.Body.String())
 	}
