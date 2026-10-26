@@ -1,0 +1,284 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Black-box UI suites against a real server (built with the SPA embedded) and
+# Postgres, driven through Lightpanda over CDP; there is no Playwright-managed
+# browser. See docs/development/testing.md.
+#   e2e     pull requests and main: the Playwright e2e suite
+#   monkey  nightly and on demand: a seeded random walk over the UI
+
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Monkey seed to replay (empty: a random one, printed in the log)"
+        required: false
+        default: ""
+      steps:
+        description: "Monkey steps per role"
+        required: false
+        default: "400"
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.3"
+  # Bump together with LIGHTPANDA_SHA256 (the lightpanda-x86_64-linux asset of the
+  # release); Dependabot does not track either.
+  BUN_VERSION: "1.4.4"
+  LIGHTPANDA_VERSION: "1.0.2"
+  LIGHTPANDA_SHA256: ae7d01d261efb9e480e18ce3424533332883863bcf70b12a4321b5733f37e19e
+
+jobs:
+  e2e:
+    name: e2e
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: docker.io/postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: openartifact_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Build the web UI
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      # The SPA is embedded at build time, so the UI is built first.
+      - name: Build the server
+        run: go build -o "$RUNNER_TEMP/oa-server" ./cmd/server
+
+      - name: Install Lightpanda
+        env:
+          LP_VERSION: ${{ env.LIGHTPANDA_VERSION }}
+          LP_SHA256: ${{ env.LIGHTPANDA_SHA256 }}
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/lightpanda" \
+            "https://github.com/lightpanda-io/browser/releases/download/${LP_VERSION}/lightpanda-x86_64-linux"
+          echo "${LP_SHA256}  $RUNNER_TEMP/lightpanda" | sha256sum --check --strict -
+          chmod +x "$RUNNER_TEMP/lightpanda"
+
+      # --cdp-max-message-size: axe-core (~1.5 MB) is injected through one CDP message.
+      - name: Start Lightpanda
+        env:
+          LIGHTPANDA_DISABLE_TELEMETRY: "true"
+        run: |
+          setsid nohup "$RUNNER_TEMP/lightpanda" serve --host 127.0.0.1 --port 9222 --cdp-max-message-size 8388608 \
+            >"$RUNNER_TEMP/lightpanda.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/lightpanda.log" >&2
+          echo "Lightpanda did not answer on 127.0.0.1:9222" >&2
+          exit 1
+
+      - name: Start and seed the server
+        env:
+          OA_BIN: ${{ runner.temp }}/oa-server
+          OA_TESTENV_DIR: ${{ runner.temp }}/testenv
+          OA_PORT: "18080"
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: openartifact_e2e
+        run: |
+          scripts/testenv.sh start
+          # Hand the seeded credentials to the next steps, masked in the log.
+          . "$OA_TESTENV_DIR/env"
+          for v in OA_ADMIN_PASS OA_ADMIN_TOKEN OA_DEV_PASS; do echo "::add-mask::${!v}"; done
+          {
+            echo "OA_URL=$OA_URL"
+            echo "OA_ADMIN_USER=$OA_ADMIN_USER"
+            echo "OA_ADMIN_PASS=$OA_ADMIN_PASS"
+            echo "OA_ADMIN_TOKEN=$OA_ADMIN_TOKEN"
+            echo "OA_DEV_USER=$OA_DEV_USER"
+            echo "OA_DEV_PASS=$OA_DEV_PASS"
+            echo "OA_TESTENV_DIR=$OA_TESTENV_DIR"
+          } >>"$GITHUB_ENV"
+
+      - name: Playwright e2e
+        working-directory: web
+        run: bun run e2e
+
+      - name: Collect logs
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          cp "$OA_TESTENV_DIR/server.log" "$RUNNER_TEMP/logs/server.log" || true
+          cp "$RUNNER_TEMP/lightpanda.log" "$RUNNER_TEMP/logs/lightpanda.log" || true
+
+      - name: Upload traces, report and logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-failure
+          path: |
+            web/test-results
+            web/playwright-report
+            ${{ runner.temp }}/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  monkey:
+    name: monkey
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: docker.io/postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: openartifact_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Build the web UI
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      # The SPA is embedded at build time, so the UI is built first.
+      - name: Build the server
+        run: go build -o "$RUNNER_TEMP/oa-server" ./cmd/server
+
+      - name: Install Lightpanda
+        env:
+          LP_VERSION: ${{ env.LIGHTPANDA_VERSION }}
+          LP_SHA256: ${{ env.LIGHTPANDA_SHA256 }}
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/lightpanda" \
+            "https://github.com/lightpanda-io/browser/releases/download/${LP_VERSION}/lightpanda-x86_64-linux"
+          echo "${LP_SHA256}  $RUNNER_TEMP/lightpanda" | sha256sum --check --strict -
+          chmod +x "$RUNNER_TEMP/lightpanda"
+
+      # --cdp-max-message-size: axe-core (~1.5 MB) is injected through one CDP message.
+      - name: Start Lightpanda
+        env:
+          LIGHTPANDA_DISABLE_TELEMETRY: "true"
+        run: |
+          setsid nohup "$RUNNER_TEMP/lightpanda" serve --host 127.0.0.1 --port 9222 --cdp-max-message-size 8388608 \
+            >"$RUNNER_TEMP/lightpanda.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/lightpanda.log" >&2
+          echo "Lightpanda did not answer on 127.0.0.1:9222" >&2
+          exit 1
+
+      - name: Start and seed the server
+        env:
+          OA_BIN: ${{ runner.temp }}/oa-server
+          OA_TESTENV_DIR: ${{ runner.temp }}/testenv
+          OA_PORT: "18080"
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: openartifact_e2e
+        run: |
+          scripts/testenv.sh start
+          # Hand the seeded credentials to the next steps, masked in the log.
+          . "$OA_TESTENV_DIR/env"
+          for v in OA_ADMIN_PASS OA_ADMIN_TOKEN OA_DEV_PASS; do echo "::add-mask::${!v}"; done
+          {
+            echo "OA_URL=$OA_URL"
+            echo "OA_ADMIN_USER=$OA_ADMIN_USER"
+            echo "OA_ADMIN_PASS=$OA_ADMIN_PASS"
+            echo "OA_ADMIN_TOKEN=$OA_ADMIN_TOKEN"
+            echo "OA_DEV_USER=$OA_DEV_USER"
+            echo "OA_DEV_PASS=$OA_DEV_PASS"
+            echo "OA_TESTENV_DIR=$OA_TESTENV_DIR"
+          } >>"$GITHUB_ENV"
+
+      # Inputs reach the test through the environment only: the test validates them
+      # (an integer seed, a positive step count) and fails on anything else.
+      - name: Monkey random walk
+        working-directory: web
+        env:
+          MONKEY_SEED: ${{ inputs.seed }}
+          MONKEY_STEPS: ${{ inputs.steps || '400' }}
+          MONKEY_MAX_SECONDS: "600"
+        run: bun run monkey
+
+      - name: Seed in the job summary
+        if: always()
+        run: |
+          if [ -f web/monkey-seed.txt ]; then
+            echo "Monkey seed: \`$(cat web/monkey-seed.txt)\` (replay with workflow_dispatch input seed)" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Collect logs
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          cp "$OA_TESTENV_DIR/server.log" "$RUNNER_TEMP/logs/server.log" || true
+          cp "$RUNNER_TEMP/lightpanda.log" "$RUNNER_TEMP/logs/lightpanda.log" || true
+
+      - name: Upload seed, traces and logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: monkey-failure
+          path: |
+            web/monkey-seed.txt
+            web/test-results
+            web/playwright-report
+            ${{ runner.temp }}/logs
+          if-no-files-found: ignore
+          retention-days: 30
