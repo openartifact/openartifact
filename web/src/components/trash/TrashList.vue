@@ -60,11 +60,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-deleted="{ row }">
         <div class="text-xs text-muted">
           <RelativeTime :value="row.deleted_at" />
-          <div v-if="row.deleted_by">{{ tp('rl.trash.deletedBy', { name: row.deleted_by }) }}</div>
+          <div v-if="row.deleted_by_name">{{ tp('rl.trash.deletedBy', { name: row.deleted_by_name }) }}</div>
         </div>
       </template>
       <template #cell-expires="{ row }">
-        <span class="text-xs text-muted" :title="tp('rl.trash.expiresTitle', { date: formatDateTime(row.purge_at) })">{{ purgeInText(row.purge_at) }}</span>
+        <span class="text-xs text-muted" :title="tp('rl.trash.expiresTitle', { date: formatDateTime(row.expires_at) })">{{ purgeInText(row.expires_at) }}</span>
       </template>
       <template #cell-actions="{ row }">
         <div class="flex items-center gap-2">

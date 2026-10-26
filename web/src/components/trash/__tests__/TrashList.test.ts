@@ -23,7 +23,8 @@ const item = (id: string, kind = 'npm_version') => ({
   size_bytes: 2048,
   deleted_at: '2026-01-02T03:04:05Z',
   deleted_by: 'alice',
-  purge_at: '2999-01-01T00:00:00Z',
+  deleted_by_name: 'alice',
+  expires_at: '2999-01-01T00:00:00Z',
 })
 
 let spy: Mock<typeof fetch>
