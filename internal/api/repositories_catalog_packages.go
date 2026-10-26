@@ -59,13 +59,6 @@ func parsePackageListParams(r *http.Request) (packageListParams, string) {
 		return params, "q is too long"
 	}
 
-	// Postgres text cannot hold NUL: it would surface as a database error (500).
-	for _, v := range [...]string{params.format, params.name, params.search} {
-		if strings.ContainsRune(v, 0) {
-			return params, "format, package_name and q must not contain NUL bytes"
-		}
-	}
-
 	if params.sortKey != "" && params.sortKey != packageSortCreated && params.sortKey != packageSortName {
 		return params, "sort must be created or name"
 	}

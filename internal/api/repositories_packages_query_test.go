@@ -61,9 +61,6 @@ func TestPackagesListingQueryParams(t *testing.T) {
 			want: database.ComponentListOptions{Name: "@acme/widget", Page: 1, Limit: 25},
 		},
 		{name: "unknown sort is rejected", query: "sort=size", wantStatus: http.StatusBadRequest},
-		{name: "NUL byte in q is rejected", query: "q=a%00b", wantStatus: http.StatusBadRequest},
-		{name: "NUL byte in format is rejected", query: "format=n%00pm", wantStatus: http.StatusBadRequest},
-		{name: "NUL byte in package_name is rejected", query: "package_name=a%00b", wantStatus: http.StatusBadRequest},
 		{name: "overlong q is rejected", query: "q=" + strings.Repeat("a", maxPackageQueryLen+1), wantStatus: http.StatusBadRequest},
 	}
 
