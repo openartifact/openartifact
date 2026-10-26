@@ -532,8 +532,9 @@
               },
               "groups": {
                 "type": "array",
+                "description": "Names of the groups the user belongs to.",
                 "items": {
-                  "$ref": "#/components/schemas/Group"
+                  "type": "string"
                 }
               },
               "projects": {

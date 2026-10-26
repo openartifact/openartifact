@@ -14,7 +14,7 @@ beforeEach(() => setActivePinia(createPinia()))
 describe('ProfilePage', () => {
   it('leads to the password page and to the personal access tokens', async () => {
     const session = useSessionStore()
-    session.user = { id: 'u1', username: 'alice', email: 'alice@example.com' } as never
+    session.user = { id: 'u1', username: 'alice', email: 'alice@example.com', groups: ['platform-eng'] } as never
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:rest(.*)*', component: { template: '<div />' } }] })
     await router.push('/settings/profile')
     const w = mount(ProfilePage, { global: { plugins: [router] } })
@@ -23,5 +23,6 @@ describe('ProfilePage', () => {
     expect(block.attributes('aria-labelledby')).toBe('profile-credentials-title')
     expect(block.findAll('a').map((a) => a.attributes('href'))).toEqual(['/settings/password', '/settings/tokens?type=personal'])
     expect(w.text()).toContain('alice@example.com')
+    expect(w.find('[data-testid="profile-groups"]').text()).toContain('platform-eng')
   })
 })

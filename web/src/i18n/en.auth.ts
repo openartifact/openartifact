@@ -43,6 +43,8 @@ export const enAuth = {
   'settings.profile.admin': 'Admin',
   'settings.profile.email': 'Email',
   'settings.profile.fullName': 'Full name',
+  'settings.profile.groups': 'Groups',
+  'settings.profile.noGroups': 'Not a member of any group',
   'settings.profile.role': 'Role',
   'settings.profile.roleAdmin': 'Administrator',
   'settings.profile.roleUser': 'User',

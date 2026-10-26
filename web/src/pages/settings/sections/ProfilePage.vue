@@ -26,9 +26,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               {{ t('settings.profile.admin') }}
             </span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-caption font-medium bg-surface-hover text-foreground/70">
-              {{ t('auth.username').toLowerCase() }}: {{ session.user?.username }}
-            </span>
           </div>
         </div>
       </div>
@@ -56,6 +53,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div>
             <div class="text-caption font-semibold text-muted mb-0.5">{{ t('settings.profile.fullName') }}</div>
             <div class="text-sm text-foreground">{{ session.user.full_name }}</div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between px-5 py-4" data-testid="profile-groups">
+          <div>
+            <div class="text-caption font-semibold text-muted mb-0.5">{{ t('settings.profile.groups') }}</div>
+            <div v-if="groups.length" class="flex flex-wrap gap-1.5">
+              <span v-for="g in groups" :key="g" class="inline-flex items-center rounded-full bg-surface-hover px-2 py-0.5 font-mono text-caption text-foreground">{{ g }}</span>
+            </div>
+            <div v-else class="text-sm text-muted">{{ t('settings.profile.noGroups') }}</div>
           </div>
         </div>
         <div class="flex items-center justify-between px-5 py-4">
@@ -99,6 +105,8 @@ const links = [
   { to: PASSWORD_PATH, label: t('sx.profile.password'), hint: t('sx.profile.passwordHint') },
   { to: PERSONAL_TOKENS_PATH, label: t('sx.profile.tokens'), hint: t('sx.profile.tokensHint') },
 ]
+
+const groups = computed(() => session.user?.groups ?? [])
 
 const initials = computed(() => {
   const name = session.user?.full_name || session.user?.username || '?'

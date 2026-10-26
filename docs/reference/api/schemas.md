@@ -1890,7 +1890,7 @@ Includes all fields of [User](#user).
 | `disabled` | boolean | no | - |
 | `email` | string (email) | no | - |
 | `full_name` | string | no | - |
-| `groups` | array of [Group](#group) | no | - |
+| `groups` | array of string | no | Names of the groups the user belongs to. |
 | `id` | string (uuid) | no | - |
 | `is_admin` | boolean | no | - |
 | `last_login_at` | string (date-time) | no | - |

@@ -28,7 +28,7 @@ export const useSessionStore = defineStore('session', () => {
   const isAdmin = computed(() => {
     if (!user.value) return false
     if (user.value.is_admin === true) return true
-    if (user.value.groups?.some((g) => g.name === 'admin')) return true
+    if (user.value.groups?.includes('admin')) return true
     return false
   })
 

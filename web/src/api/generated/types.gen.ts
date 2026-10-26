@@ -170,7 +170,10 @@ export type User = {
 
 export type UserExtended = User & {
     is_admin?: boolean;
-    groups?: Array<Group>;
+    /**
+     * Names of the groups the user belongs to.
+     */
+    groups?: Array<string>;
     /**
      * The caller's project roles; global admins are implicit owners everywhere and are listed only for roles they hold.
      */
