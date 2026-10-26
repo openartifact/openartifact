@@ -10,7 +10,7 @@ import type { ApiCleanupPolicy } from '../lib/cleanupPolicy'
 import type {
   Project as GeneratedProject,
   ProjectActivityEntry,
-  ProjectActivityPage,
+  ActivityPage,
   ProjectQuota as GeneratedProjectQuota,
   ProjectUsage as GeneratedProjectUsage,
   Quota as QuotaLimits,
@@ -276,7 +276,7 @@ export async function listProjectActivity(
   if (params.cursor) qs.set('cursor', params.cursor)
   if (params.limit != null) qs.set('per_page', String(params.limit))
   const query = qs.toString() ? `?${qs}` : ''
-  const res = await request<Partial<ProjectActivityPage>>(`${base(project)}/activity${query}`)
+  const res = await request<Partial<ActivityPage>>(`${base(project)}/activity${query}`)
   return { items: res?.data ?? [], hasMore: res?.has_more ?? false, nextCursor: res?.next_cursor ?? null }
 }
 

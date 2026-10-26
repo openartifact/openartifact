@@ -74,7 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </span>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="text-sm text-muted truncate max-w-[200px] block" :title="entry.target">{{ entry.target || '—' }}</span>
+                  <span class="text-sm text-muted truncate max-w-[200px] block" :title="entry.target ?? undefined">{{ entry.target || '—' }}</span>
                 </td>
                 <td class="px-4 py-3 text-center">
                   <button

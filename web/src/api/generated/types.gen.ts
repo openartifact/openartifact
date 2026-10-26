@@ -222,6 +222,10 @@ export type Repository = {
     upstream_url?: string;
     upstream_username?: string;
     /**
+     * Proxy repos: true when an upstream password is stored. The password is write-only (`upstream_password` on create and update) and is never returned.
+     */
+    upstream_password_set?: boolean;
+    /**
      * Cache TTL in seconds
      */
     cache_ttl_seconds?: number;
@@ -955,19 +959,190 @@ export type StorageBackend = {
     last_checked_at?: string;
     created_at?: string;
     updated_at?: string;
+    /**
+     * What the backend holds; present on the list and get endpoints.
+     */
+    usage?: {
+        blob_count: number;
+        size_bytes: number;
+    };
 };
 
+/**
+ * One audit log entry of the admin audit list.
+ */
 export type AuditEntry = {
-    id?: string;
-    timestamp?: string;
-    actor?: string;
-    action?: string;
-    target?: string;
-    result?: string;
-    ip?: string;
+    id: string;
+    timestamp: string;
+    action: string;
+    /**
+     * Username or token name recorded with the event; empty when unknown.
+     */
+    actor: string;
+    /**
+     * Display name of the actor: the recorded name, else the user's current name, else `system` for background work; empty when unknown.
+     */
+    actor_name: string;
+    /**
+     * What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows).
+     */
+    subject: AuditSubject | null;
+    /**
+     * The raw resource id.
+     */
+    target?: string | null;
+    ip?: string | null;
     details?: {
         [key: string]: unknown;
-    };
+    } | null;
+    repository_id?: string | null;
+    resource_type?: string | null;
+    resource_id?: string | null;
+};
+
+/**
+ * What an audit event acted on, resolved server-side. `name` is null when the subject is gone and the event did not record its name.
+ */
+export type AuditSubject = {
+    /**
+     * `repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `permission_target`, `gpg_key`, `sso_provider`, `setting`, or the raw resource type of an event kind without a dedicated one (`storage_tier`, `storage_policy`, ...).
+     */
+    kind: string;
+    name: string | null;
+    /**
+     * Package version, for `package` subjects that record one.
+     */
+    version?: string;
+    /**
+     * Name of the repository the event belongs to.
+     */
+    repository?: string;
+    /**
+     * Name of the project the event belongs to.
+     */
+    project?: string;
+};
+
+/**
+ * A `ProjectActivityEntry` with the actor's and the subject's names resolved.
+ */
+export type ActivityEntry = ProjectActivityEntry & {
+    /**
+     * Display name of the actor: the recorded name, else the user's current name, else `system`; empty when unknown.
+     */
+    actor_name: string;
+    subject: AuditSubject | null;
+};
+
+/**
+ * One token of the unified token list. The secret is never returned.
+ */
+export type UnifiedToken = {
+    id: string;
+    type: 'personal' | 'project' | 'federation';
+    name: string;
+    /**
+     * Username of the token's owner (personal), creator (project) or creator (federation, as recorded).
+     */
+    owner: string;
+    /**
+     * Project name: set for project tokens and for federation tokens of a repository that belongs to a project.
+     */
+    project?: string;
+    /**
+     * Repository name, for federation tokens.
+     */
+    repository?: string;
+    /**
+     * Project role, for project tokens.
+     */
+    role?: string;
+    /**
+     * Permission-target ids a personal token is limited to.
+     */
+    scopes?: Array<string>;
+    created_at: string;
+    /**
+     * Absent for a token that never expires (federation tokens never do).
+     */
+    expires_at?: string;
+    last_used_at?: string;
+    /**
+     * True once `expires_at` has passed.
+     */
+    expired: boolean;
+};
+
+export type UnifiedTokenList = {
+    tokens: Array<UnifiedToken>;
+    /**
+     * Tokens the caller may see that match the filters.
+     */
+    total: number;
+    page: number;
+    limit: number;
+};
+
+/**
+ * A quota next to its live usage. Limits are absent when unlimited.
+ */
+export type QuotaLine = {
+    limit_bytes?: number;
+    used_bytes: number;
+    /**
+     * Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`.
+     */
+    soft_limit_bytes?: number;
+    warn_threshold_percent: number;
+    max_artifact_count?: number;
+    artifact_count: number;
+    /**
+     * `used_bytes` of `limit_bytes`; 0 when unlimited.
+     */
+    usage_percent: number;
+    /**
+     * True once the size or the artifact count limit is reached.
+     */
+    exceeded: boolean;
+};
+
+export type RepositoryUsage = {
+    /**
+     * Distinct packages (by name).
+     */
+    package_count: number;
+    /**
+     * Package rows (versions, or files for formats without versions).
+     */
+    version_count: number;
+    /**
+     * Stored size from the quota counter.
+     */
+    size_bytes: number;
+    /**
+     * Absent for an empty repository.
+     */
+    last_published_at?: string;
+    quota: QuotaLine;
+};
+
+/**
+ * A repository's or a project's quota and usage.
+ */
+export type QuotaOverviewItem = QuotaLine & {
+    scope: 'repository' | 'project';
+    name: string;
+    /**
+     * Project owning a repository; absent for a project line and for a repository without one.
+     */
+    project?: string;
+};
+
+export type QuotaOverviewList = {
+    quotas: Array<QuotaOverviewItem>;
+    total: number;
+    page: number;
+    limit: number;
 };
 
 /**
@@ -1394,8 +1569,8 @@ export type ProjectActivityEntry = {
     repository_id?: string | null;
 };
 
-export type ProjectActivityPage = {
-    data: Array<ProjectActivityEntry>;
+export type ActivityPage = {
+    data: Array<ActivityEntry>;
     per_page: number;
     /**
      * True when entries follow this page.
@@ -1405,6 +1580,28 @@ export type ProjectActivityPage = {
      * Pass as `cursor` to fetch the next page. Absent when `has_more` is false.
      */
     next_cursor?: string;
+};
+
+/**
+ * A project of the project list: the project plus its member count, usage and quota.
+ */
+export type ProjectListItem = Project & {
+    /**
+     * Direct members; users who hold a role only through a group are not counted.
+     */
+    member_count: number;
+    usage: {
+        /**
+         * Stored size across the project's repositories (trashed ones included).
+         */
+        size_bytes: number;
+    };
+    /**
+     * Absent when the project has no size limit.
+     */
+    quota?: {
+        limit_bytes: number;
+    };
 };
 
 export type ProjectUsage = {
@@ -2106,7 +2303,7 @@ export type PresignedUploadResult = {
 };
 
 /**
- * A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.
+ * A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at expires_at.
  */
 export type TrashItem = {
     /**
@@ -2132,7 +2329,15 @@ export type TrashItem = {
     deleted_at: string;
     deleted_by: string;
     /**
-     * deleted_at plus the repository's effective retention.
+     * Who deleted the item as a display name: the username, or the policy or peer that did it (`cleanup-policy`, `federation:<peer>`). Empty when not recorded. Same value as `deleted_by`.
+     */
+    deleted_by_name: string;
+    /**
+     * When the retention purge removes the item for good: deleted_at plus the repository's effective retention.
+     */
+    expires_at: string;
+    /**
+     * Same value as `expires_at`, kept for existing clients.
      */
     purge_at: string;
 };
@@ -5943,6 +6148,176 @@ export type PostApiV1PermissionTargetsByIdAssignmentsResponses = {
     200: unknown;
 };
 
+export type GetApiV1TokensData = {
+    body?: never;
+    path?: never;
+    query?: {
+        type?: 'personal' | 'project' | 'federation';
+        /**
+         * Project name: only that project's tokens and the federation tokens of its repositories (personal tokens never match).
+         */
+        project?: string;
+        /**
+         * RFC 3339 timestamp or `YYYY-MM-DD` date: only tokens that expire before it (already expired ones included; tokens without an expiry never match).
+         */
+        expires_before?: string;
+        /**
+         * Case-insensitive substring of the token name or owner.
+         */
+        q?: string;
+        page?: number;
+        limit?: number;
+    };
+    url: '/api/v1/tokens';
+};
+
+export type GetApiV1TokensErrors = {
+    /**
+     * Invalid type or expires_before
+     */
+    400: unknown;
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * A non-admin API token cannot list tokens
+     */
+    403: unknown;
+};
+
+export type GetApiV1TokensResponses = {
+    /**
+     * One page of tokens
+     */
+    200: UnifiedTokenList;
+};
+
+export type GetApiV1TokensResponse = GetApiV1TokensResponses[keyof GetApiV1TokensResponses];
+
+export type GetApiV1AdminQuotasData = {
+    body?: never;
+    path?: never;
+    query?: {
+        scope?: 'repository' | 'project';
+        /**
+         * `true` keeps only quotas that enforce a limit.
+         */
+        limited?: boolean;
+        /**
+         * Case-insensitive substring of the repository or project name.
+         */
+        q?: string;
+        page?: number;
+        limit?: number;
+    };
+    url: '/api/v1/admin/quotas';
+};
+
+export type GetApiV1AdminQuotasErrors = {
+    /**
+     * Invalid scope
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminQuotasResponses = {
+    /**
+     * One page of quotas
+     */
+    200: QuotaOverviewList;
+};
+
+export type GetApiV1AdminQuotasResponse = GetApiV1AdminQuotasResponses[keyof GetApiV1AdminQuotasResponses];
+
+export type GetApiV1RepositoriesByNameUsageData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/usage';
+};
+
+export type GetApiV1RepositoriesByNameUsageErrors = {
+    /**
+     * Admin or project maintainer access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameUsageResponses = {
+    /**
+     * Repository usage
+     */
+    200: RepositoryUsage;
+};
+
+export type GetApiV1RepositoriesByNameUsageResponse = GetApiV1RepositoriesByNameUsageResponses[keyof GetApiV1RepositoriesByNameUsageResponses];
+
+export type GetApiV1RepositoriesByNameActivityData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        /**
+         * Exact package name as recorded with the event.
+         */
+        package_name?: string;
+        /**
+         * Exact version as recorded with the event.
+         */
+        version?: string;
+        /**
+         * Case-insensitive substring of the actor name or actor id.
+         */
+        actor?: string;
+        /**
+         * Case-insensitive substring of the action name.
+         */
+        action?: string;
+        /**
+         * Opaque `next_cursor` of the previous page; omit for the newest entries.
+         */
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/v1/repositories/{name}/activity';
+};
+
+export type GetApiV1RepositoriesByNameActivityErrors = {
+    /**
+     * Malformed cursor
+     */
+    400: unknown;
+    /**
+     * Admin or project maintainer access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameActivityResponses = {
+    /**
+     * One page of activity
+     */
+    200: ActivityPage;
+};
+
+export type GetApiV1RepositoriesByNameActivityResponse = GetApiV1RepositoriesByNameActivityResponses[keyof GetApiV1RepositoriesByNameActivityResponses];
+
 export type GetApiV1AdminTokensData = {
     body?: never;
     path?: never;
@@ -7331,6 +7706,10 @@ export type GetApiV1ProjectsData = {
          * List every project instead of only the caller's own. Global administrators only.
          */
         all?: boolean;
+        /**
+         * Case-insensitive substring of the project name, slug or display name.
+         */
+        q?: string;
     };
     url: '/api/v1/projects';
 };
@@ -7340,7 +7719,7 @@ export type GetApiV1ProjectsResponses = {
      * List of projects
      */
     200: {
-        projects?: Array<Project>;
+        projects?: Array<ProjectListItem>;
         can_create?: boolean;
     };
 };
@@ -8001,7 +8380,7 @@ export type GetApiV1ProjectsByProjectActivityResponses = {
     /**
      * One page of activity
      */
-    200: ProjectActivityPage;
+    200: ActivityPage;
 };
 
 export type GetApiV1ProjectsByProjectActivityResponse = GetApiV1ProjectsByProjectActivityResponses[keyof GetApiV1ProjectsByProjectActivityResponses];
