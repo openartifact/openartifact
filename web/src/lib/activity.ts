@@ -6,6 +6,7 @@ import type { AuditEntry } from '../api/audit'
 import type { RecentPackage } from '../api/dashboard'
 import type { ProjectActivityEntry } from '../api/projects'
 import { artifactPath } from './artifactPath'
+import { tDynamic } from '../i18n/en'
 
 /** What an audit entry acted on, resolved by the server from ids (never a UUID). */
 export interface AuditSubject {
@@ -54,6 +55,15 @@ export function isFeedEntry(entry: ResolvedAuditEntry): boolean {
 export function verbOf(action: string | undefined): string {
   const tail = (action ?? '').split('.').pop() ?? ''
   return tail.replaceAll('_', ' ')
+}
+
+/** An audit action as a table label: `artifact.deleted` -> "Moved to trash"; an action without a catalog entry reads as its verb ("Member added"). */
+export function actionLabel(action: string | undefined): string {
+  const key = `activity.action.${action ?? ''}`
+  const label = tDynamic(key)
+  if (label !== key) return label
+  const verb = verbOf(action)
+  return verb.charAt(0).toUpperCase() + verb.slice(1)
 }
 
 const repoPath = (name: string): string => `/repos/${encodeURIComponent(name)}`

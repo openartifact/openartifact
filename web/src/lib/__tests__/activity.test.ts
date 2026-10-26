@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { auditItem, isFeedAction, isFeedEntry, mergeActivity, projectItem, publishedItem, subjectPath, verbOf } from '../activity'
+import { actionLabel, auditItem, isFeedAction, isFeedEntry, mergeActivity, projectItem, publishedItem, subjectPath, verbOf } from '../activity'
 
 describe('activity feed', () => {
   it('drops traffic actions', () => {
@@ -23,6 +23,13 @@ describe('activity feed', () => {
     expect(verbOf('project.member_added')).toBe('member added')
     expect(verbOf('artifact.uploaded')).toBe('uploaded')
     expect(verbOf(undefined)).toBe('')
+  })
+
+  it('labels an action for a table, with a readable fallback', () => {
+    expect(actionLabel('artifact.deleted')).toBe('Moved to trash')
+    expect(actionLabel('artifact.released')).toBe('Released from quarantine')
+    expect(actionLabel('project.member_added')).toBe('Member added')
+    expect(actionLabel(undefined)).toBe('')
   })
 
   it('names the actor and links the resolved subject and its repository', () => {

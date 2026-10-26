@@ -25,8 +25,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :empty-hint="t('artifact.activity.emptyHint')"
     >
       <template #cell-timestamp="{ row }"><RelativeTime :value="row.timestamp" /></template>
-      <template #cell-actor="{ row }"><span class="font-mono text-xs">{{ row.actor_name || '—' }}</span></template>
-      <template #cell-action="{ row }"><span class="font-mono text-xs">{{ row.action }}</span></template>
+      <template #cell-actor="{ row }"><span class="text-sm">{{ row.actor_name || '—' }}</span></template>
+      <template #cell-action="{ row }"><span class="text-sm">{{ actionLabel(row.action) }}</span></template>
       <template #cell-message="{ row }"><span class="text-sm text-muted">{{ row.message || '—' }}</span></template>
     </ListTable>
   </section>
@@ -40,6 +40,7 @@ import { listArtifactActivity } from '../../api/artifact'
 import { useArtifactContext } from '../../composables/useArtifact'
 import { useListQuery } from '../../composables/useListQuery'
 import { strParam } from '../../composables/useUrlState'
+import { actionLabel } from '../../lib/activity'
 import { t, tp } from '../../i18n/en'
 
 const ctx = useArtifactContext()

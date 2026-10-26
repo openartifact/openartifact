@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <template #cell-when="{ row }"><RelativeTime :value="row.timestamp" class="text-xs text-muted" /></template>
     <template #cell-actor="{ row }"><span class="text-sm">{{ row.actor_name || row.actor || '—' }}</span></template>
-    <template #cell-action="{ row }"><span class="font-mono text-xs">{{ row.action }}</span></template>
+    <template #cell-action="{ row }"><span class="text-sm">{{ actionLabel(row.action) }}</span></template>
     <template #cell-subject="{ row }">
       <router-link v-if="subjectLink(row)" :to="subjectLink(row)!" class="font-mono text-xs text-foreground hover:text-primary">{{ subjectText(row) }}</router-link>
       <span v-else class="text-sm text-muted">{{ subjectText(row) || row.message || '—' }}</span>
@@ -30,6 +30,7 @@ import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import RelativeTime from '../ui/RelativeTime.vue'
 import { listRepoActivity, type RepoActivityEntry } from '../../api/repositories'
 import { useListQuery } from '../../composables/useListQuery'
+import { actionLabel } from '../../lib/activity'
 import { artifactPath } from '../../lib/artifactPath'
 import { t } from '../../i18n/en'
 
