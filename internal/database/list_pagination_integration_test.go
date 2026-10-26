@@ -81,6 +81,14 @@ func TestRepositoryListingPagesAreDisjointAndCompleteWithTiedTimestamps(t *testi
 		t.Error("paged order differs from the single-page order")
 	}
 
+	checkPublicAndByName(t, pg)
+}
+
+func checkPublicAndByName(t *testing.T, pg *PostgresDB) {
+	t.Helper()
+
+	ctx := context.Background()
+
 	public, err := pg.ListPublicRepositoryNames(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -181,5 +189,4 @@ func TestListProjectRepositoriesCountsOnlyLiveOwnedRepositories(t *testing.T) {
 	if !slices.Equal(names, []string{"m1", "m2", "m3", "m4", "m5"}) {
 		t.Errorf("names = %v", names)
 	}
-
 }

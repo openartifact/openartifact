@@ -117,7 +117,7 @@ func TestMetricsAuthMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
-			req := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", http.NoBody)
 			if tc.header != "" {
 				req.Header.Set("Authorization", tc.header)
 			}

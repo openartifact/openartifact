@@ -261,32 +261,9 @@ func (w *rebuildWorkers) regenerate(db *database.PostgresDB) func(ctx context.Co
 			return errors.New("no primary blob store to write metadata to") //nolint:err113 // one-off message
 		}
 
-		rows, err := db.GetDB().QueryContext(ctx, `
-			SELECT id::text, format FROM repositories
-			WHERE repo_type = 'hosted' AND id IN (SELECT unnest($1::text[])::uuid)`, repoIDs)
+		repos, err := listHostedRepos(ctx, db, repoIDs)
 		if err != nil {
-			return fmt.Errorf("list repositories to regenerate: %w", err)
-		}
-
-		type repo struct{ id, format string }
-
-		var repos []repo
-
-		for rows.Next() {
-			var r repo
-			if err := rows.Scan(&r.id, &r.format); err != nil {
-				_ = rows.Close()
-
-				return fmt.Errorf("scan repository: %w", err)
-			}
-
-			repos = append(repos, r)
-		}
-
-		_ = rows.Close()
-
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("list repositories to regenerate: %w", err)
+			return err
 		}
 
 		for _, r := range repos {
@@ -410,4 +387,34 @@ func printSummary(w io.Writer, rep *recovery.Report) {
 	}
 
 	_, _ = fmt.Fprintf(w, "post steps: %v; exit status %d\n", rep.PostSteps, rep.ExitCode())
+}
+
+type hostedRepo struct{ id, format string }
+
+// listHostedRepos returns the hosted repositories among repoIDs.
+func listHostedRepos(ctx context.Context, db *database.PostgresDB, repoIDs []string) ([]hostedRepo, error) {
+	rows, err := db.GetDB().QueryContext(ctx, `
+			SELECT id::text, format FROM repositories
+			WHERE repo_type = 'hosted' AND id IN (SELECT unnest($1::text[])::uuid)`, repoIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list repositories to regenerate: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []hostedRepo
+
+	for rows.Next() {
+		var r hostedRepo
+		if err := rows.Scan(&r.id, &r.format); err != nil {
+			return nil, fmt.Errorf("scan repository: %w", err)
+		}
+
+		repos = append(repos, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list repositories to regenerate: %w", err)
+	}
+
+	return repos, nil
 }

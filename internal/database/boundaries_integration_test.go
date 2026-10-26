@@ -37,133 +37,164 @@ func holdsAdminAll(t *testing.T, pg *PostgresDB, userID string) bool {
 }
 
 func TestCreateBootstrapAdmin(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"creates the admin with admin-all, an expiring password and a token", testCreateBootstrapAdminCreatesTheAdminWithAdminAll},
+		{"a password that must not change has no expiry", testCreateBootstrapAdminAPasswordThatMustNotChange},
+		{"an instance that has users is left alone", testCreateBootstrapAdminAnInstanceThatHasUsersIs},
+		{"replicas racing on first boot create exactly one admin", testCreateBootstrapAdminReplicasRacingOnFirstBootCreate},
+		{"a missing admin-all target aborts without leaving a user", testCreateBootstrapAdminAMissingAdminAllTargetAborts},
+	} {
+		t.Run(tc.name, tc.run)
+	}
+}
+
+func testCreateBootstrapAdminCreatesTheAdminWithAdminAll(t *testing.T) {
+	t.Helper()
+
 	ctx := context.Background()
 
-	t.Run("creates the admin with admin-all, an expiring password and a token", func(t *testing.T) {
-		pg := newQuotaTestDB(t, 4)
-		pwExp := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
-		tokExp := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
+	pg := newQuotaTestDB(t, 4)
+	pwExp := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	tokExp := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
 
-		created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{
-			Username: "admin", PasswordHash: "hash", MustChangePassword: true, PasswordExpiresAt: &pwExp,
-			TokenHash: "tokhash", TokenName: "bootstrap", TokenExpiresAt: &tokExp,
+	created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{
+		Username: "admin", PasswordHash: "hash", MustChangePassword: true, PasswordExpiresAt: &pwExp,
+		TokenHash: "tokhash", TokenName: "bootstrap", TokenExpiresAt: &tokExp,
+	})
+	if err != nil || !created {
+		t.Fatalf("CreateBootstrapAdmin = %v, %v", created, err)
+	}
+
+	u, err := pg.GetUserByUsername(ctx, "admin")
+	if err != nil || u == nil {
+		t.Fatalf("GetUserByUsername = %v, %v", u, err)
+	}
+
+	if !u.MustChangePassword || !holdsAdminAll(t, pg, u.ID) {
+		t.Errorf("admin: must_change=%v admin-all=%v, want true/true", u.MustChangePassword, holdsAdminAll(t, pg, u.ID))
+	}
+
+	exp, err := pg.GetPasswordExpiry(ctx, u.ID)
+	if err != nil || exp == nil || !exp.Equal(pwExp) {
+		t.Errorf("GetPasswordExpiry = %v, %v; want %v", exp, err, pwExp)
+	}
+
+	tok, err := pg.GetTokenByHashUncached(ctx, "tokhash")
+	if err != nil || tok == nil {
+		t.Fatalf("token = %v, %v", tok, err)
+	}
+
+	if tok.UserID != u.ID || tok.ExpiresAt == nil || !tok.ExpiresAt.Equal(tokExp) {
+		t.Errorf("token = %+v, want the admin's token expiring %v", tok, tokExp)
+	}
+}
+
+func testCreateBootstrapAdminAPasswordThatMustNotChange(t *testing.T) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	pg := newQuotaTestDB(t, 4)
+
+	if created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin", PasswordHash: "h"}); err != nil || !created {
+		t.Fatalf("CreateBootstrapAdmin = %v, %v", created, err)
+	}
+
+	u, _ := pg.GetUserByUsername(ctx, "admin")
+
+	if exp, err := pg.GetPasswordExpiry(ctx, u.ID); err != nil || exp != nil {
+		t.Errorf("GetPasswordExpiry = %v, %v; want nil, nil", exp, err)
+	}
+
+	if tok, err := pg.GetTokenByHashUncached(ctx, ""); err != nil || tok != nil {
+		t.Errorf("a token was created although none was requested: %v, %v", tok, err)
+	}
+}
+
+func testCreateBootstrapAdminAnInstanceThatHasUsersIs(t *testing.T) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	pg := newQuotaTestDB(t, 4)
+
+	if created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin", PasswordHash: "first"}); err != nil || !created {
+		t.Fatalf("first CreateBootstrapAdmin = %v, %v", created, err)
+	}
+
+	created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "other", PasswordHash: "second", TokenHash: "t2", TokenName: "x"})
+	if err != nil || created {
+		t.Fatalf("second CreateBootstrapAdmin = %v, %v; want false, nil", created, err)
+	}
+
+	if u, _ := pg.GetUserByUsername(ctx, "other"); u != nil {
+		t.Error("the losing call created a user")
+	}
+
+	if tok, _ := pg.GetTokenByHashUncached(ctx, "t2"); tok != nil {
+		t.Error("the losing call created a token")
+	}
+}
+
+func testCreateBootstrapAdminReplicasRacingOnFirstBootCreate(t *testing.T) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	pg := newQuotaTestDB(t, 8)
+
+	var (
+		wg      sync.WaitGroup
+		winners atomic.Int32
+		failed  atomic.Int32
+	)
+
+	for i := range 6 {
+		wg.Go(func() {
+			created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin" + string(rune('a'+i)), PasswordHash: "h"})
+			if err != nil {
+				failed.Add(1)
+			}
+
+			if created {
+				winners.Add(1)
+			}
 		})
-		if err != nil || !created {
-			t.Fatalf("CreateBootstrapAdmin = %v, %v", created, err)
-		}
+	}
 
-		u, err := pg.GetUserByUsername(ctx, "admin")
-		if err != nil || u == nil {
-			t.Fatalf("GetUserByUsername = %v, %v", u, err)
-		}
+	wg.Wait()
 
-		if !u.MustChangePassword || !holdsAdminAll(t, pg, u.ID) {
-			t.Errorf("admin: must_change=%v admin-all=%v, want true/true", u.MustChangePassword, holdsAdminAll(t, pg, u.ID))
-		}
+	if winners.Load() != 1 || failed.Load() != 0 {
+		t.Errorf("winners = %d, errors = %d; want 1 and 0", winners.Load(), failed.Load())
+	}
 
-		exp, err := pg.GetPasswordExpiry(ctx, u.ID)
-		if err != nil || exp == nil || !exp.Equal(pwExp) {
-			t.Errorf("GetPasswordExpiry = %v, %v; want %v", exp, err, pwExp)
-		}
+	if n, _ := pg.CountUsers(ctx); n != 1 {
+		t.Errorf("users = %d, want 1", n)
+	}
+}
 
-		tok, err := pg.GetTokenByHashUncached(ctx, "tokhash")
-		if err != nil || tok == nil {
-			t.Fatalf("token = %v, %v", tok, err)
-		}
+func testCreateBootstrapAdminAMissingAdminAllTargetAborts(t *testing.T) {
+	t.Helper()
 
-		if tok.UserID != u.ID || tok.ExpiresAt == nil || !tok.ExpiresAt.Equal(tokExp) {
-			t.Errorf("token = %+v, want the admin's token expiring %v", tok, tokExp)
-		}
-	})
+	ctx := context.Background()
 
-	t.Run("a password that must not change has no expiry", func(t *testing.T) {
-		pg := newQuotaTestDB(t, 4)
+	pg := newQuotaTestDB(t, 4)
 
-		if created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin", PasswordHash: "h"}); err != nil || !created {
-			t.Fatalf("CreateBootstrapAdmin = %v, %v", created, err)
-		}
+	if _, err := pg.GetDB().ExecContext(ctx, `DELETE FROM permission_targets WHERE name = 'admin-all'`); err != nil {
+		t.Fatal(err)
+	}
 
-		u, _ := pg.GetUserByUsername(ctx, "admin")
+	created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin", PasswordHash: "h", TokenHash: "t", TokenName: "n"})
+	if err == nil || created {
+		t.Fatalf("CreateBootstrapAdmin = %v, %v; want an error", created, err)
+	}
 
-		if exp, err := pg.GetPasswordExpiry(ctx, u.ID); err != nil || exp != nil {
-			t.Errorf("GetPasswordExpiry = %v, %v; want nil, nil", exp, err)
-		}
-
-		if tok, err := pg.GetTokenByHashUncached(ctx, ""); err != nil || tok != nil {
-			t.Errorf("a token was created although none was requested: %v, %v", tok, err)
-		}
-	})
-
-	t.Run("an instance that has users is left alone", func(t *testing.T) {
-		pg := newQuotaTestDB(t, 4)
-
-		if created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin", PasswordHash: "first"}); err != nil || !created {
-			t.Fatalf("first CreateBootstrapAdmin = %v, %v", created, err)
-		}
-
-		created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "other", PasswordHash: "second", TokenHash: "t2", TokenName: "x"})
-		if err != nil || created {
-			t.Fatalf("second CreateBootstrapAdmin = %v, %v; want false, nil", created, err)
-		}
-
-		if u, _ := pg.GetUserByUsername(ctx, "other"); u != nil {
-			t.Error("the losing call created a user")
-		}
-
-		if tok, _ := pg.GetTokenByHashUncached(ctx, "t2"); tok != nil {
-			t.Error("the losing call created a token")
-		}
-	})
-
-	t.Run("replicas racing on first boot create exactly one admin", func(t *testing.T) {
-		pg := newQuotaTestDB(t, 8)
-
-		var (
-			wg      sync.WaitGroup
-			winners atomic.Int32
-			failed  atomic.Int32
-		)
-
-		for i := range 6 {
-			wg.Go(func() {
-				created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin" + string(rune('a'+i)), PasswordHash: "h"})
-				if err != nil {
-					failed.Add(1)
-				}
-
-				if created {
-					winners.Add(1)
-				}
-			})
-		}
-
-		wg.Wait()
-
-		if winners.Load() != 1 || failed.Load() != 0 {
-			t.Errorf("winners = %d, errors = %d; want 1 and 0", winners.Load(), failed.Load())
-		}
-
-		if n, _ := pg.CountUsers(ctx); n != 1 {
-			t.Errorf("users = %d, want 1", n)
-		}
-	})
-
-	t.Run("a missing admin-all target aborts without leaving a user", func(t *testing.T) {
-		pg := newQuotaTestDB(t, 4)
-
-		if _, err := pg.GetDB().ExecContext(ctx, `DELETE FROM permission_targets WHERE name = 'admin-all'`); err != nil {
-			t.Fatal(err)
-		}
-
-		created, err := pg.CreateBootstrapAdmin(ctx, BootstrapAdmin{Username: "admin", PasswordHash: "h", TokenHash: "t", TokenName: "n"})
-		if err == nil || created {
-			t.Fatalf("CreateBootstrapAdmin = %v, %v; want an error", created, err)
-		}
-
-		if n, _ := pg.CountUsers(ctx); n != 0 {
-			t.Errorf("users = %d after the failed bootstrap, want 0 (rolled back)", n)
-		}
-	})
+	if n, _ := pg.CountUsers(ctx); n != 0 {
+		t.Errorf("users = %d after the failed bootstrap, want 0 (rolled back)", n)
+	}
 }
 
 func TestRepairBootstrapAdmin(t *testing.T) {
@@ -338,6 +369,34 @@ func TestDeleteOtherSessionsByUser(t *testing.T) {
 	}
 }
 
+func checkVEXListing(t *testing.T, pg *PostgresDB, repoA string) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	all, err := pg.ListVEXStatements(ctx, repoA, "")
+	if err != nil || len(all) != 3 {
+		t.Fatalf("ListVEXStatements(repoA) = %d, %v; want 3 (repoB's is not included)", len(all), err)
+	}
+
+	order := make([]string, len(all))
+	for i, s := range all {
+		order[i] = s.ArtifactID + "/" + s.VulnID
+	}
+
+	if !slices.Equal(order, []string{"pkg:1/CVE-1", "pkg:1/CVE-2", "pkg:2/CVE-1"}) {
+		t.Errorf("list order = %v, want by artifact then vulnerability", order)
+	}
+
+	if one, _ := pg.ListVEXStatements(ctx, repoA, "pkg:2"); len(one) != 1 || one[0].VulnID != "CVE-1" {
+		t.Errorf("artifact filter returned %+v", one)
+	}
+
+	if none, err := pg.ListVEXStatements(ctx, repoA, "pkg:absent"); err != nil || none == nil || len(none) != 0 {
+		t.Errorf("empty result = %v, %v; want an empty non-nil slice", none, err)
+	}
+}
+
 func TestVEXStatements(t *testing.T) {
 	ctx := context.Background()
 	pg := newQuotaTestDB(t, 4)
@@ -371,27 +430,7 @@ func TestVEXStatements(t *testing.T) {
 		}
 	}
 
-	all, err := pg.ListVEXStatements(ctx, repoA, "")
-	if err != nil || len(all) != 3 {
-		t.Fatalf("ListVEXStatements(repoA) = %d, %v; want 3 (repoB's is not included)", len(all), err)
-	}
-
-	order := make([]string, len(all))
-	for i, s := range all {
-		order[i] = s.ArtifactID + "/" + s.VulnID
-	}
-
-	if !slices.Equal(order, []string{"pkg:1/CVE-1", "pkg:1/CVE-2", "pkg:2/CVE-1"}) {
-		t.Errorf("list order = %v, want by artifact then vulnerability", order)
-	}
-
-	if one, _ := pg.ListVEXStatements(ctx, repoA, "pkg:2"); len(one) != 1 || one[0].VulnID != "CVE-1" {
-		t.Errorf("artifact filter returned %+v", one)
-	}
-
-	if none, err := pg.ListVEXStatements(ctx, repoA, "pkg:absent"); err != nil || none == nil || len(none) != 0 {
-		t.Errorf("empty result = %v, %v; want an empty non-nil slice", none, err)
-	}
+	checkVEXListing(t, pg, repoA)
 
 	t.Run("constraints reject unjustified not_affected and unknown status", func(t *testing.T) {
 		for _, bad := range []*models.VEXStatement{
@@ -420,244 +459,306 @@ func TestVEXStatements(t *testing.T) {
 	})
 }
 
-func TestPresignedUploadLifecycle(t *testing.T) {
-	ctx := context.Background()
-	pg := newQuotaTestDB(t, 4)
-	repo := newQuotaRepo(t, pg, "presign", 0, 0)
-	otherRepo := newQuotaRepo(t, pg, "presign-other", 0, 0)
-	sha := strings.Repeat("ab", 32)
+type presignEnv struct {
+	pg        *PostgresDB
+	repo      string
+	otherRepo string
+	sha       string
+}
 
-	newUpload := func(t *testing.T, user string, expires time.Time) *models.PresignedUpload {
-		t.Helper()
+func (e presignEnv) newUpload(t *testing.T, user string, expires time.Time) *models.PresignedUpload {
+	t.Helper()
 
-		u := &models.PresignedUpload{RepositoryID: repo, Path: "a/b", SizeBytes: 1, SHA256: sha, CreatedBy: user, ExpiresAt: expires}
-		if err := pg.CreatePresignedUpload(ctx, u); err != nil {
-			t.Fatal(err)
-		}
-
-		return u
+	u := &models.PresignedUpload{RepositoryID: e.repo, Path: "a/b", SizeBytes: 1, SHA256: e.sha, CreatedBy: user, ExpiresAt: expires}
+	if err := e.pg.CreatePresignedUpload(context.Background(), u); err != nil {
+		t.Fatal(err)
 	}
 
-	t.Run("ids that are not uuids are never found, claimed or an error", func(t *testing.T) {
-		if u, err := pg.GetPresignedUpload(ctx, repo, "../etc/passwd"); u != nil || err != nil {
-			t.Errorf("Get = %v, %v; want nil, nil", u, err)
+	return u
+}
+
+func TestPresignedUploadLifecycle(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	env := presignEnv{
+		pg:        pg,
+		repo:      newQuotaRepo(t, pg, "presign", 0, 0),
+		otherRepo: newQuotaRepo(t, pg, "presign-other", 0, 0),
+		sha:       strings.Repeat("ab", 32),
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func(t *testing.T, env presignEnv)
+	}{
+		{"ids that are not uuids are never found, claimed or an error", testPresignedIdsThatAreNotUuidsAre},
+		{"an upload of another repository is invisible and cannot be claimed", testPresignedAnUploadOfAnotherRepositoryIs},
+		{"the complete lease is exclusive until released, expired or completed", testPresignedTheCompleteLeaseIsExclusiveUntil},
+		{"only one of many parallel claims wins", testPresignedOnlyOneOfManyParallelClaims},
+		{"expiry listing skips live uploads and uploads whose complete is running", testPresignedExpiryListingSkipsLiveUploadsAnd},
+		{"the expiry only moves forward and never revives a completed upload", testPresignedTheExpiryOnlyMovesForwardAnd},
+		{"existing ids drop unknown and malformed ones", testPresignedExistingIdsDropUnknownAndMalformed},
+		{"the per-user cap counts only live unfinished uploads", testPresignedThePerUserCapCountsOnly},
+		{"constraints reject a negative size and a malformed digest", testPresignedConstraintsRejectANegativeSizeAnd},
+	} {
+		t.Run(tc.name, func(t *testing.T) { tc.run(t, env) })
+	}
+}
+
+func testPresignedIdsThatAreNotUuidsAre(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	if u, err := env.pg.GetPresignedUpload(ctx, env.repo, "../etc/passwd"); u != nil || err != nil {
+		t.Errorf("Get = %v, %v; want nil, nil", u, err)
+	}
+
+	if ok, err := env.pg.ClaimPresignedUpload(ctx, env.repo, "nope", time.Minute); ok || err != nil {
+		t.Errorf("Claim = %v, %v; want false, nil", ok, err)
+	}
+
+	if ids, err := env.pg.ExistingPresignedUploadIDs(ctx, []string{"x", "y"}); len(ids) != 0 || err != nil {
+		t.Errorf("Existing = %v, %v; want none", ids, err)
+	}
+}
+
+func testPresignedAnUploadOfAnotherRepositoryIs(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	u := env.newUpload(t, "alice", time.Now().Add(time.Hour))
+
+	if got, err := env.pg.GetPresignedUpload(ctx, env.otherRepo, u.ID); got != nil || err != nil {
+		t.Errorf("Get through another repository = %v, %v", got, err)
+	}
+
+	if ok, _ := env.pg.ClaimPresignedUpload(ctx, env.otherRepo, u.ID, time.Minute); ok {
+		t.Error("claimed an upload of another repository")
+	}
+}
+
+func testPresignedTheCompleteLeaseIsExclusiveUntil(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	u := env.newUpload(t, "alice", time.Now().Add(time.Hour))
+
+	if ok, err := env.pg.ClaimPresignedUpload(ctx, env.repo, u.ID, time.Hour); err != nil || !ok {
+		t.Fatalf("first claim = %v, %v", ok, err)
+	}
+
+	if ok, _ := env.pg.ClaimPresignedUpload(ctx, env.repo, u.ID, time.Hour); ok {
+		t.Error("a second claim succeeded while the lease was held")
+	}
+
+	if err := env.pg.ReleasePresignedUpload(ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, _ := env.pg.ClaimPresignedUpload(ctx, env.repo, u.ID, time.Hour); !ok {
+		t.Fatal("claim after release failed")
+	}
+
+	// A lease shorter than the time since the claim counts as expired.
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		ok, _ := env.pg.ClaimPresignedUpload(ctx, env.repo, u.ID, 10*time.Millisecond)
+		if ok {
+			break
 		}
 
-		if ok, err := pg.ClaimPresignedUpload(ctx, repo, "nope", time.Minute); ok || err != nil {
-			t.Errorf("Claim = %v, %v; want false, nil", ok, err)
+		if time.Now().After(deadline) {
+			t.Fatal("an expired lease could not be taken over")
 		}
 
-		if ids, err := pg.ExistingPresignedUploadIDs(ctx, []string{"x", "y"}); len(ids) != 0 || err != nil {
-			t.Errorf("Existing = %v, %v; want none", ids, err)
-		}
-	})
+		time.Sleep(5 * time.Millisecond)
+	}
 
-	t.Run("an upload of another repository is invisible and cannot be claimed", func(t *testing.T) {
-		u := newUpload(t, "alice", time.Now().Add(time.Hour))
+	if err := env.pg.MarkPresignedUploadCompleted(ctx, u.ID, "artifact-1"); err != nil {
+		t.Fatal(err)
+	}
 
-		if got, err := pg.GetPresignedUpload(ctx, otherRepo, u.ID); got != nil || err != nil {
-			t.Errorf("Get through another repository = %v, %v", got, err)
-		}
+	if ok, _ := env.pg.ClaimPresignedUpload(ctx, env.repo, u.ID, time.Nanosecond); ok {
+		t.Error("a completed upload could be claimed again")
+	}
 
-		if ok, _ := pg.ClaimPresignedUpload(ctx, otherRepo, u.ID, time.Minute); ok {
-			t.Error("claimed an upload of another repository")
-		}
-	})
+	got, _ := env.pg.GetPresignedUpload(ctx, env.repo, u.ID)
+	if got == nil || got.CompletedAt == nil || got.CompletingSince != nil || got.ArtifactID != "artifact-1" {
+		t.Errorf("completed upload = %+v", got)
+	}
 
-	t.Run("the complete lease is exclusive until released, expired or completed", func(t *testing.T) {
-		u := newUpload(t, "alice", time.Now().Add(time.Hour))
+	// Releasing must not reopen a completed upload.
+	_ = env.pg.ReleasePresignedUpload(ctx, u.ID)
 
-		if ok, err := pg.ClaimPresignedUpload(ctx, repo, u.ID, time.Hour); err != nil || !ok {
-			t.Fatalf("first claim = %v, %v", ok, err)
-		}
+	if got, _ := env.pg.GetPresignedUpload(ctx, env.repo, u.ID); got == nil || got.CompletedAt == nil {
+		t.Error("release reopened a completed upload")
+	}
+}
 
-		if ok, _ := pg.ClaimPresignedUpload(ctx, repo, u.ID, time.Hour); ok {
-			t.Error("a second claim succeeded while the lease was held")
-		}
+func testPresignedOnlyOneOfManyParallelClaims(t *testing.T, env presignEnv) {
+	t.Helper()
 
-		if err := pg.ReleasePresignedUpload(ctx, u.ID); err != nil {
-			t.Fatal(err)
-		}
+	ctx := context.Background()
 
-		if ok, _ := pg.ClaimPresignedUpload(ctx, repo, u.ID, time.Hour); !ok {
-			t.Fatal("claim after release failed")
-		}
+	u := env.newUpload(t, "alice", time.Now().Add(time.Hour))
 
-		// A lease shorter than the time since the claim counts as expired.
-		deadline := time.Now().Add(5 * time.Second)
+	var (
+		wg   sync.WaitGroup
+		wins atomic.Int32
+	)
 
-		for {
-			ok, _ := pg.ClaimPresignedUpload(ctx, repo, u.ID, 10*time.Millisecond)
-			if ok {
-				break
+	for range 8 {
+		wg.Go(func() {
+			if ok, _ := env.pg.ClaimPresignedUpload(ctx, env.repo, u.ID, time.Hour); ok {
+				wins.Add(1)
 			}
+		})
+	}
 
-			if time.Now().After(deadline) {
-				t.Fatal("an expired lease could not be taken over")
-			}
+	wg.Wait()
 
-			time.Sleep(5 * time.Millisecond)
-		}
+	if wins.Load() != 1 {
+		t.Errorf("%d claims won, want 1", wins.Load())
+	}
+}
 
-		if err := pg.MarkPresignedUploadCompleted(ctx, u.ID, "artifact-1"); err != nil {
+func testPresignedExpiryListingSkipsLiveUploadsAnd(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	expired := env.newUpload(t, "alice", time.Now().Add(-time.Hour))
+	live := env.newUpload(t, "alice", time.Now().Add(time.Hour))
+	busy := env.newUpload(t, "alice", time.Now().Add(-time.Hour))
+
+	if ok, _ := env.pg.ClaimPresignedUpload(ctx, env.repo, busy.ID, time.Hour); !ok {
+		t.Fatal("claim failed")
+	}
+
+	ids, err := env.pg.ListExpiredPresignedUploads(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Contains(ids, expired.ID) {
+		t.Error("an expired upload is not listed")
+	}
+
+	if slices.Contains(ids, live.ID) || slices.Contains(ids, busy.ID) {
+		t.Errorf("listed a live or in-progress upload: %v", ids)
+	}
+
+	limited, _ := env.pg.ListExpiredPresignedUploads(ctx, 1)
+	if len(limited) != 1 {
+		t.Errorf("limit 1 returned %d ids", len(limited))
+	}
+}
+
+func testPresignedTheExpiryOnlyMovesForwardAnd(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	soon := time.Now().Add(time.Hour).UTC().Truncate(time.Microsecond)
+	u := env.newUpload(t, "alice", soon)
+
+	if err := env.pg.ExtendPresignedUploadExpiry(ctx, u.ID, soon.Add(-30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := env.pg.GetPresignedUpload(ctx, env.repo, u.ID); !got.ExpiresAt.Equal(soon) {
+		t.Errorf("expiry shortened to %v", got.ExpiresAt)
+	}
+
+	if err := env.pg.ExtendPresignedUploadExpiry(ctx, u.ID, soon.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := env.pg.GetPresignedUpload(ctx, env.repo, u.ID); !got.ExpiresAt.Equal(soon.Add(time.Hour)) {
+		t.Errorf("expiry = %v, want it extended", got.ExpiresAt)
+	}
+
+	_ = env.pg.MarkPresignedUploadCompleted(ctx, u.ID, "a")
+	_ = env.pg.ExtendPresignedUploadExpiry(ctx, u.ID, soon.Add(48*time.Hour))
+
+	if got, _ := env.pg.GetPresignedUpload(ctx, env.repo, u.ID); !got.ExpiresAt.Equal(soon.Add(time.Hour)) {
+		t.Errorf("a completed upload's expiry changed to %v", got.ExpiresAt)
+	}
+}
+
+func testPresignedExistingIdsDropUnknownAndMalformed(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	u := env.newUpload(t, "alice", time.Now().Add(time.Hour))
+
+	got, err := env.pg.ExistingPresignedUploadIDs(ctx, []string{u.ID, "garbage", "00000000-0000-0000-0000-000000000000"})
+	if err != nil || !slices.Equal(got, []string{u.ID}) {
+		t.Errorf("Existing = %v, %v; want only %s", got, err, u.ID)
+	}
+}
+
+func testPresignedThePerUserCapCountsOnly(t *testing.T, env presignEnv) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	const user = "capped"
+
+	mk := func(expires time.Time) *models.PresignedUpload {
+		return &models.PresignedUpload{RepositoryID: env.repo, Path: "p", SizeBytes: 1, SHA256: env.sha, CreatedBy: user, ExpiresAt: expires}
+	}
+
+	a, b := mk(time.Now().Add(time.Hour)), mk(time.Now().Add(time.Hour))
+	for _, u := range []*models.PresignedUpload{a, b} {
+		if err := env.pg.CreatePresignedUploadCapped(ctx, u, 2); err != nil {
 			t.Fatal(err)
 		}
+	}
 
-		if ok, _ := pg.ClaimPresignedUpload(ctx, repo, u.ID, time.Nanosecond); ok {
-			t.Error("a completed upload could be claimed again")
+	if err := env.pg.CreatePresignedUploadCapped(ctx, mk(time.Now().Add(time.Hour)), 2); !errors.Is(err, ErrPresignedUploadCap) {
+		t.Fatalf("third upload = %v, want ErrPresignedUploadCap", err)
+	}
+
+	// Another user is not affected by the cap.
+	other := mk(time.Now().Add(time.Hour))
+	other.CreatedBy = "someone-else"
+
+	if err := env.pg.CreatePresignedUploadCapped(ctx, other, 2); err != nil {
+		t.Errorf("another user was capped: %v", err)
+	}
+
+	// A completed upload frees a slot.
+	_ = env.pg.MarkPresignedUploadCompleted(ctx, a.ID, "x")
+
+	if err := env.pg.CreatePresignedUploadCapped(ctx, mk(time.Now().Add(time.Hour)), 2); err != nil {
+		t.Errorf("a completed upload still counted against the cap: %v", err)
+	}
+
+	// maxPending <= 0 disables the cap.
+	for range 3 {
+		if err := env.pg.CreatePresignedUploadCapped(ctx, mk(time.Now().Add(time.Hour)), 0); err != nil {
+			t.Errorf("uncapped create = %v", err)
 		}
+	}
+}
 
-		got, _ := pg.GetPresignedUpload(ctx, repo, u.ID)
-		if got == nil || got.CompletedAt == nil || got.CompletingSince != nil || got.ArtifactID != "artifact-1" {
-			t.Errorf("completed upload = %+v", got)
-		}
+func testPresignedConstraintsRejectANegativeSizeAnd(t *testing.T, env presignEnv) {
+	t.Helper()
 
-		// Releasing must not reopen a completed upload.
-		_ = pg.ReleasePresignedUpload(ctx, u.ID)
+	ctx := context.Background()
 
-		if got, _ := pg.GetPresignedUpload(ctx, repo, u.ID); got == nil || got.CompletedAt == nil {
-			t.Error("release reopened a completed upload")
-		}
-	})
+	bad := &models.PresignedUpload{RepositoryID: env.otherRepo, Path: "p", SizeBytes: -1, SHA256: env.sha, ExpiresAt: time.Now().Add(time.Hour)}
+	if err := env.pg.CreatePresignedUpload(ctx, bad); err == nil {
+		t.Error("a negative size was accepted")
+	}
 
-	t.Run("only one of many parallel claims wins", func(t *testing.T) {
-		u := newUpload(t, "alice", time.Now().Add(time.Hour))
-
-		var (
-			wg   sync.WaitGroup
-			wins atomic.Int32
-		)
-
-		for range 8 {
-			wg.Go(func() {
-				if ok, _ := pg.ClaimPresignedUpload(ctx, repo, u.ID, time.Hour); ok {
-					wins.Add(1)
-				}
-			})
-		}
-
-		wg.Wait()
-
-		if wins.Load() != 1 {
-			t.Errorf("%d claims won, want 1", wins.Load())
-		}
-	})
-
-	t.Run("expiry listing skips live uploads and uploads whose complete is running", func(t *testing.T) {
-		expired := newUpload(t, "alice", time.Now().Add(-time.Hour))
-		live := newUpload(t, "alice", time.Now().Add(time.Hour))
-		busy := newUpload(t, "alice", time.Now().Add(-time.Hour))
-
-		if ok, _ := pg.ClaimPresignedUpload(ctx, repo, busy.ID, time.Hour); !ok {
-			t.Fatal("claim failed")
-		}
-
-		ids, err := pg.ListExpiredPresignedUploads(ctx, 100)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !slices.Contains(ids, expired.ID) {
-			t.Error("an expired upload is not listed")
-		}
-
-		if slices.Contains(ids, live.ID) || slices.Contains(ids, busy.ID) {
-			t.Errorf("listed a live or in-progress upload: %v", ids)
-		}
-
-		limited, _ := pg.ListExpiredPresignedUploads(ctx, 1)
-		if len(limited) != 1 {
-			t.Errorf("limit 1 returned %d ids", len(limited))
-		}
-	})
-
-	t.Run("the expiry only moves forward and never revives a completed upload", func(t *testing.T) {
-		soon := time.Now().Add(time.Hour).UTC().Truncate(time.Microsecond)
-		u := newUpload(t, "alice", soon)
-
-		if err := pg.ExtendPresignedUploadExpiry(ctx, u.ID, soon.Add(-30*time.Minute)); err != nil {
-			t.Fatal(err)
-		}
-
-		if got, _ := pg.GetPresignedUpload(ctx, repo, u.ID); !got.ExpiresAt.Equal(soon) {
-			t.Errorf("expiry shortened to %v", got.ExpiresAt)
-		}
-
-		if err := pg.ExtendPresignedUploadExpiry(ctx, u.ID, soon.Add(time.Hour)); err != nil {
-			t.Fatal(err)
-		}
-
-		if got, _ := pg.GetPresignedUpload(ctx, repo, u.ID); !got.ExpiresAt.Equal(soon.Add(time.Hour)) {
-			t.Errorf("expiry = %v, want it extended", got.ExpiresAt)
-		}
-
-		_ = pg.MarkPresignedUploadCompleted(ctx, u.ID, "a")
-		_ = pg.ExtendPresignedUploadExpiry(ctx, u.ID, soon.Add(48*time.Hour))
-
-		if got, _ := pg.GetPresignedUpload(ctx, repo, u.ID); !got.ExpiresAt.Equal(soon.Add(time.Hour)) {
-			t.Errorf("a completed upload's expiry changed to %v", got.ExpiresAt)
-		}
-	})
-
-	t.Run("existing ids drop unknown and malformed ones", func(t *testing.T) {
-		u := newUpload(t, "alice", time.Now().Add(time.Hour))
-
-		got, err := pg.ExistingPresignedUploadIDs(ctx, []string{u.ID, "garbage", "00000000-0000-0000-0000-000000000000"})
-		if err != nil || !slices.Equal(got, []string{u.ID}) {
-			t.Errorf("Existing = %v, %v; want only %s", got, err, u.ID)
-		}
-	})
-
-	t.Run("the per-user cap counts only live unfinished uploads", func(t *testing.T) {
-		const user = "capped"
-
-		mk := func(expires time.Time) *models.PresignedUpload {
-			return &models.PresignedUpload{RepositoryID: repo, Path: "p", SizeBytes: 1, SHA256: sha, CreatedBy: user, ExpiresAt: expires}
-		}
-
-		a, b := mk(time.Now().Add(time.Hour)), mk(time.Now().Add(time.Hour))
-		for _, u := range []*models.PresignedUpload{a, b} {
-			if err := pg.CreatePresignedUploadCapped(ctx, u, 2); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		if err := pg.CreatePresignedUploadCapped(ctx, mk(time.Now().Add(time.Hour)), 2); !errors.Is(err, ErrPresignedUploadCap) {
-			t.Fatalf("third upload = %v, want ErrPresignedUploadCap", err)
-		}
-
-		// Another user is not affected by the cap.
-		other := mk(time.Now().Add(time.Hour))
-		other.CreatedBy = "someone-else"
-
-		if err := pg.CreatePresignedUploadCapped(ctx, other, 2); err != nil {
-			t.Errorf("another user was capped: %v", err)
-		}
-
-		// A completed upload frees a slot.
-		_ = pg.MarkPresignedUploadCompleted(ctx, a.ID, "x")
-
-		if err := pg.CreatePresignedUploadCapped(ctx, mk(time.Now().Add(time.Hour)), 2); err != nil {
-			t.Errorf("a completed upload still counted against the cap: %v", err)
-		}
-
-		// maxPending <= 0 disables the cap.
-		for range 3 {
-			if err := pg.CreatePresignedUploadCapped(ctx, mk(time.Now().Add(time.Hour)), 0); err != nil {
-				t.Errorf("uncapped create = %v", err)
-			}
-		}
-	})
-
-	t.Run("constraints reject a negative size and a malformed digest", func(t *testing.T) {
-		bad := &models.PresignedUpload{RepositoryID: otherRepo, Path: "p", SizeBytes: -1, SHA256: sha, ExpiresAt: time.Now().Add(time.Hour)}
-		if err := pg.CreatePresignedUpload(ctx, bad); err == nil {
-			t.Error("a negative size was accepted")
-		}
-
-		bad = &models.PresignedUpload{RepositoryID: otherRepo, Path: "p", SizeBytes: 1, SHA256: "NOT-A-DIGEST", ExpiresAt: time.Now().Add(time.Hour)}
-		if err := pg.CreatePresignedUpload(ctx, bad); err == nil {
-			t.Error("a malformed digest was accepted")
-		}
-	})
+	bad = &models.PresignedUpload{RepositoryID: env.otherRepo, Path: "p", SizeBytes: 1, SHA256: "NOT-A-DIGEST", ExpiresAt: time.Now().Add(time.Hour)}
+	if err := env.pg.CreatePresignedUpload(ctx, bad); err == nil {
+		t.Error("a malformed digest was accepted")
+	}
 }
