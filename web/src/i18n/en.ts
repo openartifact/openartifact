@@ -213,28 +213,10 @@ const base = {
 
   // Artifact Browser
   'browser.title': 'Browse',
-  'browser.filterPlaceholder': 'Filter artifacts…',
-  'browser.errorTitle': 'Failed to load artifacts',
-  'browser.loadFailed': 'Failed to load artifacts',
   'browser.retry': 'Retry',
-  'browser.emptyTitle': 'No artifacts',
-  'browser.emptyHint': 'No artifacts have been uploaded to this repository yet.',
-  'browser.noMatchTitle': 'No matching artifacts',
-  'browser.noMatchHint': 'Try a different search term.',
-  'browser.selectAll': 'Select all on page',
 
   // Dependency Graph
   'graph.title': 'Dependency graph',
-  'graph.sbomList': 'Select SBOM',
-  'graph.selectSbom': '— choose a SBOM —',
-  'graph.loading': 'Loading…',
-  'graph.exportSvg': 'Export SVG',
-  'graph.emptyTitle': 'No graph loaded',
-  'graph.emptyHint': 'Select a SBOM from the list, enter an artifact identifier, or add manual dependencies to visualize the dependency graph.',
-  'graph.legend': 'Legend',
-  'graph.nodes': 'nodes',
-  'graph.edges': 'edges',
-  'graph.clickHint': 'Click a node to highlight connections',
 
   // Bulk Actions
   'bulk.selectedOne': 'item selected',

@@ -20,13 +20,13 @@ export const packageRoutes: RouteRecordRaw[] = [
   {
     path: '/repos/:repo/packages/:pkg(.+)/versions/:v(.+)',
     name: 'artifact-version',
-    component: () => import('../../pages/PackageDetailPage.vue'),
+    component: () => import('../../pages/ArtifactPage.vue'),
     meta: { crumbs: [...repoTrail, { param: 'pkg' }], requiresAuth: true },
   },
   {
     path: '/repos/:repo/packages/:pkg(.+)',
     name: 'artifact',
-    component: () => import('../../pages/PackageDetailPage.vue'),
+    component: () => import('../../pages/ArtifactPage.vue'),
     meta: { crumbs: [...repoTrail, { param: 'pkg' }], requiresAuth: true },
   },
 ]

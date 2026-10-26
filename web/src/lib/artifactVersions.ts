@@ -7,7 +7,7 @@ import type { PackageItem } from '../api/repositories'
 /** Version strings that mark a pre-release; matched anywhere after a separator. */
 const PRERELEASE = /[-.](rc|alpha|beta|snapshot|preview|dev|pre)(?![a-z])/i
 
-export function isPrerelease(version: string): boolean {
+function isPrerelease(version: string): boolean {
   return PRERELEASE.test(version)
 }
 
@@ -104,34 +104,17 @@ export function primaryFile(entry: VersionEntry): PackageItem | undefined {
   return entry.files[0]
 }
 
-interface VersionComparison {
-  /** Size change from `base` to `other`, bytes. */
-  sizeDelta: number
-  fileDelta: number
-  /** Vulnerability count change per severity; null when either side has no counts. */
-  securityDelta: SeverityCounts | null
-  /** Days between the two publications (positive when `other` is newer); null when a date is missing. */
-  days: number | null
+/** The highest severity with a non-zero count; `none` for no counts or all zero. */
+export function worstSeverity(counts: SeverityCounts | null | undefined): 'critical' | 'high' | 'medium' | 'low' | 'none' {
+  if (!counts) return 'none'
+  if (counts.critical > 0) return 'critical'
+  if (counts.high > 0) return 'high'
+  if (counts.medium > 0) return 'medium'
+  if (counts.low > 0) return 'low'
+  return 'none'
 }
 
-/** What changed from `base` to `other`: size, files, vulnerability counts and age. */
-export function compareVersions(base: VersionEntry, other: VersionEntry): VersionComparison {
-  const a = base.security
-  const b = other.security
-  const ta = time(base.createdAt)
-  const tb = time(other.createdAt)
-  return {
-    sizeDelta: other.size - base.size,
-    fileDelta: other.files.length - base.files.length,
-    securityDelta:
-      a && b
-        ? {
-            critical: b.critical - a.critical,
-            high: b.high - a.high,
-            medium: b.medium - a.medium,
-            low: b.low - a.low,
-          }
-        : null,
-    days: ta && tb ? Math.round((tb - ta) / 86_400_000) : null,
-  }
+/** Orders version strings by their numeric parts (1.10.0 after 1.9.0), then as text. */
+export function compareVersionStrings(a: string, b: string): number {
+  return a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' })
 }

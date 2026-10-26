@@ -16,7 +16,7 @@ export interface ArtifactAccess {
  * What the caller may do on the artifact page. The server is the gate; this
  * only decides which controls and tabs to offer.
  */
-interface ArtifactCapabilities {
+export interface ArtifactCapabilities {
   /** Findings detail, VEX, scan-now, quarantine, activity: global admins and project maintainers. */
   maintain: boolean
   /** Properties edit, SBOM generate. */
@@ -32,13 +32,6 @@ export function artifactCapabilities(access: ArtifactAccess): ArtifactCapabiliti
     write: access.isAdmin || p?.write === true,
     remove: access.isAdmin || p?.delete === true,
   }
-}
-
-/** `detail`: findings with VEX and actions. `counts`: numbers and the scan time only. */
-export type SecurityView = 'detail' | 'counts'
-
-export function securityView(caps: Pick<ArtifactCapabilities, 'maintain'>): SecurityView {
-  return caps.maintain ? 'detail' : 'counts'
 }
 
 export type SecurityLevel = 'critical' | 'high' | 'medium' | 'low' | 'clean' | 'unscanned'
