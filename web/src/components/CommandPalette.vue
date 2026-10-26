@@ -146,6 +146,7 @@ import { useSessionStore } from '../stores/session'
 import { useThemeStore } from '../stores/theme'
 import { useSignOut } from '../composables/useSignOut'
 import { usePaletteSearch } from '../composables/usePaletteSearch'
+import { useRestoreFocus } from '../composables/useRestoreFocus'
 import {
   buildGroups,
   flattenGroups,
@@ -244,9 +245,12 @@ watch(
   { immediate: true },
 )
 
+const { restoreFocus } = useRestoreFocus(computed(() => ui.commandPaletteOpen))
+
 function onAfterLeave(): void {
   query.value = ''
   search.reset()
+  restoreFocus()
 }
 
 function close(): void {

@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   width below 768px.
 -->
 <template>
-  <TransitionRoot :show="open" as="template" appear>
+  <TransitionRoot :show="open" as="template" appear @after-leave="restoreFocus">
     <Dialog as="div" class="relative z-50" @close="requestClose">
       <TransitionChild
         as="template"
@@ -79,6 +79,8 @@ import {
   TransitionRoot,
 } from '@headlessui/vue'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
+import { toRef } from 'vue'
+import { useRestoreFocus } from '../../composables/useRestoreFocus'
 import { t } from '../../i18n/en'
 
 const props = withDefaults(
@@ -96,6 +98,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{ close: []; 'update:open': [open: boolean] }>()
+
+const { restoreFocus } = useRestoreFocus(toRef(props, 'open'))
 
 function requestClose(): void {
   if (props.busy) return

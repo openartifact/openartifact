@@ -141,7 +141,7 @@ export function usePaletteSearch(options: PaletteSearchOptions) {
       sources.push(
         listBundles({ name: q, limit }).then((res) =>
           apply(gen, {
-            bundles: res.bundles.map((b) => ({
+            bundles: (res.bundles ?? []).map((b) => ({
               id: `bundle:${b.name}:${b.version}`,
               group: 'bundles',
               title: `${b.name} ${b.version}`,

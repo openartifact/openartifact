@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <TransitionRoot appear :show="open" as="template">
+  <TransitionRoot appear :show="open" as="template" @after-leave="restoreFocus">
     <Dialog as="div" class="relative z-50" @close="close">
       <TransitionChild
         as="template"
@@ -86,9 +86,11 @@ import {
   TransitionRoot,
   TransitionChild,
 } from '@headlessui/vue'
+import { toRef } from 'vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import { t } from '../i18n/en'
+import { useRestoreFocus } from '../composables/useRestoreFocus'
 
 const props = withDefaults(
   defineProps<{
@@ -115,6 +117,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{ (e: 'confirm'): void; (e: 'close'): void }>()
+
+const { restoreFocus } = useRestoreFocus(toRef(props, 'open'))
 
 function close(): void {
   if (!props.busy) emit('close')

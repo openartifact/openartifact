@@ -48,6 +48,15 @@ describe('usePaletteSearch', () => {
     expect(s.entities.value.users[0]!.to).toBe('/settings/users?q=chen_wei')
   })
 
+  it('treats a null bundle list (no match) as empty, not as a failed source', async () => {
+    bundles.mockResolvedValue({ total: 0, page: 1, limit: 5, bundles: null } as never)
+    const s = make()
+    s.setQuery('nothing')
+    await wait(40)
+    expect(s.status.value).toBe('ready')
+    expect(s.entities.value.bundles).toEqual([])
+  })
+
   it('does not ask for bundles or users when the caller is not an administrator', async () => {
     const s = make(false)
     s.setQuery('shop')
