@@ -102,7 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { CalendarIcon, QueueListIcon } from '@heroicons/vue/24/outline'
 import AppToggle from './AppToggle.vue'
 import type { CleanupPolicyForm } from '../lib/cleanupPolicy'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const form = defineModel<CleanupPolicyForm>({ required: true })
 

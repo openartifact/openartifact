@@ -96,7 +96,7 @@ import AppButton from '../../../components/AppButton.vue'
 import { ref } from 'vue'
 import { changePassword } from '../../../api/auth'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 const form = ref({ current_password: '', new_password: '', confirm_password: '' })
 const errors = ref<Record<string, string>>({})

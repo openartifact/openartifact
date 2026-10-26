@@ -41,7 +41,7 @@ import { computed } from 'vue'
 import type { ProjectListItem } from '../api/projects'
 import { formatBytes } from '../lib/quota'
 import { quotaUsage, type QuotaLevel } from '../lib/projectList'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const props = defineProps<{
   usage?: ProjectListItem['usage']

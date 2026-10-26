@@ -172,8 +172,9 @@ import { useUrlFlag } from '../../../composables/useUrlFlag'
 import { strParam } from '../../../composables/useUrlState'
 import { useDocsLink } from '../../../composables/useDocsLink'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { compareText } from '../../../lib/intl'
 
 const toasts = useToastStore()
 const docsUrl = useDocsLink('settings-permissions')
@@ -206,7 +207,7 @@ const { list, refresh: load } = useLocalList({
     const q = f.q.trim().toLowerCase()
     return !q || [p.name, p.repository_filter, p.path_pattern].some((v) => v?.toLowerCase().includes(q))
   },
-  compare: (a, b) => (a.name ?? '').localeCompare(b.name ?? ''),
+  compare: (a, b) => compareText(a.name, b.name),
 })
 
 const formData = ref({

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { FORMAT_LOCALE } from './datetime'
+import { formatLocale } from './intl'
 
 const UNITS = [
   { unit: 'day', seconds: 86_400 },
@@ -14,7 +14,7 @@ const UNITS = [
 type DurationUnit = (typeof UNITS)[number]['unit']
 
 function unitLabel(n: number, unit: DurationUnit, display: 'long' | 'short'): string {
-  return new Intl.NumberFormat(FORMAT_LOCALE, { style: 'unit', unit, unitDisplay: display }).format(n)
+  return new Intl.NumberFormat(formatLocale(), { style: 'unit', unit, unitDisplay: display }).format(n)
 }
 
 /**
@@ -36,7 +36,7 @@ export function formatDuration(
     parts.push(unitLabel(n, unit, display))
     if (parts.length === maxUnits) break
   }
-  return parts.join(' ')
+  return new Intl.ListFormat(formatLocale(), { type: 'unit', style: 'narrow' }).format(parts)
 }
 
 /** Largest single unit that divides the duration exactly: 172800 -> "2 days", 90 -> "90 seconds". */

@@ -73,7 +73,7 @@ import {
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { useToastStore, type Toast } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const toastStore = useToastStore()
 const toasts = computed(() => toastStore.visible)

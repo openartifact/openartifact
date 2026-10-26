@@ -6,7 +6,7 @@ import type { AdminSystemInfo } from '../api/admin'
 import type { SecurityHealth } from '../api/security'
 import { formatUtc } from './datetime'
 import { safeDocsUrl, vulnScannerLabel } from './vulnScanners'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 export type HealthStatus = 'ok' | 'warn' | 'bad' | 'none'
 

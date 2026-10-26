@@ -4,7 +4,7 @@
 
 import { computed, reactive, ref } from 'vue'
 import { createStorageBackend, testStorageBackend, updateStorageBackend } from '../api/storage'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import { submittableConfig, visibleFields, type StorageBackend } from '../lib/storageBackends'
 import { useToastStore } from '../stores/toast'
 

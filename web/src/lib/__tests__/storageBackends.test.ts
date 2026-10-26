@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import {
-  BACKEND_TYPES,
+  backendTypes,
   buildBackendTypes,
   locationSummary,
   statusBadgeClass,
@@ -18,12 +18,12 @@ import {
   type StorageBackend,
 } from '../storageBackends'
 import { storageBackendColor } from '../brandColors'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const KINDS = ['filesystem', 's3', 'gcs', 'azure', 'garage', 'seaweedfs', 'oci']
 
 function field(kind: string, key: string): FieldDef {
-  const f = BACKEND_TYPES[kind].fields.find((x) => x.key === key)
+  const f = backendTypes()[kind].fields.find((x) => x.key === key)
   if (!f) throw new Error(`${kind} has no field ${key}`)
   return f
 }
@@ -32,14 +32,14 @@ function backend(kind: string, config: Record<string, unknown>): StorageBackend 
   return { id: 'x', name: 'n', kind, status: 'unknown', is_default: false, config }
 }
 
-describe('BACKEND_TYPES registry', () => {
+describe('backendTypes registry', () => {
   it('registers every backend kind the server supports', () => {
-    expect(Object.keys(BACKEND_TYPES).sort()).toEqual([...KINDS].sort())
+    expect(Object.keys(backendTypes()).sort()).toEqual([...KINDS].sort())
   })
 
   it('gives every kind a label, description and at least one field', () => {
     for (const kind of KINDS) {
-      const meta = BACKEND_TYPES[kind]
+      const meta = backendTypes()[kind]
       expect(meta.label).not.toBe('')
       expect(meta.desc).not.toBe('')
       expect(meta.fields.length).toBeGreaterThan(0)
@@ -48,15 +48,15 @@ describe('BACKEND_TYPES registry', () => {
 
   it('has unique field keys and non-empty labels within each kind', () => {
     for (const kind of KINDS) {
-      const keys = BACKEND_TYPES[kind].fields.map((f) => f.key)
+      const keys = backendTypes()[kind].fields.map((f) => f.key)
       expect(new Set(keys).size).toBe(keys.length)
-      for (const f of BACKEND_TYPES[kind].fields) expect(f.label).not.toBe('')
+      for (const f of backendTypes()[kind].fields) expect(f.label).not.toBe('')
     }
   })
 
   it('requires the connection essentials of each kind', () => {
     const required = (kind: string) =>
-      BACKEND_TYPES[kind].fields.filter((f) => f.required).map((f) => f.key)
+      backendTypes()[kind].fields.filter((f) => f.required).map((f) => f.key)
     expect(required('filesystem')).toEqual(['path'])
     expect(required('s3')).toEqual(['bucket', 'region', 'accessKey', 'secretKey'])
     expect(required('gcs')).toEqual(['project', 'bucket', 'creds'])
@@ -77,7 +77,7 @@ describe('BACKEND_TYPES registry', () => {
 
   it('keeps secret fields masked, monospaced and free of defaults', () => {
     for (const kind of KINDS) {
-      for (const f of BACKEND_TYPES[kind].fields.filter((x) => x.type === 'secret')) {
+      for (const f of backendTypes()[kind].fields.filter((x) => x.type === 'secret')) {
         expect(f.mono).toBe(true)
         expect(f.default).toBeUndefined()
       }
@@ -124,7 +124,7 @@ describe('BACKEND_TYPES registry', () => {
 
   it('keeps toggle and segmented fields free of text-input attributes', () => {
     for (const kind of KINDS) {
-      for (const f of BACKEND_TYPES[kind].fields.filter((x) => x.type === 'toggle')) {
+      for (const f of backendTypes()[kind].fields.filter((x) => x.type === 'toggle')) {
         expect(f.placeholder).toBeUndefined()
         expect(f.mono).toBeUndefined()
       }
@@ -138,8 +138,8 @@ describe('BACKEND_TYPES registry', () => {
   it('rebuilds an identical registry on each call', () => {
     const again = buildBackendTypes()
     for (const kind of KINDS) {
-      expect(again[kind].fields).toEqual(BACKEND_TYPES[kind].fields)
-      expect(again[kind].label).toBe(BACKEND_TYPES[kind].label)
+      expect(again[kind].fields).toEqual(backendTypes()[kind].fields)
+      expect(again[kind].label).toBe(backendTypes()[kind].label)
     }
   })
 })
@@ -153,7 +153,7 @@ describe('visibleFields', () => {
   })
 
   it('returns every field of kinds without conditions', () => {
-    expect(keys('oci', {})).toEqual(BACKEND_TYPES.oci.fields.map((f) => f.key))
+    expect(keys('oci', {})).toEqual(backendTypes().oci.fields.map((f) => f.key))
   })
 
   it('falls back to the default auth mode for azure', () => {

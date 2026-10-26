@@ -25,7 +25,7 @@ import { CheckCircleIcon } from '@heroicons/vue/20/solid'
 import SeverityBadge from '../ui/SeverityBadge.vue'
 import { securityState } from '../../lib/repoList'
 import type { RepositoryListItem } from '../../api/repositories'
-import { t, tp, tpn } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n'
 
 const props = defineProps<{ item: Pick<RepositoryListItem, 'stats'> }>()
 const state = computed(() => securityState(props.item))

@@ -8,7 +8,7 @@
 
 import { resolveNav, sectionPath, settingsSections, type NavIcon } from './navigation'
 import type { RecentItem } from './paletteRecent'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 export type PaletteGroupId =
   | 'recent'

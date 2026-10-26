@@ -57,7 +57,7 @@ import { useArtifactContext } from '../../composables/useArtifact'
 import { useLocalList } from '../../composables/useLocalList'
 import { formatBytes } from '../../lib/quota'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ctx = useArtifactContext()
 const toasts = useToastStore()

@@ -316,7 +316,7 @@ import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
 import { aiProviderColor, tint } from '../../../lib/brandColors'
 import { aiBrandIcon } from '../../../lib/brandIcons'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 interface ProviderMeta {
   label: string

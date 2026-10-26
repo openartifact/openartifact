@@ -93,7 +93,7 @@ import FormatBadge from './FormatBadge.vue'
 import TierPolicyDialog from './TierPolicyDialog.vue'
 import { deletePolicy, updatePolicy, type StoragePolicy, type StorageTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import { formFromPolicy, formToInput, policyConditions } from '../lib/tiering'
 
 defineProps<{ policies: StoragePolicy[]; tiers: StorageTier[] }>()

@@ -45,7 +45,7 @@ import { computed } from 'vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import type { SecurityHealth } from '../../api/security'
 import { safeDocsUrl, vulnScannerLabel } from '../../lib/vulnScanners'
-import { t, tp, tpn } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n'
 
 const props = defineProps<{ health: SecurityHealth }>()
 

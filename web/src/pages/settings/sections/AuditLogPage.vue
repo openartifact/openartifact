@@ -162,7 +162,7 @@ import { useListQuery } from '../../../composables/useListQuery'
 import { boolParam, strParam } from '../../../composables/useUrlState'
 import { auditSubject, auditSubjectView, isHttpNoise } from '../../../lib/auditSubject'
 import { formatUtc } from '../../../lib/datetime'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
 
 /** Entries asked of the server per request. */
 const CHUNK = 50

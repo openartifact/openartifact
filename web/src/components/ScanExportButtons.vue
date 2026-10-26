@@ -29,7 +29,7 @@ import { ArrowDownTrayIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import { downloadScanExport } from '../api/security'
 import { useToastStore } from '../stores/toast'
-import { t, tDynamic } from '../i18n/en'
+import { t, tDynamic } from '../i18n'
 
 const props = withDefaults(
   defineProps<{

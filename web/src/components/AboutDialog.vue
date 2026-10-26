@@ -14,13 +14,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="space-y-4 text-sm" data-testid="about-dialog">
       <div>
         <p class="font-medium text-foreground" data-testid="about-powered-by">{{ poweredBy }}</p>
-        <p class="mt-0.5 text-muted" data-testid="about-license">{{ t('brand.license') }}</p>
+        <p class="mt-0.5 text-muted" data-testid="about-license">{{ ATTRIBUTION.license }}</p>
         <p class="mt-0.5 text-xs text-muted">{{ t('about.sourceHint') }}</p>
       </div>
       <ul class="space-y-1.5">
         <li>
           <a :href="sourceHref" target="_blank" rel="noopener noreferrer" data-testid="about-source" class="inline-flex items-center gap-1.5 text-primary hover:underline">
-            <CodeBracketIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('brand.sourceCode') }}
+            <CodeBracketIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ ATTRIBUTION.sourceCode }}
           </a>
         </li>
         <li>
@@ -62,7 +62,8 @@ import { useSessionStore } from '../stores/session'
 import { useAppVersion, useApiReferenceEnabled, useDocsUrl, formatVersion } from '../composables/useAppVersion'
 import { formatCommit } from '../lib/buildInfo'
 import { DEFAULT_SOURCE_URL, safeUrl } from '../lib/branding'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
+import { ATTRIBUTION } from '../lib/attribution'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -90,7 +91,7 @@ watch(
 const sourceHref = computed(() => safeUrl(store.sourceUrl) || DEFAULT_SOURCE_URL)
 const supportHref = computed(() => safeUrl(store.supportUrl, 'contact'))
 const poweredBy = computed(() => {
-  let text = t('brand.poweredBy')
+  let text = ATTRIBUTION.poweredBy
   if (version.value) text += ` ${formatVersion(version.value)}`
   if (commit.value) text += ` (${commit.value})`
   return text

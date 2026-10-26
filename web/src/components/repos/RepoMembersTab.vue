@@ -40,7 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import { listRepoMembers, type RepositoryMember } from '../../api/repositories'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ repo: string }>()
 

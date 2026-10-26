@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { onBeforeUnmount, ref } from 'vue'
 import { CheckIcon, ClipboardDocumentIcon } from '@heroicons/vue/24/outline'
 import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{
   text: string

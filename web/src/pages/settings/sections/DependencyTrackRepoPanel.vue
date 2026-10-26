@@ -198,7 +198,7 @@ import type {
   DependencyTrackTest,
 } from '../../../api/dependencyTrack'
 import { formatDateTime } from '../../../lib/datetime'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 const inputClass =
   'w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors'

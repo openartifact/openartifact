@@ -42,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
       <template #cell-versions="{ row }">
         <span v-if="isPackage(row)" class="inline-flex items-center gap-1 whitespace-nowrap">
-          {{ row.versionCount === 1 ? t('search.versionCount.one') : tp('search.versionCount', { count: String(row.versionCount) }) }}
+          {{ tpn('search.versionCount', row.versionCount) }}
           <button
             v-if="row.versionCount > 1"
             type="button"
@@ -82,7 +82,7 @@ import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import type { PackageRow, SearchRow } from '../../lib/packageSearch'
 import VersionList from './VersionList.vue'
 import type { useSearch } from '../../composables/useSearch'
-import { t, tp } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n'
 
 const props = defineProps<{
   list: ReturnType<typeof useSearch>['list']

@@ -52,7 +52,7 @@ import AppButton from './AppButton.vue'
 import VexStatusBadge from './VexStatusBadge.vue'
 import { vulnFindings, type VulnScan } from '../api/security'
 import type { VexRecord } from '../api/vex'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const props = withDefaults(defineProps<{
   scan: VulnScan

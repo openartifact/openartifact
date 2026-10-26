@@ -73,7 +73,7 @@ import { useListQuery } from '../../composables/useListQuery'
 import { boolParam, strParam } from '../../composables/useUrlState'
 import { artifactPath } from '../../lib/artifactPath'
 import { formatBytesOrDash } from '../../lib/quota'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ repo: Repository }>()
 

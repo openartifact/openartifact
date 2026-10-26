@@ -108,7 +108,7 @@ import { SETTINGS_ACTIONS_TARGET } from '../../lib/settingsActions'
 import { groupOf, siblingRail } from '../../lib/settingsSearch'
 import { findSettingsSection, SETTINGS_GROUPS } from '../../lib/settingsSections'
 import { useSessionStore } from '../../stores/session'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const route = useRoute()
 const router = useRouter()

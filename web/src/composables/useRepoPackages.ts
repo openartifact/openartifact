@@ -5,7 +5,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { listAllRepositories, listPackages, type PackageItem, type Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const PAGE_SIZE = 100
 

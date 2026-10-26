@@ -113,7 +113,7 @@ import {
   type GraphLink,
   type SbomPackage,
 } from '../../lib/sbomGraph'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{
   packages: SbomPackage[]

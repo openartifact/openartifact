@@ -131,7 +131,7 @@ import {
   type VexFormErrors,
 } from '../lib/vex'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   open: boolean

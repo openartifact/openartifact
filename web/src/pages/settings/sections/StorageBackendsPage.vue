@@ -124,7 +124,7 @@ import StorageBackendDrawer from '../../../components/StorageBackendDrawer.vue'
 import StorageBackendDeleteDialog from '../../../components/StorageBackendDeleteDialog.vue'
 import { useStorageBackends } from '../../../composables/useStorageBackends'
 import type { DrawerMode } from '../../../composables/useStorageBackendForm'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 import type { StorageBackend } from '../../../lib/storageBackends'
 
 const {

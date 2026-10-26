@@ -146,7 +146,7 @@ import AppButton from '../AppButton.vue'
 import StateBlock from './StateBlock.vue'
 import type { ListQuery } from '../../composables/useListQuery'
 import type { Schema } from '../../composables/useUrlState'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 export interface ListColumn {
   key: string

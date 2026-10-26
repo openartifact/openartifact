@@ -9,7 +9,7 @@
 import type { Component } from 'vue'
 import { CloudIcon, ServerIcon } from '@heroicons/vue/24/outline'
 import type { StorageBackend as StorageApi } from '../api/storage'
-import { t } from '../i18n/en'
+import { currentLocale, t } from '../i18n'
 import { storageBackendColor, tint } from './brandColors'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -227,14 +227,21 @@ export function buildBackendTypes(): Record<string, BackendType> {
   }
 }
 
-/** Built once: the English catalog is static. */
-export const BACKEND_TYPES: Record<string, BackendType> = buildBackendTypes()
+let cached: { locale: string; types: Record<string, BackendType> } | null = null
+
+/** The registry in the active language, rebuilt when the language changes. */
+export function backendTypes(): Record<string, BackendType> {
+  const locale = currentLocale.value
+  if (cached?.locale !== locale) cached = { locale, types: buildBackendTypes() }
+
+  return cached.types
+}
 
 // ─── Config helpers ────────────────────────────────────────────────────────────
 
 /** Fields of `kind` whose `when` conditions hold for the current `config`. */
 export function visibleFields(kind: string, config: Record<string, unknown>): FieldDef[] {
-  const fields = BACKEND_TYPES[kind]?.fields
+  const fields = backendTypes()[kind]?.fields
   if (!fields) return []
   return fields.filter((field) => {
     if (!field.when) return true
@@ -260,14 +267,14 @@ export function submittableConfig(config: Record<string, unknown>): Record<strin
 }
 
 export function locationSummary(b: StorageBackend): string {
-  const meta = BACKEND_TYPES[b.kind]
+  const meta = backendTypes()[b.kind]
   return meta ? meta.summary(b.config as Record<string, unknown>) : ''
 }
 
 // ─── Presentation helpers ──────────────────────────────────────────────────────
 
 export function typeMeta(kind: string): BackendType | undefined {
-  return BACKEND_TYPES[kind]
+  return backendTypes()[kind]
 }
 
 export function typeColor(kind: string): string {

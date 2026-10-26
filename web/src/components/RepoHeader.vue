@@ -50,7 +50,7 @@ import type { Repository } from '../api/repositories'
 import type { Crumb } from '../lib/crumbs'
 import { showsFederation } from '../lib/federation'
 import { useSessionStore } from '../stores/session'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 export type RepoSection = 'main' | 'browse' | 'graph' | 'trash' | 'configuration' | 'cleanup' | 'federation'
 

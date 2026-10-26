@@ -6,6 +6,7 @@
 // filters map to the list the API returns, sorting and paging.
 
 import type { ProjectListItem } from '../api/projects'
+import { compareText } from './intl'
 
 export const PROJECT_SCOPES = ['mine', 'all'] as const
 export type ProjectScope = (typeof PROJECT_SCOPES)[number]
@@ -65,7 +66,7 @@ export function queryProjects(
     const kb = sortKey(b, query.sort)
     const order = ka < kb ? -1 : ka > kb ? 1 : 0
     // The name breaks ties so equal keys keep a stable, readable order.
-    return order !== 0 ? order * sign : (a.name ?? '').localeCompare(b.name ?? '')
+    return order !== 0 ? order * sign : compareText(a.name, b.name)
   })
   const start = (Math.max(1, query.page) - 1) * query.limit
   return { rows: matches.slice(start, start + query.limit), total: matches.length }

@@ -48,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import StateBlock from '../ui/StateBlock.vue'
 import DashSection from './DashSection.vue'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import type { ActivityItem } from '../../lib/activity'
 

@@ -36,7 +36,7 @@ import {
   PowerIcon,
 } from '@heroicons/vue/24/outline'
 import CopyButton from './CopyButton.vue'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 export type StateVariant = 'empty' | 'filtered' | 'error' | 'forbidden' | 'off'
 

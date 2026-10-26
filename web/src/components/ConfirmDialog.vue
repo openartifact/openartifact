@@ -89,7 +89,7 @@ import {
 import { toRef } from 'vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 import { useRestoreFocus } from '../composables/useRestoreFocus'
 
 const props = withDefaults(

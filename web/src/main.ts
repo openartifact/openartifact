@@ -11,9 +11,12 @@ import { useThemeStore } from './stores/theme'
 import { useToastStore } from './stores/toast'
 import { useBrandingStore } from './stores/branding'
 import { isSessionExpired } from './api/client'
-import { t } from './i18n/en'
+import { initI18n, t } from './i18n'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { startServiceWorker } from './pwa/register'
+
+// The catalog of the user's language is fetched before anything renders in it.
+await initI18n()
 
 const app = createApp(App)
 

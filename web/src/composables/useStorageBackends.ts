@@ -9,7 +9,7 @@ import {
   testStorageBackend,
   updateStorageBackend,
 } from '../api/storage'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import type { StorageBackend } from '../lib/storageBackends'
 import { useToastStore } from '../stores/toast'
 

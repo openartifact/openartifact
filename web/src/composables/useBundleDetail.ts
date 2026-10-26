@@ -6,7 +6,7 @@ import { computed, ref, shallowRef, watch, type ComputedRef, type Ref } from 'vu
 import { getBundle, listPipelines, listPromotions, type Bundle, type BundlePromotion, type Pipeline } from '../api/bundles'
 import { ApiError } from '../api/client'
 import { listAllRepositories, type Repository } from '../api/repositories'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 export type BundleLoadState = 'loading' | 'ready' | 'not-found' | 'error'
 

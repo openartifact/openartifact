@@ -26,7 +26,7 @@ import type { ProjectMembership } from '../../api/projects'
 import ProjectRoleBadge from '../ProjectRoleBadge.vue'
 import StateBlock from '../ui/StateBlock.vue'
 import DashSection from './DashSection.vue'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 defineProps<{ projects: ProjectMembership[] }>()
 </script>

@@ -67,7 +67,7 @@ import AppButton from './AppButton.vue'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { useUpload, type UploadEntry, type UploadStatus } from '../composables/useUpload'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{ repo: string; format?: string }>()
 const emit = defineEmits<{ uploaded: [] }>()

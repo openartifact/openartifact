@@ -232,7 +232,7 @@ import { formatDateTime } from '../../lib/datetime'
 import { fill, peerCreateBody, peerUpdateBody, upsertPeer, type PeerForm } from '../../lib/federation'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ repo: Repository }>()
 const emit = defineEmits<{ toggled: [enabled: boolean] }>()

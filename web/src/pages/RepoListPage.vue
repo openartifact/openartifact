@@ -142,7 +142,7 @@ import { formatBytesOrDash } from '../lib/quota'
 import { REPO_SORTS, securityState } from '../lib/repoList'
 import { useSessionStore } from '../stores/session'
 import { useToastStore } from '../stores/toast'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const SELECT =
   'h-9 rounded-lg border border-border-strong bg-surface px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11'

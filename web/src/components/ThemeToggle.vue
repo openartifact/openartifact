@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ComputerDesktopIcon, MoonIcon, SunIcon } from '@heroicons/vue/24/outline'
 import { useThemeStore } from '../stores/theme'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const theme = useThemeStore()
 

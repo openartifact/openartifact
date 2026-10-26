@@ -49,7 +49,7 @@ import { strParam } from '../../composables/useUrlState'
 import { artifactPath } from '../../lib/artifactPath'
 import { compareVersionStrings, worstCount, worstSeverity, type VersionEntry } from '../../lib/artifactVersions'
 import { formatBytes } from '../../lib/quota'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ctx = useArtifactContext()
 

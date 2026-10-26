@@ -29,7 +29,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { t, tDynamic } from '../i18n/en'
+import { t, tDynamic } from '../i18n'
 
 const props = defineProps<{
   modelValue: string

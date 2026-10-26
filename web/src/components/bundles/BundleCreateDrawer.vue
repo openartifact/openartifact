@@ -63,7 +63,7 @@ import { createBundle, type Bundle, type Pipeline } from '../../api/bundles'
 import { validateBundleLabel } from '../../lib/bundles'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ open: boolean; pipelines: Pipeline[] }>()
 const emit = defineEmits<{ close: []; created: [bundle: Bundle] }>()

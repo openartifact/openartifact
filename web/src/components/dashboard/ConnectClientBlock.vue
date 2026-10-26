@@ -54,7 +54,7 @@ import ConnectClientPanel from '../ConnectClientPanel.vue'
 import FormatBadge from '../FormatBadge.vue'
 import StateBlock from '../ui/StateBlock.vue'
 import DashSection from './DashSection.vue'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 import { formatLabel } from '../../lib/formats'
 
 const props = defineProps<{ repos: RepositoryWithStats[]; state: 'loading' | 'ready' | 'error'; canCreate: boolean }>()

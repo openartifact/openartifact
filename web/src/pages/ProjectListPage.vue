@@ -122,7 +122,7 @@ import {
   type ProjectSort,
 } from '../lib/projectList'
 import { useSessionStore } from '../stores/session'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const route = useRoute()
 const router = useRouter()

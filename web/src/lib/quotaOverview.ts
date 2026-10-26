@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { QuotaOverviewItem } from '../api/quota'
+import { compareText } from './intl'
 
 export type QuotaState = 'over' | 'near' | 'ok'
 
@@ -34,6 +35,6 @@ export function compareQuotas(a: QuotaOverviewItem, b: QuotaOverviewItem, sort: 
     case 'usage':
       return a.usage_percent - b.usage_percent || a.used_bytes - b.used_bytes
     default:
-      return a.name.localeCompare(b.name)
+      return compareText(a.name, b.name)
   }
 }

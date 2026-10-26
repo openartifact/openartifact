@@ -130,7 +130,7 @@ import { formatLabel } from '../lib/formats'
 import { errorStatus } from '../lib/projectAccess'
 import { useSessionStore } from '../stores/session'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{ project: Project }>()
 

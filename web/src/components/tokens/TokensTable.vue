@@ -102,7 +102,7 @@ import type { ListQuery } from '../../composables/useListQuery'
 import type { Schema } from '../../composables/useUrlState'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { expiryOf, expiryText, scopeOf } from '../../lib/tokens'
-import { t, tDynamic, tp } from '../../i18n/en'
+import { t, tDynamic, tp } from '../../i18n'
 
 defineProps<{
   query: ListQuery<Schema, UnifiedToken>

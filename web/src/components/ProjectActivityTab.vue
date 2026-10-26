@@ -64,7 +64,7 @@ import AuditExportButtons from './AuditExportButtons.vue'
 import { downloadProjectActivityExport, listProjectActivity, type ProjectActivityEntry } from '../api/projects'
 import type { ExportFormat } from '../api/audit'
 import { formatDateTime } from '../lib/datetime'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const PAGE_SIZE = 25
 

@@ -4,7 +4,7 @@
 
 import { ref } from 'vue'
 import { dryRun, type StoragePolicyInput, type TierDryRun } from '../api/tiering'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const SAMPLE_LIMIT = 25
 

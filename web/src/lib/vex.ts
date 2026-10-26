@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { VEX_STATEMENT_MAX_LENGTH, type VexDecision, type VexJustification, type VexRecord, type VexStatus } from '../api/vex'
-import { tDynamic } from '../i18n/en'
+import { tDynamic } from '../i18n'
 
 type VexBadgeVariant = 'success' | 'warning' | 'neutral' | 'danger'
 

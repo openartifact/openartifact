@@ -238,7 +238,7 @@ import {
   grantableRoles,
 } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   project: Project

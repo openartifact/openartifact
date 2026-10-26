@@ -106,7 +106,7 @@ import { useArtifactContext } from '../../composables/useArtifact'
 import { securityLevel } from '../../lib/artifactSecurity'
 import { formatDateTime } from '../../lib/datetime'
 import { vexByVulnId } from '../../lib/vex'
-import { t, tp, tpn } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 

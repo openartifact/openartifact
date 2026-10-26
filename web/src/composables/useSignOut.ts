@@ -5,7 +5,7 @@
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 /**
  * Returns the one sign-out action shared by the sidebar, the command palette

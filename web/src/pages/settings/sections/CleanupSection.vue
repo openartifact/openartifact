@@ -136,7 +136,8 @@ import { enumParam, strParam } from '../../../composables/useUrlState'
 import { loadCleanupOverview, type CleanupOverviewRow } from '../../../lib/cleanupOverview'
 import { formatDateTime, timeAgo } from '../../../lib/datetime'
 import { useToastStore } from '../../../stores/toast'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
+import { compareText } from '../../../lib/intl'
 
 const STATUSES = ['all', 'enabled', 'disabled'] as const
 type CleanupStatus = (typeof STATUSES)[number]
@@ -162,7 +163,7 @@ const { list, refresh } = useLocalList({
     return f.status === 'all' || (f.status === 'enabled') === row.enabled
   },
   compare(a, b, sort) {
-    return sort === 'repository' ? a.repository.localeCompare(b.repository) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)
+    return sort === 'repository' ? compareText(a.repository, b.repository) || compareText(a.name, b.name) : compareText(a.name, b.name)
   },
 })
 

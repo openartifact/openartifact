@@ -101,7 +101,7 @@ import { createPipeline, type Pipeline } from '../../api/bundles'
 import { listAllRepositories, type Repository } from '../../api/repositories'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{ open: boolean; pipelines: Pipeline[] }>()
 const emit = defineEmits<{ close: []; created: [pipeline: Pipeline] }>()

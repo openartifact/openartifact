@@ -9,7 +9,7 @@ import { enumParam, strParam } from './useUrlState'
 import { EXPIRING_FILTERS, TOKEN_TYPE_FILTERS, toListParams } from '../lib/tokens'
 import { useSessionStore } from '../stores/session'
 import { useToastStore } from '../stores/toast'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 /**
  * The Access tokens table: type, search, expiry and project filters bound to

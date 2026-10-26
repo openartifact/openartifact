@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { tDynamic } from '../i18n/en'
+import { tDynamic } from '../i18n'
 import type { LicenseScan, VulnScan, VulnScanner } from '../api/security'
 import { VULN_SCANNERS } from '../api/security'
 

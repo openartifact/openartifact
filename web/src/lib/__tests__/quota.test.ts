@@ -2,10 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect } from 'bun:test'
+import { afterEach, describe, it, expect } from 'bun:test'
+import { setLocale } from '../../i18n'
 import { formatBytes, percentOf, splitBytes, toBytes, usageBarClass, usageLevel } from '../quota'
 
 describe('quota helpers', () => {
+  afterEach(() => setLocale('en'))
+
+  it('writes sizes with the decimal separator of the UI language', async () => {
+    await setLocale('de')
+    expect(formatBytes(2.5 * 1024 ** 2)).toBe('2,5 MB')
+    expect(formatBytes(512)).toBe('512 B')
+  })
+
   it('formats byte sizes', () => {
     expect(formatBytes(12)).toBe('12 B')
     expect(formatBytes(2048)).toBe('2.0 KB')

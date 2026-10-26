@@ -4,7 +4,7 @@
 
 import type { AuditEntry, AuditSubject } from '../api/audit'
 import { artifactPath } from './artifactPath'
-import { t, tDynamic } from '../i18n/en'
+import { t, tDynamic } from '../i18n'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

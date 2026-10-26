@@ -57,7 +57,7 @@ import AppButton from './AppButton.vue'
 import { listFederationDeferred, type FederationDeferredUnit, type FederationPeer } from '../api/federation'
 import { formatDateTime } from '../lib/datetime'
 import { fill } from '../lib/federation'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   repoName: string

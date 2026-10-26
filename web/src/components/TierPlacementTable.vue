@@ -114,7 +114,7 @@ import StatusBadge from './StatusBadge.vue'
 import TierAddDialog from './TierAddDialog.vue'
 import { deleteTier, updateTier, type StorageTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import { formatBytes } from '../lib/quota'
 import { formatCount, sharePercent } from '../lib/tiering'
 

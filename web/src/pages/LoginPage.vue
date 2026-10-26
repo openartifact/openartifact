@@ -42,6 +42,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          RIGHT — Form panel
     ════════════════════════════════════════════════ -->
     <div class="relative flex items-center justify-center p-6 sm:p-10">
+      <!-- Language: picked before signing in, saved in this browser. -->
+      <div class="absolute right-4 top-4 w-44 sm:right-6 sm:top-6">
+        <LanguageSelect id="language-select-login" label-class="sr-only" />
+      </div>
       <div class="w-full max-w-sm">
 
          <!-- Mobile brand logo (hidden on lg+) -->
@@ -194,8 +198,9 @@ import {
 import { login, listSSOProviders } from '../api/auth'
 import type { SSOProvider } from '../api/auth'
 import { useSessionStore } from '../stores/session'
+import { useLoginDraft } from '../composables/useLoginDraft'
 import FormatBadge from '../components/FormatBadge.vue'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import { ssoBrandIcon } from '../lib/brandIcons'
 import { ALL_FORMATS } from '../lib/formats'
 import { useBrandingStore } from '../stores/branding'
@@ -203,6 +208,7 @@ import { ssoProviderColor } from '../lib/brandColors'
 import { safeNextPath } from '../lib/safeRedirect'
 import AppButton from '../components/AppButton.vue'
 import BrandLogo from '../components/BrandLogo.vue'
+import LanguageSelect from '../components/LanguageSelect.vue'
 import MiniMarkdown from '../components/MiniMarkdown'
 import PoweredBy from '../components/PoweredBy.vue'
 
@@ -211,7 +217,8 @@ const route = useRoute()
 const session = useSessionStore()
 const branding = useBrandingStore()
 
-const form = ref({ username: '', password: '' })
+// Kept outside the component: switching the language re-creates the page and must not clear what was typed.
+const { draft: form, clearDraft } = useLoginDraft()
 const loading = ref(false)
 const errorMsg = ref('')
 const showPassword = ref(false)
@@ -233,6 +240,7 @@ async function handleSubmit(): Promise<void> {
   try {
     const user = await login(form.value)
     session.user = user
+    clearDraft()
     // Fetch full profile (includes is_admin) before navigating so the
     // sidebar admin section is visible immediately without a reload.
     await session.fetchMe()

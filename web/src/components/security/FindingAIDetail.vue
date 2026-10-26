@@ -87,7 +87,7 @@ import { getAIAnalysis, triggerAIAnalysis, type AIAnalysis } from '../../api/ai'
 import type { SecurityFinding } from '../../api/security'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { useToastStore } from '../../stores/toast'
-import { t, tDynamic } from '../../i18n/en'
+import { t, tDynamic } from '../../i18n'
 
 const POLL_MS = 4000
 

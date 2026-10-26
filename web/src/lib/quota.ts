@@ -5,6 +5,8 @@
 // Pure helpers shared by the quota screens: byte formatting, the size unit
 // picker and the usage bar colour.
 
+import { formatNumber } from './intl'
+
 export const SIZE_UNITS = [
   { label: 'MB', bytes: 1024 ** 2 },
   { label: 'GB', bytes: 1024 ** 3 },
@@ -13,12 +15,19 @@ export const SIZE_UNITS = [
 
 export type SizeUnit = (typeof SIZE_UNITS)[number]['label']
 
-/** Human readable size, one decimal from KB upwards. */
+const ONE_DECIMAL = { minimumFractionDigits: 1, maximumFractionDigits: 1 } as const
+
+/** A percentage or ratio with one decimal in the active language ("12.5" / "12,5"). */
+export function formatOneDecimal(n: number): string {
+  return formatNumber(n, ONE_DECIMAL)
+}
+
+/** Human readable size, one decimal from KB upwards, written for the active language. */
 export function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TB`
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes >= 1024 ** 4) return `${formatOneDecimal(bytes / 1024 ** 4)} TB`
+  if (bytes >= 1024 ** 3) return `${formatOneDecimal(bytes / 1024 ** 3)} GB`
+  if (bytes >= 1024 ** 2) return `${formatOneDecimal(bytes / 1024 ** 2)} MB`
+  if (bytes >= 1024) return `${formatOneDecimal(bytes / 1024)} KB`
   return `${bytes} B`
 }
 

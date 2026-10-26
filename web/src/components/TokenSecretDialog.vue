@@ -37,7 +37,7 @@ import { ref, watch } from 'vue'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import CopyButton from './ui/CopyButton.vue'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   title: string

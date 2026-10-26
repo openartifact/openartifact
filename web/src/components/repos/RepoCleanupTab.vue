@@ -250,7 +250,7 @@ import {
   emptyCleanupForm,
   type CleanupPolicyView as CleanupPolicy,
 } from '../../lib/cleanupPolicy'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 import { useToastStore } from '../../stores/toast'
 import {
   PlusIcon,

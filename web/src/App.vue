@@ -5,7 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-bg text-foreground">
+  <!-- The key re-creates the whole app when the language changes: setup code that read the catalog once picks up the new language. -->
+  <div :key="locale" class="flex h-screen overflow-hidden bg-bg text-foreground">
     <a
       v-if="showShell"
       href="#main-content"
@@ -65,7 +66,7 @@ import { useUIStore } from './stores/ui'
 import { useSessionStore } from './stores/session'
 import { isPaletteHotkey, isPaletteSlashHotkey } from './lib/paletteHotkey'
 import { loadRecent, pushRecent, recentFromPath, recentStorageKey, saveRecent } from './lib/paletteRecent'
-import { t } from './i18n/en'
+import { currentLocale as locale, t } from './i18n'
 
 const CommandPalette = defineAsyncComponent(() => import('./components/CommandPalette.vue'))
 

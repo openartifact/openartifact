@@ -41,7 +41,7 @@ import { useArtifactContext } from '../../composables/useArtifact'
 import { useListQuery } from '../../composables/useListQuery'
 import { strParam } from '../../composables/useUrlState'
 import { actionLabel } from '../../lib/activity'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ctx = useArtifactContext()
 

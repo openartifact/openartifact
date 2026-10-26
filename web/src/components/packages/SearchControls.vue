@@ -61,7 +61,7 @@ import { FlagIcon, InformationCircleIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import FilterBar from '../ui/FilterBar.vue'
 import type { useSearch } from '../../composables/useSearch'
-import { t, type TranslationKey } from '../../i18n/en'
+import { t, type TranslationKey } from '../../i18n'
 import { ALL_FORMATS, formatLabel } from '../../lib/formats'
 
 const props = defineProps<{

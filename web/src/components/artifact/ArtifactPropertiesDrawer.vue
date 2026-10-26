@@ -51,7 +51,7 @@ import Drawer from '../ui/Drawer.vue'
 import { deleteArtifactProperty, setArtifactProperties, type ArtifactProperties } from '../../api/artifactProperties'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { duplicateName, propertyChanges, propertyRows } from '../../lib/artifactProperties'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{
   open: boolean

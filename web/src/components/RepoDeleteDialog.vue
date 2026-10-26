@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { confirmNameMatches } from '../lib/trash'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const props = defineProps<{ open: boolean; name: string; busy?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'confirm'): void }>()

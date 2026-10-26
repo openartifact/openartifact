@@ -66,7 +66,7 @@ import { buildCreateBody, emptyRepoForm, formValid, nameError, quotaBytesOf } fr
 import { allowedFormats, coerceFormat, upstreamUrlRequired } from '../../lib/repoTypes'
 import { useSessionStore } from '../../stores/session'
 import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{
   open: boolean

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { TabDef } from '../composables/useUrlTab'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 /** Tabs of the artifact page, in order; the first is the default (`?tab=` absent or unknown). */
 export const PACKAGE_TABS = ['overview', 'versions', 'files', 'dependencies', 'security', 'sbom', 'activity'] as const

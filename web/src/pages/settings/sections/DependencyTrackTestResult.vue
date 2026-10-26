@@ -30,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DependencyTrackTest } from '../../../api/dependencyTrack'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 const props = defineProps<{ result: DependencyTrackTest }>()
 const permissions = computed(() => props.result.permissions ?? [])

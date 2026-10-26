@@ -51,7 +51,8 @@ import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import { useArtifactContext } from '../../composables/useArtifact'
 import { useLocalList } from '../../composables/useLocalList'
 import { strParam } from '../../composables/useUrlState'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
+import { compareText } from '../../lib/intl'
 
 const ctx = useArtifactContext()
 
@@ -76,7 +77,7 @@ const { list, all, refresh } = useLocalList({
   load: async (): Promise<Row[]> =>
     (ctx.detail.value?.dependencies ?? []).map((d, i) => ({ key: `${i}:${d.name}`, name: d.name, version: d.version ?? '', kind: d.kind ?? '' })),
   match: (row, { q, kind }) => (!kind || row.kind === kind) && (!q || row.name.toLowerCase().includes(q.toLowerCase())),
-  compare: (a, b) => a.name.localeCompare(b.name),
+  compare: (a, b) => compareText(a.name, b.name),
 })
 
 const kinds = computed(() => [...new Set(all.value.map((r) => r.kind).filter(Boolean))].sort())

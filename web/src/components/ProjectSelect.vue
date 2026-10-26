@@ -25,7 +25,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { listProjects, SYSTEM_PROJECT_NAME } from '../api/projects'
 import type { Project } from '../api/projects'
 import { atLeast } from '../lib/projectAccess'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 import { useSessionStore } from '../stores/session'
 
 defineProps<{ id: string }>()

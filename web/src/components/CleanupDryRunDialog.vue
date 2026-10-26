@@ -44,7 +44,7 @@ import { computed } from 'vue'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import type { CleanupPreview } from '../api/generated'
-import { t, tpn } from '../i18n/en'
+import { t, tpn } from '../i18n'
 
 const props = defineProps<{ open: boolean; title: string; repositories: CleanupPreview[] }>()
 const emit = defineEmits<{ (e: 'close'): void }>()

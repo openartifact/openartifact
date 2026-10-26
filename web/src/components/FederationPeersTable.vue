@@ -128,7 +128,7 @@ import StatusBadge from './StatusBadge.vue'
 import type { FederationPeer } from '../api/federation'
 import { formatDateTime } from '../lib/datetime'
 import { fill, formatLag, peerStateLabel, peerStateVariant, previewError, resyncPending } from '../lib/federation'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 defineProps<{
   peers: readonly FederationPeer[]

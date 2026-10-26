@@ -8,7 +8,7 @@
 import type { TokenListParams, TokenType, UnifiedToken } from '../api/tokens'
 import type { ProjectMemberRole } from '../api/projects'
 import { atLeast } from './projectAccess'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 export const TOKEN_TYPES: readonly TokenType[] = ['personal', 'project', 'federation']
 /** `all` is the unfiltered list (the legacy `/admin/tokens` redirect uses it). */

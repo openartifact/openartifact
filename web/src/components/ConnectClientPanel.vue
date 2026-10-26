@@ -67,7 +67,7 @@ import { computed, ref, watch } from 'vue'
 import CopyButton from './ui/CopyButton.vue'
 import { clientSetup } from '../lib/installCommands'
 import { useDocsLink } from '../composables/useDocsLink'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   format: string

@@ -69,7 +69,7 @@ import { formatDateTime } from '../../lib/datetime'
 import { formatLabel } from '../../lib/formats'
 import { formatBytes } from '../../lib/quota'
 import { safeHttpUrl } from '../../lib/artifactLinks'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ctx = useArtifactContext()
 const entry = computed(() => ctx.entry.value)

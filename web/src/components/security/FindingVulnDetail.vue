@@ -59,7 +59,7 @@ import VulnScanFindingsTable from '../VulnScanFindingsTable.vue'
 import VulnScanStatus from '../VulnScanStatus.vue'
 import { SCAN_EXPORT_FORMATS, vulnScanExportUrl, type ScanExportFormat, type SecurityFinding } from '../../api/security'
 import { useVulnScanDetail } from '../../composables/useVulnScanDetail'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{
   finding: SecurityFinding

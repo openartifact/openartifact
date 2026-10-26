@@ -79,7 +79,7 @@ import AppToggle from './AppToggle.vue'
 import { listStorageBackends, type StorageBackend } from '../api/storage'
 import { createTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   open: boolean

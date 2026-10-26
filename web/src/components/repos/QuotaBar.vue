@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed } from 'vue'
 import { formatBytes } from '../../lib/quota'
 import { quotaUsage, type QuotaLevel } from '../../lib/projectList'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{ used?: number; limit?: number }>()
 

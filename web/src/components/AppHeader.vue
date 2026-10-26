@@ -55,7 +55,7 @@ import UserMenu from './UserMenu.vue'
 import BrandLogo from './BrandLogo.vue'
 import { useBrandingStore } from '../stores/branding'
 import { isApplePlatform, paletteHotkeyLabel, paletteHotkeyShortcut } from '../lib/paletteHotkey'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const ui = useUIStore()
 const branding = useBrandingStore()

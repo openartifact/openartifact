@@ -17,6 +17,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Installation](getting-started/installation.md) | Docker Compose, Helm, release binaries and source builds; first login and password reset; installing the web UI as an app (PWA) |
 | [Web UI](getting-started/web-ui.md) | The seven areas, the Ctrl/Cmd+K command palette, the settings hub, the artifact page and where the old URLs went |
 | [Configuration](getting-started/configuration.md) | Load order, env-only variables, and every setting with env var, YAML key and default |
+| [Language](getting-started/language.md) | Choosing the UI language: browser default, the picker in the user menu and on the sign-in page, where the choice is stored, what follows it |
 | [Upgrading](getting-started/upgrading.md) | Forward-only migrations, image tags, per-method upgrade steps, secrets to keep, rollback |
 
 ## Package formats
@@ -104,6 +105,7 @@ Generated from the code (`make docs-gen`), never hand-edited.
 | Page | Contents |
 |---|---|
 | [Development guide](development/README.md) | Toolchain, build, test, lint, generate, CI and release pipeline |
+| [Translating the web UI](development/translations.md) | Catalog layout, adding UI text, the `i18n:check` rules, adding a language, correcting a translation by pull request |
 | [Architecture](development/architecture.md) | Code layout, request flow, routing invariant, storage and database split |
 | [Design: federated repositories](design/federation.md) | Multi-site replication: unit log, pull protocol, conflict rules, tombstones, peer authentication, supported formats |
 

@@ -69,7 +69,7 @@ import FormField from './FormField.vue'
 import type { FederationPeer } from '../api/federation'
 import { emptyPeerForm, peerFormFrom, validatePeerForm, type PeerForm, type PeerFormErrors } from '../lib/federation'
 import { INPUT_CLASS } from '../lib/formClasses'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   open: boolean

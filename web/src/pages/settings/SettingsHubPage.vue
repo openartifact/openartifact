@@ -47,7 +47,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-if="query">
       <section v-if="results.length" aria-labelledby="hub-results-h" data-testid="hub-results">
         <h2 id="hub-results-h" class="text-sm font-semibold text-foreground">
-          {{ tp(results.length === 1 ? 'settings.hub.resultsCount.one' : 'settings.hub.resultsCount.other', { count: String(results.length), q: query }) }}
+          {{ tpn('settings.hub.resultsCount', results.length, { q: query }) }}
         </h2>
         <p class="mb-2 text-xs text-muted">{{ t('settings.hub.rankedHint') }}</p>
         <ul class="divide-y divide-border rounded-lg border border-border bg-surface">
@@ -73,7 +73,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <p v-if="lockedMatches > 0" class="mt-4 flex items-start gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-muted" data-testid="hub-locked-matches">
         <InformationCircleIcon class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        {{ tp(lockedMatches === 1 ? 'settings.hub.lockedMatches.one' : 'settings.hub.lockedMatches.other', { count: String(lockedMatches) }) }}
+        {{ tpn('settings.hub.lockedMatches', lockedMatches) }}
       </p>
     </template>
 
@@ -126,7 +126,7 @@ import { sectionPath } from '../../lib/navigation'
 import { hubGroups, lockedMatchCount, openableSections, searchSettings, type SettingsMatch } from '../../lib/settingsSearch'
 import { useSessionStore } from '../../stores/session'
 import { useUIStore } from '../../stores/ui'
-import { t, tp, type TranslationKey } from '../../i18n/en'
+import { t, tp, tpn, type TranslationKey } from '../../i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -160,10 +160,7 @@ const results = computed(() => searchSettings(query.value, openableSections(isAd
 const lockedMatches = computed(() => lockedMatchCount(query.value, isAdmin.value))
 const liveText = computed(() =>
   query.value
-    ? tp(results.value.length === 1 ? 'settings.hub.resultsCount.one' : 'settings.hub.resultsCount.other', {
-        count: String(results.value.length),
-        q: query.value,
-      })
+    ? tpn('settings.hub.resultsCount', results.value.length, { q: query.value })
     : '',
 )
 

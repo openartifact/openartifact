@@ -72,7 +72,7 @@ import { safeNextPath } from '../lib/safeRedirect'
 import FormField from '../components/FormField.vue'
 import BrandLogo from '../components/BrandLogo.vue'
 import PoweredBy from '../components/PoweredBy.vue'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const router = useRouter()
 const route = useRoute()

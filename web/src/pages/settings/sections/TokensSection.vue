@@ -97,7 +97,8 @@ import { useDocsLink } from '../../../composables/useDocsLink'
 import { useTokenList } from '../../../composables/useTokenList'
 import type { UnifiedToken } from '../../../api/tokens'
 import { TOKEN_TYPE_FILTERS, type TokenTypeFilter } from '../../../lib/tokens'
-import { t, tDynamic, tp } from '../../../i18n/en'
+import { t, tDynamic, tp } from '../../../i18n'
+import { formatLocale } from '../../../lib/intl'
 
 const EXPIRING_DAYS = ['7', '30'] as const
 const typeOptions = TOKEN_TYPE_FILTERS.map((o) => ({ value: o, label: tDynamic(`tok.type.${o}`) }))
@@ -135,6 +136,6 @@ const notice = computed(() => {
 
 function revokeDescription(token: UnifiedToken): string {
   const owner = token.owner === who.value.username ? t('tok.revoke.you') : token.owner
-  return tp('tok.revoke.desc', { name: token.name, type: tDynamic(`tok.type.${token.type}`).toLowerCase(), owner })
+  return tp('tok.revoke.desc', { name: token.name, type: tDynamic(`tok.type.${token.type}`).toLocaleLowerCase(formatLocale()), owner })
 }
 </script>

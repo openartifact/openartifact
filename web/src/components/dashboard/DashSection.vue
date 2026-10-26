@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import AppButton from '../AppButton.vue'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 withDefaults(
   defineProps<{

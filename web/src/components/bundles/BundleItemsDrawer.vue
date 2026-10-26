@@ -98,7 +98,7 @@ import { candidateKey, candidateToItem, isBundleable } from '../../lib/bundles'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { formatBytes } from '../../lib/quota'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const LIMIT = 25
 

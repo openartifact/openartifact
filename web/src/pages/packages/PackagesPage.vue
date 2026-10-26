@@ -62,7 +62,7 @@ import SearchResults from '../../components/packages/SearchResults.vue'
 import CopyButton from '../../components/ui/CopyButton.vue'
 import StateBlock from '../../components/ui/StateBlock.vue'
 import { useSearch } from '../../composables/useSearch'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const { list, plan, mode, autoChecksum, setMode } = useSearch()
 

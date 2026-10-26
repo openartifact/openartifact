@@ -25,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed } from 'vue'
 import StatusBadge from './StatusBadge.vue'
 import { vulnScanHasFailures, vulnScanLabel, vulnScanVariant } from '../lib/scanStatus'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   status: string

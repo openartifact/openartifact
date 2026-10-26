@@ -6,7 +6,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { getVulnScan, type VulnScan } from '../api/security'
 import { listVexStatements, type VexRecord } from '../api/vex'
 import { vexByVulnId } from '../lib/vex'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 /** The scan a finding stands for: its repository (every per-repository endpoint needs it) and id. */
 export interface ScanRef {
