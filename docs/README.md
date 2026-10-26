@@ -15,6 +15,7 @@ These pages are also published, one version per release, at <https://openartifac
 | Page | Contents |
 |---|---|
 | [Installation](getting-started/installation.md) | Docker Compose, Helm, release binaries and source builds; first login and password reset; installing the web UI as an app (PWA) |
+| [Web UI](getting-started/web-ui.md) | The seven areas, the Ctrl/Cmd+K command palette, the settings hub, the artifact page and where the old URLs went |
 | [Configuration](getting-started/configuration.md) | Load order, env-only variables, and every setting with env var, YAML key and default |
 | [Upgrading](getting-started/upgrading.md) | Forward-only migrations, image tags, per-method upgrade steps, secrets to keep, rollback |
 

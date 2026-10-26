@@ -100,7 +100,7 @@ curl -sS "https://b.example.com/api/v1/repositories/libs-b/federation" \
   -H "Authorization: Bearer $TOKEN_B"
 ```
 
-The status lists the peers with their cursor, backlog, lag, last success, last error, consecutive failures and deferred units. The same data is on the repository's **Federation** tab in the web UI, where you can enable or disable federation, create and revoke tokens (the plaintext is displayed once), add, edit, pause and remove peers, press **Resync** and inspect deferred units.
+The status lists the peers with their cursor, backlog, lag, last success, last error, consecutive failures and deferred units. The same data is in the **Federation** section of the repository's Settings tab (`/repos/NAME?tab=settings`) where you can enable or disable federation, create and revoke tokens (the plaintext is displayed once), add, edit, pause and remove peers, press **Resync** and inspect deferred units. **Settings > Federation** (`/settings/federation`) gives the overview: the server state and every federated repository with how its peers are doing.
 
 Upload an artifact to A and it appears on B within about a poll interval; with two-way replication the reverse holds.
 
@@ -186,7 +186,7 @@ groups:
         labels: {severity: warning}
 ```
 
-Set the lag alert below `federation.tombstoneRetention`; a peer that stays behind longer risks resurrecting deleted artifacts. The health fields (lag, backlog, last success, last error, consecutive failures, deferred count, remote head versus cursor) are in `GET .../federation` and the repository's Federation tab. General metrics setup is in [monitoring](monitoring.md).
+Set the lag alert below `federation.tombstoneRetention`; a peer that stays behind longer risks resurrecting deleted artifacts. The health fields (lag, backlog, last success, last error, consecutive failures, deferred count, remote head versus cursor) are in `GET .../federation` and the Federation section of the repository's Settings tab. General metrics setup is in [monitoring](monitoring.md).
 
 ## Security
 

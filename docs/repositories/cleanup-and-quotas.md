@@ -99,7 +99,7 @@ curl -X POST HOST/api/v1/projects/PROJECT/cleanup-policies \
   -d '{"name":"keep-10","enabled":true,"keep_last_n":10}'
 ```
 
-In the web UI they are in the project's **Settings** section under **Cleanup defaults**, next to a note that a repository's own enabled policy overrides them.
+In the web UI they are in the project's **Settings** tab (`/projects/NAME?tab=settings`) under **Cleanup defaults**, next to a note that a repository's own enabled policy overrides them.
 
 ## Docker registry garbage collection
 
@@ -205,4 +205,4 @@ curl -X PUT HOST/api/v1/projects/PROJECT/quota \
 
 ### In the web UI
 
-Every member sees the project's **Usage** section: stored size and artifact count, the project quota as a bar that turns amber at the warning threshold and red at the limit, and a table with the size, artifact count and limits of each repository (proxy and group rows read "Not metered"). The project's **Settings** section shows the quota: global admins edit it there, owners and maintainers see it read-only.
+A repository's own limit and cleanup policies are in the **Settings** tab of the repository (`/repos/NAME?tab=settings`, sections **Quota** and **Cleanup policies**); administrators see every repository and project with its limit and usage in **Settings > Quotas** (`/settings/quotas`) and the cleanup policies in **Settings > Cleanup policies** (`/settings/cleanup`). Every member sees the project's **Usage** tab: stored size and artifact count, the project quota as a bar that turns amber at the warning threshold and red at the limit, and a table with the size, artifact count and limits of each repository (proxy and group rows read "Not metered"). The same tab shows the project quota: global admins edit it there, owners and maintainers see it read-only.

@@ -62,7 +62,7 @@ A `deb` or `rpm` is only a package of one distribution release. Grype and Trivy 
 
 ### The overview across repositories
 
-`GET /api/v1/vuln/scans` (administrators) lists the scans of every repository at once, which is what the **Security → Vulnerabilities** page opens with. Rows are summaries (the repository's name and format, the package, the counts, the status, the scanners, the quarantine flag) without the findings; read those with `GET …/vuln/scans/{id}`. The order is fixed, worst first: most critical findings, then high, medium and low, then newest, then id.
+`GET /api/v1/vuln/scans` (administrators) lists the scans of every repository at once, which is what the **Security** inbox filtered to vulnerabilities (`/security?type=vuln`) is built from. Rows are summaries (the repository's name and format, the package, the counts, the status, the scanners, the quarantine flag) without the findings; read those with `GET …/vuln/scans/{id}`. The order is fixed, worst first: most critical findings, then high, medium and low, then newest, then id.
 
 | Query | Meaning |
 |---|---|
@@ -217,7 +217,7 @@ The design follows [zot](https://zotregistry.dev/)'s CVE scanning: scans run off
 
 ## Exporting findings (SARIF, CSV, JSON)
 
-Vulnerability and secret scans can be downloaded for other tools. All export routes need an admin, take `?format=sarif|csv|json` (default `json`; anything else is `400 validation_failed`) and answer with `Content-Disposition: attachment`. The **Security → Vulnerabilities** and **Secrets** pages have SARIF, CSV and JSON buttons: the vulnerability page exports the whole selection of its active filters (all pages, not just the loaded rows), the secrets page the selected repository.
+Vulnerability and secret scans can be downloaded for other tools. All export routes need an admin, take `?format=sarif|csv|json` (default `json`; anything else is `400 validation_failed`) and answer with `Content-Disposition: attachment`. The **Security** inbox has an **Export** menu (CSV, JSON, VEX) that exports the whole selection of its active filters (all pages, not just the loaded rows), see [Security findings](findings.md#exporting). The SARIF export is the per-scan API route below.
 
 | Export | Route |
 |---|---|
@@ -349,7 +349,7 @@ A package whose own licenses cannot be read from its file while the repository h
 
 A license that is only known after the upload (a license scan, or a change of the artifact's license [properties](../repositories/properties.md) through `PUT`/`PATCH`, which also covers raw, Go, Conan and imported artifacts) cannot reject anything any more. Instead, when a `block` policy is violated the artifact is **quarantined**: downloads answer `403 ARTIFACT_QUARANTINED` (see [Quarantine](#quarantine)) until an admin approves it.
 
-- A quarantined artifact stays quarantined across re-scans and edits of its license properties; changing the license to something allowed is not a way around the block. Only `POST …/license/scans/{id}/quarantine` with `{"quarantined":false}` releases it (and `true` quarantines it again by hand). The web UI's license scan page has the same Approve and Quarantine buttons.
+- A quarantined artifact stays quarantined across re-scans and edits of its license properties; changing the license to something allowed is not a way around the block. Only `POST …/license/scans/{id}/quarantine` with `{"quarantined":false}` releases it (and `true` quarantines it again by hand). The web UI has the same Approve and Quarantine buttons on license findings in **Security** (`/security?type=license`).
 - An approval is stored with the licenses it was granted for (`quarantine_approved: true`). Re-scanning the same licenses keeps it approved; if the licenses recorded later differ, including a different spelling of the version such as `GPL-3.0-or-later` after approving `GPL-3.0-only`, and a blocking policy is violated, the artifact is quarantined again.
 - If a property change is saved but the policy cannot be evaluated, the request answers `500` ("properties saved, but the license policy could not be evaluated") and the artifact is not quarantined until the next scan.
 - The quarantine matches on the scan's `artifact_id`, exactly like the other scan types, so scan under the identifier the artifact is served under.
@@ -363,7 +363,7 @@ SBOM generation (CycloneDX 1.4-1.6, SPDX 2.3) and VEX documents are described in
 
 A license that is only known after the upload (a license scan, or a change of the artifact's license [properties](../repositories/properties.md) through `PUT`/`PATCH`, which also covers raw, Go, Conan and imported artifacts) cannot reject anything any more. Instead, when a `block` policy is violated the artifact is **quarantined**: downloads answer `403 ARTIFACT_QUARANTINED` (see [Quarantine](#quarantine)) until an admin approves it.
 
-- A quarantined artifact stays quarantined across re-scans and edits of its license properties; changing the license to something allowed is not a way around the block. Only `POST …/license/scans/{id}/quarantine` with `{"quarantined":false}` releases it (and `true` quarantines it again by hand). The web UI's license scan page has the same Approve and Quarantine buttons.
+- A quarantined artifact stays quarantined across re-scans and edits of its license properties; changing the license to something allowed is not a way around the block. Only `POST …/license/scans/{id}/quarantine` with `{"quarantined":false}` releases it (and `true` quarantines it again by hand). The web UI has the same Approve and Quarantine buttons on license findings in **Security** (`/security?type=license`).
 - An approval is stored with the licenses it was granted for (`quarantine_approved: true`). Re-scanning the same licenses keeps it approved; if the licenses recorded later differ, including a different spelling of the version such as `GPL-3.0-or-later` after approving `GPL-3.0-only`, and a blocking policy is violated, the artifact is quarantined again.
 - If a property change is saved but the policy cannot be evaluated, the request answers `500` ("properties saved, but the license policy could not be evaluated") and the artifact is not quarantined until the next scan.
 - The quarantine matches on the scan's `artifact_id`, exactly like the other scan types, so scan under the identifier the artifact is served under.
@@ -400,4 +400,4 @@ If the quarantine state cannot be read the request fails closed with 500. Set `q
 
 An artifact matches when its scan's `artifact_id` equals one of the identifiers the download handler knows it by (a leading slash is ignored). Examples from the format handlers: npm `name@version` or `name/-/<tarball>`; Maven the repository path (`com/acme/lib/1.0/lib-1.0.jar`); PyPI, Debian, RPM, Helm, RubyGems and Conda the file name or the component/package ID returned by the repository package listing; raw the file path. A scan recorded under an identifier the client never requests quarantines nothing.
 
-AI analysis may *recommend* quarantine but never applies it: the recommendation is stored for review ([AI analysis](../integrations/ai-analysis.md)). The web UI's vulnerability, secret and license scan pages expose the same quarantine toggle.
+AI analysis may *recommend* quarantine but never applies it: the recommendation is stored for review ([AI analysis](../integrations/ai-analysis.md)). The web UI exposes the same quarantine toggle on the findings of the **Security** inbox and on the **Security** tab of the artifact page.

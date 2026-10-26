@@ -80,7 +80,7 @@ Sub-paths and methods that are not listed in the API table below fall back to th
 
 ## Creating projects
 
-By default only a global admin creates projects (`POST /api/v1/projects`, `oa project create`, Admin > Projects). The admin may name the `owner` (a username, default: the caller) and set policy fields in the same request.
+By default only a global admin creates projects (`POST /api/v1/projects`, `oa project create`, or **New project** on the Projects page). The admin may name the `owner` (a username, default: the caller) and set policy fields in the same request.
 
 Setting **`projects.self_create`** lets every authenticated human user create a project and become its owner. Sessions and `access` tokens without scopes qualify; `deploy` tokens, the legacy key and scoped tokens do not.
 
@@ -88,7 +88,7 @@ Setting **`projects.self_create`** lets every authenticated human user create a 
 |---|---|
 | Config file | `projects.selfCreate: true` ([`openartifact.example.yaml`](../../openartifact.example.yaml)) |
 | Environment | `OPENARTIFACT_PROJECTS_SELF_CREATE=true` |
-| Admin UI | the self-service toggle on the Admin > Projects page |
+| Admin UI | the self-service toggle in **Settings > Project creation policy** (`/settings/project-policy`) |
 | API | `GET` / `PUT /api/v1/admin/projects/settings` with `{"self_create": true}` (global admin) |
 
 The config value or environment variable is the default until an admin saves the setting through the UI or API; a saved value takes precedence. If the stored value cannot be read, self-creation is off.
@@ -124,7 +124,7 @@ Members see the numbers with `GET /projects/{project}/usage`, or in the **Usage*
 
 A project can also define **default cleanup policies** (`/projects/{project}/cleanup-policies`; members read, owners and admins write). A default policy applies to every hosted repository of the project that has no enabled cleanup policy of its own; a repository's own enabled policy overrides the defaults. Details: [project default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies).
 
-In the web UI the project **Settings** section holds both: the project quota (editable by global admins, read-only for everyone else) and the cleanup defaults (listed for all members, editable by owners and admins).
+In the web UI the project quota (editable by global admins, read-only for everyone else) is in the **Usage** tab and the cleanup defaults (listed for all members, editable by owners and admins) in the **Settings** tab of the project.
 
 ## Audit events
 
@@ -142,12 +142,12 @@ Every project mutation writes an audit entry with the project in `project_id`:
 
 ### Project activity
 
-Every member reads the events of their own project, without being a global admin, with `GET /projects/{project}/activity` or in the **Activity** section of the project page. The feed holds the entries whose `project_id` is the project (the table above) plus the entries recorded against a repository the project owns today (`repository_id`): `project.repository_created`, `project.repository_deleted`, `project.repository_transferred`, and the repository events of the trash (`artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`). A repository moved to another project takes its entries with it. Uploads and downloads are not audit events (see [monitoring](../operations/monitoring.md#audit-log)), so the feed shows administrative changes, not package traffic. `project.token_created` and `project.token_revoked` are left out of the feed for viewers and developers (token names and roles are maintainer-level information); maintainers, owners and global admins see them.
+Every member reads the events of their own project, without being a global admin, with `GET /projects/{project}/activity` or in the **Activity** tab of the project page. The feed holds the entries whose `project_id` is the project (the table above) plus the entries recorded against a repository the project owns today (`repository_id`): `project.repository_created`, `project.repository_deleted`, `project.repository_transferred`, and the repository events of the trash (`artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`). A repository moved to another project takes its entries with it. Uploads and downloads are not audit events (see [monitoring](../operations/monitoring.md#audit-log)), so the feed shows administrative changes, not package traffic. `project.token_created` and `project.token_revoked` are left out of the feed for viewers and developers (token names and roles are maintainer-level information); maintainers, owners and global admins see them.
 
 - Newest first, keyset paging like the admin log: `per_page` (default 25, at most 100), `cursor` (the previous `next_cursor`), `has_more`. There is no total and no row is ever counted. `actor` and `action` are case-insensitive substring filters.
 - Entries carry `id`, `timestamp`, `action`, `actor` (user or token name), `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. They never carry the client IP address: that stays in the admin log.
 - Entries also carry `actor_name` and `subject` (the same resolved names as the [admin audit log](../operations/monitoring.md#audit-log)). `GET /repositories/{name}/activity?package_name=&version=&cursor=&limit=` returns the same entries for one repository (admins and project maintainers): the events recorded against it, which are the trash events, promotions and the project's repository events. Uploads are not audit events with a repository, so publishes do not appear. `package_name` and `version` match only events that record a package version (package deletes, restores and purges).
-- `GET /projects/{project}/activity/export?format=jsonl|csv` downloads the same feed (all of it, optionally narrowed by `since`, `until`, `actor`, `action`) with the same visibility rules; fields and format in [audit export](../operations/monitoring.md#export). The **Activity** section has the matching buttons.
+- `GET /projects/{project}/activity/export?format=jsonl|csv` downloads the same feed (all of it, optionally narrowed by `since`, `until`, `actor`, `action`) with the same visibility rules; fields and format in [audit export](../operations/monitoring.md#export). The **Activity** tab has the matching buttons.
 - Access is the viewer role: a non-member gets `404`, the same as for an unknown project, so one project's activity never leaks into another's. Anonymous, deploy and scoped credentials get no project role, as for every other project route.
 
 ## API

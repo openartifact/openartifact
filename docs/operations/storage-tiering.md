@@ -24,7 +24,7 @@ A tier is a name for a storage backend. Lifecycle policies decide which blobs li
 | Term | Meaning |
 |---|---|
 | Primary store | The blob store configured with `STORAGE_BACKEND` ([storage](storage.md)). All new uploads land here. |
-| Storage backend | An additional backend registered in the admin UI ([storage backends](storage.md#settings), `/api/v1/admin/storage`). Filesystem, S3-compatible and the other kinds work. |
+| Storage backend | An additional backend registered in **Settings > Storage backends** ([storage backends](storage.md#settings), `/api/v1/admin/storage`). Filesystem, S3-compatible and the other kinds work. |
 | Tier | A named entry that maps to one storage backend. The tier `hot` always exists and is the primary store; you cannot delete it. Every other tier maps to exactly one registered backend, and a backend can be a tier only once. |
 | Placement | Where a blob's bytes are: `blobs.storage_backend_id` (`NULL` = the primary store). The database is the single authority. |
 | Policy | A rule "blobs matching these conditions belong on this tier". |
@@ -215,7 +215,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" -X POST "$OA/api/v1/admin/tiering/run
 
 ## Admin UI
 
-Storage tiers (`/admin/storage/tiers`, under Storage in the sidebar):
+Storage tiers (**Settings > Storage tiers**, `/settings/tiers`, in the Storage group of the settings hub):
 
 - Placement: one row per tier with its backend, availability, blob count and bytes, and the promote-on-read switch. Add and delete tiers.
 - Policies: create, edit, enable or disable and delete policies; conditions are described in plain words (age and idle in days, sizes in units).

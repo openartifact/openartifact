@@ -65,7 +65,7 @@ curl -X PATCH HOST/api/v1/repository/ci-scratch -H "Authorization: Bearer <TOKEN
   -H 'Content-Type: application/json' -d '{"trash_retention_days":0}'
 ```
 
-Also available at creation (`POST /api/v1/repositories`), in the UI repository settings and in the CLI: `oa repo create|update --trash-retention-days N` (`default` on `update` goes back to the server-wide value). Negative values are `400`.
+Also available at creation (`POST /api/v1/repositories`), in the repository's Settings tab and in the CLI: `oa repo create|update --trash-retention-days N` (`default` on `update` goes back to the server-wide value). Negative values are `400`.
 
 ## Kinds
 
@@ -149,7 +149,7 @@ Errors: `404` for an unknown or no longer trashed item, `409` for a restore conf
 
 ## UI
 
-Repository pages have a Trash tab listing that repository's deleted items with who deleted them, when, and when they will be purged, with Restore for users who can delete there. Admins also get a global Trash page (items and deleted repositories) with Restore and Purge now. Deleting a repository asks for its name, the same as the API and CLI below.
+A repository has a **Trash** tab (`/repos/NAME?tab=trash`) listing its deleted items with who deleted them (`deleted_by_name`), when, and when they will be purged (`expires_at`), with Restore for users who can delete there. Admins also get the instance-wide **Settings > Trash** (`/settings/trash`: items and deleted repositories) with Restore and Purge now. Deleting a repository asks for its name, the same as the API and CLI below.
 
 ## CLI
 
@@ -204,7 +204,7 @@ The purge worker runs every `OPENARTIFACT_TRASH_PURGE_INTERVAL` (default `15m`) 
 
 ### Empty a repository's trash
 
-`DELETE /api/v1/repositories/{name}/trash` purges every trashed item of one repository now (UI: Empty trash on the repository's trash page; CLI: `oa trash purge --repo NAME --all`). It takes the same steps as a single purge for each item: the record is removed, blobs are freed through the reference-counted path, the [quota](#quota) is released, an `artifact.purged` audit entry is written and the webhook event is emitted. It needs the repository-scoped `manage` permission (global admins have it everywhere), because it is destructive in bulk. Only items are purged: the repository itself, and a repository that is itself in the trash (`404`), are not touched. A request purges at most 1000 items and answers `{"purged": N, "remaining": M}`; repeat it while `remaining` is above 0 (the CLI does this itself).
+`DELETE /api/v1/repositories/{name}/trash` purges every trashed item of one repository now (UI: Empty trash on the repository's Trash tab; CLI: `oa trash purge --repo NAME --all`). It takes the same steps as a single purge for each item: the record is removed, blobs are freed through the reference-counted path, the [quota](#quota) is released, an `artifact.purged` audit entry is written and the webhook event is emitted. It needs the repository-scoped `manage` permission (global admins have it everywhere), because it is destructive in bulk. Only items are purged: the repository itself, and a repository that is itself in the trash (`404`), are not touched. A request purges at most 1000 items and answers `{"purged": N, "remaining": M}`; repeat it while `remaining` is above 0 (the CLI does this itself).
 
 Purging removes the record, releases the repository's [quota](#quota) (for npm it also prunes dist-tags and packages left with no versions), and frees blobs through the usual reference-counted path. Blobs are content-addressed and deduplicated: a blob is removed from storage only when no other row references it, including rows of other repositories and other formats, and including other items still in the trash. Purging one copy of a shared file therefore frees nothing.
 
@@ -214,7 +214,7 @@ Soft-deleted bytes keep counting against the repository's [quota](../repositorie
 
 ## Immutable releases
 
-`immutable_releases` is a per-repository setting (`POST /api/v1/repositories`, `PATCH /api/v1/repository/{name}`, UI settings, `oa repo ... --immutable-releases`), off by default. When on, a **released** version can be neither deleted nor overwritten: the request is `409`, in the format's own error style. Admins can override one request with `?force=true`; for anyone else the parameter is ignored. Pre-releases and snapshots stay mutable, so CI can keep publishing over them.
+`immutable_releases` is a per-repository setting (`POST /api/v1/repositories`, `PATCH /api/v1/repository/{name}`, the repository's Settings tab, `oa repo ... --immutable-releases`), off by default. When on, a **released** version can be neither deleted nor overwritten: the request is `409`, in the format's own error style. Admins can override one request with `?force=true`; for anyone else the parameter is ignored. Pre-releases and snapshots stay mutable, so CI can keep publishing over them.
 
 What counts as a release:
 

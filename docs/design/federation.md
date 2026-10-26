@@ -10,7 +10,7 @@ Status: implemented (issue [#33](https://github.com/openartifact/openartifact/is
 
 Shipped:
 
-- Everything in [Replication](#replication), [Security](#security), [Formats](#formats) (the nine formats of the table), [Observability](#observability) and [Configuration](#configuration), including the web UI Federation tab and the admin API.
+- Everything in [Replication](#replication), [Security](#security), [Formats](#formats) (the nine formats of the table), [Observability](#observability) and [Configuration](#configuration), including the web UI Federation section of the repository's Settings tab and the admin API.
 - Resumable blob pulls, see [Resumable blob transfers](#resumable-blob-transfers).
 - Integration tests with two real server instances and, in CI, with three instances federated in a triangle (raw, npm and Docker) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
 

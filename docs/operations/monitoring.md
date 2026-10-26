@@ -250,7 +250,7 @@ OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
 ## Audit log
 
-The server records who changed what. Events are stored in the `audit_logs` table and shown under Admin, Audit in the UI.
+The server records who changed what. Events are stored in the `audit_logs` table and shown under **Settings > Audit log** (`/settings/audit`) in the UI.
 
 Members of a project read the slice that concerns them (the project's own events and those of its repositories) without admin rights: see [project activity](../security/projects.md#project-activity).
 
@@ -315,7 +315,7 @@ Fields, in this order. The set is stable: fields may be appended, never renamed 
 
 Unset values are `null` in JSONL and an empty cell in CSV. CSV is RFC 4180 (quoted cells, doubled quotes, newlines allowed inside quotes). To keep spreadsheets from running attacker-controlled text, a CSV cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading `'`; read JSONL when you need the exact value.
 
-Members of a project export the project's own activity with `GET /api/v1/projects/{project}/activity/export` (same `format`, `since`, `until`, `actor` and `action` parameters, file name `openartifact-<project>-activity-<timestamp>.<ext>`). It applies the same visibility rules as the [project activity](../security/projects.md#project-activity) feed: `project.token_*` events only for maintainers and above and no client addresses. Its fields are `id`, `timestamp`, `action`, `actor`, `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. The Admin, Audit page and the project's Activity section have **Export JSONL** and **Export CSV** buttons for the same downloads (the admin button applies the filters typed on the page).
+Members of a project export the project's own activity with `GET /api/v1/projects/{project}/activity/export` (same `format`, `since`, `until`, `actor` and `action` parameters, file name `openartifact-<project>-activity-<timestamp>.<ext>`). It applies the same visibility rules as the [project activity](../security/projects.md#project-activity) feed: `project.token_*` events only for maintainers and above and no client addresses. Its fields are `id`, `timestamp`, `action`, `actor`, `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. The **Settings > Audit log** section and the project's Activity tab have **Export JSONL** and **Export CSV** buttons for the same downloads (the admin button applies the filters typed on the page).
 
 #### Shipping the log to a SIEM
 

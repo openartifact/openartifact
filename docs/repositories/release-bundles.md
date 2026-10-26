@@ -14,10 +14,10 @@ All routes are under `/api/v1`. Administrators can do everything; other authenti
 
 ## Web UI
 
-Administrators find **Release bundles** in the sidebar (`/bundles`); the pages need an administrator, whereas the API and `oa` also serve non-admin callers ([Permissions](#permissions)).
+Administrators find **Bundles** in the main navigation (`/bundles`); the pages need an administrator, whereas the API and `oa` also serve non-admin callers ([Permissions](#permissions)).
 
 - **List**: filter by name and state; **New bundle** creates a draft (name, version, description, optional pipeline); **New pipeline** defines the ordered stages, each optionally bound to a repository.
-- **Detail** (`/bundles/{name}/{version}`): summary, the pipeline as a stage trail with the bundle's current stage, the items (format, SHA-256, size, source repository), the vulnerability scan totals of the source repositories (linking to the filtered [vulnerability scans](../security/scanning.md)) and the promotion history.
+- **Detail** (`/bundles/{name}/{version}`): summary, the pipeline as a stage trail with the bundle's current stage, the items (format, SHA-256, size, source repository), the vulnerability scan totals of the source repositories (linking to the filtered [security findings](../security/findings.md)) and the promotion history.
 - **Draft**: *Add items* (source repository, SHA-256, artifact path, optional format and size), remove items, *Seal* and *Delete*. Sealing offers the registered GPG keys; choosing one signs the manifest.
 - **Sealed**: *Promote* (target stage among the stages after the current one, target repository, notes; a stage bound to a repository fixes the target; *Replace conflicting content (force)* sends `?force=true`, see [Promoting a bundle](#promoting-a-bundle)), *Archive*, and downloads of the *Manifest* and, for a signed bundle, the *Signature*.
 

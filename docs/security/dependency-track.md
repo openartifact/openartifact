@@ -24,7 +24,7 @@ For one artifact (`name@version`), a push does, in order:
 4. Builds a CycloneDX VEX of the **admin-recorded decisions only** (statuses OpenArtifact derives from a scan, such as `fixed_in`, are not sent: DT decides those itself) for the vulnerabilities DT found, and uploads it with `POST /api/v1/vex`. It waits for that token too.
 5. Reads the findings again and counts how many carry an analysis: that is the `vex_applied` figure shown in the UI and the API.
 
-Pushes are queued in the background, de-duplicated per artifact (several uploads or scans in a row collapse into one push; a request that arrives while a push runs triggers one more afterwards) and never delay an upload. The outcome of the last push of every artifact (`queued`, `running`, `done`, `skipped`, `failed`, with a sanitized reason, the DT project and the counts) is kept and shown in the admin UI and by `GET /api/v1/repositories/{name}/dependency-track/pushes` or `oa dtrack pushes REPO`.
+Pushes are queued in the background, de-duplicated per artifact (several uploads or scans in a row collapse into one push; a request that arrives while a push runs triggers one more afterwards) and never delay an upload. The outcome of the last push of every artifact (`queued`, `running`, `done`, `skipped`, `failed`, with a sanitized reason, the DT project and the counts) is kept and shown in the Dependency-Track settings and by `GET /api/v1/repositories/{name}/dependency-track/pushes` or `oa dtrack pushes REPO`.
 
 ### How the VEX is matched
 
@@ -34,7 +34,7 @@ If DT's analyzers find something later (a feed update), the next push (the next 
 
 ## Configuration
 
-Admin UI: **Admin → Dependency-Track**. The same through the API:
+Admin UI: **Settings > Dependency-Track** (`/settings/dependency-track`). The same through the API:
 
 ```sh
 curl -sS -X PUT HOST/api/v1/admin/dependency-track -H 'Authorization: Bearer <TOKEN>' \
@@ -74,7 +74,7 @@ The DT project is `project_name` + `project_version`, rendered per artifact from
 
 ### Per repository
 
-A repository can override any of it (UI: *Per-repository override*; API: `PUT /api/v1/repositories/{name}/dependency-track`; `DELETE` removes the override): its own URL and key (a repository can feed another DT), name and version templates, and `auto_push` / `push_vex` as *inherit*, on or off. An override applies explicitly, and its `enabled` flag wins, so a repository can opt in when the global integration is off, or opt out when it is on. Empty strings and unset booleans inherit the global value. `GET` returns the override and the **effective** configuration (never a key).
+A repository can override any of it (UI: *Per-repository override* in the Dependency-Track settings; API: `PUT /api/v1/repositories/{name}/dependency-track`; `DELETE` removes the override): its own URL and key (a repository can feed another DT), name and version templates, and `auto_push` / `push_vex` as *inherit*, on or off. An override applies explicitly, and its `enabled` flag wins, so a repository can opt in when the global integration is off, or opt out when it is on. Empty strings and unset booleans inherit the global value. `GET` returns the override and the **effective** configuration (never a key).
 
 `POST /api/v1/repositories/{name}/dependency-track/push` with `{"artifact_id":"my-lib@1.2.3"}` (`oa dtrack push REPO --artifact-id my-lib@1.2.3`) pushes one artifact now.
 

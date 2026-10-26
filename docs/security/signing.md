@@ -14,7 +14,7 @@ GPG keys sign the metadata of Debian and RPM repositories and the manifest of se
 
 There are two ways to provide a key, and they combine:
 
-- **Managed keys** (recommended): generate or import keys with the admin API, the `oa gpg` CLI or the **Admin → GPG keys** page. Private keys are stored in the database, sealed with AES-256-GCM under `OPENARTIFACT_SECRET_KEY`, and are never returned by the API. Managed keys need no restart and can be rotated at runtime.
+- **Managed keys** (recommended): generate or import keys with the admin API, the `oa gpg` CLI or **Settings > GPG and signing** (`/settings/signing`). Private keys are stored in the database, sealed with AES-256-GCM under `OPENARTIFACT_SECRET_KEY`, and are never returned by the API. Managed keys need no restart and can be rotated at runtime.
 - **File / environment key**: the ASCII-armored private key from `gpg.keyPath`, loaded at startup. It shows up as a read-only entry (`id: config`) in the key list and is never stored in the database.
 
 ### Which key signs a repository

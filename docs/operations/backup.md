@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Admin-triggered export of the database records, and optionally the blobs, to one `.tar.gz` archive, and a matching restore.
 
-Everything is admin only (403 otherwise) and available from the UI (Admin, Backup), the `oa` CLI and the REST API. There is no built-in scheduler and no retention: backups run when asked, and archives stay in the backup directory until you remove them.
+Everything is admin only (403 otherwise) and available from the UI (**Settings > Backup and restore**, `/settings/backup`), the `oa` CLI and the REST API. There is no built-in scheduler and no retention: backups run when asked, and archives stay in the backup directory until you remove them.
 
 A backup is a periodic snapshot. For a recovery point of minutes instead of the backup interval, and for what to do when the database, the blob store or a single repository is lost, see [disaster recovery](disaster-recovery.md) and [PostgreSQL point-in-time recovery](postgres-pitr.md).
 

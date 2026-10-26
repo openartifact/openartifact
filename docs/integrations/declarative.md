@@ -205,4 +205,4 @@ For a dry run in a pipeline, use `oa diff -f ...` and fail the build on exit sta
 
 ### Getting the first token
 
-On a new server, the bootstrap `admin` password is printed once in the server log. Sign in with `oa auth login`, or create a token in the UI (Settings, Tokens), and store it in the Secret above. Tokens that [expire](../security/authentication.md) need rotating in that Secret.
+On a new server, the bootstrap `admin` password is printed once in the server log. Sign in with `oa auth login`, or create a token in the UI (**Settings > Access tokens**), and store it in the Secret above. Tokens that [expire](../security/authentication.md) need rotating in that Secret.

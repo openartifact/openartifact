@@ -58,7 +58,7 @@ How it works:
 3. If the account must change its password (bootstrap `admin`, reset account), the CLI asks for a new one first (with `--password-stdin`: the second stdin line) and signs in again.
 4. It creates an `access` API token named `oa-cli` (`POST /api/v1/auth/tokens`), and saves server and token to the config file.
 
-`oa auth logout` clears the local token and prints the server-side token id. API tokens cannot revoke tokens, so the `oa-cli` token stays valid unless you pass `--revoke --username U --password-stdin` (which signs in and revokes it) or revoke it in the UI under Settings, Tokens. `--revoke` needs a login saved by this version of `oa`. A corrupt `~/.config/oa/config.json` no longer blocks `oa auth login`, `help` and `version`; `oa auth login` rewrites it.
+`oa auth logout` clears the local token and prints the server-side token id. API tokens cannot revoke tokens, so the `oa-cli` token stays valid unless you pass `--revoke --username U --password-stdin` (which signs in and revokes it) or revoke it in the UI under **Settings > Access tokens**. `--revoke` needs a login saved by this version of `oa`. A corrupt `~/.config/oa/config.json` no longer blocks `oa auth login`, `help` and `version`; `oa auth login` rewrites it.
 
 Webhook secrets are read from `--secret-file FILE` (`-` for stdin) or `OA_WEBHOOK_SECRET`, never from argv.
 
@@ -86,7 +86,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `webhook` | `list`, `create --name N --url U --events E,E [--secret-file F\|-] [--active=false]`, `show <id>`, `update <id> [--name N] [--url U] [--events E,E] [--active[=false]]`, `delete <id>`, `test <id>`, `deliveries <id>`, `repo list <repo>`, `repo create <repo> --name N --url U --events E,E [--secret-file F\|-]` |
 | `sbom` | `list <repo>`, `generate <repo> --artifact-id ID [--format cyclonedx\|spdx\|spdx-json\|spdx3-json] [--spec-version V]`, `show <repo> <id>`, `download <repo> <id> <dest> [--attest true\|bundle]`, `delete <repo> <id>` |
 | `vex` | `get <repo> [--artifact-id ID] [--format openvex\|cyclonedx] [--spec-version V] [--output FILE] [--attest true\|bundle]`, `list <repo> [--artifact-id ID]`, `set <repo> --artifact-id ID --vuln CVE --status S [--justification J] [--impact T] [--action T]`, `delete <repo> <id>` |
-| `dtrack` *admin* | `show <repo>`, `test <repo>`, `push <repo> --artifact-id ID`, `pushes <repo>`: the repository's [Dependency-Track](../security/dependency-track.md) integration (the global settings and API keys are set in the admin UI or the API) |
+| `dtrack` *admin* | `show <repo>`, `test <repo>`, `push <repo> --artifact-id ID`, `pushes <repo>`: the repository's [Dependency-Track](../security/dependency-track.md) integration (the global settings and API keys are set in **Settings > Dependency-Track** or the API) |
 | `vuln` | `scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv\|trivy\|grype]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
 | `license` | `scan <repo> --artifact-id ID`, `list <repo>`, `show <repo> <id>` |
 | `secret` | `scan <repo> --artifact-id ID [--content-file FILE\|-]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |

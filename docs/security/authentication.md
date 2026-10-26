@@ -95,7 +95,7 @@ curl -sS -b jar -X POST HOST/api/v1/auth/tokens -H "X-CSRF-Token: $CSRF" \
   -H 'Content-Type: application/json' -d '{"name":"ci","kind":"deploy"}'
 ```
 
-`oa auth login` does the same exchange and saves an `access` token ([CLI](../integrations/cli.md)). The web UI creates tokens under the user's profile.
+`oa auth login` does the same exchange and saves an `access` token ([CLI](../integrations/cli.md)). The web UI creates and revokes tokens in **Settings > Access tokens** (`/settings/tokens`): personal tokens, [project tokens](projects.md#project-tokens) and federation tokens in one list, filtered by type.
 
 Use a token:
 

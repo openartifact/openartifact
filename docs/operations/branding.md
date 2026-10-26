@@ -38,7 +38,7 @@ The colour you pick is the starting point. The server derives one variant per th
 
 There are three layers, strongest first:
 
-1. **Runtime, in the admin UI** (Administration, Branding) or through the API. Stored in the database, effective for every replica within seconds, no restart. Each field shows whether it is overridden and can be reset to the configured default.
+1. **Runtime, in the admin UI** (**Settings > Branding**, `/settings/branding`) or through the API. Stored in the database, effective for every replica within seconds, no restart. Each field shows whether it is overridden and can be reset to the configured default.
 2. **Configuration**: `branding.*` in the YAML file or `OPENARTIFACT_BRANDING_*` environment variables, read at startup. Logo and favicon values are **file paths**. An invalid value (bad colour, unreadable or unsafe image) stops the server at startup with a message naming the key.
 3. **Built-in defaults**.
 
@@ -91,7 +91,7 @@ OpenArtifact is licensed under the GNU Affero General Public License v3.0. Secti
 
 For that reason the UI always shows, and branding cannot remove or hide:
 
-- **Powered by OpenArtifact vX.Y.Z**, in the About dialog (sidebar footer) and in the login page footer.
+- **Powered by OpenArtifact vX.Y.Z**, in the About dialog (user menu) and in the login page footer.
 - A **Source code** link to `sourceUrl`.
 
 If you run a modified build, point `sourceUrl` at the place where you publish the exact source of that build (a fork, a release tarball). If you run an unmodified release the default is correct. `sourceUrl` cannot be empty.

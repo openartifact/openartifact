@@ -407,7 +407,7 @@ Encrypted fields:
 | proxy repository upstream password | [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
 | SSO client secret | [authentication](../security/authentication.md) |
 | AI provider API key | [AI analysis](../integrations/ai-analysis.md) |
-| credentials of storage backends created under Admin, Storage | see below |
+| credentials of storage backends created under **Settings > Storage backends** | see below |
 
 Rules:
 
@@ -423,7 +423,7 @@ OPENARTIFACT_SECRET_KEY="$(openssl rand -base64 32)"
 
 ### Storage backend records
 
-`GET/POST /api/v1/admin/storage`, `GET/PATCH/DELETE /api/v1/admin/storage/{name}` and `POST /api/v1/admin/storage/{name}/test` (admin only, also the Admin, Storage page) keep named backend definitions. Credential keys in `config` (`access_key`, `secret_key`, `password`, `account_key`, `hmac_key`, `hmac_secret` and similar) are encrypted at rest, never returned (a `has_<key>` flag is returned instead) and kept when an update omits them. `test` checks connectivity for every kind (`filesystem`, `s3`, `garage`, `seaweedfs`, `gcs`, `azure` and `oci`; object stores get a bucket or container check with the stored credentials), and records the status as `healthy` or `unreachable`. The records do not route traffic: blobs are always read and written through the single backend configured with `STORAGE_*`.
+`GET/POST /api/v1/admin/storage`, `GET/PATCH/DELETE /api/v1/admin/storage/{name}` and `POST /api/v1/admin/storage/{name}/test` (admin only, also **Settings > Storage backends**, `/settings/backends`) keep named backend definitions. Credential keys in `config` (`access_key`, `secret_key`, `password`, `account_key`, `hmac_key`, `hmac_secret` and similar) are encrypted at rest, never returned (a `has_<key>` flag is returned instead) and kept when an update omits them. `test` checks connectivity for every kind (`filesystem`, `s3`, `garage`, `seaweedfs`, `gcs`, `azure` and `oci`; object stores get a bucket or container check with the stored credentials), and records the status as `healthy` or `unreachable`. The records do not route traffic: blobs are always read and written through the single backend configured with `STORAGE_*`.
 
 ## Health
 
