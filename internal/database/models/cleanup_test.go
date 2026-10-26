@@ -6,6 +6,7 @@ package models
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,9 @@ func TestCleanupPolicyValidate(t *testing.T) {
 		{"keep since", CleanupPolicy{Name: "p", KeepSinceDays: new(30), ScheduleCron: "0 3 * * 1"}, true},
 		{"both + pattern", CleanupPolicy{Name: "p", KeepLastN: new(1), KeepSinceDays: new(1), NamePattern: `^foo-.*$`}, true},
 		{"no name", CleanupPolicy{KeepLastN: new(3)}, false},
+		{"keep_last_n at the column limit", CleanupPolicy{Name: "p", KeepLastN: new(math.MaxInt32)}, true},
+		{"keep_last_n past the column limit", CleanupPolicy{Name: "p", KeepLastN: new(math.MaxInt32 + 1)}, false},
+		{"keep_since_days past the column limit", CleanupPolicy{Name: "p", KeepSinceDays: new(14031399088217)}, false},
 		{"name at the column width", CleanupPolicy{Name: strings.Repeat("n", 255), KeepLastN: new(3)}, true},
 		{"name wider than the column", CleanupPolicy{Name: strings.Repeat("n", 256), KeepLastN: new(3)}, false},
 		{"no criteria", CleanupPolicy{Name: "p", NamePattern: ".*"}, false},

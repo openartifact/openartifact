@@ -7,6 +7,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -56,12 +57,12 @@ func (p *CleanupPolicy) Validate() error {
 		return fmt.Errorf("%w: name must be at most %d bytes", ErrInvalidCleanupPolicy, maxCleanupPolicyNameLen)
 	}
 
-	if p.KeepLastN != nil && *p.KeepLastN < 1 {
-		return fmt.Errorf("%w: keep_last_n must be >= 1", ErrInvalidCleanupPolicy)
+	if p.KeepLastN != nil && (*p.KeepLastN < 1 || *p.KeepLastN > math.MaxInt32) {
+		return fmt.Errorf("%w: keep_last_n must be between 1 and %d", ErrInvalidCleanupPolicy, math.MaxInt32)
 	}
 
-	if p.KeepSinceDays != nil && *p.KeepSinceDays < 1 {
-		return fmt.Errorf("%w: keep_since_days must be >= 1", ErrInvalidCleanupPolicy)
+	if p.KeepSinceDays != nil && (*p.KeepSinceDays < 1 || *p.KeepSinceDays > math.MaxInt32) {
+		return fmt.Errorf("%w: keep_since_days must be between 1 and %d", ErrInvalidCleanupPolicy, math.MaxInt32)
 	}
 
 	if p.KeepDownloadedSinceDays != nil {
