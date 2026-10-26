@@ -24,17 +24,22 @@ export function packagesFromCycloneDx(doc: CycloneDxDocument): SbomPackage[] {
   for (const v of doc.vulnerabilities ?? []) {
     for (const a of v.affects ?? []) vulnerable.add(a.ref)
   }
-  return components.map((c) => {
+  // Two components can share name and version (a different purl or hash): the drawing and the
+  // table identify a package by `name@version`, so they are merged into one.
+  const merged = new Map<string, SbomPackage>()
+  for (const c of components) {
     const ref = c['bom-ref']
-    return {
-      name: c.name,
-      version: c.version ?? '',
-      vulnerable: ref ? vulnerable.has(ref) : false,
-      dependencies: (ref ? (deps.get(ref) ?? []) : [])
-        .map((r) => byRef.get(r))
-        .filter((x): x is { name: string; version: string } => x !== undefined),
+    const pkg: SbomPackage = { name: c.name, version: c.version ?? '', vulnerable: ref ? vulnerable.has(ref) : false, dependencies: [] }
+    const id = nodeId(pkg)
+    const known = merged.get(id) ?? pkg
+    known.vulnerable ||= pkg.vulnerable
+    for (const r of ref ? (deps.get(ref) ?? []) : []) {
+      const dep = byRef.get(r)
+      if (dep && !known.dependencies.some((d) => nodeId(d) === nodeId(dep))) known.dependencies.push(dep)
     }
-  })
+    merged.set(id, known)
+  }
+  return [...merged.values()]
 }
 
 export interface GraphNode {
@@ -135,5 +140,11 @@ export function reportsOfVersion(reports: readonly SbomItem[], fileIds: readonly
   const ids = new Set(fileIds)
   return reports
     .filter((r) => ids.has(r.artifact_id))
-    .sort((a, b) => Date.parse(b.generated_at ?? b.created_at ?? '') - Date.parse(a.generated_at ?? a.created_at ?? ''))
+    .sort((a, b) => reportTime(b) - reportTime(a))
+}
+
+/** Generation time in ms; a report without a usable timestamp counts as the oldest. */
+function reportTime(r: SbomItem): number {
+  const ms = Date.parse(r.generated_at ?? r.created_at ?? '')
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms
 }
