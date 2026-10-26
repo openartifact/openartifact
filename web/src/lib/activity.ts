@@ -33,11 +33,21 @@ export interface ActivityItem {
   where?: ActivityLink
 }
 
-/** Audit actions that describe traffic, not a decision or a change; they never reach the feed. */
-const NOISE = new Set(['http.request', 'artifact.downloaded', 'auth.token_validate'])
+/** Audit actions that describe traffic or routine sessions, not a decision or a change; they never reach the feed. */
+const NOISE = new Set(['http.request', 'artifact.downloaded', 'auth.token_validate', 'auth.login', 'auth.sso_login', 'auth.logout'])
 
 export function isFeedAction(action: string | undefined): boolean {
   return !!action && !NOISE.has(action)
+}
+
+/**
+ * Whether an audit entry says something on its own line. Entries recorded from a bare request
+ * carry no resolved subject ("admin deleted"); only the account events (failed sign-in,
+ * password change, token created) read without one.
+ */
+export function isFeedEntry(entry: ResolvedAuditEntry): boolean {
+  if (!isFeedAction(entry.action)) return false
+  return !!entry.subject?.name || (entry.action ?? '').startsWith('auth.')
 }
 
 /** `project.member_added` -> `member added`, `artifact.uploaded` -> `uploaded`. */
@@ -87,13 +97,13 @@ export function auditItem(entry: ResolvedAuditEntry): ActivityItem {
   }
 }
 
-/** Project feeds carry a readable message, not resolved ids; the project is the link. */
+/** Project feeds carry a readable message, not resolved ids; the message is a sentence of its own, so it replaces the verb. */
 export function projectItem(entry: ProjectActivityEntry, project: string): ActivityItem {
   return {
     id: `${project}:${entry.id}`,
     at: entry.timestamp,
     actor: entry.actor,
-    verb: verbOf(entry.action),
+    verb: entry.message ? '' : verbOf(entry.action),
     subject: entry.message ? { label: entry.message } : undefined,
     where: { label: project, to: `/projects/${encodeURIComponent(project)}` },
   }

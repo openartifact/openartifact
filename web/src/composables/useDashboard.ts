@@ -23,7 +23,7 @@ import { listProjectActivity, listProjects } from '../api/projects'
 import { listStorageBackends, type StorageBackend } from '../api/storage'
 import {
   auditItem,
-  isFeedAction,
+  isFeedEntry,
   mergeActivity,
   projectItem,
   publishedItem,
@@ -142,9 +142,9 @@ export function useDashboard() {
   async function loadActivity(): Promise<Block<ActivityItem[]>> {
     if (isAdmin.value) {
       return toBlock(async () => {
-        // Unmapped requests and downloads are traffic, not activity.
-        const res = await listAudit({ limit: 50 })
-        return mergeActivity([res.items.filter((e) => isFeedAction(e.action)).map((e) => auditItem(e as ResolvedAuditEntry))], FEED_LIMIT)
+        // Requests, downloads, routine sign-ins and entries without a subject are not activity.
+        const res = await listAudit({ limit: 100 })
+        return mergeActivity([res.items.map((e) => e as ResolvedAuditEntry).filter(isFeedEntry).map(auditItem)], FEED_LIMIT)
       })
     }
     return toBlock(async () => {

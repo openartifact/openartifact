@@ -3,13 +3,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { auditItem, isFeedAction, mergeActivity, projectItem, publishedItem, subjectPath, verbOf } from '../activity'
+import { auditItem, isFeedAction, isFeedEntry, mergeActivity, projectItem, publishedItem, subjectPath, verbOf } from '../activity'
 
 describe('activity feed', () => {
   it('drops traffic actions', () => {
     expect(isFeedAction('http.request')).toBe(false)
     expect(isFeedAction('artifact.downloaded')).toBe(false)
     expect(isFeedAction('repository.created')).toBe(true)
+  })
+
+  it('keeps routine sign-ins and entries without a subject out of the feed', () => {
+    expect(isFeedAction('auth.login')).toBe(false)
+    expect(isFeedEntry({ action: 'repository.deleted', subject: null })).toBe(false)
+    expect(isFeedEntry({ action: 'artifact.deleted', subject: { kind: 'package', name: 'left-pad' } })).toBe(true)
+    expect(isFeedEntry({ action: 'auth.login_failed', subject: null })).toBe(true)
   })
 
   it('reads the verb off the action', () => {
@@ -47,6 +54,8 @@ describe('activity feed', () => {
   it('links a project feed entry to its project and a publish to its artifact version', () => {
     const p = projectItem({ id: 'e1', timestamp: 't', action: 'project.member_added', actor: 'carol', message: 'added dave as maintainer' }, 'storefront')
     expect(p.where).toEqual({ label: 'storefront', to: '/projects/storefront' })
+    expect(p.verb).toBe('')
+    expect(projectItem({ id: 'e2', timestamp: 't', action: 'project.member_added', actor: 'carol' }, 'storefront').verb).toBe('member added')
     const pub = publishedItem({ repository: 'r', format: 'npm', name: '@a/b', version: '1.0.0', created_at: 't', created_by_name: 'eve' })
     expect(pub.subject?.to).toBe('/repos/r/packages/@a/b/versions/1.0.0')
     expect(pub.actor).toBe('eve')
