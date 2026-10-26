@@ -40,9 +40,12 @@ export function artifactCapabilities(access: ArtifactAccess): ArtifactCapabiliti
   }
 }
 
-export type SecurityLevel = 'critical' | 'high' | 'medium' | 'low' | 'clean' | 'unscanned'
+export type SecurityLevel = 'critical' | 'high' | 'medium' | 'low' | 'other' | 'clean' | 'unscanned'
 
-/** The worst thing a summary reports; `unscanned` when no scan completed and nothing is flagged. */
+/**
+ * The worst thing a summary reports; `other` when only license, secret or AI findings or a quarantine
+ * remain, `unscanned` when no scan completed and nothing is flagged.
+ */
 export function securityLevel(summary: SecuritySummary | null): SecurityLevel {
   if (!summary) return 'unscanned'
   const { critical, high, medium, low } = summary.vuln
@@ -51,6 +54,8 @@ export function securityLevel(summary: SecuritySummary | null): SecurityLevel {
   if (medium > 0) return 'medium'
   if (low > 0) return 'low'
   if (summary.scanned_at === null && summary.license.violations === 0 && summary.secret.count === 0) return 'unscanned'
+  const { license, secret, ai } = summary
+  if (license.violations > 0 || secret.count > 0 || ai.quarantine_recommended > 0 || ai.review_required > 0 || summary.quarantined) return 'other'
   return 'clean'
 }
 

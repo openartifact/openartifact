@@ -29,9 +29,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-files="{ row }"><span class="tabular-nums">{{ row.files.length }}</span></template>
       <template #cell-security="{ row }">
         <SeverityBadge v-if="worstSeverity(row.security) !== 'none'" :severity="worstSeverity(row.security)" :count="worstCount(row.security)" />
-        <span v-else-if="row.scannedAt" class="text-xs text-muted">{{ t('artifact.versions.clean') }}</span>
-        <span v-else class="text-xs text-muted">{{ t('artifact.versions.notScanned') }}</span>
-        <span v-if="row.flagged && worstSeverity(row.security) !== 'critical' && worstSeverity(row.security) !== 'high'" class="ml-2 text-xs text-warning">{{ t('artifact.versions.flagged') }}</span>
+        <span v-else-if="row.scannedAt && !row.flagged" class="text-xs text-muted">{{ t('artifact.versions.clean') }}</span>
+        <span v-else-if="!row.scannedAt && !row.flagged" class="text-xs text-muted">{{ t('artifact.versions.notScanned') }}</span>
+        <span v-if="row.flagged && worstSeverity(row.security) !== 'critical' && worstSeverity(row.security) !== 'high'" class="text-xs text-warning" :class="worstSeverity(row.security) === 'none' ? '' : 'ml-2'">{{ t('artifact.versions.flagged') }}</span>
       </template>
     </ListTable>
   </section>
