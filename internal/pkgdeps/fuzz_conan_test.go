@@ -188,12 +188,17 @@ func FuzzConanRead(f *testing.F) {
 
 		fuzzConanCheckFinished(t, res.Deps)
 
+		// finish trims whitespace the recipe quotes (a vertical tab inside a
+		// version), so only what the parser read is checked against the recipe;
+		// Read must then return exactly that, finished.
 		clean := fuzzConanClean(conanfile)
-		for _, d := range res.Deps {
+		read := parseConan([]manifest.Part{{Label: "conanfile.py", Body: clean}}).Deps
+
+		for _, d := range read {
 			fuzzConanCheck(t, clean, d)
 		}
 
-		if want := finish(parseConan([]manifest.Part{{Label: "conanfile.py", Body: clean}}).Deps); !slices.Equal(res.Deps, want) {
+		if want := finish(read); !slices.Equal(res.Deps, want) {
 			t.Fatalf("Read = %+v, the conanfile.py alone gives %+v", res.Deps, want)
 		}
 	})

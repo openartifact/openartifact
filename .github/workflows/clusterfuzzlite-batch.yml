@@ -37,14 +37,23 @@ jobs:
       actions: read # find the previous crash artifacts
       security-events: write # upload SARIF to code scanning
     steps:
-      - name: Require the storage token
+      # ClusterFuzzLite only logs a failed upload and carries on, so a token
+      # GitHub rejects would cost the whole run before anyone notices.
+      - name: Check the storage token
         env:
           FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
         run: |
-          if [ -z "$FUZZ_STORAGE_TOKEN" ]; then
-            echo "::error::secret FUZZ_STORAGE_TOKEN is not set (docs/development/README.md#fuzzing)"
-            exit 1
-          fi
+          fail() { echo "::error::FUZZ_STORAGE_TOKEN $1 (docs/development/README.md#fuzzing)"; exit 1; }
+          [ -n "$FUZZ_STORAGE_TOKEN" ] || fail "is not set"
+          [ "$FUZZ_STORAGE_TOKEN" = "${FUZZ_STORAGE_TOKEN//[[:space:]]/}" ] ||
+            fail "holds whitespace or a newline: set it with printf %s"
+          code="$(curl -sS -o repo.json -w '%{http_code}' \
+            -H "Authorization: Bearer $FUZZ_STORAGE_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/openartifact/openartifact-fuzz-storage)"
+          [ "$code" = 200 ] || fail "is rejected by GitHub (HTTP $code): expired, revoked or not granted to openartifact-fuzz-storage"
+          jq -e '.permissions.push == true' repo.json > /dev/null ||
+            fail "cannot push to openartifact-fuzz-storage: it needs Contents: read and write"
+          rm -f repo.json
 
       - name: Build fuzzers
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
@@ -84,14 +93,23 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: Require the storage token
+      # ClusterFuzzLite only logs a failed upload and carries on, so a token
+      # GitHub rejects would cost the whole run before anyone notices.
+      - name: Check the storage token
         env:
           FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
         run: |
-          if [ -z "$FUZZ_STORAGE_TOKEN" ]; then
-            echo "::error::secret FUZZ_STORAGE_TOKEN is not set (docs/development/README.md#fuzzing)"
-            exit 1
-          fi
+          fail() { echo "::error::FUZZ_STORAGE_TOKEN $1 (docs/development/README.md#fuzzing)"; exit 1; }
+          [ -n "$FUZZ_STORAGE_TOKEN" ] || fail "is not set"
+          [ "$FUZZ_STORAGE_TOKEN" = "${FUZZ_STORAGE_TOKEN//[[:space:]]/}" ] ||
+            fail "holds whitespace or a newline: set it with printf %s"
+          code="$(curl -sS -o repo.json -w '%{http_code}' \
+            -H "Authorization: Bearer $FUZZ_STORAGE_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/openartifact/openartifact-fuzz-storage)"
+          [ "$code" = 200 ] || fail "is rejected by GitHub (HTTP $code): expired, revoked or not granted to openartifact-fuzz-storage"
+          jq -e '.permissions.push == true' repo.json > /dev/null ||
+            fail "cannot push to openartifact-fuzz-storage: it needs Contents: read and write"
+          rm -f repo.json
 
       - name: Build fuzzers
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
@@ -122,14 +140,23 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: Require the storage token
+      # ClusterFuzzLite only logs a failed upload and carries on, so a token
+      # GitHub rejects would cost the whole run before anyone notices.
+      - name: Check the storage token
         env:
           FUZZ_STORAGE_TOKEN: ${{ secrets.FUZZ_STORAGE_TOKEN }}
         run: |
-          if [ -z "$FUZZ_STORAGE_TOKEN" ]; then
-            echo "::error::secret FUZZ_STORAGE_TOKEN is not set (docs/development/README.md#fuzzing)"
-            exit 1
-          fi
+          fail() { echo "::error::FUZZ_STORAGE_TOKEN $1 (docs/development/README.md#fuzzing)"; exit 1; }
+          [ -n "$FUZZ_STORAGE_TOKEN" ] || fail "is not set"
+          [ "$FUZZ_STORAGE_TOKEN" = "${FUZZ_STORAGE_TOKEN//[[:space:]]/}" ] ||
+            fail "holds whitespace or a newline: set it with printf %s"
+          code="$(curl -sS -o repo.json -w '%{http_code}' \
+            -H "Authorization: Bearer $FUZZ_STORAGE_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/openartifact/openartifact-fuzz-storage)"
+          [ "$code" = 200 ] || fail "is rejected by GitHub (HTTP $code): expired, revoked or not granted to openartifact-fuzz-storage"
+          jq -e '.permissions.push == true' repo.json > /dev/null ||
+            fail "cannot push to openartifact-fuzz-storage: it needs Contents: read and write"
+          rm -f repo.json
 
       - name: Build fuzzers (coverage)
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
