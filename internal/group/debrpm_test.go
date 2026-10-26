@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -301,14 +302,75 @@ func TestGroupPackageFileComesFromTheOwningMember(t *testing.T) {
 
 func TestGroupPackageFileNotInTheIndexIs404WithoutAskingMembers(t *testing.T) {
 	f := newDebRPM(t, "rpm", member("a", "rpm", "hosted"), member("mirror", "rpm", "proxy"))
+	f.set("mirror", "repodata/repomd.xml", 200, "<repomd/>") // a mirror of one repository, which the index covers
 	f.set("mirror", "Packages/evil-1.rpm", 200, "evil")
 
 	if w := f.get(http.MethodGet, "Packages/evil-1.rpm"); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "evil") {
 		t.Errorf("unlisted file = %d %q, want 404", w.Code, w.Body.String())
 	}
 
+	if slices.Contains(f.asked, "a") || len(f.asked) > 1 {
+		t.Errorf("members asked for an unlisted file: %v, want at most the mirror's root repodata", f.asked)
+	}
+}
+
+// A proxy over a tree of repositories has no repodata at its root, so the
+// merged index cannot cover it: the group serves the sub-paths from it as the
+// proxy does.
+func TestRPMGroupServesSubPathsOfAProxyOverATreeOfRepositories(t *testing.T) {
+	f := newDebRPM(t, "rpm", member("hosted", "rpm", "hosted"), member("tree", "rpm", "proxy"))
+	f.set("tree", "9/BaseOS/x86_64/os/repodata/repomd.xml", 200, "<repomd/>")
+	f.set("tree", "9/BaseOS/x86_64/os/Packages/hello-1.rpm", 200, "HELLO")
+
+	for path, want := range map[string]string{
+		"9/BaseOS/x86_64/os/repodata/repomd.xml":  "<repomd/>",
+		"9/BaseOS/x86_64/os/Packages/hello-1.rpm": "HELLO",
+	} {
+		if w := f.get(http.MethodGet, path); w.Code != http.StatusOK || w.Body.String() != want {
+			t.Errorf("%s = %d %q, want %q", path, w.Code, w.Body.String(), want)
+		}
+	}
+
+	if w := f.get(http.MethodGet, "9/BaseOS/x86_64/os/Packages/nope.rpm"); w.Code != http.StatusNotFound {
+		t.Errorf("missing sub-path file = %d, want 404", w.Code)
+	}
+
+	if slices.Contains(f.asked, "hosted") {
+		t.Errorf("a hosted member was asked for a sub-path: %v", f.asked)
+	}
+}
+
+func TestRPMGroupDoesNotServeSubPathsOfAnUnreadableTreeMember(t *testing.T) {
+	f := newDebRPM(t, "rpm", member("open", "rpm", "hosted"), member("tree", "rpm", "proxy"))
+	f.set("tree", "9/os/Packages/hello-1.rpm", 200, "HELLO")
+	f.denied["tree"] = true
+
+	if w := f.get(http.MethodGet, "9/os/Packages/hello-1.rpm"); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "HELLO") {
+		t.Errorf("sub-path of a member the caller cannot read = %d %q, want 404", w.Code, w.Body.String())
+	}
+
 	if len(f.asked) != 0 {
-		t.Errorf("members asked for an unlisted file: %v", f.asked)
+		t.Errorf("an unreadable member was asked: %v", f.asked)
+	}
+}
+
+func TestRPMGroupWithoutAnyRootRepodataExplainsTheMissingIndex(t *testing.T) {
+	f := newDebRPM(t, "rpm", member("tree", "rpm", "proxy"))
+	f.gen.err = fmt.Errorf("%w (proxy members without repodata/repomd.xml at their upstream root: tree)", ErrNoRepodata)
+
+	w := f.get(http.MethodGet, "repodata/repomd.xml")
+	if w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("no mergeable index = %d (Cache-Control %q), want 404 no-store", w.Code, w.Header().Get("Cache-Control"))
+	}
+
+	for _, want := range []string{"no merged repodata", "tree", "sub-path"} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("body %q does not mention %q", w.Body.String(), want)
+		}
+	}
+
+	if f.gen.refreshed != 0 {
+		t.Error("nothing to merge must not schedule background work")
 	}
 }
 

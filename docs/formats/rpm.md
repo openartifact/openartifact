@@ -95,3 +95,5 @@ An RPM proxy repository mirrors `repodata/` and `Packages/` from `upstream_url`.
 ## Group
 
 An RPM group publishes merged `repodata/` (`repomd.xml`, `primary`, `filelists`, `other` and `modules`), signed with the server key (`repomd.xml.asc`), and serves `Packages/` files from the member that owns them. Use `baseurl=HOST/repos/GROUP` and `gpgkey=HOST/repos/GROUP/public.key` as for a hosted repository. Merging rules, regeneration and limits: [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups).
+
+A proxy member whose upstream is a tree of repositories (no `repodata/` at the root, one per sub-directory such as `9/BaseOS/x86_64/os/`) cannot be merged into the group's index. The group serves such a member's sub-paths unmerged: use `baseurl=HOST/repos/GROUP/9/BaseOS/x86_64/os/`, one repository per `baseurl`. If the group has nothing else to list, `HOST/repos/GROUP/repodata/repomd.xml` answers `404` with a message that says so. Details: [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups).

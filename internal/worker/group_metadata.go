@@ -82,7 +82,15 @@ type GroupMetadataWorker struct {
 func NewGroupMetadataWorker(db sq.Database, blobStore storage.BlobStore, opener MemberOpener, rpm RPMPackageLoader, signers gpg.Resolver, log *logger.Logger) *GroupMetadataWorker {
 	w := &GroupMetadataWorker{db: db, blobStore: blobStore, opener: opener, rpm: rpm, signers: signers, log: log}
 	w.q = newRegenQueue("group", log, func(ctx context.Context, groupID string) error {
-		return w.generate(ctx, groupID, "", false, nil)
+		err := w.generate(ctx, groupID, "", false, nil)
+		if errors.Is(err, group.ErrNoRepodata) {
+			// Nothing to merge is a property of the members, not a failure;
+			// requests for the index explain it.
+			w.log.Infow("group metadata not generated", "group_id", groupID, "reason", err.Error())
+			return nil
+		}
+
+		return err
 	})
 
 	return w
