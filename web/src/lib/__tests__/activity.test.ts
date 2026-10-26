@@ -42,7 +42,7 @@ describe('activity feed', () => {
       subject: { kind: 'package', name: 'lodash 4.17.21', repository: 'npm-main' },
     } as never)
     expect(item.actor).toBe('alice')
-    expect(item.subject).toEqual({ label: 'lodash 4.17.21', to: '/repos/npm-main/packages/lodash 4.17.21'.replace(' ', '%20') })
+    expect(item.subject).toEqual({ label: 'lodash 4.17.21', to: '/repos/npm-main/packages/lodash%204.17.21' })
     expect(item.where).toEqual({ label: 'npm-main', to: '/repos/npm-main' })
   })
 
