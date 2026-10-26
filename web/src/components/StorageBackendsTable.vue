@@ -20,6 +20,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
           {{ t('adm.storage.column.status') }}
         </th>
+        <th scope="col" class="text-right text-caption font-semibold text-muted px-3 py-2.5">
+          {{ t('sx.usage.stored') }}
+        </th>
         <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5">
           {{ t('adm.storage.column.actions') }}
         </th>
@@ -102,6 +105,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </td>
 
+        <!-- Usage cell -->
+        <td class="px-3 py-3.5 text-right" :data-testid="`backend-usage-${backend.name}`">
+          <template v-if="backend.usage">
+            <p class="text-sm tabular-nums text-foreground">{{ formatBytes(backend.usage.size_bytes) }}</p>
+            <p class="text-xs tabular-nums text-muted">{{ tp('sx.usage.blobs', { n: backend.usage.blob_count.toLocaleString('en') }) }}</p>
+          </template>
+          <span v-else class="text-xs text-muted" :title="t('sx.usage.none')">—</span>
+        </td>
+
         <!-- Actions cell -->
         <td class="px-5 py-3.5">
           <div class="flex items-center gap-0.5 justify-end">
@@ -160,6 +172,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ArrowPathIcon, BoltIcon, PencilIcon, StarIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { t, tp } from '../i18n/en'
 import { timeAgo } from '../lib/datetime'
+import { formatBytes } from '../lib/quota'
 import {
   locationSummary,
   statusBadgeClass,

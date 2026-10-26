@@ -13,6 +13,7 @@ const backends = [
     id: 'b1', name: 'primary', kind: 's3', is_default: true, status: 'healthy',
     last_checked_at: new Date().toISOString(),
     config: { bucket: 'oa-prod', region: 'eu-west-1', accessKey: 'AKIA1', has_secretKey: true },
+    usage: { blob_count: 1234, size_bytes: 5 * 1024 ** 3 },
   },
   { id: 'b2', name: 'local', kind: 'filesystem', is_default: false, status: 'unknown', config: { path: '/data' } },
 ]
@@ -58,6 +59,16 @@ describe('StorageBackendsPage', () => {
     expect(rows[0]!.find('[aria-label="Set as default: primary"]').exists()).toBe(false)
     expect(rows[1]!.find('[aria-label="Set as default: local"]').exists()).toBe(true)
     expect(rows[0]!.find('[aria-label="Delete backend: primary"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('shows what each backend stores, and a dash when the server reports nothing', async () => {
+    stubFetch()
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="backend-usage-primary"]').text()).toBe('5.0 GBBlobs: 1,234')
+    expect(wrapper.find('[data-testid="backend-usage-local"]').text()).toBe('—')
     wrapper.unmount()
   })
 
