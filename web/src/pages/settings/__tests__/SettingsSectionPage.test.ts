@@ -35,10 +35,10 @@ describe('SettingsSectionPage', () => {
   })
   afterEach(() => fetchSpy.mockRestore())
 
-  it('shows the breadcrumb Settings > Group > Section and the registry title', async () => {
+  it('shows the breadcrumb Settings > Group above the section title', async () => {
     const { wrapper } = await mountSection('/settings/backends', true)
     const crumbs = wrapper.findAll('header nav ol li').map((li) => li.text())
-    expect(crumbs).toEqual(['Settings', 'Storage', 'Storage backends'])
+    expect(crumbs).toEqual(['Settings', 'Storage'])
     expect(wrapper.get('h1').text()).toBe('Storage backends')
     wrapper.unmount()
   })
@@ -76,7 +76,7 @@ describe('SettingsSectionPage', () => {
   it('lists personal tokens under Your account for non-administrators', async () => {
     const { wrapper } = await mountSection('/settings/profile', false)
     expect(wrapper.findAll('[data-testid="settings-rail"] details')).toHaveLength(1)
-    expect(wrapper.findAll('header nav ol li').map((li) => li.text())).toEqual(['Settings', 'Your account', 'Profile'])
+    expect(wrapper.findAll('header nav ol li').map((li) => li.text())).toEqual(['Settings', 'Your account'])
     wrapper.unmount()
   })
 

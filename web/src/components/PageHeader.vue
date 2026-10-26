@@ -7,21 +7,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <header class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div class="min-w-0">
-      <nav :aria-label="t('shell.breadcrumbs')" class="mb-1">
+      <nav v-if="ancestors.length > 0" :aria-label="t('shell.breadcrumbs')" class="mb-1">
         <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
           <li
-            v-for="(crumb, i) in trail"
+            v-for="(crumb, i) in ancestors"
             :key="i"
             class="flex min-w-0 items-center gap-1.5"
           >
             <ChevronRightIcon v-if="i > 0" class="h-3 w-3 shrink-0" aria-hidden="true" />
-            <span
-              v-if="i === trail.length - 1"
-              aria-current="page"
-              class="truncate font-medium text-foreground"
-            >{{ crumb.label }}</span>
             <router-link
-              v-else-if="crumb.to"
+              v-if="crumb.to"
               :to="crumb.to"
               class="max-w-[20ch] truncate hover:text-foreground hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center sm:max-w-none"
             >{{ crumb.label }}</router-link>
@@ -71,10 +66,8 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
-// Always a trail: a page whose route declares none still shows itself as the current crumb.
-const trail = computed<Crumb[]>(() => {
-  const declared = props.crumbs ?? resolveCrumbs(route)
-  return declared.length > 0 ? declared : [{ label: props.title }]
-})
+// The h1 names the current page, so the trail shows only the pages above it:
+// a top-level page has no breadcrumb at all.
+const ancestors = computed<Crumb[]>(() => (props.crumbs ?? resolveCrumbs(route)).slice(0, -1))
 const helpUrl = useDocsLink(() => docsKey(route))
 </script>
