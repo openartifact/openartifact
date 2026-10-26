@@ -123,6 +123,7 @@ List API tokens for the current user
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of tokens | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 

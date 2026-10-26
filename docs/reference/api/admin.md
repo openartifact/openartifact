@@ -139,6 +139,7 @@ Get details of a specific backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup details | `application/json`: [Backup](schemas.md#backup) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/backup/{id}/download`
@@ -159,6 +160,7 @@ Download a backup file (admin only)
 |---|---|---|
 | `200` | Backup file | `application/octet-stream`: string (binary) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/gpg/keys`
@@ -341,6 +343,7 @@ List all license policies (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/admin/license/policies`
 
@@ -358,6 +361,7 @@ Create a global license policy (admin only)
 |---|---|---|
 | `201` | License policy created | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/admin/quotas`
 
@@ -480,6 +484,7 @@ Get details of a specific SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider details | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `PATCH /api/v1/admin/sso-providers/{slug}`
@@ -509,6 +514,7 @@ Update an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider updated | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `DELETE /api/v1/admin/sso-providers/{slug}`
@@ -528,6 +534,7 @@ Delete an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | SSO provider deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `POST /api/v1/admin/sso-providers/{slug}/test`
@@ -654,6 +661,7 @@ Get details of a specific storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend details | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 ### `PATCH /api/v1/admin/storage/{name}`
@@ -683,6 +691,7 @@ Update a storage backend (admin only). Changing kind or config is refused with 4
 |---|---|---|
 | `200` | Storage backend updated | `application/json`: [StorageBackend](schemas.md#storagebackend) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 | `409` | The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move | - |
 
@@ -704,6 +713,7 @@ Delete a storage backend (admin only)
 |---|---|---|
 | `204` | Storage backend deleted | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 ### `POST /api/v1/admin/storage/{name}/test`
@@ -1040,5 +1050,6 @@ Revoke any user's API token (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

@@ -164,6 +164,8 @@ Search artifacts by properties
 |---|---|---|
 | `200` | Search results | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -211,6 +213,7 @@ Replace all properties for a specific artifact
 |---|---|---|
 | `200` | Properties updated | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PATCH /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
@@ -236,6 +239,7 @@ Patch properties for a specific artifact
 |---|---|---|
 | `200` | Properties updated | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/artifacts/{artifact_id}/properties/{key}`
@@ -258,6 +262,7 @@ Delete a specific property from an artifact
 |---|---|---|
 | `204` | Property deleted | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Property not found | - |
 
 ### `PUT /api/v1/repositories/{name}/comps`
@@ -338,6 +343,7 @@ Delete a package from a hosted repository. Requires write access.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Package deleted | `application/json`: [PackageDeleteResult](schemas.md#packagedeleteresult) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Release versions are immutable in this repository | `application/json`: [Error](schemas.md#error) |
 
@@ -358,6 +364,7 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/policies`
@@ -382,6 +389,7 @@ Create a license policy for a repository
 |---|---|---|
 | `201` | License policy created | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/license/policies/{id}`
@@ -406,6 +414,7 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/license/policies/{id}`
@@ -426,6 +435,7 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/scan`
@@ -475,6 +485,7 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -501,6 +512,7 @@ Get details of a specific license scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | License scan details | `application/json`: [LicenseScanResult](schemas.md#licensescanresult) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `POST /api/v1/repositories/{name}/license/scans/{id}/quarantine`
@@ -551,6 +563,7 @@ List the member repositories of a group repository in resolution order
 |---|---|---|
 | `200` | List of members | `application/json`: object |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -585,6 +598,7 @@ Replace the ordered member repositories of a group repository. Members must be h
 |---|---|---|
 | `200` | Members updated | `application/json`: object |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -658,6 +672,7 @@ Upload a package into a hosted rpm repository (multipart/form-data). Requires wr
 |---|---|---|
 | `200` | Package stored | `application/json`: [PackageUploadResult](schemas.md#packageuploadresult) |
 | `400` | Invalid input or wrong repository format | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 | `405` | Proxy and group repositories are read-only | `application/json`: [Error](schemas.md#error) |
 | `409` | Package already exists | `application/json`: [Error](schemas.md#error) |
@@ -702,6 +717,7 @@ Delete a package row (an id of the package listing) from a hosted repository of 
 | Status | Description | Body |
 |---|---|---|
 | `200` | Package deleted | `application/json`: [PackageDeleteResult](schemas.md#packagedeleteresult) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Release versions are immutable in this repository | `application/json`: [Error](schemas.md#error) |
 
@@ -725,6 +741,7 @@ Returns a binary diff that turns the package whose sha256 is given in `from` int
 |---|---|---|
 | `200` | Binary delta Headers: `X-Delta-From`, `X-Delta-Size`, `X-Delta-To`. | `application/octet-stream`: string (binary) |
 | `400` | Missing or invalid from | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository, target or source package not found | `application/json`: [Error](schemas.md#error) |
 | `413` | Package too large for delta generation | `application/json`: [Error](schemas.md#error) |
 
@@ -746,6 +763,7 @@ List the pre-computed deltas targeting a package. Requires read access.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Available deltas | `application/json`: [PackageDeltaList](schemas.md#packagedeltalist) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/packages/{id}/download`
@@ -766,6 +784,7 @@ Streams the blob of a row returned by the package listing (any format) as an att
 | Status | Description | Body |
 |---|---|---|
 | `200` | Package file | `application/octet-stream`: string (binary) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Package not found in this repository, or the row has no stored file | - |
 | `501` | No blob store configured | - |
 
@@ -786,6 +805,7 @@ Get quota configuration for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | Quota configuration | `application/json`: [Quota](schemas.md#quota) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 ### `PUT /api/v1/repositories/{name}/quota`
@@ -810,6 +830,7 @@ Set quota configuration for a repository. Requires global admin, or the maintain
 |---|---|---|
 | `200` | Quota updated | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/quota`
@@ -829,6 +850,7 @@ Remove quota configuration for a repository. Requires global admin, or the maint
 | Status | Description | Body |
 |---|---|---|
 | `204` | Quota deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/quota/reconcile`
@@ -868,6 +890,7 @@ List SBOM reports for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of SBOM reports | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -905,6 +928,7 @@ Generate a Software Bill of Materials for a repository artifact. Components are 
 |---|---|---|
 | `201` | SBOM generation started | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 | `422` | The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`) | - |
 
@@ -926,6 +950,7 @@ Get details of a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `200` | SBOM report details | `application/json`: [SBOMReport](schemas.md#sbomreport) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/sbom/{id}`
@@ -946,6 +971,7 @@ Delete a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `204` | SBOM report deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
 ### `GET /api/v1/repositories/{name}/sbom/{id}/download`
@@ -968,6 +994,7 @@ Download an SBOM report file
 |---|---|---|
 | `200` | SBOM file, or its attestation with `attest` | `application/octet-stream`: string (binary); `application/vnd.dev.sigstore.bundle.v0.3+json`: object; `application/vnd.dsse.envelope.v1+json`: object |
 | `400` | Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested) | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 | `501` | Attestations are not enabled | - |
 
@@ -989,6 +1016,7 @@ Trigger a secrets scan for a repository
 |---|---|---|
 | `201` | Secrets scan started | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans`
@@ -1008,6 +1036,7 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -1034,6 +1063,7 @@ Get details of a specific secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Secrets scan details | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/secrets/scans/{id}`
@@ -1054,6 +1084,7 @@ Delete a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Secrets scan deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `POST /api/v1/repositories/{name}/secrets/scans/{id}/quarantine`
@@ -1075,6 +1106,7 @@ Quarantine an artifact found in a secrets scan
 |---|---|---|
 | `200` | Artifact quarantined | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/uploads`
@@ -1232,6 +1264,7 @@ Build an OpenVEX 0.2.0 (default) or CycloneDX VEX document from the latest vulne
 |---|---|---|
 | `200` | VEX document, or its attestation with `attest` | `application/json`: object; `application/vnd.dev.sigstore.bundle.v0.3+json`: object; `application/vnd.dsse.envelope.v1+json`: object |
 | `400` | Invalid format, spec_version or artifact_id | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 | `501` | Attestations are not enabled | - |
 
@@ -1253,6 +1286,7 @@ List the VEX decisions recorded for a repository, optionally for one artifact. A
 | Status | Description | Body |
 |---|---|---|
 | `200` | VEX decisions | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -1292,6 +1326,7 @@ Record (or replace) the decision for one vulnerability of one artifact. `not_aff
 |---|---|---|
 | `200` | Recorded decision | `application/json`: [VEXStatement](schemas.md#vexstatement) |
 | `400` | Validation failed | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/vex/statements/{id}`
@@ -1312,6 +1347,7 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 | Status | Description | Body |
 |---|---|---|
 | `204` | Decision deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or decision not found | - |
 
 ### `POST /api/v1/repositories/{name}/vuln/scan`
@@ -1381,6 +1417,7 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -1407,6 +1444,7 @@ Get details of a specific vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Vulnerability scan details | `application/json`: [VulnScanResult](schemas.md#vulnscanresult) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/vuln/scans/{id}`
@@ -1427,6 +1465,7 @@ Delete a vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Vulnerability scan deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `POST /api/v1/repositories/{name}/vuln/scans/{id}/quarantine`
@@ -1476,6 +1515,7 @@ List webhooks for a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of webhooks | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -1519,6 +1559,7 @@ Create a new webhook for a repository
 |---|---|---|
 | `201` | Webhook created | `application/json`: [Webhook](schemas.md#webhook) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repository/{name}`
@@ -1540,6 +1581,7 @@ Get details of a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | Repository details | `application/json`: [Repository](schemas.md#repository) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 ### `PATCH /api/v1/repository/{name}`

@@ -87,6 +87,7 @@ Get details of a specific user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | User details | `application/json`: [User](schemas.md#user) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
 ### `PATCH /api/v1/users/{id}`
@@ -118,6 +119,7 @@ Update a user (admin only). Setting `disabled: true` keeps the account, blocks l
 | Status | Description | Body |
 |---|---|---|
 | `200` | User updated | `application/json`: [User](schemas.md#user) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
 ### `DELETE /api/v1/users/{id}`
@@ -138,6 +140,7 @@ Permanently delete a user (admin only). The account row, its API tokens, session
 |---|---|---|
 | `204` | User deleted | - |
 | `400` | Cannot delete your own account | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 | `409` | Cannot delete the last enabled admin | - |
 
@@ -158,6 +161,7 @@ List groups that a user belongs to
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of groups | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -183,6 +187,7 @@ List the active (not revoked) API tokens of a user (owner or admin)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of tokens | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -219,6 +224,7 @@ Create an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/users/{id}/tokens/{tokenId}`
@@ -239,5 +245,6 @@ Revoke an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

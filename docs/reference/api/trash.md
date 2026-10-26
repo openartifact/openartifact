@@ -32,6 +32,7 @@ Soft-deleted items of one repository. Requires the repository-scoped delete perm
 | Status | Description | Body |
 |---|---|---|
 | `200` | A page of trashed items, newest deletion first | `application/json`: [TrashList](schemas.md#trashlist) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Delete permission on the repository required | - |
 | `404` | Repository not found | - |
 
@@ -99,6 +100,7 @@ Every soft-deleted package and repository, newest first.
 | Status | Description | Body |
 |---|---|---|
 | `200` | A page of trashed items, newest deletion first | `application/json`: [TrashList](schemas.md#trashlist) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `DELETE /api/v1/trash/{kind}/{id}`

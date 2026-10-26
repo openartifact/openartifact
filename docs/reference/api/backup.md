@@ -79,6 +79,7 @@ Get details of a specific backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup details | `application/json`: [Backup](schemas.md#backup) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/backup/{id}/download`
@@ -99,6 +100,7 @@ Download a backup file (admin only)
 |---|---|---|
 | `200` | Backup file | `application/octet-stream`: string (binary) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `POST /api/v1/admin/restore`

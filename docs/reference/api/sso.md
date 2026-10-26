@@ -74,6 +74,7 @@ Get details of a specific SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider details | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `PATCH /api/v1/admin/sso-providers/{slug}`
@@ -103,6 +104,7 @@ Update an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider updated | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `DELETE /api/v1/admin/sso-providers/{slug}`
@@ -122,6 +124,7 @@ Delete an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | SSO provider deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `POST /api/v1/admin/sso-providers/{slug}/test`

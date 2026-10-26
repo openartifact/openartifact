@@ -58,6 +58,8 @@ Search artifacts by properties
 |---|---|---|
 | `200` | Search results | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -105,6 +107,7 @@ Replace all properties for a specific artifact
 |---|---|---|
 | `200` | Properties updated | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PATCH /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
@@ -130,6 +133,7 @@ Patch properties for a specific artifact
 |---|---|---|
 | `200` | Properties updated | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/artifacts/{artifact_id}/properties/{key}`
@@ -152,6 +156,7 @@ Delete a specific property from an artifact
 |---|---|---|
 | `204` | Property deleted | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Property not found | - |
 
 ### `GET /api/v1/repositories/{name}/packages`

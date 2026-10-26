@@ -61,6 +61,7 @@ List the projects the caller holds a role in, each with my_role, repository_coun
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of projects | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -106,6 +107,7 @@ Get details of a specific project. Requires a role in the project (viewer or abo
 | Status | Description | Body |
 |---|---|---|
 | `200` | Project details | `application/json`: [Project](schemas.md#project) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 ### `PATCH /api/v1/projects/{project}`
@@ -176,6 +178,7 @@ Audit events of the project and of the repositories it owns (member, group, toke
 |---|---|---|
 | `200` | One page of activity | `application/json`: [ActivityPage](schemas.md#activitypage) |
 | `400` | Malformed cursor | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 ### `GET /api/v1/projects/{project}/activity/export`
@@ -221,6 +224,7 @@ Default cleanup policies of the project. A project policy applies to every live 
 | Status | Description | Body |
 |---|---|---|
 | `200` | Policies | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 Fields of the `200` response (`application/json`):
@@ -356,6 +360,7 @@ List groups attached to a project, with the role each group's members get. Requi
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of project groups | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -428,6 +433,7 @@ List members of a project. Requires a role in the project (viewer or above) or g
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of project members | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 Fields of the `200` response (`application/json`):
@@ -528,6 +534,7 @@ The project's storage ceiling (0 = unlimited) and its live usage. Any member.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Project quota | `application/json`: [ProjectQuota](schemas.md#projectquota) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 ### `PUT /api/v1/projects/{project}/quota`
@@ -580,6 +587,7 @@ List the live (not trashed) repositories of a project, newest first. Requires a 
 | Status | Description | Body |
 |---|---|---|
 | `200` | A page of repositories | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 Fields of the `200` response (`application/json`):
@@ -686,6 +694,7 @@ List the active tokens of a project. Maintainers, owners and global admins see a
 | Status | Description | Body |
 |---|---|---|
 | `200` | Project tokens | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
 Fields of the `200` response (`application/json`):
@@ -758,5 +767,6 @@ Storage usage of a project: the sum of its repositories' counters, the project q
 | Status | Description | Body |
 |---|---|---|
 | `200` | Usage | `application/json`: [ProjectUsage](schemas.md#projectusage) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 

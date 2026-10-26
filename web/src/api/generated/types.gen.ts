@@ -3189,6 +3189,15 @@ export type GetApiV1AuthTokensData = {
     url: '/api/v1/auth/tokens';
 };
 
+export type GetApiV1AuthTokensErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type GetApiV1AuthTokensError = GetApiV1AuthTokensErrors[keyof GetApiV1AuthTokensErrors];
+
 export type GetApiV1AuthTokensResponses = {
     /**
      * List of tokens
@@ -3536,6 +3545,10 @@ export type PostApiV1RepositoriesByNamePackagesErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: Error;
@@ -3579,6 +3592,10 @@ export type GetApiV1RepositoriesByNameMembersErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
@@ -3617,6 +3634,10 @@ export type PutApiV1RepositoriesByNameMembersErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
@@ -3645,6 +3666,10 @@ export type GetApiV1RepositoriesByNameCleanupPoliciesData = {
 };
 
 export type GetApiV1RepositoriesByNameCleanupPoliciesErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -3686,6 +3711,10 @@ export type PostApiV1RepositoriesByNameCleanupPoliciesErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -3713,10 +3742,16 @@ export type GetApiV1RepositoriesByNameWebhooksData = {
 
 export type GetApiV1RepositoriesByNameWebhooksErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameWebhooksError = GetApiV1RepositoriesByNameWebhooksErrors[keyof GetApiV1RepositoriesByNameWebhooksErrors];
 
 export type GetApiV1RepositoriesByNameWebhooksResponses = {
     /**
@@ -3757,6 +3792,10 @@ export type PostApiV1RepositoriesByNameWebhooksErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -3802,6 +3841,10 @@ export type PostApiV1RepositoriesByNameSbomGenerateErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -3830,6 +3873,10 @@ export type GetApiV1RepositoriesByNameSbomData = {
 };
 
 export type GetApiV1RepositoriesByNameSbomErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -3861,10 +3908,16 @@ export type DeleteApiV1RepositoriesByNameSbomByIdData = {
 
 export type DeleteApiV1RepositoriesByNameSbomByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * SBOM report not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1RepositoriesByNameSbomByIdError = DeleteApiV1RepositoriesByNameSbomByIdErrors[keyof DeleteApiV1RepositoriesByNameSbomByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameSbomByIdResponses = {
     /**
@@ -3887,10 +3940,16 @@ export type GetApiV1RepositoriesByNameSbomByIdData = {
 
 export type GetApiV1RepositoriesByNameSbomByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * SBOM report not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameSbomByIdError = GetApiV1RepositoriesByNameSbomByIdErrors[keyof GetApiV1RepositoriesByNameSbomByIdErrors];
 
 export type GetApiV1RepositoriesByNameSbomByIdResponses = {
     /**
@@ -3922,6 +3981,10 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadErrors = {
      */
     400: unknown;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * SBOM report not found
      */
     404: unknown;
@@ -3930,6 +3993,8 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadErrors = {
      */
     501: unknown;
 };
+
+export type GetApiV1RepositoriesByNameSbomByIdDownloadError = GetApiV1RepositoriesByNameSbomByIdDownloadErrors[keyof GetApiV1RepositoriesByNameSbomByIdDownloadErrors];
 
 export type GetApiV1RepositoriesByNameSbomByIdDownloadResponses = {
     /**
@@ -3971,6 +4036,10 @@ export type GetApiV1RepositoriesByNameVexErrors = {
      */
     400: unknown;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
@@ -3979,6 +4048,8 @@ export type GetApiV1RepositoriesByNameVexErrors = {
      */
     501: unknown;
 };
+
+export type GetApiV1RepositoriesByNameVexError = GetApiV1RepositoriesByNameVexErrors[keyof GetApiV1RepositoriesByNameVexErrors];
 
 export type GetApiV1RepositoriesByNameVexResponses = {
     /**
@@ -4004,10 +4075,16 @@ export type GetApiV1RepositoriesByNameVexStatementsData = {
 
 export type GetApiV1RepositoriesByNameVexStatementsErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameVexStatementsError = GetApiV1RepositoriesByNameVexStatementsErrors[keyof GetApiV1RepositoriesByNameVexStatementsErrors];
 
 export type GetApiV1RepositoriesByNameVexStatementsResponses = {
     /**
@@ -4045,10 +4122,16 @@ export type PutApiV1RepositoriesByNameVexStatementsErrors = {
      */
     400: unknown;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type PutApiV1RepositoriesByNameVexStatementsError = PutApiV1RepositoriesByNameVexStatementsErrors[keyof PutApiV1RepositoriesByNameVexStatementsErrors];
 
 export type PutApiV1RepositoriesByNameVexStatementsResponses = {
     /**
@@ -4071,10 +4154,16 @@ export type DeleteApiV1RepositoriesByNameVexStatementsByIdData = {
 
 export type DeleteApiV1RepositoriesByNameVexStatementsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or decision not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1RepositoriesByNameVexStatementsByIdError = DeleteApiV1RepositoriesByNameVexStatementsByIdErrors[keyof DeleteApiV1RepositoriesByNameVexStatementsByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameVexStatementsByIdResponses = {
     /**
@@ -4135,6 +4224,10 @@ export type GetApiV1RepositoriesByNameLicenseScansData = {
 
 export type GetApiV1RepositoriesByNameLicenseScansErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -4165,10 +4258,16 @@ export type GetApiV1RepositoriesByNameLicenseScansByIdData = {
 
 export type GetApiV1RepositoriesByNameLicenseScansByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Scan not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameLicenseScansByIdError = GetApiV1RepositoriesByNameLicenseScansByIdErrors[keyof GetApiV1RepositoriesByNameLicenseScansByIdErrors];
 
 export type GetApiV1RepositoriesByNameLicenseScansByIdResponses = {
     /**
@@ -4226,6 +4325,10 @@ export type GetApiV1RepositoriesByNameLicensePoliciesData = {
 
 export type GetApiV1RepositoriesByNameLicensePoliciesErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -4255,6 +4358,10 @@ export type PostApiV1RepositoriesByNameLicensePoliciesErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -4280,6 +4387,10 @@ export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdData = {
 };
 
 export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -4309,6 +4420,10 @@ export type PutApiV1RepositoriesByNameLicensePoliciesByIdData = {
 
 export type PutApiV1RepositoriesByNameLicensePoliciesByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -4330,6 +4445,15 @@ export type GetApiV1AdminLicensePoliciesData = {
     url: '/api/v1/admin/license/policies';
 };
 
+export type GetApiV1AdminLicensePoliciesErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type GetApiV1AdminLicensePoliciesError = GetApiV1AdminLicensePoliciesErrors[keyof GetApiV1AdminLicensePoliciesErrors];
+
 export type GetApiV1AdminLicensePoliciesResponses = {
     /**
      * List of license policies
@@ -4349,6 +4473,10 @@ export type PostApiV1AdminLicensePoliciesErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
 };
 
 export type PostApiV1AdminLicensePoliciesError = PostApiV1AdminLicensePoliciesErrors[keyof PostApiV1AdminLicensePoliciesErrors];
@@ -4375,6 +4503,10 @@ export type PostApiV1RepositoriesByNameSecretsScanErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -4399,6 +4531,10 @@ export type GetApiV1RepositoriesByNameSecretsScansData = {
 };
 
 export type GetApiV1RepositoriesByNameSecretsScansErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -4471,10 +4607,16 @@ export type DeleteApiV1RepositoriesByNameSecretsScansByIdData = {
 
 export type DeleteApiV1RepositoriesByNameSecretsScansByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Scan not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1RepositoriesByNameSecretsScansByIdError = DeleteApiV1RepositoriesByNameSecretsScansByIdErrors[keyof DeleteApiV1RepositoriesByNameSecretsScansByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameSecretsScansByIdResponses = {
     /**
@@ -4497,10 +4639,16 @@ export type GetApiV1RepositoriesByNameSecretsScansByIdData = {
 
 export type GetApiV1RepositoriesByNameSecretsScansByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Scan not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameSecretsScansByIdError = GetApiV1RepositoriesByNameSecretsScansByIdErrors[keyof GetApiV1RepositoriesByNameSecretsScansByIdErrors];
 
 export type GetApiV1RepositoriesByNameSecretsScansByIdResponses = {
     /**
@@ -4565,6 +4713,10 @@ export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -5023,6 +5175,10 @@ export type GetApiV1RepositoriesByNameVulnScansData = {
 
 export type GetApiV1RepositoriesByNameVulnScansErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -5094,10 +5250,16 @@ export type DeleteApiV1RepositoriesByNameVulnScansByIdData = {
 
 export type DeleteApiV1RepositoriesByNameVulnScansByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Scan not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1RepositoriesByNameVulnScansByIdError = DeleteApiV1RepositoriesByNameVulnScansByIdErrors[keyof DeleteApiV1RepositoriesByNameVulnScansByIdErrors];
 
 export type DeleteApiV1RepositoriesByNameVulnScansByIdResponses = {
     /**
@@ -5120,10 +5282,16 @@ export type GetApiV1RepositoriesByNameVulnScansByIdData = {
 
 export type GetApiV1RepositoriesByNameVulnScansByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Scan not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameVulnScansByIdError = GetApiV1RepositoriesByNameVulnScansByIdErrors[keyof GetApiV1RepositoriesByNameVulnScansByIdErrors];
 
 export type GetApiV1RepositoriesByNameVulnScansByIdResponses = {
     /**
@@ -5181,6 +5349,10 @@ export type DeleteApiV1RepositoriesByNameQuotaData = {
 
 export type DeleteApiV1RepositoriesByNameQuotaErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -5208,10 +5380,16 @@ export type GetApiV1RepositoriesByNameQuotaData = {
 
 export type GetApiV1RepositoriesByNameQuotaErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameQuotaError = GetApiV1RepositoriesByNameQuotaErrors[keyof GetApiV1RepositoriesByNameQuotaErrors];
 
 export type GetApiV1RepositoriesByNameQuotaResponses = {
     /**
@@ -5236,6 +5414,10 @@ export type PutApiV1RepositoriesByNameQuotaErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or addressed resource not found
      */
@@ -5332,6 +5514,10 @@ export type PatchApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors = 
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -5364,6 +5550,10 @@ export type PutApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;
@@ -5394,6 +5584,10 @@ export type DeleteApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesByKeyErr
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Property not found
      */
@@ -5428,6 +5622,14 @@ export type GetApiV1RepositoriesByNameArtifactsSearchErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository or addressed resource not found
+     */
+    404: Error;
 };
 
 export type GetApiV1RepositoriesByNameArtifactsSearchError = GetApiV1RepositoriesByNameArtifactsSearchErrors[keyof GetApiV1RepositoriesByNameArtifactsSearchErrors];
@@ -5502,6 +5704,15 @@ export type GetApiV1WebhooksData = {
     url: '/api/v1/webhooks';
 };
 
+export type GetApiV1WebhooksErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type GetApiV1WebhooksError = GetApiV1WebhooksErrors[keyof GetApiV1WebhooksErrors];
+
 export type GetApiV1WebhooksResponses = {
     /**
      * List of webhooks
@@ -5539,6 +5750,10 @@ export type PostApiV1WebhooksErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
 };
 
 export type PostApiV1WebhooksError = PostApiV1WebhooksErrors[keyof PostApiV1WebhooksErrors];
@@ -5563,10 +5778,16 @@ export type DeleteApiV1WebhooksByIdData = {
 
 export type DeleteApiV1WebhooksByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Webhook not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1WebhooksByIdError = DeleteApiV1WebhooksByIdErrors[keyof DeleteApiV1WebhooksByIdErrors];
 
 export type DeleteApiV1WebhooksByIdResponses = {
     /**
@@ -5588,10 +5809,16 @@ export type GetApiV1WebhooksByIdData = {
 
 export type GetApiV1WebhooksByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Webhook not found
      */
     404: unknown;
 };
+
+export type GetApiV1WebhooksByIdError = GetApiV1WebhooksByIdErrors[keyof GetApiV1WebhooksByIdErrors];
 
 export type GetApiV1WebhooksByIdResponses = {
     /**
@@ -5627,10 +5854,20 @@ export type PutApiV1WebhooksByIdData = {
 
 export type PutApiV1WebhooksByIdErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Webhook not found
      */
     404: unknown;
 };
+
+export type PutApiV1WebhooksByIdError = PutApiV1WebhooksByIdErrors[keyof PutApiV1WebhooksByIdErrors];
 
 export type PutApiV1WebhooksByIdResponses = {
     /**
@@ -5652,10 +5889,16 @@ export type GetApiV1WebhooksByIdDeliveriesData = {
 
 export type GetApiV1WebhooksByIdDeliveriesErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Webhook not found
      */
     404: unknown;
 };
+
+export type GetApiV1WebhooksByIdDeliveriesError = GetApiV1WebhooksByIdDeliveriesErrors[keyof GetApiV1WebhooksByIdDeliveriesErrors];
 
 export type GetApiV1WebhooksByIdDeliveriesResponses = {
     /**
@@ -5785,6 +6028,10 @@ export type DeleteApiV1UsersByIdErrors = {
      */
     400: unknown;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * User not found
      */
     404: unknown;
@@ -5793,6 +6040,8 @@ export type DeleteApiV1UsersByIdErrors = {
      */
     409: unknown;
 };
+
+export type DeleteApiV1UsersByIdError = DeleteApiV1UsersByIdErrors[keyof DeleteApiV1UsersByIdErrors];
 
 export type DeleteApiV1UsersByIdResponses = {
     /**
@@ -5814,10 +6063,16 @@ export type GetApiV1UsersByIdData = {
 
 export type GetApiV1UsersByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * User not found
      */
     404: unknown;
 };
+
+export type GetApiV1UsersByIdError = GetApiV1UsersByIdErrors[keyof GetApiV1UsersByIdErrors];
 
 export type GetApiV1UsersByIdResponses = {
     /**
@@ -5845,10 +6100,16 @@ export type PatchApiV1UsersByIdData = {
 
 export type PatchApiV1UsersByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * User not found
      */
     404: unknown;
 };
+
+export type PatchApiV1UsersByIdError = PatchApiV1UsersByIdErrors[keyof PatchApiV1UsersByIdErrors];
 
 export type PatchApiV1UsersByIdResponses = {
     /**
@@ -5870,10 +6131,16 @@ export type GetApiV1UsersByIdGroupsData = {
 
 export type GetApiV1UsersByIdGroupsErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * User not found
      */
     404: unknown;
 };
+
+export type GetApiV1UsersByIdGroupsError = GetApiV1UsersByIdGroupsErrors[keyof GetApiV1UsersByIdGroupsErrors];
 
 export type GetApiV1UsersByIdGroupsResponses = {
     /**
@@ -5897,10 +6164,16 @@ export type GetApiV1UsersByIdTokensData = {
 
 export type GetApiV1UsersByIdTokensErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * User not found
      */
     404: unknown;
 };
+
+export type GetApiV1UsersByIdTokensError = GetApiV1UsersByIdTokensErrors[keyof GetApiV1UsersByIdTokensErrors];
 
 export type GetApiV1UsersByIdTokensResponses = {
     /**
@@ -5928,6 +6201,10 @@ export type PostApiV1UsersByIdTokensData = {
 };
 
 export type PostApiV1UsersByIdTokensErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * The addressed resource was not found
      */
@@ -5957,10 +6234,16 @@ export type DeleteApiV1UsersByIdTokensByTokenIdData = {
 
 export type DeleteApiV1UsersByIdTokensByTokenIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Token not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1UsersByIdTokensByTokenIdError = DeleteApiV1UsersByIdTokensByTokenIdErrors[keyof DeleteApiV1UsersByIdTokensByTokenIdErrors];
 
 export type DeleteApiV1UsersByIdTokensByTokenIdResponses = {
     /**
@@ -5977,6 +6260,15 @@ export type GetApiV1GroupsData = {
     query?: never;
     url: '/api/v1/groups';
 };
+
+export type GetApiV1GroupsErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type GetApiV1GroupsError = GetApiV1GroupsErrors[keyof GetApiV1GroupsErrors];
 
 export type GetApiV1GroupsResponses = {
     /**
@@ -6004,6 +6296,10 @@ export type PostApiV1GroupsErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
 };
 
 export type PostApiV1GroupsError = PostApiV1GroupsErrors[keyof PostApiV1GroupsErrors];
@@ -6028,10 +6324,16 @@ export type DeleteApiV1GroupsByIdData = {
 
 export type DeleteApiV1GroupsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1GroupsByIdError = DeleteApiV1GroupsByIdErrors[keyof DeleteApiV1GroupsByIdErrors];
 
 export type DeleteApiV1GroupsByIdResponses = {
     /**
@@ -6053,10 +6355,16 @@ export type GetApiV1GroupsByIdData = {
 
 export type GetApiV1GroupsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group not found
      */
     404: unknown;
 };
+
+export type GetApiV1GroupsByIdError = GetApiV1GroupsByIdErrors[keyof GetApiV1GroupsByIdErrors];
 
 export type GetApiV1GroupsByIdResponses = {
     /**
@@ -6081,10 +6389,16 @@ export type PatchApiV1GroupsByIdData = {
 
 export type PatchApiV1GroupsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group not found
      */
     404: unknown;
 };
+
+export type PatchApiV1GroupsByIdError = PatchApiV1GroupsByIdErrors[keyof PatchApiV1GroupsByIdErrors];
 
 export type PatchApiV1GroupsByIdResponses = {
     /**
@@ -6106,10 +6420,16 @@ export type GetApiV1GroupsByIdMembersData = {
 
 export type GetApiV1GroupsByIdMembersErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group not found
      */
     404: unknown;
 };
+
+export type GetApiV1GroupsByIdMembersError = GetApiV1GroupsByIdMembersErrors[keyof GetApiV1GroupsByIdMembersErrors];
 
 export type GetApiV1GroupsByIdMembersResponses = {
     /**
@@ -6135,10 +6455,16 @@ export type PutApiV1GroupsByIdMembersData = {
 
 export type PutApiV1GroupsByIdMembersErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group not found
      */
     404: unknown;
 };
+
+export type PutApiV1GroupsByIdMembersError = PutApiV1GroupsByIdMembersErrors[keyof PutApiV1GroupsByIdMembersErrors];
 
 export type PutApiV1GroupsByIdMembersResponses = {
     /**
@@ -6161,10 +6487,16 @@ export type DeleteApiV1GroupsByIdMembersByUserIdData = {
 
 export type DeleteApiV1GroupsByIdMembersByUserIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group or user not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1GroupsByIdMembersByUserIdError = DeleteApiV1GroupsByIdMembersByUserIdErrors[keyof DeleteApiV1GroupsByIdMembersByUserIdErrors];
 
 export type DeleteApiV1GroupsByIdMembersByUserIdResponses = {
     /**
@@ -6187,10 +6519,16 @@ export type PostApiV1GroupsByIdMembersByUserIdData = {
 
 export type PostApiV1GroupsByIdMembersByUserIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Group or user not found
      */
     404: unknown;
 };
+
+export type PostApiV1GroupsByIdMembersByUserIdError = PostApiV1GroupsByIdMembersByUserIdErrors[keyof PostApiV1GroupsByIdMembersByUserIdErrors];
 
 export type PostApiV1GroupsByIdMembersByUserIdResponses = {
     /**
@@ -6300,6 +6638,15 @@ export type GetApiV1PermissionTargetsData = {
     url: '/api/v1/permission-targets';
 };
 
+export type GetApiV1PermissionTargetsErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type GetApiV1PermissionTargetsError = GetApiV1PermissionTargetsErrors[keyof GetApiV1PermissionTargetsErrors];
+
 export type GetApiV1PermissionTargetsResponses = {
     /**
      * List of permission targets
@@ -6329,6 +6676,10 @@ export type PostApiV1PermissionTargetsErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Conflict with the current state
      */
     409: Error;
@@ -6356,10 +6707,16 @@ export type DeleteApiV1PermissionTargetsByIdData = {
 
 export type DeleteApiV1PermissionTargetsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Permission target not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1PermissionTargetsByIdError = DeleteApiV1PermissionTargetsByIdErrors[keyof DeleteApiV1PermissionTargetsByIdErrors];
 
 export type DeleteApiV1PermissionTargetsByIdResponses = {
     /**
@@ -6381,10 +6738,16 @@ export type GetApiV1PermissionTargetsByIdData = {
 
 export type GetApiV1PermissionTargetsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Permission target not found
      */
     404: unknown;
 };
+
+export type GetApiV1PermissionTargetsByIdError = GetApiV1PermissionTargetsByIdErrors[keyof GetApiV1PermissionTargetsByIdErrors];
 
 export type GetApiV1PermissionTargetsByIdResponses = {
     /**
@@ -6414,6 +6777,10 @@ export type PatchApiV1PermissionTargetsByIdErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Permission target not found
      */
@@ -6448,6 +6815,10 @@ export type DeleteApiV1PermissionTargetsByIdAssignmentsErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * The addressed resource was not found
      */
@@ -6513,6 +6884,10 @@ export type PostApiV1PermissionTargetsByIdAssignmentsErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * The addressed resource was not found
      */
@@ -6740,10 +7115,16 @@ export type DeleteApiV1AdminTokensByTokenIdData = {
 
 export type DeleteApiV1AdminTokensByTokenIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Token not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1AdminTokensByTokenIdError = DeleteApiV1AdminTokensByTokenIdErrors[keyof DeleteApiV1AdminTokensByTokenIdErrors];
 
 export type DeleteApiV1AdminTokensByTokenIdResponses = {
     /**
@@ -6826,10 +7207,16 @@ export type GetApiV1AdminBackupByIdData = {
 
 export type GetApiV1AdminBackupByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Backup not found
      */
     404: unknown;
 };
+
+export type GetApiV1AdminBackupByIdError = GetApiV1AdminBackupByIdErrors[keyof GetApiV1AdminBackupByIdErrors];
 
 export type GetApiV1AdminBackupByIdResponses = {
     /**
@@ -6854,6 +7241,10 @@ export type GetApiV1AdminBackupByIdDownloadErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Backup not found
      */
@@ -6978,6 +7369,10 @@ export type DeleteApiV1AdminStorageByNameErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Storage backend not found
      */
     404: unknown;
@@ -7005,10 +7400,16 @@ export type GetApiV1AdminStorageByNameData = {
 
 export type GetApiV1AdminStorageByNameErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Storage backend not found
      */
     404: unknown;
 };
+
+export type GetApiV1AdminStorageByNameError = GetApiV1AdminStorageByNameErrors[keyof GetApiV1AdminStorageByNameErrors];
 
 export type GetApiV1AdminStorageByNameResponses = {
     /**
@@ -7038,6 +7439,10 @@ export type PatchApiV1AdminStorageByNameErrors = {
      * Invalid request
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Storage backend not found
      */
@@ -8022,10 +8427,16 @@ export type DeleteApiV1AdminSsoProvidersBySlugData = {
 
 export type DeleteApiV1AdminSsoProvidersBySlugErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * SSO provider not found
      */
     404: unknown;
 };
+
+export type DeleteApiV1AdminSsoProvidersBySlugError = DeleteApiV1AdminSsoProvidersBySlugErrors[keyof DeleteApiV1AdminSsoProvidersBySlugErrors];
 
 export type DeleteApiV1AdminSsoProvidersBySlugResponses = {
     /**
@@ -8047,10 +8458,16 @@ export type GetApiV1AdminSsoProvidersBySlugData = {
 
 export type GetApiV1AdminSsoProvidersBySlugErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * SSO provider not found
      */
     404: unknown;
 };
+
+export type GetApiV1AdminSsoProvidersBySlugError = GetApiV1AdminSsoProvidersBySlugErrors[keyof GetApiV1AdminSsoProvidersBySlugErrors];
 
 export type GetApiV1AdminSsoProvidersBySlugResponses = {
     /**
@@ -8078,10 +8495,16 @@ export type PatchApiV1AdminSsoProvidersBySlugData = {
 
 export type PatchApiV1AdminSsoProvidersBySlugErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * SSO provider not found
      */
     404: unknown;
 };
+
+export type PatchApiV1AdminSsoProvidersBySlugError = PatchApiV1AdminSsoProvidersBySlugErrors[keyof PatchApiV1AdminSsoProvidersBySlugErrors];
 
 export type PatchApiV1AdminSsoProvidersBySlugResponses = {
     /**
@@ -8137,6 +8560,15 @@ export type GetApiV1ProjectsData = {
     };
     url: '/api/v1/projects';
 };
+
+export type GetApiV1ProjectsErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
+};
+
+export type GetApiV1ProjectsError = GetApiV1ProjectsErrors[keyof GetApiV1ProjectsErrors];
 
 export type GetApiV1ProjectsResponses = {
     /**
@@ -8229,10 +8661,16 @@ export type GetApiV1ProjectsByProjectData = {
 
 export type GetApiV1ProjectsByProjectErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectError = GetApiV1ProjectsByProjectErrors[keyof GetApiV1ProjectsByProjectErrors];
 
 export type GetApiV1ProjectsByProjectResponses = {
     /**
@@ -8290,10 +8728,16 @@ export type GetApiV1ProjectsByProjectRepositoriesData = {
 
 export type GetApiV1ProjectsByProjectRepositoriesErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectRepositoriesError = GetApiV1ProjectsByProjectRepositoriesErrors[keyof GetApiV1ProjectsByProjectRepositoriesErrors];
 
 export type GetApiV1ProjectsByProjectRepositoriesResponses = {
     /**
@@ -8425,10 +8869,16 @@ export type GetApiV1ProjectsByProjectMembersData = {
 
 export type GetApiV1ProjectsByProjectMembersErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectMembersError = GetApiV1ProjectsByProjectMembersErrors[keyof GetApiV1ProjectsByProjectMembersErrors];
 
 export type GetApiV1ProjectsByProjectMembersResponses = {
     /**
@@ -8561,10 +9011,16 @@ export type GetApiV1ProjectsByProjectTokensData = {
 
 export type GetApiV1ProjectsByProjectTokensErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectTokensError = GetApiV1ProjectsByProjectTokensErrors[keyof GetApiV1ProjectsByProjectTokensErrors];
 
 export type GetApiV1ProjectsByProjectTokensResponses = {
     /**
@@ -8655,10 +9111,16 @@ export type GetApiV1ProjectsByProjectGroupsData = {
 
 export type GetApiV1ProjectsByProjectGroupsErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectGroupsError = GetApiV1ProjectsByProjectGroupsErrors[keyof GetApiV1ProjectsByProjectGroupsErrors];
 
 export type GetApiV1ProjectsByProjectGroupsResponses = {
     /**
@@ -8752,10 +9214,16 @@ export type GetApiV1ProjectsByProjectUsageData = {
 
 export type GetApiV1ProjectsByProjectUsageErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectUsageError = GetApiV1ProjectsByProjectUsageErrors[keyof GetApiV1ProjectsByProjectUsageErrors];
 
 export type GetApiV1ProjectsByProjectUsageResponses = {
     /**
@@ -8795,10 +9263,16 @@ export type GetApiV1ProjectsByProjectActivityErrors = {
      */
     400: unknown;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectActivityError = GetApiV1ProjectsByProjectActivityErrors[keyof GetApiV1ProjectsByProjectActivityErrors];
 
 export type GetApiV1ProjectsByProjectActivityResponses = {
     /**
@@ -8874,10 +9348,16 @@ export type GetApiV1ProjectsByProjectQuotaData = {
 
 export type GetApiV1ProjectsByProjectQuotaErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectQuotaError = GetApiV1ProjectsByProjectQuotaErrors[keyof GetApiV1ProjectsByProjectQuotaErrors];
 
 export type GetApiV1ProjectsByProjectQuotaResponses = {
     /**
@@ -8936,10 +9416,16 @@ export type GetApiV1ProjectsByProjectCleanupPoliciesData = {
 
 export type GetApiV1ProjectsByProjectCleanupPoliciesErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Project not found or the caller is not a member
      */
     404: unknown;
 };
+
+export type GetApiV1ProjectsByProjectCleanupPoliciesError = GetApiV1ProjectsByProjectCleanupPoliciesErrors[keyof GetApiV1ProjectsByProjectCleanupPoliciesErrors];
 
 export type GetApiV1ProjectsByProjectCleanupPoliciesResponses = {
     /**
@@ -9269,6 +9755,10 @@ export type GetApiV1RepositoriesByNamePackagesByIdDownloadData = {
 
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Package not found in this repository, or the row has no stored file
      */
     404: unknown;
@@ -9277,6 +9767,8 @@ export type GetApiV1RepositoriesByNamePackagesByIdDownloadErrors = {
      */
     501: unknown;
 };
+
+export type GetApiV1RepositoriesByNamePackagesByIdDownloadError = GetApiV1RepositoriesByNamePackagesByIdDownloadErrors[keyof GetApiV1RepositoriesByNamePackagesByIdDownloadErrors];
 
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadResponses = {
     /**
@@ -9347,10 +9839,16 @@ export type GetApiV1RepositoryByNameData = {
 
 export type GetApiV1RepositoryByNameErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoryByNameError = GetApiV1RepositoryByNameErrors[keyof GetApiV1RepositoryByNameErrors];
 
 export type GetApiV1RepositoryByNameResponses = {
     /**
@@ -10865,10 +11363,16 @@ export type GetApiV1TrashData = {
 
 export type GetApiV1TrashErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type GetApiV1TrashError = GetApiV1TrashErrors[keyof GetApiV1TrashErrors];
 
 export type GetApiV1TrashResponses = {
     /**
@@ -11024,6 +11528,10 @@ export type GetApiV1RepositoriesByNameTrashData = {
 
 export type GetApiV1RepositoriesByNameTrashErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Delete permission on the repository required
      */
     403: unknown;
@@ -11032,6 +11540,8 @@ export type GetApiV1RepositoriesByNameTrashErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameTrashError = GetApiV1RepositoriesByNameTrashErrors[keyof GetApiV1RepositoriesByNameTrashErrors];
 
 export type GetApiV1RepositoriesByNameTrashResponses = {
     /**
@@ -11511,6 +12021,10 @@ export type DeleteApiV1RepositoriesByNameDebsByIdData = {
 
 export type DeleteApiV1RepositoriesByNameDebsByIdErrors = {
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or package not found
      */
     404: Error;
@@ -11548,6 +12062,10 @@ export type DeleteApiV1RepositoriesByNamePackagesByIdData = {
 };
 
 export type DeleteApiV1RepositoriesByNamePackagesByIdErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or package not found
      */
@@ -11670,6 +12188,10 @@ export type GetApiV1RepositoriesByNamePackagesByIdDeltaErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository, target or source package not found
      */
     404: Error;
@@ -11707,6 +12229,10 @@ export type GetApiV1RepositoriesByNamePackagesByIdDeltasData = {
 };
 
 export type GetApiV1RepositoriesByNamePackagesByIdDeltasErrors = {
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository or package not found
      */

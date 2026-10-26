@@ -29,6 +29,7 @@ List webhooks for a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of webhooks | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -72,6 +73,7 @@ Create a new webhook for a repository
 |---|---|---|
 | `201` | Webhook created | `application/json`: [Webhook](schemas.md#webhook) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/webhooks`
@@ -85,6 +87,7 @@ List all webhooks
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of webhooks | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -121,6 +124,7 @@ Create a new webhook
 |---|---|---|
 | `201` | Webhook created | `application/json`: [Webhook](schemas.md#webhook) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/webhooks/{id}`
 
@@ -139,6 +143,7 @@ Get details of a specific webhook
 | Status | Description | Body |
 |---|---|---|
 | `200` | Webhook details | `application/json`: [Webhook](schemas.md#webhook) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
 ### `PUT /api/v1/webhooks/{id}`
@@ -175,6 +180,8 @@ Update a webhook
 | Status | Description | Body |
 |---|---|---|
 | `200` | Webhook updated | `application/json`: [Webhook](schemas.md#webhook) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
 ### `DELETE /api/v1/webhooks/{id}`
@@ -194,6 +201,7 @@ Delete a webhook
 | Status | Description | Body |
 |---|---|---|
 | `204` | Webhook deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
 ### `GET /api/v1/webhooks/{id}/deliveries`
@@ -213,6 +221,7 @@ List deliveries for a specific webhook
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of deliveries | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
 Fields of the `200` response (`application/json`):

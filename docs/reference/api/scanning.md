@@ -23,6 +23,7 @@ List all license policies (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/admin/license/policies`
 
@@ -40,6 +41,7 @@ Create a global license policy (admin only)
 |---|---|---|
 | `201` | License policy created | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/license/policies`
 
@@ -58,6 +60,7 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/policies`
@@ -82,6 +85,7 @@ Create a license policy for a repository
 |---|---|---|
 | `201` | License policy created | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/license/policies/{id}`
@@ -106,6 +110,7 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/license/policies/{id}`
@@ -126,6 +131,7 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/scan`
@@ -175,6 +181,7 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -201,6 +208,7 @@ Get details of a specific license scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | License scan details | `application/json`: [LicenseScanResult](schemas.md#licensescanresult) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `POST /api/v1/repositories/{name}/license/scans/{id}/quarantine`
@@ -251,6 +259,7 @@ Trigger a secrets scan for a repository
 |---|---|---|
 | `201` | Secrets scan started | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans`
@@ -270,6 +279,7 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -319,6 +329,7 @@ Get details of a specific secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Secrets scan details | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/secrets/scans/{id}`
@@ -339,6 +350,7 @@ Delete a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Secrets scan deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans/{id}/export`
@@ -383,6 +395,7 @@ Quarantine an artifact found in a secrets scan
 |---|---|---|
 | `200` | Artifact quarantined | - |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/security/summary`
@@ -477,6 +490,7 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -503,6 +517,7 @@ Get details of a specific vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Vulnerability scan details | `application/json`: [VulnScanResult](schemas.md#vulnscanresult) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/vuln/scans/{id}`
@@ -523,6 +538,7 @@ Delete a vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Vulnerability scan deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `GET /api/v1/repositories/{name}/vuln/scans/{id}/export`

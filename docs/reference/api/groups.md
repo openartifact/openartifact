@@ -23,6 +23,7 @@ List all groups
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of groups | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -51,6 +52,7 @@ Create a new group
 |---|---|---|
 | `201` | Group created | `application/json`: [Group](schemas.md#group) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/groups/{id}`
 
@@ -69,6 +71,7 @@ Get details of a specific group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Group details | `application/json`: [Group](schemas.md#group) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
 ### `PATCH /api/v1/groups/{id}`
@@ -97,6 +100,7 @@ Update a group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Group updated | `application/json`: [Group](schemas.md#group) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
 ### `DELETE /api/v1/groups/{id}`
@@ -116,6 +120,7 @@ Delete a group
 | Status | Description | Body |
 |---|---|---|
 | `204` | Group deleted | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
 ### `GET /api/v1/groups/{id}/members`
@@ -135,6 +140,7 @@ List members of a group
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of group members | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -168,6 +174,7 @@ Replace all members of a group
 | Status | Description | Body |
 |---|---|---|
 | `204` | Members updated | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
 ### `POST /api/v1/groups/{id}/members/{userId}`
@@ -188,6 +195,7 @@ Add a user to a group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Member added | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group or user not found | - |
 
 ### `DELETE /api/v1/groups/{id}/members/{userId}`
@@ -208,6 +216,7 @@ Remove a user from a group
 | Status | Description | Body |
 |---|---|---|
 | `204` | Member removed | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group or user not found | - |
 
 ### `GET /api/v1/users/{id}/groups`
@@ -227,6 +236,7 @@ List groups that a user belongs to
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of groups | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
 Fields of the `200` response (`application/json`):
