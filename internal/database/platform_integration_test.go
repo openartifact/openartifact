@@ -181,6 +181,13 @@ func TestListUnifiedTokensFieldsAndPaging(t *testing.T) {
 		t.Fatalf("last page = %v, %v", rest, err)
 	}
 
+	t.Run("fields", func(t *testing.T) { checkUnifiedTokenFields(t, pg) })
+}
+
+func checkUnifiedTokenFields(t *testing.T, pg *PostgresDB) {
+	t.Helper()
+
+	ctx := context.Background()
 	byName := map[string]*models.TokenListItem{}
 
 	all, _, _ := pg.ListUnifiedTokens(ctx, models.TokenListParams{Admin: true, Page: 1, Limit: 50})
@@ -232,6 +239,14 @@ func TestListQuotaOverview(t *testing.T) {
 	if p := byKey["project/beta"]; p.MaxSizeBytes != 0 || p.UsedBytes != 40 {
 		t.Errorf("beta = %+v", p)
 	}
+
+	checkQuotaOverviewFilters(t, pg, items)
+}
+
+func checkQuotaOverviewFilters(t *testing.T, pg *PostgresDB, items []*models.QuotaOverview) {
+	t.Helper()
+
+	ctx := context.Background()
 
 	// Largest usage first.
 	if items[0].UsedBytes < items[len(items)-1].UsedBytes {

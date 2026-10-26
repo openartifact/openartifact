@@ -407,7 +407,12 @@ func TestRepositoryActivityResolvesNamesInOneBatch(t *testing.T) {
 		t.Errorf("query = %+v", p)
 	}
 
-	data := body["data"].([]any)
+	checkResolvedActivityRows(t, body["data"].([]any))
+}
+
+func checkResolvedActivityRows(t *testing.T, data []any) {
+	t.Helper()
+
 	e := func(i int) map[string]any { return data[i].(map[string]any) }
 
 	if e(0)["actor_name"] != "dana" {
