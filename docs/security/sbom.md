@@ -100,7 +100,7 @@ oa vex get REPO --artifact-id my-lib@1.2.3 --output vex.openvex.json
 
 ### In the web UI
 
-Open **Security → Vulnerability scans**, pick the repository and use **Details** on a scan: every finding has a **VEX decision** button (status, justification for `not_affected`, impact and action statements) and shows its recorded status. The **VEX decisions** section below the scans lists the repository's statements with a delete action and downloads the OpenVEX or CycloneDX VEX document of the repository (or of one artifact from its findings drawer).
+Open **Security** (`/security?type=vuln`), filter by the repository and open a finding (or the scan details), or open the **Security** tab of the artifact page: every finding has a **VEX decision** button (status, justification for `not_affected`, impact and action statements) and shows its recorded status. The **VEX decisions** section below the scans lists the repository's statements with a delete action and downloads the OpenVEX or CycloneDX VEX document of the repository (or of one artifact from its findings drawer).
 
 ### Status of a vulnerability
 

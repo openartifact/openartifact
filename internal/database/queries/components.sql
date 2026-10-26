@@ -521,3 +521,64 @@ FROM (
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
 ) AS p
 LIMIT 1;
+
+-- Display names of listed package rows by id (the finding lists show a scanned
+-- artifact as name and version, and scans of the package pages record the row
+-- id as artifact_id). Same name and version expressions as GetRepoComponentBlob
+-- (keep in sync with it); soft-deleted rows resolve too, so a finding of a
+-- trashed package keeps its name.
+
+-- name: ResolveComponentNames :many
+SELECT repository_id, id, name, version
+FROM (
+    SELECT t.repository_id::uuid AS repository_id, t.id::uuid AS id, t.name::text AS name, t.version::text AS version
+    FROM deb_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM rpm_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT np.repository_id, t.id, np.full_name::text, t.version::text
+    FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM pypi_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id_coord)::text, t.version::text
+    FROM maven_artifacts t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, (t.organisation || ':' || t.module)::text, t.revision::text
+    FROM ivy_artifacts t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id)::text, t.version::text
+    FROM sbt_artifacts t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.package_id::text, t.version::text
+    FROM nuget_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.module_path::text, t.version::text
+    FROM gomod_modules t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM cargo_crates t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM rubygems_gems t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM conda_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM conan_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM helm_charts t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.path::text, ''::text
+    FROM raw_artifacts t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.cache_key::text, ''::text
+    FROM proxy_cache_entries t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text
+    FROM docker_tags t JOIN repositories r ON r.id = t.repository_id WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+) AS p;

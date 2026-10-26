@@ -41,6 +41,14 @@ type AuditEvent struct {
 	ProjectID    *string
 	IPAddress    *string
 	Details      string // free-text; stored in details_json as {"message": "..."}
+	// Package and Version name the package version the event concerns and
+	// Subject the display name of what it acted on, captured at emit time so
+	// the entry stays readable after the subject is gone. They are stored in
+	// details_json as "package", "version" and "subject"; the per-package
+	// activity filter matches on the first two.
+	Package string
+	Version string
+	Subject string
 }
 
 type Logger struct {
@@ -88,8 +96,8 @@ func (l *Logger) run() {
 
 	for event := range l.ch {
 		detailsJSON := "{}"
-		if event.Details != "" || event.Actor != "" {
-			detailsJSON = buildDetailsJSON(event.Details, event.Actor)
+		if event.Details != "" || event.Actor != "" || event.Package != "" || event.Version != "" || event.Subject != "" {
+			detailsJSON = buildDetailsJSON(event)
 		}
 
 		entry := &models.AuditLog{
@@ -121,18 +129,23 @@ func (l *Logger) run() {
 const insertTimeout = 10 * time.Second
 
 // buildDetailsJSON always yields valid JSON regardless of input bytes.
-func buildDetailsJSON(message, actor string) string {
-	m := make(map[string]string, 2)
-	if message != "" {
-		m["message"] = message
+func buildDetailsJSON(event AuditEvent) string {
+	m := make(map[string]string, 5)
+
+	for k, v := range map[string]string{
+		"message": event.Details, "actor": event.Actor,
+		"package": event.Package, "version": event.Version, "subject": event.Subject,
+	} {
+		if v != "" {
+			m[k] = v
+		}
 	}
-	if actor != "" {
-		m["actor"] = actor
-	}
+
 	b, err := json.Marshal(m)
 	if err != nil {
 		return "{}"
 	}
+
 	return string(b)
 }
 

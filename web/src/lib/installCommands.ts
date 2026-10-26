@@ -63,8 +63,9 @@ export function pullCommand(
   const q = shellQuote
   switch (format) {
     case 'docker':
-      // The registry resolves the whole image name to a repository.
-      return `docker pull ${q(`${hostOf(origin)}/${repo}:${version}`)}`
+      // The listed package name already is the registry name, `<repo>` or
+      // `<repo>/<image path>` (internal/ocipath), so it is the pull path.
+      return `docker pull ${q(`${hostOf(origin)}/${pkg}:${version}`)}`
     case 'npm':
       return `npm install ${q(`${pkg}@${version}`)} ${q(`--registry=${base}/`)}`
     case 'pypi':
@@ -99,6 +100,17 @@ export function pullCommand(
     default:
       return `${base}/`
   }
+}
+
+/**
+ * Docker pull pinned to a manifest digest (`sha256:<hex>`; a bare hex digest is
+ * accepted), or null when the digest is not a sha256 one. The pinned form does
+ * not move when the tag is re-pushed.
+ */
+export function dockerDigestPull(origin: string, pkg: string, digest: string): string | null {
+  const hex = digest.replace(/^sha256:/, '')
+  if (!/^[0-9a-f]{64}$/.test(hex)) return null
+  return `docker pull ${shellQuote(`${hostOf(origin)}/${pkg}@sha256:${hex}`)}`
 }
 
 interface ClientSetup {
@@ -149,7 +161,7 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
         },
         {
           client: 'twine',
-          configure: `# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = ${base}/\nusername = <USERNAME>\npassword = <TOKEN>`,
+          configure: `# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = ${base}/legacy/\nusername = <USERNAME>\npassword = <TOKEN>`,
           publish: `twine upload --repository openartifact dist/*`,
         },
       ]
@@ -189,7 +201,7 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
       return [
         {
           client: 'cargo',
-          configure: `# ~/.cargo/config.toml\n[registries.${repo}]\nindex = "sparse+${base}/index/"\ntoken = "<TOKEN>"`,
+          configure: `# ~/.cargo/config.toml\n[registries.${repo}]\nindex = "sparse+${base}/index/"\ntoken = "Bearer <TOKEN>"`,
           publish: `cargo publish --registry ${repo}`,
         },
       ]
@@ -213,7 +225,7 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
         {
           client: 'gem',
           configure: `gem sources --add ${base}/`,
-          publish: `GEM_HOST_API_KEY=<TOKEN> gem push my-gem-1.0.0.gem --host ${base}`,
+          publish: `GEM_HOST_API_KEY="Bearer <TOKEN>" gem push my-gem-1.0.0.gem --host ${base}`,
         },
       ]
     case 'raw':

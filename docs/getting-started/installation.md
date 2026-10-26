@@ -202,8 +202,8 @@ The web UI is an installable app (PWA): it opens in its own window without brows
 
 | Platform | How |
 |---|---|
-| Desktop Chrome / Edge | Click the install icon at the right end of the address bar, or **Install app** next to your user name in the sidebar footer (shown only when the browser offers an install). |
-| Android (Chrome) | Menu → **Install app** (or **Add to Home screen**), or the **Install app** button in the sidebar. |
+| Desktop Chrome / Edge | Click the install icon at the right end of the address bar, or **Install app** in the user menu (shown only when the browser offers an install). |
+| Android (Chrome) | Menu → **Install app** (or **Add to Home screen**), or the **Install app** item in the user menu. |
 | iOS / iPadOS (Safari) | Share → **Add to Home Screen**. Safari fires no install event, so there is no in-app button. |
 
 What the installed app does and does not do:

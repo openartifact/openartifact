@@ -166,7 +166,10 @@ func TestMigration014SanitizesLegacyFailures(t *testing.T) {
 		}
 	}
 
-	// Put the schema back to its state before migration 014.
+	// Put the schema back to its state before migration 014. The security
+	// results view (084) reads the license_results columns dropped below, so it
+	// goes first and is re-created by the migration run further down.
+	mustExec(`DROP VIEW security_results`)
 	mustExec(`ALTER TABLE vuln_results DROP COLUMN failed_scanners`)
 	mustExec(`DROP INDEX idx_license_results_quarantined`)
 	mustExec(`ALTER TABLE license_results DROP COLUMN quarantined, DROP COLUMN quarantine_approved`)
@@ -180,6 +183,15 @@ func TestMigration014SanitizesLegacyFailures(t *testing.T) {
 
 	if n, _ := res.RowsAffected(); n != 1 {
 		t.Fatalf("expected exactly one tracked 014 migration, removed %d", n)
+	}
+
+	res, err = db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version LIKE '084%'`)
+	if err != nil {
+		t.Fatalf("forget migration 084: %v", err)
+	}
+
+	if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("expected exactly one tracked 084 migration, removed %d", n)
 	}
 
 	const rawError = `run trivy: exec: "trivy": executable file not found in $PATH (stderr: /srv/oa/.cache/token=abc)`
@@ -214,6 +226,8 @@ func TestMigration014SanitizesLegacyFailures(t *testing.T) {
 	if err := pg.Migrate(ctx); err != nil {
 		t.Fatalf("re-apply pending migration 014: %v", err)
 	}
+
+	mustExec(`SELECT 1 FROM security_results LIMIT 0`)
 
 	message := func(jobID string) *string {
 		t.Helper()

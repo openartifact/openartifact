@@ -12,6 +12,35 @@ Named request and response objects of the [REST API](README.md), sorted by name.
 
 ## Schemas
 
+### ActivityEntry
+
+A `ProjectActivityEntry` with the actor's and the subject's names resolved.
+
+Includes all fields of [ProjectActivityEntry](#projectactivityentry).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | string | yes | Audit action, e.g. `project.member_added`, `project.repository_created`. |
+| `actor` | string | yes | Username or token name of the actor; empty when unknown. |
+| `actor_name` | string | yes | Display name of the actor: the recorded name, else the user's current name, else `system`; empty when unknown. |
+| `actor_type` | string | no | Nullable. One of: `user`, `system`, `token`, `sso`. |
+| `id` | string (uuid) | yes | - |
+| `message` | string | yes | - |
+| `repository_id` | string (uuid) | no | Nullable. |
+| `resource_id` | string | no | Nullable. |
+| `resource_type` | string | no | Nullable. |
+| `subject` | [AuditSubject](#auditsubject) | yes | Nullable. |
+| `timestamp` | string (date-time) | yes | - |
+
+### ActivityPage
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `data` | array of [ActivityEntry](#activityentry) | yes | - |
+| `has_more` | boolean | yes | True when entries follow this page. |
+| `next_cursor` | string | no | Pass as `cursor` to fetch the next page. Absent when `has_more` is false. |
+| `per_page` | integer | yes | - |
+
 ### AdminToken
 
 Includes all fields of [Token](#token).
@@ -61,16 +90,34 @@ Includes all fields of [Token](#token).
 
 ### AuditEntry
 
+One audit log entry of the admin audit list.
+
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | no | - |
-| `actor` | string | no | - |
-| `details` | object | no | - |
-| `id` | string (uuid) | no | - |
-| `ip` | string | no | - |
-| `result` | string | no | - |
-| `target` | string | no | - |
-| `timestamp` | string (date-time) | no | - |
+| `action` | string | yes | - |
+| `actor` | string | yes | Username or token name recorded with the event; empty when unknown. |
+| `actor_name` | string | yes | Display name of the actor: the recorded name, else the user's current name, else `system` for background work; empty when unknown. |
+| `details` | object | no | Nullable. |
+| `id` | string (uuid) | yes | - |
+| `ip` | string | no | Nullable. |
+| `repository_id` | string (uuid) | no | Nullable. |
+| `resource_id` | string | no | Nullable. |
+| `resource_type` | string | no | Nullable. |
+| `subject` | [AuditSubject](#auditsubject) | yes | What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows). Nullable. |
+| `target` | string | no | The raw resource id. Nullable. |
+| `timestamp` | string (date-time) | yes | - |
+
+### AuditSubject
+
+What an audit event acted on, resolved server-side. `name` is null when the subject is gone and the event did not record its name.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | `repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `permission_target`, `gpg_key`, `sso_provider`, `setting`, or the raw resource type of an event kind without a dedicated one (`storage_tier`, `storage_policy`, ...). |
+| `name` | string | yes | Nullable. |
+| `project` | string | no | Name of the project the event belongs to. |
+| `repository` | string | no | Name of the repository the event belongs to. |
+| `version` | string | no | Package version, for `package` subjects that record one. |
 
 ### Backup
 
@@ -182,6 +229,25 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `status` | string | yes | One of: `in_progress`, `success`, `failed`. |
 | `target_repo_id` | string | yes | - |
 | `to_stage` | string | yes | - |
+
+### ChecksumHit
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `algorithm` | string | yes | One of: `sha256`, `sha1`, `md5`. |
+| `checksum` | string | yes | The checksum searched for, lowercase. |
+| `filename` | string | yes | File within the package; empty for the formats with no file name of their own (conda, conan, docker, go). |
+| `format` | string | yes | - |
+| `name` | string | yes | - |
+| `repository` | string | yes | - |
+| `version` | string | yes | - |
+
+### ChecksumResult
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `packages` | array of [ChecksumHit](#checksumhit) | yes | - |
+| `total` | integer | yes | Number of files carrying the checksum. |
 
 ### CleanupPolicy
 
@@ -445,7 +511,8 @@ A remote instance this repository pulls changes from. Secrets (token, client key
 | `instance_id` | string | yes | Identifier of this instance. |
 | `log_id` | string | yes | Identifier of this repository's log; changes when federation is disabled and enabled again. |
 | `peers` | array of [FederationPeer](#federationpeer) | yes | - |
-| `supported` | boolean | yes | The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget). |
+| `server_enabled` | boolean | yes | Federation is enabled on the server (federation.enabled); when false no repository can be federated. |
+| `supported` | boolean | yes | Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server. |
 | `tokens` | array of [FederationToken](#federationtoken) | yes | - |
 | `tombstones` | integer (int64) | yes | Logged deletions. |
 | `units` | integer (int64) | yes | Logged units. |
@@ -685,6 +752,90 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 | `error` | string | no | - |
 | `success` | boolean | yes | - |
 
+### PackageDetail
+
+One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `arch` | string | yes | - |
+| `created_at` | string (date-time) | yes | - |
+| `dependencies` | array of object | yes | - |
+| `dependencies[].kind` | string | no | Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it. |
+| `dependencies[].name` | string | yes | - |
+| `dependencies[].version` | string | no | Version requirement as the format writes it. |
+| `description` | string | no | - |
+| `filename` | string | yes | - |
+| `files` | array of object | yes | All the files of this version (one per architecture, classifier or distribution), this one included; at most 200. |
+| `files[].arch` | string | yes | - |
+| `files[].filename` | string | yes | - |
+| `files[].id` | string (uuid) | yes | - |
+| `files[].sha256` | string | yes | - |
+| `files[].size` | integer (int64) | yes | - |
+| `format` | string | yes | - |
+| `homepage` | string | no | - |
+| `id` | string (uuid) | yes | - |
+| `latest_version` | string | yes | - |
+| `license` | string | no | - |
+| `md5` | string | no | Only for the formats that record it. |
+| `metadata` | array of object | yes | Format-specific fields, ordered by key; empty values are left out. |
+| `metadata[].key` | string | yes | - |
+| `metadata[].value` | string | yes | - |
+| `name` | string | yes | - |
+| `sha1` | string | no | Only for the formats that record it. |
+| `sha256` | string | yes | - |
+| `size` | integer (int64) | yes | - |
+| `summary` | string | no | - |
+| `updated_at` | string (date-time) | yes | - |
+| `version` | string | yes | - |
+| `version_count` | integer | yes | Versions of the package this one belongs to. |
+
+### PackageFile
+
+One row (file) of a repository's package listing.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `arch` | string | yes | - |
+| `created_at` | string (date-time) | yes | - |
+| `filename` | string | yes | - |
+| `flagged` | boolean | yes | A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type). |
+| `format` | string | yes | - |
+| `id` | string (uuid) | yes | Row id; the key of the package detail, download and scan endpoints. |
+| `name` | string | yes | - |
+| `scanned_at` | string (date-time) | no | Latest completed scan; absent when never scanned (security is then all zero). |
+| `security` | [PackageSecurity](#packagesecurity) | yes | - |
+| `sha256` | string | yes | - |
+| `size` | integer (int64) | yes | - |
+| `version` | string | yes | - |
+
+### PackageGroup
+
+One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `flagged` | boolean | yes | - |
+| `format` | string | yes | - |
+| `latest_version` | string | yes | The most recently published version. |
+| `name` | string | yes | - |
+| `scanned_at` | string (date-time) | no | Latest completed scan of the latest version; absent when never scanned. |
+| `security` | [PackageSecurity](#packagesecurity) | yes | - |
+| `size_bytes` | integer (int64) | yes | Size of the latest version, all its files summed. |
+| `updated_at` | string (date-time) | yes | Latest modification of any version. |
+| `version_count` | integer | yes | - |
+
+### PackageSecurity
+
+Vulnerability counts by severity.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `critical` | integer (int64) | yes | - |
+| `high` | integer (int64) | yes | - |
+| `low` | integer (int64) | yes | - |
+| `medium` | integer (int64) | yes | - |
+
 ### PackageUploadResult
 
 | Field | Type | Required | Description |
@@ -815,15 +966,6 @@ One audit event of a project or of a repository it owns. Carries no client addre
 | `resource_type` | string | no | Nullable. |
 | `timestamp` | string (date-time) | yes | - |
 
-### ProjectActivityPage
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `data` | array of [ProjectActivityEntry](#projectactivityentry) | yes | - |
-| `has_more` | boolean | yes | True when entries follow this page. |
-| `next_cursor` | string | no | Pass as `cursor` to fetch the next page. Absent when `has_more` is false. |
-| `per_page` | integer | yes | - |
-
 ### ProjectCleanupPreview
 
 | Field | Type | Required | Description |
@@ -862,6 +1004,37 @@ One audit event of a project or of a repository it owns. Carries no client addre
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `role` | string | yes | One of: `viewer`, `developer`, `maintainer`. |
+
+### ProjectListItem
+
+A project of the project list: the project plus its member count, usage and quota.
+
+Includes all fields of [Project](#project).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `allow_public_repos` | boolean | no | Whether repositories of this project may be public. |
+| `allowed_formats` | array of string | no | Package formats repositories of this project may use. null allows every format. Nullable. |
+| `allowed_repo_types` | array of string | no | Repository types allowed in this project. Items: one of: `hosted`, `proxy`, `group`. |
+| `created_at` | string (date-time) | no | - |
+| `description` | string | no | Nullable. |
+| `display_name` | string | no | Nullable. |
+| `id` | string (uuid) | no | - |
+| `is_system` | boolean | no | The built-in system project: it grants nothing and cannot be deleted. |
+| `max_repositories` | integer | no | Maximum number of repositories the project may own. 0 means unlimited. Minimum: 0. |
+| `member_count` | integer | yes | Direct members; users who hold a role only through a group are not counted. |
+| `my_role` | string | no | The caller's effective role in the project; a global admin without a role is an implicit owner. One of: `owner`, `maintainer`, `developer`, `viewer`. |
+| `name` | string | no | - |
+| `owner_id` | string (uuid) | no | Nullable. |
+| `quota` | object | no | Absent when the project has no size limit. |
+| `quota.limit_bytes` | integer (int64) | yes | - |
+| `repo_name_prefix` | string | no | Prefix every repository name in this project must start with. Empty means no prefix is required. |
+| `repository_count` | integer | no | Number of live (not trashed) repositories. |
+| `slug` | string | no | URL-safe unique identifier derived from the name: lowercased, runs of characters outside a-z0-9 collapsed to '-', at most 64 characters. A name or slug collision on create returns 409. |
+| `token_max_ttl_days` | integer | no | Maximum lifetime in days of tokens scoped to this project. 0 means no cap. Minimum: 0. |
+| `updated_at` | string (date-time) | no | - |
+| `usage` | object | yes | - |
+| `usage.size_bytes` | integer (int64) | yes | Stored size across the project's repositories (trashed ones included). |
 
 ### ProjectMember
 
@@ -1021,12 +1194,67 @@ Partial update: omitted fields stay unchanged.
 | `max_size_bytes` | integer | no | - |
 | `warn_threshold_percent` | number | no | - |
 
+### QuotaLine
+
+A quota next to its live usage. Limits are absent when unlimited.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_count` | integer (int64) | yes | - |
+| `exceeded` | boolean | yes | True once the size or the artifact count limit is reached. |
+| `limit_bytes` | integer (int64) | no | - |
+| `max_artifact_count` | integer (int64) | no | - |
+| `soft_limit_bytes` | integer (int64) | no | Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`. |
+| `usage_percent` | integer | yes | `used_bytes` of `limit_bytes`; 0 when unlimited. |
+| `used_bytes` | integer (int64) | yes | - |
+| `warn_threshold_percent` | integer | yes | - |
+
+### QuotaOverviewItem
+
+A repository's or a project's quota and usage.
+
+Includes all fields of [QuotaLine](#quotaline).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_count` | integer (int64) | yes | - |
+| `exceeded` | boolean | yes | True once the size or the artifact count limit is reached. |
+| `limit_bytes` | integer (int64) | no | - |
+| `max_artifact_count` | integer (int64) | no | - |
+| `name` | string | yes | - |
+| `project` | string | no | Project owning a repository; absent for a project line and for a repository without one. |
+| `scope` | string | yes | One of: `repository`, `project`. |
+| `soft_limit_bytes` | integer (int64) | no | Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`. |
+| `usage_percent` | integer | yes | `used_bytes` of `limit_bytes`; 0 when unlimited. |
+| `used_bytes` | integer (int64) | yes | - |
+| `warn_threshold_percent` | integer | yes | - |
+
+### QuotaOverviewList
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `limit` | integer | yes | - |
+| `page` | integer | yes | - |
+| `quotas` | array of [QuotaOverviewItem](#quotaoverviewitem) | yes | - |
+| `total` | integer | yes | - |
+
 ### ReadyResponse
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `reason` | string | no | - |
 | `status` | string | no | One of: `ready`, `not ready`. |
+
+### RecentPackage
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | yes | - |
+| `created_by_name` | string | no | Never set: the server does not record who published a package. |
+| `format` | string | yes | - |
+| `name` | string | yes | - |
+| `repository` | string | yes | - |
+| `version` | string | yes | - |
 
 ### RecoveryStatus
 
@@ -1121,6 +1349,27 @@ Partial update: omitted fields stay unchanged.
 | `started_at` | string (date-time) | no | - |
 | `unreferenced` | integer (int64) | no | Blobs only the replica holds that nothing references. |
 
+### RepoSecuritySummary
+
+Counts only; no finding ids, titles or other details.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ai` | object | yes | - |
+| `ai.quarantine_recommended` | integer | yes | - |
+| `ai.review_required` | integer | yes | - |
+| `license` | object | yes | - |
+| `license.violations` | integer | yes | License findings that are not suppressed. |
+| `quarantined` | boolean | yes | True when a result of the selection is quarantined. |
+| `scanned_at` | string (date-time) | yes | Latest completed scan of the selection; null when nothing was scanned. Nullable. |
+| `secret` | object | yes | - |
+| `secret.count` | integer | yes | - |
+| `vuln` | object | yes | - |
+| `vuln.critical` | integer | yes | - |
+| `vuln.high` | integer | yes | - |
+| `vuln.low` | integer | yes | - |
+| `vuln.medium` | integer | yes | - |
+
 ### Repository
 
 | Field | Type | Required | Description |
@@ -1148,8 +1397,10 @@ Partial update: omitted fields stay unchanged.
 | `public` | boolean | no | Whether repository is publicly accessible |
 | `repo_type` | string | no | Repository type. One of: `hosted`, `proxy`, `group`. |
 | `sign_packages` | boolean | no | Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed. |
+| `stats` | [RepositoryStats](#repositorystats) | no | - |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `updated_at` | string (date-time) | no | Last update timestamp |
+| `upstream_password_set` | boolean | no | Proxy repos: true when an upstream password is stored. The password is write-only (`upstream_password` on create and update) and is never returned. |
 | `upstream_url` | string | no | Upstream repository URL (for proxy repos) |
 | `upstream_username` | string | no | - |
 
@@ -1162,6 +1413,37 @@ Partial update: omitted fields stay unchanged.
 | `name` | string | yes | Member repository name |
 | `priority` | integer | yes | Resolution order within the group (lowest first) |
 | `repo_type` | string | yes | Member repository type. One of: `hosted`, `proxy`. |
+
+### RepositoryStats
+
+Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `last_published_at` | string (date-time) | no | Time of the newest package; absent for an empty repository. |
+| `package_count` | integer (int64) | yes | Number of distinct package names, counted as the package listing names them. |
+| `quota` | object | yes | - |
+| `quota.limit_bytes` | integer (int64) | no | Size quota; absent when unlimited. |
+| `quota.used_bytes` | integer (int64) | yes | - |
+| `security` | object | yes | Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any. |
+| `security.critical` | integer (int64) | yes | - |
+| `security.high` | integer (int64) | yes | - |
+| `security.license_violations` | integer (int64) | yes | Artifacts whose license scan is quarantined (the server stores no other license violation count). |
+| `security.low` | integer (int64) | yes | - |
+| `security.medium` | integer (int64) | yes | - |
+| `security.scanned_at` | string (date-time) | no | Latest completed scan; absent when never scanned. |
+| `security.secrets` | integer (int64) | yes | Secret findings. |
+| `size_bytes` | integer (int64) | yes | Stored size, from the repository's quota counter (equals quota.used_bytes). |
+
+### RepositoryUsage
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `last_published_at` | string (date-time) | no | Absent for an empty repository. |
+| `package_count` | integer (int64) | yes | Distinct packages (by name). |
+| `quota` | [QuotaLine](#quotaline) | yes | - |
+| `size_bytes` | integer (int64) | yes | Stored size from the quota counter. |
+| `version_count` | integer (int64) | yes | Package rows (versions, or files for formats without versions). |
 
 ### SBOMReport
 
@@ -1227,6 +1509,7 @@ Partial update: omitted fields stay unchanged.
 | `sha256` | string | no | - |
 | `size` | integer (int64) | no | - |
 | `version` | string | no | - |
+| `version_count` | integer | no | Only with group=package: the number of versions of the package that match the search |
 
 ### SearchRepositoryHit
 
@@ -1244,6 +1527,94 @@ Partial update: omitted fields stay unchanged.
 | `repositories` | array of [SearchRepositoryHit](#searchrepositoryhit) | no | Repositories whose own name matches the query, ordered by name |
 | `total` | integer | no | Number of matching packages (repositories are not counted); with group=package, the number of distinct packages |
 
+### SecurityFinding
+
+One stored scan result (a package version of one type) that reports something.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_id` | string | yes | The artifact the result belongs to, `name@version`. |
+| `counts` | [SecurityFindingCounts](#securityfindingcounts) | yes | What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium. |
+| `format` | string | yes | Format of the repository (npm, pypi, maven, ...). |
+| `id` | string (uuid) | yes | - |
+| `package_name` | string | yes | - |
+| `package_version` | string | yes | - |
+| `quarantined` | boolean | yes | - |
+| `repository` | string | yes | Repository name. |
+| `scanned_at` | string (date-time) | yes | - |
+| `scanner` | string | yes | Scanner of a vulnerability result (`osv`, `trivy`, `grype` or a comma-joined list); empty for the other types. |
+| `severity` | string | yes | Highest severity of the finding; `none` when it has none. One of: `critical`, `high`, `medium`, `low`, `none`. |
+| `status` | string | yes | `quarantined` when the result's quarantine flag is set; `suppressed` when every vulnerability has a `not_affected` or `fixed` VEX decision or an admin approved a license quarantine. One of: `open`, `quarantined`, `suppressed`. |
+| `title` | string | yes | One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note. |
+| `type` | string | yes | One of: `vuln`, `license`, `secret`, `ai`. |
+| `vex_status` | string | no | Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies. One of: `affected`, `under_investigation`, `fixed`, `not_affected`. |
+
+### SecurityFindingCounts
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `critical` | integer | yes | - |
+| `high` | integer | yes | - |
+| `low` | integer | yes | - |
+| `medium` | integer | yes | - |
+
+### SecurityHealth
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ai` | object | yes | - |
+| `ai.enabled` | boolean | yes | - |
+| `dependency_track` | object | yes | - |
+| `dependency_track.enabled` | boolean | yes | The global Dependency-Track integration is enabled. |
+| `dependency_track.last_push_at` | string (date-time) | no | When that push finished; absent when none did. |
+| `dependency_track.last_push_ok` | boolean | no | Whether the latest finished push succeeded; absent when none finished. |
+| `last_scan_at` | string (date-time) | yes | When the latest vulnerability, license, secret or AI scan finished; null when none did. Nullable. |
+| `scanners` | array of object | yes | - |
+| `scanners[].docs_url` | string | no | Installation guide of a scanner that is not ready. |
+| `scanners[].message` | string | no | What an operator should do; absent for a ready scanner. |
+| `scanners[].name` | string | yes | osv, trivy or grype. |
+| `scanners[].ready` | boolean | yes | - |
+| `scans_failed_24h` | integer | yes | Scans that failed in the last 24 hours. |
+| `scans_pending` | integer | yes | Scans that are pending or running. |
+| `unscanned_repositories` | integer | yes | Repositories that hold artifacts (group repositories excluded) with no completed scan of any type. |
+
+### SecuritySummary
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `by_type` | object | yes | - |
+| `by_type.ai` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.ai.critical` | integer | yes | - |
+| `by_type.ai.high` | integer | yes | - |
+| `by_type.ai.low` | integer | yes | - |
+| `by_type.ai.medium` | integer | yes | - |
+| `by_type.ai.quarantined` | integer | yes | - |
+| `by_type.ai.total` | integer | yes | - |
+| `by_type.license` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.license.critical` | integer | yes | - |
+| `by_type.license.high` | integer | yes | - |
+| `by_type.license.low` | integer | yes | - |
+| `by_type.license.medium` | integer | yes | - |
+| `by_type.license.quarantined` | integer | yes | - |
+| `by_type.license.total` | integer | yes | - |
+| `by_type.secret` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.secret.critical` | integer | yes | - |
+| `by_type.secret.high` | integer | yes | - |
+| `by_type.secret.low` | integer | yes | - |
+| `by_type.secret.medium` | integer | yes | - |
+| `by_type.secret.quarantined` | integer | yes | - |
+| `by_type.secret.total` | integer | yes | - |
+| `by_type.vuln` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.vuln.critical` | integer | yes | - |
+| `by_type.vuln.high` | integer | yes | - |
+| `by_type.vuln.low` | integer | yes | - |
+| `by_type.vuln.medium` | integer | yes | - |
+| `by_type.vuln.quarantined` | integer | yes | - |
+| `by_type.vuln.total` | integer | yes | - |
+| `last_scan_at` | string (date-time) | yes | When the latest scan of the scope finished; null when none did. Nullable. |
+| `scanned_repositories` | integer | yes | Repositories that hold artifacts (group repositories excluded) with a completed scan of any type. |
+| `total_repositories` | integer | yes | Repositories of the scope that hold artifacts. |
+
 ### StorageBackend
 
 | Field | Type | Required | Description |
@@ -1258,6 +1629,9 @@ Partial update: omitted fields stay unchanged.
 | `status` | string | no | One of: `ok`, `degraded`, `error`, `unknown`. |
 | `status_message` | string | no | - |
 | `updated_at` | string (date-time) | no | - |
+| `usage` | object | no | What the backend holds; present on the list and get endpoints. |
+| `usage.blob_count` | integer (int64) | yes | - |
+| `usage.size_bytes` | integer (int64) | yes | - |
 
 ### StoragePolicy
 
@@ -1417,17 +1791,19 @@ Includes all fields of [Token](#token).
 
 ### TrashItem
 
-A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.
+A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at expires_at.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `deleted_at` | string (date-time) | yes | - |
 | `deleted_by` | string | yes | - |
+| `deleted_by_name` | string | yes | Who deleted the item as a display name: the username, or the policy or peer that did it (`cleanup-policy`, `federation:<peer>`). Empty when not recorded. Same value as `deleted_by`. |
+| `expires_at` | string (date-time) | yes | When the retention purge removes the item for good: deleted_at plus the repository's effective retention. |
 | `format` | string | yes | - |
 | `id` | string (uuid) | yes | Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item. |
 | `kind` | string | yes | One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `name` | string | yes | Package name, file path, image:tag or (kind repository) the repository name. |
-| `purge_at` | string (date-time) | yes | deleted_at plus the repository's effective retention. |
+| `purge_at` | string (date-time) | yes | Same value as `expires_at`, kept for existing clients. |
 | `repository` | string | yes | Name of the owning repository (the trashed repository itself for kind repository). |
 | `repository_id` | string (uuid) | yes | - |
 | `size_bytes` | integer (int64) | yes | - |
@@ -1441,6 +1817,34 @@ A soft-deleted package row or repository. It is hidden everywhere else until res
 | `limit` | integer | yes | - |
 | `page` | integer | yes | - |
 | `total` | integer | yes | - |
+
+### UnifiedToken
+
+One token of the unified token list. The secret is never returned.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | yes | - |
+| `expired` | boolean | yes | True once `expires_at` has passed. |
+| `expires_at` | string (date-time) | no | Absent for a token that never expires (federation tokens never do). |
+| `id` | string (uuid) | yes | - |
+| `last_used_at` | string (date-time) | no | - |
+| `name` | string | yes | - |
+| `owner` | string | yes | Username of the token's owner (personal), creator (project) or creator (federation, as recorded). |
+| `project` | string | no | Project name: set for project tokens and for federation tokens of a repository that belongs to a project. |
+| `repository` | string | no | Repository name, for federation tokens. |
+| `role` | string | no | Project role, for project tokens. |
+| `scopes` | array of string | no | Permission-target ids a personal token is limited to. |
+| `type` | string | yes | One of: `personal`, `project`, `federation`. |
+
+### UnifiedTokenList
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `limit` | integer | yes | - |
+| `page` | integer | yes | - |
+| `tokens` | array of [UnifiedToken](#unifiedtoken) | yes | - |
+| `total` | integer | yes | Tokens the caller may see that match the filters. |
 
 ### UpdateFederationPeerRequest
 
@@ -1486,7 +1890,7 @@ Includes all fields of [User](#user).
 | `disabled` | boolean | no | - |
 | `email` | string (email) | no | - |
 | `full_name` | string | no | - |
-| `groups` | array of [Group](#group) | no | - |
+| `groups` | array of string | no | Names of the groups the user belongs to. |
 | `id` | string (uuid) | no | - |
 | `is_admin` | boolean | no | - |
 | `last_login_at` | string (date-time) | no | - |

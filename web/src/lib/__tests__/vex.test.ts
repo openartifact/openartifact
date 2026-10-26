@@ -23,7 +23,7 @@ describe('vex helpers', () => {
     expect(vexStatusVariant('fixed')).toBe('success')
     expect(vexStatusVariant('not_affected')).toBe('success')
     expect(vexStatusVariant('under_investigation')).toBe('warning')
-    for (const s of VEX_STATUSES) expect(vexStatusLabel(s)).not.toContain('sec.vex')
+    for (const s of VEX_STATUSES) expect(vexStatusLabel(s)).not.toContain('security.vex')
   })
 
   it('starts undecided without a record and prefilled with one', () => {

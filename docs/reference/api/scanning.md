@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Scanning API
 
-27 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+32 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -373,6 +373,29 @@ Quarantine an artifact found in a secrets scan
 |---|---|---|
 | `200` | Artifact quarantined | - |
 
+### `GET /api/v1/repositories/{name}/security/summary`
+
+Security summary of a repository, package or version
+
+Counts only: vulnerabilities by severity, license violations, secret findings, AI flags and whether a result is quarantined. It carries no finding ids, titles or other details, so it needs only read access to the repository: it is what viewers, developers and tokens that cannot list findings show. Narrow it to a package with `package_name` and to one version with `version`.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `package_name` | query | string | no | Only this package. |
+| `version` | query | string | no | Only this version of the package; needs `package_name`. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The counts | `application/json`: [RepoSecuritySummary](schemas.md#reposecuritysummary) |
+| `400` | `version` without `package_name`, or a value that is too long (`validation_failed`) | - |
+| `403` | No read access to the repository | - |
+| `404` | Repository not found | - |
+
 ### `POST /api/v1/repositories/{name}/vuln/scan`
 
 Scan vulnerabilities
@@ -539,6 +562,101 @@ Quarantine (`quarantined: true`) or release (`quarantined: false`) the artifact 
 | `400` | Invalid body | - |
 | `403` | Admin access required | - |
 | `404` | Repository or scan not found | - |
+
+### `GET /api/v1/security/findings`
+
+List security findings of all repositories
+
+Vulnerability, license, secret and AI findings across repositories, worst first: highest severity, then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `type` | query | string | no | Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four. |
+| `repo` | query | string | no | Only the findings of this repository (by name). |
+| `project` | query | string | no | Only the findings of the repositories of this project (by name). |
+| `severity` | query | string | no | Only findings whose highest severity is exactly this one (the summary strip counts the same way). One of: `critical`, `high`, `medium`, `low`. |
+| `status` | query | string | no | Only findings in this state. One of: `open`, `quarantined`, `suppressed`. |
+| `q` | query | string | no | Case-insensitive substring of the repository name or of `name@version`. |
+| `limit` | query | integer | no | Page size, default 50. Minimum: 1. Maximum: 200. |
+| `cursor` | query | string | no | Opaque `next_cursor` of the previous page. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | One page of findings | `application/json`: object |
+| `400` | Invalid filter or cursor (`validation_failed`) | - |
+| `403` | Neither a global administrator nor a project maintainer or owner | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `findings` | array of [SecurityFinding](schemas.md#securityfinding) | yes | - |
+| `has_more` | boolean | yes | True when findings follow this page. |
+| `next_cursor` | string | no | Pass as `cursor` to fetch the next page. Absent when `has_more` is false. |
+
+### `GET /api/v1/security/findings/export`
+
+Export security findings
+
+Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `type` | query | string | no | Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four. |
+| `repo` | query | string | no | Only the findings of this repository (by name). |
+| `project` | query | string | no | Only the findings of the repositories of this project (by name). |
+| `severity` | query | string | no | Only findings whose highest severity is exactly this one (the summary strip counts the same way). One of: `critical`, `high`, `medium`, `low`. |
+| `status` | query | string | no | Only findings in this state. One of: `open`, `quarantined`, `suppressed`. |
+| `q` | query | string | no | Case-insensitive substring of the repository name or of `name@version`. |
+| `format` | query | string | no | `csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings). One of: `csv`, `json`, `vex`. Default: `json`. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The export as a download. CSV is `text/csv`, JSON `application/json` (`{findings, truncated}`), VEX `application/vnd.cyclonedx+json`. | `application/json`: object; `application/vnd.cyclonedx+json`: object; `text/csv`: string |
+| `400` | Unknown `format` or filter (`validation_failed`) | - |
+| `403` | Neither a global administrator nor a project maintainer or owner | - |
+
+### `GET /api/v1/security/findings/summary`
+
+Count security findings by type
+
+Findings per type (total, by highest severity, quarantined) and how many of the repositories that hold artifacts have a completed scan, within the caller's scope. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `repo` | query | string | no | Only the findings of this repository (by name). |
+| `project` | query | string | no | Only the findings of the repositories of this project (by name). |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The counts | `application/json`: [SecuritySummary](schemas.md#securitysummary) |
+| `400` | Invalid filter (`validation_failed`) | - |
+| `403` | Neither a global administrator nor a project maintainer or owner | - |
+
+### `GET /api/v1/security/health`
+
+Security health
+
+Scanner readiness, the scan queue, the Dependency-Track and AI integrations and the scan coverage in one call (admin only).
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The health aggregate | `application/json`: [SecurityHealth](schemas.md#securityhealth) |
+| `403` | Admin access required | - |
 
 ### `GET /api/v1/vuln/scans`
 

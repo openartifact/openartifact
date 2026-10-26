@@ -357,7 +357,7 @@ func TestFederationStatusAndEnableDisable(t *testing.T) {
 		t.Fatalf("status: %d %s", code, raw)
 	}
 
-	if m["enabled"] != false || m["supported"] != true || m["instance_id"] == "" {
+	if m["enabled"] != false || m["supported"] != true || m["server_enabled"] != true || m["instance_id"] == "" {
 		t.Errorf("fresh status = %v, want disabled+supported with an instance id", m)
 	}
 
@@ -429,8 +429,8 @@ func TestFederationStatusServerDisabledNotSupported(t *testing.T) {
 	fedAPISeedRepo(t, e.db, "files", "raw", "hosted")
 
 	code, m, raw := e.do(t, fedAPIAdmin, http.MethodGet, fedAPIPath("files"), "")
-	if code != http.StatusOK || m["supported"] != false || m["enabled"] != false {
-		t.Fatalf("status = %d %s, want supported=false enabled=false", code, raw)
+	if code != http.StatusOK || m["supported"] != false || m["enabled"] != false || m["server_enabled"] != false {
+		t.Fatalf("status = %d %s, want supported=false enabled=false server_enabled=false", code, raw)
 	}
 }
 

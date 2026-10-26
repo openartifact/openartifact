@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <TransitionRoot appear :show="open" as="template">
+  <TransitionRoot appear :show="open" as="template" @after-leave="restoreFocus">
     <Dialog as="div" class="relative z-50" @close="emit('close')">
       <TransitionChild
         as="template"
@@ -80,7 +80,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import {
   Dialog,
   DialogPanel,
@@ -91,6 +91,7 @@ import {
 } from '@headlessui/vue'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
 import { t } from '../i18n/en'
+import { useRestoreFocus } from '../composables/useRestoreFocus'
 
 const props = withDefaults(
   defineProps<{
@@ -107,6 +108,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{ (e: 'close'): void }>()
+
+const { restoreFocus } = useRestoreFocus(toRef(props, 'open'))
 
 const widthClass = computed(() => props.maxWidth ?? (props.drawer ? 'max-w-xl' : 'max-w-lg'))
 </script>

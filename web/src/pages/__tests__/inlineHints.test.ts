@@ -6,9 +6,7 @@ import { describe, it, expect, spyOn } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import RepoWizardPage from '../RepoWizardPage.vue'
-import PermissionsPage from '../admin/PermissionsPage.vue'
-import NewRepoModal from '../../components/NewRepoModal.vue'
+import PermissionsPage from '../settings/sections/PermissionsPage.vue'
 import { useSessionStore, type User } from '../../stores/session'
 
 const json = (body: unknown): Response =>
@@ -27,37 +25,6 @@ async function router(path: string) {
   await r.isReady()
   return r
 }
-
-const IMMUTABLE = 'Format and type cannot be changed after creation.'
-
-describe('repository format and type are immutable', () => {
-  // Verified against the API: PATCH /api/v1/repository/{name} has no format or repo_type field.
-  it('the wizard says so on the format and type steps while creating', async () => {
-    serveEmpty()
-    setActivePinia(createPinia())
-    useSessionStore().user = { id: 'a', username: 'root', is_admin: true } as User
-    const w = mount(RepoWizardPage, { global: { plugins: [await router('/repos/new')] } })
-    await flushPromises()
-    expect(w.find('[data-testid="immutable-hint"]').exists()).toBe(false)
-
-    await w.get('#repo-name').setValue('my-repo')
-    const next = () => w.findAll('button').find((b) => b.text() === 'Next')!
-    await next().trigger('click')
-    expect(w.get('[data-testid="immutable-hint"]').text()).toBe(IMMUTABLE)
-
-    await next().trigger('click')
-    expect(w.get('[data-testid="immutable-hint"]').text()).toBe(IMMUTABLE)
-  })
-
-  it('the new-repository dialog says so next to the format and type choices', async () => {
-    serveEmpty()
-    setActivePinia(createPinia())
-    useSessionStore().user = { id: 'a', username: 'root', is_admin: true } as User
-    mount(NewRepoModal, { props: { modelValue: true }, attachTo: document.body, global: { plugins: [await router('/repos')] } })
-    await flushPromises()
-    expect(document.body.querySelector('[data-testid="immutable-hint"]')?.textContent).toBe(IMMUTABLE)
-  })
-})
 
 describe('permission target patterns', () => {
   // Verified against auth.CompilePattern: anchored, "*" is ".*", an empty pattern is rejected.

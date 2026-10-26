@@ -170,7 +170,10 @@ export type User = {
 
 export type UserExtended = User & {
     is_admin?: boolean;
-    groups?: Array<Group>;
+    /**
+     * Names of the groups the user belongs to.
+     */
+    groups?: Array<string>;
     /**
      * The caller's project roles; global admins are implicit owners everywhere and are listed only for roles they hold.
      */
@@ -221,6 +224,10 @@ export type Repository = {
      */
     upstream_url?: string;
     upstream_username?: string;
+    /**
+     * Proxy repos: true when an upstream password is stored. The password is write-only (`upstream_password` on create and update) and is never returned.
+     */
+    upstream_password_set?: boolean;
     /**
      * Cache TTL in seconds
      */
@@ -295,6 +302,214 @@ export type Repository = {
      * True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation.
      */
     federated?: boolean;
+    stats?: RepositoryStats;
+};
+
+/**
+ * Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).
+ */
+export type RepositoryStats = {
+    /**
+     * Number of distinct package names, counted as the package listing names them.
+     */
+    package_count: number;
+    /**
+     * Stored size, from the repository's quota counter (equals quota.used_bytes).
+     */
+    size_bytes: number;
+    /**
+     * Time of the newest package; absent for an empty repository.
+     */
+    last_published_at?: string;
+    /**
+     * Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any.
+     */
+    security: {
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
+        /**
+         * Secret findings.
+         */
+        secrets: number;
+        /**
+         * Artifacts whose license scan is quarantined (the server stores no other license violation count).
+         */
+        license_violations: number;
+        /**
+         * Latest completed scan; absent when never scanned.
+         */
+        scanned_at?: string;
+    };
+    quota: {
+        /**
+         * Size quota; absent when unlimited.
+         */
+        limit_bytes?: number;
+        used_bytes: number;
+    };
+};
+
+/**
+ * Vulnerability counts by severity.
+ */
+export type PackageSecurity = {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+};
+
+/**
+ * One row (file) of a repository's package listing.
+ */
+export type PackageFile = {
+    /**
+     * Row id; the key of the package detail, download and scan endpoints.
+     */
+    id: string;
+    name: string;
+    version: string;
+    format: string;
+    arch: string;
+    size: number;
+    sha256: string;
+    filename: string;
+    created_at: string;
+    security: PackageSecurity;
+    /**
+     * A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type).
+     */
+    flagged: boolean;
+    /**
+     * Latest completed scan; absent when never scanned (security is then all zero).
+     */
+    scanned_at?: string;
+};
+
+/**
+ * One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.
+ */
+export type PackageGroup = {
+    name: string;
+    format: string;
+    /**
+     * The most recently published version.
+     */
+    latest_version: string;
+    version_count: number;
+    /**
+     * Size of the latest version, all its files summed.
+     */
+    size_bytes: number;
+    /**
+     * Latest modification of any version.
+     */
+    updated_at: string;
+    security: PackageSecurity;
+    flagged: boolean;
+    /**
+     * Latest completed scan of the latest version; absent when never scanned.
+     */
+    scanned_at?: string;
+};
+
+export type RecentPackage = {
+    repository: string;
+    format: string;
+    name: string;
+    version: string;
+    created_at: string;
+    /**
+     * Never set: the server does not record who published a package.
+     */
+    created_by_name?: string;
+};
+
+/**
+ * One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).
+ */
+export type PackageDetail = {
+    id: string;
+    name: string;
+    version: string;
+    format: string;
+    arch: string;
+    filename: string;
+    size: number;
+    sha256: string;
+    /**
+     * Only for the formats that record it.
+     */
+    md5?: string;
+    /**
+     * Only for the formats that record it.
+     */
+    sha1?: string;
+    created_at: string;
+    updated_at: string;
+    summary?: string;
+    description?: string;
+    license?: string;
+    homepage?: string;
+    /**
+     * Format-specific fields, ordered by key; empty values are left out.
+     */
+    metadata: Array<{
+        key: string;
+        value: string;
+    }>;
+    dependencies: Array<{
+        name: string;
+        /**
+         * Version requirement as the format writes it.
+         */
+        version?: string;
+        /**
+         * Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it.
+         */
+        kind?: string;
+    }>;
+    /**
+     * All the files of this version (one per architecture, classifier or distribution), this one included; at most 200.
+     */
+    files: Array<{
+        id: string;
+        filename: string;
+        arch: string;
+        size: number;
+        sha256: string;
+    }>;
+    /**
+     * Versions of the package this one belongs to.
+     */
+    version_count: number;
+    latest_version: string;
+};
+
+export type ChecksumResult = {
+    /**
+     * Number of files carrying the checksum.
+     */
+    total: number;
+    packages: Array<ChecksumHit>;
+};
+
+export type ChecksumHit = {
+    repository: string;
+    format: string;
+    name: string;
+    version: string;
+    /**
+     * File within the package; empty for the formats with no file name of their own (conda, conan, docker, go).
+     */
+    filename: string;
+    /**
+     * The checksum searched for, lowercase.
+     */
+    checksum: string;
+    algorithm: 'sha256' | 'sha1' | 'md5';
 };
 
 export type RepositoryMember = {
@@ -448,6 +663,10 @@ export type SearchPackageHit = {
     metadata?: {
         [key: string]: string;
     };
+    /**
+     * Only with group=package: the number of versions of the package that match the search
+     */
+    version_count?: number;
 };
 
 export type SearchRepositoryHit = {
@@ -743,19 +962,190 @@ export type StorageBackend = {
     last_checked_at?: string;
     created_at?: string;
     updated_at?: string;
+    /**
+     * What the backend holds; present on the list and get endpoints.
+     */
+    usage?: {
+        blob_count: number;
+        size_bytes: number;
+    };
 };
 
+/**
+ * One audit log entry of the admin audit list.
+ */
 export type AuditEntry = {
-    id?: string;
-    timestamp?: string;
-    actor?: string;
-    action?: string;
-    target?: string;
-    result?: string;
-    ip?: string;
+    id: string;
+    timestamp: string;
+    action: string;
+    /**
+     * Username or token name recorded with the event; empty when unknown.
+     */
+    actor: string;
+    /**
+     * Display name of the actor: the recorded name, else the user's current name, else `system` for background work; empty when unknown.
+     */
+    actor_name: string;
+    /**
+     * What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows).
+     */
+    subject: AuditSubject | null;
+    /**
+     * The raw resource id.
+     */
+    target?: string | null;
+    ip?: string | null;
     details?: {
         [key: string]: unknown;
-    };
+    } | null;
+    repository_id?: string | null;
+    resource_type?: string | null;
+    resource_id?: string | null;
+};
+
+/**
+ * What an audit event acted on, resolved server-side. `name` is null when the subject is gone and the event did not record its name.
+ */
+export type AuditSubject = {
+    /**
+     * `repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `permission_target`, `gpg_key`, `sso_provider`, `setting`, or the raw resource type of an event kind without a dedicated one (`storage_tier`, `storage_policy`, ...).
+     */
+    kind: string;
+    name: string | null;
+    /**
+     * Package version, for `package` subjects that record one.
+     */
+    version?: string;
+    /**
+     * Name of the repository the event belongs to.
+     */
+    repository?: string;
+    /**
+     * Name of the project the event belongs to.
+     */
+    project?: string;
+};
+
+/**
+ * A `ProjectActivityEntry` with the actor's and the subject's names resolved.
+ */
+export type ActivityEntry = ProjectActivityEntry & {
+    /**
+     * Display name of the actor: the recorded name, else the user's current name, else `system`; empty when unknown.
+     */
+    actor_name: string;
+    subject: AuditSubject | null;
+};
+
+/**
+ * One token of the unified token list. The secret is never returned.
+ */
+export type UnifiedToken = {
+    id: string;
+    type: 'personal' | 'project' | 'federation';
+    name: string;
+    /**
+     * Username of the token's owner (personal), creator (project) or creator (federation, as recorded).
+     */
+    owner: string;
+    /**
+     * Project name: set for project tokens and for federation tokens of a repository that belongs to a project.
+     */
+    project?: string;
+    /**
+     * Repository name, for federation tokens.
+     */
+    repository?: string;
+    /**
+     * Project role, for project tokens.
+     */
+    role?: string;
+    /**
+     * Permission-target ids a personal token is limited to.
+     */
+    scopes?: Array<string>;
+    created_at: string;
+    /**
+     * Absent for a token that never expires (federation tokens never do).
+     */
+    expires_at?: string;
+    last_used_at?: string;
+    /**
+     * True once `expires_at` has passed.
+     */
+    expired: boolean;
+};
+
+export type UnifiedTokenList = {
+    tokens: Array<UnifiedToken>;
+    /**
+     * Tokens the caller may see that match the filters.
+     */
+    total: number;
+    page: number;
+    limit: number;
+};
+
+/**
+ * A quota next to its live usage. Limits are absent when unlimited.
+ */
+export type QuotaLine = {
+    limit_bytes?: number;
+    used_bytes: number;
+    /**
+     * Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`.
+     */
+    soft_limit_bytes?: number;
+    warn_threshold_percent: number;
+    max_artifact_count?: number;
+    artifact_count: number;
+    /**
+     * `used_bytes` of `limit_bytes`; 0 when unlimited.
+     */
+    usage_percent: number;
+    /**
+     * True once the size or the artifact count limit is reached.
+     */
+    exceeded: boolean;
+};
+
+export type RepositoryUsage = {
+    /**
+     * Distinct packages (by name).
+     */
+    package_count: number;
+    /**
+     * Package rows (versions, or files for formats without versions).
+     */
+    version_count: number;
+    /**
+     * Stored size from the quota counter.
+     */
+    size_bytes: number;
+    /**
+     * Absent for an empty repository.
+     */
+    last_published_at?: string;
+    quota: QuotaLine;
+};
+
+/**
+ * A repository's or a project's quota and usage.
+ */
+export type QuotaOverviewItem = QuotaLine & {
+    scope: 'repository' | 'project';
+    name: string;
+    /**
+     * Project owning a repository; absent for a project line and for a repository without one.
+     */
+    project?: string;
+};
+
+export type QuotaOverviewList = {
+    quotas: Array<QuotaOverviewItem>;
+    total: number;
+    page: number;
+    limit: number;
 };
 
 /**
@@ -1182,8 +1572,8 @@ export type ProjectActivityEntry = {
     repository_id?: string | null;
 };
 
-export type ProjectActivityPage = {
-    data: Array<ProjectActivityEntry>;
+export type ActivityPage = {
+    data: Array<ActivityEntry>;
     per_page: number;
     /**
      * True when entries follow this page.
@@ -1193,6 +1583,28 @@ export type ProjectActivityPage = {
      * Pass as `cursor` to fetch the next page. Absent when `has_more` is false.
      */
     next_cursor?: string;
+};
+
+/**
+ * A project of the project list: the project plus its member count, usage and quota.
+ */
+export type ProjectListItem = Project & {
+    /**
+     * Direct members; users who hold a role only through a group are not counted.
+     */
+    member_count: number;
+    usage: {
+        /**
+         * Stored size across the project's repositories (trashed ones included).
+         */
+        size_bytes: number;
+    };
+    /**
+     * Absent when the project has no size limit.
+     */
+    quota?: {
+        limit_bytes: number;
+    };
 };
 
 export type ProjectUsage = {
@@ -1239,6 +1651,206 @@ export type LicensePolicy = {
     repo_id?: string | null;
     created_at?: string;
     updated_at?: string;
+};
+
+/**
+ * One stored scan result (a package version of one type) that reports something.
+ */
+export type SecurityFinding = {
+    id: string;
+    type: 'vuln' | 'license' | 'secret' | 'ai';
+    /**
+     * Repository name.
+     */
+    repository: string;
+    /**
+     * Format of the repository (npm, pypi, maven, ...).
+     */
+    format: string;
+    package_name: string;
+    package_version: string;
+    /**
+     * The artifact the result belongs to, `name@version`.
+     */
+    artifact_id: string;
+    /**
+     * Highest severity of the finding; `none` when it has none.
+     */
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
+    /**
+     * What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium.
+     */
+    counts: SecurityFindingCounts;
+    /**
+     * One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note.
+     */
+    title: string;
+    /**
+     * Scanner of a vulnerability result (`osv`, `trivy`, `grype` or a comma-joined list); empty for the other types.
+     */
+    scanner: string;
+    /**
+     * `quarantined` when the result's quarantine flag is set; `suppressed` when every vulnerability has a `not_affected` or `fixed` VEX decision or an admin approved a license quarantine.
+     */
+    status: 'open' | 'quarantined' | 'suppressed';
+    quarantined: boolean;
+    /**
+     * Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies.
+     */
+    vex_status?: 'affected' | 'under_investigation' | 'fixed' | 'not_affected';
+    scanned_at: string;
+};
+
+export type SecurityFindingCounts = {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+};
+
+export type SecuritySummary = {
+    by_type: {
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        vuln: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        license: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        secret: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        ai: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+    };
+    /**
+     * Repositories that hold artifacts (group repositories excluded) with a completed scan of any type.
+     */
+    scanned_repositories: number;
+    /**
+     * Repositories of the scope that hold artifacts.
+     */
+    total_repositories: number;
+    /**
+     * When the latest scan of the scope finished; null when none did.
+     */
+    last_scan_at: string | null;
+};
+
+export type SecurityHealth = {
+    scanners: Array<{
+        /**
+         * osv, trivy or grype.
+         */
+        name: string;
+        ready: boolean;
+        /**
+         * What an operator should do; absent for a ready scanner.
+         */
+        message?: string;
+        /**
+         * Installation guide of a scanner that is not ready.
+         */
+        docs_url?: string;
+    }>;
+    /**
+     * When the latest vulnerability, license, secret or AI scan finished; null when none did.
+     */
+    last_scan_at: string | null;
+    /**
+     * Scans that are pending or running.
+     */
+    scans_pending: number;
+    /**
+     * Scans that failed in the last 24 hours.
+     */
+    scans_failed_24h: number;
+    dependency_track: {
+        /**
+         * The global Dependency-Track integration is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Whether the latest finished push succeeded; absent when none finished.
+         */
+        last_push_ok?: boolean;
+        /**
+         * When that push finished; absent when none did.
+         */
+        last_push_at?: string;
+    };
+    ai: {
+        enabled: boolean;
+    };
+    /**
+     * Repositories that hold artifacts (group repositories excluded) with no completed scan of any type.
+     */
+    unscanned_repositories: number;
+};
+
+/**
+ * Counts only; no finding ids, titles or other details.
+ */
+export type RepoSecuritySummary = {
+    /**
+     * Latest completed scan of the selection; null when nothing was scanned.
+     */
+    scanned_at: string | null;
+    vuln: {
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
+    };
+    license: {
+        /**
+         * License findings that are not suppressed.
+         */
+        violations: number;
+    };
+    secret: {
+        count: number;
+    };
+    ai: {
+        quarantine_recommended: number;
+        review_required: number;
+    };
+    /**
+     * True when a result of the selection is quarantined.
+     */
+    quarantined: boolean;
 };
 
 /**
@@ -1694,7 +2306,7 @@ export type PresignedUploadResult = {
 };
 
 /**
- * A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.
+ * A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at expires_at.
  */
 export type TrashItem = {
     /**
@@ -1720,7 +2332,15 @@ export type TrashItem = {
     deleted_at: string;
     deleted_by: string;
     /**
-     * deleted_at plus the repository's effective retention.
+     * Who deleted the item as a display name: the username, or the policy or peer that did it (`cleanup-policy`, `federation:<peer>`). Empty when not recorded. Same value as `deleted_by`.
+     */
+    deleted_by_name: string;
+    /**
+     * When the retention purge removes the item for good: deleted_at plus the repository's effective retention.
+     */
+    expires_at: string;
+    /**
+     * Same value as `expires_at`, kept for existing clients.
      */
     purge_at: string;
 };
@@ -1862,9 +2482,13 @@ export type FederationStatus = {
      */
     enabled: boolean;
     /**
-     * The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget).
+     * Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server.
      */
     supported: boolean;
+    /**
+     * Federation is enabled on the server (federation.enabled); when false no repository can be federated.
+     */
+    server_enabled: boolean;
     /**
      * Identifier of this instance.
      */
@@ -2641,6 +3265,38 @@ export type GetApiV1RepositoriesData = {
          * Items per page (default: 25, max: 100)
          */
         limit?: number;
+        /**
+         * Only repositories whose name contains this text (case-insensitive, at most 200 characters)
+         */
+        q?: string;
+        /**
+         * Only repositories of this type
+         */
+        type?: 'hosted' | 'proxy' | 'group';
+        /**
+         * Only repositories of the project with this name; an unknown project matches nothing
+         */
+        project?: string;
+        /**
+         * true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts)
+         */
+        flagged?: boolean;
+        /**
+         * true keeps the repositories that have a size quota and have used at least quota_threshold of it
+         */
+        near_quota?: boolean;
+        /**
+         * Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8)
+         */
+        quota_threshold?: number;
+        /**
+         * true keeps the repositories that were never scanned (no completed scan of any of their artifacts)
+         */
+        unscanned?: boolean;
+        /**
+         * Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name.
+         */
+        sort?: 'name' | 'updated' | 'last_published' | 'size';
     };
     url: '/api/v1/repositories';
 };
@@ -2773,11 +3429,23 @@ export type GetApiV1RepositoriesByNamePackagesData = {
          * Only list rows whose listed package name equals this value exactly (all versions of one package)
          */
         package_name?: string;
+        /**
+         * package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped.
+         */
+        group?: 'package';
+        /**
+         * With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.
+         */
+        flagged?: boolean;
     };
     url: '/api/v1/repositories/{name}/packages';
 };
 
 export type GetApiV1RepositoriesByNamePackagesErrors = {
+    /**
+     * Invalid sort, group, flagged or q
+     */
+    400: unknown;
     /**
      * Repository not found
      */
@@ -2786,13 +3454,13 @@ export type GetApiV1RepositoriesByNamePackagesErrors = {
 
 export type GetApiV1RepositoriesByNamePackagesResponses = {
     /**
-     * List of packages
+     * List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package
      */
     200: {
         total?: number;
-        packages?: Array<{
-            [key: string]: unknown;
-        }>;
+        page?: number;
+        limit?: number;
+        packages?: Array<PackageFile | PackageGroup>;
     };
 };
 
@@ -3772,6 +4440,235 @@ export type GetApiV1VulnScansResponses = {
 
 export type GetApiV1VulnScansResponse = GetApiV1VulnScansResponses[keyof GetApiV1VulnScansResponses];
 
+export type GetApiV1SecurityFindingsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.
+         */
+        type?: string;
+        /**
+         * Only the findings of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only the findings of the repositories of this project (by name).
+         */
+        project?: string;
+        /**
+         * Only findings whose highest severity is exactly this one (the summary strip counts the same way).
+         */
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        /**
+         * Only findings in this state.
+         */
+        status?: 'open' | 'quarantined' | 'suppressed';
+        /**
+         * Case-insensitive substring of the repository name or of `name@version`.
+         */
+        q?: string;
+        /**
+         * Page size, default 50.
+         */
+        limit?: number;
+        /**
+         * Opaque `next_cursor` of the previous page.
+         */
+        cursor?: string;
+    };
+    url: '/api/v1/security/findings';
+};
+
+export type GetApiV1SecurityFindingsErrors = {
+    /**
+     * Invalid filter or cursor (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Neither a global administrator nor a project maintainer or owner
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityFindingsResponses = {
+    /**
+     * One page of findings
+     */
+    200: {
+        findings: Array<SecurityFinding>;
+        /**
+         * True when findings follow this page.
+         */
+        has_more: boolean;
+        /**
+         * Pass as `cursor` to fetch the next page. Absent when `has_more` is false.
+         */
+        next_cursor?: string;
+    };
+};
+
+export type GetApiV1SecurityFindingsResponse = GetApiV1SecurityFindingsResponses[keyof GetApiV1SecurityFindingsResponses];
+
+export type GetApiV1SecurityFindingsSummaryData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only the findings of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only the findings of the repositories of this project (by name).
+         */
+        project?: string;
+    };
+    url: '/api/v1/security/findings/summary';
+};
+
+export type GetApiV1SecurityFindingsSummaryErrors = {
+    /**
+     * Invalid filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Neither a global administrator nor a project maintainer or owner
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityFindingsSummaryResponses = {
+    /**
+     * The counts
+     */
+    200: SecuritySummary;
+};
+
+export type GetApiV1SecurityFindingsSummaryResponse = GetApiV1SecurityFindingsSummaryResponses[keyof GetApiV1SecurityFindingsSummaryResponses];
+
+export type GetApiV1SecurityFindingsExportData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.
+         */
+        type?: string;
+        /**
+         * Only the findings of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only the findings of the repositories of this project (by name).
+         */
+        project?: string;
+        /**
+         * Only findings whose highest severity is exactly this one (the summary strip counts the same way).
+         */
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        /**
+         * Only findings in this state.
+         */
+        status?: 'open' | 'quarantined' | 'suppressed';
+        /**
+         * Case-insensitive substring of the repository name or of `name@version`.
+         */
+        q?: string;
+        /**
+         * `csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings).
+         */
+        format?: 'csv' | 'json' | 'vex';
+    };
+    url: '/api/v1/security/findings/export';
+};
+
+export type GetApiV1SecurityFindingsExportErrors = {
+    /**
+     * Unknown `format` or filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Neither a global administrator nor a project maintainer or owner
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityFindingsExportResponses = {
+    /**
+     * The export as a download. CSV is `text/csv`, JSON `application/json` (`{findings, truncated}`), VEX `application/vnd.cyclonedx+json`.
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1SecurityFindingsExportResponse = GetApiV1SecurityFindingsExportResponses[keyof GetApiV1SecurityFindingsExportResponses];
+
+export type GetApiV1SecurityHealthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/security/health';
+};
+
+export type GetApiV1SecurityHealthErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityHealthResponses = {
+    /**
+     * The health aggregate
+     */
+    200: SecurityHealth;
+};
+
+export type GetApiV1SecurityHealthResponse = GetApiV1SecurityHealthResponses[keyof GetApiV1SecurityHealthResponses];
+
+export type GetApiV1RepositoriesByNameSecuritySummaryData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        /**
+         * Only this package.
+         */
+        package_name?: string;
+        /**
+         * Only this version of the package; needs `package_name`.
+         */
+        version?: string;
+    };
+    url: '/api/v1/repositories/{name}/security/summary';
+};
+
+export type GetApiV1RepositoriesByNameSecuritySummaryErrors = {
+    /**
+     * `version` without `package_name`, or a value that is too long (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * No read access to the repository
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameSecuritySummaryResponses = {
+    /**
+     * The counts
+     */
+    200: RepoSecuritySummary;
+};
+
+export type GetApiV1RepositoriesByNameSecuritySummaryResponse = GetApiV1RepositoriesByNameSecuritySummaryResponses[keyof GetApiV1RepositoriesByNameSecuritySummaryResponses];
+
 export type GetApiV1VulnScansExportData = {
     body?: never;
     path?: never;
@@ -4254,11 +5151,11 @@ export type GetApiV1RepositoriesByNameArtifactsSearchResponses = {
 export type GetApiV1SearchData = {
     body?: never;
     path?: never;
-    query: {
+    query?: {
         /**
-         * Search query: free text plus optional name:, format:, repo: and sha256: qualifiers
+         * Search query: free text plus optional name:, format:, repo: and sha256: qualifiers. Required unless checksum is given or flagged=true.
          */
-        q: string;
+        q?: string;
         /**
          * Filter by format
          */
@@ -4279,22 +5176,30 @@ export type GetApiV1SearchData = {
          * Offset for pagination
          */
         offset?: number;
+        /**
+         * true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned.
+         */
+        flagged?: boolean;
+        /**
+         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
+         */
+        checksum?: string;
     };
     url: '/api/v1/search';
 };
 
 export type GetApiV1SearchErrors = {
     /**
-     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, or query_too_broad (more than 10000 matching packages; add filters)
+     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)
      */
     400: unknown;
 };
 
 export type GetApiV1SearchResponses = {
     /**
-     * Search results
+     * Search results (SearchResult), or with checksum the files that carry it
      */
-    200: SearchResult;
+    200: SearchResult | ChecksumResult;
 };
 
 export type GetApiV1SearchResponse = GetApiV1SearchResponses[keyof GetApiV1SearchResponses];
@@ -5245,6 +6150,176 @@ export type PostApiV1PermissionTargetsByIdAssignmentsResponses = {
      */
     200: unknown;
 };
+
+export type GetApiV1TokensData = {
+    body?: never;
+    path?: never;
+    query?: {
+        type?: 'personal' | 'project' | 'federation';
+        /**
+         * Project name: only that project's tokens and the federation tokens of its repositories (personal tokens never match).
+         */
+        project?: string;
+        /**
+         * RFC 3339 timestamp or `YYYY-MM-DD` date: only tokens that expire before it (already expired ones included; tokens without an expiry never match).
+         */
+        expires_before?: string;
+        /**
+         * Case-insensitive substring of the token name or owner.
+         */
+        q?: string;
+        page?: number;
+        limit?: number;
+    };
+    url: '/api/v1/tokens';
+};
+
+export type GetApiV1TokensErrors = {
+    /**
+     * Invalid type or expires_before
+     */
+    400: unknown;
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * A non-admin API token cannot list tokens
+     */
+    403: unknown;
+};
+
+export type GetApiV1TokensResponses = {
+    /**
+     * One page of tokens
+     */
+    200: UnifiedTokenList;
+};
+
+export type GetApiV1TokensResponse = GetApiV1TokensResponses[keyof GetApiV1TokensResponses];
+
+export type GetApiV1AdminQuotasData = {
+    body?: never;
+    path?: never;
+    query?: {
+        scope?: 'repository' | 'project';
+        /**
+         * `true` keeps only quotas that enforce a limit.
+         */
+        limited?: boolean;
+        /**
+         * Case-insensitive substring of the repository or project name.
+         */
+        q?: string;
+        page?: number;
+        limit?: number;
+    };
+    url: '/api/v1/admin/quotas';
+};
+
+export type GetApiV1AdminQuotasErrors = {
+    /**
+     * Invalid scope
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminQuotasResponses = {
+    /**
+     * One page of quotas
+     */
+    200: QuotaOverviewList;
+};
+
+export type GetApiV1AdminQuotasResponse = GetApiV1AdminQuotasResponses[keyof GetApiV1AdminQuotasResponses];
+
+export type GetApiV1RepositoriesByNameUsageData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/usage';
+};
+
+export type GetApiV1RepositoriesByNameUsageErrors = {
+    /**
+     * Admin or project maintainer access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameUsageResponses = {
+    /**
+     * Repository usage
+     */
+    200: RepositoryUsage;
+};
+
+export type GetApiV1RepositoriesByNameUsageResponse = GetApiV1RepositoriesByNameUsageResponses[keyof GetApiV1RepositoriesByNameUsageResponses];
+
+export type GetApiV1RepositoriesByNameActivityData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        /**
+         * Exact package name as recorded with the event.
+         */
+        package_name?: string;
+        /**
+         * Exact version as recorded with the event.
+         */
+        version?: string;
+        /**
+         * Case-insensitive substring of the actor name or actor id.
+         */
+        actor?: string;
+        /**
+         * Case-insensitive substring of the action name.
+         */
+        action?: string;
+        /**
+         * Opaque `next_cursor` of the previous page; omit for the newest entries.
+         */
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/v1/repositories/{name}/activity';
+};
+
+export type GetApiV1RepositoriesByNameActivityErrors = {
+    /**
+     * Malformed cursor
+     */
+    400: unknown;
+    /**
+     * Admin or project maintainer access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameActivityResponses = {
+    /**
+     * One page of activity
+     */
+    200: ActivityPage;
+};
+
+export type GetApiV1RepositoriesByNameActivityResponse = GetApiV1RepositoriesByNameActivityResponses[keyof GetApiV1RepositoriesByNameActivityResponses];
 
 export type GetApiV1AdminTokensData = {
     body?: never;
@@ -6634,6 +7709,10 @@ export type GetApiV1ProjectsData = {
          * List every project instead of only the caller's own. Global administrators only.
          */
         all?: boolean;
+        /**
+         * Case-insensitive substring of the project name, slug or display name.
+         */
+        q?: string;
     };
     url: '/api/v1/projects';
 };
@@ -6643,7 +7722,7 @@ export type GetApiV1ProjectsResponses = {
      * List of projects
      */
     200: {
-        projects?: Array<Project>;
+        projects?: Array<ProjectListItem>;
         can_create?: boolean;
     };
 };
@@ -7304,7 +8383,7 @@ export type GetApiV1ProjectsByProjectActivityResponses = {
     /**
      * One page of activity
      */
-    200: ProjectActivityPage;
+    200: ActivityPage;
 };
 
 export type GetApiV1ProjectsByProjectActivityResponse = GetApiV1ProjectsByProjectActivityResponses[keyof GetApiV1ProjectsByProjectActivityResponses];
@@ -7716,6 +8795,40 @@ export type GetApiV1AdminSystemInfoResponses = {
 };
 
 export type GetApiV1AdminSystemInfoResponse = GetApiV1AdminSystemInfoResponses[keyof GetApiV1AdminSystemInfoResponses];
+
+export type GetApiV1PackagesRecentData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * true keeps the repositories the caller has write permission on
+         */
+        mine?: boolean;
+        /**
+         * Maximum entries (default 10, at most 50)
+         */
+        limit?: number;
+    };
+    url: '/api/v1/packages/recent';
+};
+
+export type GetApiV1PackagesRecentErrors = {
+    /**
+     * Invalid mine
+     */
+    400: unknown;
+};
+
+export type GetApiV1PackagesRecentResponses = {
+    /**
+     * Recent package versions
+     */
+    200: {
+        packages: Array<RecentPackage>;
+    };
+};
+
+export type GetApiV1PackagesRecentResponse = GetApiV1PackagesRecentResponses[keyof GetApiV1PackagesRecentResponses];
 
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadData = {
     body?: never;
@@ -9984,6 +11097,42 @@ export type DeleteApiV1RepositoriesByNamePackagesByIdResponses = {
 };
 
 export type DeleteApiV1RepositoriesByNamePackagesByIdResponse = DeleteApiV1RepositoriesByNamePackagesByIdResponses[keyof DeleteApiV1RepositoriesByNamePackagesByIdResponses];
+
+export type GetApiV1RepositoriesByNamePackagesByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+        /**
+         * Row id from the package listing
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/packages/{id}';
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdErrors = {
+    /**
+     * No read access to the repository
+     */
+    403: unknown;
+    /**
+     * Repository or package not found (a package of another repository is not found either)
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdResponses = {
+    /**
+     * The package version
+     */
+    200: PackageDetail;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdResponse = GetApiV1RepositoriesByNamePackagesByIdResponses[keyof GetApiV1RepositoriesByNamePackagesByIdResponses];
 
 export type PutApiV1RepositoriesByNameCompsData = {
     body: string;

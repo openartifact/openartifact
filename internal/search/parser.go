@@ -12,6 +12,9 @@ type SearchFilter struct {
 	Formats      []string
 	Repos        []string
 	SHA256Prefix string
+	// Flagged keeps the packages with a critical or high vulnerability, a secret
+	// finding or a quarantined scan result (database.FlaggedArtifactPredicate).
+	Flagged bool
 }
 
 func ParseQuery(q string) SearchFilter {

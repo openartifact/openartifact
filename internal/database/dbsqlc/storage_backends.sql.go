@@ -53,7 +53,7 @@ func (q *Queries) DeleteStorageBackend(ctx context.Context, id string) error {
 }
 
 const getStorageBackend = `-- name: GetStorageBackend :one
-SELECT id, name, kind, is_default, config, status, status_message, COALESCE(last_checked_at, TIMESTAMPTZ 'epoch') AS last_checked_at, created_at, updated_at
+SELECT id, name, kind, is_default, config, status, status_message, last_checked_at, created_at, updated_at
 FROM storage_backends WHERE name = $1
 `
 
@@ -76,7 +76,7 @@ func (q *Queries) GetStorageBackend(ctx context.Context, name string) (StorageBa
 }
 
 const listStorageBackends = `-- name: ListStorageBackends :many
-SELECT id, name, kind, is_default, config, status, status_message, COALESCE(last_checked_at, TIMESTAMPTZ 'epoch') AS last_checked_at, created_at, updated_at
+SELECT id, name, kind, is_default, config, status, status_message, last_checked_at, created_at, updated_at
 FROM storage_backends ORDER BY is_default DESC, name ASC
 `
 

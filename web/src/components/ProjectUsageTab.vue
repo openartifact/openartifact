@@ -121,7 +121,7 @@ import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
 import { getProjectUsage, type ProjectUsage, type ProjectUsageRepository } from '../api/projects'
 import { formatBytes, percentOf, usageBarClass } from '../lib/quota'
-import { t, tp } from '../i18n/en'
+import { t, tp, tpn } from '../i18n/en'
 
 const props = defineProps<{ project: string }>()
 
@@ -140,7 +140,7 @@ const rows = computed(() => usage.value?.repositories ?? [])
 function limitLabel(r: ProjectUsageRepository): string {
   const parts: string[] = []
   if ((r.max_size_bytes ?? 0) > 0) parts.push(formatBytes(r.max_size_bytes ?? 0))
-  if ((r.max_artifact_count ?? 0) > 0) parts.push(tp('projects.usage.countLimit', { n: String(r.max_artifact_count) }))
+  if ((r.max_artifact_count ?? 0) > 0) parts.push(tpn('projects.usage.countLimit', r.max_artifact_count ?? 0))
   return parts.length > 0 ? parts.join(' · ') : t('projects.usage.noRepoLimit')
 }
 

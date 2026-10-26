@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { VulnScanner, VulnScanRow } from '../api/security'
+import type { VulnScanner } from '../api/security'
 
 export const VULN_SCANNER_OPTIONS: readonly { value: VulnScanner; label: string }[] = [
   { value: 'osv', label: 'OSV-Scanner' },
@@ -18,10 +18,4 @@ export function vulnScannerLabel(name: string): string {
 /** The link comes from the server; only follow https URLs. */
 export function safeDocsUrl(url: string | null | undefined): string | undefined {
   return url && url.startsWith('https://') ? url : undefined
-}
-
-/** Scanners that produced a scan; scans recorded before the scanner column existed ran OSV. */
-export function scannerNames(scan: Pick<VulnScanRow, 'scanner'>): string[] {
-  const names = scan.scanner.split(',').filter(Boolean)
-  return names.length ? names : ['osv']
 }

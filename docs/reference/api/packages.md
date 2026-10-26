@@ -8,9 +8,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Packages API
 
-10 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+12 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
+
+### `GET /api/v1/packages/recent`
+
+Recent packages
+
+The most recently published package versions across the repositories the caller can read, newest first. A version with several files (architectures, classifiers, distributions) appears once. Proxy cache entries are not publications and are left out. The server records no publisher, so created_by_name is never set; mine=true narrows the list to the repositories the caller can write to.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `mine` | query | boolean | no | true keeps the repositories the caller has write permission on |
+| `limit` | query | integer | no | Maximum entries (default 10, at most 50). Minimum: 1. Maximum: 50. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Recent package versions | `application/json`: object |
+| `400` | Invalid mine | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `packages` | array of [RecentPackage](schemas.md#recentpackage) | yes | - |
 
 ### `GET /api/v1/repositories/{name}/artifacts/search`
 
@@ -135,20 +161,46 @@ List all packages in a specific repository
 | `sort` | query | string | no | Row order: newest first (created, the default) or by name and version (name). One of: `created`, `name`. |
 | `format` | query | string | no | Only list packages of this format |
 | `package_name` | query | string | no | Only list rows whose listed package name equals this value exactly (all versions of one package) |
+| `group` | query | string | no | package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped. One of: `package`. |
+| `flagged` | query | boolean | no | With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package. |
 
 **Responses**
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of packages | `application/json`: object |
+| `200` | List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package | `application/json`: object |
+| `400` | Invalid sort, group, flagged or q | - |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `packages` | array of object | no | - |
+| `limit` | integer | no | - |
+| `packages` | array of any | no | - |
+| `page` | integer | no | - |
 | `total` | integer | no | - |
+
+### `GET /api/v1/repositories/{name}/packages/{id}`
+
+Get a package version
+
+One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+| `id` | path | string (uuid) | yes | Row id from the package listing |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The package version | `application/json`: [PackageDetail](schemas.md#packagedetail) |
+| `403` | No read access to the repository | - |
+| `404` | Repository or package not found (a package of another repository is not found either) | - |
 
 ### `POST /api/v1/repositories/{name}/uploads`
 

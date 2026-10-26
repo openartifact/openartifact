@@ -174,6 +174,46 @@ func TestSSO_PublicList_WithProviders(t *testing.T) {
 	}
 }
 
+func TestSSO_PublicList_ExcludesDisabledProviders(t *testing.T) {
+	db := newMockDatabase()
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, p := range []*models.SSOProvider{
+		{ID: "sso-on", Slug: "corp-on", Kind: "oidc", DisplayName: "Corp", Enabled: true, OIDCConfig: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now},
+		{ID: "sso-off", Slug: "corp-off", Kind: "oidc", DisplayName: "Retired", Enabled: false, OIDCConfig: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := db.CreateSSOProvider(ctx, p); err != nil {
+			t.Fatalf("CreateSSOProvider: %v", err)
+		}
+	}
+
+	router, _ := setupSSORouter(t, db)
+
+	req := httptest.NewRequestWithContext(ctx, "GET", "/api/v1/auth/sso/providers", nil)
+	rw := httptest.NewRecorder()
+	router.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", rw.Code, rw.Body.String())
+	}
+
+	var resp struct {
+		Providers []map[string]any `json:"providers"`
+	}
+	if err := json.NewDecoder(rw.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	if len(resp.Providers) != 1 || resp.Providers[0]["slug"] != "corp-on" {
+		t.Fatalf("public list must hold only the enabled provider, got %v", resp.Providers)
+	}
+
+	if _, leaked := resp.Providers[0]["enabled"]; leaked {
+		t.Error("public list must not expose the enabled flag")
+	}
+}
+
 func TestSSO_AdminList(t *testing.T) {
 	db := newMockDatabase()
 	ctx := context.Background()

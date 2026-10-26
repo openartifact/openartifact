@@ -279,9 +279,18 @@ func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	usage, err := h.backendUsage(r.Context())
+	if err != nil {
+		h.log.Errorw("failed to read storage backend usage", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list storage backends")
+
+		return
+	}
+
 	data := make([]responses.StorageBackendResponse, len(backends))
 	for i, b := range backends {
 		data[i] = storageBackendToResponse(b)
+		data[i].Usage = usage.of(b.ID)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -363,7 +372,41 @@ func (h *AdminStorageHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, storageBackendToResponse(backend))
+	usage, err := h.backendUsage(r.Context())
+	if err != nil {
+		h.log.Errorw("failed to read storage backend usage", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
+
+		return
+	}
+
+	resp := storageBackendToResponse(backend)
+	resp.Usage = usage.of(backend.ID)
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// backendUsageByID maps a storage backend id to what it holds.
+type backendUsageByID map[string]models.TierUsage
+
+// of returns the usage of one backend; a backend holding nothing reports zeros.
+func (u backendUsageByID) of(id string) *responses.StorageBackendUsage {
+	t := u[id]
+	return &responses.StorageBackendUsage{BlobCount: t.Blobs, SizeBytes: t.Bytes}
+}
+
+func (h *AdminStorageHandler) backendUsage(ctx context.Context) (backendUsageByID, error) {
+	rows, err := h.db.StorageTierUsage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("storage backend usage: %w", err)
+	}
+
+	out := make(backendUsageByID, len(rows))
+	for _, u := range rows {
+		out[u.BackendID] = u
+	}
+
+	return out, nil
 }
 
 func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {

@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <span
-    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+    class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-xs font-medium"
     :class="variantClass"
   >
     {{ label }}

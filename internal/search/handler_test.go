@@ -27,14 +27,28 @@ type mockSearcher struct {
 	err     error
 	repoErr error
 	gotOpts PageOptions
+
+	gotFilter SearchFilter
+
+	checksumResults []ChecksumResult
+	checksumErr     error
+	gotDigest       string
+	gotAlgorithm    string
+}
+
+func (m *mockSearcher) SearchChecksum(_ context.Context, digest, algorithm string, _, _ int, _ map[uuid.UUID]struct{}) ([]ChecksumResult, int, error) {
+	m.gotDigest, m.gotAlgorithm = digest, algorithm
+
+	return m.checksumResults, len(m.checksumResults), m.checksumErr
 }
 
 func (m *mockSearcher) SearchRepositories(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]RepositoryResult, error) {
 	return m.repos, m.repoErr
 }
 
-func (m *mockSearcher) SearchPage(_ context.Context, _ SearchFilter, opts PageOptions, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, int64, error) {
+func (m *mockSearcher) SearchPage(_ context.Context, filter SearchFilter, opts PageOptions, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, int64, error) {
 	m.gotOpts = opts
+	m.gotFilter = filter
 
 	if m.err != nil {
 		return nil, 0, m.err

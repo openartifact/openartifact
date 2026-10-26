@@ -10,7 +10,7 @@ import type { ApiCleanupPolicy } from '../lib/cleanupPolicy'
 import type {
   Project as GeneratedProject,
   ProjectActivityEntry,
-  ProjectActivityPage,
+  ActivityPage,
   ProjectQuota as GeneratedProjectQuota,
   ProjectUsage as GeneratedProjectUsage,
   Quota as QuotaLimits,
@@ -18,7 +18,6 @@ import type {
   ProjectGroup,
   ProjectGroupUpdateRequest,
   ProjectMember as GeneratedProjectMember,
-  ProjectToken as GeneratedProjectToken,
   ProjectTokenCreateRequest as GeneratedProjectTokenCreateRequest,
   ProjectTokenCreateResponse as GeneratedProjectTokenCreateResponse,
   ProjectUpdateRequest,
@@ -51,6 +50,16 @@ export type Project = GeneratedProject & {
   is_system?: boolean
 }
 
+/** A project row of the list: the project plus the counters the list endpoint computes. */
+export type ProjectListItem = Project & {
+  /** Users with a direct role in the project. */
+  member_count?: number
+  /** Stored bytes across the project's repositories. */
+  usage?: { size_bytes?: number }
+  /** Present only when a size limit is set. */
+  quota?: { limit_bytes?: number }
+}
+
 export type ProjectMember = GeneratedProjectMember & { username?: string }
 
 /** One `/auth/me` entry: a project the caller holds a role in. */
@@ -60,7 +69,7 @@ export interface ProjectMembership {
 }
 
 interface ProjectList {
-  projects: Project[]
+  projects: ProjectListItem[]
   /** The caller may create projects (global admin, or self-service creation is enabled). */
   can_create: boolean
 }
@@ -97,7 +106,7 @@ function send<T>(path: string, method: string, body: unknown): Promise<T> {
 
 /** Projects the caller belongs to; `all` lists every project (global admins only, others get 403). */
 export async function listProjects(opts: { all?: boolean } = {}): Promise<ProjectList> {
-  const res = await request<{ projects?: Project[]; can_create?: boolean }>(
+  const res = await request<{ projects?: ProjectListItem[]; can_create?: boolean }>(
     `/api/v1/projects${opts.all ? '?all=true' : ''}`,
   )
   return { projects: res?.projects ?? [], can_create: res?.can_create === true }
@@ -175,26 +184,12 @@ export const getProjectSettings = () => request<ProjectSettings>('/api/v1/admin/
 export const updateProjectSettings = (body: ProjectSettings) =>
   send<ProjectSettings>('/api/v1/admin/projects/settings', 'PUT', body)
 
-/** Roles a project token can carry, lowest first. */
-export const PROJECT_TOKEN_ROLES = ['viewer', 'developer'] as const
-export type ProjectTokenRole = (typeof PROJECT_TOKEN_ROLES)[number]
-
-export type ProjectToken = GeneratedProjectToken
 type ProjectTokenCreateRequest = GeneratedProjectTokenCreateRequest
 type ProjectTokenCreated = GeneratedProjectTokenCreateResponse
-
-/** Maintainers and owners see every token of the project, other members only their own. */
-export async function listProjectTokens(project: string): Promise<ProjectToken[]> {
-  const res = await request<{ tokens?: ProjectToken[] }>(`${base(project)}/tokens`)
-  return res?.tokens ?? []
-}
 
 /** Session only (API tokens get 403). The clear-text secret is in the response, once. */
 export const createProjectToken = (project: string, body: ProjectTokenCreateRequest) =>
   send<ProjectTokenCreated>(`${base(project)}/tokens`, 'POST', body)
-
-export const revokeProjectToken = (project: string, tokenId: string) =>
-  request<void>(`${base(project)}/tokens/${enc(tokenId)}`, { method: 'DELETE' })
 
 export type ProjectQuota = GeneratedProjectQuota
 export type ProjectUsage = GeneratedProjectUsage
@@ -266,7 +261,7 @@ export async function listProjectActivity(
   if (params.cursor) qs.set('cursor', params.cursor)
   if (params.limit != null) qs.set('per_page', String(params.limit))
   const query = qs.toString() ? `?${qs}` : ''
-  const res = await request<Partial<ProjectActivityPage>>(`${base(project)}/activity${query}`)
+  const res = await request<Partial<ActivityPage>>(`${base(project)}/activity${query}`)
   return { items: res?.data ?? [], hasMore: res?.has_more ?? false, nextCursor: res?.next_cursor ?? null }
 }
 

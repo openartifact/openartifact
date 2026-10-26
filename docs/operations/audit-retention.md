@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Audit log retention
 
-The audit log (the `audit_logs` table, shown under Admin, Audit) records every administrative and security-relevant action, and a busy installation writes to it constantly: `auth.token_validate` and `http.request` entries alone can reach millions of rows a year. By default **nothing is ever deleted**, so the table grows without bound. Set a retention period to have a background worker delete old entries.
+The audit log (the `audit_logs` table, shown under **Settings > Audit log**) records every administrative and security-relevant action, and a busy installation writes to it constantly: `auth.token_validate` and `http.request` entries alone can reach millions of rows a year. By default **nothing is ever deleted**, so the table grows without bound. Set a retention period to have a background worker delete old entries.
 
 ## Enable it
 

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'bun:test'
-import { isApplePlatform, isPaletteHotkey, paletteHotkeyLabel, paletteHotkeyShortcut } from '../paletteHotkey'
+import { isApplePlatform, isPaletteHotkey, isPaletteSlashHotkey, isTypingTarget, paletteHotkeyLabel, paletteHotkeyShortcut } from '../paletteHotkey'
 
 const key = (init: Partial<KeyboardEvent> & { key: string }) => ({
   ctrlKey: false,
@@ -52,5 +52,39 @@ describe('platform hint', () => {
     expect(paletteHotkeyLabel(false)).toBe('Ctrl K')
     expect(paletteHotkeyShortcut(true)).toBe('Meta+K')
     expect(paletteHotkeyShortcut(false)).toBe('Control+K')
+  })
+})
+
+describe('isPaletteSlashHotkey', () => {
+  const slash = (target: EventTarget | null, extra: Record<string, unknown> = {}) =>
+    isPaletteSlashHotkey({ key: '/', ctrlKey: false, metaKey: false, altKey: false, target, ...extra })
+
+  it('opens from the page body and from buttons', () => {
+    expect(slash(document.body)).toBe(true)
+    expect(slash(document.createElement('button'))).toBe(true)
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    expect(slash(checkbox)).toBe(true)
+  })
+
+  it('stays a character while typing in a field', () => {
+    expect(slash(document.createElement('input'))).toBe(false)
+    const search = document.createElement('input')
+    search.type = 'search'
+    expect(slash(search)).toBe(false)
+    expect(slash(document.createElement('textarea'))).toBe(false)
+    expect(slash(document.createElement('select'))).toBe(false)
+    const editable = document.createElement('div')
+    Object.defineProperty(editable, 'isContentEditable', { value: true })
+    expect(slash(editable)).toBe(false)
+    expect(isTypingTarget(null)).toBe(false)
+  })
+
+  it('ignores other keys, modified slashes and IME composition', () => {
+    expect(slash(document.body, { key: 'a' })).toBe(false)
+    expect(slash(document.body, { ctrlKey: true })).toBe(false)
+    expect(slash(document.body, { metaKey: true })).toBe(false)
+    expect(slash(document.body, { altKey: true })).toBe(false)
+    expect(slash(document.body, { isComposing: true })).toBe(false)
   })
 })

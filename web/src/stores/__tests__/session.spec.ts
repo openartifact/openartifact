@@ -135,7 +135,7 @@ describe('useSessionStore', () => {
       id: '1',
       username: 'groupadmin',
       is_admin: false,
-      groups: [{ name: 'admin' }],
+      groups: ['admin'],
     } as User
 
     expect(store.isAdmin).toBe(true)

@@ -106,7 +106,7 @@ func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
 			continue
 		}
 
-		if strings.Contains(rw.Body.String(), `"upstream_password`) || strings.Contains(rw.Body.String(), "upstream_password_enc") {
+		if strings.Contains(rw.Body.String(), `"upstream_password"`) || strings.Contains(rw.Body.String(), "upstream_password_enc") {
 			t.Errorf("%s: response exposes the upstream password: %s", format, rw.Body.String())
 		}
 

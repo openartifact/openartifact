@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="flex items-center gap-2" role="group" :aria-label="t('sec.vex.download.label')">
+  <div class="flex items-center gap-2" role="group" :aria-label="t('security.vex.download.label')">
     <AppButton
       v-for="format in VEX_DOCUMENT_FORMATS"
       :key="format"
@@ -14,11 +14,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :disabled="busy !== null"
       :loading="busy === format"
       :data-testid="`${testIdPrefix}-${format}`"
-      :aria-label="`${t('sec.export.download')} ${tDynamic(`sec.vex.download.${format}`)}`"
+      :aria-label="`${t('security.export.download')} ${tDynamic(`security.vex.download.${format}`)}`"
       @click="download(format)"
     >
       <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
-      {{ tDynamic(`sec.vex.download.${format}`) }}
+      {{ tDynamic(`security.vex.download.${format}`) }}
     </AppButton>
   </div>
 </template>
@@ -52,7 +52,7 @@ async function download(format: VexDocumentFormat): Promise<void> {
   try {
     await downloadVexDocument(props.repo, format, { artifactId: props.artifactId })
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('sec.vex.download.failed'))
+    toasts.error(err instanceof Error ? err.message : t('security.vex.download.failed'))
   } finally {
     busy.value = null
   }

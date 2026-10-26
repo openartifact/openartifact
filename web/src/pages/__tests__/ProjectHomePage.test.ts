@@ -73,7 +73,7 @@ async function mountPage(opts: { role?: string; status?: number; query?: string;
       { path: '/projects', component: { template: '<div />' } },
       { path: '/projects/:project', component: ProjectHomePage },
       { path: '/repos/:name', component: { template: '<div />' } },
-      { path: '/admin/projects', component: { template: '<div />' } },
+      { path: '/settings/tokens', component: { template: '<div />' } },
     ],
   })
   await router.push(`/projects/alpha${opts.query ?? ''}`)
@@ -84,7 +84,7 @@ async function mountPage(opts: { role?: string; status?: number; query?: string;
 }
 
 const tabLabels = (w: VueWrapper) =>
-  w.findAll('nav[aria-label="Project sections"] a').map((a) => a.text().replace(/\s*\d+$/, ''))
+  w.findAll('[role="tab"]').map((a) => a.text().replace(/\s*\d+$/, ''))
 
 describe('ProjectHomePage', () => {
   it('shows the overview: facts, counts and recent repositories', async () => {
@@ -98,9 +98,9 @@ describe('ProjectHomePage', () => {
     expect(wrapper.text()).toContain('web-npm')
   })
 
-  it('lists every section for a viewer, with the tab kept in ?tab=', async () => {
+  it('lists every section for a viewer and has no tokens tab', async () => {
     const { wrapper } = await mountPage({ role: 'viewer' })
-    expect(tabLabels(wrapper)).toEqual(['Overview', 'Repositories', 'Usage', 'Members', 'Tokens', 'Activity', 'Settings'])
+    expect(tabLabels(wrapper)).toEqual(['Overview', 'Repositories', 'Members & groups', 'Activity', 'Usage & quota', 'Settings'])
   })
 
   it('shows the activity tab for a viewer, newest first', async () => {
@@ -114,12 +114,12 @@ describe('ProjectHomePage', () => {
 
   it('shows the repositories tab as a paginated table linking to /repos/:name', async () => {
     const { wrapper } = await mountPage({ role: 'viewer', query: '?tab=repositories' })
-    const rows = wrapper.findAll('[data-testid="repo-row"]')
+    const rows = wrapper.findAll('#' + wrapper.get('[role="tabpanel"]:not([style*="none"])').attributes('id') + ' tbody tr')
     expect(rows).toHaveLength(2)
     expect(rows[0]!.find('a').attributes('href')).toBe('/repos/web-deb')
     expect(rows[0]!.text()).toContain('Deb')
     expect(rows[1]!.text()).toContain('Public')
-    expect(wrapper.text()).toContain('Showing 1–2 of 2')
+    expect(wrapper.text()).toContain('2 of 2')
     expect(fetchSpy.mock.calls.map((c) => String(c[0]))).toContain('/api/v1/projects/alpha/repositories?page=1&limit=20')
   })
 
@@ -136,7 +136,7 @@ describe('ProjectHomePage', () => {
       expect(wrapper.find('[data-testid="member-add"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="group-attach"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="members-readonly"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="member-row"] select').exists()).toBe(false)
+      expect(wrapper.find('table select').exists()).toBe(false)
     })
 
     it('is read-only for a developer', async () => {
@@ -148,7 +148,7 @@ describe('ProjectHomePage', () => {
       const { wrapper } = await mountPage({ role: 'maintainer', query: '?tab=members' })
       expect(wrapper.find('[data-testid="member-add"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="group-attach"]').exists()).toBe(true)
-      expect(wrapper.findAll('[data-testid="member-row"] select')).toHaveLength(2)
+      expect(wrapper.findAll('table')[0]!.findAll('select')).toHaveLength(2)
     })
   })
 
@@ -179,20 +179,30 @@ describe('ProjectHomePage', () => {
       })
     })
 
-    it('points admins at the administration page for the policy', async () => {
+    it('lets admins edit the policy in a drawer', async () => {
       const { wrapper } = await mountPage({
         role: 'owner',
         query: '?tab=settings',
         user: { id: 'a', username: 'root', is_admin: true },
       })
-      expect(wrapper.find('[data-testid="project-policy"] a').attributes('href')).toBe('/admin/projects')
+      expect(wrapper.find('[data-testid="edit-policy"]').exists()).toBe(true)
+    })
+
+    it('does not offer the policy editor to project owners who are not admins', async () => {
+      const { wrapper } = await mountPage({ role: 'owner', query: '?tab=settings' })
+      expect(wrapper.find('[data-testid="edit-policy"]').exists()).toBe(false)
+    })
+
+    it('links project tokens to the token settings instead of a tab', async () => {
+      const { wrapper } = await mountPage({ role: 'owner', query: '?tab=settings' })
+      expect(wrapper.get('[data-testid="project-tokens-link"] a').attributes('href')).toBe('/settings/tokens?type=project&project=alpha')
     })
   })
 
   it('shows the not-found state for 404', async () => {
     const { wrapper } = await mountPage({ status: 404 })
     expect(wrapper.text()).toContain('Project not found')
-    expect(wrapper.find('nav[aria-label="Project sections"]').exists()).toBe(false)
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
   })
 
   it('shows the forbidden state for 403', async () => {

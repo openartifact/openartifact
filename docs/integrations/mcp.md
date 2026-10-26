@@ -36,7 +36,7 @@ Only `Authorization: Bearer <credential>` is accepted. The session cookie and Ba
 
 | Credential | Notes |
 |---|---|
-| API token `oa_pat_…` / `oa_dep_…` | create one in the web UI under Settings, Tokens (or `POST /api/v1/auth/tokens` from a login session, see [REST API](api.md#authentication)); API tokens cannot create other tokens. Project tokens (service accounts of a [project](../security/projects.md#project-tokens)) are refused with 403 |
+| API token `oa_pat_…` / `oa_dep_…` | create one in the web UI under **Settings > Access tokens** (or `POST /api/v1/auth/tokens` from a login session, see [REST API](api.md#authentication)); API tokens cannot create other tokens. Project tokens (service accounts of a [project](../security/projects.md#project-tokens)) are refused with 403 |
 | OIDC access token (JWT) | from an enabled [OIDC SSO provider](../security/sso.md); see below |
 | legacy `API_KEY` | deprecated, full admin; see [authentication](../security/authentication.md#legacy-api-key). Do not use it for agents |
 
@@ -108,7 +108,7 @@ curl -sS -X POST HOST/api/v1/permission-targets/<TARGET_ID>/assignments -H 'Auth
   -H 'Content-Type: application/json' -d '{"principal_type":"user","principal_id":"<USER_ID>"}'
 ```
 
-Then, in a login session of that user, create the token with `"scopes":["<TARGET_ID>"]` (Settings, Tokens, or `POST /api/v1/auth/tokens`, see [authentication](../security/authentication.md#api-tokens)). The token can then read repositories and packages but `trigger_ai_analysis` and `get_vulnerabilities` are refused.
+Then, in a login session of that user, create the token with `"scopes":["<TARGET_ID>"]` (**Settings > Access tokens**, or `POST /api/v1/auth/tokens`, see [authentication](../security/authentication.md#api-tokens)). The token can then read repositories and packages but `trigger_ai_analysis` and `get_vulnerabilities` are refused.
 
 ## Tools
 

@@ -39,13 +39,14 @@ Create body:
 | `slug` | `^[a-z0-9_-]{1,64}$`, used in URLs |
 | `kind` | `oidc` or `saml` (GitHub and generic OAuth2 use `kind: oidc` with `oidc_config.type`) |
 | `display_name` | shown on the login page |
+| `enabled` | optional, default `true`; `false` creates the provider disabled, so the login page does not list it |
 | `oidc_config` / `saml_config` | see below; the one matching `kind` |
 | `group_mapping` | IdP group → local group name |
 | `permission_mapping` | local group name → permission target name |
 | `auto_provision_users` | create unknown users on first login |
 | `link_by_email` | link to an existing local user with the same IdP-verified email. Local users cannot change their own email (only an admin can), so a user cannot pre-claim another person's address to be linked to their SSO identity |
 
-Providers are created enabled; `PATCH` can toggle `enabled`. Mappings accept at most 256 entries, keys and values up to 512 characters. A `claim_mapping` field is stored and returned but not used by login.
+`PATCH` toggles `enabled` later. Mappings accept at most 256 entries, keys and values up to 512 characters. A `claim_mapping` field is stored and returned but not used by login.
 
 ### `oidc_config`
 

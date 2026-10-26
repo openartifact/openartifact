@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,6 +26,9 @@ type Searcher interface {
 	// at MaxSearchResults+1) from a single scan.
 	SearchPage(ctx context.Context, filter SearchFilter, opts PageOptions, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, int64, error)
 	SearchRepositories(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]RepositoryResult, error)
+	// SearchChecksum returns the files whose stored checksum equals digest (see
+	// ParseChecksum), or ErrChecksumTooBroad.
+	SearchChecksum(ctx context.Context, digest, algorithm string, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]ChecksumResult, int, error)
 }
 
 type Handler struct {
@@ -68,6 +72,18 @@ const (
 	groupPackage = "package"
 )
 
+// parseFlagged reads the optional flagged parameter; false means a bad value.
+func parseFlagged(v string) (bool, bool) {
+	switch v {
+	case "", "false":
+		return false, true
+	case "true":
+		return true, true
+	}
+
+	return false, false
+}
+
 // parsePageOptions reads the group parameter; false means an unknown value.
 func parsePageOptions(r *http.Request) (PageOptions, bool) {
 	switch r.URL.Query().Get("group") {
@@ -85,48 +101,36 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	q := r.URL.Query().Get("q")
-	if q == "" {
+	checksum := r.URL.Query().Get("checksum")
+
+	// q may be left out when the search is narrowed by another criterion: a
+	// checksum, or flagged=true (every flagged package).
+	if q == "" && checksum == "" && r.URL.Query().Get("flagged") != "true" {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_q", "query parameter 'q' is required")
 		return
 	}
 
-	limit := 25
-
-	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be a positive integer")
-			return
-		}
-
-		if n > 100 {
-			httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must not exceed 100")
-			return
-		}
-
-		limit = n
+	limit, offset, ok := parsePaging(w, r)
+	if !ok {
+		return
 	}
 
-	offset := 0
-
-	if v := r.URL.Query().Get("offset"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			httpx.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be a non-negative integer")
-			return
-		}
-
-		offset = n
-	}
-
-	if offset > MaxSearchResults {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset too large")
+	if checksum != "" {
+		h.serveChecksum(ctx, w, checksum, limit, offset)
 		return
 	}
 
 	filter := ParseQuery(q)
 	filter.Formats = append(filter.Formats, r.URL.Query()["format"]...)
 	filter.Repos = append(filter.Repos, r.URL.Query()["repo"]...)
+
+	flagged, ok := parseFlagged(r.URL.Query().Get("flagged"))
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_flagged", "flagged must be true or false")
+		return
+	}
+
+	filter.Flagged = flagged
 
 	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", "too many format or repo filters")
@@ -188,6 +192,84 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// parsePaging reads limit (default 25, at most 100) and offset; on a bad value
+// it writes the 400 and returns false.
+func parsePaging(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	limit, offset := 25, 0
+
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be a positive integer")
+			return 0, 0, false
+		}
+
+		if n > 100 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must not exceed 100")
+			return 0, 0, false
+		}
+
+		limit = n
+	}
+
+	if v := r.URL.Query().Get("offset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be a non-negative integer")
+			return 0, 0, false
+		}
+
+		offset = n
+	}
+
+	if offset > MaxSearchResults {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset too large")
+		return 0, 0, false
+	}
+
+	return limit, offset, true
+}
+
+// serveChecksum answers a checksum lookup: the files whose stored SHA-256,
+// SHA-1 or MD5 equals the value, in the repositories the caller can read. The
+// other query parameters (q, format, repo, group, flagged) do not apply to it.
+func (h *Handler) serveChecksum(ctx context.Context, w http.ResponseWriter, checksum string, limit, offset int) {
+	digest, algorithm, ok := ParseChecksum(checksum)
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_checksum",
+			"checksum must be a hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32) digest")
+
+		return
+	}
+
+	readableRepos, err := h.resolveReadableRepos(ctx, middleware.PrincipalFromContext(ctx))
+	if err != nil {
+		h.log.Errorw("resolve readable repos failed", "error", err)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "permission resolution failed")
+
+		return
+	}
+
+	results, total, err := h.searcher.SearchChecksum(ctx, digest, algorithm, limit, offset, readableRepos)
+	if errors.Is(err, ErrChecksumTooBroad) {
+		httpx.WriteError(w, http.StatusBadRequest, "query_too_broad", "checksum matches too many files")
+		return
+	}
+
+	if err != nil {
+		h.log.Errorw("checksum search failed", "error", err)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "search failed")
+
+		return
+	}
+
+	if results == nil {
+		results = []ChecksumResult{}
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"total": total, "packages": results})
 }
 
 // resolveReadableRepos returns the repositories principal can read. The result

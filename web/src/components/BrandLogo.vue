@@ -13,7 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   - else (renamed, no logo) the built-in mark next to the product name as text,
     so a renamed instance never shows the OpenArtifact wordmark as its own name.
   The `mark` variant of a custom setup uses the favicon when one is set, else the
-  custom logo. Sizes never go below the brand minimums (lib/branding.ts); the
+  custom logo at the mark height (its width follows the artwork, capped, so a
+  wide logo stays legible instead of being squeezed into a square). Sizes never go below the brand minimums (lib/branding.ts); the
   lockup SVGs carry their own clear space. Attribution is not part of the logo.
 -->
 <template>
@@ -41,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <img :src="markUrl" alt="" aria-hidden="true" class="h-full w-full dark:hidden" />
         <img :src="markDarkUrl" alt="" aria-hidden="true" class="hidden h-full w-full dark:block" />
       </span>
-      <span v-if="variant !== 'mark'" class="min-w-0 truncate text-lead font-semibold tracking-tight text-foreground">{{ name }}</span>
+      <span v-if="variant !== 'mark'" class="min-w-0 text-lead font-semibold leading-tight tracking-tight text-foreground [overflow-wrap:anywhere]">{{ name }}</span>
       <span v-else class="sr-only">{{ name }}</span>
     </template>
   </span>
@@ -70,6 +71,9 @@ const props = withDefaults(
 
 /** Height of a custom horizontal logo: fits the 56px sidebar header with padding. */
 const HORIZONTAL_LOGO_HEIGHT_PX = 36
+
+/** Widest a custom logo may grow when it stands in for the mark (mobile header, collapsed areas). */
+const MARK_LOGO_MAX_WIDTH_PX = 112
 
 const store = useBrandingStore()
 const { productName: name } = storeToRefs(store)
@@ -106,7 +110,10 @@ const rootClass = computed(() => {
 // fixed height (the sidebar header is only so tall) and keeps its own width, the
 // stacked one to a width with a height cap. Built-in lockups have known ratios.
 const imgStyle = computed(() => {
-  if (props.variant === 'mark') return { width: `${px.value}px`, height: `${px.value}px` }
+  if (props.variant === 'mark') {
+    if (custom.value && !store.faviconUrl) return { height: `${px.value}px`, width: 'auto', maxWidth: `min(${MARK_LOGO_MAX_WIDTH_PX}px, 100%)` }
+    return { width: `${px.value}px`, height: `${px.value}px` }
+  }
   if (custom.value && props.variant === 'horizontal') return { height: `${HORIZONTAL_LOGO_HEIGHT_PX}px`, width: 'auto', maxWidth: '100%' }
   return { width: `${px.value}px`, maxWidth: '100%', maxHeight: `${Math.round(px.value / (props.variant === 'stacked' ? 1.2 : 2))}px` }
 })

@@ -3,14 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'bun:test'
-import type { Bundle, Pipeline } from '../../api/bundles'
+import type { Bundle, BundlePromotion, ItemCandidate, Pipeline } from '../../api/bundles'
 import {
   bundleRoute,
-  itemFormToInput,
+  bundleStatus,
+  candidateToItem,
+  isBundleable,
+  lifecycleSteps,
   promotableStages,
-  stageSteps,
   validateBundleLabel,
-  validateItemForm,
+  type LifecycleStep,
 } from '../bundles'
 
 const pipeline: Pipeline = {
@@ -22,44 +24,121 @@ const pipeline: Pipeline = {
   created_at: '',
   updated_at: '',
 }
-const sealed = (current: string | null): Bundle =>
-  ({ name: 'shop', version: '1', state: 'sealed', current_stage: current, pipeline_id: 'p' }) as Bundle
+const bundle = (over: Partial<Bundle> = {}): Bundle =>
+  ({
+    name: 'shop',
+    version: '1',
+    state: 'sealed',
+    current_stage: null,
+    pipeline_id: 'p',
+    gpg_key_id: 'K',
+    created_at: '2026-10-01T10:00:00Z',
+    created_by: 'ann',
+    sealed_at: '2026-10-02T10:00:00Z',
+    sealed_by: 'bob',
+    ...over,
+  }) as Bundle
+const promotion = (to: string, over: Partial<BundlePromotion> = {}): BundlePromotion =>
+  ({ status: 'success', to_stage: to, from_stage: null, promoted_by: 'cy', started_at: '2026-10-03T10:00:00Z', ...over }) as BundlePromotion
 
-describe('stage trail', () => {
-  it('marks stages before the current one done and the rest pending', () => {
-    expect(stageSteps(pipeline, 'qa').map((s) => s.status)).toEqual(['done', 'current', 'pending'])
-    expect(stageSteps(pipeline, null).map((s) => s.status)).toEqual(['pending', 'pending', 'pending'])
-    expect(stageSteps(undefined, 'qa')).toEqual([])
-  })
-
+describe('promotable stages', () => {
   it('only offers stages after the current one, and only for sealed bundles', () => {
-    expect(promotableStages(pipeline, sealed(null)).map((s) => s.name)).toEqual(['dev', 'qa', 'prod'])
-    expect(promotableStages(pipeline, sealed('qa')).map((s) => s.name)).toEqual(['prod'])
-    expect(promotableStages(pipeline, sealed('prod'))).toEqual([])
-    expect(promotableStages(pipeline, { ...sealed(null), state: 'draft' })).toEqual([])
-    expect(promotableStages(undefined, sealed(null))).toEqual([])
+    expect(promotableStages(pipeline, bundle()).map((s) => s.name)).toEqual(['dev', 'qa', 'prod'])
+    expect(promotableStages(pipeline, bundle({ current_stage: 'qa' })).map((s) => s.name)).toEqual(['prod'])
+    expect(promotableStages(pipeline, bundle({ current_stage: 'prod' }))).toEqual([])
+    expect(promotableStages(pipeline, bundle({ state: 'draft' }))).toEqual([])
+    expect(promotableStages(undefined, bundle())).toEqual([])
   })
 })
 
-describe('item form', () => {
-  const ok = { source_repo_id: 'r', sha256: 'A'.repeat(64), artifact_path: ' a/b.jar ', format: '', size_bytes: '' }
-
-  it('accepts a valid item and normalises it', () => {
-    expect(validateItemForm(ok)).toEqual({})
-    expect(itemFormToInput({ ...ok, size_bytes: '42', format: 'maven' })).toEqual({
-      source_repo_id: 'r',
-      sha256: 'a'.repeat(64),
-      artifact_path: 'a/b.jar',
-      format: 'maven',
-      size_bytes: 42,
-    })
-    expect(itemFormToInput(ok)).not.toHaveProperty('size_bytes')
+describe('bundle status: one primary action per state', () => {
+  it('draft: seal, blocked only while the items are known to be empty', () => {
+    const draft = bundle({ state: 'draft', gpg_key_id: undefined })
+    expect(bundleStatus(draft, pipeline, 2)).toMatchObject({ primary: 'seal', blocked: false, notices: [] })
+    expect(bundleStatus(draft, pipeline, 0)).toMatchObject({ primary: 'seal', blocked: true, notices: ['noItems'] })
+    expect(bundleStatus(draft, pipeline, null)).toMatchObject({ primary: 'seal', blocked: false })
   })
 
-  it('reports each invalid field', () => {
-    const errors = validateItemForm({ source_repo_id: '', sha256: 'xyz', artifact_path: '', format: '', size_bytes: '-1' })
-    expect(Object.keys(errors).sort()).toEqual(['artifact_path', 'sha256', 'size_bytes', 'source_repo_id'])
-    expect(validateItemForm({ ...ok, artifact_path: 'é'.repeat(600) }).artifact_path).toBeDefined()
+  it('sealed: promote to the next stage', () => {
+    const s = bundleStatus(bundle({ current_stage: 'dev' }), pipeline, 3)
+    expect(s.primary).toBe('promote')
+    expect(s.nextStage?.name).toBe('qa')
+    expect(s.notices).toEqual([])
+  })
+
+  it('sealed without a signature says so', () => {
+    expect(bundleStatus(bundle({ gpg_key_id: undefined }), pipeline, 3).notices).toEqual(['unsigned'])
+  })
+
+  it('sealed with nothing to promote to: archive, with the reason', () => {
+    expect(bundleStatus(bundle({ current_stage: 'prod' }), pipeline, 3)).toMatchObject({ primary: 'archive', notices: ['finalStage'] })
+    expect(bundleStatus(bundle({ pipeline_id: null }), undefined, 3)).toMatchObject({ primary: 'archive', notices: ['noPipeline'] })
+    expect(bundleStatus(bundle(), undefined, 3)).toMatchObject({ primary: 'archive', notices: ['pipelineUnavailable'] })
+  })
+
+  it('archived: no action', () => {
+    expect(bundleStatus(bundle({ state: 'archived' }), pipeline, 3)).toMatchObject({ primary: null, notices: ['archived'] })
+  })
+})
+
+describe('lifecycle steps', () => {
+  const by = (steps: LifecycleStep[]) => steps.map((s) => `${s.id}:${s.status}`)
+
+  it('a draft is done at creation and waits for the seal', () => {
+    const steps = lifecycleSteps(bundle({ state: 'draft', sealed_at: null, sealed_by: null, gpg_key_id: undefined }), pipeline, [])
+    expect(by(steps)).toEqual(['draft:done', 'sealed:current', 'signed:todo', 'stage:dev:todo', 'stage:qa:todo', 'stage:prod:todo'])
+    expect(steps[0]).toMatchObject({ by: 'ann', at: '2026-10-01T10:00:00Z' })
+  })
+
+  it('a sealed signed bundle waits for its first stage', () => {
+    expect(by(lifecycleSteps(bundle(), pipeline, []))).toEqual(['draft:done', 'sealed:done', 'signed:done', 'stage:dev:current', 'stage:qa:todo', 'stage:prod:todo'])
+  })
+
+  it('reached stages are done with their latest successful promotion', () => {
+    const steps = lifecycleSteps(bundle({ current_stage: 'qa' }), pipeline, [
+      promotion('qa', { promoted_by: 'old', started_at: '2026-10-03T10:00:00Z' }),
+      promotion('qa', { promoted_by: 'new', started_at: '2026-10-05T10:00:00Z' }),
+      promotion('qa', { promoted_by: 'failed', status: 'failed', started_at: '2026-10-09T10:00:00Z' }),
+    ])
+    expect(by(steps).slice(3)).toEqual(['stage:dev:done', 'stage:qa:done', 'stage:prod:current'])
+    expect(steps.find((s) => s.id === 'stage:qa')).toMatchObject({ by: 'new', at: '2026-10-05T10:00:00Z' })
+  })
+
+  it('an unsigned sealed bundle skips the signature step instead of waiting for it', () => {
+    const steps = lifecycleSteps(bundle({ gpg_key_id: undefined }), pipeline, [])
+    expect(by(steps).slice(0, 4)).toEqual(['draft:done', 'sealed:done', 'signed:skipped', 'stage:dev:current'])
+  })
+
+  it('an archived bundle has no current step', () => {
+    expect(lifecycleSteps(bundle({ state: 'archived', current_stage: 'dev' }), pipeline, []).some((s) => s.status === 'current')).toBe(false)
+  })
+
+  it('without a pipeline the trail ends at the signature', () => {
+    expect(by(lifecycleSteps(bundle({ pipeline_id: null }), undefined, []))).toEqual(['draft:done', 'sealed:done', 'signed:done'])
+  })
+})
+
+describe('item candidates', () => {
+  const hit: ItemCandidate = { repository: 'maven-dev', format: 'maven', name: 'shop', version: '1', path: 'com/acme/shop-1.jar', sha256: 'A'.repeat(64), size: 2048 }
+  const repos = new Map([['maven-dev', 'r1']])
+
+  it('needs the digest and path an item pins', () => {
+    expect(isBundleable(hit)).toBe(true)
+    expect(isBundleable({ ...hit, sha256: '' })).toBe(false)
+    expect(isBundleable({ ...hit, sha256: 'xyz' })).toBe(false)
+    expect(isBundleable({ ...hit, path: '' })).toBe(false)
+  })
+
+  it('becomes an item of the hit repository, with a lower-case digest', () => {
+    expect(candidateToItem(hit, repos)).toEqual({
+      source_repo_id: 'r1',
+      sha256: 'a'.repeat(64),
+      artifact_path: 'com/acme/shop-1.jar',
+      format: 'maven',
+      size_bytes: 2048,
+    })
+    expect(candidateToItem({ ...hit, size: Number.NaN }, repos)).not.toHaveProperty('size_bytes')
+    expect(candidateToItem({ ...hit, repository: 'other' }, repos)).toBeNull()
   })
 })
 

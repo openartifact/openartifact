@@ -532,8 +532,9 @@
               },
               "groups": {
                 "type": "array",
+                "description": "Names of the groups the user belongs to.",
                 "items": {
-                  "$ref": "#/components/schemas/Group"
+                  "type": "string"
                 }
               },
               "projects": {
@@ -643,6 +644,10 @@
           "upstream_username": {
             "type": "string"
           },
+          "upstream_password_set": {
+            "type": "boolean",
+            "description": "Proxy repos: true when an upstream password is stored. The password is write-only (`upstream_password` on create and update) and is never returned."
+          },
           "cache_ttl_seconds": {
             "type": "integer",
             "description": "Cache TTL in seconds"
@@ -718,6 +723,9 @@
           "federated": {
             "type": "boolean",
             "description": "True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation."
+          },
+          "stats": {
+            "$ref": "#/components/schemas/RepositoryStats"
           }
         },
         "required": [
@@ -725,6 +733,178 @@
           "name",
           "format"
         ]
+      },
+      "RepositoryStats": {
+        "type": "object",
+        "description": "Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).",
+        "properties": {
+          "package_count": { "type": "integer", "format": "int64", "description": "Number of distinct package names, counted as the package listing names them." },
+          "size_bytes": { "type": "integer", "format": "int64", "description": "Stored size, from the repository's quota counter (equals quota.used_bytes)." },
+          "last_published_at": { "type": "string", "format": "date-time", "description": "Time of the newest package; absent for an empty repository." },
+          "security": {
+            "type": "object",
+            "description": "Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any.",
+            "properties": {
+              "critical": { "type": "integer", "format": "int64" },
+              "high": { "type": "integer", "format": "int64" },
+              "medium": { "type": "integer", "format": "int64" },
+              "low": { "type": "integer", "format": "int64" },
+              "secrets": { "type": "integer", "format": "int64", "description": "Secret findings." },
+              "license_violations": { "type": "integer", "format": "int64", "description": "Artifacts whose license scan is quarantined (the server stores no other license violation count)." },
+              "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan; absent when never scanned." }
+            },
+            "required": ["critical", "high", "medium", "low", "secrets", "license_violations"]
+          },
+          "quota": {
+            "type": "object",
+            "properties": {
+              "limit_bytes": { "type": "integer", "format": "int64", "description": "Size quota; absent when unlimited." },
+              "used_bytes": { "type": "integer", "format": "int64" }
+            },
+            "required": ["used_bytes"]
+          }
+        },
+        "required": ["package_count", "size_bytes", "security", "quota"]
+      },
+      "PackageSecurity": {
+        "type": "object",
+        "description": "Vulnerability counts by severity.",
+        "properties": {
+          "critical": { "type": "integer", "format": "int64" },
+          "high": { "type": "integer", "format": "int64" },
+          "medium": { "type": "integer", "format": "int64" },
+          "low": { "type": "integer", "format": "int64" }
+        },
+        "required": ["critical", "high", "medium", "low"]
+      },
+      "PackageFile": {
+        "type": "object",
+        "description": "One row (file) of a repository's package listing.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Row id; the key of the package detail, download and scan endpoints." },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "format": { "type": "string" },
+          "arch": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" },
+          "sha256": { "type": "string" },
+          "filename": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "security": { "$ref": "#/components/schemas/PackageSecurity" },
+          "flagged": { "type": "boolean", "description": "A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type)." },
+          "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan; absent when never scanned (security is then all zero)." }
+        },
+        "required": ["id", "name", "version", "format", "arch", "size", "sha256", "filename", "created_at", "security", "flagged"]
+      },
+      "PackageGroup": {
+        "type": "object",
+        "description": "One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.",
+        "properties": {
+          "name": { "type": "string" },
+          "format": { "type": "string" },
+          "latest_version": { "type": "string", "description": "The most recently published version." },
+          "version_count": { "type": "integer" },
+          "size_bytes": { "type": "integer", "format": "int64", "description": "Size of the latest version, all its files summed." },
+          "updated_at": { "type": "string", "format": "date-time", "description": "Latest modification of any version." },
+          "security": { "$ref": "#/components/schemas/PackageSecurity" },
+          "flagged": { "type": "boolean" },
+          "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan of the latest version; absent when never scanned." }
+        },
+        "required": ["name", "format", "latest_version", "version_count", "size_bytes", "updated_at", "security", "flagged"]
+      },
+      "RecentPackage": {
+        "type": "object",
+        "properties": {
+          "repository": { "type": "string" },
+          "format": { "type": "string" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "created_by_name": { "type": "string", "description": "Never set: the server does not record who published a package." }
+        },
+        "required": ["repository", "format", "name", "version", "created_at"]
+      },
+      "PackageDetail": {
+        "type": "object",
+        "description": "One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "format": { "type": "string" },
+          "arch": { "type": "string" },
+          "filename": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" },
+          "sha256": { "type": "string" },
+          "md5": { "type": "string", "description": "Only for the formats that record it." },
+          "sha1": { "type": "string", "description": "Only for the formats that record it." },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "summary": { "type": "string" },
+          "description": { "type": "string" },
+          "license": { "type": "string" },
+          "homepage": { "type": "string" },
+          "metadata": {
+            "type": "array",
+            "description": "Format-specific fields, ordered by key; empty values are left out.",
+            "items": {
+              "type": "object",
+              "properties": { "key": { "type": "string" }, "value": { "type": "string" } },
+              "required": ["key", "value"]
+            }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "type": "string", "description": "Version requirement as the format writes it." },
+                "kind": { "type": "string", "description": "Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it." }
+              },
+              "required": ["name"]
+            }
+          },
+          "files": {
+            "type": "array",
+            "description": "All the files of this version (one per architecture, classifier or distribution), this one included; at most 200.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "format": "uuid" },
+                "filename": { "type": "string" },
+                "arch": { "type": "string" },
+                "size": { "type": "integer", "format": "int64" },
+                "sha256": { "type": "string" }
+              },
+              "required": ["id", "filename", "arch", "size", "sha256"]
+            }
+          },
+          "version_count": { "type": "integer", "description": "Versions of the package this one belongs to." },
+          "latest_version": { "type": "string" }
+        },
+        "required": ["id", "name", "version", "format", "arch", "filename", "size", "sha256", "created_at", "updated_at", "metadata", "dependencies", "files", "version_count", "latest_version"]
+      },
+      "ChecksumResult": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer", "description": "Number of files carrying the checksum." },
+          "packages": { "type": "array", "items": { "$ref": "#/components/schemas/ChecksumHit" } }
+        },
+        "required": ["total", "packages"]
+      },
+      "ChecksumHit": {
+        "type": "object",
+        "properties": {
+          "repository": { "type": "string" },
+          "format": { "type": "string" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "filename": { "type": "string", "description": "File within the package; empty for the formats with no file name of their own (conda, conan, docker, go)." },
+          "checksum": { "type": "string", "description": "The checksum searched for, lowercase." },
+          "algorithm": { "type": "string", "enum": ["sha256", "sha1", "md5"] }
+        },
+        "required": ["repository", "format", "name", "version", "filename", "checksum", "algorithm"]
       },
       "RepositoryMember": {
         "type": "object",
@@ -1126,6 +1306,10 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "version_count": {
+            "type": "integer",
+            "description": "Only with group=package: the number of versions of the package that match the search"
           }
         }
       },
@@ -1816,11 +2000,30 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "usage": {
+            "type": "object",
+            "description": "What the backend holds; present on the list and get endpoints.",
+            "properties": {
+              "blob_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "format": "int64"
+              }
+            },
+            "required": [
+              "blob_count",
+              "size_bytes"
+            ]
           }
         }
       },
       "AuditEntry": {
         "type": "object",
+        "description": "One audit log entry of the admin audit list.",
         "properties": {
           "id": {
             "type": "string",
@@ -1830,25 +2033,352 @@
             "type": "string",
             "format": "date-time"
           },
-          "actor": {
-            "type": "string"
-          },
           "action": {
             "type": "string"
           },
-          "target": {
-            "type": "string"
+          "actor": {
+            "type": "string",
+            "description": "Username or token name recorded with the event; empty when unknown."
           },
-          "result": {
-            "type": "string"
+          "actor_name": {
+            "type": "string",
+            "description": "Display name of the actor: the recorded name, else the user's current name, else `system` for background work; empty when unknown."
+          },
+          "subject": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuditSubject"
+              }
+            ],
+            "nullable": true,
+            "description": "What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows)."
+          },
+          "target": {
+            "type": "string",
+            "nullable": true,
+            "description": "The raw resource id."
           },
           "ip": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "details": {
-            "type": "object"
+            "type": "object",
+            "nullable": true
+          },
+          "repository_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "resource_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "resource_id": {
+            "type": "string",
+            "nullable": true
           }
-        }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "action",
+          "actor",
+          "actor_name",
+          "subject"
+        ]
+      },
+      "AuditSubject": {
+        "type": "object",
+        "description": "What an audit event acted on, resolved server-side. `name` is null when the subject is gone and the event did not record its name.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "`repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `permission_target`, `gpg_key`, `sso_provider`, `setting`, or the raw resource type of an event kind without a dedicated one (`storage_tier`, `storage_policy`, ...)."
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string",
+            "description": "Package version, for `package` subjects that record one."
+          },
+          "repository": {
+            "type": "string",
+            "description": "Name of the repository the event belongs to."
+          },
+          "project": {
+            "type": "string",
+            "description": "Name of the project the event belongs to."
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ]
+      },
+      "ActivityEntry": {
+        "description": "A `ProjectActivityEntry` with the actor's and the subject's names resolved.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProjectActivityEntry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "actor_name": {
+                "type": "string",
+                "description": "Display name of the actor: the recorded name, else the user's current name, else `system`; empty when unknown."
+              },
+              "subject": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AuditSubject"
+                  }
+                ],
+                "nullable": true
+              }
+            },
+            "required": [
+              "actor_name",
+              "subject"
+            ]
+          }
+        ]
+      },
+      "UnifiedToken": {
+        "type": "object",
+        "description": "One token of the unified token list. The secret is never returned.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "project",
+              "federation"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string",
+            "description": "Username of the token's owner (personal), creator (project) or creator (federation, as recorded)."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project name: set for project tokens and for federation tokens of a repository that belongs to a project."
+          },
+          "repository": {
+            "type": "string",
+            "description": "Repository name, for federation tokens."
+          },
+          "role": {
+            "type": "string",
+            "description": "Project role, for project tokens."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permission-target ids a personal token is limited to."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent for a token that never expires (federation tokens never do)."
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expired": {
+            "type": "boolean",
+            "description": "True once `expires_at` has passed."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "owner",
+          "created_at",
+          "expired"
+        ]
+      },
+      "UnifiedTokenList": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnifiedToken"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Tokens the caller may see that match the filters."
+          },
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tokens",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "QuotaLine": {
+        "type": "object",
+        "description": "A quota next to its live usage. Limits are absent when unlimited.",
+        "properties": {
+          "limit_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "soft_limit_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`."
+          },
+          "warn_threshold_percent": {
+            "type": "integer"
+          },
+          "max_artifact_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "artifact_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "usage_percent": {
+            "type": "integer",
+            "description": "`used_bytes` of `limit_bytes`; 0 when unlimited."
+          },
+          "exceeded": {
+            "type": "boolean",
+            "description": "True once the size or the artifact count limit is reached."
+          }
+        },
+        "required": [
+          "used_bytes",
+          "warn_threshold_percent",
+          "artifact_count",
+          "usage_percent",
+          "exceeded"
+        ]
+      },
+      "RepositoryUsage": {
+        "type": "object",
+        "properties": {
+          "package_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Distinct packages (by name)."
+          },
+          "version_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Package rows (versions, or files for formats without versions)."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Stored size from the quota counter."
+          },
+          "last_published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent for an empty repository."
+          },
+          "quota": {
+            "$ref": "#/components/schemas/QuotaLine"
+          }
+        },
+        "required": [
+          "package_count",
+          "version_count",
+          "size_bytes",
+          "quota"
+        ]
+      },
+      "QuotaOverviewItem": {
+        "description": "A repository's or a project's quota and usage.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/QuotaLine"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "repository",
+                  "project"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string",
+                "description": "Project owning a repository; absent for a project line and for a repository without one."
+              }
+            },
+            "required": [
+              "scope",
+              "name"
+            ]
+          }
+        ]
+      },
+      "QuotaOverviewList": {
+        "type": "object",
+        "properties": {
+          "quotas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotaOverviewItem"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "quotas",
+          "total",
+          "page",
+          "limit"
+        ]
       },
       "GPGKey": {
         "type": "object",
@@ -2733,13 +3263,13 @@
           "message"
         ]
       },
-      "ProjectActivityPage": {
+      "ActivityPage": {
         "type": "object",
         "properties": {
           "data": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProjectActivityEntry"
+              "$ref": "#/components/schemas/ActivityEntry"
             }
           },
           "per_page": {
@@ -2758,6 +3288,53 @@
           "data",
           "per_page",
           "has_more"
+        ]
+      },
+      "ProjectListItem": {
+        "description": "A project of the project list: the project plus its member count, usage and quota.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Project"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "member_count": {
+                "type": "integer",
+                "description": "Direct members; users who hold a role only through a group are not counted."
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "size_bytes": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "Stored size across the project's repositories (trashed ones included)."
+                  }
+                },
+                "required": [
+                  "size_bytes"
+                ]
+              },
+              "quota": {
+                "type": "object",
+                "description": "Absent when the project has no size limit.",
+                "properties": {
+                  "limit_bytes": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                },
+                "required": [
+                  "limit_bytes"
+                ]
+              }
+            },
+            "required": [
+              "member_count",
+              "usage"
+            ]
+          }
         ]
       },
       "ProjectUsage": {
@@ -2896,6 +3473,475 @@
             "format": "date-time"
           }
         }
+      },
+      "SecurityFinding": {
+        "type": "object",
+        "description": "One stored scan result (a package version of one type) that reports something.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "vuln",
+              "license",
+              "secret",
+              "ai"
+            ]
+          },
+          "repository": {
+            "type": "string",
+            "description": "Repository name."
+          },
+          "format": {
+            "type": "string",
+            "description": "Format of the repository (npm, pypi, maven, ...)."
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string",
+            "description": "The artifact the result belongs to, `name@version`."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "none"
+            ],
+            "description": "Highest severity of the finding; `none` when it has none."
+          },
+          "counts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SecurityFindingCounts"
+              }
+            ],
+            "description": "What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium."
+          },
+          "title": {
+            "type": "string",
+            "description": "One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note."
+          },
+          "scanner": {
+            "type": "string",
+            "description": "Scanner of a vulnerability result (`osv`, `trivy`, `grype` or a comma-joined list); empty for the other types."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "quarantined",
+              "suppressed"
+            ],
+            "description": "`quarantined` when the result's quarantine flag is set; `suppressed` when every vulnerability has a `not_affected` or `fixed` VEX decision or an admin approved a license quarantine."
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "vex_status": {
+            "type": "string",
+            "enum": [
+              "affected",
+              "under_investigation",
+              "fixed",
+              "not_affected"
+            ],
+            "description": "Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies."
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "repository",
+          "format",
+          "package_name",
+          "package_version",
+          "artifact_id",
+          "severity",
+          "counts",
+          "title",
+          "scanner",
+          "status",
+          "quarantined",
+          "scanned_at"
+        ]
+      },
+      "SecurityFindingCounts": {
+        "type": "object",
+        "properties": {
+          "critical": {
+            "type": "integer"
+          },
+          "high": {
+            "type": "integer"
+          },
+          "medium": {
+            "type": "integer"
+          },
+          "low": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "critical",
+          "high",
+          "medium",
+          "low"
+        ]
+      },
+      "SecuritySummary": {
+        "type": "object",
+        "properties": {
+          "by_type": {
+            "type": "object",
+            "properties": {
+              "vuln": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              },
+              "license": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              },
+              "secret": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              },
+              "ai": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              }
+            },
+            "required": [
+              "vuln",
+              "license",
+              "secret",
+              "ai"
+            ]
+          },
+          "scanned_repositories": {
+            "type": "integer",
+            "description": "Repositories that hold artifacts (group repositories excluded) with a completed scan of any type."
+          },
+          "total_repositories": {
+            "type": "integer",
+            "description": "Repositories of the scope that hold artifacts."
+          },
+          "last_scan_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the latest scan of the scope finished; null when none did."
+          }
+        },
+        "required": [
+          "by_type",
+          "scanned_repositories",
+          "total_repositories",
+          "last_scan_at"
+        ]
+      },
+      "SecurityHealth": {
+        "type": "object",
+        "properties": {
+          "scanners": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "osv, trivy or grype."
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "What an operator should do; absent for a ready scanner."
+                },
+                "docs_url": {
+                  "type": "string",
+                  "description": "Installation guide of a scanner that is not ready."
+                }
+              },
+              "required": [
+                "name",
+                "ready"
+              ]
+            }
+          },
+          "last_scan_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the latest vulnerability, license, secret or AI scan finished; null when none did."
+          },
+          "scans_pending": {
+            "type": "integer",
+            "description": "Scans that are pending or running."
+          },
+          "scans_failed_24h": {
+            "type": "integer",
+            "description": "Scans that failed in the last 24 hours."
+          },
+          "dependency_track": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "The global Dependency-Track integration is enabled."
+              },
+              "last_push_ok": {
+                "type": "boolean",
+                "description": "Whether the latest finished push succeeded; absent when none finished."
+              },
+              "last_push_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When that push finished; absent when none did."
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          },
+          "ai": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          },
+          "unscanned_repositories": {
+            "type": "integer",
+            "description": "Repositories that hold artifacts (group repositories excluded) with no completed scan of any type."
+          }
+        },
+        "required": [
+          "scanners",
+          "last_scan_at",
+          "scans_pending",
+          "scans_failed_24h",
+          "dependency_track",
+          "ai",
+          "unscanned_repositories"
+        ]
+      },
+      "RepoSecuritySummary": {
+        "type": "object",
+        "description": "Counts only; no finding ids, titles or other details.",
+        "properties": {
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Latest completed scan of the selection; null when nothing was scanned."
+          },
+          "vuln": {
+            "type": "object",
+            "properties": {
+              "critical": {
+                "type": "integer"
+              },
+              "high": {
+                "type": "integer"
+              },
+              "medium": {
+                "type": "integer"
+              },
+              "low": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "license": {
+            "type": "object",
+            "properties": {
+              "violations": {
+                "type": "integer",
+                "description": "License findings that are not suppressed."
+              }
+            },
+            "required": [
+              "violations"
+            ]
+          },
+          "secret": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "count"
+            ]
+          },
+          "ai": {
+            "type": "object",
+            "properties": {
+              "quarantine_recommended": {
+                "type": "integer"
+              },
+              "review_required": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "quarantine_recommended",
+              "review_required"
+            ]
+          },
+          "quarantined": {
+            "type": "boolean",
+            "description": "True when a result of the selection is quarantined."
+          }
+        },
+        "required": [
+          "scanned_at",
+          "vuln",
+          "license",
+          "secret",
+          "ai",
+          "quarantined"
+        ]
       },
       "VulnScanOverviewRow": {
         "type": "object",
@@ -3961,7 +5007,7 @@
       },
       "TrashItem": {
         "type": "object",
-        "description": "A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.",
+        "description": "A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at expires_at.",
         "properties": {
           "id": {
             "type": "string",
@@ -4021,10 +5067,19 @@
           "deleted_by": {
             "type": "string"
           },
+          "deleted_by_name": {
+            "type": "string",
+            "description": "Who deleted the item as a display name: the username, or the policy or peer that did it (`cleanup-policy`, `federation:<peer>`). Empty when not recorded. Same value as `deleted_by`."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the retention purge removes the item for good: deleted_at plus the repository's effective retention."
+          },
           "purge_at": {
             "type": "string",
             "format": "date-time",
-            "description": "deleted_at plus the repository's effective retention."
+            "description": "Same value as `expires_at`, kept for existing clients."
           }
         },
         "required": [
@@ -4037,6 +5092,8 @@
           "size_bytes",
           "deleted_at",
           "deleted_by",
+          "deleted_by_name",
+          "expires_at",
           "purge_at"
         ]
       },
@@ -4181,7 +5238,8 @@
         "type": "object",
         "properties": {
           "enabled": { "type": "boolean", "description": "Federation is on: the repository keeps a change log." },
-          "supported": { "type": "boolean", "description": "The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget)." },
+          "supported": { "type": "boolean", "description": "Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server." },
+          "server_enabled": { "type": "boolean", "description": "Federation is enabled on the server (federation.enabled); when false no repository can be federated." },
           "instance_id": { "type": "string", "description": "Identifier of this instance." },
           "log_id": { "type": "string", "description": "Identifier of this repository's log; changes when federation is disabled and enabled again." },
           "head_seq": { "type": "integer", "format": "int64", "description": "Highest sequence in the log." },
@@ -4190,7 +5248,7 @@
           "peers": { "type": "array", "items": { "$ref": "#/components/schemas/FederationPeer" } },
           "tokens": { "type": "array", "items": { "$ref": "#/components/schemas/FederationToken" } }
         },
-        "required": ["enabled", "supported", "instance_id", "log_id", "head_seq", "units", "tombstones", "peers", "tokens"]
+        "required": ["enabled", "supported", "server_enabled", "instance_id", "log_id", "head_seq", "units", "tombstones", "peers", "tokens"]
       },
       "UpdateFederationRequest": {
         "type": "object",
@@ -5312,6 +6370,54 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only repositories whose name contains this text (case-insensitive, at most 200 characters)",
+            "schema": { "type": "string", "maxLength": 200 }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only repositories of this type",
+            "schema": { "type": "string", "enum": ["hosted", "proxy", "group"] }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only repositories of the project with this name; an unknown project matches nothing",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "description": "true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts)",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "near_quota",
+            "in": "query",
+            "description": "true keeps the repositories that have a size quota and have used at least quota_threshold of it",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "quota_threshold",
+            "in": "query",
+            "description": "Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8)",
+            "schema": { "type": "number", "minimum": 0, "exclusiveMinimum": true, "maximum": 1 }
+          },
+          {
+            "name": "unscanned",
+            "in": "query",
+            "description": "true keeps the repositories that were never scanned (no completed scan of any of their artifacts)",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name.",
+            "schema": { "type": "string", "enum": ["name", "updated", "last_published", "size"] }
           }
         ],
         "responses": {
@@ -5668,11 +6774,23 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "description": "package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped.",
+            "schema": { "type": "string", "enum": ["package"] }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "description": "With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.",
+            "schema": { "type": "boolean" }
           }
         ],
         "responses": {
           "200": {
-            "description": "List of packages",
+            "description": "List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package",
             "content": {
               "application/json": {
                 "schema": {
@@ -5681,16 +6799,28 @@
                     "total": {
                       "type": "integer"
                     },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
                     "packages": {
                       "type": "array",
                       "items": {
-                        "type": "object"
+                        "oneOf": [
+                          { "$ref": "#/components/schemas/PackageFile" },
+                          { "$ref": "#/components/schemas/PackageGroup" }
+                        ]
                       }
                     }
                   }
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid sort, group, flagged or q"
           },
           "404": {
             "description": "Repository not found"
@@ -7378,6 +8508,369 @@
         }
       }
     },
+    "/api/v1/security/findings": {
+      "get": {
+        "summary": "List security findings of all repositories",
+        "description": "Vulnerability, license, secret and AI findings across repositories, worst first: highest severity, then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the findings of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only the findings of the repositories of this project (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Only findings whose highest severity is exactly this one (the summary strip counts the same way).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only findings in this state.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "quarantined",
+                "suppressed"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring of the repository name or of `name@version`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque `next_cursor` of the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of findings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "findings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SecurityFinding"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "True when findings follow this page."
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "description": "Pass as `cursor` to fetch the next page. Absent when `has_more` is false."
+                    }
+                  },
+                  "required": [
+                    "findings",
+                    "has_more"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or cursor (`validation_failed`)"
+          },
+          "403": {
+            "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/findings/summary": {
+      "get": {
+        "summary": "Count security findings by type",
+        "description": "Findings per type (total, by highest severity, quarantined) and how many of the repositories that hold artifacts have a completed scan, within the caller's scope. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the findings of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only the findings of the repositories of this project (by name).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/findings/export": {
+      "get": {
+        "summary": "Export security findings",
+        "description": "Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the findings of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only the findings of the repositories of this project (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Only findings whose highest severity is exactly this one (the summary strip counts the same way).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only findings in this state.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "quarantined",
+                "suppressed"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring of the repository name or of `name@version`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "json",
+                "vex"
+              ],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export as a download. CSV is `text/csv`, JSON `application/json` (`{findings, truncated}`), VEX `application/vnd.cyclonedx+json`.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/vnd.cyclonedx+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format` or filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/health": {
+      "get": {
+        "summary": "Security health",
+        "description": "Scanner readiness, the scan queue, the Dependency-Track and AI integrations and the scan coverage in one call (admin only).",
+        "tags": [
+          "Scanning"
+        ],
+        "responses": {
+          "200": {
+            "description": "The health aggregate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityHealth"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/security/summary": {
+      "get": {
+        "summary": "Security summary of a repository, package or version",
+        "description": "Counts only: vulnerabilities by severity, license violations, secret findings, AI flags and whether a result is quarantined. It carries no finding ids, titles or other details, so it needs only read access to the repository: it is what viewers, developers and tokens that cannot list findings show. Narrow it to a package with `package_name` and to one version with `version`.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package_name",
+            "in": "query",
+            "description": "Only this package.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "description": "Only this version of the package; needs `package_name`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSecuritySummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`version` without `package_name`, or a value that is too long (`validation_failed`)"
+          },
+          "403": {
+            "description": "No read access to the repository"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
     "/api/v1/vuln/scans/export": {
       "get": {
         "summary": "Export vulnerability scans of all repositories",
@@ -8235,8 +9728,7 @@
           {
             "name": "q",
             "in": "query",
-            "required": true,
-            "description": "Search query: free text plus optional name:, format:, repo: and sha256: qualifiers",
+            "description": "Search query: free text plus optional name:, format:, repo: and sha256: qualifiers. Required unless checksum is given or flagged=true.",
             "schema": {
               "type": "string"
             }
@@ -8286,21 +9778,36 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "description": "true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "description": "Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.",
+            "schema": { "type": "string" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Search results",
+            "description": "Search results (SearchResult), or with checksum the files that carry it",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SearchResult"
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/SearchResult" },
+                    { "$ref": "#/components/schemas/ChecksumResult" }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, or query_too_broad (more than 10000 matching packages; add filters)"
+            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)"
           }
         }
       }
@@ -9941,6 +11448,296 @@
         "responses": {
           "204": {
             "description": "Permission unassigned"
+          }
+        }
+      }
+    },
+    "/api/v1/tokens": {
+      "get": {
+        "summary": "List tokens",
+        "description": "Personal, project and federation tokens in one list, newest first. A global admin sees every token; anyone else sees their own personal tokens plus the project and federation tokens of the projects they maintain or own. Secrets are never returned and revoked tokens are not listed. A non-admin needs an interactive session (an API token gets 403). Revoke with the per-type endpoints: `DELETE /api/v1/auth/tokens/{id}` (own personal), `DELETE /api/v1/admin/tokens/{tokenId}` (admin, any personal or project token), `DELETE /api/v1/projects/{project}/tokens/{tokenId}` and `DELETE /api/v1/repositories/{name}/federation/tokens/{tokenId}`.",
+        "tags": [
+          "Tokens"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "personal",
+                "project",
+                "federation"
+              ]
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Project name: only that project's tokens and the federation tokens of its repositories (personal tokens never match).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expires_before",
+            "in": "query",
+            "description": "RFC 3339 timestamp or `YYYY-MM-DD` date: only tokens that expire before it (already expired ones included; tokens without an expiry never match).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring of the token name or owner.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedTokenList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid type or expires_before"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "A non-admin API token cannot list tokens"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/quotas": {
+      "get": {
+        "summary": "List all quotas",
+        "description": "Every live repository and every project with its quota and live usage, largest usage first, in one request. A repository or project without a limit is listed as unlimited. Admin only.",
+        "tags": [
+          "Admin",
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "project"
+              ]
+            }
+          },
+          {
+            "name": "limited",
+            "in": "query",
+            "description": "`true` keeps only quotas that enforce a limit.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring of the repository or project name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of quotas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaOverviewList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid scope"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/usage": {
+      "get": {
+        "summary": "Get repository usage",
+        "description": "What the repository holds (packages, versions, stored bytes, newest publish) next to its quota. Package and version counts scan the repository's package rows: use it for one repository on demand, not in a loop. Requires global admin or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryUsage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin or project maintainer access required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/activity": {
+      "get": {
+        "summary": "Repository activity",
+        "description": "Audit events recorded against one repository (deletions, restores, purges, repository and project changes), newest first, with actor and subject names resolved. `package_name` and `version` keep only the events that record that package version: deletions, restores and purges do, other events never match. Keyset paging only: follow `next_cursor` while `has_more` is true; no row is counted. Client addresses are not returned. Requires global admin or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package_name",
+            "in": "query",
+            "description": "Exact package name as recorded with the event.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "description": "Exact version as recorded with the event.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Case-insensitive substring of the actor name or actor id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Case-insensitive substring of the action name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque `next_cursor` of the previous page; omit for the newest entries.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of activity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed cursor"
+          },
+          "403": {
+            "description": "Admin or project maintainer access required"
+          },
+          "404": {
+            "description": "Repository not found"
           }
         }
       }
@@ -11886,7 +13683,7 @@
     "/api/v1/projects": {
       "get": {
         "summary": "List projects",
-        "description": "List the projects the caller holds a role in, each with my_role and repository_count; with all=true, every project (global administrators only, others get 403). can_create tells whether the caller may create a project (global admin, or any human user while the projects.self_create setting is on).",
+        "description": "List the projects the caller holds a role in, each with my_role, repository_count, member_count (direct members), usage and quota (computed for the whole list with grouped queries); with all=true, every project (global administrators only, others get 403). can_create tells whether the caller may create a project (global admin, or any human user while the projects.self_create setting is on).",
         "tags": [
           "Projects"
         ],
@@ -11899,6 +13696,15 @@
             "schema": {
               "type": "boolean",
               "default": false
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive substring of the project name, slug or display name.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -11913,7 +13719,7 @@
                     "projects": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Project"
+                        "$ref": "#/components/schemas/ProjectListItem"
                       }
                     },
                     "can_create": {
@@ -12800,7 +14606,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectActivityPage"
+                  "$ref": "#/components/schemas/ActivityPage"
                 }
               }
             }
@@ -13426,6 +15232,34 @@
           "403": {
             "description": "Administrator access required"
           }
+        }
+      }
+    },
+    "/api/v1/packages/recent": {
+      "get": {
+        "summary": "Recent packages",
+        "description": "The most recently published package versions across the repositories the caller can read, newest first. A version with several files (architectures, classifiers, distributions) appears once. Proxy cache entries are not publications and are left out. The server records no publisher, so created_by_name is never set; mine=true narrows the list to the repositories the caller can write to.",
+        "tags": ["Packages"],
+        "parameters": [
+          { "name": "mine", "in": "query", "description": "true keeps the repositories the caller has write permission on", "schema": { "type": "boolean" } },
+          { "name": "limit", "in": "query", "description": "Maximum entries (default 10, at most 50)", "schema": { "type": "integer", "minimum": 1, "maximum": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent package versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "packages": { "type": "array", "items": { "$ref": "#/components/schemas/RecentPackage" } }
+                  },
+                  "required": ["packages"]
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid mine" }
         }
       }
     },
@@ -16912,6 +18746,23 @@
       }
     },
     "/api/v1/repositories/{name}/packages/{id}": {
+      "get": {
+        "summary": "Get a package version",
+        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
+        "tags": ["Repositories", "Packages"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "description": "Repository name", "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "description": "Row id from the package listing", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The package version",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PackageDetail" } } }
+          },
+          "403": { "description": "No read access to the repository" },
+          "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
+        }
+      },
       "delete": {
         "summary": "Delete a package",
         "description": "Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires write access.",

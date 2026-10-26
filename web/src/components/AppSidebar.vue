@@ -4,270 +4,124 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+<!--
+  The primary navigation: the seven top-level areas, a collapsible rail on
+  desktop and an off-canvas menu below md. The account menu, the theme and
+  sign-out live in the header's user menu, so they stay reachable in the
+  collapsed rail and on mobile.
+-->
 <template>
-  <aside
+  <div
     id="app-sidebar"
-    ref="asideEl"
+    ref="sidebarEl"
     tabindex="-1"
-    class="bg-surface border-r border-border flex flex-col shrink-0 outline-none
-      max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out
+    class="flex shrink-0 flex-col border-r border-border bg-surface outline-none
+      max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-72 max-md:max-w-[85vw] max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out
+      motion-reduce:transition-none
       md:relative md:transition-[width] md:duration-200 md:ease-out"
     :class="[
-      collapsed ? 'w-16' : 'w-60',
+      collapsed ? 'md:w-16' : 'md:w-60',
       isMobile && !ui.mobileNavOpen ? '-translate-x-full' : 'translate-x-0',
     ]"
     :inert="isMobile && !ui.mobileNavOpen"
-    :aria-label="t('nav.repositories')"
   >
-    <!-- Brand mark -->
+    <!-- Brand mark: a long white-label name wraps instead of overflowing -->
     <div
-      class="flex items-center gap-2.5 h-14 border-b border-border/60 shrink-0"
+      class="flex min-h-14 shrink-0 items-center gap-2.5 border-b border-border/60 py-2"
       :class="collapsed ? 'justify-center px-0' : 'px-3'"
     >
       <router-link
         to="/"
-        class="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        class="flex min-h-11 min-w-0 flex-1 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         :class="collapsed && 'flex-none'"
-        :aria-label="store.productName"
+        :aria-label="brand.productName"
       >
         <BrandLogo :variant="collapsed ? 'mark' : 'horizontal'" />
       </router-link>
       <button
         v-if="isMobile"
         type="button"
-        class="shrink-0 -mr-1 p-2 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+        class="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         :aria-label="t('sidebar.close')"
         @click="ui.closeMobileNav()"
       >
-        <XMarkIcon class="w-5 h-5" aria-hidden="true" />
+        <XMarkIcon class="h-5 w-5" aria-hidden="true" />
       </button>
     </div>
 
-    <!-- Collapse / expand toggle -->
-    <button
-      v-if="!isMobile"
-      type="button"
-      class="absolute -right-3 top-[3.5rem] w-6 h-6 rounded-full bg-surface border border-border shadow-sm flex items-center justify-center hover:bg-surface-hover transition-colors z-10"
-      :aria-label="collapsed ? t('sidebar.expand') : t('sidebar.collapse')"
-      @click="ui.toggleSidebar()"
-    >
-      <ChevronRightIcon v-if="collapsed" class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
-      <ChevronLeftIcon v-else class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
-    </button>
-
-    <!-- Scrollable navigation -->
-    <nav class="flex-1 overflow-y-auto nice-scroll px-2 py-3" :aria-label="t('shell.primaryNav')">
-
-      <!-- BROWSE -->
-      <p v-if="!collapsed" class="px-2 mt-2 mb-1 text-xs text-muted">
-        {{ t('sidebar.browse') }}
-      </p>
-      <div v-else class="my-3 mx-auto w-6 h-px bg-border" />
-
-      <SidebarLink to="/" :icon="HomeIcon" :label="t('nav.dashboard')" :collapsed="collapsed" />
-      <SidebarLink to="/repos" :icon="CubeIcon" :label="t('nav.repositories')" :collapsed="collapsed" />
-      <SidebarLink to="/projects" :icon="FolderIcon" :label="t('nav.projects')" :collapsed="collapsed" />
-      <SidebarLink v-if="session.isAdmin" to="/bundles" :icon="TagIcon" :label="t('bundles.nav')" :collapsed="collapsed" />
-      <SidebarLink to="/search" :icon="MagnifyingGlassIcon" :label="t('nav.search')" :collapsed="collapsed" />
-
-      <!-- SECURITY (admins only: the scan APIs need the manage permission) -->
-      <template v-if="session.isAdmin">
-        <p v-if="!collapsed" class="px-2 mt-4 mb-1 text-xs text-muted">
-          {{ t('nav.security') }}
-        </p>
-        <div v-else class="my-3 mx-auto w-6 h-px bg-border" />
-
-        <SidebarLink to="/security/vulns" :icon="ShieldExclamationIcon" :label="t('nav.vulns')" :collapsed="collapsed" />
-        <SidebarLink to="/security/licenses" :icon="DocumentTextIcon" :label="t('nav.licenses')" :collapsed="collapsed" />
-        <SidebarLink to="/security/secrets" :icon="EyeSlashIcon" :label="t('nav.secrets')" :collapsed="collapsed" />
-        <SidebarLink to="/security/ai-analysis" :icon="SparklesIcon" :label="t('shell.aiAnalysis')" :collapsed="collapsed" />
-      </template>
-
-      <!-- ADMINISTRATION (admins only, collapsible) -->
-      <template v-if="session.isAdmin">
-        <button
-          v-if="!collapsed"
-          type="button"
-          class="w-full flex items-center justify-between px-2 mt-4 mb-1 text-xs text-muted hover:text-foreground transition-colors"
-          :aria-expanded="adminOpen"
-          aria-controls="sidebar-admin-links"
-          @click="adminOpen = !adminOpen"
-        >
-          <span>{{ t('sidebar.admin') }}</span>
-          <ChevronDownIcon class="w-3.5 h-3.5 transition-transform" :class="adminOpen ? '' : '-rotate-90'" aria-hidden="true" />
-        </button>
-        <div v-else class="my-3 mx-auto w-6 h-px bg-border" />
-
-        <div id="sidebar-admin-links" v-show="adminOpen || collapsed">
-          <SidebarLink to="/admin/users" :icon="UsersIcon" :label="t('nav.users')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/groups" :icon="UserGroupIcon" :label="t('nav.groups')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/projects" :icon="BuildingOfficeIcon" :label="t('shell.projects')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/permissions" :icon="ShieldCheckIcon" :label="t('nav.permissions')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/sso" :icon="KeyIcon" :label="t('nav.sso')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/gpg" :icon="LockClosedIcon" :label="t('nav.gpg')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/tokens" :icon="TicketIcon" :label="t('nav.tokens')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/audit" :icon="ClipboardDocumentListIcon" :label="t('nav.audit')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/trash" :icon="TrashIcon" :label="t('nav.trash')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/storage" exact :icon="ServerStackIcon" :label="t('nav.storage')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/storage/tiers" :icon="Square3Stack3DIcon" :label="t('nav.storageTiers')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/backup" :icon="ArchiveBoxIcon" :label="t('nav.backup')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/webhooks" :icon="BellAlertIcon" :label="t('nav.webhooks')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/system" :icon="Cog6ToothIcon" :label="t('nav.system')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/dependency-track" :icon="ShieldExclamationIcon" :label="t('nav.dependencyTrack')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/ai" :icon="SparklesIcon" :label="t('shell.aiSettings')" :collapsed="collapsed" />
-          <SidebarLink to="/admin/branding" :icon="SwatchIcon" :label="t('nav.branding')" :collapsed="collapsed" />
-        </div>
-      </template>
-
-      <!-- SETTINGS -->
-      <p v-if="!collapsed" class="px-2 mt-4 mb-1 text-xs text-muted">
-        {{ t('sidebar.settings') }}
-      </p>
-      <div v-else class="my-3 mx-auto w-6 h-px bg-border" />
-
-      <SidebarLink to="/settings/profile" :icon="UserCircleIcon" :label="t('nav.profile')" :collapsed="collapsed" />
-
+    <nav class="nice-scroll flex-1 overflow-y-auto px-2 py-3" :aria-label="t('shell.primaryNav')">
+      <ul class="space-y-0.5">
+        <li v-for="item in items" :key="item.id">
+          <SidebarLink
+            :id="item.id"
+            :to="item.to"
+            :label="item.label"
+            :icon="navIcon(item.icon)"
+            :collapsed="collapsed"
+            :active="item.id === activeId"
+            :locked="item.locked"
+            :reason="item.reason"
+            :note="item.note"
+          />
+        </li>
+      </ul>
     </nav>
 
-    <!-- User footer -->
-    <div
-      class="border-t border-border px-3 py-3 flex items-center gap-2"
-      :class="collapsed && 'flex-col'"
-    >
-      <!-- Avatar -->
-      <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-        <span class="text-primary text-sm font-medium" aria-hidden="true">
-          {{ session.user?.username?.[0]?.toUpperCase() ?? '?' }}
-        </span>
-      </div>
-
-      <!-- Username + logout button (hidden when collapsed) -->
-      <template v-if="!collapsed">
-        <span class="flex-1 text-sm font-medium text-foreground truncate">
-          {{ session.user?.username }}
-        </span>
-        <button
-          v-if="canInstall"
-          type="button"
-          class="shrink-0 text-muted hover:text-foreground transition-colors"
-          :aria-label="t('pwa.install')"
-          :title="t('pwa.install')"
-          @click="install"
-        >
-          <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="shrink-0 text-muted hover:text-foreground transition-colors"
-          :aria-label="t('auth.signOut')"
-          @click="handleLogout"
-        >
-          <ArrowRightOnRectangleIcon class="w-4 h-4" aria-hidden="true" />
-        </button>
-      </template>
+    <!-- Collapse / expand the rail (desktop) -->
+    <div v-if="!isMobile" class="shrink-0 border-t border-border p-2">
       <button
         type="button"
-        class="shrink-0 text-muted hover:text-foreground transition-colors"
-        :aria-label="t('about.open')"
-        :title="t('about.open')"
-        data-testid="about-open"
-        @click="aboutOpen = true"
+        class="flex h-9 w-full items-center gap-3 rounded-md text-ui text-muted transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        :class="collapsed ? 'justify-center px-0' : 'px-2.5'"
+        :aria-label="collapsed ? t('sidebar.expand') : t('sidebar.collapse')"
+        :aria-expanded="!collapsed"
+        aria-controls="app-sidebar"
+        data-testid="sidebar-toggle"
+        @click="ui.toggleSidebar()"
       >
-        <InformationCircleIcon class="w-4 h-4" aria-hidden="true" />
+        <ChevronRightIcon v-if="collapsed" class="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+        <ChevronLeftIcon v-else class="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+        <span v-if="!collapsed" class="truncate">{{ t('sidebar.collapse') }}</span>
       </button>
     </div>
-    <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />
-  </aside>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { useSessionStore } from '../stores/session'
-import { useUIStore } from '../stores/ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useRoute } from 'vue-router'
-import { useSignOut } from '../composables/useSignOut'
-import { useInstallPrompt } from '../composables/useInstallPrompt'
-import {
-  HomeIcon,
-  CubeIcon,
-  FolderIcon,
-  MagnifyingGlassIcon,
-  TagIcon,
-  ChevronDownIcon,
-  UsersIcon,
-  UserGroupIcon,
-  BuildingOfficeIcon,
-  ShieldCheckIcon,
-  KeyIcon,
-  LockClosedIcon,
-  TicketIcon,
-  ClipboardDocumentListIcon,
-  ServerStackIcon,
-  Square3Stack3DIcon,
-  ArchiveBoxIcon,
-  Cog6ToothIcon,
-  UserCircleIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ArrowDownTrayIcon,
-  ArrowRightOnRectangleIcon,
-  InformationCircleIcon,
-  BellAlertIcon,
-  ShieldExclamationIcon,
-  DocumentTextIcon,
-  EyeSlashIcon,
-  SparklesIcon,
-  SwatchIcon,
-  TrashIcon,
-  XMarkIcon,
-} from '@heroicons/vue/24/outline'
+import { ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import SidebarLink from './SidebarLink.vue'
-import { t } from '../i18n/en'
-import AboutDialog from './AboutDialog.vue'
 import BrandLogo from './BrandLogo.vue'
+import { navIcon } from './navIcons'
 import { useBrandingStore } from '../stores/branding'
+import { useSessionStore } from '../stores/session'
+import { useUIStore } from '../stores/ui'
+import { activeAreaId, resolveNav } from '../lib/navigation'
+import { t } from '../i18n/en'
 
 const session = useSessionStore()
 const ui = useUIStore()
-const store = useBrandingStore()
-const aboutOpen = ref(false)
+const brand = useBrandingStore()
 const route = useRoute()
 
-// Below md the sidebar is an off-canvas drawer: always expanded, toggled from
-// the header, and the desktop rail preference does not apply.
+const items = computed(() => resolveNav(session.isAdmin))
+const activeId = computed(() => activeAreaId(route.path))
+
+// Below md the sidebar is an off-canvas menu: always expanded, opened from the
+// header, and the desktop rail preference does not apply.
 const isMobile = useMediaQuery('(max-width: 767px)')
 const collapsed = computed(() => ui.sidebarCollapsed && !isMobile.value)
-const asideEl = ref<HTMLElement | null>(null)
+
+const sidebarEl = ref<HTMLElement | null>(null)
 watch(
   () => ui.mobileNavOpen,
   async (open) => {
-    if (!open) return
     await nextTick()
-    asideEl.value?.focus()
+    if (open) sidebarEl.value?.focus()
+    // Closed from the menu itself (Esc, scrim, close button): focus goes back to the header toggle.
+    else if (ui.mobileNavReturnFocus) document.getElementById('mobile-nav-toggle')?.focus()
   },
 )
-
-const ADMIN_OPEN_KEY = 'openartifact.sidebar.adminOpen'
-function readAdminOpen(): boolean {
-  try {
-    return localStorage.getItem(ADMIN_OPEN_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-const adminOpen = ref(route.path.startsWith('/admin') || readAdminOpen())
-watch(adminOpen, (open) => {
-  try {
-    localStorage.setItem(ADMIN_OPEN_KEY, open ? '1' : '0')
-  } catch {
-    // storage unavailable — state simply isn't remembered
-  }
-})
-watch(() => route.path, (path) => {
-  if (path.startsWith('/admin')) adminOpen.value = true
-})
-
-const handleLogout = useSignOut()
-const { canInstall, install } = useInstallPrompt()
 </script>

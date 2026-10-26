@@ -17,6 +17,7 @@ import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import type { RouteRecordNormalized } from 'vue-router'
 import router from '../index'
 import { useSessionStore, type User } from '../../stores/session'
+import { useToastStore } from '../../stores/toast'
 
 // Every route lazy-loads its page, which drags in API clients, stores and
 // sub-components that have nothing to do with the guards. Swap them for a stub.
@@ -171,32 +172,66 @@ describe('router beforeEach guards', () => {
   })
 
   describe('admin access', () => {
-    it.each(['/security/vulns', '/security/licenses', '/security/secrets', '/security/ai-analysis'])(
-      'non-admin cannot open %s',
-      async (path) => {
-        signIn({ is_admin: false })
+    it.each([
+      ['/security', '/security'],
+      ['/security/vulns', '/security?type=vuln'],
+      ['/security/licenses', '/security?type=license'],
+      ['/security/secrets', '/security?type=secret'],
+      ['/security/ai-analysis', '/security?type=ai'],
+    ])('every signed-in user can open %s (the server scopes the findings): lands on %s', async (path, landing) => {
+      for (const is_admin of [false, true]) {
+        signIn({ is_admin })
+        await push(path)
+        expect(router.currentRoute.value.fullPath).toBe(landing)
+      }
+    })
+
+    it('non-admin cannot open an admin settings section, nor its legacy /admin URL', async () => {
+      signIn({ is_admin: false })
+      await push('/settings/users')
+      expect(router.currentRoute.value.path).toBe('/')
+      await push('/admin/users')
+      expect(router.currentRoute.value.path).toBe('/')
+    })
+
+    it('says why a non-admin was sent home, for settings sections and admin pages', async () => {
+      signIn({ is_admin: false })
+      for (const path of ['/settings/users', '/bundles']) {
+        const toasts = useToastStore()
+        const before = toasts.queue.length
         await push(path)
         expect(router.currentRoute.value.path).toBe('/')
-      },
-    )
-
-    it('admin can open the security pages', async () => {
-      signIn({ is_admin: true })
-      await push('/security/vulns')
-      expect(router.currentRoute.value.path).toBe('/security/vulns')
+        expect(toasts.queue.length).toBe(before + 1)
+        expect(toasts.queue[before]?.title).toContain('administrators')
+      }
     })
 
-    it('non-admin cannot access /admin/users', async () => {
+    it('non-admin can open the personal settings sections', async () => {
       signIn({ is_admin: false })
-      await push('/admin/users')
-      // Should redirect away from admin route
-      expect(router.currentRoute.value.path).not.toBe('/admin/users')
+      await push('/settings/profile')
+      expect(router.currentRoute.value.path).toBe('/settings/profile')
+      await push('/settings')
+      expect(router.currentRoute.value.name).toBe('settings-hub')
     })
 
-    it('admin can access /admin/users', async () => {
+    it('admin can open an admin settings section; /admin/users redirects to it', async () => {
       signIn({ is_admin: true })
       await push('/admin/users')
-      expect(router.currentRoute.value.path).toBe('/admin/users')
+      expect(router.currentRoute.value.path).toBe('/settings/users')
+    })
+
+    it('the access-token section opens on personal tokens unless a type is chosen', async () => {
+      signIn({ is_admin: false })
+      await push('/settings/tokens')
+      expect(router.currentRoute.value.fullPath).toBe('/settings/tokens?type=personal')
+      await push('/settings/tokens?type=project')
+      expect(router.currentRoute.value.fullPath).toBe('/settings/tokens?type=project')
+    })
+
+    it('an unknown settings section resolves (the page shows its own not-found state)', async () => {
+      signIn({ is_admin: false })
+      await push('/settings/nope')
+      expect(router.currentRoute.value.name).toBe('settings-section')
     })
   })
 })

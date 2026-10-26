@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 REST API of the OpenArtifact artifact repository manager.
 
-This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 269 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
+This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 280 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
 ## Security
 
@@ -29,7 +29,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 | Tag | Endpoints | Description |
 |---|---|---|
-| [Admin](admin.md) | 45 | - |
+| [Admin](admin.md) | 46 | - |
 | [AI](ai.md) | 7 | - |
 | [Audit](audit.md) | 2 | - |
 | [Authentication](authentication.md) | 8 | - |
@@ -43,21 +43,21 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Federation](federation.md) | 9 | - |
 | [GPG](gpg.md) | 7 | - |
 | [Groups](groups.md) | 10 | - |
-| [Packages](packages.md) | 10 | - |
+| [Packages](packages.md) | 12 | - |
 | [Permissions](permissions.md) | 8 | - |
 | [Projects](projects.md) | 30 | - |
-| [Repositories](repositories.md) | 59 | - |
+| [Repositories](repositories.md) | 63 | - |
 | [SBOM](sbom.md) | 15 | - |
-| [Scanning](scanning.md) | 27 | - |
+| [Scanning](scanning.md) | 32 | - |
 | [Search](search.md) | 1 | - |
 | [SSO](sso.md) | 13 | - |
 | [Storage](storage.md) | 21 | - |
 | [System](system.md) | 5 | - |
-| [Tokens](tokens.md) | 8 | - |
+| [Tokens](tokens.md) | 9 | - |
 | [Trash](trash.md) | 6 | - |
 | [Users](users.md) | 9 | - |
 | [Webhooks](webhooks.md) | 9 | - |
 
 ## Schemas
 
-All 125 named request and response objects are on the [schemas page](schemas.md).
+All 147 named request and response objects are on the [schemas page](schemas.md).

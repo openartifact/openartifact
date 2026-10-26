@@ -19,10 +19,10 @@ Hosted gem server: Marshal spec indexes, gemspecs, gem download, push, yank, inf
 
 ```sh
 gem sources --add HOST/repos/REPO/
-GEM_HOST_API_KEY=<TOKEN> gem push my-gem-1.0.0.gem --host HOST/repos/REPO
+GEM_HOST_API_KEY="Bearer <TOKEN>" gem push my-gem-1.0.0.gem --host HOST/repos/REPO
 ```
 
-The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as password. `gem` sends the API key verbatim as the header value, so if push answers `401` use `GEM_HOST_API_KEY="Bearer <TOKEN>"`. See [authentication](../security/authentication.md).
+The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as password. `gem` sends the API key verbatim as the header value, so it carries the `Bearer ` prefix. See [authentication](../security/authentication.md).
 
 ## Endpoints
 

@@ -15,6 +15,7 @@ These pages are also published, one version per release, at <https://openartifac
 | Page | Contents |
 |---|---|
 | [Installation](getting-started/installation.md) | Docker Compose, Helm, release binaries and source builds; first login and password reset; installing the web UI as an app (PWA) |
+| [Web UI](getting-started/web-ui.md) | The seven areas, the Ctrl/Cmd+K command palette, the settings hub, the artifact page and where the old URLs went |
 | [Configuration](getting-started/configuration.md) | Load order, env-only variables, and every setting with env var, YAML key and default |
 | [Upgrading](getting-started/upgrading.md) | Forward-only migrations, image tags, per-method upgrade steps, secrets to keep, rollback |
 
@@ -49,6 +50,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [RBAC](security/rbac.md) | Users, groups, permission targets, request-to-action mapping, projects (repository ownership, member and group access) |
 | [Projects](security/projects.md) | Project roles, member and group self-service, who may create projects, audit events, API |
 | [Scanning](security/scanning.md) | Vulnerability, secret and license scans, quarantine |
+| [Security findings](security/findings.md) | The findings of all repositories in one list (vulnerabilities, licenses, secrets, AI), summary, export, scanner health and the per-repository counts |
 | [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX 2.3 and 3.0 SBOMs, OpenVEX / CycloneDX VEX, signed attestations (cosign), Trivy, Grype |
 | [Dependency-Track](security/dependency-track.md) | Pushing the BOM on upload and scan and the VEX after analysis; project naming, permissions, per-repository overrides |
 | [License metadata](security/licenses.md) | How licenses are read from package files: precedence per format, unresolved licenses, limits and limitations |

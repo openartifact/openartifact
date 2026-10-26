@@ -208,11 +208,20 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body models.SSOProvider
-	if err := decodeJSON(r, &body); err != nil {
+	// enabled is optional and defaults to true; an explicit false creates the
+	// provider disabled, so it stays off the login page until it is enabled.
+	var in struct {
+		models.SSOProvider
+
+		Enabled *bool `json:"enabled"`
+	}
+
+	if err := decodeJSON(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
+
+	body := in.SSOProvider
 
 	if !slugRe.MatchString(body.Slug) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "slug must match ^[a-z0-9_-]{1,64}$")
@@ -286,7 +295,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	body.ID = uuid.New().String()
 	body.CreatedAt = now
 	body.UpdatedAt = now
-	body.Enabled = true
+	body.Enabled = in.Enabled == nil || *in.Enabled
 
 	if err := h.db.CreateSSOProvider(r.Context(), &body); err != nil {
 		h.log.Errorw("admin sso create: db error", "error", err)

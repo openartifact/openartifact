@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t, tp } from '../i18n/en'
+import { t, tp, tpn } from '../i18n/en'
 import type { Repository } from '../api/generated/types.gen'
 
 const DAY_MS = 86_400_000
@@ -40,8 +40,8 @@ export function parseRetentionInput(raw: string | number | null | undefined): nu
 
 /** Toast text for an "empty trash" result: how many were purged and, when capped, how many are left. */
 export function emptyTrashResultText(purged: number, remaining: number): string {
-  const base = tp('trash.emptiedCount', { n: String(purged) })
-  return remaining > 0 ? `${base} ${tp('trash.emptiedRemaining', { n: String(remaining) })}` : base
+  const base = tpn('trash.emptiedCount', purged)
+  return remaining > 0 ? `${base} ${tpn('trash.emptiedRemaining', remaining)}` : base
 }
 
 /** Per-repository capabilities of the current user (`Repository.permissions`). */

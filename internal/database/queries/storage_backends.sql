@@ -3,11 +3,11 @@ INSERT INTO storage_backends (id, name, kind, is_default, config, status, status
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: ListStorageBackends :many
-SELECT id, name, kind, is_default, config, status, status_message, COALESCE(last_checked_at, TIMESTAMPTZ 'epoch') AS last_checked_at, created_at, updated_at
+SELECT id, name, kind, is_default, config, status, status_message, last_checked_at, created_at, updated_at
 FROM storage_backends ORDER BY is_default DESC, name ASC;
 
 -- name: GetStorageBackend :one
-SELECT id, name, kind, is_default, config, status, status_message, COALESCE(last_checked_at, TIMESTAMPTZ 'epoch') AS last_checked_at, created_at, updated_at
+SELECT id, name, kind, is_default, config, status, status_message, last_checked_at, created_at, updated_at
 FROM storage_backends WHERE name = $1;
 
 -- name: UpdateStorageBackend :exec

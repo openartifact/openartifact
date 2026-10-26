@@ -21,19 +21,14 @@ export const ROUTE_DOCS: Readonly<Record<string, DocsPath>> = {
   login: null,
   'change-password': null,
   'not-found': null,
-  // The search page has no dedicated docs page (properties search is API-only).
-  search: null,
+  // The package search has no dedicated docs page (properties search is API-only).
+  packages: null,
 
-  // Repositories
+  // Repositories and artifacts
   repos: 'repositories/hosted-proxy-group',
-  'repo-new': 'repositories/hosted-proxy-group',
-  'repo-edit': 'repositories/hosted-proxy-group',
-  'repo-settings': 'repositories/hosted-proxy-group',
   'repo-detail': 'formats/client-setup',
-  'repo-browse': 'formats/',
-  'repo-graph': 'security/sbom',
-  'repo-trash': 'operations/trash',
-  'package-detail': 'formats/',
+  artifact: 'formats/',
+  'artifact-version': 'formats/',
 
   // Projects and bundles
   projects: 'security/projects',
@@ -41,36 +36,45 @@ export const ROUTE_DOCS: Readonly<Record<string, DocsPath>> = {
   bundles: 'repositories/release-bundles',
   'bundle-detail': 'repositories/release-bundles',
 
-  // Administration
-  'admin-users': 'security/rbac',
-  'admin-groups': 'security/rbac',
-  'admin-permissions': 'security/rbac',
-  'admin-sso': 'security/sso',
-  'admin-system': 'operations/monitoring',
-  'admin-gpg': 'security/signing',
-  'admin-tokens': 'security/authentication',
-  'admin-trash': 'operations/trash',
-  'admin-audit': 'operations/monitoring',
-  'admin-storage': 'operations/storage',
-  'admin-storage-tiers': 'operations/storage-tiering',
-  'admin-projects': 'security/projects',
-  'admin-webhooks': 'operations/webhooks',
-  'admin-backup': 'operations/backup',
-  'admin-ai': 'integrations/ai-analysis',
-  // No docs page yet.
-  'admin-branding': 'operations/branding',
-  'admin-dependency-track': 'security/dependency-track',
+  // Security findings
+  security: 'security/scanning',
 
-  // Security
-  'security-vulns': 'security/scanning',
-  'security-licenses': 'security/licenses',
-  'security-secrets': 'security/scanning',
-  'security-ai-analysis': 'integrations/ai-analysis',
-
-  // Settings
+  // Settings: the hub, and one entry per section id (`settings-<id>`, see `docsKey`).
+  'settings-hub': null,
   'settings-profile': 'security/authentication',
   'settings-password': 'security/authentication',
   'settings-tokens': 'security/authentication',
+  'settings-users': 'security/rbac',
+  'settings-groups': 'security/rbac',
+  'settings-permissions': 'security/rbac',
+  'settings-sso': 'security/sso',
+  'settings-project-policy': 'security/projects',
+  'settings-backends': 'operations/storage',
+  'settings-tiers': 'operations/storage-tiering',
+  'settings-quotas': 'repositories/cleanup-and-quotas',
+  'settings-cleanup': 'repositories/cleanup-and-quotas',
+  'settings-trash': 'operations/trash',
+  'settings-backup': 'operations/backup',
+  'settings-scanners': 'security/scanning',
+  'settings-policies': 'security/licenses',
+  'settings-signing': 'security/signing',
+  'settings-dependency-track': 'security/dependency-track',
+  'settings-webhooks': 'operations/webhooks',
+  'settings-federation': 'operations/federation',
+  'settings-ai': 'integrations/ai-analysis',
+  'settings-branding': 'operations/branding',
+  'settings-audit': 'operations/monitoring',
+  'settings-health': 'operations/monitoring',
+}
+
+/**
+ * Docs key of a route: its name, except the generic `/settings/:section` route,
+ * which is keyed by section (`settings-users`).
+ */
+export function docsKey(route: { name?: string | symbol | null; params: Record<string, unknown> }): string | symbol | null | undefined {
+  return route.name === 'settings-section' && typeof route.params.section === 'string'
+    ? `settings-${route.params.section}`
+    : route.name
 }
 
 /**

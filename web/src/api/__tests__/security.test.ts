@@ -4,7 +4,9 @@
 
 import { describe, it, expect, spyOn, afterEach } from 'bun:test'
 import {
-  listAllVulnScans,
+  listFindings,
+  getFindingsSummary,
+  findingsExportUrl,
   getVulnScanSummary,
   getVulnScan,
   deleteVulnScan,
@@ -15,8 +17,6 @@ import {
   setVulnQuarantine,
   setLicenseQuarantine,
   VULN_ECOSYSTEMS,
-  vulnScansExportUrl,
-  secretScansExportUrl,
   downloadScanExport,
 } from '../security'
 import { triggerAIAnalysis } from '../ai'
@@ -119,15 +119,26 @@ describe('security api', () => {
     expect(lastBody()).toEqual({ manifest_text: 'm', artifact_name: 'n' })
   })
 
-  it('lists scans across repositories with only the set filters and the cursor', async () => {
-    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ scans: [{ id: 's1' }], has_more: true, next_cursor: 'c2' }))
-    const page = await listAllVulnScans({ repo: 'my repo', severity: 'high', quarantined: false, limit: 25, cursor: 'c1' })
-    expect(page).toEqual({ scans: [{ id: 's1' } as never], has_more: true, next_cursor: 'c2' })
-    expect(lastUrl()).toBe('/api/v1/vuln/scans?repo=my+repo&severity=high&quarantined=false&limit=25&cursor=c1')
+  it('lists findings with only the set filters and the cursor', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ findings: [{ id: 'f1' }], has_more: true, next_cursor: 'c2' }))
+    const page = await listFindings({ type: 'vuln', repo: 'my repo', severity: 'high', limit: 25, cursor: 'c1' })
+    expect(page).toEqual({ findings: [{ id: 'f1' } as never], has_more: true, next_cursor: 'c2' })
+    const url = lastUrl()
+    expect(url.startsWith('/api/v1/security/findings?')).toBe(true)
+    const q = new URLSearchParams(url.split('?')[1])
+    expect(Object.fromEntries(q)).toEqual({ type: 'vuln', repo: 'my repo', severity: 'high', limit: '25', cursor: 'c1' })
 
     spy.mockResolvedValue(json({}))
-    expect(await listAllVulnScans()).toEqual({ scans: [], has_more: false, next_cursor: undefined })
-    expect(lastUrl()).toBe('/api/v1/vuln/scans')
+    expect(await listFindings({})).toEqual({ findings: [], has_more: false, next_cursor: undefined })
+    expect(lastUrl()).toBe('/api/v1/security/findings')
+  })
+
+  it('reads the findings summary for an optional repository', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({}))
+    await getFindingsSummary('r 1')
+    expect(lastUrl()).toBe('/api/v1/security/findings/summary?repo=r+1')
+    await getFindingsSummary()
+    expect(lastUrl()).toBe('/api/v1/security/findings/summary')
   })
 
   it('reads the summary for an optional repository', async () => {
@@ -150,12 +161,11 @@ describe('security api', () => {
 })
 
 describe('scan exports', () => {
-  it('builds export URLs that carry the overview filters and the format', () => {
-    expect(vulnScansExportUrl({}, 'sarif')).toBe('/api/v1/vuln/scans/export?format=sarif')
-    expect(vulnScansExportUrl({ repo: 'npm main', severity: 'high', quarantined: false }, 'csv')).toBe(
-      '/api/v1/vuln/scans/export?repo=npm+main&severity=high&quarantined=false&format=csv',
-    )
-    expect(secretScansExportUrl('raw/x', 'json')).toBe('/api/v1/repositories/raw%2Fx/secrets/scans/export?format=json')
+  it('builds findings export URLs that carry the inbox filters and the format', () => {
+    expect(findingsExportUrl({}, 'csv')).toBe('/api/v1/security/findings/export?format=csv')
+    const u = findingsExportUrl({ type: 'vuln', repo: 'npm main', status: 'open' }, 'vex')
+    const q = new URLSearchParams(u.split('?')[1])
+    expect(Object.fromEntries(q)).toEqual({ type: 'vuln', repo: 'npm main', status: 'open', format: 'vex' })
   })
 
   it('downloads through a preflight, then lets the browser stream the file', async () => {

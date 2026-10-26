@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -89,7 +90,10 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewSecretsHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	NewVulnHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	NewVulnHandler(nil, nil, nil, nil).RegisterOverviewRoutes(r)
+	NewSecurityHandler(nil, nil, nil, nil, nil, ai.Settings{}).RegisterRoutes(r)
 	NewQuotasHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
+	NewQuotasHandler(nil, nil, nil).RegisterAdminRoutes(r)
+	NewRepositoryActivityHandler(nil, nil, nil).RegisterAuthed(r)
 	NewPropertiesHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	NewAIHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	log, err := logger.New("error", "json", "stderr")

@@ -21,6 +21,8 @@ export interface StorageBackend {
   status?: string
   status_message?: string | null
   last_checked_at?: string | null
+  /** Blobs stored on this backend and their total size. */
+  usage?: { blob_count: number; size_bytes: number }
   created_at?: string
   updated_at?: string
 }

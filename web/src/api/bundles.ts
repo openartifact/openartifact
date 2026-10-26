@@ -51,6 +51,17 @@ interface PromoteInput {
   notes?: string
 }
 
+/** A stored file the item picker offers: the search hit carries everything an item needs. */
+export interface ItemCandidate {
+  repository: string
+  format: string
+  name: string
+  version: string
+  path: string
+  sha256: string
+  size: number
+}
+
 const enc = encodeURIComponent
 
 const json = (method: string, body: unknown): RequestInit => ({
@@ -158,4 +169,11 @@ export function createPipeline(input: {
   stages: PipelineStage[]
 }): Promise<Pipeline> {
   return request<Pipeline>('/api/v1/pipelines', json('POST', input))
+}
+
+/** Stored files matching `q` (free text, or `sha256:<digest>`) in the repositories the caller can read. */
+export async function searchItemCandidates(q: string, signal?: AbortSignal): Promise<ItemCandidate[]> {
+  const qs = new URLSearchParams({ q, limit: '25' })
+  const res = await request<{ packages?: ItemCandidate[] }>(`/api/v1/search?${qs}`, { signal })
+  return res?.packages ?? []
 }

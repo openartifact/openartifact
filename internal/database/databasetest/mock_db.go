@@ -91,6 +91,28 @@ func (m *BaseMockDB) GetComponentByID(ctx context.Context, id string) (*models.C
 func (m *BaseMockDB) GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error) {
 	return nil, errNotImpl("GetRepoComponentBlob")
 }
+func (m *BaseMockDB) GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error) {
+	return nil, errNotImpl("GetRepoComponentDetail")
+}
+
+// RepoCatalogStats and the aggregates after it default to "nothing recorded": the repository and
+// package listings decorate their rows with them, and a test of the listing
+// itself should not have to stub them.
+func (m *BaseMockDB) RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error) {
+	return map[string]models.RepoStats{}, nil
+}
+func (m *BaseMockDB) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+func (m *BaseMockDB) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
+	return nil, 0, errNotImpl("ListRepoPackageRollup")
+}
+func (m *BaseMockDB) ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error) {
+	return map[string]models.ArtifactSecurity{}, nil
+}
+func (m *BaseMockDB) ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error) {
+	return nil, errNotImpl("ListRecentPackages")
+}
 func (m *BaseMockDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
 	return nil, errNotImpl("GetComponentByFilename")
 }
@@ -608,6 +630,26 @@ func (m *BaseMockDB) InsertAuditLog(ctx context.Context, event *models.AuditLog)
 func (m *BaseMockDB) ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error) {
 	return nil, errNotImpl("ListAuditLogs")
 }
+func (m *BaseMockDB) ListUnifiedTokens(ctx context.Context, params models.TokenListParams) ([]*models.TokenListItem, int, error) {
+	return nil, 0, errNotImpl("ListUnifiedTokens")
+}
+
+func (m *BaseMockDB) ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error) {
+	return nil, errNotImpl("ResolveAuditNames")
+}
+
+func (m *BaseMockDB) ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {
+	return nil, errNotImpl("ListProjectStats")
+}
+
+func (m *BaseMockDB) ListQuotaOverview(ctx context.Context, params models.QuotaListParams) ([]*models.QuotaOverview, int, error) {
+	return nil, 0, errNotImpl("ListQuotaOverview")
+}
+
+func (m *BaseMockDB) GetRepositoryUsage(ctx context.Context, repoID string) (*models.RepositoryUsage, error) {
+	return nil, errNotImpl("GetRepositoryUsage")
+}
+
 func (m *BaseMockDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error) {
 	return nil, 0, errNotImpl("ListAllTokens")
 }
@@ -833,6 +875,9 @@ func (m *BaseMockDB) UpdateStorageQuota(ctx context.Context, quota *models.Stora
 }
 func (m *BaseMockDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	return errNotImpl("DecrementStorageUsage")
+}
+func (m *BaseMockDB) StorageTierUsage(ctx context.Context) ([]models.TierUsage, error) {
+	return nil, errNotImpl("StorageTierUsage")
 }
 func (m *BaseMockDB) StorageBackendBusyReason(ctx context.Context, backendID string) (string, error) {
 	return "", errNotImpl("StorageBackendBusyReason")
@@ -1118,6 +1163,21 @@ func (m *BaseMockDB) ListVulnScanOverview(ctx context.Context, params models.Vul
 }
 func (m *BaseMockDB) VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error) {
 	return nil, errNotImpl("VulnScanOverviewSummary")
+}
+func (m *BaseMockDB) ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error) {
+	return nil, errNotImpl("ListSecurityFindings")
+}
+func (m *BaseMockDB) SecurityFindingsSummary(ctx context.Context, filter models.FindingFilter) (*models.FindingsSummary, error) {
+	return nil, errNotImpl("SecurityFindingsSummary")
+}
+func (m *BaseMockDB) SecurityHealthStats(ctx context.Context) (*models.SecurityHealthStats, error) {
+	return nil, errNotImpl("SecurityHealthStats")
+}
+func (m *BaseMockDB) LatestFinishedDependencyTrackPush(ctx context.Context) (*models.DependencyTrackLastPush, error) {
+	return nil, errNotImpl("LatestFinishedDependencyTrackPush")
+}
+func (m *BaseMockDB) RepoSecuritySummary(ctx context.Context, repoID, packageName, version string) (*models.RepoSecuritySummary, error) {
+	return nil, errNotImpl("RepoSecuritySummary")
 }
 func (m *BaseMockDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
 	return nil, errNotImpl("GetVulnScanResultByID")

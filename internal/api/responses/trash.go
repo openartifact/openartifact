@@ -20,7 +20,13 @@ type TrashItemResponse struct {
 	SizeBytes  int64  `json:"size_bytes"`
 	DeletedAt  string `json:"deleted_at"`
 	DeletedBy  string `json:"deleted_by"`
-	// PurgeAt is when the retention purge removes the item for good.
+	// DeletedByName is who deleted the item as a display name: the username,
+	// or the policy or peer that did it (cleanup-policy, federation:<peer>).
+	// Empty when the deleter was not recorded. DeletedBy holds the same value.
+	DeletedByName string `json:"deleted_by_name"`
+	// ExpiresAt is when the retention purge removes the item for good.
+	ExpiresAt string `json:"expires_at"`
+	// PurgeAt is ExpiresAt under its original name, kept for existing clients.
 	PurgeAt string `json:"purge_at"`
 }
 

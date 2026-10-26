@@ -7,9 +7,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <section class="rounded-lg border border-border bg-surface">
     <div class="px-4 py-3 border-b border-border">
-      <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.connect.title') }}</h2>
-      <p class="text-xs text-muted mt-0.5">
-        {{ t('repoDetail.connect.hint') }}
+      <h2 v-if="!titled" class="text-sm font-semibold text-foreground">{{ t('repoDetail.connect.title') }}</h2>
+      <p class="text-xs text-muted" :class="titled ? '' : 'mt-0.5'">
+        {{ readOnly ? t('repoDetail.connect.hintReadOnly') : t('repoDetail.connect.hint') }}
         <a
           v-if="docsUrl"
           :href="docsUrl"
@@ -44,24 +44,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="current" class="p-4 space-y-4">
       <div>
         <div class="flex items-center justify-between mb-1.5">
-          <h3 class="text-xs font-medium text-muted">{{ t('repoDetail.connect.configure') }}</h3>
-          <AppButton variant="secondary" size="xs"
-            @click="copy(current.configure)"
-          >
-            {{ t('repoDetail.copy') }}
-          </AppButton>
+          <h3 class="text-xs font-medium text-muted">{{ configureLabel }}</h3>
+          <CopyButton :text="current.configure" :label="`${t('repoDetail.copy')}: ${configureLabel}`" />
         </div>
         <pre class="rounded-md border border-border bg-surface-hover p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-all">{{ current.configure }}</pre>
       </div>
 
-      <div v-if="current.publish">
+      <p v-if="readOnly" class="text-xs text-muted" data-testid="connect-read-only">{{ t('repoDetail.connect.readOnly') }}</p>
+      <div v-else-if="current.publish">
         <div class="flex items-center justify-between mb-1.5">
           <h3 class="text-xs font-medium text-muted">{{ t('repoDetail.connect.publish') }}</h3>
-          <AppButton variant="secondary" size="xs"
-            @click="copy(current.publish)"
-          >
-            {{ t('repoDetail.copy') }}
-          </AppButton>
+          <CopyButton :text="current.publish" :label="`${t('repoDetail.copy')}: ${t('repoDetail.connect.publish')}`" />
         </div>
         <pre class="rounded-md border border-border bg-surface-hover p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-all">{{ current.publish }}</pre>
       </div>
@@ -71,30 +64,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import AppButton from './AppButton.vue'
+import CopyButton from './ui/CopyButton.vue'
 import { clientSetup } from '../lib/installCommands'
 import { useDocsLink } from '../composables/useDocsLink'
-import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 
-const props = defineProps<{ format: string; repo: string }>()
+const props = defineProps<{
+  format: string
+  repo: string
+  /** The host already shows the "Connect a client" heading above the panel. */
+  titled?: boolean
+  /** A proxy or group repository cannot be published to: the panel only offers the commands that read from it. */
+  readOnly?: boolean
+}>()
 
 // The client-setup page lists the configure and publish commands of every client.
 const docsUrl = useDocsLink('repo-detail')
 
-const toasts = useToastStore()
 const active = ref(0)
 const setups = computed(() => clientSetup(props.format, window.location.origin, props.repo))
 const current = computed(() => setups.value[active.value])
+// A raw repository is read with a plain download, not a client configuration.
+const configureLabel = computed(() => (props.format === 'raw' ? t('repoDetail.connect.download') : t('repoDetail.connect.configure')))
 
 watch(setups, () => {
   active.value = 0
 })
-
-function copy(text: string): void {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => toasts.success(t('repoDetail.copied')))
-    .catch(() => toasts.error(t('repoDetail.urlCopyFailed')))
-}
 </script>

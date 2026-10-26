@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Tokens API
 
-8 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+9 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -119,6 +119,32 @@ Revoke an API token for the current user
 |---|---|---|
 | `204` | Token revoked | - |
 | `404` | Token not found | - |
+
+### `GET /api/v1/tokens`
+
+List tokens
+
+Personal, project and federation tokens in one list, newest first. A global admin sees every token; anyone else sees their own personal tokens plus the project and federation tokens of the projects they maintain or own. Secrets are never returned and revoked tokens are not listed. A non-admin needs an interactive session (an API token gets 403). Revoke with the per-type endpoints: `DELETE /api/v1/auth/tokens/{id}` (own personal), `DELETE /api/v1/admin/tokens/{tokenId}` (admin, any personal or project token), `DELETE /api/v1/projects/{project}/tokens/{tokenId}` and `DELETE /api/v1/repositories/{name}/federation/tokens/{tokenId}`.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `type` | query | string | no | One of: `personal`, `project`, `federation`. |
+| `project` | query | string | no | Project name: only that project's tokens and the federation tokens of its repositories (personal tokens never match). |
+| `expires_before` | query | string | no | RFC 3339 timestamp or `YYYY-MM-DD` date: only tokens that expire before it (already expired ones included; tokens without an expiry never match). |
+| `q` | query | string | no | Case-insensitive substring of the token name or owner. |
+| `page` | query | integer | no | Default: `1`. Minimum: 1. |
+| `limit` | query | integer | no | Default: `25`. Minimum: 1. Maximum: 100. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | One page of tokens | `application/json`: [UnifiedTokenList](schemas.md#unifiedtokenlist) |
+| `400` | Invalid type or expires_before | - |
+| `401` | Not authenticated | - |
+| `403` | A non-admin API token cannot list tokens | - |
 
 ### `GET /api/v1/users/{id}/tokens`
 

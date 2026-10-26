@@ -6,192 +6,221 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <PageHeader :title="t('projects.title')" :description="t('projects.description')">
+    <PageHeader :title="t('projects.title')" :description="session.isAdmin ? t('projects.descriptionAdmin') : t('projects.description')">
       <template #actions>
-        <label v-if="session.isAdmin" class="inline-flex items-center gap-2 text-sm text-foreground" :title="t('projects.allHint')">
-          <AppToggle v-model="showAll" :label="t('projects.all')" />
-          <span>{{ t('projects.all') }}</span>
-        </label>
-        <AppButton v-if="canCreate" variant="primary" data-testid="new-project" @click="openCreate">
+        <AppButton
+          variant="primary"
+          data-testid="new-project"
+          :disabled="blocked"
+          :aria-describedby="blocked ? 'project-create-blocked' : undefined"
+          @click="openCreate"
+        >
+          <PlusIcon class="h-4 w-4" aria-hidden="true" />
           {{ t('projects.new') }}
         </AppButton>
       </template>
     </PageHeader>
+    <p v-if="blocked" id="project-create-blocked" class="-mt-3 mb-4 text-sm text-muted" data-testid="create-blocked">
+      {{ t('projects.createBlocked') }}
+    </p>
 
-    <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
+    <FilterBar
+      :search="list.text.q"
+      :search-label="t('projects.search')"
+      :placeholder="t('projects.search')"
+      :active="list.filtered.value"
+      @update:search="(v) => list.setFilter('q', v)"
+      @clear="list.clear"
+    >
+      <SegmentedControl
+        v-if="session.isAdmin"
+        :options="scopeOptions"
+        :model-value="list.filters.value.scope"
+        :label="t('projects.scope')"
+        @update:model-value="(v) => list.setFilter('scope', v as ProjectScope)"
+      />
+    </FilterBar>
 
-    <div v-else-if="loadError" class="rounded-xl border border-danger/30 bg-surface p-8 text-center" role="alert">
-      <p class="text-sm text-danger">{{ loadError }}</p>
-      <AppButton variant="secondary" size="sm" class="mt-3" @click="load">{{ t('browser.retry') }}</AppButton>
-    </div>
-
-    <EmptyState
-      v-else-if="projects.length === 0"
-      :title="t('projects.empty')"
-      :description="showAll ? t('projects.emptyAll') : canCreate ? t('projects.emptyCanCreate') : t('projects.emptyHint')"
-      :docs-url="docsUrl"
-      :docs-label="t('docs.projects')"
-    />
-
-    <div v-else class="rounded-xl border border-border bg-surface overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full" :aria-label="t('projects.title')">
-          <thead>
-            <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.column.name') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.column.displayName') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.column.role') }}</th>
-              <th scope="col" class="text-right px-4 py-2.5">{{ t('projects.column.repositories') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="p in projects" :key="p.id ?? p.name" class="hover:bg-surface-hover/40 transition-colors" data-testid="project-row">
-              <td class="px-4 py-3">
-                <router-link
-                  :to="`/projects/${encodeURIComponent(p.name ?? '')}`"
-                  class="font-mono text-sm font-semibold text-foreground hover:text-primary transition-colors"
-                >{{ p.name }}</router-link>
-                <span v-if="p.is_system" class="ml-2 text-xs text-muted">{{ t('projects.builtIn') }}</span>
-              </td>
-              <td class="px-4 py-3 text-sm text-muted">{{ p.display_name && p.display_name !== p.name ? p.display_name : '' }}</td>
-              <td class="px-4 py-3"><ProjectRoleBadge :role="p.my_role" /></td>
-              <td class="px-4 py-3 text-right font-mono text-sm tabular-nums text-foreground">{{ p.repository_count ?? 0 }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <AdminDialog :open="createOpen" max-width="max-w-md" :title="t('projects.create.title')" @close="createOpen = false">
-      <form id="project-create-form" class="space-y-4" @submit.prevent="create">
-        <div>
-          <label for="new-project-name" class="block text-xs font-semibold text-foreground mb-1.5">
-            {{ t('projects.create.name') }} <span class="text-danger ml-0.5">*</span>
-          </label>
-          <input
-            id="new-project-name"
-            v-model="form.name"
-            type="text"
-            required
-            placeholder="my-project"
-            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary"
-          />
-          <p class="text-caption text-muted mt-1">{{ t('projects.create.nameHint') }}</p>
+    <ListTable
+      :columns="columns"
+      :caption="t('projects.title')"
+      :query="list"
+      :empty-title="emptyTitle"
+      :empty-hint="emptyHint"
+    >
+      <template #cell-name="{ row }">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <router-link
+              :to="`/projects/${encodeURIComponent(row.name ?? '')}`"
+              class="font-mono text-sm font-semibold text-foreground hover:text-primary"
+            >{{ row.name }}</router-link>
+            <span v-if="row.is_system" class="text-xs text-muted">{{ t('projects.builtIn') }}</span>
+          </div>
+          <p v-if="subtitle(row)" class="truncate text-xs text-muted">{{ subtitle(row) }}</p>
         </div>
-        <div>
-          <label for="new-project-display-name" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('projects.create.displayName') }}</label>
-          <input
-            id="new-project-display-name"
-            v-model="form.display_name"
-            type="text"
-            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm focus:ring-2 focus:ring-primary"
-          />
-        </div>
-        <div>
-          <label for="new-project-description" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('projects.create.description') }}</label>
-          <textarea
-            id="new-project-description"
-            v-model="form.description"
-            rows="3"
-            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm focus:ring-2 focus:ring-primary resize-none"
-          />
-        </div>
-        <p v-if="createError" class="text-sm text-danger" role="alert">{{ createError }}</p>
-      </form>
-      <template #footer>
-        <AppButton variant="secondary" size="sm" @click="createOpen = false">{{ t('common.cancel') }}</AppButton>
-        <AppButton variant="primary" size="sm" type="submit" form="project-create-form" :loading="creating" :disabled="!form.name.trim()">
-          {{ t('projects.create.action') }}
-        </AppButton>
       </template>
-    </AdminDialog>
+      <template #cell-role="{ row }">
+        <ProjectRoleBadge v-if="row.my_role" :role="row.my_role" />
+        <span v-else class="text-xs text-muted">{{ t('projects.notMember') }}</span>
+      </template>
+      <template #cell-members="{ row }">
+        <span class="tabular-nums">{{ row.member_count ?? '—' }}</span>
+      </template>
+      <template #cell-repositories="{ row }">
+        <router-link
+          v-if="row.repository_count"
+          :to="{ path: `/projects/${encodeURIComponent(row.name ?? '')}`, query: { tab: 'repositories' } }"
+          class="tabular-nums text-primary hover:underline"
+        >{{ row.repository_count }}</router-link>
+        <span v-else class="tabular-nums">{{ row.repository_count ?? 0 }}</span>
+      </template>
+      <template #cell-used="{ row }">
+        <ProjectQuotaCell :usage="row.usage" :quota="row.quota" />
+      </template>
+      <template #cell-created="{ row }">
+        <time :datetime="row.created_at" :title="formatDateTime(row.created_at)" class="text-xs text-muted">{{ timeAgo(row.created_at) }}</time>
+      </template>
+      <template #empty-action>
+        <div class="flex flex-col items-center gap-3">
+          <AppButton v-if="canCreate" variant="primary" @click="openCreate">{{ t('projects.new') }}</AppButton>
+          <DocsLink :url="docsUrl">{{ t('docs.projects') }}</DocsLink>
+        </div>
+      </template>
+    </ListTable>
+
+    <ProjectCreateDrawer :open="createOpen" @close="closeCreate" @created="onCreated" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import AdminDialog from '../components/AdminDialog.vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { PlusIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../components/AppButton.vue'
-import AppToggle from '../components/AppToggle.vue'
-import EmptyState from '../components/EmptyState.vue'
+import DocsLink from '../components/DocsLink.vue'
 import PageHeader from '../components/PageHeader.vue'
+import ProjectCreateDrawer from '../components/ProjectCreateDrawer.vue'
+import ProjectQuotaCell from '../components/ProjectQuotaCell.vue'
 import ProjectRoleBadge from '../components/ProjectRoleBadge.vue'
-import { createProject, listProjects, type Project } from '../api/projects'
-import { errorStatus } from '../lib/projectAccess'
-import { useSessionStore } from '../stores/session'
+import FilterBar from '../components/ui/FilterBar.vue'
+import ListTable, { type ListColumn } from '../components/ui/ListTable.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import { listProjects, type ProjectListItem } from '../api/projects'
 import { useDocsLink } from '../composables/useDocsLink'
-import { useToastStore } from '../stores/toast'
+import { useListQuery } from '../composables/useListQuery'
+import { enumParam, strParam } from '../composables/useUrlState'
+import { formatDateTime, timeAgo } from '../lib/datetime'
+import {
+  PROJECT_SCOPES,
+  PROJECT_SORTS,
+  createBlockedReason,
+  defaultScope,
+  effectiveScope,
+  queryProjects,
+  type ProjectScope,
+  type ProjectSort,
+} from '../lib/projectList'
+import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 
+const route = useRoute()
 const router = useRouter()
 const session = useSessionStore()
-const toasts = useToastStore()
+
 const docsUrl = useDocsLink('projects')
-
-const projects = ref<Project[]>([])
 const canCreate = ref(false)
-const showAll = ref(false)
-const loading = ref(true)
-const loadError = ref('')
+const loaded = ref(false)
+// The API list carries no paging or search: one fetch per scope, the rest is client side.
+let fetched: { scope: ProjectScope; items: ProjectListItem[] } | null = null
 
-let loadGeneration = 0
+const list = useListQuery({
+  filters: { scope: enumParam(PROJECT_SCOPES, defaultScope(session.isAdmin)), q: strParam() },
+  debounce: ['q'],
+  limit: 20,
+  sorts: PROJECT_SORTS,
+  fetch: async (req) => {
+    const scope = effectiveScope(session.isAdmin, req.filters.scope)
+    if (!fetched || fetched.scope !== scope) {
+      const res = await listProjects({ all: scope === 'all' })
+      fetched = { scope, items: res.projects }
+      canCreate.value = res.can_create
+      loaded.value = true
+    }
+    const { rows, total } = queryProjects(fetched.items, {
+      q: req.filters.q,
+      sort: req.sort as ProjectSort,
+      dir: req.dir,
+      page: req.page,
+      limit: req.limit,
+    })
+    return { rows, total }
+  },
+})
 
-async function load(): Promise<void> {
-  const generation = ++loadGeneration
-  loading.value = true
-  loadError.value = ''
-  try {
-    const res = await listProjects({ all: session.isAdmin && showAll.value })
-    if (generation !== loadGeneration) return
-    projects.value = res.projects
-    canCreate.value = res.can_create
-  } catch {
-    if (generation !== loadGeneration) return
-    loadError.value = t('projects.loadFailed')
-  } finally {
-    if (generation === loadGeneration) loading.value = false
-  }
+const blocked = computed(() => loaded.value && createBlockedReason(canCreate.value, session.isAdmin) !== null)
+
+const scopeOptions = computed(() => [
+  { value: 'mine', label: t('projects.scope.mine') },
+  { value: 'all', label: t('projects.scope.all') },
+])
+
+const columns = computed<ListColumn[]>(() => [
+  { key: 'name', label: t('projects.column.name'), sortable: true },
+  { key: 'role', label: t('projects.column.role'), sortable: true },
+  { key: 'members', label: t('projects.column.members'), sortable: true, align: 'end' },
+  { key: 'repositories', label: t('projects.column.repositories'), sortable: true, align: 'end' },
+  { key: 'used', label: t('projects.column.used'), sortable: true },
+  { key: 'created', label: t('projects.column.created'), sortable: true },
+])
+
+const mineOnly = computed(() => effectiveScope(session.isAdmin, list.filters.value.scope) === 'mine')
+const emptyTitle = computed(() => (mineOnly.value && !session.isAdmin ? t('projects.emptyMember') : t('projects.empty')))
+const emptyHint = computed(() =>
+  mineOnly.value
+    ? canCreate.value ? t('projects.emptyCanCreate') : t('projects.emptyHint')
+    : t('projects.emptyAll'),
+)
+
+function subtitle(p: ProjectListItem): string {
+  const display = p.display_name && p.display_name !== p.name ? p.display_name : ''
+  return display || p.description || ''
 }
 
-// Create dialog
+// Create drawer: `?new=1` (command palette) opens it; closing drops the parameter.
 const createOpen = ref(false)
-const creating = ref(false)
-const createError = ref('')
-const form = ref({ name: '', display_name: '', description: '' })
+
+function dropNewParam(): void {
+  if (route.query.new === undefined) return
+  const { new: _drop, ...query } = route.query
+  void router.replace({ query })
+}
 
 function openCreate(): void {
-  form.value = { name: '', display_name: '', description: '' }
-  createError.value = ''
   createOpen.value = true
 }
 
-async function create(): Promise<void> {
-  const name = form.value.name.trim()
-  if (!name || creating.value) return
-  creating.value = true
-  createError.value = ''
-  try {
-    // Only the fields a non-admin may send: policy stays with global admins.
-    await createProject({
-      name,
-      display_name: form.value.display_name.trim() || undefined,
-      description: form.value.description.trim() || undefined,
-    })
-    toasts.success(t('projects.create.done'))
-    createOpen.value = false
-    await router.push(`/projects/${encodeURIComponent(name)}`)
-  } catch (err) {
-    const status = errorStatus(err)
-    createError.value =
-      status === 409 ? t('projects.create.conflict')
-      : status === 403 ? t('projects.create.forbidden')
-      : t('projects.create.failed')
-  } finally {
-    creating.value = false
-  }
+function closeCreate(): void {
+  createOpen.value = false
+  dropNewParam()
 }
 
-watch(showAll, () => void load())
-onMounted(load)
+async function onCreated(name: string): Promise<void> {
+  createOpen.value = false
+  await router.push(`/projects/${encodeURIComponent(name)}`)
+}
+
+// The create permission arrives with the first list response, so `?new=1` waits for it.
+if (route.query.new !== undefined) {
+  const stop = watch(
+    loaded,
+    (ready) => {
+      if (!ready) return
+      stop()
+      if (canCreate.value || session.isAdmin) createOpen.value = true
+      else dropNewParam()
+    },
+    { immediate: true },
+  )
+}
 </script>

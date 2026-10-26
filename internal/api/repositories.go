@@ -188,97 +188,11 @@ func (h *RepositoriesHandler) RegisterAuthed(r chi.Router) {
 	r.Post("/api/v1/projects/{project}/repositories", h.handleCreateInProject)
 	r.Post("/api/v1/projects/{project}/repositories/{name}/transfer", h.handleTransfer)
 	r.Get("/api/v1/repositories/{name}/packages", h.handlePackages)
+	r.Get("/api/v1/repositories/{name}/packages/{id}", h.handlePackageDetail)
+	r.Get("/api/v1/packages/recent", h.handleRecentPackages)
 	r.Get("/api/v1/repositories/{name}/packages/{id}/download", h.handleDownloadPackage)
 	r.Get("/api/v1/repositories/{name}/members", h.handleGetMembers)
 	r.Put("/api/v1/repositories/{name}/members", h.handleUpdateMembers)
-}
-
-func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	formatFilter := q.Get("format")
-	page := min(parseIntMin(q.Get("page"), 1, 1), maxListPage)
-	limit := parseIntClamp(q.Get("limit"), 25, 1, 100)
-
-	ctx := r.Context()
-	p := currentPrincipal(r)
-
-	var (
-		repos []*models.Repository
-		total int
-	)
-
-	if p != nil && !p.IsAnonymous {
-		// Load the principal's permission targets once and match in memory:
-		// one query for the targets plus one per batch of repositories.
-		canRead, err := h.evaluator.RepoReadFilter(ctx, *p)
-		if err != nil {
-			h.log.Errorw("list repositories: permission lookup failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-
-		for dbPage := 1; ; dbPage++ {
-			batch, err := h.db.ListRepositories(ctx, dbPage, repoListBatch, formatFilter)
-			if err != nil {
-				h.log.Errorw("list repositories: db error", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
-
-			for _, repo := range batch {
-				ok, err := canRead(repo)
-				if err == nil && ok {
-					repos = append(repos, repo)
-				}
-			}
-
-			if len(batch) < repoListBatch {
-				break
-			}
-		}
-
-		total = len(repos)
-		start := (page - 1) * limit
-		if start >= total {
-			repos = nil
-		} else {
-			end := min(start+limit, total)
-			repos = repos[start:end]
-		}
-	} else {
-		var err error
-		repos, err = h.db.ListRepositories(ctx, page, limit, formatFilter)
-		if err != nil {
-			h.log.Errorw("list repositories: db error", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-
-		total, err = h.db.CountRepositories(ctx, formatFilter)
-		if err != nil {
-			h.log.Errorw("count repositories: db error", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-	}
-
-	filtered := make([]responses.RepositoryResponse, 0, len(repos))
-	projectNames := map[string]string{}
-
-	for _, repo := range repos {
-		filtered = append(filtered, h.repositoryResponse(ctx, repo, projectNames))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"total":        total,
-		"page":         page,
-		"limit":        limit,
-		"repositories": filtered,
-	})
 }
 
 func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -1433,90 +1347,6 @@ func (h *RepositoriesHandler) listComponents(ctx context.Context, repoID string,
 	return searcher.SearchComponents(ctx, repoID, opts)
 }
 
-// maxPackageQueryLen bounds the q search term of the package listing.
-const maxPackageQueryLen = 200
-
-func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	q := r.URL.Query()
-	formatFilter := q.Get("format")
-	page := min(parseIntMin(q.Get("page"), 1, 1), maxListPage)
-	limit := parseIntClamp(q.Get("limit"), 25, 1, 100)
-
-	search := strings.TrimSpace(q.Get("q"))
-	if len(search) > maxPackageQueryLen {
-		writeError(w, http.StatusBadRequest, "bad_request", "q is too long")
-		return
-	}
-
-	sortKey := q.Get("sort")
-	if sortKey != "" && sortKey != "created" && sortKey != "name" {
-		writeError(w, http.StatusBadRequest, "bad_request", "sort must be created or name")
-		return
-	}
-
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("packages: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-	if p != nil && !p.IsAnonymous {
-		ok, err := h.evaluator.Evaluate(ctx, *p, repo.Name, "", "read")
-		if err != nil || !ok {
-			writeError(w, http.StatusForbidden, "forbidden", "access denied")
-			return
-		}
-	}
-
-	components, total, err := h.listComponents(ctx, repo.ID, database.ComponentListOptions{
-		Format:     formatFilter,
-		Name:       q.Get("package_name"),
-		Query:      search,
-		SortByName: sortKey == "name",
-		Page:       page,
-		Limit:      limit,
-	})
-	if err != nil {
-		h.log.Errorw("packages: db error listing components", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	packages := make([]map[string]any, 0, len(components))
-	for _, c := range components {
-		packages = append(packages, map[string]any{
-			"id":         c.ID,
-			"name":       c.Name,
-			"version":    c.Version,
-			"format":     c.Format,
-			"arch":       c.Arch,
-			"size":       c.PackageSize,
-			"sha256":     c.SHA256,
-			"filename":   c.Filename,
-			"created_at": c.CreatedAt,
-		})
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"total":    total,
-		"page":     page,
-		"limit":    limit,
-		"packages": packages,
-	})
-}
-
 // handleDownloadPackage streams the blob of a package (by component ID) that
 // belongs to the repository named in the URL.
 //
@@ -1796,6 +1626,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		ttl, negTTL, maxStale := r.CacheTTLSeconds, r.NegativeCacheTTLSeconds, r.MaxStaleSeconds
 		resp.UpstreamURL = r.UpstreamURL
 		resp.UpstreamUsername = r.UpstreamUsername
+		resp.UpstreamPasswordSet = r.UpstreamPasswordEnc != ""
 		resp.CacheTTLSeconds = &ttl
 		resp.NegativeCacheTTLSeconds = &negTTL
 		resp.MaxStaleSeconds = &maxStale

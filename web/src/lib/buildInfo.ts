@@ -32,3 +32,13 @@ export function formatBuildTime(value: string | null | undefined): string | null
   const v = value.trim()
   return Number.isNaN(new Date(v).getTime()) ? v : formatDateTime(v)
 }
+
+/** True when the server was built without -ldflags: its version (`dev` or `unknown`) or its commit carries no stamp. */
+export function isUnstampedBuild(info: { version?: string | null; commit?: string | null }): boolean {
+  const version = info.version?.trim().toLowerCase()
+  return !version || version === 'dev' || !isStamped(version) || !isStamped(info.commit)
+}
+
+/** The link flags that stamp a build (names match the Makefile, Dockerfile and release config). */
+export const LDFLAGS_EXAMPLE =
+  'go build -ldflags "-X main.version=1.0.0 -X main.commit=$(git rev-parse --short HEAD) -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" ./cmd/server'

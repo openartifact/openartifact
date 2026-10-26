@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Admin API
 
-45 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+46 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -354,6 +354,30 @@ Create a global license policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+
+### `GET /api/v1/admin/quotas`
+
+List all quotas
+
+Every live repository and every project with its quota and live usage, largest usage first, in one request. A repository or project without a limit is listed as unlimited. Admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `scope` | query | string | no | One of: `repository`, `project`. |
+| `limited` | query | boolean | no | `true` keeps only quotas that enforce a limit. |
+| `q` | query | string | no | Case-insensitive substring of the repository or project name. |
+| `page` | query | integer | no | Default: `1`. Minimum: 1. |
+| `limit` | query | integer | no | Default: `500`. Minimum: 1. Maximum: 2000. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | One page of quotas | `application/json`: [QuotaOverviewList](schemas.md#quotaoverviewlist) |
+| `400` | Invalid scope | - |
+| `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/recovery/status`
 

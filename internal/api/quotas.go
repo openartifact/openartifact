@@ -44,6 +44,12 @@ func (h *QuotasHandler) RegisterRoutes(r chi.Router, pathPrefix string) {
 	r.Put(pathPrefix+"/quota", h.handleUpdateQuota)
 	r.Delete(pathPrefix+"/quota", h.handleDeleteQuota)
 	r.Post(pathPrefix+"/quota/reconcile", h.handleReconcileQuota)
+	r.Get(pathPrefix+"/usage", h.handleGetUsage)
+}
+
+// RegisterAdminRoutes registers the instance-wide quota overview.
+func (h *QuotasHandler) RegisterAdminRoutes(r chi.Router) {
+	r.Get("/api/v1/admin/quotas", h.handleListOverview)
 }
 
 func (h *QuotasHandler) handleGetQuota(w http.ResponseWriter, r *http.Request) {

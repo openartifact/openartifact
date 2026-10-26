@@ -8,8 +8,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import SectionTabs from '../SectionTabs.vue'
 import RepoHeader from '../RepoHeader.vue'
-import ProjectHeader from '../ProjectHeader.vue'
-import type { Project } from '../../api/projects'
 
 function makeRouter() {
   return createRouter({
@@ -48,45 +46,11 @@ describe('SectionTabs', () => {
 })
 
 describe('the one tab convention', () => {
-  it('RepoHeader and ProjectHeader both render their sections through SectionTabs', () => {
+  it('RepoHeader renders its sections through SectionTabs', () => {
     const repo = mount(RepoHeader, {
       props: { name: 'r', repo: null, active: 'main' },
       global: { plugins: [makeRouter(), createPinia()] },
     })
     expect(repo.findComponent(SectionTabs).exists()).toBe(true)
-
-    const project: Project = { name: 'p', my_role: 'viewer' }
-    const proj = mount(ProjectHeader, {
-      props: { name: 'p', project, active: 'overview' },
-      global: { plugins: [makeRouter(), createPinia()] },
-    })
-    expect(proj.findComponent(SectionTabs).exists()).toBe(true)
-  })
-
-  it('ProjectHeader lists no tabs until the project is loaded', () => {
-    const wrapper = mount(ProjectHeader, {
-      props: { name: 'p', project: null, active: 'overview' },
-      global: { plugins: [makeRouter(), createPinia()] },
-    })
-    expect(wrapper.findComponent(SectionTabs).exists()).toBe(false)
-  })
-
-  it('ProjectHeader links the overview without a tab query and the rest with ?tab=', () => {
-    const wrapper = mount(ProjectHeader, {
-      props: { name: 'my p', project: { name: 'my p', my_role: 'owner' }, active: 'members', counts: { members: 4 } },
-      global: { plugins: [makeRouter(), createPinia()] },
-    })
-    const hrefs = wrapper.findAll('nav a').map((a) => a.attributes('href'))
-    expect(hrefs).toEqual([
-      '/projects/my%20p',
-      '/projects/my%20p?tab=repositories',
-      '/projects/my%20p?tab=usage',
-      '/projects/my%20p?tab=members',
-      '/projects/my%20p?tab=tokens',
-      '/projects/my%20p?tab=activity',
-      '/projects/my%20p?tab=settings',
-    ])
-    expect(wrapper.find('nav a[aria-current="page"]').text()).toContain('Members')
-    expect(wrapper.find('nav a[aria-current="page"]').text()).toContain('4')
   })
 })

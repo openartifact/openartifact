@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 HTTP callbacks for repository and artifact events, signed with HMAC-SHA256, retried with backoff and logged per delivery.
 
-A webhook is either global (fires for events in every repository) or scoped to one repository. All management routes are admin only; they are also in the UI under Admin, Webhooks.
+A webhook is either global (fires for events in every repository) or scoped to one repository. All management routes are admin only; they are also in the UI under **Settings > Webhooks** (`/settings/webhooks`).
 
 ## Events
 

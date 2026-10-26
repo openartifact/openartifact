@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, spyOn, type Mock } from 'bun:test'
-import { mount, flushPromises, type DOMWrapper } from '@vue/test-utils'
+import { mount, flushPromises, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import MemberTable from '../MemberTable.vue'
 import RoleSelect from '../RoleSelect.vue'
@@ -27,48 +27,79 @@ const GROUPS: ProjectGroup[] = [
 let fetchSpy: Mock<typeof fetch>
 
 function mountTable(project: Project, members = MEMBERS, groups = GROUPS, status = 200) {
+  document.body.innerHTML = ''
   fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
     status >= 400 ? json({ error: 'x' }, status) : json({}),
   )
-  return mount(MemberTable, { props: { project, members, groups }, global: { plugins: [createPinia()] } })
+  return mount(MemberTable, {
+    props: { project, members, groups },
+    global: { plugins: [createPinia()] },
+    attachTo: document.body,
+  })
 }
 
 const disabledOptions = (select: DOMWrapper<Element>) =>
   select.findAll('option').filter((o) => (o.element as HTMLOptionElement).disabled).map((o) => o.attributes('value'))
 
+const memberRows = (w: VueWrapper) => w.findAll('table')[0]!.findAll('tbody tr')
+const groupRows = (w: VueWrapper) => w.findAll('table')[1]!.findAll('tbody tr')
+const isDisabled = (row: DOMWrapper<Element>, tag: 'select' | 'button') => (row.find(tag).element as HTMLSelectElement).disabled
+
+/** The drawer is teleported to the body: its select and options are read from there. */
+function drawerSelect(id: string): HTMLSelectElement {
+  return document.body.querySelector(`#${id}`) as HTMLSelectElement
+}
+const optionValues = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.value)
+const disabledValues = (select: HTMLSelectElement) => Array.from(select.options).filter((o) => o.disabled).map((o) => o.value)
+
+async function type(selector: string, value: string): Promise<void> {
+  const el = document.body.querySelector(selector) as HTMLInputElement | HTMLSelectElement
+  el.value = value
+  el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input'))
+  await flushPromises()
+}
+
+async function submit(formId: string): Promise<void> {
+  ;(document.body.querySelector(formId) as HTMLFormElement).dispatchEvent(new Event('submit', { cancelable: true }))
+  await flushPromises()
+}
+
 describe('MemberTable escalation rules', () => {
-  it('lets an owner grant every member role and edit every row', () => {
+  it('lets an owner grant every member role and edit every row', async () => {
     const wrapper = mountTable({ name: 'p', my_role: 'owner', owner_id: 'u1' })
-    const add = wrapper.find('[data-testid="member-add"] select')
-    expect(add.findAll('option').map((o) => o.attributes('value'))).toEqual(['viewer', 'developer', 'maintainer', 'owner'])
-    expect(disabledOptions(add)).toEqual([])
-    const rows = wrapper.findAll('[data-testid="member-row"]')
+    await wrapper.get('[data-testid="member-add"]').trigger('click')
+    await flushPromises()
+    const add = drawerSelect('member-new-role')
+    expect(optionValues(add)).toEqual(['viewer', 'developer', 'maintainer', 'owner'])
+    expect(disabledValues(add)).toEqual([])
+    const rows = memberRows(wrapper)
     // u1 is the recorded owner: protected; the others are editable.
-    expect((rows[0]!.find('select').element as HTMLSelectElement).disabled).toBe(true)
-    expect((rows[1]!.find('select').element as HTMLSelectElement).disabled).toBe(false)
-    expect((rows[2]!.find('select').element as HTMLSelectElement).disabled).toBe(false)
+    expect(isDisabled(rows[0]!, 'select')).toBe(true)
+    expect(isDisabled(rows[1]!, 'select')).toBe(false)
+    expect(isDisabled(rows[2]!, 'select')).toBe(false)
   })
 
-  it('disables the maintainer and owner roles for a maintainer, and locks their rows', () => {
+  it('disables the maintainer and owner roles for a maintainer, and locks their rows', async () => {
     const wrapper = mountTable({ name: 'p', my_role: 'maintainer', owner_id: 'u1' })
-    const add = wrapper.find('[data-testid="member-add"] select')
-    expect(disabledOptions(add)).toEqual(['maintainer', 'owner'])
+    await wrapper.get('[data-testid="member-add"]').trigger('click')
+    await flushPromises()
+    expect(disabledValues(drawerSelect('member-new-role'))).toEqual(['maintainer', 'owner'])
 
-    const rows = wrapper.findAll('[data-testid="member-row"]')
-    const locked = (i: number) => (rows[i]!.find('select').element as HTMLSelectElement).disabled
-    expect(rows.map((_, i) => locked(i))).toEqual([true, true, true, false, false])
+    const rows = memberRows(wrapper)
+    expect(rows.map((r) => isDisabled(r, 'select'))).toEqual([true, true, true, false, false])
 
     // A developer row stays editable, but the caller still cannot pick maintainer/owner.
     expect(disabledOptions(rows[3]!.find('select'))).toEqual(['maintainer', 'owner'])
-    const removeButtons = rows.map((r) => (r.find('button').element as HTMLButtonElement).disabled)
-    expect(removeButtons).toEqual([true, true, true, false, false])
+    expect(rows.map((r) => isDisabled(r, 'button'))).toEqual([true, true, true, false, false])
 
-    const groupAdd = wrapper.find('[data-testid="group-attach"] select')
-    expect(groupAdd.findAll('option').map((o) => o.attributes('value'))).toEqual(['viewer', 'developer', 'maintainer'])
-    expect(disabledOptions(groupAdd)).toEqual(['maintainer'])
-    const groupRows = wrapper.findAll('[data-testid="group-row"]')
-    expect((groupRows[0]!.find('select').element as HTMLSelectElement).disabled).toBe(true)
-    expect((groupRows[1]!.find('select').element as HTMLSelectElement).disabled).toBe(false)
+    await wrapper.get('[data-testid="group-attach"]').trigger('click')
+    await flushPromises()
+    const groupAdd = drawerSelect('group-new-role')
+    expect(optionValues(groupAdd)).toEqual(['viewer', 'developer', 'maintainer'])
+    expect(disabledValues(groupAdd)).toEqual(['maintainer'])
+    const rowsOfGroups = groupRows(wrapper)
+    expect(isDisabled(rowsOfGroups[0]!, 'select')).toBe(true)
+    expect(isDisabled(rowsOfGroups[1]!, 'select')).toBe(false)
   })
 
   it('protects the last owner even when the caller is an owner', () => {
@@ -77,10 +108,10 @@ describe('MemberTable escalation rules', () => {
       { user_id: 'u4', username: 'dev', role: 'developer' },
     ]
     const wrapper = mountTable({ name: 'p', my_role: 'owner', owner_id: 'someone-else' }, members)
-    const rows = wrapper.findAll('[data-testid="member-row"]')
-    expect((rows[0]!.find('select').element as HTMLSelectElement).disabled).toBe(true)
-    expect((rows[0]!.find('button').element as HTMLButtonElement).disabled).toBe(true)
-    expect((rows[1]!.find('select').element as HTMLSelectElement).disabled).toBe(false)
+    const rows = memberRows(wrapper)
+    expect(isDisabled(rows[0]!, 'select')).toBe(true)
+    expect(isDisabled(rows[0]!, 'button')).toBe(true)
+    expect(isDisabled(rows[1]!, 'select')).toBe(false)
   })
 
   it('renders read-only roles for a developer', () => {
@@ -98,12 +129,13 @@ describe('MemberTable escalation rules', () => {
     expect(wrapper.find('[data-testid="members-system"]').exists()).toBe(true)
   })
 
-  it('adds a member by username with the chosen role and asks the page to reload', async () => {
+  it('adds a member from the drawer with the chosen role and asks the page to reload', async () => {
     const wrapper = mountTable({ name: 'p', my_role: 'maintainer', owner_id: 'u1' })
-    await wrapper.find('#member-username').setValue('newbie')
-    await wrapper.find('[data-testid="member-add"] select').setValue('developer')
-    await wrapper.find('[data-testid="member-add"]').trigger('submit')
+    await wrapper.get('[data-testid="member-add"]').trigger('click')
     await flushPromises()
+    await type('#member-username', 'newbie')
+    await type('#member-new-role', 'developer')
+    await submit('#member-add-form')
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(String(url)).toBe('/api/v1/projects/p/members')
     expect((init as RequestInit).method).toBe('POST')
@@ -111,10 +143,9 @@ describe('MemberTable escalation rules', () => {
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 
-  it('changes a member role with PATCH', async () => {
+  it('changes a member role with PATCH and no confirmation', async () => {
     const wrapper = mountTable({ name: 'p', my_role: 'owner', owner_id: 'u1' })
-    const row = wrapper.findAll('[data-testid="member-row"]')[3]!
-    await row.find('select').setValue('maintainer')
+    await memberRows(wrapper)[3]!.find('select').setValue('maintainer')
     await flushPromises()
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(String(url)).toBe('/api/v1/projects/p/members/u4')
@@ -122,12 +153,21 @@ describe('MemberTable escalation rules', () => {
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ role: 'maintainer' })
   })
 
-  it('attaches a group by name', async () => {
+  it('asks for confirmation before removing a member', async () => {
     const wrapper = mountTable({ name: 'p', my_role: 'owner', owner_id: 'u1' })
-    await wrapper.find('#group-name').setValue('release team')
-    await wrapper.find('[data-testid="group-attach"] select').setValue('maintainer')
-    await wrapper.find('[data-testid="group-attach"]').trigger('submit')
+    await memberRows(wrapper)[3]!.find('button').trigger('click')
     await flushPromises()
+    expect(fetchSpy.mock.calls).toHaveLength(0)
+    expect(document.body.textContent).toContain('Remove this member?')
+  })
+
+  it('attaches a group by name from the drawer', async () => {
+    const wrapper = mountTable({ name: 'p', my_role: 'owner', owner_id: 'u1' })
+    await wrapper.get('[data-testid="group-attach"]').trigger('click')
+    await flushPromises()
+    await type('#group-name', 'release team')
+    await type('#group-new-role', 'maintainer')
+    await submit('#group-attach-form')
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(String(url)).toBe('/api/v1/projects/p/groups/release%20team')
     expect((init as RequestInit).method).toBe('PUT')
@@ -136,7 +176,7 @@ describe('MemberTable escalation rules', () => {
 
   it('still asks the page to reload when a change is rejected', async () => {
     const wrapper = mountTable({ name: 'p', my_role: 'owner', owner_id: 'u1' }, MEMBERS, GROUPS, 409)
-    await wrapper.findAll('[data-testid="member-row"]')[3]!.find('select').setValue('viewer')
+    await memberRows(wrapper)[3]!.find('select').setValue('viewer')
     await flushPromises()
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })

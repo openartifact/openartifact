@@ -250,7 +250,7 @@ OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
 ## Audit log
 
-The server records who changed what. Events are stored in the `audit_logs` table and shown under Admin, Audit in the UI.
+The server records who changed what. Events are stored in the `audit_logs` table and shown under **Settings > Audit log** (`/settings/audit`) in the UI.
 
 Members of a project read the slice that concerns them (the project's own events and those of its repositories) without admin rights: see [project activity](../security/projects.md#project-activity).
 
@@ -274,7 +274,7 @@ curl -H "Authorization: Bearer <TOKEN>" \
 | `actor` | | case-insensitive substring of the actor |
 | `action` | | case-insensitive substring of the action |
 
-The response is `{"data":[...],"page":1,"per_page":25,"total":N}`, newest first. Each entry has `id`, `timestamp`, `action`, `actor`, `target`, `details`, `ip`, `repository_id`, `resource_type` and `resource_id`.
+The response is `{"data":[...],"page":1,"per_page":25,"total":N}`, newest first. Each entry has `id`, `timestamp`, `action`, `actor`, `actor_name`, `subject`, `target`, `details`, `ip`, `repository_id`, `resource_type` and `resource_id`. `actor_name` is the name recorded with the event, else the user's current name, else `system` for background work. `subject` is what the event acted on, `{"kind","name","version?","repository?","project?"}` (kinds such as `repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `setting`), resolved from ids with one lookup per page; it is `null` for events that name nothing (logins, generic request rows). A subject that was deleted keeps the name its event recorded (trash events do), else `name` is `null`. The export keeps its field set.
 
 ### Export
 
@@ -315,7 +315,7 @@ Fields, in this order. The set is stable: fields may be appended, never renamed 
 
 Unset values are `null` in JSONL and an empty cell in CSV. CSV is RFC 4180 (quoted cells, doubled quotes, newlines allowed inside quotes). To keep spreadsheets from running attacker-controlled text, a CSV cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading `'`; read JSONL when you need the exact value.
 
-Members of a project export the project's own activity with `GET /api/v1/projects/{project}/activity/export` (same `format`, `since`, `until`, `actor` and `action` parameters, file name `openartifact-<project>-activity-<timestamp>.<ext>`). It applies the same visibility rules as the [project activity](../security/projects.md#project-activity) feed: `project.token_*` events only for maintainers and above and no client addresses. Its fields are `id`, `timestamp`, `action`, `actor`, `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. The Admin, Audit page and the project's Activity section have **Export JSONL** and **Export CSV** buttons for the same downloads (the admin button applies the filters typed on the page).
+Members of a project export the project's own activity with `GET /api/v1/projects/{project}/activity/export` (same `format`, `since`, `until`, `actor` and `action` parameters, file name `openartifact-<project>-activity-<timestamp>.<ext>`). It applies the same visibility rules as the [project activity](../security/projects.md#project-activity) feed: `project.token_*` events only for maintainers and above and no client addresses. Its fields are `id`, `timestamp`, `action`, `actor`, `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. The **Settings > Audit log** section and the project's Activity tab have **Export JSONL** and **Export CSV** buttons for the same downloads (the admin button applies the filters typed on the page).
 
 #### Shipping the log to a SIEM
 

@@ -18,3 +18,26 @@ WITH doomed AS (
 DELETE FROM audit_logs a
 USING doomed d
 WHERE a.id = d.id;
+
+-- name: ResolveAuditNames :many
+-- Display names of the entities one audit page refers to, one primary-key
+-- lookup arm per kind so a page costs a single round trip however many rows it
+-- has. Entities that no longer exist simply yield no row.
+SELECT 'user'::text AS kind, id::text AS id, username::text AS name
+FROM auth_users WHERE id = ANY(sqlc.arg(user_ids)::uuid[])
+UNION ALL
+SELECT 'group', id::text, name::text FROM auth_groups WHERE id = ANY(sqlc.arg(group_ids)::uuid[])
+UNION ALL
+SELECT 'repository', id::text, name::text FROM repositories WHERE id = ANY(sqlc.arg(repository_ids)::uuid[])
+UNION ALL
+SELECT 'project', id::text, name::text FROM projects WHERE id = ANY(sqlc.arg(project_ids)::uuid[])
+UNION ALL
+SELECT 'permission_target', id::text, name::text FROM permission_targets WHERE id = ANY(sqlc.arg(permission_target_ids)::uuid[])
+UNION ALL
+SELECT 'gpg_key', id::text, name::text FROM gpg_keys WHERE id = ANY(sqlc.arg(gpg_key_ids)::uuid[])
+UNION ALL
+SELECT 'sso_provider', id::text, slug::text FROM auth_sso_providers WHERE id = ANY(sqlc.arg(sso_provider_ids)::uuid[])
+UNION ALL
+SELECT 'bundle', id::text, (name || ' ' || version)::text FROM release_bundles WHERE id = ANY(sqlc.arg(bundle_ids)::uuid[])
+UNION ALL
+SELECT 'token', id::text, name::text FROM auth_tokens WHERE id = ANY(sqlc.arg(token_ids)::uuid[]);

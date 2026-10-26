@@ -498,7 +498,7 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindNuGet, IDs: []string{pkg.ID}, Resource: nupkgName(packageID, version)}, func() error {
+	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindNuGet, IDs: []string{pkg.ID}, Resource: nupkgName(packageID, version), Package: packageID, Version: version}, func() error {
 		if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
 			return fmt.Errorf("delete nuget package: %w", err)
 		}

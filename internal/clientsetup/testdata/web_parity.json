@@ -83,7 +83,7 @@
       },
       {
         "client": "twine",
-        "configure": "# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = https://artifacts.example.com:8443/repos/repo1/\nusername = \u003cUSERNAME\u003e\npassword = \u003cTOKEN\u003e",
+        "configure": "# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = https://artifacts.example.com:8443/repos/repo1/legacy/\nusername = \u003cUSERNAME\u003e\npassword = \u003cTOKEN\u003e",
         "publish": "twine upload --repository openartifact dist/*"
       }
     ]
@@ -100,7 +100,7 @@
       },
       {
         "client": "twine",
-        "configure": "# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = https://artifacts.example.com:8443/repos/my%20repo/\nusername = \u003cUSERNAME\u003e\npassword = \u003cTOKEN\u003e",
+        "configure": "# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = https://artifacts.example.com:8443/repos/my%20repo/legacy/\nusername = \u003cUSERNAME\u003e\npassword = \u003cTOKEN\u003e",
         "publish": "twine upload --repository openartifact dist/*"
       }
     ]
@@ -217,7 +217,7 @@
     "snippets": [
       {
         "client": "cargo",
-        "configure": "# ~/.cargo/config.toml\n[registries.repo1]\nindex = \"sparse+https://artifacts.example.com:8443/repos/repo1/index/\"\ntoken = \"\u003cTOKEN\u003e\"",
+        "configure": "# ~/.cargo/config.toml\n[registries.repo1]\nindex = \"sparse+https://artifacts.example.com:8443/repos/repo1/index/\"\ntoken = \"Bearer \u003cTOKEN\u003e\"",
         "publish": "cargo publish --registry repo1"
       }
     ]
@@ -230,7 +230,7 @@
     "snippets": [
       {
         "client": "cargo",
-        "configure": "# ~/.cargo/config.toml\n[registries.my repo]\nindex = \"sparse+https://artifacts.example.com:8443/repos/my%20repo/index/\"\ntoken = \"\u003cTOKEN\u003e\"",
+        "configure": "# ~/.cargo/config.toml\n[registries.my repo]\nindex = \"sparse+https://artifacts.example.com:8443/repos/my%20repo/index/\"\ntoken = \"Bearer \u003cTOKEN\u003e\"",
         "publish": "cargo publish --registry my repo"
       }
     ]
@@ -294,7 +294,7 @@
       {
         "client": "gem",
         "configure": "gem sources --add https://artifacts.example.com:8443/repos/repo1/",
-        "publish": "GEM_HOST_API_KEY=\u003cTOKEN\u003e gem push my-gem-1.0.0.gem --host https://artifacts.example.com:8443/repos/repo1"
+        "publish": "GEM_HOST_API_KEY=\"Bearer \u003cTOKEN\u003e\" gem push my-gem-1.0.0.gem --host https://artifacts.example.com:8443/repos/repo1"
       }
     ]
   },
@@ -307,7 +307,7 @@
       {
         "client": "gem",
         "configure": "gem sources --add https://artifacts.example.com:8443/repos/my%20repo/",
-        "publish": "GEM_HOST_API_KEY=\u003cTOKEN\u003e gem push my-gem-1.0.0.gem --host https://artifacts.example.com:8443/repos/my%20repo"
+        "publish": "GEM_HOST_API_KEY=\"Bearer \u003cTOKEN\u003e\" gem push my-gem-1.0.0.gem --host https://artifacts.example.com:8443/repos/my%20repo"
       }
     ]
   },

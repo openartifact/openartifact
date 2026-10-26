@@ -3,9 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { downloadAttachment, request } from './client'
-import type { AuditEntry, GetApiV1AdminAuditData, GetApiV1AdminAuditResponses } from './generated/types.gen'
+import type {
+  AuditEntry,
+  AuditSubject,
+  GetApiV1AdminAuditData,
+  GetApiV1AdminAuditResponses,
+} from './generated/types.gen'
 
-export type { AuditEntry }
+export type { AuditEntry, AuditSubject }
 
 /**
  * Filters understood by `GET /api/v1/admin/audit`. `limit` is sent as

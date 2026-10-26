@@ -99,14 +99,18 @@ func (h *AdminAuditHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resolved := resolveAuditEntries(r.Context(), h.db, h.log, result.Logs)
+
 	data := make([]any, 0, len(result.Logs))
-	for _, log := range result.Logs {
+	for i, log := range result.Logs {
 		details := parseDetailsJSON(log.DetailsJSON)
 		data = append(data, map[string]any{
 			"id":            log.ID,
 			"timestamp":     log.CreatedAt,
 			"action":        log.Action,
 			"actor":         extractActor(details),
+			"actor_name":    resolved[i].actorName,
+			"subject":       resolved[i].subject,
 			"target":        log.ResourceID,
 			"details":       details,
 			"ip":            log.IPAddress,

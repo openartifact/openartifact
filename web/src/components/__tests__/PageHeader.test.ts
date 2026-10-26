@@ -66,10 +66,16 @@ describe('PageHeader', () => {
     expect(w.find('#a').exists()).toBe(true)
   })
 
-  it('omits the nav when the route declares no crumbs', async () => {
+  it('shows the page itself as the only crumb when the route declares none', async () => {
     const w = await mountAt('/repos/demo', undefined)
-    expect(w.find('nav').exists()).toBe(false)
+    expect(w.findAll('nav li').map((i) => i.text())).toEqual(['Page title'])
+    expect(w.get('nav span[aria-current="page"]').text()).toBe('Page title')
     expect(w.get('h1').text()).toBe('Page title')
+  })
+
+  it('renders the breadcrumb on a top-level page with a single crumb', async () => {
+    const w = await mountAt('/repos/demo', [{ key: 'nav.repositories' }])
+    expect(w.findAll('nav li').map((i) => i.text())).toEqual(['Repositories'])
   })
 
   it('lets the crumbs prop override the route trail', async () => {

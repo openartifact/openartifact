@@ -46,13 +46,14 @@ Global admins only. Turning self_create on lets any human user create projects (
 
 List projects
 
-List the projects the caller holds a role in, each with my_role and repository_count; with all=true, every project (global administrators only, others get 403). can_create tells whether the caller may create a project (global admin, or any human user while the projects.self_create setting is on).
+List the projects the caller holds a role in, each with my_role, repository_count, member_count (direct members), usage and quota (computed for the whole list with grouped queries); with all=true, every project (global administrators only, others get 403). can_create tells whether the caller may create a project (global admin, or any human user while the projects.self_create setting is on).
 
 **Parameters**
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
 | `all` | query | boolean | no | List every project instead of only the caller's own. Global administrators only. Default: `false`. |
+| `q` | query | string | no | Case-insensitive substring of the project name, slug or display name. |
 
 **Responses**
 
@@ -65,7 +66,7 @@ Fields of the `200` response (`application/json`):
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `can_create` | boolean | no | - |
-| `projects` | array of [Project](schemas.md#project) | no | - |
+| `projects` | array of [ProjectListItem](schemas.md#projectlistitem) | no | - |
 
 ### `POST /api/v1/projects`
 
@@ -172,7 +173,7 @@ Audit events of the project and of the repositories it owns (member, group, toke
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | One page of activity | `application/json`: [ProjectActivityPage](schemas.md#projectactivitypage) |
+| `200` | One page of activity | `application/json`: [ActivityPage](schemas.md#activitypage) |
 | `400` | Malformed cursor | - |
 | `404` | Project not found or the caller is not a member | - |
 

@@ -99,7 +99,7 @@ curl -X POST HOST/api/v1/projects/PROJECT/cleanup-policies \
   -d '{"name":"keep-10","enabled":true,"keep_last_n":10}'
 ```
 
-In the web UI they are in the project's **Settings** section under **Cleanup defaults**, next to a note that a repository's own enabled policy overrides them.
+In the web UI they are in the project's **Settings** tab (`/projects/NAME?tab=settings`) under **Cleanup defaults**, next to a note that a repository's own enabled policy overrides them.
 
 ## Docker registry garbage collection
 
@@ -164,6 +164,8 @@ The recount is a single statement over one snapshot of the tables and is exact w
 | Method and path | Auth | Purpose |
 |---|---|---|
 | `GET /api/v1/repositories/{repo}/quota` | `read` on the repository | Limits and current usage. |
+| `GET /api/v1/repositories/{repo}/usage` | admin, project maintainer | Packages, versions, stored bytes, newest publish and the quota in one object (`limit_bytes` absent when unlimited). |
+| `GET /api/v1/admin/quotas` | admin | Every repository and project with its limit and live usage in one request (`scope`, `limited`, `q`, `page`, `limit`). |
 | `PUT /api/v1/repositories/{repo}/quota` | admin | Set `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent` (partial: unset fields are unchanged). Negative limits and a threshold outside 0-100 are `400 validation_failed`. |
 | `DELETE /api/v1/repositories/{repo}/quota` | admin | Reset both limits to unlimited (`204`); usage counters are kept. |
 | `POST /api/v1/repositories/{repo}/quota/reconcile` | admin | Recompute the usage counters from the package rows (see [above](#keeping-the-counters-correct)); returns the quota. Limits are unchanged. |
@@ -203,4 +205,4 @@ curl -X PUT HOST/api/v1/projects/PROJECT/quota \
 
 ### In the web UI
 
-Every member sees the project's **Usage** section: stored size and artifact count, the project quota as a bar that turns amber at the warning threshold and red at the limit, and a table with the size, artifact count and limits of each repository (proxy and group rows read "Not metered"). The project's **Settings** section shows the quota: global admins edit it there, owners and maintainers see it read-only.
+A repository's own limit and cleanup policies are in the **Settings** tab of the repository (`/repos/NAME?tab=settings`, sections **Quota** and **Cleanup policies**); administrators see every repository and project with its limit and usage in **Settings > Quotas** (`/settings/quotas`) and the cleanup policies in **Settings > Cleanup policies** (`/settings/cleanup`). Every member sees the project's **Usage** tab: stored size and artifact count, the project quota as a bar that turns amber at the warning threshold and red at the limit, and a table with the size, artifact count and limits of each repository (proxy and group rows read "Not metered"). The same tab shows the project quota: global admins edit it there, owners and maintainers see it read-only.

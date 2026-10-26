@@ -451,6 +451,9 @@ func (a *app) registerScanningRoutes() {
 
 	quotasHandler := api.NewQuotasHandler(log, db, evaluator)
 	quotasHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
+	quotasHandler.RegisterAdminRoutes(authedAPI)
+
+	api.NewRepositoryActivityHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 
 	propertiesHandler := api.NewPropertiesHandler(log, db, blobStore)
 	propertiesHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
@@ -480,6 +483,8 @@ func (a *app) registerVulnRoutes() {
 	vulnHandler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scannerRegistry).WithTasks(a.tasks).WithScanHook(a.onScanned)
 	vulnHandler.RegisterRoutes(a.web.authed, "/api/v1/repositories/{name}")
 	vulnHandler.RegisterOverviewRoutes(a.web.authed)
+
+	api.NewSecurityHandler(a.db, a.log, a.web.evaluator, scannerRegistry, a.feat.sbomGen, a.feat.envAI).RegisterRoutes(a.web.authed)
 }
 
 // onScanned pushes a stored scan to Dependency-Track and attaches its

@@ -237,6 +237,10 @@ func (d *pzDB) CountRepositoriesByProject(context.Context, []string) (map[string
 	return map[string]int{}, nil
 }
 
+func (d *pzDB) ListProjectStats(context.Context, []string) (map[string]*models.ProjectStats, error) {
+	return map[string]*models.ProjectStats{}, nil
+}
+
 func (d *pzDB) AddProjectMember(_ context.Context, projectID, userID, role string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

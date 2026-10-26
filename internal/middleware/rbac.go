@@ -680,14 +680,15 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 	segs := strings.Split(strings.Trim(strings.TrimPrefix(escapedPath, "/api/v1/"), "/"), "/")
 
 	switch {
-	case isSafeMethod(method) && len(segs) == 1 && (segs[0] == "repositories" || segs[0] == "search"):
-		// Handlers filter per repository (RepoReadFilter / per-hit Evaluate).
+	case isFilteredListRoute(method, segs):
+		// Handlers filter per repository (RepoReadFilter / per-hit Evaluate) or
+		// per caller (the unified token list).
 		// The action stays "manage" so that an anonymous principal, which the
 		// pass-through does not cover, can never satisfy it (the handlers'
 		// anonymous branch is unfiltered).
 		return routeScope{action: "manage", anyAuthenticated: true}
-	case isSafeMethod(method) && len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]):
-		return routeScope{action: "read", repoName: segs[1]}
+	case isReadOnlyRoute(method, segs):
+		return classifyReadOnlyRoute(segs)
 	case len(segs) >= 3 && segs[0] == "repositories" && isPlainName(segs[1]) && slices.Contains(repoDataSegments(), segs[2]):
 		switch method {
 		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
@@ -716,16 +717,88 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 	return manage
 }
 
+// isFilteredListRoute reports whether segs (of an /api/v1/ path) is a list the
+// handler filters for the caller: the repositories, the search and the recent
+// packages (per repository), and the unified token list (own personal tokens,
+// the tokens of the caller's projects, everything for an admin).
+func isFilteredListRoute(method string, segs []string) bool {
+	if !isSafeMethod(method) {
+		return false
+	}
+
+	switch len(segs) {
+	case 1:
+		return segs[0] == "repositories" || segs[0] == "search" || (method == http.MethodGet && segs[0] == "tokens")
+	case 2:
+		return segs[0] == "packages" && segs[1] == "recent"
+	}
+
+	return false
+}
+
+// isReadOnlyRoute reports whether (method, segs) is a read-only route with its
+// own scope: GET repository/{name}, the security findings routes or the
+// counts-only repository security summary.
+func isReadOnlyRoute(method string, segs []string) bool {
+	return isSafeMethod(method) && (len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]) ||
+		isSecurityFindingsRoute(method, segs) || isRepoSecuritySummaryRoute(method, segs))
+}
+
+// classifyReadOnlyRoute is the scope of a route isReadOnlyRoute accepted.
+func classifyReadOnlyRoute(segs []string) routeScope {
+	if segs[0] == "security" {
+		// The findings handlers scope the result to the repositories of the
+		// projects the caller maintains or owns (all of them for a global
+		// admin) and answer 403 to everyone else; "manage" keeps anonymous
+		// callers out, as for the repository lists.
+		return routeScope{action: "manage", anyAuthenticated: true}
+	}
+
+	// A repository, or its counts-only security summary: anyone who can read it.
+	return routeScope{action: "read", repoName: segs[1]}
+}
+
+// isSecurityFindingsRoute reports whether segs (of an /api/v1/ path) is the
+// cross-type findings list, its summary or its export (read-only).
+func isSecurityFindingsRoute(method string, segs []string) bool {
+	if !isSafeMethod(method) || len(segs) < 2 || len(segs) > 3 || segs[0] != "security" || segs[1] != "findings" {
+		return false
+	}
+
+	return len(segs) == 2 || segs[2] == "summary" || segs[2] == "export"
+}
+
+// isRepoSecuritySummaryRoute reports whether segs (of an /api/v1/ path) is
+// GET repositories/{name}/security/summary, the counts-only security summary.
+func isRepoSecuritySummaryRoute(method string, segs []string) bool {
+	return isSafeMethod(method) && len(segs) == 4 && segs[0] == "repositories" && isPlainName(segs[1]) &&
+		segs[2] == "security" && segs[3] == "summary"
+}
+
+// isDelegatedRepoReadOrQuota reports whether {name}/{leaf} is a delegated
+// route of a repository: any quota route but the reconcile POST (a different
+// path depth), and the GET usage, activity and members reads.
+func isDelegatedRepoReadOrQuota(method, leaf string) bool {
+	switch leaf {
+	case "quota":
+		return method != http.MethodPost
+	case "usage", "activity", "members":
+		return method == http.MethodGet
+	default:
+		return false
+	}
+}
+
 // delegatedRepoName returns the repository of a route whose administration is
 // delegated to project maintainers and owners (global manage still passes):
-// PATCH/DELETE repository/{name}, the cleanup-policy routes and the quota
-// routes of the repository, or "" for any other route. The one exception in the
+// PATCH/DELETE repository/{name}, the cleanup-policy routes, the quota routes
+// and the GET usage, activity and members routes of the repository, or "" for any other route. The one exception in the
 // quota family, POST .../quota/reconcile, stays administrative.
 func delegatedRepoName(method string, segs []string) string {
 	switch {
 	case len(segs) == 2 && segs[0] == "repository" && (method == http.MethodPatch || method == http.MethodDelete):
 	case len(segs) >= 3 && len(segs) <= 5 && segs[0] == "repositories" && segs[2] == "cleanup-policies":
-	case len(segs) == 3 && segs[0] == "repositories" && segs[2] == "quota" && method != http.MethodPost:
+	case len(segs) == 3 && segs[0] == "repositories" && isDelegatedRepoReadOrQuota(method, segs[2]):
 	default:
 		return ""
 	}
@@ -870,20 +943,23 @@ func isSPARepoPath(segments []string) bool {
 		return false
 	}
 
-	switch len(segments) {
-	case 2: // /repos/{name}, /repos/new
+	switch {
+	case len(segments) == 2: // /repos/{name}
 		return true
-	case 3: // /repos/{name}/edit|settings|browse|graph|trash
+	case len(segments) == 3: // legacy /repos/{name}/edit|settings|browse|graph|trash, redirected client-side
 		switch segments[2] {
 		case "edit", "settings", "browse", "graph", "trash":
 			return true
 		}
 
 		return false
-	case 5: // /repos/{name}/packages/{format}/{pkg}
-		return segments[2] == "packages"
 	default:
-		return false
+		// /repos/{name}/packages/{package...}[/versions/{version...}] and the
+		// legacy /repos/{name}/packages/{format}/{package}: package names may
+		// hold "/" (npm scope, docker image path, go module), so any depth
+		// under the literal "packages" segment is the artifact page. No format
+		// handler registers a route under that literal.
+		return segments[2] == "packages"
 	}
 }
 

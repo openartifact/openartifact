@@ -7,8 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <AdminDialog
     :open="open"
-    :eyebrow="t('sec.vex.eyebrow')"
-    :title="`${t('sec.vex.decisionFor')} ${vulnId}`"
+    :eyebrow="t('security.vex.eyebrow')"
+    :title="`${t('security.vex.decisionFor')} ${vulnId}`"
     :description="`${repo} · ${artifactLabel ?? artifactId}`"
     max-width="max-w-lg"
     @close="close"
@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span v-if="existing.created_by">· {{ existing.created_by }}</span>
       </div>
 
-      <FormField id="vex-status" :label="t('sec.vex.field.status')">
+      <FormField id="vex-status" :label="t('security.vex.field.status')">
         <select id="vex-status" v-model="form.status" :class="inputClass" data-testid="vex-status">
           <option v-for="s in VEX_STATUSES" :key="s" :value="s">{{ vexStatusLabel(s) }}</option>
         </select>
@@ -29,8 +29,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <FormField
         v-if="form.status === 'not_affected'"
         id="vex-justification"
-        :label="t('sec.vex.field.justification')"
-        :hint="t('sec.vex.field.justificationHint')"
+        :label="t('security.vex.field.justification')"
+        :hint="t('security.vex.field.justificationHint')"
         :error="errorText('justification')"
       >
         <select
@@ -43,12 +43,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           :class="inputClass"
           data-testid="vex-justification"
         >
-          <option value="" disabled>{{ t('sec.vex.field.justification') }}</option>
+          <option value="" disabled>{{ t('security.vex.field.justification') }}</option>
           <option v-for="j in VEX_JUSTIFICATIONS" :key="j" :value="j">{{ vexJustificationLabel(j) }}</option>
         </select>
       </FormField>
 
-      <FormField id="vex-impact" :label="t('sec.vex.field.impact')" :hint="t('sec.vex.field.impactHint')" :error="errorText('impact')">
+      <FormField id="vex-impact" :label="t('security.vex.field.impact')" :hint="t('security.vex.field.impactHint')" :error="errorText('impact')">
         <textarea
           id="vex-impact"
           v-model="form.impact"
@@ -59,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
       </FormField>
 
-      <FormField id="vex-action" :label="t('sec.vex.field.action')" :hint="t('sec.vex.field.actionHint')" :error="errorText('action')">
+      <FormField id="vex-action" :label="t('security.vex.field.action')" :hint="t('security.vex.field.actionHint')" :error="errorText('action')">
         <textarea
           id="vex-action"
           v-model="form.action"
@@ -74,14 +74,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Nested so clicks inside it are not "outside" this dialog. -->
     <ConfirmDialog
       :open="confirmOpen"
-      :title="t('sec.vex.deleteTitle')"
+      :title="t('security.vex.deleteTitle')"
       :description="`${vulnId} · ${artifactLabel ?? artifactId}`"
-      :confirm-label="t('sec.vex.delete')"
+      :confirm-label="t('security.vex.delete')"
       :busy="deleting"
       @confirm="remove"
       @close="confirmOpen = false"
     >
-      {{ t('sec.vex.deleteDescription') }}
+      {{ t('security.vex.deleteDescription') }}
     </ConfirmDialog>
 
     <template #footer>
@@ -94,13 +94,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         data-testid="vex-delete"
         @click="confirmOpen = true"
       >
-        {{ t('sec.vex.deleteDecision') }}
+        {{ t('security.vex.deleteDecision') }}
       </AppButton>
       <AppButton variant="secondary" size="md" :disabled="busy" @click="close">
         {{ t('common.cancel') }}
       </AppButton>
       <AppButton variant="primary" size="md" :loading="saving" :disabled="busy" data-testid="vex-save" @click="save">
-        {{ saving ? t('sec.vex.saving') : t('sec.vex.save') }}
+        {{ saving ? t('security.vex.saving') : t('security.vex.save') }}
       </AppButton>
     </template>
   </AdminDialog>
@@ -170,7 +170,7 @@ const errors = computed<VexFormErrors>(() => validateVexForm(form.value))
 
 function errorText(field: keyof VexFormErrors): string | undefined {
   const code = attempted.value ? errors.value[field] : undefined
-  return code ? t(`sec.vex.error.${code}`) : undefined
+  return code ? t(`security.vex.error.${code}`) : undefined
 }
 
 // Every time the dialog opens (or another decision is edited) it starts from the recorded decision.
@@ -195,10 +195,10 @@ async function save(): Promise<void> {
   saving.value = true
   try {
     const record = await putVexStatement(props.repo, vexDecisionBody(props.artifactId, props.vulnId, form.value))
-    toasts.success(t('sec.vex.saved'))
+    toasts.success(t('security.vex.saved'))
     emit('saved', record)
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('sec.vex.saveFailed'))
+    toasts.error(err instanceof Error ? err.message : t('security.vex.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -210,11 +210,11 @@ async function remove(): Promise<void> {
   deleting.value = true
   try {
     await deleteVexStatement(props.repo, id)
-    toasts.success(t('sec.vex.deleted'))
+    toasts.success(t('security.vex.deleted'))
     confirmOpen.value = false
     emit('deleted', id)
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('sec.vex.deleteFailed'))
+    toasts.error(err instanceof Error ? err.message : t('security.vex.deleteFailed'))
   } finally {
     deleting.value = false
   }

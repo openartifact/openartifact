@@ -57,6 +57,9 @@ describe('emptyTrashResultText', () => {
   it('reports the purged count', () => {
     expect(emptyTrashResultText(3, 0)).toBe('Purged 3 items from the trash.')
   })
+  it('uses the singular for a single item', () => {
+    expect(emptyTrashResultText(1, 1)).toBe('Purged 1 item from the trash. 1 item remains; empty the trash again.')
+  })
   it('mentions what is left when the request was capped', () => {
     expect(emptyTrashResultText(1000, 250)).toBe('Purged 1000 items from the trash. 250 items remain; empty the trash again.')
   })

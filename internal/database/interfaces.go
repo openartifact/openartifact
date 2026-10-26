@@ -73,6 +73,26 @@ type Database interface {
 	// GetRepoComponentBlob resolves a package-listing row id (any format) to its
 	// blob, scoped to repoID. Returns nil, nil when the id is not in that repository.
 	GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error)
+	// GetRepoComponentDetail resolves a package-listing row id (any format) to
+	// the row with its stored metadata, scoped to repoID. Returns nil, nil when
+	// the id is not in that repository.
+	GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error)
+	// RepoCatalogStats returns the stored size, quota and security aggregates of
+	// the repositories, one entry per id, and the newest-package time when
+	// withLastPublished.
+	RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error)
+	// CountRepoPackageNames returns the number of distinct package names of
+	// each repository, one entry per id.
+	CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error)
+	// ListRepoPackageRollup lists a repository's packages, one row per package
+	// (latest version, version count, latest size), with the total.
+	ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error)
+	// ArtifactSecurity returns the scan state of the listed package rows of a
+	// repository by row id; rows never scanned have no entry.
+	ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error)
+	// ListRecentPackages returns the newest package versions across repoIDs,
+	// newest first, at most limit.
+	ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error)
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
 	// GetComponentBySHA256 returns the live rpm or deb package in a repository whose blob has the given sha256, or nil.
@@ -392,6 +412,12 @@ type Database interface {
 	InsertAuditLog(ctx context.Context, event *models.AuditLog) error
 	ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error)
 	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
+	// ListUnifiedTokens pages the personal, project and federation tokens the
+	// caller may see (params.Admin: all), newest first, with the matching total.
+	ListUnifiedTokens(ctx context.Context, params models.TokenListParams) ([]*models.TokenListItem, int, error)
+	// ResolveAuditNames looks up the display names of the entities one audit
+	// page refers to with a single query; entities that were deleted are absent.
+	ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error)
 
 	// Cleanup policy methods
 	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
@@ -533,6 +559,12 @@ type Database interface {
 	GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
+	// ListQuotaOverview pages every live repository and project with its limits
+	// and live usage, largest usage first, with the matching total.
+	ListQuotaOverview(ctx context.Context, params models.QuotaListParams) ([]*models.QuotaOverview, int, error)
+	// GetRepositoryUsage counts the packages and versions a repository holds
+	// and when the newest was created (scans that repository's rows).
+	GetRepositoryUsage(ctx context.Context, repoID string) (*models.RepositoryUsage, error)
 	// ListStorageQuotas returns the limits of every repository quota row (backup export).
 	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
@@ -562,6 +594,8 @@ type Database interface {
 	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
 	// StorageBackendBusyReason says why a backend must not change kind/config ("" = idle).
 	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
+	// StorageTierUsage returns blob counts and bytes per placement ("" = primary store).
+	StorageTierUsage(ctx context.Context) ([]models.TierUsage, error)
 	UpdateStorageBackendStatus(ctx context.Context, id, status string, message *string) error
 
 	DeleteArtifactProperty(ctx context.Context, repoID, artifactID, key string) error
@@ -592,6 +626,9 @@ type Database interface {
 	ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error
 	// ListProjectRepositories returns one page of the project's live repositories and their total.
 	ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error)
+	// ListProjectStats returns the member count, usage and size ceiling of the
+	// given projects with grouped queries (one round trip for the whole page).
+	ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error)
 	// CountRepositoriesByProject returns the live repository count per project ID.
 	CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error)
 	// CreateProjectToken mints a project token: service user, membership and
@@ -701,6 +738,19 @@ type Database interface {
 	ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error)
 	// VulnScanOverviewSummary counts the overview's scans, optionally of one repository (by name).
 	VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error)
+	// ListSecurityFindings returns one keyset page of the vuln, license, secret and AI findings
+	// within a scope, worst first (ErrInvalidFindingFilter for an unknown type, severity or status
+	// or a page size below 1).
+	ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error)
+	// SecurityFindingsSummary counts findings per type and the scanned repositories of a scope.
+	SecurityFindingsSummary(ctx context.Context, filter models.FindingFilter) (*models.FindingsSummary, error)
+	// SecurityHealthStats returns the instance-wide scan queue and coverage numbers.
+	SecurityHealthStats(ctx context.Context) (*models.SecurityHealthStats, error)
+	// LatestFinishedDependencyTrackPush returns the outcome of the latest finished push, nil when none.
+	LatestFinishedDependencyTrackPush(ctx context.Context) (*models.DependencyTrackLastPush, error)
+	// RepoSecuritySummary returns the counts-only security state of a repository, narrowed to a
+	// package and version when they are not empty.
+	RepoSecuritySummary(ctx context.Context, repoID, packageName, version string) (*models.RepoSecuritySummary, error)
 	SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
 	GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error)
 	// SetLicenseScanQuarantine quarantines (true) or approves (false) the artifact of one license scan result.

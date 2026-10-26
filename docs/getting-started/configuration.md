@@ -118,7 +118,7 @@ PostgreSQL is the only supported database.
 
 ### Branding (`branding`)
 
-White-label name, logos, colour and links; administrators can override each value at runtime (Administration > Branding), and a runtime value wins. Details, image rules and the attribution that cannot be hidden: [White-label branding](../operations/branding.md).
+White-label name, logos, colour and links; administrators can override each value at runtime (**Settings > Branding**), and a runtime value wins. Details, image rules and the attribution that cannot be hidden: [White-label branding](../operations/branding.md).
 
 | Environment variable | YAML key | Default | Description |
 |---|---|---|---|
@@ -314,7 +314,7 @@ Signs SBOM and VEX attestations (`?attest=true`); see [SBOM and VEX](../security
 |---|---|---|---|
 | `ATTESTATION_KEY_PATH` | `keyPath` | empty | Unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: an ECDSA P-256 key is generated on first use and stored encrypted in the database |
 
-The Dependency-Track integration has no file or environment settings: it is configured in the admin UI or through the API ([Dependency-Track](../security/dependency-track.md)).
+The Dependency-Track integration has no file or environment settings: it is configured in **Settings > Dependency-Track** or through the API ([Dependency-Track](../security/dependency-track.md)).
 
 ### Logging (`log`)
 
@@ -343,7 +343,7 @@ Bytes of deleted blobs are removed later by a sweeper; see [deferred blob deleti
 
 ### Projects (`projects`)
 
-See [Projects](../security/projects.md). An administrator can change `selfCreate` in the UI (Admin > Projects) or through `PUT /api/v1/admin/projects/settings`; once saved, the stored value takes precedence over this default and applies immediately.
+See [Projects](../security/projects.md). An administrator can change `selfCreate` in the UI (**Settings > Project creation policy**) or through `PUT /api/v1/admin/projects/settings`; once saved, the stored value takes precedence over this default and applies immediately.
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|

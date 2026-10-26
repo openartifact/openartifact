@@ -95,6 +95,10 @@ type RepositoryResponse struct {
 	// the API would accept (the trash tab needs delete, emptying it manage).
 	Permissions *RepositoryPermissions `json:"permissions,omitempty"`
 
+	// Stats is the repository's catalog figures. It is only set by the
+	// repository list.
+	Stats *RepositoryStats `json:"stats,omitempty"`
+
 	// PresignDownloads overrides the global storage.presignDownloads setting:
 	// null inherits it, true redirects blob downloads to presigned URLs, false
 	// always streams through the server.
@@ -116,11 +120,14 @@ type RepositoryResponse struct {
 	Federated bool `json:"federated"`
 
 	// Proxy repositories only. The upstream password is never returned.
-	UpstreamURL             string `json:"upstream_url,omitempty"`
-	UpstreamUsername        string `json:"upstream_username,omitempty"`
-	CacheTTLSeconds         *int   `json:"cache_ttl_seconds,omitempty"`
-	NegativeCacheTTLSeconds *int   `json:"negative_cache_ttl_seconds,omitempty"`
-	MaxStaleSeconds         *int   `json:"max_stale_seconds,omitempty"`
+	UpstreamURL      string `json:"upstream_url,omitempty"`
+	UpstreamUsername string `json:"upstream_username,omitempty"`
+	// UpstreamPasswordSet says a password is stored for the upstream. The
+	// password itself is write-only: no response ever carries it.
+	UpstreamPasswordSet     bool `json:"upstream_password_set,omitempty"`
+	CacheTTLSeconds         *int `json:"cache_ttl_seconds,omitempty"`
+	NegativeCacheTTLSeconds *int `json:"negative_cache_ttl_seconds,omitempty"`
+	MaxStaleSeconds         *int `json:"max_stale_seconds,omitempty"`
 }
 
 // RepositoryPermissions reports which actions the calling principal may perform on one repository.
@@ -169,6 +176,14 @@ type StorageBackendResponse struct {
 	LastCheckedAt *string        `json:"last_checked_at"`
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at"`
+	// Usage is what the backend holds. Present on the list and get endpoints.
+	Usage *StorageBackendUsage `json:"usage,omitempty"`
+}
+
+// StorageBackendUsage is the blob count and byte total placed on one backend.
+type StorageBackendUsage struct {
+	BlobCount int64 `json:"blob_count"`
+	SizeBytes int64 `json:"size_bytes"`
 }
 
 // SSOProviderResponse represents an SSO provider in API responses.
@@ -216,6 +231,28 @@ type ProjectResponse struct {
 	// IsSystem marks the built-in system project ("unassigned"): it grants
 	// nothing and cannot be deleted.
 	IsSystem bool `json:"is_system"`
+}
+
+// ProjectListItem is one project of GET /api/v1/projects: the project with
+// its member count, usage and quota.
+type ProjectListItem struct {
+	ProjectResponse
+
+	// MemberCount is the number of direct members (group grants not counted).
+	MemberCount int               `json:"member_count"`
+	Usage       ProjectListUsage  `json:"usage"`
+	Quota       *ProjectListQuota `json:"quota,omitempty"`
+}
+
+// ProjectListUsage is the stored size across the project's repositories.
+type ProjectListUsage struct {
+	SizeBytes int64 `json:"size_bytes"`
+}
+
+// ProjectListQuota is the project's size ceiling; the object is omitted when
+// the project has no size limit.
+type ProjectListQuota struct {
+	LimitBytes int64 `json:"limit_bytes"`
 }
 
 // ProjectMemberResponse represents a project member in API responses.
@@ -289,6 +326,52 @@ type StorageQuotaResponse struct {
 	IsExceeded           bool   `json:"is_exceeded"`
 	CreatedAt            string `json:"created_at"`
 	UpdatedAt            string `json:"updated_at"`
+}
+
+// QuotaLine is a quota next to its live usage. Limits are omitted when
+// unlimited.
+type QuotaLine struct {
+	LimitBytes *int64 `json:"limit_bytes,omitempty"`
+	UsedBytes  int64  `json:"used_bytes"`
+	// SoftLimitBytes is the usage at which the warning threshold is crossed
+	// (LimitBytes times WarnThresholdPercent), set with LimitBytes.
+	SoftLimitBytes       *int64 `json:"soft_limit_bytes,omitempty"`
+	WarnThresholdPercent int    `json:"warn_threshold_percent"`
+	MaxArtifactCount     *int64 `json:"max_artifact_count,omitempty"`
+	ArtifactCount        int64  `json:"artifact_count"`
+	// UsagePercent is UsedBytes of LimitBytes (0 when unlimited); Exceeded is
+	// true once the size or the artifact count limit is reached.
+	UsagePercent int  `json:"usage_percent"`
+	Exceeded     bool `json:"exceeded"`
+}
+
+// RepositoryUsageResponse is GET /api/v1/repositories/{name}/usage.
+type RepositoryUsageResponse struct {
+	PackageCount    int64     `json:"package_count"`
+	VersionCount    int64     `json:"version_count"`
+	SizeBytes       int64     `json:"size_bytes"`
+	LastPublishedAt *string   `json:"last_published_at,omitempty"`
+	Quota           QuotaLine `json:"quota"`
+}
+
+// QuotaOverviewItem is one repository or project of GET /api/v1/admin/quotas.
+type QuotaOverviewItem struct {
+	QuotaLine
+
+	// Scope is "repository" or "project".
+	Scope string `json:"scope"`
+	Name  string `json:"name"`
+	// Project is the project owning a repository (omitted for a project line
+	// and for a repository without one).
+	Project string `json:"project,omitempty"`
+}
+
+// QuotaOverviewList is GET /api/v1/admin/quotas.
+type QuotaOverviewList struct {
+	Quotas []QuotaOverviewItem `json:"quotas"`
+	Total  int                 `json:"total"`
+	Page   int                 `json:"page"`
+	Limit  int                 `json:"limit"`
 }
 
 // ProjectQuotaResponse is a project's storage ceiling and its live usage (the
@@ -568,13 +651,67 @@ type ProjectActivityEntry struct {
 	RepositoryID *string `json:"repository_id"`
 }
 
-// ProjectActivityPage is GET /api/v1/projects/{project}/activity: keyset paging
-// only, no total. NextCursor is empty when HasMore is false.
-type ProjectActivityPage struct {
-	Data       []ProjectActivityEntry `json:"data"`
-	PerPage    int                    `json:"per_page"`
-	HasMore    bool                   `json:"has_more"`
-	NextCursor string                 `json:"next_cursor,omitempty"`
+// UnifiedTokenResponse is one token of GET /api/v1/tokens, whatever its kind:
+// personal (type "personal", Owner is the user), project (Project, Role, Owner
+// is the creator) or federation (Repository, Project when the repository
+// belongs to one). The secret is never returned.
+type UnifiedTokenResponse struct {
+	ID         string   `json:"id"`
+	Type       string   `json:"type"`
+	Name       string   `json:"name"`
+	Owner      string   `json:"owner"`
+	Project    string   `json:"project,omitempty"`
+	Repository string   `json:"repository,omitempty"`
+	Role       string   `json:"role,omitempty"`
+	Scopes     []string `json:"scopes,omitempty"`
+	CreatedAt  string   `json:"created_at"`
+	ExpiresAt  *string  `json:"expires_at,omitempty"`
+	LastUsedAt *string  `json:"last_used_at,omitempty"`
+	// Expired is true once ExpiresAt has passed; a token without an expiry never expires.
+	Expired bool `json:"expired"`
+}
+
+// UnifiedTokenList is GET /api/v1/tokens.
+type UnifiedTokenList struct {
+	Tokens []UnifiedTokenResponse `json:"tokens"`
+	Total  int                    `json:"total"`
+	Page   int                    `json:"page"`
+	Limit  int                    `json:"limit"`
+}
+
+// AuditSubject names what an audit event acted on, resolved server-side so
+// clients do not look ids up. Name is null when the subject is gone and the
+// event did not record its name.
+type AuditSubject struct {
+	// Kind is repository, package, project, user, group, token, bundle,
+	// permission_target, gpg_key, sso_provider, setting, or the raw
+	// resource_type of an event kind without a dedicated one.
+	Kind    string  `json:"kind"`
+	Name    *string `json:"name"`
+	Version string  `json:"version,omitempty"`
+	// Repository and Project name the repository and project the event belongs to.
+	Repository string `json:"repository,omitempty"`
+	Project    string `json:"project,omitempty"`
+}
+
+// ActivityEntry is a ProjectActivityEntry with the actor's and the subject's
+// names resolved. It is the entry of the project and repository activity feeds.
+type ActivityEntry struct {
+	ProjectActivityEntry
+
+	// ActorName is the user, token owner or "system" behind the event ("" when unknown).
+	ActorName string        `json:"actor_name"`
+	Subject   *AuditSubject `json:"subject"`
+}
+
+// ActivityPage is GET /api/v1/projects/{project}/activity and
+// GET /api/v1/repositories/{name}/activity: keyset paging only, no total.
+// NextCursor is empty when HasMore is false.
+type ActivityPage struct {
+	Data       []ActivityEntry `json:"data"`
+	PerPage    int             `json:"per_page"`
+	HasMore    bool            `json:"has_more"`
+	NextCursor string          `json:"next_cursor,omitempty"`
 }
 
 // VulnScanOverviewRowResponse is one scan of the cross-repository overview:

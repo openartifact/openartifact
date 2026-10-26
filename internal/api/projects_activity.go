@@ -5,12 +5,14 @@
 package api
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 const (
@@ -58,33 +60,30 @@ func (h *ProjectsHandler) handleListActivity(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	resp := responses.ProjectActivityPage{
-		Data:    make([]responses.ProjectActivityEntry, 0, len(page.Logs)),
+	writeJSON(w, http.StatusOK, activityPage(r.Context(), h.db, h.log, page, perPage))
+}
+
+// activityPage renders one page of audit rows as an activity feed page, names
+// resolved.
+func activityPage(ctx context.Context, db database.Database, log *logger.Logger, page *models.AuditPage, perPage int) responses.ActivityPage {
+	resp := responses.ActivityPage{
+		Data:    activityEntries(ctx, db, log, page.Logs),
 		PerPage: perPage,
 		HasMore: page.Next != nil,
-	}
-
-	for _, l := range page.Logs {
-		resp.Data = append(resp.Data, activityEntry(l))
 	}
 
 	if page.Next != nil {
 		resp.NextCursor = encodeAuditCursor(page.Next)
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
 func activityEntry(l *models.AuditLog) responses.ProjectActivityEntry {
-	var details struct {
-		Message string `json:"message"`
-		Actor   string `json:"actor"`
-	}
+	return activityEntryFrom(l, parseAuditDetails(l.DetailsJSON))
+}
 
-	// A row whose details are not the {"message","actor"} object (the generic
-	// request rows carry other keys) just has neither.
-	_ = json.Unmarshal(l.DetailsJSON, &details)
-
+func activityEntryFrom(l *models.AuditLog, details auditDetails) responses.ProjectActivityEntry {
 	return responses.ProjectActivityEntry{
 		ID:           l.ID,
 		Timestamp:    formatTime(l.CreatedAt),

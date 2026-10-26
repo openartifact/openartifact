@@ -87,15 +87,17 @@ type FederationDeferredResponse struct {
 
 // FederationStatusResponse is the federation state of a repository.
 type FederationStatusResponse struct {
-	Enabled    bool                      `json:"enabled"`
-	Supported  bool                      `json:"supported"`
-	InstanceID string                    `json:"instance_id"`
-	LogID      string                    `json:"log_id"`
-	HeadSeq    int64                     `json:"head_seq"`
-	Units      int64                     `json:"units"`
-	Tombstones int64                     `json:"tombstones"`
-	Peers      []FederationPeerResponse  `json:"peers"`
-	Tokens     []FederationTokenResponse `json:"tokens"`
+	Enabled   bool `json:"enabled"`
+	Supported bool `json:"supported"`
+	// ServerEnabled is federation.enabled; Supported is false while it is off.
+	ServerEnabled bool                      `json:"server_enabled"`
+	InstanceID    string                    `json:"instance_id"`
+	LogID         string                    `json:"log_id"`
+	HeadSeq       int64                     `json:"head_seq"`
+	Units         int64                     `json:"units"`
+	Tombstones    int64                     `json:"tombstones"`
+	Peers         []FederationPeerResponse  `json:"peers"`
+	Tokens        []FederationTokenResponse `json:"tokens"`
 }
 
 // FederationHandler serves the federation admin API of a repository.
@@ -228,9 +230,10 @@ func tokenResponse(t *federation.Token) FederationTokenResponse {
 // status builds the federation status of a repository.
 func (h *FederationHandler) status(ctx context.Context, repo *models.Repository) (*FederationStatusResponse, error) {
 	out := &FederationStatusResponse{
-		Supported: h.supported(repo),
-		Peers:     []FederationPeerResponse{},
-		Tokens:    []FederationTokenResponse{},
+		Supported:     h.supported(repo),
+		ServerEnabled: h.serverEnabled,
+		Peers:         []FederationPeerResponse{},
+		Tokens:        []FederationTokenResponse{},
 	}
 
 	instance, err := h.store.InstanceID(ctx)

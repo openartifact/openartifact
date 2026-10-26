@@ -2,31 +2,81 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, ApiError, JSON_HEADERS } from './client'
-import { pagedResponse, emptyPaged, type PagedResult } from './transform'
-import type { AdminToken, Token, TokenCreateResponse } from './generated/types.gen'
+import { request, JSON_HEADERS } from './client'
+import type { TokenCreateResponse } from './generated/types.gen'
 
-export type ApiToken = Token
-export type { AdminToken }
 export type CreatedToken = TokenCreateResponse
 
-function empty(): PagedResult<ApiToken> {
-  return emptyPaged<ApiToken>()
+export type TokenType = 'personal' | 'project' | 'federation'
+
+/** One row of the unified token list. The secret is never part of it. */
+export interface UnifiedToken {
+  id: string
+  type: TokenType
+  name: string
+  /** Username: the owner (personal) or the creator (project, federation). */
+  owner: string
+  /** Project of a project token, or of the repository a federation token belongs to. */
+  project?: string
+  /** Repository of a federation token. */
+  repository?: string
+  /** Project role of a project token. */
+  role?: string
+  /** Permission targets a personal token is limited to. */
+  scopes?: string[]
+  created_at: string
+  expires_at?: string
+  last_used_at?: string
+  expired: boolean
 }
 
-// --- Self-service ---
+export interface UnifiedTokenPage {
+  tokens: UnifiedToken[]
+  total: number
+  page: number
+  limit: number
+}
 
-export async function listMyTokens(): Promise<PagedResult<ApiToken>> {
-  try {
-    const raw = await request<Record<string, unknown>>('/api/v1/auth/tokens')
-    return pagedResponse<ApiToken>(raw)
-  } catch (err) {
-    if (err instanceof ApiError && (err.status === 404 || err.status === 501)) return empty()
-    throw err
+export interface TokenListParams {
+  /** Omitted: every type. */
+  type?: TokenType
+  /** RFC 3339: only tokens that expire before it (already expired ones included). */
+  expiresBefore?: string
+  q?: string
+  /** Project name: its project tokens and the federation tokens of its repositories. */
+  project?: string
+  page?: number
+  limit?: number
+}
+
+const enc = encodeURIComponent
+
+/** Personal, project and federation tokens in one list; admins see all, others what they own or maintain. */
+export async function listTokens(params: TokenListParams = {}): Promise<UnifiedTokenPage> {
+  const qs = new URLSearchParams()
+  if (params.type) qs.set('type', params.type)
+  if (params.expiresBefore) qs.set('expires_before', params.expiresBefore)
+  if (params.q) qs.set('q', params.q)
+  if (params.project) qs.set('project', params.project)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.limit) qs.set('limit', String(params.limit))
+  const query = qs.toString()
+  const res = await request<Partial<UnifiedTokenPage>>(`/api/v1/tokens${query ? `?${query}` : ''}`)
+  return {
+    tokens: res.tokens ?? [],
+    total: res.total ?? res.tokens?.length ?? 0,
+    page: res.page ?? params.page ?? 1,
+    limit: res.limit ?? params.limit ?? 25,
   }
 }
 
-export async function createMyToken(body: { name: string; kind: 'access' | 'deploy'; expires_at?: string }): Promise<CreatedToken> {
+/** Personal token of the caller: `kind: deploy` cannot reach the management API. */
+export function createMyToken(body: {
+  name: string
+  kind: 'access' | 'deploy'
+  scopes?: string[]
+  expires_at?: string
+}): Promise<CreatedToken> {
   return request<CreatedToken>('/api/v1/auth/tokens', {
     method: 'POST',
     headers: JSON_HEADERS,
@@ -34,27 +84,36 @@ export async function createMyToken(body: { name: string; kind: 'access' | 'depl
   })
 }
 
-export async function revokeMyToken(id: string | number): Promise<void> {
-  return request<void>(`/api/v1/auth/tokens/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
+/** Who is revoking: decides between the self-service and the admin endpoint for a personal token. */
+export interface Revoker {
+  username: string
+  isAdmin: boolean
 }
 
-// --- Admin ---
-
-export async function listTokens(params?: { page?: number; limit?: number; principal?: string }): Promise<PagedResult<AdminToken>> {
-  const qs = new URLSearchParams()
-  if (params?.page != null) qs.set('page', String(params.page))
-  if (params?.limit != null) qs.set('per_page', String(params.limit))
-  if (params?.principal) qs.set('principal', params.principal)
-  const query = qs.toString() ? `?${qs}` : ''
-  try {
-    const raw = await request<Record<string, unknown>>(`/api/v1/admin/tokens${query}`)
-    return pagedResponse<AdminToken>(raw)
-  } catch (err) {
-    if (err instanceof ApiError && (err.status === 404 || err.status === 501)) return emptyPaged<AdminToken>()
-    throw err
+/** The endpoint that revokes `token`, or null when this caller has none for it. */
+export function revokeEndpoint(
+  token: Pick<UnifiedToken, 'id' | 'type' | 'owner' | 'project' | 'repository'>,
+  who: Revoker,
+): string | null {
+  const id = enc(token.id)
+  switch (token.type) {
+    case 'personal':
+      if (token.owner === who.username) return `/api/v1/auth/tokens/${id}`
+      return who.isAdmin ? `/api/v1/admin/tokens/${id}` : null
+    case 'project':
+      if (token.project) return `/api/v1/projects/${enc(token.project)}/tokens/${id}`
+      return who.isAdmin ? `/api/v1/admin/tokens/${id}` : null
+    case 'federation':
+      return token.repository ? `/api/v1/repositories/${enc(token.repository)}/federation/tokens/${id}` : null
   }
 }
 
-export async function revokeToken(id: string | number): Promise<void> {
-  return request<void>(`/api/v1/admin/tokens/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
+/** Revokes a token through the endpoint of its type; throws when the caller has none. */
+export async function revokeToken(
+  token: Pick<UnifiedToken, 'id' | 'type' | 'owner' | 'project' | 'repository'>,
+  who: Revoker,
+): Promise<void> {
+  const url = revokeEndpoint(token, who)
+  if (!url) throw new Error(`token ${token.id} cannot be revoked by ${who.username}`)
+  await request<void>(url, { method: 'DELETE' })
 }

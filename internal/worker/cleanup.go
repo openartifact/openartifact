@@ -624,7 +624,7 @@ const (
 // repository's retention allows it. A failed move skips the rows: deleting
 // permanently because the soft path broke would defeat the point of the trash.
 func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate) trashOutcome {
-	outcome, err := w.moveToTrash(ctx, repoID, t, cs)
+	outcome, err := w.moveToTrash(ctx, repoID, t, cs, cleanupActor)
 	if err != nil && !errors.Is(err, database.ErrTrashNotFound) {
 		w.log.Warnw("failed to move artifacts to trash", "count", len(cs), "error", err)
 	}
@@ -633,8 +633,9 @@ func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t fo
 }
 
 // moveToTrash is trashCandidates with the failure reported: database.ErrTrashNotFound
-// when concurrent deletes removed every row since they were selected.
-func (w *CleanupWorker) moveToTrash(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate) (trashOutcome, error) {
+// when concurrent deletes removed every row since they were selected. actor is
+// recorded as the rows' deleted_by.
+func (w *CleanupWorker) moveToTrash(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate, actor string) (trashOutcome, error) {
 	store, ok := w.db.(database.TrashStore)
 	if !ok {
 		return trashHard, nil
@@ -645,7 +646,7 @@ func (w *CleanupWorker) moveToTrash(ctx context.Context, repoID string, t format
 		ids[i] = c.id
 	}
 
-	soft, err := store.TrashRows(ctx, repoID, t.kind, ids, cleanupActor)
+	soft, err := store.TrashRows(ctx, repoID, t.kind, ids, actor)
 
 	switch {
 	case err != nil:

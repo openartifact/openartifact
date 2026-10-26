@@ -81,7 +81,7 @@ describe('ProjectCleanupDefaults', () => {
     await flushPromises()
     const call = spy.mock.calls.find((c) => String(c[0]).endsWith('/cleanup-policies/c1/dry-run'))
     expect(call?.[1]?.method).toBe('POST')
-    expect(document.querySelector('[data-testid="dryrun-total"]')?.textContent).toContain('2 item(s)')
+    expect(document.querySelector('[data-testid="dryrun-total"]')?.textContent).toContain('2 items')
     expect(document.querySelectorAll('[data-testid="dryrun-item"]')).toHaveLength(2)
     expect(document.body.textContent).toContain('npm-a')
   })

@@ -627,7 +627,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindPyPI, IDs: []string{pkg.ID}, Resource: pkg.Filename}, func() error {
+	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindPyPI, IDs: []string{pkg.ID}, Resource: pkg.Filename, Package: pkg.Name, Version: pkg.Version}, func() error {
 		if err := h.DB.DeletePyPIPackage(r.Context(), repoID, pkg.Name, pkg.Version, pkg.Filename); err != nil {
 			return fmt.Errorf("delete pypi package: %w", err)
 		}

@@ -18,8 +18,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -575,14 +577,15 @@ func TestRPMDelete_ReleasesQuotaAndEmitsDeleted(t *testing.T) {
 }
 
 type fakePackageDeleter struct {
-	repo *models.Repository
-	id   string
-	res  *worker.DeletedPackage
-	err  error
+	repo  *models.Repository
+	id    string
+	actor string
+	res   *worker.DeletedPackage
+	err   error
 }
 
-func (f *fakePackageDeleter) DeletePackage(_ context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error) (*worker.DeletedPackage, error) {
-	f.repo, f.id = repo, id
+func (f *fakePackageDeleter) DeletePackage(_ context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error, actor string) (*worker.DeletedPackage, error) {
+	f.repo, f.id, f.actor = repo, id, actor
 
 	if f.err != nil {
 		return nil, f.err
@@ -609,7 +612,8 @@ func TestPackageDelete_GenericFormats(t *testing.T) {
 		h.Register(router)
 
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodDelete,
+		ctx := middleware.WithPrincipal(context.Background(), &auth.Principal{Username: "alice"})
+		router.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodDelete,
 			"/api/v1/repositories/"+repo+"/packages/p-1", nil))
 
 		return rec
@@ -633,6 +637,10 @@ func TestPackageDelete_GenericFormats(t *testing.T) {
 
 	if d.repo == nil || d.repo.Name != "npm-repo" || d.id != "p-1" {
 		t.Errorf("deleter called with %+v, %q", d.repo, d.id)
+	}
+
+	if d.actor != "alice" {
+		t.Errorf("deleter actor = %q, want the requesting user", d.actor)
 	}
 
 	if rec := del(h, "imm-repo"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "IMMUTABLE_RELEASE") {

@@ -19,6 +19,9 @@ export const enFederation = {
   'federation.enabled': 'Federation enabled',
   'federation.disabled': 'Federation disabled',
   'federation.toggleFailed': 'Could not change federation.',
+  'federation.serverOff.title': 'Federation is turned off on this server',
+  'federation.serverOff.hint':
+    'An administrator enables it with federation.enabled (OPENARTIFACT_FEDERATION_ENABLED) in the server configuration, then restarts the server.',
   'federation.unsupported.title': 'Federation is not available for this repository',
   'federation.unsupported.hint':
     'Only hosted repositories of the raw, maven, npm, docker, helm, pypi, cargo, go and nuget formats can be federated. Proxy and group repositories cannot.',

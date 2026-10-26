@@ -382,3 +382,69 @@ func TestAdminSSO_Test_OIDC_DiscoveryFails(t *testing.T) {
 		t.Errorf("expected error=oidc_discovery_failed, got %v", resp["error"])
 	}
 }
+
+// A provider created with enabled=false is stored disabled and stays off the
+// login page's public list; omitting the flag creates it enabled.
+func TestAdminSSO_Create_HonorsEnabledFlag(t *testing.T) {
+	cases := []struct {
+		name        string
+		enabled     any // omitted when nil
+		wantEnabled bool
+	}{
+		{"omitted defaults to enabled", nil, true},
+		{"explicit true", true, true},
+		{"explicit false", false, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newMockDatabase()
+			router, principal := setupSSORouter(t, db)
+
+			cfg, _ := json.Marshal(models.OIDCConfig{Issuer: "https://203.0.113.10", ClientID: "c", ClientSecret: "s"})
+			payload := map[string]any{"slug": "p1", "kind": "oidc", "display_name": "P1", "oidc_config": json.RawMessage(cfg)}
+
+			if tc.enabled != nil {
+				payload["enabled"] = tc.enabled
+			}
+
+			body, _ := json.Marshal(payload)
+			req := withAdminPrincipal(httptest.NewRequestWithContext(context.Background(), http.MethodPost,
+				"/api/v1/admin/sso-providers", bytes.NewReader(body)), principal)
+
+			rw := httptest.NewRecorder()
+			router.ServeHTTP(rw, req)
+
+			if rw.Code != http.StatusCreated {
+				t.Fatalf("create: got %d (%s), want 201", rw.Code, rw.Body.String())
+			}
+
+			var created struct {
+				Enabled bool `json:"enabled"`
+			}
+			if err := json.Unmarshal(rw.Body.Bytes(), &created); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+
+			if created.Enabled != tc.wantEnabled {
+				t.Errorf("enabled = %v, want %v", created.Enabled, tc.wantEnabled)
+			}
+
+			pub := httptest.NewRecorder()
+			router.ServeHTTP(pub, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/auth/sso/providers", nil))
+
+			var list struct {
+				Providers []struct {
+					Slug string `json:"slug"`
+				} `json:"providers"`
+			}
+			if err := json.Unmarshal(pub.Body.Bytes(), &list); err != nil {
+				t.Fatalf("decode public list: %v", err)
+			}
+
+			if listed := len(list.Providers) == 1; listed != tc.wantEnabled {
+				t.Errorf("listed on the login page = %v, want %v", listed, tc.wantEnabled)
+			}
+		})
+	}
+}

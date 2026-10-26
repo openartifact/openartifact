@@ -73,7 +73,7 @@ describe('system info composables', () => {
 
   it('useDocsLink resolves a route name against the shared docs url', async () => {
     serve({ version: 'dev', docs_url: 'https://docs.example.com/latest/' })
-    const route = ref<string | undefined>('admin-sso')
+    const route = ref<string | undefined>('settings-sso')
     const link = useDocsLink(route)
     expect(link.value).toBeNull()
     await flushPromises()
