@@ -92,7 +92,13 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 		}
 
 		if repo == nil || repo.RepoType == repotype.Hosted || repo.RepoType == "" {
+			if hint := wrongUploadHint(repo, r); hint != "" {
+				http.Error(w, hint, http.StatusNotFound)
+				return
+			}
+
 			next.ServeHTTP(w, r)
+
 			return
 		}
 
@@ -127,6 +133,42 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		}
 	})
+}
+
+// restUploadEndpoint is the REST upload endpoint (relative to
+// /api/v1/repositories/{name}/) of the hosted formats that are not uploaded
+// through a route under /repos/{name}; "" for every other format.
+func restUploadEndpoint(format string) string {
+	switch format {
+	case "deb":
+		return "debs"
+	case "rpm":
+		return "packages"
+	default:
+		return ""
+	}
+}
+
+// wrongUploadHint answers a POST or PUT to /repos/{name}/upload of a hosted
+// deb or rpm repository with the real endpoint. No route exists there, so the
+// shared catch-alls of other formats (conda upload, npm publish) would
+// otherwise answer with an error that has nothing to do with the request. It
+// returns "" for every other request.
+func wrongUploadHint(repo *models.Repository, r *http.Request) string {
+	if repo == nil || (r.Method != http.MethodPost && r.Method != http.MethodPut) {
+		return ""
+	}
+
+	endpoint := restUploadEndpoint(repo.Format)
+	if endpoint == "" {
+		return ""
+	}
+
+	if _, tail := middleware.RepoAndPath(r.URL.Path); strings.TrimSuffix(tail, "/") != "upload" {
+		return ""
+	}
+
+	return "no upload endpoint at /repos/" + repo.Name + "/upload: upload packages with POST /api/v1/repositories/" + repo.Name + "/" + endpoint
 }
 
 // OCIMiddleware is Middleware for the registry routes (/v2/<name>/...): a
