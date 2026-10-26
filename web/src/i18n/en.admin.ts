@@ -23,7 +23,7 @@ export const enAdmin = {
   'adm.webhooks.column.status': 'Status',
   'adm.webhooks.column.created': 'Created',
   'adm.webhooks.statusActive': 'Active',
-  'adm.webhooks.statusInactive': 'Inactive',
+  'adm.webhooks.statusInactive': 'Disabled',
   'adm.webhooks.field.name': 'Name',
   'adm.webhooks.field.namePlaceholder': 'My webhook',
   'adm.webhooks.field.url': 'URL',
@@ -186,7 +186,7 @@ export const enAdmin = {
   'adm.users.filter.disabled': 'Disabled',
 
   // Groups
-  'adm.groups.description': 'Organise users into groups to grant permissions in bulk.',
+  'adm.groups.description': 'Organize users into groups to grant permissions in bulk.',
   'adm.groups.stat.groups': 'Groups',
   'adm.groups.stat.memberships': 'Memberships',
   'adm.groups.listTitle': 'Groups',
@@ -271,7 +271,7 @@ export const enAdmin = {
   'adm.projects.saveFailed': 'Failed to save project',
 
   // SSO
-  'adm.sso.emptyHint': 'No SSO providers configured. Add an OIDC or SAML provider to enable single sign-on.',
+  'adm.sso.emptyHint': 'Add an OIDC or SAML provider so people can sign in with your identity provider.',
   'adm.sso.enabled': 'Enabled',
   'adm.sso.disabled': 'Disabled',
   'adm.sso.testOkAt': 'Last test passed',
@@ -381,8 +381,8 @@ export const enAdmin = {
   'adm.ai.saveChanges': 'Save changes',
   'adm.ai.loading': 'Loading AI settings…',
   'adm.ai.enable': 'Enable AI analysis',
-  'adm.ai.enableHint': 'When enabled, artifacts can be analysed by the configured model. Analyses run only when someone requests one, unless automatic analysis below is turned on.',
-  'adm.ai.autoAnalyze': 'Analyse new uploads automatically',
+  'adm.ai.enableHint': 'When enabled, artifacts can be analyzed by the configured model. Analyzes run only when someone requests one, unless automatic analysis below is turned on.',
+  'adm.ai.autoAnalyze': 'Analyze new uploads automatically',
   'adm.ai.autoAnalyzeHint': 'Off by default. When on, every uploaded package that has a readable manifest is sent to the configured model right after the upload. Package manifests are sent to the provider, so enable it only for providers you trust with this data.',
   'adm.ai.provider': 'Provider',
   'adm.ai.providerHint': 'Pick an OpenAI-compatible provider.',
@@ -425,6 +425,8 @@ export const enAdmin = {
 
   // GPG
   'adm.gpg.eyebrow': 'GPG key',
+  'adm.gpg.empty.title': 'No signing keys',
+  'adm.gpg.empty.hint': 'Import a private key or generate one, then activate it globally or for a deb or rpm repository to sign its metadata.',
   'adm.gpg.noSecretKey': 'Storing keys is disabled: set OPENARTIFACT_SECRET_KEY on the server to import or generate signing keys.',
   'adm.gpg.armored': 'ASCII-armored private key',
   'adm.gpg.armoredFile': 'Load from file',

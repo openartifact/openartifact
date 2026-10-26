@@ -98,7 +98,7 @@ describe('BrandingPage', () => {
     await wrapper.get('[data-testid="save"]').trigger('click')
     await flushPromises()
     expect(calls('PUT')).toHaveLength(0)
-    expect(field(wrapper, 'primary_color').get('[role="alert"]').text()).toBe('Use a colour in the form #rrggbb.')
+    expect(field(wrapper, 'primary_color').get('[role="alert"]').text()).toBe('Use a color in the form #rrggbb.')
   })
 
   it('validates the name and the source url', async () => {

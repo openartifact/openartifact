@@ -27,7 +27,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="text-danger" role="alert">{{ loadError }}</div>
-    <EmptyState v-else-if="keys.length === 0" :title="t('common.empty')" />
+    <div v-else-if="keys.length === 0" class="rounded-lg border border-border bg-surface">
+      <EmptyState :title="t('adm.gpg.empty.title')" :description="t('adm.gpg.empty.hint')" />
+    </div>
     <DataTable v-else :columns="columns" :rows="keys as Record<string, unknown>[]" row-key="id">
       <template #cell-name="{ row }">
         <div class="flex items-center gap-2">

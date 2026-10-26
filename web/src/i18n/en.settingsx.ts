@@ -274,7 +274,7 @@ export const enSettingsX = {
   'sx.health.jobs': 'Scan jobs',
   'sx.health.jobs.sub': 'Queue and recent failures',
   'sx.health.jobs.idle': 'Nothing queued, no failures in 24 hours',
-  'sx.health.jobs.detail': '{pending} pending or running, {failed} failed in 24 hours',
+  'sx.health.jobs.detail': '{pending} pending or running, {failed} failed in 24 hours.',
   'sx.health.jobs.lastScan': 'Last scan finished {time}.',
   'sx.health.unscanned': 'Repositories never scanned',
   'sx.health.unscanned.sub': 'Repositories with artifacts',

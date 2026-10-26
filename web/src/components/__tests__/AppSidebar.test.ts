@@ -68,7 +68,7 @@ describe('AppSidebar', () => {
   })
 
   it('treats membership of the admin group as admin', () => {
-    session.user = makeUser({ is_admin: false, groups: [{ name: 'admin' }] })
+    session.user = makeUser({ is_admin: false, groups: ['admin'] })
     const { wrapper } = mountSidebar()
     expect(wrapper.find('a[href="/bundles"]').exists()).toBe(true)
   })
