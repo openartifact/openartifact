@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Translating the web UI
 
-The web UI is translated into Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese and Japanese; English is the source. The non-English catalogs have not been reviewed by native speakers yet; corrections are welcome as pull requests. This page is for translators and for contributors who add or change UI text.
+The web UI is translated into Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese and Japanese; English is the source. Corrections are welcome as pull requests. This page is for translators and for contributors who add or change UI text.
 
 For what the language setting does for users, see [Language](../getting-started/language.md).
 

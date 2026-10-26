@@ -10,7 +10,6 @@ One directory per language (`en` is the source, the others are translations), on
 (`admin.json`, `repos.json`, ...). Keys are flat and dotted; the same key in the same file exists in every
 language. Plural messages are `<key>_one` / `<key>_other` (and the other CLDR forms a language has).
 
-**Review status.** The `it`, `de`, `fr`, `es`, `pt-BR`, `zh-Hans` and `ja` catalogs have not been reviewed by native
-speakers yet. Corrections are welcome as pull requests.
+Corrections are welcome as pull requests.
 
 How to change or add a string, add a language and run the checks: [Translating the web UI](../../../../docs/development/translations.md).
