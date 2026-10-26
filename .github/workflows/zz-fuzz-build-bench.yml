@@ -9,35 +9,27 @@ on:
   pull_request:
     paths:
       - ".github/workflows/zz-fuzz-build-bench.yml"
+      - ".github/zz-diag.sh"
 
 permissions:
   contents: read
 
 jobs:
-  bench:
+  diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Runner
-        run: |
-          nproc; free -m; df -h .; grep -m1 'model name' /proc/cpuinfo
 
       - name: Build image
         run: docker build -f .clusterfuzzlite/Dockerfile -t oa-cfl .
 
-      - name: Old build.sh (serial)
+      - name: Per-target breakdown
         run: |
-          git show origin/main:.clusterfuzzlite/build.sh > "$RUNNER_TEMP/old-build.sh"
-          chmod +x "$RUNNER_TEMP/old-build.sh"
-          .github/zz-bench.sh old "$RUNNER_TEMP/old-build.sh" 1
-
-      - name: New build.sh, 1 job
-        run: .github/zz-bench.sh new1 "" 1
-
-      - name: New build.sh, 4 jobs
-        run: .github/zz-bench.sh new4 "" 4
+          chmod +x .github/zz-diag.sh
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm -e FUZZING_ENGINE=libfuzzer -e SANITIZER=address -e ARCHITECTURE=x86_64 \
+            -e FUZZING_LANGUAGE=go -e PROJECT_NAME=openartifact \
+            -v "$PWD/.github/zz-diag.sh:/src/build.sh:ro" -v "$RUNNER_TEMP/out:/out" oa-cfl compile 2>&1 | grep -E '^DIAG|rror' || true
