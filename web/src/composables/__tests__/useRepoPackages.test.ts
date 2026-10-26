@@ -5,9 +5,8 @@
 import { describe, it, expect, spyOn } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
-import { LAST_REPO_KEY, useRepoPackages, type RepoPackagesOptions } from '../useRepoPackages'
+import { useRepoPackages } from '../useRepoPackages'
 
 const json = (body: unknown): Response =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -34,108 +33,41 @@ function mockApi(held: Record<string, Promise<void>> = {}) {
   return packageCalls
 }
 
-async function setup(path: string, options?: RepoPackagesOptions) {
-  const router: Router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/:rest(.*)*', component: { template: '<div />' } }],
-  })
-  await router.push(path)
-  await router.isReady()
+async function setup() {
   let state!: ReturnType<typeof useRepoPackages>
   const Host = defineComponent({
     setup() {
-      state = useRepoPackages(options)
+      state = useRepoPackages()
       return () => h('div')
     },
   })
-  mount(Host, { global: { plugins: [createPinia(), router] } })
+  mount(Host, { global: { plugins: [createPinia()] } })
   await flushPromises()
-  return { state, router }
+  return state
 }
 
-describe('useRepoPackages initial selection', () => {
-  it('prefers a valid repo from the URL over the remembered and the first repository', async () => {
-    mockApi()
-    localStorage.setItem(LAST_REPO_KEY, 'beta')
-    const { state } = await setup('/security/secrets?repo=gamma')
-    expect(state.selectedRepo.value).toBe('gamma')
-  })
-
-  it('falls back to the last used repository when the URL repo is unknown', async () => {
-    mockApi()
-    localStorage.setItem(LAST_REPO_KEY, 'beta')
-    const { state, router } = await setup('/security/secrets?repo=ghost')
-    expect(state.selectedRepo.value).toBe('beta')
-    expect(router.currentRoute.value.query.repo).toBe('beta')
-  })
-
-  it('ignores a remembered repository that no longer exists and takes the first one', async () => {
-    mockApi()
-    localStorage.setItem(LAST_REPO_KEY, 'deleted')
-    const { state } = await setup('/security/secrets')
-    expect(state.selectedRepo.value).toBe('alpha')
-  })
-
-  it('takes the first repository when nothing is known, and writes it to the URL and storage', async () => {
-    mockApi()
-    const { state, router } = await setup('/security/secrets?tab=x')
-    expect(state.selectedRepo.value).toBe('alpha')
-    expect(router.currentRoute.value.query).toEqual({ tab: 'x', repo: 'alpha' })
-    expect(localStorage.getItem(LAST_REPO_KEY)).toBe('alpha')
-    expect(state.packages.value.map((p) => p.id)).toEqual(['alpha-pkg'])
-  })
-
-  it('leaves the selection to the page in manual mode', async () => {
+describe('useRepoPackages', () => {
+  it('lists the repositories and leaves the selection to the form', async () => {
     const calls = mockApi()
-    localStorage.setItem(LAST_REPO_KEY, 'beta')
-    const { state, router } = await setup('/security/vulns?repo=gamma', { selection: 'manual' })
+    const state = await setup()
     expect(state.repos.value.map((r) => r.name)).toEqual(REPOS)
+    expect(state.reposLoaded.value).toBe(true)
     expect(state.selectedRepo.value).toBe('')
     expect(calls).toEqual([])
 
     state.selectedRepo.value = 'beta'
     await flushPromises()
-    expect(router.currentRoute.value.query.repo).toBe('gamma')
-    expect(localStorage.getItem(LAST_REPO_KEY)).toBe('beta')
     expect(state.packages.value.map((p) => p.id)).toEqual(['beta-pkg'])
-  })
-})
-
-describe('useRepoPackages selection sync', () => {
-  it('writes a manual selection to the URL with replace and to storage', async () => {
-    mockApi()
-    const { state, router } = await setup('/security/licenses')
-    const position = router.options.history.state.position
-
-    state.selectedRepo.value = 'gamma'
-    await flushPromises()
-    expect(router.currentRoute.value.query.repo).toBe('gamma')
-    expect(router.options.history.state.position).toBe(position)
-    expect(localStorage.getItem(LAST_REPO_KEY)).toBe('gamma')
-
-    state.selectedRepo.value = ''
-    await flushPromises()
-    expect(router.currentRoute.value.query.repo).toBeUndefined()
-  })
-
-  it('follows a URL change to another known repository and ignores an unknown one', async () => {
-    mockApi()
-    const { state, router } = await setup('/security/licenses?repo=alpha')
-    await router.replace({ query: { repo: 'beta' } })
-    await flushPromises()
-    expect(state.selectedRepo.value).toBe('beta')
-
-    await router.replace({ query: { repo: 'ghost' } })
-    await flushPromises()
-    expect(state.selectedRepo.value).toBe('beta')
+    expect(state.findPackage('beta-pkg')?.name).toBe('beta-name')
   })
 
   it('discards the packages of a repository that was deselected before they arrived', async () => {
     let release!: () => void
     const slow = new Promise<void>((resolve) => (release = resolve))
     mockApi({ alpha: slow })
-    const { state } = await setup('/security/licenses')
-    expect(state.selectedRepo.value).toBe('alpha')
+    const state = await setup()
+    state.selectedRepo.value = 'alpha'
+    await flushPromises()
     expect(state.packages.value).toEqual([])
 
     state.selectedRepo.value = 'beta'

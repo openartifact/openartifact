@@ -18,13 +18,11 @@ describe('resolveNav', () => {
     expect(items.every((i) => !i.locked && i.reason === null && i.note === null)).toBe(true)
   })
 
-  it('keeps Bundles and Security visible but locked, with a reason, for non-admins', () => {
+  it('keeps Bundles visible but locked, with a reason, for non-admins; Security is open (the server scopes it)', () => {
     const items = Object.fromEntries(resolveNav(false).map((i) => [i.id, i]))
-    for (const id of ['bundles', 'security']) {
-      expect(items[id]!.locked).toBe(true)
-      expect(items[id]!.reason).toBe('Requires administrator')
-    }
-    for (const id of ['home', 'repos', 'packages', 'projects', 'settings']) expect(items[id]!.locked).toBe(false)
+    expect(items.bundles!.locked).toBe(true)
+    expect(items.bundles!.reason).toBe('Requires administrator')
+    for (const id of ['home', 'repos', 'packages', 'projects', 'security', 'settings']) expect(items[id]!.locked).toBe(false)
   })
 
   it('tells non-admins that instance settings are managed by administrators, without locking Settings', () => {

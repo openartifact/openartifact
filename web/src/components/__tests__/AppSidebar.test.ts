@@ -49,17 +49,16 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).not.toContain('Requires administrator')
   })
 
-  it('keeps Bundles and Security visible but disabled, with the reason, for a developer', () => {
+  it('keeps Bundles visible but disabled, with the reason, for a developer; Security stays open (server-scoped)', () => {
     session.user = makeUser({ is_admin: false })
     const { wrapper } = mountSidebar()
-    for (const id of ['bundles', 'security']) {
-      const el = wrapper.get(`[data-testid="nav-${id}"]`)
-      expect(el.element.tagName).toBe('SPAN')
-      expect(el.attributes('aria-disabled')).toBe('true')
-      expect(el.attributes('href')).toBeUndefined()
-      expect(el.get('[data-testid="nav-reason"]').text()).toBe('Requires administrator')
-    }
-    expect(wrapper.findAll('nav a').map((a) => a.attributes('href'))).toEqual(['/', '/repos', '/packages', '/projects', '/settings'])
+    const el = wrapper.get('[data-testid="nav-bundles"]')
+    expect(el.element.tagName).toBe('SPAN')
+    expect(el.attributes('aria-disabled')).toBe('true')
+    expect(el.attributes('href')).toBeUndefined()
+    expect(el.get('[data-testid="nav-reason"]').text()).toBe('Requires administrator')
+    expect(wrapper.get('[data-testid="nav-security"]').attributes('href')).toBe('/security')
+    expect(wrapper.findAll('nav a').map((a) => a.attributes('href'))).toEqual(['/', '/repos', '/packages', '/projects', '/security', '/settings'])
   })
 
   it('tells developers that instance settings are managed by administrators', () => {
@@ -113,9 +112,9 @@ describe('AppSidebar', () => {
       expect(repos.get('.sr-only').text()).toBe('Repositories')
       expect(repos.get('[role="tooltip"]').text()).toBe('Repositories')
       // A locked item carries its reason in the name and the tooltip.
-      const security = wrapper.get('[data-testid="nav-security"]')
-      expect(security.get('.sr-only').text()).toContain('Requires administrator')
-      expect(security.get('[role="tooltip"]').text()).toContain('Requires administrator')
+      const bundles = wrapper.get('[data-testid="nav-bundles"]')
+      expect(bundles.get('.sr-only').text()).toContain('Requires administrator')
+      expect(bundles.get('[role="tooltip"]').text()).toContain('Requires administrator')
     })
 
     it('uses the full width when expanded', () => {

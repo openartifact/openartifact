@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="loading" class="text-muted" role="status">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="bg-surface rounded-xl border border-border py-12 text-center" role="alert">
       <p class="text-sm text-danger">{{ loadError }}</p>
-      <AppButton variant="secondary" size="sm" class="mt-3" @click="load">{{ t('sec.common.retry') }}</AppButton>
+      <AppButton variant="secondary" size="sm" class="mt-3" @click="load">{{ t('security.common.retry') }}</AppButton>
     </div>
     <UnavailableStub v-else-if="!sysInfo" />
     <div v-else class="space-y-5">

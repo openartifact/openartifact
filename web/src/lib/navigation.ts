@@ -33,7 +33,7 @@ export const NAV_AREAS: readonly NavArea[] = [
   { id: 'packages', to: '/packages', labelKey: 'shell.nav.packages', icon: 'packages', adminOnly: false, prefixes: ['/packages'], keywords: 'search find artifacts versions checksum' },
   { id: 'projects', to: '/projects', labelKey: 'shell.nav.projects', icon: 'projects', adminOnly: false, prefixes: ['/projects'], keywords: 'teams members' },
   { id: 'bundles', to: '/bundles', labelKey: 'shell.nav.bundles', icon: 'bundles', adminOnly: true, prefixes: ['/bundles'], keywords: 'release promote seal pipeline' },
-  { id: 'security', to: '/security', labelKey: 'shell.nav.security', icon: 'security', adminOnly: true, prefixes: ['/security'], keywords: 'vulnerabilities licenses secrets findings scan' },
+  { id: 'security', to: '/security', labelKey: 'shell.nav.security', icon: 'security', adminOnly: false, prefixes: ['/security'], keywords: 'vulnerabilities licenses secrets findings scan' },
   { id: 'settings', to: '/settings', labelKey: 'shell.nav.settings', icon: 'settings', adminOnly: false, prefixes: ['/settings'], keywords: 'administration configuration preferences' },
 ]
 

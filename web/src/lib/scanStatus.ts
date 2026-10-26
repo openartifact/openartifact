@@ -31,7 +31,7 @@ export function vulnScanVariant(status: string): BadgeVariant {
 
 /** Translated label for a vulnerability scan status; unknown values are shown verbatim. */
 export function vulnScanLabel(status: string): string {
-  return (VULN_SCAN_STATUSES as readonly string[]).includes(status) ? tDynamic(`sec.vuln.status.${status}`) : status
+  return (VULN_SCAN_STATUSES as readonly string[]).includes(status) ? tDynamic(`security.vuln.status.${status}`) : status
 }
 
 /** True when the scan ended without a usable result from every scanner. */
@@ -100,6 +100,6 @@ export function licenseActionVariant(action: string | undefined): BadgeVariant {
 /** Translated label of a license policy action; unknown values are shown verbatim. */
 export function licenseActionLabel(action: string | undefined): string {
   return action === 'block' || action === 'warn' || action === 'allow'
-    ? tDynamic(`sec.license.action.${action}`)
+    ? tDynamic(`security.license.action.${action}`)
     : (action ?? '')
 }

@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <StatusBadge :label="vulnScanLabel(status)" :variant="vulnScanVariant(status)" data-testid="scan-status" />
     <template v-if="vulnScanHasFailures(status)">
       <p v-if="failedScanners.length" class="text-caption text-muted" data-testid="failed-scanners">
-        {{ t('sec.vuln.failedScanners') }}: <span class="font-mono">{{ failedScanners.join(', ') }}</span>
+        {{ t('security.vuln.failedScanners') }}: <span class="font-mono">{{ failedScanners.join(', ') }}</span>
       </p>
       <p
         v-if="scanError"

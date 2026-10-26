@@ -4,14 +4,14 @@
 
 import type { RouteRecordRaw } from 'vue-router'
 
-// One findings page, `?type=vuln|license|secret|ai&severity=&status=&repo=`.
-// Until the security slice replaces the placeholder, `?type` picks one of the
-// four existing scan pages.
+// One findings inbox, `?type=vuln|license|secret|ai&severity=&status=&repo=&q=`.
+// Open to every signed-in user: the server scopes it to the caller's projects
+// and answers 403 when there are none (the page shows the forbidden state).
 export const securityRoutes: RouteRecordRaw[] = [
   {
     path: '/security',
     name: 'security',
     component: () => import('../../pages/security/SecurityPage.vue'),
-    meta: { crumbs: [{ key: 'nav.security', to: '/security' }], requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [{ key: 'nav.security', to: '/security' }], requiresAuth: true },
   },
 ]

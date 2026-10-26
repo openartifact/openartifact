@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <ul v-if="violations.length" class="space-y-1" :aria-label="t('sec.license.violations')">
+  <ul v-if="violations.length" class="space-y-1" :aria-label="t('security.license.violations')">
     <li
       v-for="(v, i) in violations"
       :key="`${v.policy_id ?? ''}-${i}`"

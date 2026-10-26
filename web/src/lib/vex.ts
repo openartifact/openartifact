@@ -21,11 +21,11 @@ export function vexStatusVariant(status: VexStatus): VexBadgeVariant {
 }
 
 export function vexStatusLabel(status: string): string {
-  return tDynamic(`sec.vex.status.${status}`)
+  return tDynamic(`security.vex.status.${status}`)
 }
 
 export function vexJustificationLabel(justification: string): string {
-  return tDynamic(`sec.vex.justification.${justification}`)
+  return tDynamic(`security.vex.justification.${justification}`)
 }
 
 /** Decisions of a list, keyed by vulnerability id (one artifact's decisions have unique vuln ids). */

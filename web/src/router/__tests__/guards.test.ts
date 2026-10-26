@@ -171,21 +171,18 @@ describe('router beforeEach guards', () => {
   })
 
   describe('admin access', () => {
-    it.each(['/security', '/security?type=license', '/security/vulns', '/security/licenses', '/security/secrets', '/security/ai-analysis'])(
-      'non-admin cannot open %s',
-      async (path) => {
-        signIn({ is_admin: false })
+    it.each([
+      ['/security', '/security'],
+      ['/security/vulns', '/security?type=vuln'],
+      ['/security/licenses', '/security?type=license'],
+      ['/security/secrets', '/security?type=secret'],
+      ['/security/ai-analysis', '/security?type=ai'],
+    ])('every signed-in user can open %s (the server scopes the findings): lands on %s', async (path, landing) => {
+      for (const is_admin of [false, true]) {
+        signIn({ is_admin })
         await push(path)
-        expect(router.currentRoute.value.path).toBe('/')
-      },
-    )
-
-    it('admin can open the security page and the legacy URLs land on it', async () => {
-      signIn({ is_admin: true })
-      await push('/security')
-      expect(router.currentRoute.value.path).toBe('/security')
-      await push('/security/licenses')
-      expect(router.currentRoute.value.fullPath).toBe('/security?type=license')
+        expect(router.currentRoute.value.fullPath).toBe(landing)
+      }
     })
 
     it('non-admin cannot open an admin settings section, nor its legacy /admin URL', async () => {

@@ -68,3 +68,10 @@ export function triggerAIAnalysis(
     },
   )
 }
+
+/** The latest analysis of one artifact; 404 when none was queued yet. */
+export function getAIAnalysis(repoName: string, artifactID: string): Promise<AIAnalysis> {
+  return request<AIAnalysis>(
+    `/api/v1/repositories/${encodeURIComponent(repoName)}/ai-analysis/${encodeURIComponent(artifactID)}`,
+  )
+}
