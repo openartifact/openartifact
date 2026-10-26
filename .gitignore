@@ -55,3 +55,9 @@ web/coverage/
 # after emptying the directory).
 web/dist/*
 !web/dist/.gitkeep
+
+# Playwright e2e output and the sessions written by its global setup
+/web/test-results/
+/web/playwright-report/
+/web/e2e/.auth/
+/web/monkey-seed.txt
