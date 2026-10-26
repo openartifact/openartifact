@@ -34,6 +34,19 @@ describe('ListTable', () => {
     expect(w.findAll('tbody tr:first-child td').map((td) => td.attributes('data-label'))).toEqual(['', 'Size', ''])
   })
 
+  it('drops the stacked label of a self-explanatory cell', () => {
+    const w = render({ columns: [columns[0], { key: 'size', label: 'Size', hideLabel: true }, columns[2]] })
+    expect(w.findAll('tbody tr:first-child td').map((td) => td.attributes('data-label'))).toEqual(['', '', ''])
+  })
+
+  it('places the title cell first and the actions beside it in the mobile card', () => {
+    const w = render()
+    const [name, size, actions] = w.findAll('tbody tr:first-child td').map((td) => td.classes())
+    expect(name).toContain('max-md:flex-1')
+    expect(actions).toContain('max-md:order-1')
+    expect(size).toContain('max-md:order-3')
+  })
+
   it('shows a skeleton while the first load runs, then rows', async () => {
     const w = render({ rows: [], loading: true })
     expect(w.find('[data-testid=list-loading]').exists()).toBe(true)

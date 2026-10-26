@@ -61,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <template #cell-name="{ row }">
         <div class="flex min-w-0 items-center gap-2.5">
-          <FormatBadge :format="row.format ?? ''" size="sm" />
+          <span class="w-[4.75rem] shrink-0"><FormatBadge :format="row.format ?? ''" size="sm" /></span>
           <div class="min-w-0">
             <router-link :to="`/repos/${encodeURIComponent(row.name ?? '')}`" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary">{{ row.name }}</router-link>
             <p v-if="subtitle(row)" class="truncate text-xs text-muted">{{ subtitle(row) }}</p>

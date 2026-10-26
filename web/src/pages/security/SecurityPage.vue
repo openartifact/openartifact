@@ -118,26 +118,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <SeverityBadge :severity="(row as FindingRow).severity" />
         </template>
         <template #cell-title="{ row }">
-          <button
-            type="button"
-            class="max-w-[28rem] text-left font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:min-h-11"
-            :data-testid="`finding-${(row as FindingRow).id}`"
-            @click="selected = (row as FindingRow).source"
-          >
-            <span class="line-clamp-2 break-words">{{ (row as FindingRow).title || t('security.table.untitled') }}</span>
-          </button>
-          <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-caption text-muted">
-            <span class="rounded border border-border px-1.5 py-px">{{ tDynamic(`security.type.${(row as FindingRow).type}`) }}</span>
-            <span v-if="(row as FindingRow).vexStatus">
-              <VexStatusBadge :status="(row as FindingRow).vexStatus!" />
-            </span>
+          <div class="min-w-0">
+            <button
+              type="button"
+              class="max-w-[28rem] text-left font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:min-h-11"
+              :data-testid="`finding-${(row as FindingRow).id}`"
+              @click="selected = (row as FindingRow).source"
+            >
+              <span class="line-clamp-2 break-words">{{ (row as FindingRow).title || t('security.table.untitled') }}</span>
+            </button>
+            <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-caption text-muted">
+              <span class="rounded border border-border px-1.5 py-px">{{ tDynamic(`security.type.${(row as FindingRow).type}`) }}</span>
+              <span v-if="(row as FindingRow).vexStatus">
+                <VexStatusBadge :status="(row as FindingRow).vexStatus!" />
+              </span>
+            </div>
           </div>
         </template>
         <template #cell-artifact="{ row }">
-          <router-link :to="linkOf(row as FindingRow)" class="font-medium text-primary hover:underline">{{ (row as FindingRow).artifact || t('security.table.removedPackage') }}</router-link>
-          <div class="mt-0.5 flex items-center gap-1.5 text-caption text-muted">
-            <FormatBadge v-if="(row as FindingRow).format" :format="(row as FindingRow).format" size="sm" />
-            {{ (row as FindingRow).repository }}
+          <div class="min-w-0">
+            <router-link :to="linkOf(row as FindingRow)" class="font-medium text-primary hover:underline">{{ (row as FindingRow).artifact || t('security.table.removedPackage') }}</router-link>
+            <div class="mt-0.5 flex items-center gap-1.5 text-caption text-muted">
+              <FormatBadge v-if="(row as FindingRow).format" :format="(row as FindingRow).format" size="sm" />
+              {{ (row as FindingRow).repository }}
+            </div>
           </div>
         </template>
         <template #cell-scanner="{ row }">
@@ -239,8 +243,8 @@ onMounted(async () => {
 
 const columns = computed<ListColumn[]>(() => [
   { key: 'severity', label: t('security.col.severity') },
-  { key: 'title', label: t('security.col.finding') },
-  { key: 'artifact', label: t('security.col.package') },
+  { key: 'title', label: t('security.col.finding'), hideLabel: true },
+  { key: 'artifact', label: t('security.col.package'), hideLabel: true },
   ...(filters.value.type === 'all' || filters.value.type === 'vuln' ? [{ key: 'scanner', label: t('security.col.scanner') }] : []),
   { key: 'counts', label: t('security.col.counts') },
   { key: 'status', label: t('security.col.status') },

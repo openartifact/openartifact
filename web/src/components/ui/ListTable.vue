@@ -8,8 +8,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   The one list. Typed columns with a slot per cell (`#cell-<key>="{ row, value }"`),
   optional sorting and selection, a loading skeleton, and empty / filtered-empty /
   error states. Paging is one prop: `paging="page"` (page + limit) or
-  `paging="cursor"` ("load more"). Below 768px every row stacks into a card
-  with the column labels in front of the values.
+  `paging="cursor"` ("load more"). Below 768px every row becomes a compact card:
+  the first cell is the title (with the actions cell beside it) and the other cells
+  flow on shared lines, each led by its column label.
 
   Either drive it from `useListQuery` (`:query`, everything wired, URL-bound) or
   pass `rows`/`loading`/`error`/... and listen to the events.
@@ -88,9 +89,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <tr
               v-for="(row, index) in rows"
               :key="keyOf(row)"
-              class="hover:bg-surface-hover max-md:block max-md:px-4 max-md:py-3"
+              class="hover:bg-surface-hover max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:px-4 max-md:py-3 max-md:after:order-2 max-md:after:basis-full max-md:after:content-['']"
             >
-              <td v-if="selectable" class="w-10 px-4 py-3 max-md:block max-md:px-0 max-md:py-1">
+              <td v-if="selectable" class="w-10 px-4 py-3 max-md:order-first max-md:w-auto max-md:px-0 max-md:py-0">
                 <input
                   type="checkbox"
                   :checked="selected.includes(keyOf(row))"
@@ -102,12 +103,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td
                 v-for="(col, ci) in columns"
                 :key="col.key"
-                :data-label="col.actions || ci === 0 ? '' : col.label"
-                class="px-4 py-3 text-sm text-foreground max-md:flex max-md:min-h-11 max-md:items-center max-md:justify-between max-md:gap-3 max-md:px-0 max-md:py-1.5 max-md:before:shrink-0 max-md:before:text-xs max-md:before:text-muted max-md:before:content-[attr(data-label)]"
+                :data-label="col.actions || col.hideLabel || ci === 0 ? '' : col.label"
+                class="px-4 py-3 text-sm text-foreground max-md:flex max-md:min-w-0 max-md:items-baseline max-md:gap-1.5 max-md:px-0 max-md:py-0.5 max-md:before:shrink-0 max-md:before:text-xs max-md:before:text-muted max-md:before:content-[attr(data-label)]"
                 :class="[
                   col.align === 'end' ? 'text-right max-md:text-left' : '',
-                  ci === 0 ? 'max-md:font-medium' : '',
-                  ci === 0 || col.actions ? 'max-md:justify-start max-md:before:hidden' : '',
+                  cellPlacement(col, ci),
                 ]"
               >
                 <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]" :index="index">
@@ -155,6 +155,8 @@ export interface ListColumn {
   align?: 'start' | 'end'
   /** Row-actions column: the header is announced as "Actions" and the cell has no stacked label. */
   actions?: boolean
+  /** Self-explanatory cell (a title, a package link): below 768px it flows without its column label. */
+  hideLabel?: boolean
 }
 
 const props = withDefaults(
@@ -231,6 +233,15 @@ const summary = computed(() => {
   const to = Math.min(from + rows.value.length - 1, total.value)
   return tp('ui.table.showing', { from: String(from), to: String(to), total: String(total.value) })
 })
+
+// Mobile card layout: the first cell is the title (order 0, takes the free width), the actions cell sits
+// beside it (order 1), a zero-height break (the row's ::after, order 2) ends that line, every other cell
+// follows (order 3) and wraps.
+function cellPlacement(col: ListColumn, index: number): string {
+  if (col.actions) return 'max-md:order-1 max-md:items-center max-md:py-0 max-md:before:hidden'
+  if (index === 0) return 'max-md:order-none max-md:min-h-11 max-md:flex-1 max-md:items-center max-md:font-medium max-md:before:hidden'
+  return col.hideLabel ? 'max-md:order-3 max-md:before:hidden' : 'max-md:order-3'
+}
 
 function keyOf(row: Row): string {
   return typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey])
