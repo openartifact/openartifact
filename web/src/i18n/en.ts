@@ -264,6 +264,18 @@ export function tp(key: TranslationKey, params: Record<string, string>): string 
   return catalog[key].replace(/\{(\w+)\}/g, (match, name: string) => params[name] ?? match)
 }
 
+/**
+ * Plural-aware `tp`: a count of exactly 1 uses the `<key>.one` entry when the
+ * catalog has one, every other count the plain key. `{n}` and `{count}` are
+ * both filled with the count; `params` adds further placeholders.
+ */
+export function tpn(key: TranslationKey, count: number, params: Record<string, string> = {}): string {
+  const one = `${key}.one` as TranslationKey
+  const chosen = count === 1 && one in catalog ? one : key
+
+  return tp(chosen, { n: String(count), count: String(count), ...params })
+}
+
 /** Lookup for keys assembled at runtime (e.g. `status.${state}`); falls back to the key itself. */
 export function tDynamic(key: string): string {
   return (catalog as Record<string, string>)[key] ?? key
