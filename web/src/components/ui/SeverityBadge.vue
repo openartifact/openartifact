@@ -11,14 +11,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     :data-severity="severity"
   >
     <component :is="icon" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-    {{ count === undefined ? label : tp('ui.severity.count', { count: String(count), label: label.toLowerCase() }) }}
+    {{ count === undefined ? label : tp('ui.severity.count', { count: String(count), label: label.toLocaleLowerCase(formatLocale()) }) }}
   </span>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ExclamationTriangleIcon, InformationCircleIcon, MinusCircleIcon, XCircleIcon } from '@heroicons/vue/20/solid'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
+import { formatLocale } from '../../lib/intl'
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'none'
 

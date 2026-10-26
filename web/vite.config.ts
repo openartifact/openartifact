@@ -18,16 +18,29 @@ const restoreGitkeep = {
   },
 }
 
+/** `locale-pt-BR` for src/i18n/locales/pt-BR/admin.json (the group's `name` callback receives the module id). */
+function localeChunk(id: string): string {
+  const m = /i18n[\\/]locales[\\/]([^\\/]+)[\\/]/.exec(id)
+  return `locale-${m?.[1] ?? 'unknown'}`
+}
+
 export default defineConfig({
   plugins: [vue(), tailwindcss(), pwa(), restoreGitkeep],
   build: {
     outDir: 'dist',
     manifest: true,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
+        // One chunk per translated language (all its catalog files), fetched only for a user of that language.
+        // English is statically imported and stays in the entry chunk.
+        codeSplitting: {
+          groups: [
+            { name: (id: string) => localeChunk(id), test: /src[\\/]i18n[\\/]locales[\\/](?!en[\\/])[^\\/]+[\\/]/ },
+          ],
+        },
       },
     },
   },

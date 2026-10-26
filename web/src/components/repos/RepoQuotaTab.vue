@@ -71,7 +71,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-caption text-muted font-mono tabular-nums">
-                {{ tp('quota.percentUsed', { n: usagePercent.toFixed(1) }) }}
+                {{ tp('quota.percentUsed', { n: formatOneDecimal(usagePercent) }) }}
               </span>
               <span class="text-caption text-muted font-mono tabular-nums">
                 {{ tp('quota.free', { size: formatBytes(Math.max(quota.max_size_bytes - quota.current_size_bytes, 0)) }) }}
@@ -103,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
           <div class="mt-1.5">
             <span class="text-caption text-muted font-mono tabular-nums">
-              {{ tp('quota.percentUsed', { n: countPercent.toFixed(1) }) }}
+              {{ tp('quota.percentUsed', { n: formatOneDecimal(countPercent) }) }}
             </span>
           </div>
         </div>
@@ -237,7 +237,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref, computed, onMounted } from 'vue'
 import { ApiError } from '../../api/client'
 import { getRepoQuota, removeRepoQuota, setRepoQuota, type RepoQuota } from '../../api/quota'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 import { useToastStore } from '../../stores/toast'
 import {
   CircleStackIcon,
@@ -247,7 +247,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import AppButton from '../AppButton.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
-import { formatBytes } from '../../lib/quota'
+import { formatBytes, formatOneDecimal } from '../../lib/quota'
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 

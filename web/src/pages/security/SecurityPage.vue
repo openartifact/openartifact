@@ -218,7 +218,7 @@ import {
   type InboxFilters,
 } from '../../lib/securityFindings'
 import { useSessionStore } from '../../stores/session'
-import { t, tDynamic } from '../../i18n/en'
+import { t, tDynamic } from '../../i18n'
 
 const SELECT =
   'h-9 rounded-lg border border-border-strong bg-surface px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary max-md:h-11'

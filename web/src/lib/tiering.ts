@@ -7,8 +7,8 @@
 // bytes), the policy form model and the plain-words condition summary.
 
 import type { StoragePolicy, StoragePolicyInput } from '../api/tiering'
-import { tp, type TranslationKey } from '../i18n/en'
-import { FORMAT_LOCALE } from './datetime'
+import { tp, type TranslationKey } from '../i18n'
+import { formatNumber } from './intl'
 import { formatExactDuration } from './duration'
 import { formatBytes } from './quota'
 
@@ -209,5 +209,5 @@ export function policyConditions(p: StoragePolicy): string[] {
 
 /** Integer with locale grouping. */
 export function formatCount(n: number | undefined): string {
-  return (n ?? 0).toLocaleString(FORMAT_LOCALE)
+  return formatNumber(n)
 }

@@ -52,7 +52,7 @@ import { ExclamationTriangleIcon, InformationCircleIcon, XCircleIcon } from '@he
 import AppButton from '../AppButton.vue'
 import StateBlock from '../ui/StateBlock.vue'
 import DashSection from './DashSection.vue'
-import { t, tDynamic, tp, tpn, type TranslationKey } from '../../i18n/en'
+import { t, tDynamic, tp, tpn, type TranslationKey } from '../../i18n'
 import type { AttentionItem } from '../../lib/attention'
 
 const LIMIT = 5

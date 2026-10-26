@@ -6,7 +6,7 @@ import type { AuditEntry } from '../api/audit'
 import type { RecentPackage } from '../api/dashboard'
 import type { ProjectActivityEntry } from '../api/projects'
 import { artifactPath } from './artifactPath'
-import { tDynamic } from '../i18n/en'
+import { tDynamic } from '../i18n'
 
 /** What an audit entry acted on, resolved by the server from ids (never a UUID). */
 export interface AuditSubject {

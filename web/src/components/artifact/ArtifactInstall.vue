@@ -81,7 +81,7 @@ import { computed, ref, useId } from 'vue'
 import { LockClosedIcon, XCircleIcon } from '@heroicons/vue/20/solid'
 import CopyButton from '../ui/CopyButton.vue'
 import { installBlock } from '../../lib/artifactInstall'
-import { t, tp, tpn } from '../../i18n/en'
+import { t, tp, tpn } from '../../i18n'
 
 const props = defineProps<{
   format: string

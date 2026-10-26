@@ -48,7 +48,7 @@ import { createProject } from '../api/projects'
 import { INPUT_CLASS } from '../lib/formClasses'
 import { errorStatus } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{

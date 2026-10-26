@@ -266,7 +266,7 @@ import {
 } from '../../../api/webhooks'
 import { useDocsLink } from '../../../composables/useDocsLink'
 import { useToastStore } from '../../../stores/toast'
-import { t, tDynamic } from '../../../i18n/en'
+import { t, tDynamic } from '../../../i18n'
 import {
   PlusIcon,
   BellAlertIcon,

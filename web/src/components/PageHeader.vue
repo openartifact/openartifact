@@ -56,7 +56,7 @@ import { QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
 import { useDocsLink } from '../composables/useDocsLink'
 import { docsKey } from '../lib/docs'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   title: string

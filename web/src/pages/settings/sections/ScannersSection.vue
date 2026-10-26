@@ -99,7 +99,7 @@ import RelativeTime from '../../../components/ui/RelativeTime.vue'
 import type { SecurityHealth } from '../../../api/security'
 import { useSecurityHealth } from '../../../composables/useSecurityHealth'
 import { safeDocsUrl, vulnScannerLabel } from '../../../lib/vulnScanners'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
 
 type Scanner = SecurityHealth['scanners'][number]
 

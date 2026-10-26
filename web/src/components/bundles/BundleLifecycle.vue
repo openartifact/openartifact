@@ -36,7 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { CheckCircleIcon, ClockIcon, MinusCircleIcon, PlayCircleIcon } from '@heroicons/vue/24/outline'
 import RelativeTime from '../ui/RelativeTime.vue'
 import type { LifecycleStep, StepStatus } from '../../lib/bundles'
-import { t, type TranslationKey } from '../../i18n/en'
+import { t, type TranslationKey } from '../../i18n'
 
 defineProps<{ steps: LifecycleStep[]; label: string }>()
 

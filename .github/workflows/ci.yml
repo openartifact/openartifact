@@ -239,6 +239,9 @@ jobs:
           bun run generate-api
           git diff --exit-code -- src/api/generated
 
+      - name: translation catalogs are consistent
+        run: bun run i18n:check
+
       - run: bun test
 
       - run: bun run build

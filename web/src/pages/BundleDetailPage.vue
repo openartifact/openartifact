@@ -295,7 +295,7 @@ import {
 } from '../lib/bundles'
 import { formatBytes } from '../lib/quota'
 import { useToastStore } from '../stores/toast'
-import { t, tp, type TranslationKey } from '../i18n/en'
+import { t, tp, type TranslationKey } from '../i18n'
 
 const route = useRoute()
 const router = useRouter()

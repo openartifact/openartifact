@@ -185,7 +185,7 @@ import { useLocalList } from '../../../composables/useLocalList'
 import { useUrlFlag } from '../../../composables/useUrlFlag'
 import { strParam } from '../../../composables/useUrlState'
 import { useToastStore } from '../../../stores/toast'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
 import {
   PlusIcon,
   UsersIcon,
@@ -193,6 +193,7 @@ import {
   XMarkIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/vue/24/outline'
+import { compareText } from '../../../lib/intl'
 
 const toasts = useToastStore()
 
@@ -232,7 +233,7 @@ const { list, all, refresh: load } = useLocalList({
   match: (g, f) => !f.q.trim() || (g.name ?? '').toLowerCase().includes(f.q.trim().toLowerCase()),
   compare: (a, b, sort) => {
     const key = sort === 'created_at' ? 'created_at' : 'name'
-    return String(a[key] ?? '').localeCompare(String(b[key] ?? ''))
+    return key === 'name' ? compareText(a.name, b.name) : String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
   },
 })
 

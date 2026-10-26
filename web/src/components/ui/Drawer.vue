@@ -82,7 +82,7 @@ import {
 import { XMarkIcon } from '@heroicons/vue/24/outline'
 import { ref, toRef, watch } from 'vue'
 import { useRestoreFocus } from '../../composables/useRestoreFocus'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = withDefaults(
   defineProps<{

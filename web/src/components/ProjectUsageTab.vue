@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 <div class="absolute left-0 top-0 bottom-0 rounded-full" :class="usageBarClass(sizePercent, warn)" :style="{ width: `${Math.min(sizePercent, 100)}%` }" data-testid="size-bar" />
               </div>
-              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ tp('projects.usage.percentUsed', { n: sizePercent.toFixed(1) }) }}</p>
+              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ tp('projects.usage.percentUsed', { n: formatOneDecimal(sizePercent) }) }}</p>
             </template>
           </div>
 
@@ -64,7 +64,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 <div class="absolute left-0 top-0 bottom-0 rounded-full" :class="usageBarClass(countPercent, warn)" :style="{ width: `${Math.min(countPercent, 100)}%` }" data-testid="count-bar" />
               </div>
-              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ tp('projects.usage.percentUsed', { n: countPercent.toFixed(1) }) }}</p>
+              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ tp('projects.usage.percentUsed', { n: formatOneDecimal(countPercent) }) }}</p>
             </template>
           </div>
         </div>
@@ -120,8 +120,8 @@ import { computed, ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
 import { getProjectUsage, type ProjectUsage, type ProjectUsageRepository } from '../api/projects'
-import { formatBytes, percentOf, usageBarClass } from '../lib/quota'
-import { t, tp, tpn } from '../i18n/en'
+import { formatBytes, formatOneDecimal, percentOf, usageBarClass } from '../lib/quota'
+import { t, tp, tpn } from '../i18n'
 
 const props = defineProps<{ project: string }>()
 

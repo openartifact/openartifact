@@ -87,7 +87,7 @@ import { formatBytes } from '../../lib/quota'
 import { buildUpdateBody, formValid, repoFormFrom } from '../../lib/repoForm'
 import { useSessionStore } from '../../stores/session'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{ repo: Repository }>()
 const emit = defineEmits<{ saved: [repo: Repository] }>()

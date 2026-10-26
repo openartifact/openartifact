@@ -109,7 +109,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <td class="px-3 py-3.5 text-right" :data-testid="`backend-usage-${backend.name}`">
           <template v-if="backend.usage">
             <p class="text-sm tabular-nums text-foreground">{{ formatBytes(backend.usage.size_bytes) }}</p>
-            <p class="text-xs tabular-nums text-muted">{{ tp('sx.usage.blobs', { n: backend.usage.blob_count.toLocaleString('en') }) }}</p>
+            <p class="text-xs tabular-nums text-muted">{{ tp('sx.usage.blobs', { n: formatNumber(backend.usage.blob_count) }) }}</p>
           </template>
           <span v-else class="text-xs text-muted" :title="t('sx.usage.none')">—</span>
         </td>
@@ -170,8 +170,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ArrowPathIcon, BoltIcon, PencilIcon, StarIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import { timeAgo } from '../lib/datetime'
+import { formatNumber } from '../lib/intl'
 import { formatBytes } from '../lib/quota'
 import {
   locationSummary,

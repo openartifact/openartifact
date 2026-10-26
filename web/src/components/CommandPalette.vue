@@ -158,7 +158,7 @@ import {
   type PaletteItem,
 } from '../lib/palette'
 import { loadRecent, recentStorageKey, type RecentItem } from '../lib/paletteRecent'
-import { t, tp, type TranslationKey } from '../i18n/en'
+import { t, tp, tpn, type TranslationKey } from '../i18n'
 
 const ui = useUIStore()
 const session = useSessionStore()
@@ -211,7 +211,7 @@ const announcement = computed(() => {
   if (search.status.value === 'loading') return t('shell.palette.searching')
   const n = flat.value.length
   if (n === 0) return t('shell.palette.noResults')
-  return n === 1 ? t('shell.palette.count.one') : tp('shell.palette.count.other', { n: String(n) })
+  return tpn('shell.palette.count', n)
 })
 
 watch(query, (text) => {

@@ -71,7 +71,7 @@ import { useArtifactContext } from '../../composables/useArtifact'
 import { useLocalList } from '../../composables/useLocalList'
 import { packagesFromCycloneDx, reportsOfVersion, type SbomPackage } from '../../lib/sbomGraph'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ctx = useArtifactContext()
 const toasts = useToastStore()

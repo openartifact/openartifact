@@ -156,7 +156,7 @@ import { asyncTab } from '../lib/asyncTab'
 import { formatDate, formatDateTime, timeAgo } from '../lib/datetime'
 import { atLeast, errorStatus, visibleProjectTabs, type ProjectTab } from '../lib/projectAccess'
 import { useSessionStore } from '../stores/session'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 // Overview and Repositories render here; every other panel loads on first use.
 const MemberTable = asyncTab(() => import('../components/MemberTable.vue'))

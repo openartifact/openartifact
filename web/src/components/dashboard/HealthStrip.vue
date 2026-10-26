@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <component :is="icon(cell)" class="h-4 w-4 shrink-0" :class="tone(cell)" aria-hidden="true" />
             <span :data-status="cell.status">{{ value(cell) }}</span>
           </div>
-          <div class="mt-0.5 truncate text-xs text-muted max-md:whitespace-normal max-md:break-words" :title="detail(cell)">{{ detail(cell) }}</div>
+          <div class="mt-0.5 line-clamp-2 break-words text-xs text-muted" :title="detail(cell)">{{ detail(cell) }}</div>
         </router-link>
       </li>
     </ul>
@@ -28,7 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CheckCircleIcon, ExclamationTriangleIcon, InformationCircleIcon, XCircleIcon } from '@heroicons/vue/20/solid'
-import { t, tp, type TranslationKey } from '../../i18n/en'
+import { t, tp, type TranslationKey } from '../../i18n'
 import { unhealthyCount, type HealthCell } from '../../lib/health'
 
 const props = defineProps<{ cells: HealthCell[] }>()

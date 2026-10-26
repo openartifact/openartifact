@@ -23,7 +23,7 @@ import {
 } from '../lib/securityFindings'
 import { useSessionStore } from '../stores/session'
 import { useListQuery } from './useListQuery'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 export const INBOX_PAGE_LIMIT = 25
 

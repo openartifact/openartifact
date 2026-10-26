@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
 import { registerServiceWorker, startServiceWorker } from '../register'
 import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 class FakeWorker extends EventTarget {
   state = 'installed'

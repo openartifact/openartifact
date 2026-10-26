@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+No migrations.
+
+- **The web UI is translated** into Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese and Japanese. The language follows the browser (`navigator.languages`) until a user picks one under **Language** in the user menu or on the sign-in page; the choice is stored in that browser's local storage only, nothing on the server changes and no setting is needed. Dates, numbers and sort order follow the language. Anything without a translation is shown in English. See [Language](language.md). No action required; the web bundle grows by one small chunk per language, downloaded only for users of that language.
+
 ### 0.11.0
 
 Migrations `081` to `085`. All are rolling-safe: 0.10.0 pods keep serving while the new pods migrate.

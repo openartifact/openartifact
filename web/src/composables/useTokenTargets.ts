@@ -6,7 +6,7 @@ import { ref, watch, type Ref } from 'vue'
 import { listPermissions } from '../api/admin'
 import { listProjects, SYSTEM_PROJECT_NAME, type Project } from '../api/projects'
 import { listAllRepositories } from '../api/repositories'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 export interface PermissionChoice {
   id: string

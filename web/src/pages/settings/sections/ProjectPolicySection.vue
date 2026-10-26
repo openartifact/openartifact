@@ -58,7 +58,7 @@ import AppToggle from '../../../components/AppToggle.vue'
 import StateBlock from '../../../components/ui/StateBlock.vue'
 import { getProjectSettings, updateProjectSettings } from '../../../api/projects'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 const toasts = useToastStore()
 

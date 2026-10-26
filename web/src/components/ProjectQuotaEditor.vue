@@ -94,7 +94,7 @@ import { getProjectQuota, setProjectQuota, type ProjectQuota } from '../api/proj
 import { formatBytes, SIZE_UNITS, splitBytes, toBytes, type SizeUnit } from '../lib/quota'
 import { errorStatus } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{ project: string; editable: boolean }>()
 

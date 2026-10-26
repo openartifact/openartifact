@@ -71,7 +71,7 @@ import { artifactPath } from '../../lib/artifactPath'
 import { primaryFile } from '../../lib/artifactVersions'
 import { supportsPackageDelete } from '../../lib/formats'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground max-md:min-h-11'
 

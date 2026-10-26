@@ -159,7 +159,7 @@ import { formatLabel } from '../../lib/formats'
 import { normalizeScannerSelection } from '../../lib/scanStatus'
 import { VULN_SCANNER_OPTIONS, safeDocsUrl, vulnScannerLabel } from '../../lib/vulnScanners'
 import { useToastStore } from '../../stores/toast'
-import { t, tDynamic } from '../../i18n/en'
+import { t, tDynamic } from '../../i18n'
 
 const SELECT =
   'h-9 w-full rounded-lg border border-border-strong bg-surface-hover/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 max-md:h-11'

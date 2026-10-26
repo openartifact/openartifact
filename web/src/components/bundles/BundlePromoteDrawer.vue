@@ -75,7 +75,7 @@ import type { Repository } from '../../api/repositories'
 import type { BundleScanRow } from '../../composables/useBundleScans'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{
   open: boolean

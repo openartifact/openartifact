@@ -68,7 +68,7 @@ import Drawer from './ui/Drawer.vue'
 import { createGlobalLicensePolicy, LICENSE_POLICY_ACTIONS, type LicensePolicy, type LicensePolicyAction } from '../api/licensePolicies'
 import { INPUT_CLASS } from '../lib/formClasses'
 import { licensePolicyNameProblem, parseLicenseList } from '../lib/licensePolicy'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; created: [LicensePolicy] }>()

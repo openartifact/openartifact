@@ -135,7 +135,7 @@ import { formatBytesOrDash } from '../../lib/quota'
 import { emptyTrashResultText, purgeInText, trashCapabilities, type RepoPermissions } from '../../lib/trash'
 import { useSessionStore } from '../../stores/session'
 import { useToastStore } from '../../stores/toast'
-import { t, tp, tDynamic } from '../../i18n/en'
+import { t, tp, tDynamic } from '../../i18n'
 
 const props = defineProps<{
   /** Repository whose trash to show; omit for the admin-wide trash. */

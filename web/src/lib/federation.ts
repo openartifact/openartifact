@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t, tDynamic } from '../i18n/en'
+import { t, tDynamic } from '../i18n'
 import { formatDuration } from './duration'
 import { isFederationFormat } from './repoTypes'
 import type { Repository } from '../api/repositories'

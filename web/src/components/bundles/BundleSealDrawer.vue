@@ -46,7 +46,7 @@ import { sealBundle, type Bundle } from '../../api/bundles'
 import { listGpgKeys, type GpgKey } from '../../api/gpg'
 import { INPUT_CLASS } from '../../lib/formClasses'
 import { useToastStore } from '../../stores/toast'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const props = defineProps<{ open: boolean; name: string; version: string; itemCount: number }>()
 const emit = defineEmits<{ close: []; sealed: [bundle: Bundle] }>()

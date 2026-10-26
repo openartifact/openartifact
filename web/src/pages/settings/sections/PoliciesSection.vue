@@ -104,7 +104,8 @@ import { useLocalList } from '../../../composables/useLocalList'
 import { enumParam, strParam } from '../../../composables/useUrlState'
 import { policyAction } from '../../../lib/licensePolicy'
 import { useToastStore } from '../../../stores/toast'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
+import { compareText } from '../../../lib/intl'
 
 const FILTERS = ['all', ...LICENSE_POLICY_ACTIONS] as const
 type PolicyFilter = (typeof FILTERS)[number]
@@ -126,7 +127,7 @@ const { list, refresh } = useLocalList({
     return f.action === 'all' || policyAction(row) === f.action
   },
   compare(a, b, sort) {
-    return sort === 'updated' ? (a.updated_at ?? '').localeCompare(b.updated_at ?? '') : (a.name ?? '').localeCompare(b.name ?? '')
+    return sort === 'updated' ? (a.updated_at ?? '').localeCompare(b.updated_at ?? '') : compareText(a.name, b.name)
   },
 })
 

@@ -48,7 +48,7 @@ import { computed } from 'vue'
 import type { SecuritySummary } from '../../api/security'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { isCellActive, summaryTotals, type InboxFilters, type SeverityFilter } from '../../lib/securityFindings'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 type Cell = SeverityFilter | 'quarantined'
 

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t, tp, tpn } from '../i18n/en'
+import { t, tp, tpn } from '../i18n'
 import type { Repository } from '../api/generated/types.gen'
 
 const DAY_MS = 86_400_000

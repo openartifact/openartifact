@@ -48,7 +48,7 @@ import TierPolicyTable from '../../../components/TierPolicyTable.vue'
 import TierSimulatePanel from '../../../components/TierSimulatePanel.vue'
 import { listPolicies, listTiers, type StoragePolicy, type StorageTier } from '../../../api/tiering'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 const tiers = ref<StorageTier[]>([])
 const policies = ref<StoragePolicy[]>([])

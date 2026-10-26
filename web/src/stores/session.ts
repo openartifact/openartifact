@@ -12,7 +12,7 @@ import { atLeast } from '../lib/projectAccess'
 import { logout as apiLogout } from '../api/auth'
 import { useToastStore } from './toast'
 import { useUIStore } from './ui'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 /** The signed-in user as `/auth/me` returns it, with the caller's project roles. */
 export type User = UserExtended & { projects?: ProjectMembership[] }

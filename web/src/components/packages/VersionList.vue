@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { listPackageVersions } from '../../api/repositories'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 import { artifactPath } from '../../lib/artifactPath'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { distinctVersions, type VersionRow } from '../../lib/packageSearch'

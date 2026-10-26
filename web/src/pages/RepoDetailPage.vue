@@ -100,7 +100,7 @@ import { getRepository, type Repository } from '../api/repositories'
 import type { TabDef } from '../composables/useUrlTab'
 import { formatDuration } from '../lib/duration'
 import { useSessionStore } from '../stores/session'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const route = useRoute()
 const session = useSessionStore()

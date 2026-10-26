@@ -307,7 +307,7 @@ import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import AdminDialog from '../../../components/AdminDialog.vue'
 import { useDocsLink } from '../../../composables/useDocsLink'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 import { formatTime, timeAgo } from '../../../lib/datetime'
 
 interface TestOutcome {

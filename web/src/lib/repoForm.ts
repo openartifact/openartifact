@@ -12,7 +12,7 @@ import type { FormatId } from './formats'
 import { toBytes, splitBytes, formatBytes, type SizeUnit } from './quota'
 import { parseRetentionInput } from './trash'
 import { federationAvailable, type RepoType } from './repoTypes'
-import { t, tp, tpn } from '../i18n/en'
+import { t, tp, tpn } from '../i18n'
 
 export interface RepoForm {
   name: string

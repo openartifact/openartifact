@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
-import { t, type TranslationKey } from '../i18n/en'
+import { t, type TranslationKey } from '../i18n'
 
 /**
  * Breadcrumb declared on a route record (`meta.crumbs`). The label is either

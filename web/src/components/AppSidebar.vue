@@ -99,7 +99,7 @@ import { useBrandingStore } from '../stores/branding'
 import { useSessionStore } from '../stores/session'
 import { useUIStore } from '../stores/ui'
 import { activeAreaId, resolveNav } from '../lib/navigation'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const session = useSessionStore()
 const ui = useUIStore()

@@ -36,7 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 export interface Column {
   key: string

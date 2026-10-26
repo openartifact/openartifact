@@ -93,7 +93,7 @@ import { useListQuery } from '../composables/useListQuery'
 import { enumParam, strParam } from '../composables/useUrlState'
 import { useUrlFlag } from '../composables/useUrlFlag'
 import { bundleRoute, bundleStateLabel, bundleStateVariant } from '../lib/bundles'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const STATES = ['all', 'draft', 'sealed', 'archived'] as const
 type StateFilter = (typeof STATES)[number]

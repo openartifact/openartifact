@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 import { SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsGroupId, type SettingsSection } from './settingsSections'
 
 /** Fields a query can hit, best first (the order of `rank`). */

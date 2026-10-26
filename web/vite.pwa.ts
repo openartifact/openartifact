@@ -4,7 +4,7 @@
 
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { build, type Plugin } from 'vite'
 
 // Static app shell served next to the hashed assets (all from web/public).
@@ -20,7 +20,7 @@ function walk(dir: string): string[] {
 /**
  * Builds the service worker (src/pwa/sw.ts) into dist/sw.js once the app
  * bundle is written, injecting the precache list: every file under assets/
- * (content-hashed by Vite) plus the shell files and icons. The cache version
+ * (content-hashed by Vite) except the locale-* catalog chunks plus the shell files and icons. The cache version
  * is a digest of the listed files, so any change yields a new worker.
  */
 export function pwa(): Plugin {
@@ -41,6 +41,8 @@ export function pwa(): Plugin {
         ...walk(join(outDir, 'icons')),
       ]
         .filter((f) => !f.endsWith('.map'))
+        // Translated catalogs are fetched on demand (the chunk of the user's language only), not installed for every language.
+        .filter((f) => !/^locale-/.test(basename(f)))
         .map((f) => ({ file: f, url: '/' + relative(outDir, f).split(sep).join('/') }))
         .sort((a, b) => a.url.localeCompare(b.url))
 

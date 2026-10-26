@@ -102,7 +102,7 @@ import { deleteVexStatement, listVexStatements, type VexRecord } from '../api/ve
 import { formatDateTime } from '../lib/datetime'
 import { vexJustificationLabel } from '../lib/vex'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{
   /** Repository whose decisions are listed; empty shows a hint. */

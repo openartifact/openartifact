@@ -97,7 +97,7 @@ import { computed } from 'vue'
 import AppButton from '../../../components/AppButton.vue'
 import { PASSWORD_PATH, PERSONAL_TOKENS_PATH } from '../../../lib/navigation'
 import { useSessionStore } from '../../../stores/session'
-import { t } from '../../../i18n/en'
+import { t } from '../../../i18n'
 
 const session = useSessionStore()
 

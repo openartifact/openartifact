@@ -66,6 +66,11 @@ AGPL-3.0-or-later --exclude-year <file>`), and CI runs `reuse lint`.
   [docs/development](docs/development/README.md#conventions) and the area
   rules in `.agents/rules/`. CI enforces all of this on every pull request, and
   compiler/linter warnings must be fixed, not suppressed.
+- **UI text and translations.** New or changed UI text is written in English in
+  `web/src/i18n/locales/en/*.json` and used through `t()`; the other languages
+  can be corrected or extended by editing their JSON files in a pull request.
+  `bun run i18n:check` in `web/` validates the catalogs. See
+  [Translating the web UI](docs/development/translations.md).
 - **Test policy.** Every behavior change or bug fix needs an automated test
   that fails without it (unit tests next to the code, integration tests under
   `tests/` with the `integration` build tag). CI runs the suite with the race

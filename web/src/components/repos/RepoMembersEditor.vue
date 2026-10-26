@@ -47,7 +47,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, XMarkIcon } from '@heroicons/vue/20/solid'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const ICON_BTN =
   'inline-flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 max-md:h-11 max-md:w-11'

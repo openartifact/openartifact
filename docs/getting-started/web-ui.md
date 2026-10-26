@@ -22,7 +22,7 @@ The sidebar has seven areas. Areas that need more rights than you have stay visi
 | Security | `/security` | One inbox for vulnerability, license, secret and AI findings; see [Security findings](../security/findings.md). |
 | Settings | `/settings` | Your account, and for administrators everything configurable on the instance. |
 
-The header holds the command palette trigger and the user menu (profile, access tokens, theme, **Install app** when the browser offers it, About, sign out).
+The header holds the command palette trigger and the user menu (profile, access tokens, theme, [language](language.md), **Install app** when the browser offers it, About, sign out).
 
 ## Command palette
 

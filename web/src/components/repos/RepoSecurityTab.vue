@@ -71,7 +71,7 @@ import SeverityBadge from '../ui/SeverityBadge.vue'
 import StateBlock from '../ui/StateBlock.vue'
 import { getRepoSecuritySummary, type RepoSecuritySummary } from '../../api/repositories'
 import { useSessionStore } from '../../stores/session'
-import { t, tp } from '../../i18n/en'
+import { t, tp } from '../../i18n'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 

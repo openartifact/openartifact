@@ -166,7 +166,7 @@ import {
 } from '../lib/cleanupPolicy'
 import { errorStatus } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const props = defineProps<{ project: string; canEdit: boolean }>()
 

@@ -8,7 +8,7 @@
 // same thing, and it holds no query text, no secrets and no API data.
 
 import { NAV_AREAS, settingsSections } from './navigation'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 export type RecentKind = 'page' | 'section' | 'repo' | 'package' | 'project' | 'bundle'
 

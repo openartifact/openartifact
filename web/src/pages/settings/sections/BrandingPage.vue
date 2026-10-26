@@ -307,7 +307,7 @@ import {
   type BrandingFormErrors,
   type BrandingFormField,
 } from '../../../lib/brandingForm'
-import { t, tp, type TranslationKey } from '../../../i18n/en'
+import { t, tp, type TranslationKey } from '../../../i18n'
 
 const THEMES = ['light', 'dark'] as const
 

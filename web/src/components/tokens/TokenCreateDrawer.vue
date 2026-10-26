@@ -115,7 +115,7 @@ import {
   offeredTypes,
   presetType,
 } from '../../lib/tokens'
-import { t, tDynamic, tp } from '../../i18n/en'
+import { t, tDynamic, tp } from '../../i18n'
 import { useSessionStore } from '../../stores/session'
 
 /** The one-time result of a creation: the secret is shown once by the page. */

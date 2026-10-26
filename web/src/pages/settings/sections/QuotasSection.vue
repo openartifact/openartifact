@@ -120,7 +120,7 @@ import { useLocalList } from '../../../composables/useLocalList'
 import { enumParam, strParam } from '../../../composables/useUrlState'
 import { formatBytes } from '../../../lib/quota'
 import { compareQuotas, quotaCounts, quotaKey, quotaState, type QuotaState } from '../../../lib/quotaOverview'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
 
 const SCOPES = ['all', 'repository', 'project', 'near'] as const
 type QuotaScope = (typeof SCOPES)[number]

@@ -3,8 +3,8 @@ SPDX-PackageName = "OpenArtifact"
 SPDX-PackageSupplier = "The OpenArtifact Authors"
 SPDX-PackageDownloadLocation = "https://github.com/openartifact/openartifact"
 
-# sqlc query sources (header would leak into generated docs), generated code (sqlc, hey-api), lockfiles, binary assets and data files
-# that cannot carry comment headers.
+# sqlc query sources (header would leak into generated docs), generated code (sqlc, hey-api), lockfiles, binary assets, translation catalogs
+# (translation JSON) and glossaries, and other data files that cannot carry comment headers.
 [[annotations]]
 path = [
   "internal/database/dbsqlc/**",
@@ -23,6 +23,8 @@ path = [
   "docs/**.png",
   "web/public/**",
   "web/src/**/__snapshots__/**",
+  "web/src/i18n/locales/**/*.json",
+  "web/src/i18n/glossary/*.csv",
   "internal/clientsetup/testdata/web_parity.json",
   "internal/repotype/testdata/web_parity.json",
   "VERSION",

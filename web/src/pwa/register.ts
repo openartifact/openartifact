@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const SW_URL = '/sw.js'
 const UPDATE_CHECK_MS = 60 * 60 * 1000

@@ -4,7 +4,7 @@
 
 import type { Page } from 'puppeteer-core'
 import type { Account } from '../env'
-import { t } from '../../src/i18n/en'
+import { t } from '../../src/i18n'
 import { inpage, type ActionKind, type ActionResult, type RegexSpec, type Snapshot, type Step, type TextMatcher } from './inpage'
 import { DEFAULT_TIMEOUT_MS, eventually } from './wait'
 import type { Findings } from './watch'

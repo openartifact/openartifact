@@ -24,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import StatusBadge from './StatusBadge.vue'
 import { licenseActionLabel, licenseActionVariant } from '../lib/scanStatus'
 import type { LicensePolicyViolation } from '../api/security'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 defineProps<{
   violations: readonly LicensePolicyViolation[]

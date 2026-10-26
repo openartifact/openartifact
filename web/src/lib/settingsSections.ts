@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { Component } from 'vue'
-import { t, type TranslationKey } from '../i18n/en'
+import { t, type TranslationKey } from '../i18n'
 
 export type SettingsGroupId =
   | 'account'

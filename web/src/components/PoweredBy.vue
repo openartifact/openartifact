@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <p class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption text-muted" data-testid="powered-by">
     <span data-testid="powered-by-text">{{ label }}</span>
     <span aria-hidden="true">·</span>
-    <span>{{ t('brand.licenseShort') }}</span>
+    <span>{{ ATTRIBUTION.licenseShort }}</span>
     <span aria-hidden="true">·</span>
     <a
       :href="sourceHref"
@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       rel="noopener noreferrer"
       data-testid="source-link"
       class="underline underline-offset-2 hover:text-foreground max-md:inline-flex max-md:min-h-11 max-md:items-center"
-    >{{ t('brand.sourceCode') }}</a>
+    >{{ ATTRIBUTION.sourceCode }}</a>
   </p>
 </template>
 
@@ -31,13 +31,13 @@ import { computed } from 'vue'
 import { useBrandingStore } from '../stores/branding'
 import { useAppVersion, formatVersion } from '../composables/useAppVersion'
 import { DEFAULT_SOURCE_URL, safeUrl } from '../lib/branding'
-import { t } from '../i18n/en'
+import { ATTRIBUTION } from '../lib/attribution'
 
 const store = useBrandingStore()
 const version = useAppVersion()
 
 const sourceHref = computed(() => safeUrl(store.sourceUrl) || DEFAULT_SOURCE_URL)
 const label = computed(() =>
-  version.value ? `${t('brand.poweredBy')} ${formatVersion(version.value)}` : t('brand.poweredBy'),
+  version.value ? `${ATTRIBUTION.poweredBy} ${formatVersion(version.value)}` : ATTRIBUTION.poweredBy,
 )
 </script>

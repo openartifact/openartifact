@@ -140,7 +140,7 @@ import {
   type RepoForm,
 } from '../../lib/repoForm'
 import { federationAvailable, upstreamUrlPlaceholder, upstreamUrlRequired, type RepoType } from '../../lib/repoTypes'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const TYPES: RepoType[] = ['hosted', 'proxy', 'group']
 

@@ -117,7 +117,7 @@ import StatusBadge from '../../../components/StatusBadge.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import StateBlock from '../../../components/ui/StateBlock.vue'
 import { loadFederationOverview, type FederationOverview, type FederationRepoRow, type SyncState } from '../../../lib/federationOverview'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
 
 const STATE_VARIANT: Record<SyncState, 'success' | 'warning' | 'neutral'> = { ok: 'success', attention: 'warning', pending: 'neutral', none: 'neutral' }
 

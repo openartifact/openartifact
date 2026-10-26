@@ -24,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { BookOpenIcon } from '@heroicons/vue/24/outline'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 defineProps<{ url?: string | null }>()
 </script>

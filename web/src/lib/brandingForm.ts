@@ -9,7 +9,7 @@
 import type { BrandingAdmin, BrandingUpdate } from '../api/branding'
 import type { BrandingPalette } from './branding'
 import { IMAGE_MIME_TYPES, MAX_IMAGE_BYTES, hexToTriple, isHexColor, safeUrl } from './branding'
-import type { TranslationKey } from '../i18n/en'
+import type { TranslationKey } from '../i18n'
 
 const PRODUCT_NAME_MAX = 64
 export const LOGIN_MESSAGE_MAX = 2000

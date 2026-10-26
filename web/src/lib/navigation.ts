@@ -7,7 +7,7 @@
 // The sidebar, the palette and the "recent" list all read from here, so an
 // item a role cannot use is locked the same way everywhere.
 
-import { t, type TranslationKey } from '../i18n/en'
+import { t, type TranslationKey } from '../i18n'
 import { SETTINGS_SECTIONS, type SettingsGroupId } from './settingsSections'
 
 export type NavIcon = 'home' | 'repos' | 'packages' | 'projects' | 'bundles' | 'security' | 'settings'

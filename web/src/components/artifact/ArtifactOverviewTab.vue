@@ -93,7 +93,7 @@ import { useArtifactContext } from '../../composables/useArtifact'
 import { artifactPath } from '../../lib/artifactPath'
 import { countTotal, primaryFile } from '../../lib/artifactVersions'
 import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const ctx = useArtifactContext()
 const toasts = useToastStore()

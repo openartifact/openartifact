@@ -5,7 +5,7 @@
 import { getCurrentScope, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { getFederationStatus, type FederationStatus } from '../api/federation'
 import { FEDERATION_POLL_MS } from '../lib/federation'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 /**
  * Loads the federation status of `repo` and re-reads it every `intervalMs` while the page is

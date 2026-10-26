@@ -35,7 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed } from 'vue'
 import { CheckCircleIcon, ChevronRightIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
-import { t, tp, type TranslationKey } from '../../i18n/en'
+import { t, tp, type TranslationKey } from '../../i18n'
 import type { ChecklistStep } from '../../lib/checklist'
 
 const props = defineProps<{ steps: ChecklistStep[] }>()

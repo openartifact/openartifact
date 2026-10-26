@@ -32,7 +32,7 @@ import { ArrowDownTrayIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import type { ExportFormat } from '../api/audit'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const props = defineProps<{ download: (format: ExportFormat) => Promise<void> }>()
 

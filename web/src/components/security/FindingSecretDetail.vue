@@ -35,7 +35,7 @@ import { ref, watch } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import SeverityBadge, { type Severity } from '../ui/SeverityBadge.vue'
 import { getSecretScan, type SecretScan, type SecurityFinding } from '../../api/security'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ finding: SecurityFinding }>()
 

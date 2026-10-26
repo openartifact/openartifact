@@ -109,7 +109,7 @@ import {
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { findingArtifact, findingLink, scannerLabels, statusVariant } from '../../lib/securityFindings'
 import { useToastStore } from '../../stores/toast'
-import { t, tDynamic } from '../../i18n/en'
+import { t, tDynamic } from '../../i18n'
 
 // The vulnerability detail carries the VEX dialog and the export buttons: its own chunk.
 const FindingVulnDetail = defineAsyncComponent(() => import('./FindingVulnDetail.vue'))

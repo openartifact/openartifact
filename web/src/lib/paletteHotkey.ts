@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 interface NavigatorWithUAData extends Navigator {
   userAgentData?: { platform?: string }

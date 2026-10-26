@@ -105,7 +105,7 @@ import { securityFlag } from '../lib/artifactSecurity'
 import { worstCount, worstSeverity } from '../lib/artifactVersions'
 import { asyncTab } from '../lib/asyncTab'
 import { packageTabDefs } from '../lib/packageTabs'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const ArtifactVersionsTab = asyncTab(() => import('../components/artifact/ArtifactVersionsTab.vue'))
 const ArtifactFilesTab = asyncTab(() => import('../components/artifact/ArtifactFilesTab.vue'))

@@ -141,7 +141,7 @@ import { formatVersion } from '../../../composables/useAppVersion'
 import { formatBuildTime, formatCommit, isStamped, isUnstampedBuild, LDFLAGS_EXAMPLE } from '../../../lib/buildInfo'
 import { formatUtc } from '../../../lib/datetime'
 import { healthRows, healthSummary, type HealthRow, type HealthStatus } from '../../../lib/systemHealth'
-import { t, tp } from '../../../i18n/en'
+import { t, tp } from '../../../i18n'
 
 const BADGE: Record<HealthStatus, 'success' | 'warning' | 'danger' | 'neutral'> = { ok: 'success', warn: 'warning', bad: 'danger', none: 'neutral' }
 

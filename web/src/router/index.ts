@@ -6,7 +6,7 @@ import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded, typ
 import { useSessionStore } from '../stores/session'
 import { useBrandingStore } from '../stores/branding'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 import { safeNextPath } from '../lib/safeRedirect'
 import { resolveCrumbs } from '../lib/crumbs'
 import { findSettingsSection } from '../lib/settingsSections'

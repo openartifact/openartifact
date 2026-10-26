@@ -297,7 +297,7 @@ import { listAllRepositories } from '../../../api/repositories'
 import { ApiError } from '../../../api/client'
 import { formatDate } from '../../../lib/datetime'
 import { useToastStore } from '../../../stores/toast'
-import { t, tDynamic } from '../../../i18n/en'
+import { t, tDynamic } from '../../../i18n'
 
 const ALGORITHMS: GpgAlgorithm[] = ['ed25519', 'rsa4096']
 const inputClass =

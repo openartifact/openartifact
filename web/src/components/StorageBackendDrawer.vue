@@ -42,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <div class="grid grid-cols-2 gap-2">
           <button
-            v-for="(bt, key) in BACKEND_TYPES"
+            v-for="(bt, key) in backendTypes()"
             :key="key"
             type="button"
             :disabled="mode === 'edit'"
@@ -77,7 +77,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- Dynamic config fields -->
-      <div v-if="form.kind && BACKEND_TYPES[form.kind]">
+      <div v-if="form.kind && backendTypes()[form.kind]">
         <label class="block text-xs font-semibold text-foreground mb-3">{{ t('storage.configuration') }}</label>
         <div class="grid grid-cols-2 gap-x-3 gap-y-4">
           <StorageBackendField
@@ -153,9 +153,9 @@ import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
 import StorageBackendField from './StorageBackendField.vue'
 import { useStorageBackendForm, type DrawerMode } from '../composables/useStorageBackendForm'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 import { tint } from '../lib/brandColors'
-import { BACKEND_TYPES, typeColor, typeIcon, type StorageBackend } from '../lib/storageBackends'
+import { backendTypes, typeColor, typeIcon, type StorageBackend } from '../lib/storageBackends'
 
 const props = defineProps<{
   open: boolean

@@ -4,7 +4,7 @@
 
 import type { Repository } from '../api/repositories'
 import type { SecuritySummary } from '../api/artifact'
-import { tp } from '../i18n/en'
+import { tp } from '../i18n'
 
 export interface ArtifactAccess {
   isAdmin: boolean

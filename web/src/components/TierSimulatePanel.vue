@@ -28,7 +28,7 @@ import { BeakerIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import TierDryRunResult from './TierDryRunResult.vue'
 import { useTierDryRun } from '../composables/useTierDryRun'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 
 const dry = useTierDryRun()
 </script>

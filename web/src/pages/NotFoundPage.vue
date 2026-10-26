@@ -21,5 +21,5 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import EmptyState from '../components/EmptyState.vue'
-import { t } from '../i18n/en'
+import { t } from '../i18n'
 </script>

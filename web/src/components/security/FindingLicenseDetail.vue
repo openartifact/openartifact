@@ -43,7 +43,7 @@ import { ref, watch } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { getLicenseScan, type LicenseScan, type SecurityFinding } from '../../api/security'
 import { licenseQuarantineState } from '../../lib/scanStatus'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ finding: SecurityFinding }>()
 

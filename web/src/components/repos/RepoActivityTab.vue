@@ -32,7 +32,7 @@ import { listRepoActivity, type RepoActivityEntry } from '../../api/repositories
 import { useListQuery } from '../../composables/useListQuery'
 import { actionLabel } from '../../lib/activity'
 import { artifactPath } from '../../lib/artifactPath'
-import { t } from '../../i18n/en'
+import { t } from '../../i18n'
 
 const props = defineProps<{ repo: string }>()
 

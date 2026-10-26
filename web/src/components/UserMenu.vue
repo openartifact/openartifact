@@ -60,6 +60,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ThemeToggle />
         </div>
 
+        <div class="border-t border-border px-3 py-2">
+          <LanguageSelect id="language-select-menu" return-focus-to="user-menu-button" />
+        </div>
+
         <ul class="border-t border-border py-1">
           <li v-if="canInstall">
             <button type="button" :class="ITEM" @click="onInstall(close)">
@@ -96,12 +100,13 @@ import {
   UserCircleIcon,
 } from '@heroicons/vue/24/outline'
 import ThemeToggle from './ThemeToggle.vue'
+import LanguageSelect from './LanguageSelect.vue'
 import AboutDialog from './AboutDialog.vue'
 import { useSessionStore } from '../stores/session'
 import { useSignOut } from '../composables/useSignOut'
 import { useInstallPrompt } from '../composables/useInstallPrompt'
 import { PERSONAL_TOKENS_PATH, PROFILE_PATH } from '../lib/navigation'
-import { t, tp } from '../i18n/en'
+import { t, tp } from '../i18n'
 
 const ITEM =
   'flex min-h-11 w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none md:min-h-9'
