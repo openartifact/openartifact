@@ -15,10 +15,12 @@ import (
 	"io"
 	"maps"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
+	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
@@ -67,7 +69,7 @@ func nevra(p *pkgrpm.Package) string {
 
 // buildRPM renders the merged repodata of the group.
 func (j *groupJob) buildRPM(ctx context.Context) error {
-	sources, err := j.loadRPMSources(ctx)
+	sources, noRepodata, err := j.loadRPMSources(ctx)
 	if err != nil {
 		return err
 	}
@@ -75,6 +77,13 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 	count, err := j.selectRPMPackages(ctx, sources)
 	if err != nil {
 		return err
+	}
+
+	// Proxy members over a tree of repositories have no repodata at their
+	// root: with nothing else to list, an empty index would only hide that.
+	if count == 0 && len(noRepodata) > 0 {
+		return fmt.Errorf("%w (proxy members without repodata/repomd.xml at their upstream root: %s)",
+			group.ErrNoRepodata, strings.Join(noRepodata, ", "))
 	}
 
 	ts := time.Now().Unix()
@@ -130,13 +139,17 @@ func (j *groupJob) buildRPM(ctx context.Context) error {
 
 // loadRPMSources reads every member: hosted ones from the database, proxy ones
 // by their upstream repomd.xml. A proxy member whose repodata cannot be read is
-// left out of this generation, which is then partial.
-func (j *groupJob) loadRPMSources(ctx context.Context) ([]*rpmSource, error) {
+// left out of this generation, which is then partial. noRepodata names the
+// proxy members whose upstream has no repomd.xml at its root.
+func (j *groupJob) loadRPMSources(ctx context.Context) ([]*rpmSource, []string, error) {
 	if !j.group.MergeProxyVersions {
 		j.hostedNames = make(map[string]struct{})
 	}
 
-	var sources []*rpmSource
+	var (
+		sources    []*rpmSource
+		noRepodata []string
+	)
 
 	for _, m := range j.members {
 		if m.RepoType == repotype.Proxy {
@@ -148,6 +161,8 @@ func (j *groupJob) loadRPMSources(ctx context.Context) ([]*rpmSource, error) {
 
 			if hrefs != nil {
 				sources = append(sources, &rpmSource{member: m, hrefs: hrefs, keep: make(map[string]struct{})})
+			} else {
+				noRepodata = append(noRepodata, m.Name)
 			}
 
 			continue
@@ -155,7 +170,7 @@ func (j *groupJob) loadRPMSources(ctx context.Context) ([]*rpmSource, error) {
 
 		pkgs, err := j.w.rpm.PackagesForMetadata(ctx, m.ID)
 		if err != nil {
-			return nil, fmt.Errorf("group worker: loading packages of %s: %w", m.Name, err)
+			return nil, nil, fmt.Errorf("group worker: loading packages of %s: %w", m.Name, err)
 		}
 
 		src := &rpmSource{member: m}
@@ -170,7 +185,7 @@ func (j *groupJob) loadRPMSources(ctx context.Context) ([]*rpmSource, error) {
 		sources = append(sources, src)
 	}
 
-	return sources, nil
+	return sources, noRepodata, nil
 }
 
 // fetchRepomd reads a proxy member's repomd.xml. nil hrefs with a nil error

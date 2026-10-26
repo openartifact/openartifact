@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -25,6 +26,13 @@ import (
 // ErrDistNotFound is returned by MetadataGenerator.Generate when no member of a
 // Debian group has the requested distribution.
 var ErrDistNotFound = errors.New("group: distribution not found in any member")
+
+// ErrNoRepodata is returned by MetadataGenerator.Generate for an rpm group
+// whose proxy members have no repodata/repomd.xml at their upstream root and
+// which has nothing else to list, typically because the upstream is a tree of
+// repositories rather than one repository. The error message names the
+// members.
+var ErrNoRepodata = errors.New("no merged repodata")
 
 // MetadataGenerator produces and invalidates the merged metadata of deb and rpm
 // groups (the worker.GroupMetadataWorker).
@@ -284,6 +292,9 @@ func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *mo
 	case errors.Is(err, ErrDistNotFound):
 		http.NotFound(w, r)
 		return nil, false
+	case errors.Is(err, ErrNoRepodata):
+		writeNoRepodata(w, grp, err)
+		return nil, false
 	case err != nil:
 		if ctx.Err() == nil {
 			h.log.Errorw("group metadata generation failed", "group", grp.Name, "error", err)
@@ -313,6 +324,16 @@ func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *mo
 	}
 
 	return meta, true
+}
+
+// writeNoRepodata answers a request for the merged index of an rpm group that
+// has none to merge, saying why and where the members' own repositories are.
+func writeNoRepodata(w http.ResponseWriter, grp *models.Repository, err error) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, fmt.Sprintf("%s: %v. If a proxy member mirrors a tree of repositories, "+
+		"request a repository by its sub-path (/repos/%s/<path of the repository>/repodata/repomd.xml): "+
+		"the group serves sub-paths from its proxy members as they are, without merging them",
+		grp.Name, err, grp.Name), http.StatusNotFound)
 }
 
 // worthGenerating reports whether a metadata miss justifies generating the
@@ -423,7 +444,13 @@ func (h *Handler) serveGroupFile(w http.ResponseWriter, r *http.Request, grp *mo
 	}
 
 	if !ok {
+		if grp.Format == "rpm" {
+			h.servePassthrough(w, r, readable, relPath, be)
+			return
+		}
+
 		http.NotFound(w, r)
+
 		return
 	}
 
@@ -438,6 +465,44 @@ func (h *Handler) serveGroupFile(w http.ResponseWriter, r *http.Request, grp *mo
 	}
 
 	http.NotFound(w, r)
+}
+
+// servePassthrough serves a path the merged rpm index does not list from the
+// first readable proxy member that has it, the way the proxy itself would, but
+// only for members the index cannot cover: a proxy over a tree of repositories
+// has no repodata at its root, so the repodata and packages of each of its
+// repositories live under sub-paths a group cannot merge. For every other
+// member an unlisted file stays absent: the index decides what the group
+// serves (hosted-wins and checksum conflicts hide files on purpose).
+func (h *Handler) servePassthrough(w http.ResponseWriter, r *http.Request, readable []*models.Repository, relPath string, be Backend) {
+	var trees []*models.Repository
+
+	for _, m := range readable {
+		if m.RepoType == "proxy" && noRootRepodata(r, m, be) {
+			trees = append(trees, m)
+		}
+	}
+
+	if len(trees) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	h.serveFirstHit(w, r, trees, relPath, be)
+}
+
+// noRootRepodata reports whether the proxy member m answers 404 for its root
+// repodata/repomd.xml (a HEAD, so nothing is streamed; the proxy caches the
+// answer either way). Any other outcome, an upstream failure included, counts
+// as having one: the file is then not served rather than guessed.
+func noRootRepodata(r *http.Request, m *models.Repository, be Backend) bool {
+	pr := r.Clone(r.Context())
+	pr.Method = http.MethodHead
+
+	sw := &statusWriter{header: make(http.Header)}
+	be.ServeMember(sw, pr, m, "repodata/repomd.xml")
+
+	return sw.status == http.StatusNotFound
 }
 
 // memberFilePath is the path a member is asked for key with: a hosted member's

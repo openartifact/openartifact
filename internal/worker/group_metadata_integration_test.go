@@ -697,6 +697,53 @@ func TestGroupRPMProxyOnlyAndEmptyHosted(t *testing.T) {
 	}
 }
 
+// A proxy over a tree of repositories has no repodata at its root: with
+// nothing else in the group there is no index to merge, which Generate says
+// instead of publishing an empty one.
+func TestGroupRPMProxyOverATreeHasNoMergedIndex(t *testing.T) {
+	f := newGroupFixture(t)
+	ctx := context.Background()
+
+	tree := f.repo("rpm-tree", "rpm", "proxy")
+	grp := f.repo("rpm-group", "rpm", "group", tree.ID)
+
+	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, fakeRPMLoader{}, fixedResolver{}, testLogger(t))
+	t.Cleanup(w.Stop)
+
+	err := w.Generate(ctx, grp.ID, "", nil)
+	if !errors.Is(err, group.ErrNoRepodata) || !strings.Contains(err.Error(), "rpm-tree") {
+		t.Fatalf("Generate = %v, want ErrNoRepodata naming the member", err)
+	}
+
+	if md := f.metadata(grp.ID); len(md) != 0 {
+		t.Errorf("published %v for a group with nothing to merge", keys(md))
+	}
+}
+
+// The tree's proxy does not hide the hosted members' packages: the index lists
+// them and the proxy contributes nothing.
+func TestGroupRPMHostedWithAProxyOverATreeIndexesTheHostedPackages(t *testing.T) {
+	f := newGroupFixture(t)
+	ctx := context.Background()
+
+	hosted := f.repo("rpm-a", "rpm", "hosted")
+	tree := f.repo("rpm-tree", "rpm", "proxy")
+	grp := f.repo("rpm-group", "rpm", "group", hosted.ID, tree.ID)
+
+	loader := fakeRPMLoader{hosted.ID: {rpmPackage("foo", "1.0", "aaaa")}}
+
+	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, loader, fixedResolver{}, testLogger(t))
+	t.Cleanup(w.Stop)
+
+	if err := w.Generate(ctx, grp.ID, "", nil); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if rows := rpmListing(t, f.metadata(grp.ID)); len(rows) != 1 || rows[0].Name != "foo" {
+		t.Errorf("listing = %+v, want only the hosted package", rows)
+	}
+}
+
 // fixedResolver signs every repository with one signer (nil: unsigned).
 type fixedResolver struct{ signer gpg.Signer }
 
