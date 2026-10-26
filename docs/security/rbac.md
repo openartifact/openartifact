@@ -17,7 +17,7 @@ A **permission target** has:
 | `name` | at most 128 characters |
 | `repository_filter` | regex matched against the repository name |
 | `path_pattern` | regex matched against the artifact path |
-| `actions` | any of `read`, `write`, `delete`, `manage` (`annotate` is accepted but not enforced anywhere) |
+| `actions` | any of `read`, `write`, `delete`, `manage`, `annotate` (`annotate` only permits editing [artifact properties](../repositories/properties.md), see below) |
 
 Patterns are anchored (`^(?:pattern)$`), `*` alone is shorthand for `.*`, and an empty pattern is rejected. An invalid stored pattern grants nothing (a warning is logged).
 
@@ -40,13 +40,15 @@ Two targets are seeded by the first migration:
 | `GET/HEAD /api/v1/repositories`, `/api/v1/search` | any authenticated principal | results are filtered per repository by `read` |
 | `GET/HEAD /api/v1/repository/{name}` | `read` | `{name}` |
 | `/api/v1/repositories/{name}/debs…`, `…/packages…`, `…/comps…` (Debian/RPM upload), `…/uploads…` (presigned raw upload: create and complete) | GET/HEAD `read`, POST/PUT `write`, DELETE `delete` | `{name}`, empty path |
-| `GET/PUT/PATCH /api/v1/repositories/{name}/artifacts/{id}/properties`, `DELETE …/properties/{key}`, `GET …/artifacts/search` (artifact properties) | GET `read`; PUT, PATCH and DELETE `write` | `{name}`, empty path |
+| `GET/PUT/PATCH /api/v1/repositories/{name}/artifacts/{id}/properties`, `DELETE …/properties/{key}`, `GET …/artifacts/search` (artifact properties) | GET `read`; PUT, PATCH and DELETE `annotate` or `write` (either one) | `{name}`, empty path |
 | `POST /api/v1/bundles`, `/api/v1/bundles/{name}/{version}…` (release bundles) | any authenticated principal, then decided per bundle by the handler, see [bundle permissions](../repositories/release-bundles.md#permissions) | the bundle's source and target repositories |
 | `GET /api/v1/bundles` (list), `/api/v1/pipelines…` | `manage` | global |
 | `GET /api/v1/repositories/{name}/trash`, `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` | `{name}`, empty path |
 | `DELETE /api/v1/repositories/{name}/trash` (empty the repository trash) | `manage` | `{name}`, empty path |
 | `GET /api/v1/trash`, `POST /api/v1/trash/{kind}/{id}/restore`, `DELETE /api/v1/trash/{kind}/{id}` | `manage` | global |
 | everything else (package data) | GET/HEAD/OPTIONS `read`, DELETE `delete`, other methods `write` | see below |
+
+`annotate` is narrower than `write`: it only authorizes changing the properties of artifacts in the matching repositories (it does not include reading them, so pair it with `read`). It never allows uploading, changing or deleting package data, and neither project roles nor anonymous access grant it. Reading properties and searching by property need `read`.
 
 Beyond `write`, completing a presigned upload additionally requires being the user who created it or an admin (`403` otherwise); see [Presigned uploads](../operations/storage.md#presigned-uploads).
 
