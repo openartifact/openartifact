@@ -3,29 +3,42 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { packageTabQuery, resolvePackageTab } from '../packageTabs'
+import { resolveTab } from '../../composables/useUrlTab'
+import { PACKAGE_TABS, packageTabDefs } from '../packageTabs'
 
-describe('resolvePackageTab', () => {
-  it('opens the tab the URL names', () => {
-    expect(resolvePackageTab('versions')).toBe('versions')
-    expect(resolvePackageTab('properties')).toBe('properties')
-    expect(resolvePackageTab('security')).toBe('security')
+describe('packageTabDefs', () => {
+  const tabs = packageTabDefs({ canSeeActivity: true, versionCount: 12, fileCount: 3, securityFlag: '2 critical' })
+
+  it('lists the seven tabs with overview first', () => {
+    expect(tabs.map((tab) => tab.id)).toEqual([...PACKAGE_TABS])
+    expect(tabs[0]!.id).toBe('overview')
   })
 
-  it('falls back to overview for a missing or unknown value, judging only the first of a repeated one', () => {
-    expect(resolvePackageTab(undefined)).toBe('overview')
-    expect(resolvePackageTab('nope')).toBe('overview')
-    expect(resolvePackageTab(['nope', 'versions'])).toBe('overview')
-    expect(resolvePackageTab(['versions', 'security'])).toBe('versions')
+  it('carries the counts and the security flag on their tabs only', () => {
+    expect(tabs.find((tab) => tab.id === 'versions')!.count).toBe(12)
+    expect(tabs.find((tab) => tab.id === 'files')!.count).toBe(3)
+    expect(tabs.find((tab) => tab.id === 'security')!.flag).toBe('2 critical')
+    expect(tabs.find((tab) => tab.id === 'sbom')!.count).toBeUndefined()
+  })
+
+  it('hides activity from people who cannot read it', () => {
+    expect(packageTabDefs({ canSeeActivity: false }).find((tab) => tab.id === 'activity')!.hidden).toBe(true)
+    expect(tabs.find((tab) => tab.id === 'activity')!.hidden).toBe(false)
   })
 })
 
-describe('packageTabQuery', () => {
-  it('puts a non-default tab in the query and keeps other keys', () => {
-    expect(packageTabQuery({ v: '1.0' }, 'security')).toEqual({ v: '1.0', tab: 'security' })
+describe('tab resolution', () => {
+  const tabs = packageTabDefs({ canSeeActivity: false })
+
+  it('opens the tab the URL names', () => {
+    expect(resolveTab(tabs, 'files')).toBe('files')
+    expect(resolveTab(tabs, 'sbom')).toBe('sbom')
   })
 
-  it('drops the tab key for the default tab', () => {
-    expect(packageTabQuery({ tab: 'versions', v: '1.0' }, 'overview')).toEqual({ v: '1.0' })
+  it('resolves unknown, legacy and hidden tabs to overview', () => {
+    expect(resolveTab(tabs, undefined)).toBe('overview')
+    expect(resolveTab(tabs, 'properties')).toBe('overview')
+    expect(resolveTab(tabs, 'activity')).toBe('overview')
+    expect(resolveTab(tabs, ['nope', 'files'])).toBe('overview')
   })
 })

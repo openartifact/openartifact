@@ -14,7 +14,16 @@ export interface PackageItem {
   size?: number
   sha256?: string
   format: string
+  /** Architecture, platform or classifier of this file; empty when the format has none. */
+  arch?: string
+  filename?: string
   created_at?: string
+  /** Vulnerability counts of this file's latest scan. */
+  security?: { critical: number; high: number; medium: number; low: number }
+  /** A critical or high vulnerability, a secret finding or a quarantined scan result. */
+  flagged?: boolean
+  /** Latest completed scan; absent when never scanned. */
+  scanned_at?: string
 }
 
 /** Security counts of a repository from its artifacts' latest scans (raw: VEX does not suppress any). */
