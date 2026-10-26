@@ -106,9 +106,8 @@ import {
   setVulnQuarantine,
   type SecurityFinding,
 } from '../../api/security'
-import { artifactPath } from '../../lib/artifactPath'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
-import { scannerLabels, statusVariant } from '../../lib/securityFindings'
+import { findingArtifact, findingLink, scannerLabels, statusVariant } from '../../lib/securityFindings'
 import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n/en'
 
@@ -139,12 +138,8 @@ watch(
   { immediate: true },
 )
 
-const artifactLabel = computed(() => (props.finding ? `${props.finding.package_name}@${props.finding.package_version}` : ''))
-const artifactLink = computed(() =>
-  props.finding
-    ? `${artifactPath(props.finding.repository, props.finding.package_name, props.finding.package_version)}?tab=security`
-    : '',
-)
+const artifactLabel = computed(() => (props.finding ? findingArtifact(props.finding) || t('security.table.removedPackage') : ''))
+const artifactLink = computed(() => (props.finding ? findingLink(props.finding) : ''))
 const scanners = computed(() => (props.finding ? scannerLabels(props.finding) : []))
 const canDelete = computed(() => props.finding?.type === 'vuln' || props.finding?.type === 'secret')
 

@@ -12,6 +12,7 @@ import {
   type SecuritySummary,
 } from '../api/security'
 import { enumParam, strParam } from '../composables/useUrlState'
+import { artifactPath } from './artifactPath'
 import { vulnScannerLabel } from './vulnScanners'
 import type { BadgeVariant } from './scanStatus'
 
@@ -121,7 +122,7 @@ export interface FindingRow {
   format: string
   severity: FindingSeverity
   title: string
-  /** `name@version`: names, never ids. */
+  /** `name@version`: names, never ids; '' when the package no longer exists. */
   artifact: string
   scanners: string[]
   status: SecurityFinding['status']
@@ -133,6 +134,17 @@ export interface FindingRow {
   source: SecurityFinding
 }
 
+/** `name@version`, the bare name for formats without versions, '' when the package is gone (the API never sends an id as the name). */
+export function findingArtifact(f: Pick<SecurityFinding, 'package_name' | 'package_version'>): string {
+  return f.package_version ? `${f.package_name}@${f.package_version}` : f.package_name
+}
+
+/** Where a finding's package is reviewed: its Security tab, or the repository's when the package no longer exists. */
+export function findingLink(f: Pick<SecurityFinding, 'repository' | 'package_name' | 'package_version'>): string {
+  if (!f.package_name) return `/repos/${encodeURIComponent(f.repository)}?tab=security`
+  return `${artifactPath(f.repository, f.package_name, f.package_version)}?tab=security`
+}
+
 /** One table row per finding; what differs per type is the title text, the scanner list and whether quarantine can be toggled. */
 export function toFindingRow(f: SecurityFinding): FindingRow {
   return {
@@ -142,7 +154,7 @@ export function toFindingRow(f: SecurityFinding): FindingRow {
     format: f.format,
     severity: f.severity,
     title: f.title,
-    artifact: f.package_version ? `${f.package_name}@${f.package_version}` : f.package_name,
+    artifact: findingArtifact(f),
     scanners: scannerLabels(f),
     status: f.status,
     vexStatus: f.vex_status,

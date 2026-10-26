@@ -5,6 +5,8 @@
 import { describe, it, expect } from 'bun:test'
 import {
   countsLabel,
+  findingArtifact,
+  findingLink,
   hasNarrowingFilters,
   isCellActive,
   stripPatch,
@@ -55,5 +57,18 @@ describe('securityFindings', () => {
   it('lists only non-zero counts', () => {
     expect(countsLabel({ critical: 2, high: 0, medium: 0, low: 1 }, (s) => s)).toBe('2 critical, 1 low')
     expect(countsLabel({ critical: 0, high: 0, medium: 0, low: 0 }, (s) => s)).toBe('')
+  })
+
+  it('labels a finding with its package and links its Security tab', () => {
+    const f = { repository: 'npm-internal', package_name: '@acme/ui-kit', package_version: '1.1.0' }
+    expect(findingArtifact(f)).toBe('@acme/ui-kit@1.1.0')
+    expect(findingLink(f)).toBe('/repos/npm-internal/packages/@acme/ui-kit/versions/1.1.0?tab=security')
+    expect(findingArtifact({ package_name: 'keys/deploy.env', package_version: '' })).toBe('keys/deploy.env')
+  })
+
+  it('falls back to the repository when the package is gone', () => {
+    const f = { repository: 'raw-assets', package_name: '', package_version: '' }
+    expect(findingArtifact(f)).toBe('')
+    expect(findingLink(f)).toBe('/repos/raw-assets?tab=security')
   })
 })

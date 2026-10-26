@@ -161,6 +161,7 @@ export const enSecurity = {
   'security.forbidden.action': 'Browse packages',
   'security.table.caption': 'Security findings',
   'security.table.untitled': 'Untitled finding',
+  'security.table.removedPackage': 'Removed package',
   'security.empty.title': 'No findings',
   'security.empty.hint': 'Scan results appear here as soon as a package is scanned.',
   'security.clear.title': 'All clear',

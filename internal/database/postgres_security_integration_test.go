@@ -391,3 +391,41 @@ func TestRepoSecuritySummary(t *testing.T) {
 		t.Fatalf("unknown version = %+v", none)
 	}
 }
+
+// A scan started from a package page records the package row id as artifact_id:
+// the finding must carry the package's name and version, never the id.
+func TestSecurityFindings_ResolvesPackageRowIDs(t *testing.T) {
+	f := newSecurityFixture(t)
+
+	blob := mustScan[string](t, f.db,
+		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('b', 64), 3, repeat('b', 64)) RETURNING id`)
+	pkg := mustScan[string](t, f.db,
+		`INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, blob_id)
+		 VALUES ($1, 'data-pipeline', '2.3.1', 'data_pipeline-2.3.1.tar.gz', 'sdist', $2) RETURNING id`, f.repoB, blob)
+	purged := "00000000-0000-4000-8000-000000000001"
+
+	job := seedScanJob(t, f.db, f.repoB, pkg, "license", "license", "completed", f.now)
+	lic := mustScan[string](t, f.db, `INSERT INTO license_results (scan_job_id, licenses, quarantined)
+		VALUES ($1, '{AGPL-3.0-only}', true) RETURNING id`, job)
+	job = seedScanJob(t, f.db, f.repoB, purged, "secret", "secrets", "completed", f.now)
+	gone := mustScan[string](t, f.db, `INSERT INTO secret_results (scan_job_id, findings, finding_count)
+		VALUES ($1, '[{"type":"aws-key","severity":"high"}]', 1) RETURNING id`, job)
+
+	byID := map[string]*models.Finding{}
+	for _, fd := range listAll(t, f, models.FindingListParams{}).Findings {
+		byID[fd.ID] = fd
+	}
+
+	if got := byID[lic]; got == nil || got.PackageName != "data-pipeline" || got.PackageVersion != "2.3.1" || got.ArtifactID != pkg {
+		t.Fatalf("license finding of a package row id = %+v, want data-pipeline@2.3.1", got)
+	}
+
+	if got := byID[gone]; got == nil || got.PackageName != "" || got.PackageVersion != "" {
+		t.Fatalf("finding of a purged package = %+v, want no name", got)
+	}
+
+	// name@version artifact ids keep working untouched
+	if got := byID[f.ids["lodash"]]; got.PackageName != "lodash" {
+		t.Fatalf("lodash = %+v", got)
+	}
+}

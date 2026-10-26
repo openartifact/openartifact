@@ -157,7 +157,59 @@ func (p *PostgresDB) ListSecurityFindings(ctx context.Context, params models.Fin
 		page.Findings = append(page.Findings, findingFromRow(r))
 	}
 
+	if err := p.resolveFindingPackages(ctx, page.Findings); err != nil {
+		return nil, err
+	}
+
 	return page, nil
+}
+
+// resolveFindingPackages replaces the package name of findings recorded against
+// a package row id (scans started from a package page use the row id as
+// artifact_id, and the view then has nothing but that id to show) with the
+// row's name and version. An id that no longer resolves (purged package) is
+// blanked: the API never returns a bare id as a package name.
+func (p *PostgresDB) resolveFindingPackages(ctx context.Context, findings []*models.Finding) error {
+	var ids []string
+
+	for _, f := range findings {
+		if f.PackageName == f.ArtifactID && isUUID(f.ArtifactID) {
+			ids = append(ids, f.ArtifactID)
+		}
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	rows, err := p.q.ResolveComponentNames(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("resolve finding packages: %w", err)
+	}
+
+	type key struct{ repo, id string }
+
+	names := make(map[key]dbsqlc.ResolveComponentNamesRow, len(rows))
+	for _, r := range rows {
+		names[key{r.RepositoryID, r.ID}] = r
+	}
+
+	for _, f := range findings {
+		if f.PackageName != f.ArtifactID || !isUUID(f.ArtifactID) {
+			continue
+		}
+
+		r, ok := names[key{f.RepositoryID, f.ArtifactID}]
+		if !ok {
+			f.PackageName, f.PackageVersion = "", ""
+
+			continue
+		}
+
+		f.PackageName, f.PackageVersion = r.Name, r.Version
+	}
+
+	return nil
 }
 
 func findingFromRow(r dbsqlc.ListSecurityFindingsRow) *models.Finding {

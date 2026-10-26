@@ -134,7 +134,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </template>
         <template #cell-artifact="{ row }">
-          <router-link :to="linkOf(row as FindingRow)" class="font-medium text-primary hover:underline">{{ (row as FindingRow).artifact }}</router-link>
+          <router-link :to="linkOf(row as FindingRow)" class="font-medium text-primary hover:underline">{{ (row as FindingRow).artifact || t('security.table.removedPackage') }}</router-link>
           <div class="mt-0.5 flex items-center gap-1.5 text-caption text-muted">
             <FormatBadge v-if="(row as FindingRow).format" :format="(row as FindingRow).format" size="sm" />
             {{ (row as FindingRow).repository }}
@@ -201,12 +201,12 @@ import StateBlock from '../../components/ui/StateBlock.vue'
 import { listAllRepositories } from '../../api/repositories'
 import { FINDINGS_EXPORT_FORMATS, findingsExportUrl, type FindingCounts, type FindingsExportFormat, type SecurityFinding } from '../../api/security'
 import { useSecurityInbox } from '../../composables/useSecurityInbox'
-import { artifactPath } from '../../lib/artifactPath'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import {
   SEVERITY_FILTERS,
   STATUS_FILTERS,
   countsLabel,
+  findingLink,
   hasNarrowingFilters,
   statusVariant,
   toFindingFilters,
@@ -260,9 +260,7 @@ function clearAll(): void {
   list.setFilters({ severity: '', status: '', repo: '', q: '' })
 }
 
-function linkOf(row: FindingRow): string {
-  return `${artifactPath(row.repository, row.source.package_name, row.source.package_version)}?tab=security`
-}
+const linkOf = (row: FindingRow): string => findingLink(row.source)
 
 const countsText = (c: FindingCounts): string => countsLabel(c, (s) => t(`ui.severity.${s}`))
 

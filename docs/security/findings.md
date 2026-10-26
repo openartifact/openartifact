@@ -48,7 +48,7 @@ The row's `severity` is its worst non-zero count (`critical`, `high`, `medium`, 
 
 ## The findings list
 
-`GET /api/v1/security/findings` returns `{findings, has_more, next_cursor}`. A finding has `id`, `type`, `repository`, `format`, `package_name`, `package_version`, `artifact_id`, `severity`, `counts` (`critical`, `high`, `medium`, `low`), `title`, `scanner`, `status`, `quarantined`, `vex_status` (when set) and `scanned_at`. The `title` names what was found: the id of the worst vulnerability of a vulnerability finding, the unresolved licenses (else the licenses) of a license finding, the description of the worst secret of a secret finding and the first line of the notes (at most 160 characters) of an AI finding.
+`GET /api/v1/security/findings` returns `{findings, has_more, next_cursor}`. A finding has `id`, `type`, `repository`, `format`, `package_name`, `package_version`, `artifact_id`, `severity`, `counts` (`critical`, `high`, `medium`, `low`), `title`, `scanner`, `status`, `quarantined`, `vex_status` (when set) and `scanned_at`. `package_name` and `package_version` are the scanned package's name and version; a scan started from a package page, which records the package row id as `artifact_id`, resolves to the package's name and version, and a package that no longer exists leaves both empty (an id is never returned as a name). The `title` names what was found: the id of the worst vulnerability of a vulnerability finding, the unresolved licenses (else the licenses) of a license finding, the description of the worst secret of a secret finding and the first line of the notes (at most 160 characters) of an AI finding.
 
 | Query | Meaning |
 |---|---|
