@@ -118,3 +118,28 @@ func TestEmptyListsSerialiseAsArrays(t *testing.T) {
 		})
 	}
 }
+
+// A pipeline stored without stages (null in the database) still answers
+// "stages": [] as the schema promises.
+func TestPipelineWithoutStagesSerialisesAsEmptyArray(t *testing.T) {
+	for name, p := range map[string]*models.PromotionPipeline{
+		"nil stages":         {Name: "p"},
+		"null stages in raw": {Name: "p", StagesRaw: []byte("null")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := json.Marshal(pipelineToMap(p))
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+
+			if got := string(body["stages"]); got != "[]" {
+				t.Fatalf("stages = %s, want []", got)
+			}
+		})
+	}
+}

@@ -1259,11 +1259,16 @@ func pipelineToMap(p *models.PromotionPipeline) map[string]any {
 		_ = json.Unmarshal(p.StagesRaw, &p.Stages)
 	}
 
+	stages := p.Stages
+	if stages == nil {
+		stages = []models.PipelineStage{}
+	}
+
 	return map[string]any{
 		"id":          p.ID,
 		"name":        p.Name,
 		"description": p.Description,
-		"stages":      p.Stages,
+		"stages":      stages,
 		"created_by":  p.CreatedBy,
 		"created_at":  formatTime(p.CreatedAt),
 		"updated_at":  formatTime(p.UpdatedAt),
