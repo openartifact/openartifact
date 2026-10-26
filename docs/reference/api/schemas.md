@@ -12,6 +12,35 @@ Named request and response objects of the [REST API](README.md), sorted by name.
 
 ## Schemas
 
+### ActivityEntry
+
+A `ProjectActivityEntry` with the actor's and the subject's names resolved.
+
+Includes all fields of [ProjectActivityEntry](#projectactivityentry).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | string | yes | Audit action, e.g. `project.member_added`, `project.repository_created`. |
+| `actor` | string | yes | Username or token name of the actor; empty when unknown. |
+| `actor_name` | string | yes | Display name of the actor: the recorded name, else the user's current name, else `system`; empty when unknown. |
+| `actor_type` | string | no | Nullable. One of: `user`, `system`, `token`, `sso`. |
+| `id` | string (uuid) | yes | - |
+| `message` | string | yes | - |
+| `repository_id` | string (uuid) | no | Nullable. |
+| `resource_id` | string | no | Nullable. |
+| `resource_type` | string | no | Nullable. |
+| `subject` | [AuditSubject](#auditsubject) | yes | Nullable. |
+| `timestamp` | string (date-time) | yes | - |
+
+### ActivityPage
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `data` | array of [ActivityEntry](#activityentry) | yes | - |
+| `has_more` | boolean | yes | True when entries follow this page. |
+| `next_cursor` | string | no | Pass as `cursor` to fetch the next page. Absent when `has_more` is false. |
+| `per_page` | integer | yes | - |
+
 ### AdminToken
 
 Includes all fields of [Token](#token).
@@ -61,16 +90,34 @@ Includes all fields of [Token](#token).
 
 ### AuditEntry
 
+One audit log entry of the admin audit list.
+
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | no | - |
-| `actor` | string | no | - |
-| `details` | object | no | - |
-| `id` | string (uuid) | no | - |
-| `ip` | string | no | - |
-| `result` | string | no | - |
-| `target` | string | no | - |
-| `timestamp` | string (date-time) | no | - |
+| `action` | string | yes | - |
+| `actor` | string | yes | Username or token name recorded with the event; empty when unknown. |
+| `actor_name` | string | yes | Display name of the actor: the recorded name, else the user's current name, else `system` for background work; empty when unknown. |
+| `details` | object | no | Nullable. |
+| `id` | string (uuid) | yes | - |
+| `ip` | string | no | Nullable. |
+| `repository_id` | string (uuid) | no | Nullable. |
+| `resource_id` | string | no | Nullable. |
+| `resource_type` | string | no | Nullable. |
+| `subject` | [AuditSubject](#auditsubject) | yes | What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows). Nullable. |
+| `target` | string | no | The raw resource id. Nullable. |
+| `timestamp` | string (date-time) | yes | - |
+
+### AuditSubject
+
+What an audit event acted on, resolved server-side. `name` is null when the subject is gone and the event did not record its name.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | `repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `permission_target`, `gpg_key`, `sso_provider`, `setting`, or the raw resource type of an event kind without a dedicated one (`storage_tier`, `storage_policy`, ...). |
+| `name` | string | yes | Nullable. |
+| `project` | string | no | Name of the project the event belongs to. |
+| `repository` | string | no | Name of the repository the event belongs to. |
+| `version` | string | no | Package version, for `package` subjects that record one. |
 
 ### Backup
 
@@ -919,15 +966,6 @@ One audit event of a project or of a repository it owns. Carries no client addre
 | `resource_type` | string | no | Nullable. |
 | `timestamp` | string (date-time) | yes | - |
 
-### ProjectActivityPage
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `data` | array of [ProjectActivityEntry](#projectactivityentry) | yes | - |
-| `has_more` | boolean | yes | True when entries follow this page. |
-| `next_cursor` | string | no | Pass as `cursor` to fetch the next page. Absent when `has_more` is false. |
-| `per_page` | integer | yes | - |
-
 ### ProjectCleanupPreview
 
 | Field | Type | Required | Description |
@@ -966,6 +1004,37 @@ One audit event of a project or of a repository it owns. Carries no client addre
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `role` | string | yes | One of: `viewer`, `developer`, `maintainer`. |
+
+### ProjectListItem
+
+A project of the project list: the project plus its member count, usage and quota.
+
+Includes all fields of [Project](#project).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `allow_public_repos` | boolean | no | Whether repositories of this project may be public. |
+| `allowed_formats` | array of string | no | Package formats repositories of this project may use. null allows every format. Nullable. |
+| `allowed_repo_types` | array of string | no | Repository types allowed in this project. Items: one of: `hosted`, `proxy`, `group`. |
+| `created_at` | string (date-time) | no | - |
+| `description` | string | no | Nullable. |
+| `display_name` | string | no | Nullable. |
+| `id` | string (uuid) | no | - |
+| `is_system` | boolean | no | The built-in system project: it grants nothing and cannot be deleted. |
+| `max_repositories` | integer | no | Maximum number of repositories the project may own. 0 means unlimited. Minimum: 0. |
+| `member_count` | integer | yes | Direct members; users who hold a role only through a group are not counted. |
+| `my_role` | string | no | The caller's effective role in the project; a global admin without a role is an implicit owner. One of: `owner`, `maintainer`, `developer`, `viewer`. |
+| `name` | string | no | - |
+| `owner_id` | string (uuid) | no | Nullable. |
+| `quota` | object | no | Absent when the project has no size limit. |
+| `quota.limit_bytes` | integer (int64) | yes | - |
+| `repo_name_prefix` | string | no | Prefix every repository name in this project must start with. Empty means no prefix is required. |
+| `repository_count` | integer | no | Number of live (not trashed) repositories. |
+| `slug` | string | no | URL-safe unique identifier derived from the name: lowercased, runs of characters outside a-z0-9 collapsed to '-', at most 64 characters. A name or slug collision on create returns 409. |
+| `token_max_ttl_days` | integer | no | Maximum lifetime in days of tokens scoped to this project. 0 means no cap. Minimum: 0. |
+| `updated_at` | string (date-time) | no | - |
+| `usage` | object | yes | - |
+| `usage.size_bytes` | integer (int64) | yes | Stored size across the project's repositories (trashed ones included). |
 
 ### ProjectMember
 
@@ -1124,6 +1193,50 @@ Partial update: omitted fields stay unchanged.
 | `max_artifact_count` | integer | no | - |
 | `max_size_bytes` | integer | no | - |
 | `warn_threshold_percent` | number | no | - |
+
+### QuotaLine
+
+A quota next to its live usage. Limits are absent when unlimited.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_count` | integer (int64) | yes | - |
+| `exceeded` | boolean | yes | True once the size or the artifact count limit is reached. |
+| `limit_bytes` | integer (int64) | no | - |
+| `max_artifact_count` | integer (int64) | no | - |
+| `soft_limit_bytes` | integer (int64) | no | Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`. |
+| `usage_percent` | integer | yes | `used_bytes` of `limit_bytes`; 0 when unlimited. |
+| `used_bytes` | integer (int64) | yes | - |
+| `warn_threshold_percent` | integer | yes | - |
+
+### QuotaOverviewItem
+
+A repository's or a project's quota and usage.
+
+Includes all fields of [QuotaLine](#quotaline).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_count` | integer (int64) | yes | - |
+| `exceeded` | boolean | yes | True once the size or the artifact count limit is reached. |
+| `limit_bytes` | integer (int64) | no | - |
+| `max_artifact_count` | integer (int64) | no | - |
+| `name` | string | yes | - |
+| `project` | string | no | Project owning a repository; absent for a project line and for a repository without one. |
+| `scope` | string | yes | One of: `repository`, `project`. |
+| `soft_limit_bytes` | integer (int64) | no | Usage at which the warning threshold is crossed (`limit_bytes` times `warn_threshold_percent`); set with `limit_bytes`. |
+| `usage_percent` | integer | yes | `used_bytes` of `limit_bytes`; 0 when unlimited. |
+| `used_bytes` | integer (int64) | yes | - |
+| `warn_threshold_percent` | integer | yes | - |
+
+### QuotaOverviewList
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `limit` | integer | yes | - |
+| `page` | integer | yes | - |
+| `quotas` | array of [QuotaOverviewItem](#quotaoverviewitem) | yes | - |
+| `total` | integer | yes | - |
 
 ### ReadyResponse
 
@@ -1287,6 +1400,7 @@ Counts only; no finding ids, titles or other details.
 | `stats` | [RepositoryStats](#repositorystats) | no | - |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `updated_at` | string (date-time) | no | Last update timestamp |
+| `upstream_password_set` | boolean | no | Proxy repos: true when an upstream password is stored. The password is write-only (`upstream_password` on create and update) and is never returned. |
 | `upstream_url` | string | no | Upstream repository URL (for proxy repos) |
 | `upstream_username` | string | no | - |
 
@@ -1320,6 +1434,16 @@ Catalog figures of a repository. Only present in the repository list (GET /api/v
 | `security.scanned_at` | string (date-time) | no | Latest completed scan; absent when never scanned. |
 | `security.secrets` | integer (int64) | yes | Secret findings. |
 | `size_bytes` | integer (int64) | yes | Stored size, from the repository's quota counter (equals quota.used_bytes). |
+
+### RepositoryUsage
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `last_published_at` | string (date-time) | no | Absent for an empty repository. |
+| `package_count` | integer (int64) | yes | Distinct packages (by name). |
+| `quota` | [QuotaLine](#quotaline) | yes | - |
+| `size_bytes` | integer (int64) | yes | Stored size from the quota counter. |
+| `version_count` | integer (int64) | yes | Package rows (versions, or files for formats without versions). |
 
 ### SBOMReport
 
@@ -1505,6 +1629,9 @@ One stored scan result (a package version of one type) that reports something.
 | `status` | string | no | One of: `ok`, `degraded`, `error`, `unknown`. |
 | `status_message` | string | no | - |
 | `updated_at` | string (date-time) | no | - |
+| `usage` | object | no | What the backend holds; present on the list and get endpoints. |
+| `usage.blob_count` | integer (int64) | yes | - |
+| `usage.size_bytes` | integer (int64) | yes | - |
 
 ### StoragePolicy
 
@@ -1664,17 +1791,19 @@ Includes all fields of [Token](#token).
 
 ### TrashItem
 
-A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.
+A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at expires_at.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `deleted_at` | string (date-time) | yes | - |
 | `deleted_by` | string | yes | - |
+| `deleted_by_name` | string | yes | Who deleted the item as a display name: the username, or the policy or peer that did it (`cleanup-policy`, `federation:<peer>`). Empty when not recorded. Same value as `deleted_by`. |
+| `expires_at` | string (date-time) | yes | When the retention purge removes the item for good: deleted_at plus the repository's effective retention. |
 | `format` | string | yes | - |
 | `id` | string (uuid) | yes | Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item. |
 | `kind` | string | yes | One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `name` | string | yes | Package name, file path, image:tag or (kind repository) the repository name. |
-| `purge_at` | string (date-time) | yes | deleted_at plus the repository's effective retention. |
+| `purge_at` | string (date-time) | yes | Same value as `expires_at`, kept for existing clients. |
 | `repository` | string | yes | Name of the owning repository (the trashed repository itself for kind repository). |
 | `repository_id` | string (uuid) | yes | - |
 | `size_bytes` | integer (int64) | yes | - |
@@ -1688,6 +1817,34 @@ A soft-deleted package row or repository. It is hidden everywhere else until res
 | `limit` | integer | yes | - |
 | `page` | integer | yes | - |
 | `total` | integer | yes | - |
+
+### UnifiedToken
+
+One token of the unified token list. The secret is never returned.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | yes | - |
+| `expired` | boolean | yes | True once `expires_at` has passed. |
+| `expires_at` | string (date-time) | no | Absent for a token that never expires (federation tokens never do). |
+| `id` | string (uuid) | yes | - |
+| `last_used_at` | string (date-time) | no | - |
+| `name` | string | yes | - |
+| `owner` | string | yes | Username of the token's owner (personal), creator (project) or creator (federation, as recorded). |
+| `project` | string | no | Project name: set for project tokens and for federation tokens of a repository that belongs to a project. |
+| `repository` | string | no | Repository name, for federation tokens. |
+| `role` | string | no | Project role, for project tokens. |
+| `scopes` | array of string | no | Permission-target ids a personal token is limited to. |
+| `type` | string | yes | One of: `personal`, `project`, `federation`. |
+
+### UnifiedTokenList
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `limit` | integer | yes | - |
+| `page` | integer | yes | - |
+| `tokens` | array of [UnifiedToken](#unifiedtoken) | yes | - |
+| `total` | integer | yes | Tokens the caller may see that match the filters. |
 
 ### UpdateFederationPeerRequest
 

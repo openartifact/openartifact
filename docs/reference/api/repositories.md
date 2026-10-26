@@ -8,9 +8,33 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-60 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+63 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
+
+### `GET /api/v1/admin/quotas`
+
+List all quotas
+
+Every live repository and every project with its quota and live usage, largest usage first, in one request. A repository or project without a limit is listed as unlimited. Admin only.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `scope` | query | string | no | One of: `repository`, `project`. |
+| `limited` | query | boolean | no | `true` keeps only quotas that enforce a limit. |
+| `q` | query | string | no | Case-insensitive substring of the repository or project name. |
+| `page` | query | integer | no | Default: `1`. Minimum: 1. |
+| `limit` | query | integer | no | Default: `500`. Minimum: 1. Maximum: 2000. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | One page of quotas | `application/json`: [QuotaOverviewList](schemas.md#quotaoverviewlist) |
+| `400` | Invalid scope | - |
+| `403` | Admin access required | - |
 
 ### `GET /api/v1/repositories`
 
@@ -90,6 +114,33 @@ Create a new repository (admin only)
 | `400` | Invalid request | - |
 | `403` | Admin access required | - |
 | `409` | A repository with this name already exists, or the name is reserved by a repository in the trash until it is purged or restored (error codes conflict, name_reserved) | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/repositories/{name}/activity`
+
+Repository activity
+
+Audit events recorded against one repository (deletions, restores, purges, repository and project changes), newest first, with actor and subject names resolved. `package_name` and `version` keep only the events that record that package version: deletions, restores and purges do, other events never match. Keyset paging only: follow `next_cursor` while `has_more` is true; no row is counted. Client addresses are not returned. Requires global admin or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `package_name` | query | string | no | Exact package name as recorded with the event. |
+| `version` | query | string | no | Exact version as recorded with the event. |
+| `actor` | query | string | no | Case-insensitive substring of the actor name or actor id. |
+| `action` | query | string | no | Case-insensitive substring of the action name. |
+| `cursor` | query | string | no | Opaque `next_cursor` of the previous page; omit for the newest entries. |
+| `limit` | query | integer | no | Default: `25`. Minimum: 1. Maximum: 100. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | One page of activity | `application/json`: [ActivityPage](schemas.md#activitypage) |
+| `400` | Malformed cursor | - |
+| `403` | Admin or project maintainer access required | - |
+| `404` | Repository not found | - |
 
 ### `GET /api/v1/repositories/{name}/artifacts/search`
 
@@ -1104,6 +1155,26 @@ Returns presigned PUT URLs for up to 100 parts of a multipart upload, each for e
 | `409` | Code upload_completed: the upload is already completed | `application/json`: [Error](schemas.md#error) |
 | `410` | The upload expired | `application/json`: [Error](schemas.md#error) |
 | `501` | The storage backend does not support multipart uploads | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/repositories/{name}/usage`
+
+Get repository usage
+
+What the repository holds (packages, versions, stored bytes, newest publish) next to its quota. Package and version counts scan the repository's package rows: use it for one repository on demand, not in a loop. Requires global admin or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Repository usage | `application/json`: [RepositoryUsage](schemas.md#repositoryusage) |
+| `403` | Admin or project maintainer access required | - |
+| `404` | Repository not found | - |
 
 ### `GET /api/v1/repositories/{name}/vex`
 

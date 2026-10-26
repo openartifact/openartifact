@@ -164,6 +164,8 @@ The recount is a single statement over one snapshot of the tables and is exact w
 | Method and path | Auth | Purpose |
 |---|---|---|
 | `GET /api/v1/repositories/{repo}/quota` | `read` on the repository | Limits and current usage. |
+| `GET /api/v1/repositories/{repo}/usage` | admin, project maintainer | Packages, versions, stored bytes, newest publish and the quota in one object (`limit_bytes` absent when unlimited). |
+| `GET /api/v1/admin/quotas` | admin | Every repository and project with its limit and live usage in one request (`scope`, `limited`, `q`, `page`, `limit`). |
 | `PUT /api/v1/repositories/{repo}/quota` | admin | Set `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent` (partial: unset fields are unchanged). Negative limits and a threshold outside 0-100 are `400 validation_failed`. |
 | `DELETE /api/v1/repositories/{repo}/quota` | admin | Reset both limits to unlimited (`204`); usage counters are kept. |
 | `POST /api/v1/repositories/{repo}/quota/reconcile` | admin | Recompute the usage counters from the package rows (see [above](#keeping-the-counters-correct)); returns the quota. Limits are unchanged. |

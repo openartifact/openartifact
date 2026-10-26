@@ -99,7 +99,7 @@ A self-created project:
 - accepts only `name`, `display_name` and `description`; a request with `owner` or any policy field is answered with 403;
 - starts with the default policy: hosted repositories only, all formats, repository name prefix `<slug>-`, no public repositories, at most 50 repositories, token TTL cap of 365 days. The owner cannot change these; a global admin can. The policy is enforced when non-admins [create or transfer repositories](#repository-self-service).
 
-`GET /api/v1/projects` returns `can_create` (admin, or self-creation on) so clients can show or hide the create action.
+`GET /api/v1/projects` returns `can_create` (admin, or self-creation on) so clients can show or hide the create action. Each project of the list also carries `member_count` (direct members), `usage.size_bytes` (the sum of its repositories' counters) and, when a size limit is set, `quota.limit_bytes`, computed for the whole list with grouped queries; `q` keeps the projects whose name, slug or display name contains it.
 
 ## Project tokens
 
@@ -146,6 +146,7 @@ Every member reads the events of their own project, without being a global admin
 
 - Newest first, keyset paging like the admin log: `per_page` (default 25, at most 100), `cursor` (the previous `next_cursor`), `has_more`. There is no total and no row is ever counted. `actor` and `action` are case-insensitive substring filters.
 - Entries carry `id`, `timestamp`, `action`, `actor` (user or token name), `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. They never carry the client IP address: that stays in the admin log.
+- Entries also carry `actor_name` and `subject` (the same resolved names as the [admin audit log](../operations/monitoring.md#audit-log)). `GET /repositories/{name}/activity?package_name=&version=&cursor=&limit=` returns the same entries for one repository (admins and project maintainers): the events recorded against it, which are the trash events, promotions and the project's repository events. Uploads are not audit events with a repository, so publishes do not appear. `package_name` and `version` match only events that record a package version (package deletes, restores and purges).
 - `GET /projects/{project}/activity/export?format=jsonl|csv` downloads the same feed (all of it, optionally narrowed by `since`, `until`, `actor`, `action`) with the same visibility rules; fields and format in [audit export](../operations/monitoring.md#export). The **Activity** section has the matching buttons.
 - Access is the viewer role: a non-member gets `404`, the same as for an unknown project, so one project's activity never leaks into another's. Anonymous, deploy and scoped credentials get no project role, as for every other project route.
 

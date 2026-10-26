@@ -274,7 +274,7 @@ curl -H "Authorization: Bearer <TOKEN>" \
 | `actor` | | case-insensitive substring of the actor |
 | `action` | | case-insensitive substring of the action |
 
-The response is `{"data":[...],"page":1,"per_page":25,"total":N}`, newest first. Each entry has `id`, `timestamp`, `action`, `actor`, `target`, `details`, `ip`, `repository_id`, `resource_type` and `resource_id`.
+The response is `{"data":[...],"page":1,"per_page":25,"total":N}`, newest first. Each entry has `id`, `timestamp`, `action`, `actor`, `actor_name`, `subject`, `target`, `details`, `ip`, `repository_id`, `resource_type` and `resource_id`. `actor_name` is the name recorded with the event, else the user's current name, else `system` for background work. `subject` is what the event acted on, `{"kind","name","version?","repository?","project?"}` (kinds such as `repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `setting`), resolved from ids with one lookup per page; it is `null` for events that name nothing (logins, generic request rows). A subject that was deleted keeps the name its event recorded (trash events do), else `name` is `null`. The export keeps its field set.
 
 ### Export
 

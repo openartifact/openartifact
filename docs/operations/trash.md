@@ -106,9 +106,13 @@ JSON is snake_case. An item:
   "size_bytes": 1048576,
   "deleted_at": "2026-01-02T15:04:05Z",
   "deleted_by": "alice",
+  "deleted_by_name": "alice",
+  "expires_at": "2026-01-09T15:04:05Z",
   "purge_at": "2026-01-09T15:04:05Z"
 }
 ```
+
+`expires_at` is when the retention purge removes the item for good; `purge_at` is the same value under its original name, kept for existing clients. `deleted_by_name` is who deleted the item as a display name: the username, or the policy or peer that did it (`cleanup-policy`, `federation:<peer>`); it is empty when the deleter was not recorded and equals `deleted_by`.
 
 A list is `{"items":[...],"total":N,"page":P,"limit":L}` (`page` from 1).
 

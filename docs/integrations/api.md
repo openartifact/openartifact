@@ -158,7 +158,18 @@ The repository then moves to the trash for its retention period (unless that is 
 | `DELETE /api/v1/trash/{kind}/{id}` | admin | Purge now (permanent); `204` |
 | `DELETE /api/v1/repositories/{name}/trash` | `manage` on the repository (or admin) | Empty that repository's trash (items only; at most 1000 per call); `200` `{"purged":N,"remaining":M}` |
 
-An item is `{"id","kind","repository_id","repository","format","name","version","size_bytes","deleted_at","deleted_by","purge_at"}`; a list is `{"items":[...],"total":N,"page":P,"limit":L}`. Restore conflicts are `409` (`trash_conflict`, `repository_in_trash`). Kinds, examples and semantics: [Trash](../operations/trash.md#api).
+An item is `{"id","kind","repository_id","repository","format","name","version","size_bytes","deleted_at","deleted_by","deleted_by_name","expires_at","purge_at"}` (`expires_at` and `purge_at` hold the same purge time; `deleted_by_name` is the display name of the deleter); a list is `{"items":[...],"total":N,"page":P,"limit":L}`. Restore conflicts are `409` (`trash_conflict`, `repository_in_trash`). Kinds, examples and semantics: [Trash](../operations/trash.md#api).
+
+## Tokens, activity and usage
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `GET /api/v1/tokens` | any signed-in user | Personal, project and federation tokens in one list, `{"tokens":[...],"total":N,"page":P,"limit":L}`, newest first. Query: `type` (`personal`, `project`, `federation`), `project` (name), `expires_before` (RFC 3339 or `YYYY-MM-DD`), `q` (name or owner substring), `page`, `limit` (default 25, at most 100). A global admin sees every token; anyone else sees their own personal tokens plus the project and federation tokens of the projects they maintain or own, and needs a session (an API token gets `403`). Each token has `id`, `type`, `name`, `owner`, `created_at`, `expired` and, where they apply, `project`, `repository`, `role`, `scopes`, `expires_at`, `last_used_at`; the secret is never returned and revoked tokens are not listed. Revoke with `DELETE /auth/tokens/{id}`, `/admin/tokens/{id}`, `/projects/{project}/tokens/{id}` or `/repositories/{name}/federation/tokens/{id}`. |
+| `GET /api/v1/repositories/{name}/activity` | admin, or maintainer or owner of the repository's project | Audit events recorded against the repository, newest first, with `actor_name` and `subject` resolved. Query: `package_name`, `version`, `actor`, `action`, `cursor`, `limit` (default 25, at most 100). Keyset paging: `{"data":[...],"per_page":N,"has_more":b,"next_cursor":"..."}`. |
+| `GET /api/v1/repositories/{name}/usage` | admin, or maintainer or owner of the repository's project | `package_count`, `version_count`, `size_bytes`, `last_published_at` and the repository `quota` (`limit_bytes` and `soft_limit_bytes` are absent when unlimited, `used_bytes`, `usage_percent`, `exceeded`). It scans the repository's package rows: read it for one repository on demand. |
+| `GET /api/v1/admin/quotas` | admin | Every live repository and every project with its quota and live usage in one request, largest usage first: `{"quotas":[{"scope","name","project?","limit_bytes?","used_bytes",...}],"total","page","limit"}`. Query: `scope`, `limited=true`, `q`, `page`, `limit` (default 500, at most 2000). |
+
+Audit entries of `GET /admin/audit` and of the project and repository activity feeds carry `actor_name` (the recorded name, else the user's current name, else `system`) and `subject` (`kind`, `name`, and `repository`, `project` or `version` where they apply), resolved from ids with one batched lookup per page; a subject that no longer exists keeps the name the event recorded, else its `name` is `null`. The export formats are unchanged. `GET /api/v1/projects` also returns `member_count`, `usage.size_bytes` and, for a project with a size limit, `quota.limit_bytes`, and accepts `q`.
 
 ## Route groups
 
