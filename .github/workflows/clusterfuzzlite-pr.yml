@@ -34,7 +34,7 @@ jobs:
   fuzz:
     name: fuzz (code change)
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # building the ~150 targets in parallel, then 10 minutes of fuzzing
+    timeout-minutes: 60 # building the ~150 targets takes 13-19 minutes on a hosted runner, fuzzing 10
     permissions:
       contents: read
       actions: read # find the latest main build to tell new crashes from old ones

@@ -21,7 +21,6 @@
 #                            OSS-Fuzz Go shim ignores f.Add and testdata/fuzz)
 #   <name>.dict              .clusterfuzzlite/dicts/<name>.dict, else the package
 #                            dictionary .clusterfuzzlite/dicts/<package path>.dict
-#   <name>.options           libFuzzer limits, always
 #
 # Run from the repository root inside the base-builder-go image, see
 # docs/development/README.md.
@@ -56,16 +55,6 @@ while IFS= read -r dir; do
   grep -lE --include='*_test.go' '^package [A-Za-z0-9_]+_test$' "$dir"/*_test.go 2>/dev/null | xargs -r rm -v
 done < <(cut -d: -f1 "$targets" | xargs -n1 dirname | sort -u)
 
-# Default libFuzzer limits of every target. The Go runtime of a fuzzer binary
-# already holds ~1.4 GiB resident at start under AddressSanitizer, so libFuzzer's
-# 2 GiB default would report an out-of-memory crash on a large input.
-export options="$work/default.options"
-cat > "$options" <<'EOF'
-[libfuzzer]
-rss_limit_mb=4096
-timeout=30
-EOF
-
 # build_target <file>:func FuzzX(f *testing.F)
 # Builds one target into $work/out/<name>. A failure prints the log and exits 255,
 # which makes xargs start no further job.
@@ -98,8 +87,6 @@ build_target() {
     OUT="$out" compile_native_go_fuzzer_v2 "$pkg" "$fn" "$name"
     # The coverage build writes no .a; the fuzzing build leaves it in the cwd.
     rm -f "$name.a"
-
-    cp "$options" "$out/$name.options"
 
     # Dictionary: per target, else per package.
     local pkgname dict
