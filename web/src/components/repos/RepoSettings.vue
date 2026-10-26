@@ -100,7 +100,8 @@ const form = ref(repoFormFrom(props.repo))
 const initial = ref(JSON.stringify(form.value))
 const dirty = computed(() => JSON.stringify(form.value) !== initial.value)
 // The name is fixed after creation, so the create-time name rules do not apply: an empty prefix and the stored name always pass.
-const valid = computed(() => formValid(form.value, '', false))
+// Unlike at creation, no proxy format falls back to a default upstream here: the server refuses an empty upstream_url on update.
+const valid = computed(() => formValid(form.value, '', form.value.type === 'proxy'))
 const saving = ref(false)
 const saveError = ref('')
 
@@ -149,7 +150,7 @@ async function save(): Promise<void> {
     const before = props.repo.member_repos ?? []
     if (props.repo.repo_type === 'group' && form.value.members.join('\n') !== before.join('\n')) {
       await updateRepoMembers(props.repo.name, form.value.members)
-      updated = { ...updated, member_repos: form.value.members }
+      updated = { ...updated, member_repos: [...form.value.members] }
     }
     toasts.success(t('rl.settings.saved'))
     emit('saved', updated)
