@@ -7,7 +7,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- The ordered members of a group repository: requests resolve against them in this order, the first match wins. -->
 <template>
   <div>
-    <p class="mb-3 text-sm text-muted">{{ t('repoDetail.group.hint') }}</p>
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-x-4">
+      <p class="text-sm text-muted">{{ t('repoDetail.group.hint') }}</p>
+      <router-link
+        :to="{ query: { tab: 'settings' }, hash: '#members' }"
+        class="text-sm text-primary hover:underline max-md:flex max-md:min-h-11 max-md:items-center"
+        data-testid="edit-members"
+      >{{ t('repoDetail.group.edit') }}</router-link>
+    </div>
     <ListTable
       :columns="columns"
       :caption="t('repoDetail.group.title')"

@@ -183,6 +183,7 @@ export const enRepos = {
   'repoDetail.group.title': 'Members',
   'repoDetail.group.hint': 'Requests are resolved against the members in this order; the first match wins.',
   'repoDetail.group.position': 'Position',
+  'repoDetail.group.edit': 'Edit members',
   'repoDetail.group.emptyTitle': 'No members',
   'repoDetail.group.emptyHint': 'This group has no member repositories, so every request returns not found.',
   'repoDetail.group.loadFailed': 'Failed to load group members',

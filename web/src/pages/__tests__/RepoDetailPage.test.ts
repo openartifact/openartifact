@@ -59,7 +59,19 @@ describe('RepoDetailPage', () => {
     const names = tabNames(w)
     expect(names.some((n) => n.startsWith('Members'))).toBe(true)
     expect(names.some((n) => n.startsWith('Packages'))).toBe(false)
+    expect(w.get('[data-testid="edit-members"]').text()).toBe('Edit members')
+    // a group cannot be published to
+    expect(w.find('[data-testid="connect-read-only"]').exists()).toBe(true)
     w.unmount()
+  })
+
+  it('offers no publish command for a proxy, but does for a hosted repository', async () => {
+    const proxy = await mountPage({ ...repo, repo_type: 'proxy', permissions: {} }, { id: 'u', username: 'ann' })
+    expect(proxy.find('[data-testid="connect-read-only"]').exists()).toBe(true)
+    proxy.unmount()
+    const hosted = await mountPage({ ...repo, permissions: {} }, { id: 'u', username: 'ann' })
+    expect(hosted.find('[data-testid="connect-read-only"]').exists()).toBe(false)
+    hosted.unmount()
   })
 
   it('does not request the member list of a group for a plain reader, whom the server refuses', async () => {
