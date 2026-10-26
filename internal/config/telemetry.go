@@ -62,20 +62,24 @@ func applyTelemetryEnv(o *telemetry.OTLPConfig) {
 	}
 }
 
-// overrideExporter reads a standard OTEL_*_EXPORTER variable: otlp switches the
-// signal on, none switches it off; any other value leaves the setting
-// unchanged.
+// overrideExporter reads a standard OTEL_*_EXPORTER variable, a comma-separated
+// list: one naming otlp switches the signal on, otherwise none switches it off;
+// any other list leaves the setting unchanged.
 func overrideExporter(cfg *bool, key string) {
 	v, ok := os.LookupEnv(key)
 	if !ok {
 		return
 	}
 
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "otlp":
-		*cfg = true
-	case "none":
-		*cfg = false
+	for name := range strings.SplitSeq(strings.ToLower(v), ",") {
+		switch strings.TrimSpace(name) {
+		case "otlp":
+			*cfg = true
+
+			return
+		case "none":
+			*cfg = false
+		}
 	}
 }
 

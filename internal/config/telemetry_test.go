@@ -65,7 +65,9 @@ func TestTelemetrySignalEnv(t *testing.T) {
 	}{
 		{"OTEL_TRACES_EXPORTER", "none", func(c *Config) bool { return c.Telemetry.OTLP.Traces }, false},
 		{"OTEL_TRACES_EXPORTER", "zipkin", func(c *Config) bool { return c.Telemetry.OTLP.Traces }, true},
+		{"OTEL_TRACES_EXPORTER", "zipkin,console", func(c *Config) bool { return c.Telemetry.OTLP.Traces }, true},
 		{"OTEL_METRICS_EXPORTER", "otlp", func(c *Config) bool { return c.Telemetry.OTLP.Metrics }, true},
+		{"OTEL_METRICS_EXPORTER", "console, otlp", func(c *Config) bool { return c.Telemetry.OTLP.Metrics }, true},
 		{"OTEL_LOGS_EXPORTER", "OTLP", func(c *Config) bool { return c.Telemetry.OTLP.Logs }, true},
 		{"OPENARTIFACT_OTLP_AUDIT", "true", func(c *Config) bool { return c.Telemetry.OTLP.Audit }, true},
 	}
