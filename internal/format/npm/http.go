@@ -277,7 +277,7 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(pkgName+"@"+blob.version, pkgName+"/-/"+tarball, tarball, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(blob.id, pkgName+"@"+blob.version, pkgName+"/-/"+tarball, tarball, r.URL.Path)...) {
 		return
 	}
 
@@ -318,13 +318,14 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 
 // tarballBlob is the stored blob behind one tarball filename.
 type tarballBlob struct {
+	id      string // npm_versions row id: the identifier the UI scans and quarantines by
 	sha256  string // blob store key
 	size    int64  // from the blob row; 0 when unknown
 	version string
 }
 
 func tarballOf(v *models.NPMVersion) tarballBlob {
-	return tarballBlob{sha256: v.BlobSHA256, size: v.BlobSizeBytes, version: v.Version}
+	return tarballBlob{id: v.ID, sha256: v.BlobSHA256, size: v.BlobSizeBytes, version: v.Version}
 }
 
 // resolveTarball maps a tarball filename to its version and blob. Tarballs are

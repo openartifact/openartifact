@@ -110,6 +110,7 @@ Trigger a new backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `202` | Backup started | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `202` response (`application/json`):
@@ -138,6 +139,8 @@ Get details of a specific backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup details | `application/json`: [Backup](schemas.md#backup) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/backup/{id}/download`
@@ -157,6 +160,8 @@ Download a backup file (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup file | `application/octet-stream`: string (binary) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/gpg/keys`
@@ -251,6 +256,7 @@ Deletes a database-managed key (admin only). An active key (global or assigned t
 | Status | Description | Body |
 |---|---|---|
 | `204` | GPG key deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 | `409` | Key is active (key_in_use) or read-only | - |
@@ -303,6 +309,7 @@ Stops the key signing globally, or for the repository named in the `repository` 
 | Status | Description | Body |
 |---|---|---|
 | `204` | Deactivated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Key or repository not found | - |
 | `409` | The key was not active there, or it is the read-only config key | - |
@@ -324,6 +331,7 @@ Downloads the ASCII-armored public key (admin only).
 | Status | Description | Body |
 |---|---|---|
 | `200` | Armored public key | `application/pgp-keys`: string |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 
@@ -338,6 +346,7 @@ List all license policies (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/admin/license/policies`
 
@@ -354,6 +363,8 @@ Create a global license policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/admin/quotas`
 
@@ -424,8 +435,14 @@ List all SSO providers (admin only)
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of SSO providers | `application/json`: array of [SSOProvider](schemas.md#ssoprovider) |
+| `200` | List of SSO providers | `application/json`: object |
 | `403` | Admin access required | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `providers` | array of [SSOProvider](schemas.md#ssoprovider) | yes | - |
 
 ### `POST /api/v1/admin/sso-providers`
 
@@ -450,6 +467,7 @@ Create a new SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | SSO provider created | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/sso-providers/{slug}`
@@ -469,6 +487,8 @@ Get details of a specific SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider details | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `PATCH /api/v1/admin/sso-providers/{slug}`
@@ -498,6 +518,8 @@ Update an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider updated | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `DELETE /api/v1/admin/sso-providers/{slug}`
@@ -517,6 +539,8 @@ Delete an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | SSO provider deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 ### `POST /api/v1/admin/sso-providers/{slug}/test`
@@ -536,6 +560,7 @@ Test an SSO provider configuration (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test result | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -589,6 +614,7 @@ Create a new storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Storage backend created | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/admin/storage/replication`
@@ -642,6 +668,8 @@ Get details of a specific storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend details | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 ### `PATCH /api/v1/admin/storage/{name}`
@@ -670,6 +698,8 @@ Update a storage backend (admin only). Changing kind or config is refused with 4
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend updated | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 | `409` | The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move | - |
 
@@ -690,6 +720,8 @@ Delete a storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Storage backend deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 ### `POST /api/v1/admin/storage/{name}/test`
@@ -709,6 +741,7 @@ Test connection to a storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test result | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -798,6 +831,7 @@ Gets a lifecycle policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Policy | `application/json`: [StoragePolicy](schemas.md#storagepolicy) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Storage policy not found | - |
 
@@ -844,6 +878,7 @@ Deletes a lifecycle policy; blobs already moved stay where they are (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Policy deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Storage policy not found | - |
 
@@ -998,6 +1033,7 @@ List all API tokens across users (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Paginated list of tokens | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):
@@ -1026,5 +1062,7 @@ Revoke any user's API token (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

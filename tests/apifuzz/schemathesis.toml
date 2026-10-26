@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Schemathesis configuration for scripts/api-fuzz.sh. Request budget, seed and
+# credentials come from the runner; this file holds what is static: the list of
+# operations the fuzzer must not call and the documented known-issue exclusions.
+
+color = false
+
+# --- Never fuzzed: dangerous or server-disrupting -------------------------------
+
+[[operations]]
+# Replaces the whole database and blob store with an uploaded archive.
+include-name = "POST /api/v1/admin/restore"
+enabled = false
+
+[[operations]]
+# Revokes the session/token the run authenticates with.
+include-name = "POST /api/v1/auth/logout"
+enabled = false
+
+[[operations]]
+# Could rotate the password of the account the run logs in with.
+include-name = "POST /api/v1/auth/change-password"
+enabled = false
+
+# --- Never fuzzed: calls out to the network -------------------------------------
+# The fuzzer feeds arbitrary URLs and hosts to these; an outbound call to a
+# random target is non-deterministic and slow, and not something CI should do.
+
+[[operations]]
+include-name = "POST /api/v1/webhooks/{id}/test"
+enabled = false
+
+[[operations]]
+include-name = "POST /api/v1/admin/storage/{name}/test"
+enabled = false
+
+[[operations]]
+include-name = "POST /api/v1/admin/sso-providers/{slug}/test"
+enabled = false
+
+[[operations]]
+include-name = "POST /api/v1/admin/dependency-track/test"
+enabled = false
+
+[[operations]]
+include-name = "POST /api/v1/repositories/{name}/dependency-track/test"
+enabled = false
+
+[[operations]]
+include-name = "POST /api/v1/admin/ai/test"
+enabled = false
+
+[[operations]]
+# Lists the models of the configured AI provider: a live request to whatever
+# base URL the fuzzer stored with PUT /api/v1/admin/ai (502 when it fails).
+include-name = "GET /api/v1/admin/ai/models"
+enabled = false
+
+# --- Fuzzed, with an expected 5xx --------------------------------------------------
+
+[[operations]]
+# 503 ai_disabled is the documented answer while no AI provider is configured,
+# which is the state of the test server.
+include-name = "POST /api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger"
+
+[operations.checks.not_a_server_error]
+expected-statuses = ["2xx", "3xx", "4xx", "503"]

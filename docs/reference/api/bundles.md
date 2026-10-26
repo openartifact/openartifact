@@ -213,6 +213,7 @@ The exact JSON document a bundle signature covers (admin only): bundle identity 
 | Status | Description | Body |
 |---|---|---|
 | `200` | Manifest | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Bundle not found | - |
 
@@ -234,6 +235,7 @@ Armored detached GPG signature of the manifest; 404 when the bundle was sealed w
 | Status | Description | Body |
 |---|---|---|
 | `200` | Armored signature | `application/pgp-signature`: string |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Bundle not found or not signed | - |
 

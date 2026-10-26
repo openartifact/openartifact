@@ -44,6 +44,8 @@ Search artifacts
 
 Search artifacts by properties
 
+**Security:** `bearerAuth` or `cookieAuth` or .
+
 **Parameters**
 
 | Name | In | Type | Required | Description |
@@ -57,12 +59,17 @@ Search artifacts by properties
 | Status | Description | Body |
 |---|---|---|
 | `200` | Search results | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
 List artifact properties
 
 List properties for a specific artifact
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -76,6 +83,9 @@ List properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Artifact properties | `application/json`: map of string |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -99,6 +109,9 @@ Replace all properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Properties updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PATCH /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
 
@@ -122,6 +135,9 @@ Patch properties for a specific artifact
 | Status | Description | Body |
 |---|---|---|
 | `200` | Properties updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/artifacts/{artifact_id}/properties/{key}`
 
@@ -142,6 +158,8 @@ Delete a specific property from an artifact
 | Status | Description | Body |
 |---|---|---|
 | `204` | Property deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Property not found | - |
 
 ### `GET /api/v1/repositories/{name}/packages`
@@ -149,6 +167,8 @@ Delete a specific property from an artifact
 List packages in repository
 
 List all packages in a specific repository
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -170,6 +190,7 @@ List all packages in a specific repository
 |---|---|---|
 | `200` | List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package | `application/json`: object |
 | `400` | Invalid sort, group, flagged or q | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -187,6 +208,8 @@ Get a package version
 
 One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
 
+**Security:** `bearerAuth` or `cookieAuth` or .
+
 **Parameters**
 
 | Name | In | Type | Required | Description |
@@ -199,6 +222,7 @@ One package version, by the row id of the package listing: the metadata its form
 | Status | Description | Body |
 |---|---|---|
 | `200` | The package version | `application/json`: [PackageDetail](schemas.md#packagedetail) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | No read access to the repository | - |
 | `404` | Repository or package not found (a package of another repository is not found either) | - |
 
@@ -248,6 +272,7 @@ Discards an upload that will not be completed: the staging object, the parts upl
 | Status | Description | Body |
 |---|---|---|
 | `204` | The upload was discarded | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `401` | Authentication required | - |
 | `403` | Write permission denied, or the caller is neither the creator of the upload nor an administrator | - |
 | `404` | Repository or upload not found (or expired and swept) | - |

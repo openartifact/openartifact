@@ -29,6 +29,7 @@ Federation health of one repository: whether it is enabled, the log position, an
 | Status | Description | Body |
 |---|---|---|
 | `200` | Federation status | `application/json`: [FederationStatus](schemas.md#federationstatus) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository not found | - |
 
@@ -56,6 +57,7 @@ Enabling backfills the change log from the repository's existing content. Disabl
 | `400` | Invalid request, or the repository is not hosted or its format has no federation (error code validation_failed) | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/federation/peers`
 
@@ -128,8 +130,10 @@ Stops pulling from the peer and forgets its cursor and deferred units. Content a
 | Status | Description | Body |
 |---|---|---|
 | `204` | Peer deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository or peer not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/federation/peers/{id}/deferred`
 
@@ -149,8 +153,10 @@ Units pulled from the peer that could not be applied yet (for example a dependen
 | Status | Description | Body |
 |---|---|---|
 | `200` | The deferred units | `application/json`: [FederationDeferredList](schemas.md#federationdeferredlist) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository or peer not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/federation/peers/{id}/resync`
 
@@ -170,8 +176,10 @@ Resets the peer's cursor so the next pass re-reads its whole log and merges it i
 | Status | Description | Body |
 |---|---|---|
 | `202` | Resync queued | `application/json`: [FederationPeer](schemas.md#federationpeer) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository or peer not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/federation/tokens`
 
@@ -217,6 +225,8 @@ The token stops working at once; it stays listed with revoked_at set. Same permi
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository or token not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 

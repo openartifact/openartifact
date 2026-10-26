@@ -32,6 +32,7 @@ Soft-deleted items of one repository. Requires the repository-scoped delete perm
 | Status | Description | Body |
 |---|---|---|
 | `200` | A page of trashed items, newest deletion first | `application/json`: [TrashList](schemas.md#trashlist) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Delete permission on the repository required | - |
 | `404` | Repository not found | - |
 
@@ -52,6 +53,7 @@ Permanently purges the trashed items of one repository now (blobs freed, quota r
 | Status | Description | Body |
 |---|---|---|
 | `200` | Items purged by this request and items still in the trash | `application/json`: [TrashEmpty](schemas.md#trashempty) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository not found | - |
 
@@ -74,6 +76,7 @@ Like the admin restore, for callers with the repository-scoped delete permission
 | Status | Description | Body |
 |---|---|---|
 | `200` | The restored item | `application/json`: [TrashItem](schemas.md#trashitem) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Delete permission on the repository required (restoring a repository needs an admin) | - |
 | `404` | Trash item not found (never deleted, already restored or purged, or not in this repository) | `application/json`: [Error](schemas.md#error) |
 | `409` | trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first. | `application/json`: [Error](schemas.md#error) |
@@ -98,6 +101,7 @@ Every soft-deleted package and repository, newest first.
 | Status | Description | Body |
 |---|---|---|
 | `200` | A page of trashed items, newest deletion first | `application/json`: [TrashList](schemas.md#trashlist) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 ### `DELETE /api/v1/trash/{kind}/{id}`
@@ -118,6 +122,7 @@ Permanently removes the item before its retention window ends: frees its blobs (
 | Status | Description | Body |
 |---|---|---|
 | `204` | Purged | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Trash item not found | `application/json`: [Error](schemas.md#error) |
 | `409` | The repository is still referenced (for example by a release bundle or promotion) | `application/json`: [Error](schemas.md#error) |
@@ -140,6 +145,7 @@ Brings the item back, refreshes the repository's generated metadata and emits ar
 | Status | Description | Body |
 |---|---|---|
 | `200` | The restored item | `application/json`: [TrashItem](schemas.md#trashitem) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Trash item not found (never deleted, already restored or purged, or not in this repository) | `application/json`: [Error](schemas.md#error) |
 | `409` | trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first. | `application/json`: [Error](schemas.md#error) |

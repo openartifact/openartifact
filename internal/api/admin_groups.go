@@ -330,6 +330,11 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 	for _, m := range body.Members {
 		if !currentSet[m] {
 			if err := h.db.AddUserToGroup(ctx, m, id); err != nil {
+				if database.IsForeignKeyViolation(err) {
+					writeError(w, http.StatusBadRequest, "validation_failed", "unknown user: "+m)
+					return
+				}
+
 				h.log.Errorw("set members: add failed", "error", err, "user", m)
 				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 

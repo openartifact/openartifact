@@ -49,10 +49,10 @@ Includes all fields of [Token](#token).
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
 | `created_by` | string | no | Username that minted a project token. Nullable. |
-| `expires_at` | string (date-time) | no | - |
+| `expires_at` | string (date-time) | no | Nullable. |
 | `id` | string (uuid) | no | - |
 | `kind` | string | no | One of: `access`, `deploy`. |
-| `last_used_at` | string (date-time) | no | - |
+| `last_used_at` | string (date-time) | no | Nullable. |
 | `name` | string | no | - |
 | `project` | string | no | Project of a project token. Nullable. |
 | `project_role` | string | no | Nullable. One of: `viewer`, `developer`. |
@@ -123,7 +123,7 @@ What an audit event acted on, resolved server-side. `name` is null when the subj
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `completed_at` | string (date-time) | no | - |
+| `completed_at` | string (date-time) | no | Nullable. |
 | `created_at` | string (date-time) | no | - |
 | `error_message` | string | no | - |
 | `id` | string (uuid) | no | - |
@@ -256,12 +256,12 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `created_at` | string (date-time) | no | - |
 | `enabled` | boolean | no | - |
 | `id` | string (uuid) | no | - |
-| `keep_downloaded_since_days` | integer | no | - |
+| `keep_downloaded_since_days` | integer | no | Nullable. |
 | `keep_last_n` | integer | no | Nullable. Minimum: 1. |
-| `keep_since_days` | integer | no | - |
+| `keep_since_days` | integer | no | Nullable. |
 | `last_run_at` | string (date-time) | no | Nullable. |
 | `last_run_deleted` | integer | no | Nullable. |
-| `last_run_error` | string | no | - |
+| `last_run_error` | string | no | Nullable. |
 | `name` | string | no | - |
 | `name_pattern` | string | no | - |
 | `project_id` | string (uuid) | no | Set for a project default policy. |
@@ -563,7 +563,7 @@ A signing key. Private key material is never part of the API.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
-| `description` | string | no | - |
+| `description` | string | no | Nullable. |
 | `id` | string (uuid) | no | - |
 | `name` | string | no | - |
 | `updated_at` | string (date-time) | no | - |
@@ -1041,7 +1041,7 @@ Includes all fields of [Project](#project).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
-| `id` | string (uuid) | no | - |
+| `id` | string | no | Membership id: the project id and the user id joined by a colon |
 | `project_id` | string (uuid) | no | - |
 | `role` | string | no | One of: `owner`, `maintainer`, `developer`, `viewer`. |
 | `user_id` | string (uuid) | no | - |
@@ -1322,7 +1322,7 @@ Includes all fields of [QuotaLine](#quotaline).
 | `last_error_at` | string (date-time) | no | Nullable. |
 | `last_verify` | [ReplicationVerifyResult](#replicationverifyresult) | no | - |
 | `oldest_pending_age_seconds` | number (double) | no | Replication lag: the age of the oldest queued operation. |
-| `read_fallback` | string | no | One of: `notfound`, `error`, `off`. |
+| `read_fallback` | string | no | One of: ``, `notfound`, `error`, `off`. |
 | `replica` | object | no | Nullable. |
 | `replica.location` | string | no | Directory, bucket or container of the replica; never a credential. |
 | `replica.type` | string | no | - |
@@ -1624,10 +1624,10 @@ One stored scan result (a package version of one type) that reports something.
 | `id` | string (uuid) | no | - |
 | `is_default` | boolean | no | - |
 | `kind` | string | no | One of: `filesystem`, `s3`, `gcs`, `azure`. |
-| `last_checked_at` | string (date-time) | no | - |
+| `last_checked_at` | string (date-time) | no | Nullable. |
 | `name` | string | no | - |
 | `status` | string | no | One of: `ok`, `degraded`, `error`, `unknown`. |
-| `status_message` | string | no | - |
+| `status_message` | string | no | Nullable. |
 | `updated_at` | string (date-time) | no | - |
 | `usage` | object | no | What the backend holds; present on the list and get endpoints. |
 | `usage.blob_count` | integer (int64) | yes | - |
@@ -1760,10 +1760,10 @@ One stored scan result (a package version of one type) that reports something.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
-| `expires_at` | string (date-time) | no | - |
+| `expires_at` | string (date-time) | no | Nullable. |
 | `id` | string (uuid) | no | - |
 | `kind` | string | no | One of: `access`, `deploy`. |
-| `last_used_at` | string (date-time) | no | - |
+| `last_used_at` | string (date-time) | no | Nullable. |
 | `name` | string | no | - |
 | `scopes` | array of string | no | - |
 
@@ -1774,10 +1774,10 @@ Includes all fields of [Token](#token).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
-| `expires_at` | string (date-time) | no | - |
+| `expires_at` | string (date-time) | no | Nullable. |
 | `id` | string (uuid) | no | - |
 | `kind` | string | no | One of: `access`, `deploy`. |
-| `last_used_at` | string (date-time) | no | - |
+| `last_used_at` | string (date-time) | no | Nullable. |
 | `name` | string | no | - |
 | `scopes` | array of string | no | - |
 | `token` | string | no | The raw token value (only returned on creation) |
@@ -1872,10 +1872,10 @@ Absent fields stay unchanged.
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
 | `disabled` | boolean | no | - |
-| `email` | string (email) | no | - |
-| `full_name` | string | no | - |
+| `email` | string (email) | no | Nullable. |
+| `full_name` | string | no | Nullable. |
 | `id` | string (uuid) | no | - |
-| `last_login_at` | string (date-time) | no | - |
+| `last_login_at` | string (date-time) | no | Nullable. |
 | `must_change_password` | boolean | no | - |
 | `updated_at` | string (date-time) | no | - |
 | `username` | string | no | - |
@@ -1888,12 +1888,12 @@ Includes all fields of [User](#user).
 |---|---|---|---|
 | `created_at` | string (date-time) | no | - |
 | `disabled` | boolean | no | - |
-| `email` | string (email) | no | - |
-| `full_name` | string | no | - |
+| `email` | string (email) | no | Nullable. |
+| `full_name` | string | no | Nullable. |
 | `groups` | array of string | no | Names of the groups the user belongs to. |
 | `id` | string (uuid) | no | - |
 | `is_admin` | boolean | no | - |
-| `last_login_at` | string (date-time) | no | - |
+| `last_login_at` | string (date-time) | no | Nullable. |
 | `must_change_password` | boolean | no | - |
 | `projects` | array of [ProjectRole](#projectrole) | no | The caller's project roles; global admins are implicit owners everywhere and are listed only for roles they hold. |
 | `updated_at` | string (date-time) | no | - |
@@ -2027,7 +2027,7 @@ Whether one vulnerability scanner can run on the server. Fixed, client-safe text
 | `max_retries` | integer | no | - |
 | `name` | string | no | - |
 | `payload_format` | string | no | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |
-| `repository_id` | string (uuid) | no | - |
+| `repository_id` | string (uuid) | no | Nullable. |
 | `ssl_verify` | boolean | no | - |
 | `timeout_seconds` | integer | no | - |
 | `updated_at` | string (date-time) | no | - |

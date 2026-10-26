@@ -7,6 +7,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -39,6 +40,9 @@ type CleanupPolicy struct {
 	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
+// maxCleanupPolicyNameLen is the width of the cleanup_policies.name column.
+const maxCleanupPolicyNameLen = 255
+
 // Validate checks that the policy can safely be executed: at least one
 // retention criterion, strictly positive values (zero or negative values would
 // select every artifact for deletion), a compilable name pattern and a valid
@@ -49,12 +53,16 @@ func (p *CleanupPolicy) Validate() error {
 		return fmt.Errorf("%w: name is required", ErrInvalidCleanupPolicy)
 	}
 
-	if p.KeepLastN != nil && *p.KeepLastN < 1 {
-		return fmt.Errorf("%w: keep_last_n must be >= 1", ErrInvalidCleanupPolicy)
+	if len(p.Name) > maxCleanupPolicyNameLen {
+		return fmt.Errorf("%w: name must be at most %d bytes", ErrInvalidCleanupPolicy, maxCleanupPolicyNameLen)
 	}
 
-	if p.KeepSinceDays != nil && *p.KeepSinceDays < 1 {
-		return fmt.Errorf("%w: keep_since_days must be >= 1", ErrInvalidCleanupPolicy)
+	if p.KeepLastN != nil && (*p.KeepLastN < 1 || *p.KeepLastN > math.MaxInt32) {
+		return fmt.Errorf("%w: keep_last_n must be between 1 and %d", ErrInvalidCleanupPolicy, math.MaxInt32)
+	}
+
+	if p.KeepSinceDays != nil && (*p.KeepSinceDays < 1 || *p.KeepSinceDays > math.MaxInt32) {
+		return fmt.Errorf("%w: keep_since_days must be between 1 and %d", ErrInvalidCleanupPolicy, math.MaxInt32)
 	}
 
 	if p.KeepDownloadedSinceDays != nil {

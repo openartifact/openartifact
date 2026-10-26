@@ -95,6 +95,7 @@ func (a *app) addBaseMiddleware(srv *api.HTTPServer) {
 	srv.AddMiddleware(middleware.TracingMiddleware)
 	srv.AddMiddleware(middleware.LoggingMiddleware(a.log))
 	srv.AddMiddleware(middleware.CORSMiddleware(cfg.Server.CORSOrigins))
+	srv.AddMiddleware(middleware.RejectNULBytes)
 
 	if a.feat.mcpServer != nil {
 		srv.AddMiddleware(aimcp.OriginMiddleware(cfg.MCP.HTTPPath, cfg.BaseURL, cfg.MCP.AllowedOrigins))

@@ -58,12 +58,15 @@ export function enumParam<T extends string>(values: readonly T[], def: T): Codec
   }
 }
 
-/** A comma-separated list (e.g. `?type=vuln,secret`). */
+/** A comma-separated list (e.g. `?type=vuln,secret`). A value with no item (`?type=,`) reads as the default, like an absent one. */
 export function listParam(def: readonly string[] = []): Codec<string[]> {
   const key = (a: readonly string[]) => a.join(',')
   return {
     default: [...def],
-    parse: (raw) => (raw === null || raw === '' ? [...def] : raw.split(',').filter(Boolean)),
+    parse: (raw) => {
+      const items = raw === null ? [] : raw.split(',').filter(Boolean)
+      return items.length ? items : [...def]
+    },
     serialize: (v) => (key(v) === key(def) || v.length === 0 ? null : v.join(',')),
   }
 }

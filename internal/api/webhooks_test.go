@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -29,7 +31,7 @@ type webhooksMockDB struct {
 }
 
 func (db *webhooksMockDB) CreateWebhook(_ context.Context, wh *models.Webhook) error {
-	wh.ID = "wh-1"
+	wh.ID = "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11"
 	db.stored = wh
 
 	return nil
@@ -64,7 +66,7 @@ func newWebhooksTestRouter(t *testing.T, db *webhooksMockDB) (http.Handler, *htt
 	return newWebhooksTestRouterWith(t, db, nil)
 }
 
-func newWebhooksTestRouterWith(t *testing.T, db *webhooksMockDB, dispatcher *webhook.Dispatcher) (http.Handler, *http.Request) {
+func newWebhooksTestRouterWith(t *testing.T, db database.Database, dispatcher *webhook.Dispatcher) (http.Handler, *http.Request) {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")
@@ -118,7 +120,7 @@ func TestWebhookCreateNeverReturnsSecretAndEncryptsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resp["id"] != "wh-1" || resp["has_secret"] != true || resp["ssl_verify"] != false || resp["enabled"] != true {
+	if resp["id"] != "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11" || resp["has_secret"] != true || resp["ssl_verify"] != false || resp["enabled"] != true {
 		t.Fatalf("unexpected response: %v", resp)
 	}
 
@@ -176,13 +178,13 @@ func TestWebhookCreateRejectsOversizedBody(t *testing.T) {
 
 func TestWebhookUpdateHonoursSSLVerifyAndSecretIsKept(t *testing.T) {
 	db := &webhooksMockDB{stored: &models.Webhook{
-		ID: "wh-1", Name: "ci", URL: "https://93.184.216.34/h", SecretEnc: "stored-enc",
+		ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "ci", URL: "https://93.184.216.34/h", SecretEnc: "stored-enc",
 		Enabled: true, Events: []string{"artifact.uploaded"}, ContentType: "application/json",
 		SSLVerify: true, MaxRetries: 3, TimeoutSeconds: 30,
 	}}
 	r, base := newWebhooksTestRouter(t, db)
 
-	rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"ssl_verify":false,"enabled":false,"timeout_seconds":1000}`)
+	rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"ssl_verify":false,"enabled":false,"timeout_seconds":1000}`)
 	if rw.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rw.Code, rw.Body.String())
 	}
@@ -191,7 +193,7 @@ func TestWebhookUpdateHonoursSSLVerifyAndSecretIsKept(t *testing.T) {
 		t.Fatalf("unexpected stored webhook: %+v", db.stored)
 	}
 
-	rw = doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks/wh-1", "")
+	rw = doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", "")
 	if strings.Contains(rw.Body.String(), "stored-enc") || !strings.Contains(rw.Body.String(), `"has_secret":true`) {
 		t.Fatalf("GET leaks or hides secret state: %s", rw.Body.String())
 	}
@@ -248,33 +250,33 @@ func TestWebhookPayloadFormat(t *testing.T) {
 
 	t.Run("update changes and validates", func(t *testing.T) {
 		db := &webhooksMockDB{stored: &models.Webhook{
-			ID: "wh-1", Name: "ci", URL: "https://93.184.216.34/h", Enabled: true, Events: []string{"artifact.uploaded"},
+			ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "ci", URL: "https://93.184.216.34/h", Enabled: true, Events: []string{"artifact.uploaded"},
 			ContentType: "application/json", PayloadFormat: "openartifact", SSLVerify: true, MaxRetries: 3, TimeoutSeconds: 30,
 		}}
 		r, base := newWebhooksTestRouter(t, db)
 
-		rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"payload_format":"nope"}`)
+		rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"payload_format":"nope"}`)
 		if rw.Code != http.StatusBadRequest || db.stored.PayloadFormat != "openartifact" {
 			t.Fatalf("invalid format: status %d, stored %q", rw.Code, db.stored.PayloadFormat)
 		}
 
-		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"payload_format":"teams"}`)
+		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"payload_format":"teams"}`)
 		if rw.Code != http.StatusOK || db.stored.PayloadFormat != "teams" {
 			t.Fatalf("status %d, stored %q: %s", rw.Code, db.stored.PayloadFormat, rw.Body.String())
 		}
 
 		// An update that does not mention the format keeps it.
-		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"enabled":false}`)
+		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"enabled":false}`)
 		if rw.Code != http.StatusOK || db.stored.PayloadFormat != "teams" {
 			t.Fatalf("format not kept: status %d, stored %q", rw.Code, db.stored.PayloadFormat)
 		}
 	})
 
 	t.Run("rows predating the column read as openartifact", func(t *testing.T) {
-		db := &webhooksMockDB{stored: &models.Webhook{ID: "wh-1", Name: "old", URL: "https://93.184.216.34/h"}}
+		db := &webhooksMockDB{stored: &models.Webhook{ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "old", URL: "https://93.184.216.34/h"}}
 		r, base := newWebhooksTestRouter(t, db)
 
-		rw := doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks/wh-1", "")
+		rw := doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", "")
 		if !strings.Contains(rw.Body.String(), `"payload_format":"openartifact"`) {
 			t.Fatalf("body = %s", rw.Body.String())
 		}
@@ -317,7 +319,7 @@ func TestWebhookTestDeliveryUsesPayloadFormat(t *testing.T) {
 	} {
 		t.Run(format, func(t *testing.T) {
 			db := &webhooksMockDB{stored: &models.Webhook{
-				ID: "wh-1", Name: "t", URL: srv.URL, Enabled: true, Events: []string{"artifact.uploaded"},
+				ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "t", URL: srv.URL, Enabled: true, Events: []string{"artifact.uploaded"},
 				ContentType: "application/json", PayloadFormat: format, SSLVerify: true, MaxRetries: 1, TimeoutSeconds: 5,
 			}}
 
@@ -327,7 +329,7 @@ func TestWebhookTestDeliveryUsesPayloadFormat(t *testing.T) {
 
 			r, base := newWebhooksTestRouterWith(t, db, d)
 
-			rw := doWebhookRequest(t, r, base, http.MethodPost, "/api/v1/webhooks/wh-1/test", "")
+			rw := doWebhookRequest(t, r, base, http.MethodPost, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11/test", "")
 			if rw.Code != http.StatusAccepted {
 				t.Fatalf("status = %d: %s", rw.Code, rw.Body.String())
 			}
@@ -337,5 +339,53 @@ func TestWebhookTestDeliveryUsesPayloadFormat(t *testing.T) {
 				t.Fatalf("unexpected %s request: content type %q, body %v", format, rec.contentType, rec.body)
 			}
 		})
+	}
+}
+
+// webhookLookupCounter fails every webhook lookup like Postgres does for a
+// value that is not a uuid, and counts how often the handlers got that far.
+type webhookLookupCounter struct {
+	webhooksMockDB
+
+	lookups int
+}
+
+func (db *webhookLookupCounter) GetWebhook(context.Context, string) (*models.Webhook, error) {
+	db.lookups++
+
+	return nil, errors.New("invalid input syntax for type uuid")
+}
+
+// TestWebhookRoutesRejectMalformedIDs pins that an id that is not a UUID is a
+// plain 404 and never reaches the database (which would surface as a 500).
+func TestWebhookRoutesRejectMalformedIDs(t *testing.T) {
+	routes := []struct {
+		method string
+		suffix string
+		body   string
+	}{
+		{http.MethodGet, "", ""},
+		{http.MethodPut, "", `{"enabled":false}`},
+		{http.MethodDelete, "", ""},
+		{http.MethodGet, "/deliveries", ""},
+		{http.MethodPost, "/test", ""},
+	}
+
+	for _, id := range []string{"0", "not-a-uuid", "null%2Cnull"} {
+		for _, rt := range routes {
+			t.Run(rt.method+rt.suffix+"/"+id, func(t *testing.T) {
+				db := &webhookLookupCounter{}
+				r, base := newWebhooksTestRouterWith(t, db, nil)
+
+				rw := doWebhookRequest(t, r, base, rt.method, "/api/v1/webhooks/"+id+rt.suffix, rt.body)
+				if rw.Code != http.StatusNotFound {
+					t.Fatalf("status = %d, want 404: %s", rw.Code, rw.Body.String())
+				}
+
+				if db.lookups != 0 {
+					t.Fatalf("handler reached the database %d time(s) for a malformed id", db.lookups)
+				}
+			})
+		}
 	}
 }

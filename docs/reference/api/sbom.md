@@ -104,6 +104,9 @@ List SBOM reports for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of SBOM reports | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -139,6 +142,9 @@ Generate a Software Bill of Materials for a repository artifact. Components are 
 | Status | Description | Body |
 |---|---|---|
 | `201` | SBOM generation started | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 | `422` | The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`) | - |
 
 ### `GET /api/v1/repositories/{name}/sbom/{id}`
@@ -159,6 +165,8 @@ Get details of a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `200` | SBOM report details | `application/json`: [SBOMReport](schemas.md#sbomreport) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/sbom/{id}`
@@ -179,6 +187,8 @@ Delete a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `204` | SBOM report deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
 ### `POST /api/v1/repositories/{name}/sbom/{id}/attach`
@@ -226,6 +236,7 @@ Download an SBOM report file
 |---|---|---|
 | `200` | SBOM file, or its attestation with `attest` | `application/octet-stream`: string (binary); `application/vnd.dev.sigstore.bundle.v0.3+json`: object; `application/vnd.dsse.envelope.v1+json`: object |
 | `400` | Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested) | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 | `501` | Attestations are not enabled | - |
 
@@ -251,6 +262,7 @@ Build an OpenVEX 0.2.0 (default) or CycloneDX VEX document from the latest vulne
 |---|---|---|
 | `200` | VEX document, or its attestation with `attest` | `application/json`: object; `application/vnd.dev.sigstore.bundle.v0.3+json`: object; `application/vnd.dsse.envelope.v1+json`: object |
 | `400` | Invalid format, spec_version or artifact_id | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 | `501` | Attestations are not enabled | - |
 
@@ -305,6 +317,8 @@ List the VEX decisions recorded for a repository, optionally for one artifact. A
 | Status | Description | Body |
 |---|---|---|
 | `200` | VEX decisions | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -344,6 +358,7 @@ Record (or replace) the decision for one vulnerability of one artifact. `not_aff
 |---|---|---|
 | `200` | Recorded decision | `application/json`: [VEXStatement](schemas.md#vexstatement) |
 | `400` | Validation failed | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/vex/statements/{id}`
@@ -364,5 +379,7 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 | Status | Description | Body |
 |---|---|---|
 | `204` | Decision deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or decision not found | - |
 

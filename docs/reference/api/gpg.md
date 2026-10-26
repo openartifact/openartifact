@@ -104,6 +104,7 @@ Deletes a database-managed key (admin only). An active key (global or assigned t
 | Status | Description | Body |
 |---|---|---|
 | `204` | GPG key deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 | `409` | Key is active (key_in_use) or read-only | - |
@@ -156,6 +157,7 @@ Stops the key signing globally, or for the repository named in the `repository` 
 | Status | Description | Body |
 |---|---|---|
 | `204` | Deactivated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Key or repository not found | - |
 | `409` | The key was not active there, or it is the read-only config key | - |
@@ -177,6 +179,7 @@ Downloads the ASCII-armored public key (admin only).
 | Status | Description | Body |
 |---|---|---|
 | `200` | Armored public key | `application/pgp-keys`: string |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 

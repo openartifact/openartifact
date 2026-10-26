@@ -29,6 +29,9 @@ List cleanup policies for a repository. Requires global admin, or the maintainer
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of cleanup policies | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -66,6 +69,9 @@ Create a new cleanup policy for a repository. Requires global admin, or the main
 | Status | Description | Body |
 |---|---|---|
 | `201` | Cleanup policy created | `application/json`: [CleanupPolicy](schemas.md#cleanuppolicy) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/cleanup-policies/{id}`
 

@@ -6,6 +6,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -82,6 +83,8 @@ func (h *AdminDeclarativeHandler) handleList(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, declarativeItems(objs))
 }
 
+func hasNUL(s string) bool { return strings.IndexByte(s, 0) >= 0 }
+
 // validateDeclarativeItem returns a client-facing message, or "" when valid.
 func validateDeclarativeItem(it models.DeclarativeObject) string {
 	switch {
@@ -93,6 +96,9 @@ func validateDeclarativeItem(it models.DeclarativeObject) string {
 		return "object_id must be 1-256 characters"
 	case utf8.RuneCountInString(it.AppliedHash) > declarativeMaxHash:
 		return "applied_hash must be at most 128 characters"
+	case hasNUL(it.Kind) || hasNUL(it.Name) || hasNUL(it.ObjectID) || hasNUL(it.AppliedHash):
+		// Postgres text cannot hold NUL: it would surface as a database error (500).
+		return "fields must not contain NUL bytes"
 	}
 
 	return ""

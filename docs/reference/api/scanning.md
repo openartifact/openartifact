@@ -23,6 +23,7 @@ List all license policies (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/admin/license/policies`
 
@@ -39,6 +40,8 @@ Create a global license policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/license/policies`
 
@@ -57,6 +60,9 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/policies`
 
@@ -79,6 +85,9 @@ Create a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | License policy created | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/license/policies/{id}`
 
@@ -102,6 +111,9 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/repositories/{name}/license/policies/{id}`
 
@@ -121,6 +133,9 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/repositories/{name}/license/scan`
 
@@ -169,6 +184,9 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -194,6 +212,8 @@ Get details of a specific license scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | License scan details | `application/json`: [LicenseScanResult](schemas.md#licensescanresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `POST /api/v1/repositories/{name}/license/scans/{id}/quarantine`
@@ -243,6 +263,9 @@ Trigger a secrets scan for a repository
 | Status | Description | Body |
 |---|---|---|
 | `201` | Secrets scan started | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans`
 
@@ -261,6 +284,9 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -309,6 +335,8 @@ Get details of a specific secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Secrets scan details | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/secrets/scans/{id}`
@@ -329,6 +357,8 @@ Delete a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Secrets scan deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `GET /api/v1/repositories/{name}/secrets/scans/{id}/export`
@@ -372,12 +402,17 @@ Quarantine an artifact found in a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Artifact quarantined | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/security/summary`
 
 Security summary of a repository, package or version
 
 Counts only: vulnerabilities by severity, license violations, secret findings, AI flags and whether a result is quarantined. It carries no finding ids, titles or other details, so it needs only read access to the repository: it is what viewers, developers and tokens that cannot list findings show. Narrow it to a package with `package_name` and to one version with `version`.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -438,6 +473,7 @@ Report which vulnerability scanners can run on the server: `osv` is always ready
 | Status | Description | Body |
 |---|---|---|
 | `200` | Scanners in the order osv, trivy, grype | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):
@@ -463,6 +499,9 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
 
@@ -488,6 +527,8 @@ Get details of a specific vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Vulnerability scan details | `application/json`: [VulnScanResult](schemas.md#vulnscanresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `DELETE /api/v1/repositories/{name}/vuln/scans/{id}`
@@ -508,6 +549,8 @@ Delete a vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Vulnerability scan deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
 ### `GET /api/v1/repositories/{name}/vuln/scans/{id}/export`

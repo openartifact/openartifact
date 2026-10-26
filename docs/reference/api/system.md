@@ -66,7 +66,7 @@ Returns Prometheus-format metrics
 | Status | Description | Body |
 |---|---|---|
 | `200` | Metrics in Prometheus format | `text/plain`: string |
-| `401` | Unauthorized (if METRICS_AUTH_TOKEN is set) | - |
+| `401` | Unauthorized: the endpoint needs the METRICS_AUTH_TOKEN bearer token and answers 401 for every caller while none is configured | - |
 
 ### `GET /ready`
 

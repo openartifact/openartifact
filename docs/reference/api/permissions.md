@@ -22,7 +22,14 @@ List all permission targets
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of permission targets | `application/json`: array of [PermissionTarget](schemas.md#permissiontarget) |
+| `200` | List of permission targets | `application/json`: object |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `data` | array of [PermissionTarget](schemas.md#permissiontarget) | yes | - |
 
 ### `POST /api/v1/permission-targets`
 
@@ -46,6 +53,9 @@ Create a new permission target
 | Status | Description | Body |
 |---|---|---|
 | `201` | Permission target created | `application/json`: [PermissionTarget](schemas.md#permissiontarget) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/permission-targets/{id}`
 
@@ -64,6 +74,8 @@ Get details of a specific permission target
 | Status | Description | Body |
 |---|---|---|
 | `200` | Permission target details | `application/json`: [PermissionTarget](schemas.md#permissiontarget) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
 
 ### `PATCH /api/v1/permission-targets/{id}`
@@ -94,7 +106,10 @@ Update a permission target
 | Status | Description | Body |
 |---|---|---|
 | `200` | Permission target updated | `application/json`: [PermissionTarget](schemas.md#permissiontarget) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/permission-targets/{id}`
 
@@ -113,6 +128,8 @@ Delete a permission target
 | Status | Description | Body |
 |---|---|---|
 | `204` | Permission target deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
 
 ### `GET /api/v1/permission-targets/{id}/assignments`
@@ -132,6 +149,7 @@ List the users and groups a permission target is assigned to (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Assignments sorted by principal type then name | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Permission target not found | - |
 
@@ -167,6 +185,9 @@ Assign a permission target to a user or group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Permission assigned | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/permission-targets/{id}/assignments`
 
@@ -194,4 +215,7 @@ Remove a permission assignment
 | Status | Description | Body |
 |---|---|---|
 | `204` | Permission unassigned | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 

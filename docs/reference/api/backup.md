@@ -50,6 +50,7 @@ Trigger a new backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `202` | Backup started | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `202` response (`application/json`):
@@ -78,6 +79,8 @@ Get details of a specific backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup details | `application/json`: [Backup](schemas.md#backup) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `GET /api/v1/admin/backup/{id}/download`
@@ -97,6 +100,8 @@ Download a backup file (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup file | `application/octet-stream`: string (binary) |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
 ### `POST /api/v1/admin/restore`

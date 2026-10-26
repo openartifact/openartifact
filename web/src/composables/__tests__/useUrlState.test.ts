@@ -42,6 +42,13 @@ describe('codecs', () => {
     })
   })
 
+  it('read a list with no item as the default, not as an empty list the URL cannot express', () => {
+    expect(readQuery(schema, { type: ',' }).type).toEqual(['vuln'])
+    expect(readQuery(schema, { type: ',,' }).type).toEqual(['vuln'])
+    expect(readQuery(schema, { type: ',secret,' }).type).toEqual(['secret'])
+    expect(listParam().parse(',')).toEqual([])
+  })
+
   it('keep keys outside the schema', () => {
     expect(writeQuery(schema, { tab: 'security', q: 'old' }, { q: 'new' })).toEqual({ tab: 'security', q: 'new' })
   })

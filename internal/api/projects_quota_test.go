@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -59,13 +60,19 @@ func (db *quotaMockDB) GetProjectUsage(_ context.Context, _ string) (*models.Pro
 
 func (db *quotaMockDB) CreateCleanupPolicy(_ context.Context, p *models.CleanupPolicy) error {
 	db.nextID++
-	p.ID = "00000000-0000-4000-8000-00000000c0" + string(rune('0'+db.nextID))
+	p.ID = "00000000-0000-4000-8000-0000000000c" + string(rune('0'+db.nextID))
 	db.policies[p.ID] = p
 
 	return nil
 }
 
+// GetCleanupPolicy rejects ids that are not UUIDs the way the uuid column does,
+// so a handler that forwards a raw path segment fails loudly.
 func (db *quotaMockDB) GetCleanupPolicy(_ context.Context, id string) (*models.CleanupPolicy, error) {
+	if !isUUIDString(id) {
+		return nil, errors.New("invalid input syntax for type uuid: " + id)
+	}
+
 	return db.policies[id], nil
 }
 
@@ -295,6 +302,24 @@ func TestProjectCleanupPolicies_ScopedToProject(t *testing.T) {
 
 	if len(db.policies) != 2 {
 		t.Fatalf("a foreign policy was changed: %v", db.policies)
+	}
+}
+
+// A policy id that is not a UUID is a 404 on every id route, not a database error.
+func TestProjectCleanupPolicies_MalformedIDIsNotFound(t *testing.T) {
+	router := newQuotaRouter(t, newQuotaMock())
+
+	for _, rt := range []struct{ method, suffix, body string }{
+		{http.MethodPut, "", `{"enabled":false}`},
+		{http.MethodDelete, "", ""},
+		{http.MethodPost, "/dry-run", ""},
+	} {
+		for _, id := range []string{"0", "not-a-uuid"} {
+			path := "/api/v1/projects/acme/cleanup-policies/" + id + rt.suffix
+			if code, _ := projectJSON(t, router, uOwner1, rt.method, path, rt.body); code != http.StatusNotFound {
+				t.Errorf("%s %s = %d, want 404", rt.method, path, code)
+			}
+		}
 	}
 }
 

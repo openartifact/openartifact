@@ -44,11 +44,11 @@ func (h *WebhooksHandler) RegisterAuthed(r chi.Router) {
 	// Global webhooks
 	r.Get("/api/v1/webhooks", h.handleListGlobal)
 	r.Post("/api/v1/webhooks", h.handleCreateGlobal)
-	r.Get("/api/v1/webhooks/{id}", h.handleGet)
-	r.Put("/api/v1/webhooks/{id}", h.handleUpdate)
-	r.Delete("/api/v1/webhooks/{id}", h.handleDelete)
-	r.Get("/api/v1/webhooks/{id}/deliveries", h.handleListDeliveries)
-	r.Post("/api/v1/webhooks/{id}/test", h.handleTest)
+	r.With(requireUUIDParams("id")).Get("/api/v1/webhooks/{id}", h.handleGet)
+	r.With(requireUUIDParams("id")).Put("/api/v1/webhooks/{id}", h.handleUpdate)
+	r.With(requireUUIDParams("id")).Delete("/api/v1/webhooks/{id}", h.handleDelete)
+	r.With(requireUUIDParams("id")).Get("/api/v1/webhooks/{id}/deliveries", h.handleListDeliveries)
+	r.With(requireUUIDParams("id")).Post("/api/v1/webhooks/{id}/test", h.handleTest)
 
 	// Repository webhooks
 	r.Get("/api/v1/repositories/{name}/webhooks", h.handleListRepo)

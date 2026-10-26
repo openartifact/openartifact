@@ -81,6 +81,7 @@ Global admins only. The raw request body is the image: Content-Type image/png or
 | `200` | Branding state | `application/json`: [BrandingAdmin](schemas.md#brandingadmin) |
 | `400` | Not a valid PNG or SVG, or the SVG is unsafe | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 | `413` | Image larger than 512 KiB | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/admin/branding/{asset}`
@@ -100,7 +101,9 @@ Global admins only. Falls back to the configured file, else the built-in image.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Branding state | `application/json`: [BrandingAdmin](schemas.md#brandingadmin) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
+| `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/branding`
 
@@ -137,5 +140,6 @@ The effective logo-light, logo-dark or favicon (PNG or sanitised SVG). 404 when 
 |---|---|---|
 | `200` | Image | `image/png`: string (binary); `image/svg+xml`: string (binary) |
 | `304` | Not modified | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | No image configured | `application/json`: [Error](schemas.md#error) |
 

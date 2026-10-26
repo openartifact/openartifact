@@ -394,7 +394,7 @@ func (h *VulnHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 		results = []*models.VulnScanResult{}
 	}
 
-	var resultMaps []responses.VulnScanResultResponse
+	resultMaps := []responses.VulnScanResultResponse{}
 	for _, result := range results {
 		resultMaps = append(resultMaps, vulnScanResultToMap(result))
 	}
