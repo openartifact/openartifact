@@ -54,8 +54,8 @@ func (h *BackupHandler) WithTasks(tasks *bgtask.Runner) *BackupHandler {
 func (h *BackupHandler) RegisterAuthed(r chi.Router) {
 	r.Post("/api/v1/admin/backup", h.handleCreateBackup)
 	r.Get("/api/v1/admin/backup", h.handleListBackups)
-	r.Get("/api/v1/admin/backup/{id}", h.handleGetBackup)
-	r.Get("/api/v1/admin/backup/{id}/download", h.handleDownloadBackup)
+	r.With(requireUUIDParams("id")).Get("/api/v1/admin/backup/{id}", h.handleGetBackup)
+	r.With(requireUUIDParams("id")).Get("/api/v1/admin/backup/{id}/download", h.handleDownloadBackup)
 	r.Post("/api/v1/admin/restore", h.handleRestore)
 }
 
