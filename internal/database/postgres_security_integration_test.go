@@ -428,4 +428,17 @@ func TestSecurityFindings_ResolvesPackageRowIDs(t *testing.T) {
 	if got := byID[f.ids["lodash"]]; got.PackageName != "lodash" {
 		t.Fatalf("lodash = %+v", got)
 	}
+
+	// the text filter matches the resolved name and version of those findings
+	for q, want := range map[string]bool{"data-pipe": true, "DATA-PIPELINE@2.3": true, "2.3.1": true, "left-pad": false} {
+		got := false
+
+		for _, fd := range listAll(t, f, models.FindingListParams{Q: q}).Findings {
+			got = got || fd.ID == lic
+		}
+
+		if got != want {
+			t.Errorf("q=%q finds the license finding of data-pipeline@2.3.1 = %v, want %v", q, got, want)
+		}
+	}
 }

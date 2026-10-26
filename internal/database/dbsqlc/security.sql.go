@@ -32,6 +32,69 @@ func (q *Queries) LatestFinishedDependencyTrackPush(ctx context.Context) (Latest
 
 const listSecurityFindings = `-- name: ListSecurityFindings :many
 
+WITH q_candidates AS MATERIALIZED (
+    SELECT array_agg(DISTINCT sr.artifact_id::uuid) AS ids
+    FROM security_results sr
+    WHERE $8::text IS NOT NULL
+      AND sr.is_finding
+      AND sr.package_name = sr.artifact_id
+      AND sr.artifact_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+), q_match AS MATERIALIZED (
+    SELECT p.repository_id, p.id
+    FROM (
+        SELECT t.repository_id::uuid AS repository_id, t.id::uuid AS id, t.name::text AS name, t.version::text AS version
+        FROM deb_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM rpm_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT np.repository_id, t.id, np.full_name::text, t.version::text
+        FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM pypi_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id_coord)::text, t.version::text
+        FROM maven_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, (t.organisation || ':' || t.module)::text, t.revision::text
+        FROM ivy_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id)::text, t.version::text
+        FROM sbt_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.package_id::text, t.version::text
+        FROM nuget_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.module_path::text, t.version::text
+        FROM gomod_modules t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM cargo_crates t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM rubygems_gems t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM conda_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM conan_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM helm_charts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.path::text, ''::text
+        FROM raw_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.cache_key::text, ''::text
+        FROM proxy_cache_entries t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text
+        FROM docker_tags t JOIN repositories r ON r.id = t.repository_id WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+    ) AS p
+    WHERE (p.name || '@' || p.version) ILIKE $8::text
+)
 SELECT p.kind, p.id, p.repository_id, p.repository_name, p.repository_format, p.artifact_id,
        p.package_name, p.package_version, p.scanner, p.scan_status, p.critical, p.high, p.medium, p.low,
        p.quarantined, p.status, p.vex_rank, p.severity_rank, p.scanned_at,
@@ -68,7 +131,8 @@ FROM (
       AND ($7::text IS NULL OR sr.status = $7::text)
       AND ($8::text IS NULL
            OR (sr.package_name || '@' || sr.package_version) ILIKE $8::text
-           OR r.name ILIKE $8::text)
+           OR r.name ILIKE $8::text
+           OR EXISTS (SELECT 1 FROM q_match m WHERE m.repository_id = sr.repository_id AND m.id::text = sr.artifact_id))
       AND (NOT $9::boolean
            OR sr.severity_rank < $10::int
            OR (sr.severity_rank = $10::int
@@ -123,6 +187,13 @@ type ListSecurityFindingsRow struct {
 // One keyset page of findings, worst first: severity rank DESC, scanned_at DESC,
 // id ASC. The caller asks for one row more than the page size. Titles are read
 // for the page rows only.
+//
+// A result of a scan started from a package page is
+// recorded against the package row id, so the view's package_name is that id.
+// The text filter (q) then matches the package's resolved name and version:
+// q_candidates are the row ids of such results, q_match those whose resolved
+// "name@version" matches (the name expressions are those of
+// ResolveComponentNames; keep them in sync). Both read nothing without a filter.
 func (q *Queries) ListSecurityFindings(ctx context.Context, arg ListSecurityFindingsParams) ([]ListSecurityFindingsRow, error) {
 	rows, err := q.db.Query(ctx, listSecurityFindings,
 		arg.Kinds,
