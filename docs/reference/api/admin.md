@@ -255,6 +255,7 @@ Deletes a database-managed key (admin only). An active key (global or assigned t
 | Status | Description | Body |
 |---|---|---|
 | `204` | GPG key deleted | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 | `409` | Key is active (key_in_use) or read-only | - |
@@ -1022,6 +1023,7 @@ List all API tokens across users (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Paginated list of tokens | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):

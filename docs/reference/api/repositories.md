@@ -150,6 +150,8 @@ Search artifacts
 
 Search artifacts by properties
 
+**Security:** `bearerAuth` or `cookieAuth` or .
+
 **Parameters**
 
 | Name | In | Type | Required | Description |
@@ -320,6 +322,7 @@ Upload a package into a hosted deb repository (multipart/form-data). Requires wr
 |---|---|---|
 | `200` | Package stored | `application/json`: [PackageUploadResult](schemas.md#packageuploadresult) |
 | `400` | Invalid input or wrong repository format | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 | `405` | Proxy and group repositories are read-only | `application/json`: [Error](schemas.md#error) |
 | `409` | Package already exists | `application/json`: [Error](schemas.md#error) |
@@ -635,6 +638,7 @@ List all packages in a specific repository
 |---|---|---|
 | `200` | List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package | `application/json`: object |
 | `400` | Invalid sort, group, flagged or q | - |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -683,6 +687,8 @@ Upload a package into a hosted rpm repository (multipart/form-data). Requires wr
 Get a package version
 
 One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 
@@ -771,6 +777,8 @@ List the pre-computed deltas targeting a package. Requires read access.
 Download a package
 
 Streams the blob of a row returned by the package listing (any format) as an attachment named after the listing filename. Docker tags download their manifest as sha256_`<hex>`.json.
+
+**Security:** `bearerAuth` or `cookieAuth` or .
 
 **Parameters**
 

@@ -174,6 +174,7 @@ Replace all members of a group
 | Status | Description | Body |
 |---|---|---|
 | `204` | Members updated | - |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 

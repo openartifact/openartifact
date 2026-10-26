@@ -30,6 +30,7 @@ List all API tokens across users (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Paginated list of tokens | `application/json`: object |
+| `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):

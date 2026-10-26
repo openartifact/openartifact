@@ -108,6 +108,7 @@ Update a permission target
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
+| `409` | Conflict with the current state | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/permission-targets/{id}`
 

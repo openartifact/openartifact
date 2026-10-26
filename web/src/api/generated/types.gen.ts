@@ -3503,10 +3503,16 @@ export type GetApiV1RepositoriesByNamePackagesErrors = {
      */
     400: unknown;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNamePackagesError = GetApiV1RepositoriesByNamePackagesErrors[keyof GetApiV1RepositoriesByNamePackagesErrors];
 
 export type GetApiV1RepositoriesByNamePackagesResponses = {
     /**
@@ -5954,10 +5960,16 @@ export type GetApiV1UsersData = {
 
 export type GetApiV1UsersErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type GetApiV1UsersError = GetApiV1UsersErrors[keyof GetApiV1UsersErrors];
 
 export type GetApiV1UsersResponses = {
     /**
@@ -6455,6 +6467,10 @@ export type PutApiV1GroupsByIdMembersData = {
 
 export type PutApiV1GroupsByIdMembersErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6785,6 +6801,10 @@ export type PatchApiV1PermissionTargetsByIdErrors = {
      * Permission target not found
      */
     404: unknown;
+    /**
+     * Conflict with the current state
+     */
+    409: Error;
 };
 
 export type PatchApiV1PermissionTargetsByIdError = PatchApiV1PermissionTargetsByIdErrors[keyof PatchApiV1PermissionTargetsByIdErrors];
@@ -7085,10 +7105,16 @@ export type GetApiV1AdminTokensData = {
 
 export type GetApiV1AdminTokensErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type GetApiV1AdminTokensError = GetApiV1AdminTokensErrors[keyof GetApiV1AdminTokensErrors];
 
 export type GetApiV1AdminTokensResponses = {
     /**
@@ -8211,6 +8237,10 @@ export type DeleteApiV1AdminGpgKeysByIdData = {
 
 export type DeleteApiV1AdminGpgKeysByIdErrors = {
     /**
+     * Invalid request
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -8223,6 +8253,8 @@ export type DeleteApiV1AdminGpgKeysByIdErrors = {
      */
     409: unknown;
 };
+
+export type DeleteApiV1AdminGpgKeysByIdError = DeleteApiV1AdminGpgKeysByIdErrors[keyof DeleteApiV1AdminGpgKeysByIdErrors];
 
 export type DeleteApiV1AdminGpgKeysByIdResponses = {
     /**
@@ -11974,6 +12006,10 @@ export type PostApiV1RepositoriesByNameDebsErrors = {
      * Invalid input or wrong repository format
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository not found
      */

@@ -6924,6 +6924,16 @@
           "400": {
             "description": "Invalid sort, group, flagged or q"
           },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Repository not found"
           }
@@ -10573,7 +10583,16 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       }
     },
     "/api/v1/search": {
@@ -11175,6 +11194,16 @@
                       "type": "integer"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11998,6 +12027,16 @@
           "204": {
             "description": "Members updated"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -12506,6 +12545,16 @@
           },
           "404": {
             "description": "Permission target not found"
+          },
+          "409": {
+            "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -13082,6 +13131,16 @@
                       "type": "integer"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -14674,6 +14733,16 @@
         "responses": {
           "204": {
             "description": "GPG key deleted"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Admin access required"
@@ -16882,7 +16951,16 @@
           "501": {
             "description": "No blob store configured"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       }
     },
     "/api/v1/repository/{name}": {
@@ -20345,6 +20423,16 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Repository not found",
             "content": {
@@ -20476,7 +20564,16 @@
           },
           "403": { "description": "No read access to the repository" },
           "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          },
+          {}
+        ]
       },
       "delete": {
         "summary": "Delete a package",
