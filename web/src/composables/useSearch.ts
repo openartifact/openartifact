@@ -2,72 +2,70 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { getCurrentScope, onScopeDispose, ref } from 'vue'
-import { search } from '../api/search'
-import type { SearchPackageHit, SearchRepoHit } from '../api/search'
+import { computed } from 'vue'
+import { searchChecksum, searchPackageGroups } from '../api/search'
+import { effectiveMode } from '../lib/checksum'
+import {
+  checksumRow,
+  groupRow,
+  isAutoChecksum,
+  planSearch,
+  type SearchRow,
+  type SearchFilters,
+} from '../lib/packageSearch'
+import { useListQuery, type ListRequest, type ListResponse } from './useListQuery'
+import { boolParam, enumParam, strParam } from './useUrlState'
 
+const FILTERS = {
+  q: strParam(),
+  format: strParam(),
+  repo: strParam(),
+  flagged: boolParam(),
+  mode: enumParam(['', 'name', 'checksum'] as const, ''),
+}
+
+const PAGE_SIZE = 20
+
+async function fetchRows(req: ListRequest<typeof FILTERS>): Promise<ListResponse<SearchRow>> {
+  const f: SearchFilters = req.filters
+  const plan = planSearch(f)
+  const scope = { format: f.format || undefined, repo: f.repo || undefined, flagged: f.flagged }
+  if (plan.kind === 'name') {
+    const res = await searchPackageGroups({ q: plan.q, ...scope, limit: req.limit, page: req.page })
+    return { rows: res.packages.map(groupRow), total: res.total }
+  }
+  if (plan.kind === 'checksum') {
+    const res = await searchChecksum({ checksum: plan.checksum, ...scope })
+    return { rows: res.packages.map(checksumRow), total: res.total }
+  }
+  return { rows: [], total: 0 }
+}
+
+/**
+ * Package search bound to the URL (`?q=&format=&repo=&flagged=1&mode=checksum&page=`):
+ * the query is debounced, a digest-shaped query switches to the checksum lookup
+ * unless the toggle says otherwise, and nothing is requested for an empty query
+ * or a checksum search whose text is not a full-length hex digest.
+ */
 export function useSearch() {
-  const query = ref('')
-  const repoResults = ref<SearchRepoHit[]>([])
-  const packageResults = ref<SearchPackageHit[]>([])
-  const loading = ref(false)
-  const searched = ref(false)
-  const error = ref('')
+  const list = useListQuery({
+    filters: FILTERS,
+    fetch: fetchRows,
+    paging: 'page',
+    limit: PAGE_SIZE,
+    debounce: ['q'],
+    debounceMs: 250,
+  })
 
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined
-  let requestId = 0
+  const plan = computed(() => planSearch(list.filters.value))
+  const mode = computed(() => effectiveMode(list.filters.value.mode, list.filters.value.q.trim()))
+  const autoChecksum = computed(() => isAutoChecksum(list.filters.value))
+  /** A query (or filters) is present, so an empty result is "no match" rather than the start screen. */
+  const active = computed(() => plan.value.kind !== 'idle')
 
-  function scheduleSearch(delayMs = 300): void {
-    clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => execute(), delayMs)
+  function setMode(next: '' | 'name' | 'checksum'): void {
+    list.setFilter('mode', next)
   }
 
-  async function execute(): Promise<void> {
-    const q = query.value.trim()
-    if (!q) {
-      clear()
-      return
-    }
-    const currentRequestId = ++requestId
-    loading.value = true
-    searched.value = true
-    error.value = ''
-    try {
-      const res = await search({ q, limit: 20 })
-      if (currentRequestId !== requestId) return
-      repoResults.value = res.repositories || []
-      packageResults.value = res.packages || []
-    } catch (err) {
-      if (currentRequestId !== requestId) return
-      repoResults.value = []
-      packageResults.value = []
-      error.value = err instanceof Error ? err.message : 'Search failed'
-    } finally {
-      if (currentRequestId === requestId) loading.value = false
-    }
-  }
-
-  function clear(): void {
-    // Invalidate any in-flight request so it cannot repopulate the results.
-    requestId++
-    loading.value = false
-    error.value = ''
-    query.value = ''
-    repoResults.value = []
-    packageResults.value = []
-    searched.value = false
-    clearTimeout(debounceTimer)
-    debounceTimer = undefined
-  }
-
-  // A page that unmounts mid-typing must not fire the pending search or apply
-  // an in-flight response afterwards.
-  if (getCurrentScope()) {
-    onScopeDispose(() => {
-      requestId++
-      clearTimeout(debounceTimer)
-    })
-  }
-
-  return { query, repoResults, packageResults, loading, searched, error, scheduleSearch, execute, clear }
+  return { list, plan, mode, autoChecksum, active, setMode }
 }

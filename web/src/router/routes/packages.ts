@@ -5,7 +5,7 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { repoTrail } from '../trails'
 
-const packagesTrail = [{ key: 'nav.search' as const, to: '/packages' }]
+const packagesTrail = [{ key: 'shell.nav.packages' as const, to: '/packages' }]
 
 // Package names may contain slashes (npm scope, docker image path, go module), so
 // `:pkg(.+)` matches raw slashes. Build links with `artifactPath` (lib/artifactPath.ts).
@@ -14,7 +14,7 @@ export const packageRoutes: RouteRecordRaw[] = [
   {
     path: '/packages',
     name: 'packages',
-    component: () => import('../../pages/SearchPage.vue'),
+    component: () => import('../../pages/packages/PackagesPage.vue'),
     meta: { crumbs: packagesTrail, requiresAuth: true },
   },
   {

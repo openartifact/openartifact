@@ -40,7 +40,7 @@ describe('route crumb trails', () => {
     ['/repos/demo/packages/left-pad', ['Repositories', 'demo', 'left-pad']],
     ['/repos/demo/packages/@scope/left-pad', ['Repositories', 'demo', '@scope/left-pad']],
     ['/repos/demo/packages/left-pad/versions/1.0.0', ['Repositories', 'demo', 'left-pad']],
-    ['/packages', ['Search']],
+    ['/packages', ['Packages']],
     ['/security', ['Security']],
     ['/settings', ['Settings']],
     ['/settings/profile', ['Settings', 'Profile']],

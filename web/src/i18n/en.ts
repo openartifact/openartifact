@@ -51,9 +51,7 @@ const base = {
   'session.probeFailedHint': 'The server did not answer. Navigating again retries the check.',
 
   // Navigation
-  'nav.dashboard': 'Dashboard',
   'nav.repositories': 'Repositories',
-  'nav.search': 'Search',
   'nav.profile': 'Profile',
   'nav.settings': 'Settings',
   'nav.users': 'Users',
@@ -117,10 +115,6 @@ const base = {
   'pagination.previous': 'Previous',
   'pagination.next': 'Next',
 
-  // Dashboard
-  'dashboard.title': 'Dashboard',
-  'dashboard.recent': 'Recent Repositories',
-
   // Repositories
   'repos.title': 'Repositories',
   'repos.empty': 'No repositories',
@@ -162,14 +156,6 @@ const base = {
   'upload.hint.maven': 'Upload .jar / .pom artifacts; the path encodes the coordinates.',
   'upload.hint.npm': 'Upload .tgz tarballs published by `npm pack`.',
   'upload.hint.generic': 'Upload package files for this repository.',
-
-  // Search
-  'search.title': 'Search',
-  'search.empty': 'No results',
-  'search.emptyHint': 'Try a different query or relax your filters.',
-  'search.placeholder': 'Search packages and repositories...',
-  'search.results.packages': 'Packages',
-  'search.results.repositories': 'Repositories',
 
   // Command palette
 
