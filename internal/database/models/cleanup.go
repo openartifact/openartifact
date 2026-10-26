@@ -39,6 +39,9 @@ type CleanupPolicy struct {
 	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
+// maxCleanupPolicyNameLen is the width of the cleanup_policies.name column.
+const maxCleanupPolicyNameLen = 255
+
 // Validate checks that the policy can safely be executed: at least one
 // retention criterion, strictly positive values (zero or negative values would
 // select every artifact for deletion), a compilable name pattern and a valid
@@ -47,6 +50,10 @@ type CleanupPolicy struct {
 func (p *CleanupPolicy) Validate() error {
 	if strings.TrimSpace(p.Name) == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidCleanupPolicy)
+	}
+
+	if len(p.Name) > maxCleanupPolicyNameLen {
+		return fmt.Errorf("%w: name must be at most %d bytes", ErrInvalidCleanupPolicy, maxCleanupPolicyNameLen)
 	}
 
 	if p.KeepLastN != nil && *p.KeepLastN < 1 {
