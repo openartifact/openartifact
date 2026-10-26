@@ -71,6 +71,7 @@ Get details of a specific group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Group details | `application/json`: [Group](schemas.md#group) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
@@ -100,6 +101,7 @@ Update a group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Group updated | `application/json`: [Group](schemas.md#group) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
@@ -120,6 +122,7 @@ Delete a group
 | Status | Description | Body |
 |---|---|---|
 | `204` | Group deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
@@ -140,6 +143,7 @@ List members of a group
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of group members | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group not found | - |
 
@@ -196,6 +200,7 @@ Add a user to a group
 | Status | Description | Body |
 |---|---|---|
 | `200` | Member added | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group or user not found | - |
 
@@ -217,6 +222,7 @@ Remove a user from a group
 | Status | Description | Body |
 |---|---|---|
 | `204` | Member removed | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Group or user not found | - |
 
@@ -237,6 +243,7 @@ List groups that a user belongs to
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of groups | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 

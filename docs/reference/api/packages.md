@@ -221,6 +221,7 @@ One package version, by the row id of the package listing: the metadata its form
 | Status | Description | Body |
 |---|---|---|
 | `200` | The package version | `application/json`: [PackageDetail](schemas.md#packagedetail) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | No read access to the repository | - |
 | `404` | Repository or package not found (a package of another repository is not found either) | - |
 

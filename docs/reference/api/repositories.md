@@ -346,6 +346,7 @@ Delete a package from a hosted repository. Requires write access.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Package deleted | `application/json`: [PackageDeleteResult](schemas.md#packagedeleteresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Release versions are immutable in this repository | `application/json`: [Error](schemas.md#error) |
@@ -367,6 +368,7 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -417,6 +419,7 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -438,6 +441,7 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -488,6 +492,7 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -515,6 +520,7 @@ Get details of a specific license scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | License scan details | `application/json`: [LicenseScanResult](schemas.md#licensescanresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -702,6 +708,7 @@ One package version, by the row id of the package listing: the metadata its form
 | Status | Description | Body |
 |---|---|---|
 | `200` | The package version | `application/json`: [PackageDetail](schemas.md#packagedetail) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | No read access to the repository | - |
 | `404` | Repository or package not found (a package of another repository is not found either) | - |
 
@@ -723,6 +730,7 @@ Delete a package row (an id of the package listing) from a hosted repository of 
 | Status | Description | Body |
 |---|---|---|
 | `200` | Package deleted | `application/json`: [PackageDeleteResult](schemas.md#packagedeleteresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Release versions are immutable in this repository | `application/json`: [Error](schemas.md#error) |
@@ -769,6 +777,7 @@ List the pre-computed deltas targeting a package. Requires read access.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Available deltas | `application/json`: [PackageDeltaList](schemas.md#packagedeltalist) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or package not found | `application/json`: [Error](schemas.md#error) |
 
@@ -792,6 +801,7 @@ Streams the blob of a row returned by the package listing (any format) as an att
 | Status | Description | Body |
 |---|---|---|
 | `200` | Package file | `application/octet-stream`: string (binary) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Package not found in this repository, or the row has no stored file | - |
 | `501` | No blob store configured | - |
@@ -813,6 +823,7 @@ Get quota configuration for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | Quota configuration | `application/json`: [Quota](schemas.md#quota) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -858,6 +869,7 @@ Remove quota configuration for a repository. Requires global admin, or the maint
 | Status | Description | Body |
 |---|---|---|
 | `204` | Quota deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -878,6 +890,7 @@ Recompute the repository's usage counters (size and artifact count) from its pac
 | Status | Description | Body |
 |---|---|---|
 | `200` | Quota with the recomputed usage | `application/json`: [Quota](schemas.md#quota) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Repository not found | - |
 
@@ -898,6 +911,7 @@ List SBOM reports for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of SBOM reports | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -958,6 +972,7 @@ Get details of a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `200` | SBOM report details | `application/json`: [SBOMReport](schemas.md#sbomreport) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
@@ -979,6 +994,7 @@ Delete a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `204` | SBOM report deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
@@ -1044,6 +1060,7 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -1071,6 +1088,7 @@ Get details of a specific secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Secrets scan details | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -1092,6 +1110,7 @@ Delete a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Secrets scan deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -1247,6 +1266,7 @@ What the repository holds (packages, versions, stored bytes, newest publish) nex
 | Status | Description | Body |
 |---|---|---|
 | `200` | Repository usage | `application/json`: [RepositoryUsage](schemas.md#repositoryusage) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin or project maintainer access required | - |
 | `404` | Repository not found | - |
 
@@ -1294,6 +1314,7 @@ List the VEX decisions recorded for a repository, optionally for one artifact. A
 | Status | Description | Body |
 |---|---|---|
 | `200` | VEX decisions | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -1355,6 +1376,7 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 | Status | Description | Body |
 |---|---|---|
 | `204` | Decision deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or decision not found | - |
 
@@ -1400,6 +1422,7 @@ Report which vulnerability scanners can run on the server: `osv` is always ready
 | Status | Description | Body |
 |---|---|---|
 | `200` | Scanners in the order osv, trivy, grype | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):
@@ -1425,6 +1448,7 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -1452,6 +1476,7 @@ Get details of a specific vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Vulnerability scan details | `application/json`: [VulnScanResult](schemas.md#vulnscanresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -1473,6 +1498,7 @@ Delete a vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Vulnerability scan deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -1523,6 +1549,7 @@ List webhooks for a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of webhooks | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -1589,6 +1616,7 @@ Get details of a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | Repository details | `application/json`: [Repository](schemas.md#repository) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 

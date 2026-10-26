@@ -153,6 +153,7 @@ Create a new API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/auth/tokens/{id}`
@@ -172,6 +173,7 @@ Revoke an API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

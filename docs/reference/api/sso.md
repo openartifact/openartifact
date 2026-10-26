@@ -74,6 +74,7 @@ Get details of a specific SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider details | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
@@ -104,6 +105,7 @@ Update an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider updated | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
@@ -124,6 +126,7 @@ Delete an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | SSO provider deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
@@ -144,6 +147,7 @@ Test an SSO provider configuration (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test result | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 Fields of the `200` response (`application/json`):

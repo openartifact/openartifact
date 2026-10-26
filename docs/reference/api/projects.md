@@ -61,6 +61,7 @@ List the projects the caller holds a role in, each with my_role, repository_coun
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of projects | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 Fields of the `200` response (`application/json`):
@@ -107,6 +108,7 @@ Get details of a specific project. Requires a role in the project (viewer or abo
 | Status | Description | Body |
 |---|---|---|
 | `200` | Project details | `application/json`: [Project](schemas.md#project) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
@@ -152,6 +154,7 @@ Delete a project. Requires the owner role or global admin.
 | Status | Description | Body |
 |---|---|---|
 | `204` | Project deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Not an owner | - |
 | `404` | Project not found or the caller is not a member | - |
 | `409` | Project still owns repositories, or it is the system project | - |
@@ -224,6 +227,7 @@ Default cleanup policies of the project. A project policy applies to every live 
 | Status | Description | Body |
 |---|---|---|
 | `200` | Policies | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
@@ -320,6 +324,7 @@ Owners and global admins.
 | Status | Description | Body |
 |---|---|---|
 | `204` | Deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Not an owner | - |
 | `404` | Project or policy not found | - |
 
@@ -360,6 +365,7 @@ List groups attached to a project, with the role each group's members get. Requi
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of project groups | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found | - |
 
@@ -413,6 +419,7 @@ Detach a group. Requires the owner or maintainer role or global admin (maintaine
 | Status | Description | Body |
 |---|---|---|
 | `204` | Group detached | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Not allowed to grant or change this role | - |
 | `404` | Group not attached | - |
 
@@ -433,6 +440,7 @@ List members of a project. Requires a role in the project (viewer or above) or g
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of project members | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
@@ -513,6 +521,7 @@ Remove a member. Requires the owner or maintainer role or global admin (maintain
 | Status | Description | Body |
 |---|---|---|
 | `204` | Member removed | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Not allowed to change this role | - |
 | `404` | Member not found | - |
 | `409` | Would remove or demote the recorded or last owner | - |
@@ -534,6 +543,7 @@ The project's storage ceiling (0 = unlimited) and its live usage. Any member.
 | Status | Description | Body |
 |---|---|---|
 | `200` | Project quota | `application/json`: [ProjectQuota](schemas.md#projectquota) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
@@ -587,6 +597,7 @@ List the live (not trashed) repositories of a project, newest first. Requires a 
 | Status | Description | Body |
 |---|---|---|
 | `200` | A page of repositories | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
@@ -694,6 +705,7 @@ List the active tokens of a project. Maintainers, owners and global admins see a
 | Status | Description | Body |
 |---|---|---|
 | `200` | Project tokens | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 
@@ -747,6 +759,7 @@ Revoke a project token; it stops working immediately. Maintainers, owners and gl
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Not allowed to revoke this token | - |
 | `404` | Project or token not found | - |
 
@@ -767,6 +780,7 @@ Storage usage of a project: the sum of its repositories' counters, the project q
 | Status | Description | Body |
 |---|---|---|
 | `200` | Usage | `application/json`: [ProjectUsage](schemas.md#projectusage) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Project not found or the caller is not a member | - |
 

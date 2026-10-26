@@ -29,6 +29,7 @@ List cleanup policies for a repository. Requires global admin, or the maintainer
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of cleanup policies | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 

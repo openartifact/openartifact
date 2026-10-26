@@ -179,6 +179,7 @@ Downloads the ASCII-armored public key (admin only).
 | Status | Description | Body |
 |---|---|---|
 | `200` | Armored public key | `application/pgp-keys`: string |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 

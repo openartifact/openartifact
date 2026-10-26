@@ -29,6 +29,7 @@ List webhooks for a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of webhooks | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -143,6 +144,7 @@ Get details of a specific webhook
 | Status | Description | Body |
 |---|---|---|
 | `200` | Webhook details | `application/json`: [Webhook](schemas.md#webhook) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
@@ -201,6 +203,7 @@ Delete a webhook
 | Status | Description | Body |
 |---|---|---|
 | `204` | Webhook deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
@@ -221,6 +224,7 @@ List deliveries for a specific webhook
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of deliveries | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
@@ -247,6 +251,7 @@ Send a test event to a webhook
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test event queued | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | Webhook not found | - |
 
 Fields of the `200` response (`application/json`):

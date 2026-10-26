@@ -88,6 +88,7 @@ Get details of a specific user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | User details | `application/json`: [User](schemas.md#user) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
@@ -120,6 +121,7 @@ Update a user (admin only). Setting `disabled: true` keeps the account, blocks l
 | Status | Description | Body |
 |---|---|---|
 | `200` | User updated | `application/json`: [User](schemas.md#user) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
@@ -162,6 +164,7 @@ List groups that a user belongs to
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of groups | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
@@ -188,6 +191,7 @@ List the active (not revoked) API tokens of a user (owner or admin)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of tokens | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
@@ -225,6 +229,7 @@ Create an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
@@ -246,6 +251,7 @@ Revoke an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

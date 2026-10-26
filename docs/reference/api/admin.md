@@ -139,6 +139,7 @@ Get details of a specific backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup details | `application/json`: [Backup](schemas.md#backup) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 
@@ -330,6 +331,7 @@ Downloads the ASCII-armored public key (admin only).
 | Status | Description | Body |
 |---|---|---|
 | `200` | Armored public key | `application/pgp-keys`: string |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | GPG key not found | - |
 
@@ -485,6 +487,7 @@ Get details of a specific SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider details | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
@@ -515,6 +518,7 @@ Update an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | SSO provider updated | `application/json`: [SSOProvider](schemas.md#ssoprovider) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
@@ -535,6 +539,7 @@ Delete an SSO provider (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | SSO provider deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
@@ -555,6 +560,7 @@ Test an SSO provider configuration (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test result | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | SSO provider not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -662,6 +668,7 @@ Get details of a specific storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend details | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
@@ -734,6 +741,7 @@ Test connection to a storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test result | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -823,6 +831,7 @@ Gets a lifecycle policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Policy | `application/json`: [StoragePolicy](schemas.md#storagepolicy) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Storage policy not found | - |
 
@@ -869,6 +878,7 @@ Deletes a lifecycle policy; blobs already moved stay where they are (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Policy deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Storage policy not found | - |
 
@@ -1052,6 +1062,7 @@ Revoke any user's API token (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

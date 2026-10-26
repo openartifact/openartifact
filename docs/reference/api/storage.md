@@ -121,6 +121,7 @@ Get details of a specific storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Storage backend details | `application/json`: [StorageBackend](schemas.md#storagebackend) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
@@ -193,6 +194,7 @@ Test connection to a storage backend (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Test result | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
 
 Fields of the `200` response (`application/json`):
@@ -282,6 +284,7 @@ Gets a lifecycle policy (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Policy | `application/json`: [StoragePolicy](schemas.md#storagepolicy) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Storage policy not found | - |
 
@@ -328,6 +331,7 @@ Deletes a lifecycle policy; blobs already moved stay where they are (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Policy deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Storage policy not found | - |
 

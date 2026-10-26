@@ -79,6 +79,7 @@ Get details of a specific backup (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Backup details | `application/json`: [Backup](schemas.md#backup) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Backup not found | - |
 

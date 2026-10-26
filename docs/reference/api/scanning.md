@@ -60,6 +60,7 @@ List license policies for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license policies | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -110,6 +111,7 @@ Update a license policy for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | License policy updated | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -131,6 +133,7 @@ Delete a license policy
 | Status | Description | Body |
 |---|---|---|
 | `204` | License policy deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -181,6 +184,7 @@ List license scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of license scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -208,6 +212,7 @@ Get details of a specific license scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | License scan details | `application/json`: [LicenseScanResult](schemas.md#licensescanresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -279,6 +284,7 @@ List secrets scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of secrets scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -329,6 +335,7 @@ Get details of a specific secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Secrets scan details | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -350,6 +357,7 @@ Delete a secrets scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Secrets scan deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -465,6 +473,7 @@ Report which vulnerability scanners can run on the server: `osv` is always ready
 | Status | Description | Body |
 |---|---|---|
 | `200` | Scanners in the order osv, trivy, grype | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 
 Fields of the `200` response (`application/json`):
@@ -490,6 +499,7 @@ List vulnerability scans for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of vulnerability scans | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -517,6 +527,7 @@ Get details of a specific vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `200` | Vulnerability scan details | `application/json`: [VulnScanResult](schemas.md#vulnscanresult) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 
@@ -538,6 +549,7 @@ Delete a vulnerability scan
 | Status | Description | Body |
 |---|---|---|
 | `204` | Vulnerability scan deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Scan not found | - |
 

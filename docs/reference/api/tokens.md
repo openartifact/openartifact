@@ -59,6 +59,7 @@ Revoke any user's API token (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 
@@ -103,6 +104,7 @@ Create a new API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 
 ### `DELETE /api/v1/auth/tokens/{id}`
@@ -122,6 +124,7 @@ Revoke an API token for the current user
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 
@@ -168,6 +171,7 @@ List the active (not revoked) API tokens of a user (owner or admin)
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of tokens | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | User not found | - |
 
@@ -205,6 +209,7 @@ Create an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `201` | Token created | `application/json`: [TokenCreateResponse](schemas.md#tokencreateresponse) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | The addressed resource was not found | `application/json`: [Error](schemas.md#error) |
 
@@ -226,6 +231,7 @@ Revoke an API token for a user (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `204` | Token revoked | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Token not found | - |
 

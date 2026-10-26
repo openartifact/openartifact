@@ -53,6 +53,7 @@ Permanently purges the trashed items of one repository now (blobs freed, quota r
 | Status | Description | Body |
 |---|---|---|
 | `200` | Items purged by this request and items still in the trash | `application/json`: [TrashEmpty](schemas.md#trashempty) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Manage permission on the repository required | - |
 | `404` | Repository not found | - |
 

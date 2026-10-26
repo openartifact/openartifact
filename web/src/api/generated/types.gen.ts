@@ -3223,6 +3223,10 @@ export type PostApiV1AuthTokensData = {
 
 export type PostApiV1AuthTokensErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -3249,6 +3253,10 @@ export type DeleteApiV1AuthTokensByIdData = {
 };
 
 export type DeleteApiV1AuthTokensByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -3673,6 +3681,10 @@ export type GetApiV1RepositoriesByNameCleanupPoliciesData = {
 
 export type GetApiV1RepositoriesByNameCleanupPoliciesErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -3747,6 +3759,10 @@ export type GetApiV1RepositoriesByNameWebhooksData = {
 };
 
 export type GetApiV1RepositoriesByNameWebhooksErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -3880,6 +3896,10 @@ export type GetApiV1RepositoriesByNameSbomData = {
 
 export type GetApiV1RepositoriesByNameSbomErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -3914,6 +3934,10 @@ export type DeleteApiV1RepositoriesByNameSbomByIdData = {
 
 export type DeleteApiV1RepositoriesByNameSbomByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -3945,6 +3969,10 @@ export type GetApiV1RepositoriesByNameSbomByIdData = {
 };
 
 export type GetApiV1RepositoriesByNameSbomByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -4081,6 +4109,10 @@ export type GetApiV1RepositoriesByNameVexStatementsData = {
 
 export type GetApiV1RepositoriesByNameVexStatementsErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4160,6 +4192,10 @@ export type DeleteApiV1RepositoriesByNameVexStatementsByIdData = {
 
 export type DeleteApiV1RepositoriesByNameVexStatementsByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4230,6 +4266,10 @@ export type GetApiV1RepositoriesByNameLicenseScansData = {
 
 export type GetApiV1RepositoriesByNameLicenseScansErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4263,6 +4303,10 @@ export type GetApiV1RepositoriesByNameLicenseScansByIdData = {
 };
 
 export type GetApiV1RepositoriesByNameLicenseScansByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -4331,6 +4375,10 @@ export type GetApiV1RepositoriesByNameLicensePoliciesData = {
 
 export type GetApiV1RepositoriesByNameLicensePoliciesErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4394,6 +4442,10 @@ export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdData = {
 
 export type DeleteApiV1RepositoriesByNameLicensePoliciesByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4425,6 +4477,10 @@ export type PutApiV1RepositoriesByNameLicensePoliciesByIdData = {
 };
 
 export type PutApiV1RepositoriesByNameLicensePoliciesByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -4538,6 +4594,10 @@ export type GetApiV1RepositoriesByNameSecretsScansData = {
 
 export type GetApiV1RepositoriesByNameSecretsScansErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4613,6 +4673,10 @@ export type DeleteApiV1RepositoriesByNameSecretsScansByIdData = {
 
 export type DeleteApiV1RepositoriesByNameSecretsScansByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -4644,6 +4708,10 @@ export type GetApiV1RepositoriesByNameSecretsScansByIdData = {
 };
 
 export type GetApiV1RepositoriesByNameSecretsScansByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -5154,10 +5222,16 @@ export type GetApiV1RepositoriesByNameVulnScannersData = {
 
 export type GetApiV1RepositoriesByNameVulnScannersErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
 };
+
+export type GetApiV1RepositoriesByNameVulnScannersError = GetApiV1RepositoriesByNameVulnScannersErrors[keyof GetApiV1RepositoriesByNameVulnScannersErrors];
 
 export type GetApiV1RepositoriesByNameVulnScannersResponses = {
     /**
@@ -5180,6 +5254,10 @@ export type GetApiV1RepositoriesByNameVulnScansData = {
 };
 
 export type GetApiV1RepositoriesByNameVulnScansErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -5256,6 +5334,10 @@ export type DeleteApiV1RepositoriesByNameVulnScansByIdData = {
 
 export type DeleteApiV1RepositoriesByNameVulnScansByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -5287,6 +5369,10 @@ export type GetApiV1RepositoriesByNameVulnScansByIdData = {
 };
 
 export type GetApiV1RepositoriesByNameVulnScansByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -5355,6 +5441,10 @@ export type DeleteApiV1RepositoriesByNameQuotaData = {
 
 export type DeleteApiV1RepositoriesByNameQuotaErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -5385,6 +5475,10 @@ export type GetApiV1RepositoriesByNameQuotaData = {
 };
 
 export type GetApiV1RepositoriesByNameQuotaErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -5450,6 +5544,10 @@ export type PostApiV1RepositoriesByNameQuotaReconcileData = {
 
 export type PostApiV1RepositoriesByNameQuotaReconcileErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -5458,6 +5556,8 @@ export type PostApiV1RepositoriesByNameQuotaReconcileErrors = {
      */
     404: unknown;
 };
+
+export type PostApiV1RepositoriesByNameQuotaReconcileError = PostApiV1RepositoriesByNameQuotaReconcileErrors[keyof PostApiV1RepositoriesByNameQuotaReconcileErrors];
 
 export type PostApiV1RepositoriesByNameQuotaReconcileResponses = {
     /**
@@ -5784,6 +5884,10 @@ export type DeleteApiV1WebhooksByIdData = {
 
 export type DeleteApiV1WebhooksByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -5814,6 +5918,10 @@ export type GetApiV1WebhooksByIdData = {
 };
 
 export type GetApiV1WebhooksByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -5895,6 +6003,10 @@ export type GetApiV1WebhooksByIdDeliveriesData = {
 
 export type GetApiV1WebhooksByIdDeliveriesErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -5928,10 +6040,16 @@ export type PostApiV1WebhooksByIdTestData = {
 
 export type PostApiV1WebhooksByIdTestErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Webhook not found
      */
     404: unknown;
 };
+
+export type PostApiV1WebhooksByIdTestError = PostApiV1WebhooksByIdTestErrors[keyof PostApiV1WebhooksByIdTestErrors];
 
 export type PostApiV1WebhooksByIdTestResponses = {
     /**
@@ -6075,6 +6193,10 @@ export type GetApiV1UsersByIdData = {
 
 export type GetApiV1UsersByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6112,6 +6234,10 @@ export type PatchApiV1UsersByIdData = {
 
 export type PatchApiV1UsersByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6142,6 +6268,10 @@ export type GetApiV1UsersByIdGroupsData = {
 };
 
 export type GetApiV1UsersByIdGroupsErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6175,6 +6305,10 @@ export type GetApiV1UsersByIdTokensData = {
 };
 
 export type GetApiV1UsersByIdTokensErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6214,6 +6348,10 @@ export type PostApiV1UsersByIdTokensData = {
 
 export type PostApiV1UsersByIdTokensErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6245,6 +6383,10 @@ export type DeleteApiV1UsersByIdTokensByTokenIdData = {
 };
 
 export type DeleteApiV1UsersByIdTokensByTokenIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6336,6 +6478,10 @@ export type DeleteApiV1GroupsByIdData = {
 
 export type DeleteApiV1GroupsByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6366,6 +6512,10 @@ export type GetApiV1GroupsByIdData = {
 };
 
 export type GetApiV1GroupsByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6401,6 +6551,10 @@ export type PatchApiV1GroupsByIdData = {
 
 export type PatchApiV1GroupsByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6431,6 +6585,10 @@ export type GetApiV1GroupsByIdMembersData = {
 };
 
 export type GetApiV1GroupsByIdMembersErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6503,6 +6661,10 @@ export type DeleteApiV1GroupsByIdMembersByUserIdData = {
 
 export type DeleteApiV1GroupsByIdMembersByUserIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6534,6 +6696,10 @@ export type PostApiV1GroupsByIdMembersByUserIdData = {
 };
 
 export type PostApiV1GroupsByIdMembersByUserIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6723,6 +6889,10 @@ export type DeleteApiV1PermissionTargetsByIdData = {
 
 export type DeleteApiV1PermissionTargetsByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -6753,6 +6923,10 @@ export type GetApiV1PermissionTargetsByIdData = {
 };
 
 export type GetApiV1PermissionTargetsByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -6867,6 +7041,10 @@ export type GetApiV1PermissionTargetsByIdAssignmentsData = {
 
 export type GetApiV1PermissionTargetsByIdAssignmentsErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -6875,6 +7053,8 @@ export type GetApiV1PermissionTargetsByIdAssignmentsErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1PermissionTargetsByIdAssignmentsError = GetApiV1PermissionTargetsByIdAssignmentsErrors[keyof GetApiV1PermissionTargetsByIdAssignmentsErrors];
 
 export type GetApiV1PermissionTargetsByIdAssignmentsResponses = {
     /**
@@ -7020,6 +7200,10 @@ export type GetApiV1RepositoriesByNameUsageData = {
 
 export type GetApiV1RepositoriesByNameUsageErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin or project maintainer access required
      */
     403: unknown;
@@ -7028,6 +7212,8 @@ export type GetApiV1RepositoriesByNameUsageErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameUsageError = GetApiV1RepositoriesByNameUsageErrors[keyof GetApiV1RepositoriesByNameUsageErrors];
 
 export type GetApiV1RepositoriesByNameUsageResponses = {
     /**
@@ -7141,6 +7327,10 @@ export type DeleteApiV1AdminTokensByTokenIdData = {
 
 export type DeleteApiV1AdminTokensByTokenIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -7232,6 +7422,10 @@ export type GetApiV1AdminBackupByIdData = {
 };
 
 export type GetApiV1AdminBackupByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -7426,6 +7620,10 @@ export type GetApiV1AdminStorageByNameData = {
 
 export type GetApiV1AdminStorageByNameErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -7501,10 +7699,16 @@ export type PostApiV1AdminStorageByNameTestData = {
 
 export type PostApiV1AdminStorageByNameTestErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Storage backend not found
      */
     404: unknown;
 };
+
+export type PostApiV1AdminStorageByNameTestError = PostApiV1AdminStorageByNameTestErrors[keyof PostApiV1AdminStorageByNameTestErrors];
 
 export type PostApiV1AdminStorageByNameTestResponses = {
     /**
@@ -7733,6 +7937,10 @@ export type DeleteApiV1AdminTieringPoliciesByIdData = {
 
 export type DeleteApiV1AdminTieringPoliciesByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -7741,6 +7949,8 @@ export type DeleteApiV1AdminTieringPoliciesByIdErrors = {
      */
     404: unknown;
 };
+
+export type DeleteApiV1AdminTieringPoliciesByIdError = DeleteApiV1AdminTieringPoliciesByIdErrors[keyof DeleteApiV1AdminTieringPoliciesByIdErrors];
 
 export type DeleteApiV1AdminTieringPoliciesByIdResponses = {
     /**
@@ -7762,6 +7972,10 @@ export type GetApiV1AdminTieringPoliciesByIdData = {
 
 export type GetApiV1AdminTieringPoliciesByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -7770,6 +7984,8 @@ export type GetApiV1AdminTieringPoliciesByIdErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1AdminTieringPoliciesByIdError = GetApiV1AdminTieringPoliciesByIdErrors[keyof GetApiV1AdminTieringPoliciesByIdErrors];
 
 export type GetApiV1AdminTieringPoliciesByIdResponses = {
     /**
@@ -8368,6 +8584,10 @@ export type GetApiV1AdminGpgKeysByIdExportData = {
 
 export type GetApiV1AdminGpgKeysByIdExportErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -8376,6 +8596,8 @@ export type GetApiV1AdminGpgKeysByIdExportErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1AdminGpgKeysByIdExportError = GetApiV1AdminGpgKeysByIdExportErrors[keyof GetApiV1AdminGpgKeysByIdExportErrors];
 
 export type GetApiV1AdminGpgKeysByIdExportResponses = {
     /**
@@ -8459,6 +8681,10 @@ export type DeleteApiV1AdminSsoProvidersBySlugData = {
 
 export type DeleteApiV1AdminSsoProvidersBySlugErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -8489,6 +8715,10 @@ export type GetApiV1AdminSsoProvidersBySlugData = {
 };
 
 export type GetApiV1AdminSsoProvidersBySlugErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -8527,6 +8757,10 @@ export type PatchApiV1AdminSsoProvidersBySlugData = {
 
 export type PatchApiV1AdminSsoProvidersBySlugErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -8558,10 +8792,16 @@ export type PostApiV1AdminSsoProvidersBySlugTestData = {
 
 export type PostApiV1AdminSsoProvidersBySlugTestErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * SSO provider not found
      */
     404: unknown;
 };
+
+export type PostApiV1AdminSsoProvidersBySlugTestError = PostApiV1AdminSsoProvidersBySlugTestErrors[keyof PostApiV1AdminSsoProvidersBySlugTestErrors];
 
 export type PostApiV1AdminSsoProvidersBySlugTestResponses = {
     /**
@@ -8594,6 +8834,10 @@ export type GetApiV1ProjectsData = {
 };
 
 export type GetApiV1ProjectsErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -8660,6 +8904,10 @@ export type DeleteApiV1ProjectsByProjectData = {
 
 export type DeleteApiV1ProjectsByProjectErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Not an owner
      */
     403: unknown;
@@ -8672,6 +8920,8 @@ export type DeleteApiV1ProjectsByProjectErrors = {
      */
     409: unknown;
 };
+
+export type DeleteApiV1ProjectsByProjectError = DeleteApiV1ProjectsByProjectErrors[keyof DeleteApiV1ProjectsByProjectErrors];
 
 export type DeleteApiV1ProjectsByProjectResponses = {
     /**
@@ -8692,6 +8942,10 @@ export type GetApiV1ProjectsByProjectData = {
 };
 
 export type GetApiV1ProjectsByProjectErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -8759,6 +9013,10 @@ export type GetApiV1ProjectsByProjectRepositoriesData = {
 };
 
 export type GetApiV1ProjectsByProjectRepositoriesErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -8901,6 +9159,10 @@ export type GetApiV1ProjectsByProjectMembersData = {
 
 export type GetApiV1ProjectsByProjectMembersErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -8972,6 +9234,10 @@ export type DeleteApiV1ProjectsByProjectMembersByUserIdData = {
 
 export type DeleteApiV1ProjectsByProjectMembersByUserIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Not allowed to change this role
      */
     403: unknown;
@@ -8984,6 +9250,8 @@ export type DeleteApiV1ProjectsByProjectMembersByUserIdErrors = {
      */
     409: unknown;
 };
+
+export type DeleteApiV1ProjectsByProjectMembersByUserIdError = DeleteApiV1ProjectsByProjectMembersByUserIdErrors[keyof DeleteApiV1ProjectsByProjectMembersByUserIdErrors];
 
 export type DeleteApiV1ProjectsByProjectMembersByUserIdResponses = {
     /**
@@ -9042,6 +9310,10 @@ export type GetApiV1ProjectsByProjectTokensData = {
 };
 
 export type GetApiV1ProjectsByProjectTokensErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -9114,6 +9386,10 @@ export type DeleteApiV1ProjectsByProjectTokensByTokenIdData = {
 
 export type DeleteApiV1ProjectsByProjectTokensByTokenIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Not allowed to revoke this token
      */
     403: unknown;
@@ -9122,6 +9398,8 @@ export type DeleteApiV1ProjectsByProjectTokensByTokenIdErrors = {
      */
     404: unknown;
 };
+
+export type DeleteApiV1ProjectsByProjectTokensByTokenIdError = DeleteApiV1ProjectsByProjectTokensByTokenIdErrors[keyof DeleteApiV1ProjectsByProjectTokensByTokenIdErrors];
 
 export type DeleteApiV1ProjectsByProjectTokensByTokenIdResponses = {
     /**
@@ -9142,6 +9420,10 @@ export type GetApiV1ProjectsByProjectGroupsData = {
 };
 
 export type GetApiV1ProjectsByProjectGroupsErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -9180,6 +9462,10 @@ export type DeleteApiV1ProjectsByProjectGroupsByGroupData = {
 
 export type DeleteApiV1ProjectsByProjectGroupsByGroupErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Not allowed to grant or change this role
      */
     403: unknown;
@@ -9188,6 +9474,8 @@ export type DeleteApiV1ProjectsByProjectGroupsByGroupErrors = {
      */
     404: unknown;
 };
+
+export type DeleteApiV1ProjectsByProjectGroupsByGroupError = DeleteApiV1ProjectsByProjectGroupsByGroupErrors[keyof DeleteApiV1ProjectsByProjectGroupsByGroupErrors];
 
 export type DeleteApiV1ProjectsByProjectGroupsByGroupResponses = {
     /**
@@ -9245,6 +9533,10 @@ export type GetApiV1ProjectsByProjectUsageData = {
 };
 
 export type GetApiV1ProjectsByProjectUsageErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -9380,6 +9672,10 @@ export type GetApiV1ProjectsByProjectQuotaData = {
 
 export type GetApiV1ProjectsByProjectQuotaErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -9447,6 +9743,10 @@ export type GetApiV1ProjectsByProjectCleanupPoliciesData = {
 };
 
 export type GetApiV1ProjectsByProjectCleanupPoliciesErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -9550,6 +9850,10 @@ export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdData = {
 
 export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Not an owner
      */
     403: unknown;
@@ -9558,6 +9862,8 @@ export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdErrors = {
      */
     404: unknown;
 };
+
+export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdError = DeleteApiV1ProjectsByProjectCleanupPoliciesByIdErrors[keyof DeleteApiV1ProjectsByProjectCleanupPoliciesByIdErrors];
 
 export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdResponses = {
     /**
@@ -9787,6 +10093,10 @@ export type GetApiV1RepositoriesByNamePackagesByIdDownloadData = {
 
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -9870,6 +10180,10 @@ export type GetApiV1RepositoryByNameData = {
 };
 
 export type GetApiV1RepositoryByNameErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -10366,6 +10680,10 @@ export type GetApiV1BundlesByNameByVersionManifestData = {
 
 export type GetApiV1BundlesByNameByVersionManifestErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -10374,6 +10692,8 @@ export type GetApiV1BundlesByNameByVersionManifestErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1BundlesByNameByVersionManifestError = GetApiV1BundlesByNameByVersionManifestErrors[keyof GetApiV1BundlesByNameByVersionManifestErrors];
 
 export type GetApiV1BundlesByNameByVersionManifestResponses = {
     /**
@@ -10398,6 +10718,10 @@ export type GetApiV1BundlesByNameByVersionManifestAscData = {
 
 export type GetApiV1BundlesByNameByVersionManifestAscErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Admin access required
      */
     403: unknown;
@@ -10406,6 +10730,8 @@ export type GetApiV1BundlesByNameByVersionManifestAscErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1BundlesByNameByVersionManifestAscError = GetApiV1BundlesByNameByVersionManifestAscErrors[keyof GetApiV1BundlesByNameByVersionManifestAscErrors];
 
 export type GetApiV1BundlesByNameByVersionManifestAscResponses = {
     /**
@@ -11518,6 +11844,10 @@ export type DeleteApiV1RepositoriesByNameTrashData = {
 
 export type DeleteApiV1RepositoriesByNameTrashErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Manage permission on the repository required
      */
     403: unknown;
@@ -11526,6 +11856,8 @@ export type DeleteApiV1RepositoriesByNameTrashErrors = {
      */
     404: unknown;
 };
+
+export type DeleteApiV1RepositoriesByNameTrashError = DeleteApiV1RepositoriesByNameTrashErrors[keyof DeleteApiV1RepositoriesByNameTrashErrors];
 
 export type DeleteApiV1RepositoriesByNameTrashResponses = {
     /**
@@ -11642,6 +11974,10 @@ export type GetApiV1RepositoriesByNameFederationData = {
 
 export type GetApiV1RepositoriesByNameFederationErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Manage permission on the repository required
      */
     403: unknown;
@@ -11650,6 +11986,8 @@ export type GetApiV1RepositoriesByNameFederationErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNameFederationError = GetApiV1RepositoriesByNameFederationErrors[keyof GetApiV1RepositoriesByNameFederationErrors];
 
 export type GetApiV1RepositoriesByNameFederationResponses = {
     /**
@@ -11753,6 +12091,10 @@ export type DeleteApiV1RepositoriesByNameFederationPeersByIdData = {
 
 export type DeleteApiV1RepositoriesByNameFederationPeersByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Manage permission on the repository required
      */
     403: unknown;
@@ -11835,6 +12177,10 @@ export type PostApiV1RepositoriesByNameFederationPeersByIdResyncData = {
 
 export type PostApiV1RepositoriesByNameFederationPeersByIdResyncErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Manage permission on the repository required
      */
     403: unknown;
@@ -11873,6 +12219,10 @@ export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredData = {
 };
 
 export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Manage permission on the repository required
      */
@@ -11951,6 +12301,10 @@ export type DeleteApiV1RepositoriesByNameFederationTokensByIdData = {
 };
 
 export type DeleteApiV1RepositoriesByNameFederationTokensByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Manage permission on the repository required
      */
@@ -12057,6 +12411,10 @@ export type DeleteApiV1RepositoriesByNameDebsByIdData = {
 
 export type DeleteApiV1RepositoriesByNameDebsByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * Forbidden
      */
     403: Error;
@@ -12098,6 +12456,10 @@ export type DeleteApiV1RepositoriesByNamePackagesByIdData = {
 };
 
 export type DeleteApiV1RepositoriesByNamePackagesByIdErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -12141,6 +12503,10 @@ export type GetApiV1RepositoriesByNamePackagesByIdData = {
 
 export type GetApiV1RepositoriesByNamePackagesByIdErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * No read access to the repository
      */
     403: unknown;
@@ -12149,6 +12515,8 @@ export type GetApiV1RepositoriesByNamePackagesByIdErrors = {
      */
     404: unknown;
 };
+
+export type GetApiV1RepositoriesByNamePackagesByIdError = GetApiV1RepositoriesByNamePackagesByIdErrors[keyof GetApiV1RepositoriesByNamePackagesByIdErrors];
 
 export type GetApiV1RepositoriesByNamePackagesByIdResponses = {
     /**
@@ -12265,6 +12633,10 @@ export type GetApiV1RepositoriesByNamePackagesByIdDeltasData = {
 };
 
 export type GetApiV1RepositoriesByNamePackagesByIdDeltasErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Forbidden
      */
@@ -12850,6 +13222,10 @@ export type GetApiV1BrandingByAssetData = {
 
 export type GetApiV1BrandingByAssetErrors = {
     /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
+    /**
      * No image configured
      */
     404: Error;
@@ -12951,6 +13327,10 @@ export type DeleteApiV1AdminBrandingByAssetData = {
 };
 
 export type DeleteApiV1AdminBrandingByAssetErrors = {
+    /**
+     * Invalid request, including a NUL byte in the URL or the body
+     */
+    400: Error;
     /**
      * Admin access required
      */

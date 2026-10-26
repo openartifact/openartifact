@@ -74,6 +74,7 @@ Get details of a specific permission target
 | Status | Description | Body |
 |---|---|---|
 | `200` | Permission target details | `application/json`: [PermissionTarget](schemas.md#permissiontarget) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
 
@@ -127,6 +128,7 @@ Delete a permission target
 | Status | Description | Body |
 |---|---|---|
 | `204` | Permission target deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Permission target not found | - |
 
@@ -147,6 +149,7 @@ List the users and groups a permission target is assigned to (admin only)
 | Status | Description | Body |
 |---|---|---|
 | `200` | Assignments sorted by principal type then name | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
 | `404` | Permission target not found | - |
 

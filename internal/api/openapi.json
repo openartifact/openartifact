@@ -6294,6 +6294,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -6329,6 +6339,16 @@
         "responses": {
           "204": {
             "description": "Token revoked"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -7129,6 +7149,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -7278,6 +7308,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -7556,6 +7596,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -7617,6 +7667,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -7661,6 +7721,16 @@
         "responses": {
           "204": {
             "description": "SBOM report deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -7900,6 +7970,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -8042,6 +8122,16 @@
           "204": {
             "description": "Decision deleted"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -8157,6 +8247,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -8214,6 +8314,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LicenseScanResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -8323,6 +8433,16 @@
         "responses": {
           "200": {
             "description": "List of license policies"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -8451,6 +8571,16 @@
           "200": {
             "description": "License policy updated"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -8502,6 +8632,16 @@
         "responses": {
           "204": {
             "description": "License policy deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -8686,6 +8826,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -8811,6 +8961,16 @@
           "200": {
             "description": "Secrets scan details"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -8855,6 +9015,16 @@
         "responses": {
           "204": {
             "description": "Secrets scan deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -9736,6 +9906,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           }
@@ -9775,6 +9955,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -9913,6 +10103,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -9957,6 +10157,16 @@
         "responses": {
           "204": {
             "description": "Vulnerability scan deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -10070,6 +10280,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -10167,6 +10387,16 @@
           "204": {
             "description": "Quota deleted"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -10214,6 +10444,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Quota"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -10872,6 +11112,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11027,6 +11277,16 @@
           "204": {
             "description": "Webhook deleted"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11080,6 +11340,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11126,6 +11396,16 @@
                       "type": "string"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11319,6 +11599,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11386,6 +11676,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11486,6 +11786,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11536,6 +11846,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11620,6 +11940,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11674,6 +12004,16 @@
         "responses": {
           "204": {
             "description": "Token revoked"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -11819,6 +12159,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11880,6 +12230,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -11915,6 +12275,16 @@
         "responses": {
           "204": {
             "description": "Group deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -11965,6 +12335,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -12084,6 +12464,16 @@
           "200": {
             "description": "Member added"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -12128,6 +12518,16 @@
         "responses": {
           "204": {
             "description": "Member removed"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -12446,6 +12846,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -12579,6 +12989,16 @@
           "204": {
             "description": "Permission target deleted"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -12631,6 +13051,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -12981,6 +13411,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin or project maintainer access required"
           },
@@ -13174,6 +13614,16 @@
           "204": {
             "description": "Token revoked"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -13330,6 +13780,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Backup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -13580,6 +14040,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -13752,6 +14222,16 @@
                       "type": "string"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -14062,6 +14542,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           },
@@ -14144,6 +14634,16 @@
         "responses": {
           "204": {
             "description": "Policy deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Admin access required"
@@ -14898,6 +15398,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           },
@@ -15039,6 +15549,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -15103,6 +15623,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -15138,6 +15668,16 @@
         "responses": {
           "204": {
             "description": "SSO provider deleted"
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden",
@@ -15198,6 +15738,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "SSO provider not found"
           }
@@ -15250,6 +15800,16 @@
                       "type": "boolean"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -15332,6 +15892,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -15419,6 +15989,16 @@
           "204": {
             "description": "Project deleted"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Not an owner"
           },
@@ -15493,6 +16073,16 @@
                       "type": "integer"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -15636,6 +16226,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -15797,6 +16397,16 @@
           "204": {
             "description": "Member removed"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Not allowed to change this role"
           },
@@ -15841,6 +16451,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -15942,6 +16562,16 @@
           "204": {
             "description": "Token revoked"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Not allowed to revoke this token"
           },
@@ -15983,6 +16613,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -16090,6 +16730,16 @@
           "204": {
             "description": "Group detached"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Not allowed to grant or change this role"
           },
@@ -16123,6 +16773,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectUsage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -16350,6 +17010,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -16463,6 +17133,16 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -16708,6 +17388,16 @@
           "204": {
             "description": "Deleted"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Not an owner"
           },
@@ -16935,6 +17625,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -16987,6 +17687,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Repository"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -17915,6 +18625,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Admin access required"
           },
@@ -17956,6 +18676,16 @@
               "application/pgp-signature": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -19975,6 +20705,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Manage permission on the repository required"
           },
@@ -20102,6 +20842,16 @@
             "description": "Federation status",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationStatus" } } }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": { "description": "Manage permission on the repository required" },
           "404": { "description": "Repository not found" }
         }
@@ -20219,6 +20969,16 @@
         ],
         "responses": {
           "204": { "description": "Peer deleted" },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": { "description": "Manage permission on the repository required" },
           "404": { "description": "Repository or peer not found" },
           "409": {
@@ -20250,6 +21010,16 @@
             "description": "Resync queued",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": { "description": "Manage permission on the repository required" },
           "404": { "description": "Repository or peer not found" },
           "409": {
@@ -20280,6 +21050,16 @@
           "200": {
             "description": "The deferred units",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationDeferredList" } } }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": { "description": "Manage permission on the repository required" },
           "404": { "description": "Repository or peer not found" },
@@ -20341,6 +21121,16 @@
         ],
         "responses": {
           "204": { "description": "Token revoked" },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": { "description": "Manage permission on the repository required" },
           "404": { "description": "Repository or token not found" },
           "409": {
@@ -20515,6 +21305,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -20561,6 +21361,16 @@
           "200": {
             "description": "The package version",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PackageDetail" } } }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": { "description": "No read access to the repository" },
           "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
@@ -20609,6 +21419,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PackageDeleteResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -20868,6 +21688,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PackageDeltaList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -21761,6 +22591,16 @@
           "304": {
             "description": "Not modified"
           },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No image configured",
             "content": {
@@ -21975,6 +22815,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BrandingAdmin"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including a NUL byte in the URL or the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

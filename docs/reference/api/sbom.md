@@ -104,6 +104,7 @@ List SBOM reports for a repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of SBOM reports | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
@@ -164,6 +165,7 @@ Get details of a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `200` | SBOM report details | `application/json`: [SBOMReport](schemas.md#sbomreport) |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
@@ -185,6 +187,7 @@ Delete a specific SBOM report
 | Status | Description | Body |
 |---|---|---|
 | `204` | SBOM report deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
 
@@ -314,6 +317,7 @@ List the VEX decisions recorded for a repository, optionally for one artifact. A
 | Status | Description | Body |
 |---|---|---|
 | `200` | VEX decisions | `application/json`: object |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -375,6 +379,7 @@ Delete a recorded VEX decision; the vulnerability falls back to its derived stat
 | Status | Description | Body |
 |---|---|---|
 | `204` | Decision deleted | - |
+| `400` | Invalid request, including a NUL byte in the URL or the body | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or decision not found | - |
 
