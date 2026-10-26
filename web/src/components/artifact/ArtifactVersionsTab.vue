@@ -28,7 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-size="{ row }"><span class="font-mono text-xs tabular-nums">{{ row.size > 0 ? formatBytes(row.size) : '—' }}</span></template>
       <template #cell-files="{ row }"><span class="tabular-nums">{{ row.files.length }}</span></template>
       <template #cell-security="{ row }">
-        <SeverityBadge v-if="worstSeverity(row.security) !== 'none'" :severity="worstSeverity(row.security)" :count="countTotal(row.security)" />
+        <SeverityBadge v-if="worstSeverity(row.security) !== 'none'" :severity="worstSeverity(row.security)" :count="worstCount(row.security)" />
         <span v-else-if="row.scannedAt" class="text-xs text-muted">{{ t('artifact.versions.clean') }}</span>
         <span v-else class="text-xs text-muted">{{ t('artifact.versions.notScanned') }}</span>
         <span v-if="row.flagged && worstSeverity(row.security) !== 'critical' && worstSeverity(row.security) !== 'high'" class="ml-2 text-xs text-warning">{{ t('artifact.versions.flagged') }}</span>
@@ -47,7 +47,7 @@ import { useLocalList } from '../../composables/useLocalList'
 import { useArtifactContext } from '../../composables/useArtifact'
 import { strParam } from '../../composables/useUrlState'
 import { artifactPath } from '../../lib/artifactPath'
-import { compareVersionStrings, countTotal, worstSeverity, type VersionEntry } from '../../lib/artifactVersions'
+import { compareVersionStrings, worstCount, worstSeverity, type VersionEntry } from '../../lib/artifactVersions'
 import { formatBytes } from '../../lib/quota'
 import { t, tp } from '../../i18n/en'
 

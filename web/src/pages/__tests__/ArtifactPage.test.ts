@@ -30,7 +30,7 @@ const SUMMARY = {
 let fetchSpy: Mock<typeof fetch>
 const sent = (): string[] => fetchSpy.mock.calls.map((c) => `${(c[1] as RequestInit | undefined)?.method ?? 'GET'} ${decodeURIComponent(String(c[0]))}`)
 
-function serve(permissions: Record<string, boolean>, packages: unknown[] = PACKAGES): void {
+function serve(permissions: Record<string, boolean>, packages: unknown[] = PACKAGES, summary: unknown = SUMMARY): void {
   fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
@@ -41,7 +41,7 @@ function serve(permissions: Record<string, boolean>, packages: unknown[] = PACKA
     if (url.includes('/packages/f-')) {
       return json({ id: 'f-new-amd64', filename: 'widget-2.0.0.tgz', sha256: SHA, license: 'MIT', summary: 'A widget', files: [{ id: 'f-new-amd64', filename: 'widget-2.0.0.tgz', size: 2048, sha256: SHA }], metadata: [{ key: 'engines', value: 'node>=20' }], dependencies: [{ name: 'left-pad', version: '^1.0.0', kind: 'runtime' }], version_count: 2, latest_version: '2.0.0' })
     }
-    if (url.startsWith('/api/v1/repositories/web/security/summary')) return json(SUMMARY)
+    if (url.startsWith('/api/v1/repositories/web/security/summary')) return json(summary)
     if (url.includes('/vuln/scans')) return json({ scans: [] })
     if (url.includes('/activity')) return json({ data: [], has_more: false })
     return json({}, 404)
@@ -114,6 +114,15 @@ describe('ArtifactPage', () => {
     expect(tabNames(wrapper).some((n) => n.startsWith('Activity'))).toBe(true)
     expect(sent().some((c) => c.startsWith('GET /api/v1/repositories/web/vuln/scans'))).toBe(true)
     expect(wrapper.find('[data-testid=sec-no-scans]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows no finding count for a version nobody scanned', async () => {
+    serve({ write: false, delete: false, manage: false, admin: false }, PACKAGES, { ...SUMMARY, scanned_at: null, vuln: { critical: 0, high: 0, medium: 0, low: 0 } })
+    const { wrapper } = await mountAt('/repos/web/packages/@acme/widget')
+    const glance = wrapper.get('[aria-label="At a glance"]').text()
+    expect(glance).toContain('–')
+    expect(glance).not.toContain('0Open findings')
     wrapper.unmount()
   })
 

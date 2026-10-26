@@ -114,6 +114,12 @@ export function worstSeverity(counts: SeverityCounts | null | undefined): 'criti
   return 'none'
 }
 
+/** How many findings carry the worst severity: the figure that belongs to the "N critical" chip. */
+export function worstCount(counts: SeverityCounts | null | undefined): number {
+  const worst = worstSeverity(counts)
+  return counts && worst !== 'none' ? counts[worst] : 0
+}
+
 /** Orders version strings by their numeric parts (1.10.0 after 1.9.0), then as text. */
 export function compareVersionStrings(a: string, b: string): number {
   return a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' })

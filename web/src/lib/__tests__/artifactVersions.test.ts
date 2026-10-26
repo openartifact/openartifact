@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { PackageItem } from '../../api/repositories'
-import { compareVersionStrings, countTotal, groupVersions, primaryFile, selectVersion, worstSeverity } from '../artifactVersions'
+import { compareVersionStrings, countTotal, groupVersions, primaryFile, selectVersion, worstCount, worstSeverity } from '../artifactVersions'
 
 const row = (over: Partial<PackageItem>): PackageItem => ({ id: 'x', name: 'pkg', version: '1.0.0', format: 'deb', ...over }) as PackageItem
 
@@ -62,5 +62,13 @@ describe('severity helpers', () => {
   })
   it('orders version strings numerically', () => {
     expect(['1.10.0', '1.9.0', '1.2.0'].sort(compareVersionStrings)).toEqual(['1.2.0', '1.9.0', '1.10.0'])
+  })
+})
+
+describe('worstCount', () => {
+  it('counts only the findings of the worst severity, the figure the chip names', () => {
+    expect(worstCount({ critical: 0, high: 2, medium: 3, low: 4 })).toBe(2)
+    expect(worstCount({ critical: 0, high: 0, medium: 0, low: 0 })).toBe(0)
+    expect(worstCount(null)).toBe(0)
   })
 })

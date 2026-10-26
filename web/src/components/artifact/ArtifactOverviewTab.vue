@@ -110,7 +110,8 @@ const metadata = computed(() => ctx.detail.value?.metadata ?? [])
 
 const glance = computed(() => {
   const counts = ctx.summary.value
-  const findings = counts ? String(countTotal(counts.vuln) + counts.license.violations + counts.secret.count) : '–'
+  // Counts of a version nobody scanned are zeros, not "no findings".
+  const findings = counts?.scanned_at ? String(countTotal(counts.vuln) + counts.license.violations + counts.secret.count) : '–'
   return [
     { tab: 'versions', label: t('artifact.tab.versions'), value: String(ctx.versions.value.length) },
     { tab: 'files', label: t('artifact.tab.files'), value: String(ctx.detail.value?.files.length ?? entry.value?.files.length ?? 0) },

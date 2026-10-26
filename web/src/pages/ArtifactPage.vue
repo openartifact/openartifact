@@ -50,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </select>
           <span v-if="entry.latest" class="rounded-full border border-info/30 bg-info-soft px-2 py-0.5 text-xs text-info">{{ t('artifact.badge.latest') }}</span>
           <span v-if="entry.prerelease" class="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{{ t('artifact.badge.prerelease') }}</span>
-          <SeverityBadge v-if="worst !== 'none'" :severity="worst" :count="countTotal(summary?.vuln)" />
+          <SeverityBadge v-if="worst !== 'none'" :severity="worst" :count="worstCount(summary?.vuln)" />
           <span v-if="summary?.quarantined" class="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning-soft px-2 py-0.5 text-xs text-warning" data-testid="badge-quarantined">
             <LockClosedIcon class="h-3 w-3" aria-hidden="true" />{{ t('artifact.badge.quarantined') }}
           </span>
@@ -102,7 +102,7 @@ import StateBlock from '../components/ui/StateBlock.vue'
 import { useArtifact } from '../composables/useArtifact'
 import { artifactPath } from '../lib/artifactPath'
 import { securityFlag } from '../lib/artifactSecurity'
-import { countTotal, worstSeverity } from '../lib/artifactVersions'
+import { worstCount, worstSeverity } from '../lib/artifactVersions'
 import { asyncTab } from '../lib/asyncTab'
 import { packageTabDefs } from '../lib/packageTabs'
 import { t, tp } from '../i18n/en'
