@@ -67,6 +67,10 @@ type routeScope struct {
 	action       string
 	repoName     string
 	artifactPath string
+	// alsoAction is a second action on the same repository and path that
+	// authorizes the route in place of action (either one suffices). Empty for
+	// every route but the property writes, which `annotate` also permits.
+	alsoAction string
 	// anyAuthenticated marks list-style endpoints whose handler filters the
 	// result per repository itself; RBAC only requires a real (non-anonymous)
 	// principal for them.
@@ -204,6 +208,10 @@ func serveStaticOrSPA(w http.ResponseWriter, r *http.Request, next http.Handler,
 // repository route, the project-delegated repo.admin check.
 func evaluateRepoScope(ctx context.Context, evaluator *auth.Evaluator, principal *auth.Principal, scope routeScope) (bool, error) {
 	allowed, err := evaluator.Evaluate(ctx, *principal, scope.repoName, scope.artifactPath, scope.action)
+	if err == nil && !allowed && scope.alsoAction != "" {
+		allowed, err = evaluator.Evaluate(ctx, *principal, scope.repoName, scope.artifactPath, scope.alsoAction)
+	}
+
 	if err != nil || allowed || scope.delegateRepo == "" {
 		return allowed, err
 	}
@@ -823,7 +831,8 @@ func isCIRoute(method string, segs []string) bool {
 
 // classifyCIRoute scopes an isCIRoute route. Artifact properties are metadata of
 // the repository's own artifacts: reading needs `read` on the repository,
-// changing them `write`. A bundle route is decided by its handler, because the
+// changing them `write` or `annotate` (either one; `annotate` grants nothing
+// else, it never lets a caller upload or change package data). A bundle route is decided by its handler, because the
 // repositories involved are in the request body or the stored items; the
 // middleware only lets an authenticated principal through.
 func classifyCIRoute(method string, segs []string) routeScope {
@@ -831,7 +840,12 @@ func classifyCIRoute(method string, segs []string) routeScope {
 		return routeScope{action: "manage", bundles: true}
 	}
 
-	return routeScope{action: actionForMethod(propertiesMethod(method)), repoName: segs[1]}
+	scope := routeScope{action: actionForMethod(propertiesMethod(method)), repoName: segs[1]}
+	if scope.action == "write" {
+		scope.alsoAction = "annotate"
+	}
+
+	return scope
 }
 
 // isRepoPropertiesRoute reports whether segs (of an /api/v1/ path) is one of the
@@ -857,7 +871,8 @@ func isRepoPropertiesRoute(method string, segs []string) bool {
 }
 
 // propertiesMethod maps a property route's method to the one that decides its
-// action: removing a property edits metadata (`write`), it is not a package delete.
+// action: removing a property edits metadata (`write` or `annotate`), it is not
+// a package delete.
 func propertiesMethod(method string) string {
 	if method == http.MethodDelete {
 		return http.MethodPut

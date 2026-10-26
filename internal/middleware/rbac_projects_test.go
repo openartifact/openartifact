@@ -57,6 +57,9 @@ type projectCaller struct {
 	scopes []string
 	admin  bool
 	role   string // role in acme, "" = non-member
+	// actions replaces the default read-only permission target (on every
+	// repository) of a non-admin caller when set.
+	actions []string
 	// anonymous sends no credentials at all.
 	anonymous bool
 }
@@ -72,6 +75,10 @@ func projectStatus(t *testing.T, caller projectCaller, selfCreate, method, path 
 	}
 
 	targets := []*models.PermissionTarget{{ID: "t-ro", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}}}
+	if caller.actions != nil {
+		targets = []*models.PermissionTarget{{ID: "t-actions", RepositoryFilter: ".*", PathPattern: ".*", Actions: caller.actions}}
+	}
+
 	if caller.admin {
 		targets = []*models.PermissionTarget{{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}}}
 	}
