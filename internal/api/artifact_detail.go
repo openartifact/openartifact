@@ -209,7 +209,7 @@ func decodeCargoDeps(raw []byte) []responses.PackageDependencyResponse {
 
 func decodeNugetDeps(raw []byte) []responses.PackageDependencyResponse {
 	var groups []struct {
-		TargetFramework string `json:"targetFramework"`
+		TargetFramework string `json:"targetFramework"` //nolint:tagliatelle // the stored nuget dependency groups are camelCase
 		Dependencies    []struct {
 			ID    string `json:"id"`
 			Range string `json:"range"`

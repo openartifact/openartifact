@@ -115,7 +115,7 @@ func parseRepoListParams(r *http.Request) (repoListParams, string) {
 
 // parseBoolParam reads an optional boolean query parameter: "" and "false" are
 // false, "true" is true; ok is false for any other value.
-func parseBoolParam(s string) (value, ok bool) {
+func parseBoolParam(s string) (bool, bool) {
 	switch s {
 	case "", "false":
 		return false, true

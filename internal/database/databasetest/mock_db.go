@@ -95,7 +95,7 @@ func (m *BaseMockDB) GetRepoComponentDetail(ctx context.Context, repoID, id stri
 	return nil, errNotImpl("GetRepoComponentDetail")
 }
 
-// The catalog aggregates below default to "nothing recorded": the repository and
+// RepoCatalogStats and the aggregates after it default to "nothing recorded": the repository and
 // package listings decorate their rows with them, and a test of the listing
 // itself should not have to stub them.
 func (m *BaseMockDB) RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error) {

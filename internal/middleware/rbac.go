@@ -680,15 +680,11 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 	segs := strings.Split(strings.Trim(strings.TrimPrefix(escapedPath, "/api/v1/"), "/"), "/")
 
 	switch {
-	case isSafeMethod(method) && len(segs) == 1 && (segs[0] == "repositories" || segs[0] == "search"):
+	case isFilteredListRoute(method, segs):
 		// Handlers filter per repository (RepoReadFilter / per-hit Evaluate).
 		// The action stays "manage" so that an anonymous principal, which the
 		// pass-through does not cover, can never satisfy it (the handlers'
 		// anonymous branch is unfiltered).
-		return routeScope{action: "manage", anyAuthenticated: true}
-	case isSafeMethod(method) && len(segs) == 2 && segs[0] == "packages" && segs[1] == "recent":
-		// Same filtering as the lists above: the handler reads only
-		// repositories the caller may read.
 		return routeScope{action: "manage", anyAuthenticated: true}
 	case isReadOnlyRoute(method, segs):
 		return classifyReadOnlyRoute(segs)
@@ -718,6 +714,24 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 	}
 
 	return manage
+}
+
+// isFilteredListRoute reports whether segs (of an /api/v1/ path) is a list the
+// handler filters per repository: the repositories, the search and the recent
+// packages.
+func isFilteredListRoute(method string, segs []string) bool {
+	if !isSafeMethod(method) {
+		return false
+	}
+
+	switch len(segs) {
+	case 1:
+		return segs[0] == "repositories" || segs[0] == "search"
+	case 2:
+		return segs[0] == "packages" && segs[1] == "recent"
+	}
+
+	return false
 }
 
 // isReadOnlyRoute reports whether (method, segs) is a read-only route with its

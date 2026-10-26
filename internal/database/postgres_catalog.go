@@ -54,7 +54,7 @@ func (p *PostgresDB) RepoCatalogStats(ctx context.Context, repoIDs []string, wit
 	for _, sc := range security {
 		s := stats[sc.RepositoryID]
 		s.Security = models.RepoSecurity{
-			SecurityCounts:    models.SecurityCounts{Critical: sc.Critical, High: sc.High, Medium: sc.Medium, Low: sc.Low},
+			Critical: sc.Critical, High: sc.High, Medium: sc.Medium, Low: sc.Low,
 			Secrets:           sc.Secrets,
 			LicenseViolations: sc.LicenseViolations,
 			Quarantined:       sc.Quarantined,
@@ -271,9 +271,7 @@ func (p *PostgresDB) ArtifactSecurity(ctx context.Context, repoID string, artifa
 
 	for _, r := range rows {
 		out[r.ArtifactPath] = models.ArtifactSecurity{
-			SecurityCounts: models.SecurityCounts{
-				Critical: int64(r.Critical), High: int64(r.High), Medium: int64(r.Medium), Low: int64(r.Low),
-			},
+			Critical: int64(r.Critical), High: int64(r.High), Medium: int64(r.Medium), Low: int64(r.Low),
 			Secrets:     int64(r.Secrets),
 			Quarantined: r.Quarantined,
 			ScannedAt:   r.ScannedAt,

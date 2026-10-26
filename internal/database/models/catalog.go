@@ -20,6 +20,7 @@ type SecurityCounts struct {
 // quarantined license results and the time of the latest completed scan.
 type RepoSecurity struct {
 	SecurityCounts
+
 	Secrets int64
 	// LicenseViolations is the number of artifacts whose license scan is
 	// quarantined; the server stores no other license violation count.
@@ -63,6 +64,7 @@ func (s RepoStats) NearQuota(threshold float64) bool {
 // its latest completed scan.
 type ArtifactSecurity struct {
 	SecurityCounts
+
 	Secrets     int64
 	Quarantined bool
 	ScannedAt   *time.Time
