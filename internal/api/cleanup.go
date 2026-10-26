@@ -43,11 +43,11 @@ func NewCleanupHandler(db database.Database, log *logger.Logger, evaluator *auth
 func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repositories/{name}/cleanup-policies", h.handleList)
 	r.Post("/api/v1/repositories/{name}/cleanup-policies", h.handleCreate)
-	r.Get("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleGet)
-	r.Put("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleUpdate)
-	r.Delete("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleDelete)
-	r.Post("/api/v1/repositories/{name}/cleanup-policies/{id}/run", h.handleRun)
-	r.Post("/api/v1/repositories/{name}/cleanup-policies/{id}/dry-run", h.handleDryRun)
+	r.With(requireUUIDParams("id")).Get("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleGet)
+	r.With(requireUUIDParams("id")).Put("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleUpdate)
+	r.With(requireUUIDParams("id")).Delete("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleDelete)
+	r.With(requireUUIDParams("id")).Post("/api/v1/repositories/{name}/cleanup-policies/{id}/run", h.handleRun)
+	r.With(requireUUIDParams("id")).Post("/api/v1/repositories/{name}/cleanup-policies/{id}/dry-run", h.handleDryRun)
 }
 
 func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
