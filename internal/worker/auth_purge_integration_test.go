@@ -15,9 +15,10 @@ import (
 
 type authPurgeFixture struct {
 	*purgeSeed
-	human, service string
-	hook           string
-	seq            int
+
+	human string
+	hook  string
+	seq   int
 }
 
 func newAuthPurgeFixture(t *testing.T) *authPurgeFixture {

@@ -21,6 +21,7 @@ import (
 
 type rpmFixture struct {
 	*cleanupSeed
+
 	repoID string
 	w      *RPMetadataWorker
 }
