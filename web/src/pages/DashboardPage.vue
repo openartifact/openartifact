@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </DashSection>
         <ActivityFeed :items="activityItems" :state="blockState(d.activity.value)" :error="errorOf(d.activity.value)" :is-admin="isAdmin" @retry="d.reload" />
       </div>
-      <div class="min-w-0">
+      <div class="min-w-0 max-xl:mt-8">
         <ConnectClientBlock :repos="dataOf(d.repos.value)?.repositories ?? []" :state="blockState(d.repos.value)" :can-create="session.canCreateRepo" @retry="d.reload" />
       </div>
     </div>

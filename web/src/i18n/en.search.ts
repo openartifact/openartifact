@@ -24,6 +24,7 @@ export const enSearch = {
   'search.badChecksum.name': 'Search names instead',
   'search.start.title': 'Search the registry',
   'search.start.hint': 'Type a package name or version, or paste a file checksum to find where it lives.',
+  'search.start.hintExamples': 'Type a package name or version, or paste a file checksum to find where it lives. Try one of these:',
   'search.start.publish': 'Nothing here yet? Publish with your package manager (commands are on Home under Connect a client) or upload a file:',
   'search.start.publishCommand': 'oa artifact upload <repository> <file>',
   'search.start.connect': 'Connect a client',

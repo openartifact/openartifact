@@ -7,8 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <section v-if="cells.length > 0" :aria-labelledby="'dash-health'" data-testid="health-strip">
     <h2 id="dash-health" class="sr-only">{{ summary }}</h2>
-    <ul class="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-5" role="list">
-      <li v-for="cell in cells" :key="cell.id" class="bg-surface">
+    <ul class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-5" role="list">
+      <li v-for="cell in cells" :key="cell.id" class="bg-surface max-lg:last:odd:col-span-2">
         <router-link
           :to="cell.to"
           class="block h-full px-4 py-3 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary max-md:min-h-11"
@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <component :is="icon(cell)" class="h-4 w-4 shrink-0" :class="tone(cell)" aria-hidden="true" />
             <span :data-status="cell.status">{{ value(cell) }}</span>
           </div>
-          <div class="mt-0.5 truncate text-xs text-muted" :title="detail(cell)">{{ detail(cell) }}</div>
+          <div class="mt-0.5 truncate text-xs text-muted max-md:whitespace-normal max-md:break-words" :title="detail(cell)">{{ detail(cell) }}</div>
         </router-link>
       </li>
     </ul>
