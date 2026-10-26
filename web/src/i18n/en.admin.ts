@@ -148,18 +148,6 @@ export const enAdmin = {
   'adm.storage.field.insecureHint': 'Disable TLS verification (not recommended for production).',
 
   // Admin tokens (base keys live in en.ts)
-  'admin.tokens.column.owner': 'Owner',
-  'admin.tokens.column.expires': 'Expires',
-  'admin.tokens.never': 'Never',
-  'adm.tokens.description': 'All API tokens issued across the instance. Revoke tokens that are no longer needed.',
-  'adm.tokens.total': 'Total tokens',
-  'adm.tokens.list': 'Tokens',
-  'adm.tokens.empty': 'No API tokens',
-  'adm.tokens.emptyHint': 'Users create their own tokens under Settings; they show up here once issued.',
-  'adm.tokens.loadFailed': 'Failed to load tokens',
-  'adm.tokens.confirmRevoke': 'Revoke token',
-  'adm.tokens.revoked': 'Token revoked',
-  'adm.tokens.revokeFailed': 'Failed to revoke token',
 
   // Users
   'adm.users.description': 'Create, edit and disable user accounts.',
@@ -228,16 +216,6 @@ export const enAdmin = {
   'adm.groups.deleteFailed': 'Failed to delete group',
 
   // System
-  'adm.system.loadFailed': 'Failed to load system information',
-  'adm.system.description': 'Server health and configuration overview',
-  'adm.system.notStamped': 'Not recorded',
-  'adm.system.notStampedHint': 'This build was not stamped with version metadata (build with make build or make docker-up)',
-  'adm.system.commit': 'Commit',
-  'adm.system.buildTime': 'Build time',
-  'adm.system.os': 'OS',
-  'adm.system.arch': 'Arch',
-  'adm.system.status': 'Status',
-  'adm.system.kind': 'Kind',
 
   // Permissions
   'adm.permissions.description': 'Permission targets map repositories and path patterns to actions, then assign them to users or groups.',
@@ -443,17 +421,7 @@ export const enAdmin = {
   'adm.ai.loadFailed': 'Failed to load AI settings',
 
   // Audit log
-  'adm.audit.description': 'Security-relevant actions recorded by the server.',
-  'adm.audit.filterActor': 'Filter by actor',
-  'adm.audit.filterAction': 'Filter by action',
-  'adm.audit.entries': 'entries',
-  'adm.audit.empty': 'No audit entries',
   'adm.audit.details': 'Details',
-  'adm.audit.ip': 'IP address',
-  'adm.audit.page': 'Page',
-  'adm.audit.previous': 'Previous page',
-  'adm.audit.next': 'Next page',
-  'adm.audit.loadFailed': 'Failed to load audit log',
 
   // GPG
   'adm.gpg.eyebrow': 'GPG key',

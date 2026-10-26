@@ -233,16 +233,10 @@ export const enProjects = {
   'projects.cleanup.forbidden': 'Only project owners can change the cleanup defaults.',
 
   // Admin page: self-service creation
-  'adm.projects.selfCreate.title': 'Allow users to create projects',
-  'adm.projects.selfCreate.hint':
-    'When on, any signed-in user can create a project and becomes its owner. Policy fields stay admin-only.',
   // Access tokens link (the tokens themselves live in settings)
   'projects.tokens.title': 'Access tokens',
   'projects.tokens.hint':
     'Project tokens are CI credentials for this project only: viewer tokens read, developer tokens read and write its repositories. They never reach the management API and stop working when their creator leaves the project.',
   'projects.tokens.manage': 'Manage project tokens',
 
-  'adm.projects.selfCreate.saved': 'Project creation setting saved',
-  'adm.projects.selfCreate.saveFailed': 'Failed to save the project creation setting',
-  'adm.projects.selfCreate.loadFailed': 'Failed to load the project creation setting',
 } as const

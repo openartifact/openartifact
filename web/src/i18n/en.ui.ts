@@ -120,6 +120,4 @@ export const enUI = {
   'ui.settings.unknown': 'Unknown setting',
   'ui.settings.unknownHint': 'There is no settings section with this name.',
   'ui.settings.hub': 'Settings',
-  'ui.settings.placeholder.title': 'This section is not available yet',
-  'ui.settings.placeholder.hint': 'It will appear here once it is built.',
 } as const

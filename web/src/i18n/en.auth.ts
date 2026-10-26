@@ -48,21 +48,5 @@ export const enAuth = {
   'settings.profile.roleUser': 'User',
 
   // Settings: tokens
-  'settings.tokens.yourTokens': 'Your tokens',
-  'settings.tokens.accessToken': 'Access token',
-  'settings.tokens.kind': 'Kind',
-  'settings.tokens.never': 'Never',
-  'settings.tokens.column.label': 'Label',
-  'settings.tokens.column.created': 'Created',
-  'settings.tokens.column.lastUsed': 'Last used',
-  'settings.tokens.column.expires': 'Expires',
-  'settings.tokens.labelPlaceholder': 'e.g., CLI Token',
-  'settings.tokens.revoke': 'Revoke',
-  'settings.tokens.revokeConfirm': 'Revoke this token? Anything using it will stop working.',
-  'settings.tokens.revoked': 'Token revoked',
-  'settings.tokens.copied': 'Copied to clipboard',
   'settings.tokens.copyFailed': 'Failed to copy',
-  'settings.tokens.createFailed': 'Failed to create token',
-  'settings.tokens.revokeFailed': 'Failed to revoke token',
-  'settings.tokens.loadFailed': 'Failed to load tokens',
 } as const

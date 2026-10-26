@@ -23,6 +23,8 @@ import { enArtifact } from './en.artifact'
 import { enSecurity } from './en.security'
 import { enSearch } from './en.search'
 import { enRepoList } from './en.repolist'
+import { enTokens } from './en.tokens'
+import { enSettingsX } from './en.settingsx'
 
 const base = {
   // App / shell
@@ -102,9 +104,6 @@ const base = {
   'common.copy': 'Copy',
   'common.copied': 'Copied',
   'common.actions': 'Actions',
-  'common.notAvailable': 'Not yet available',
-  'common.notAvailableHint': 'This admin endpoint is not yet implemented in this build.',
-  'common.viewDocs': 'View documentation',
   'common.optional': 'optional',
   'common.empty': 'Nothing to show',
   'common.refresh': 'Refresh',
@@ -194,13 +193,6 @@ const base = {
   'admin.sso.add': 'Add provider',
   'admin.sso.empty': 'No SSO providers configured',
 
-  'admin.system.title': 'System',
-  'admin.system.version': 'Version',
-  'admin.system.go': 'Go Version',
-  'admin.system.uptime': 'Uptime',
-  'admin.system.database': 'Database',
-  'admin.system.build': 'Build',
-  'admin.system.storage': 'Storage',
 
   'admin.gpg.title': 'GPG Keys',
   'admin.gpg.description': 'Manage GPG signing keys for repository metadata.',
@@ -214,22 +206,7 @@ const base = {
   'admin.gpg.column.created': 'Created',
   'admin.gpg.column.expires': 'Expires',
 
-  'admin.tokens.title': 'API tokens',
-  'admin.tokens.revoke': 'Revoke',
-  'admin.tokens.column.label': 'Label',
-  'admin.tokens.column.created': 'Created',
-  'admin.tokens.column.project': 'Project',
-  'admin.tokens.column.createdBy': 'Created by',
-  'admin.tokens.column.lastUsed': 'Last used',
-  'admin.tokens.reveal': 'This token will only be shown once. Copy it now.',
 
-  'admin.audit.title': 'Audit log',
-  'admin.audit.column.timestamp': 'When',
-  'admin.audit.column.actor': 'Actor',
-  'admin.audit.column.action': 'Action',
-  'admin.audit.column.target': 'Target',
-  'admin.audit.filter.actor': 'Actor',
-  'admin.audit.filter.action': 'Action',
 
 
   'admin.storage.title': 'Storage backends',
@@ -275,12 +252,6 @@ const base = {
   'settings.profile': 'Profile',
   'settings.password': 'Password',
   'settings.passwordDesc': 'Update your account password. Minimum 12 characters required.',
-  'settings.tokens': 'Personal access tokens',
-  'settings.tokens.subtitle': 'Tokens grant API access on your behalf. Keep them secret.',
-  'settings.tokens.empty': 'You have no active tokens.',
-  'settings.tokens.emptyHint': 'Package clients and CI jobs sign in with a token; your account password only works for the web UI.',
-  'settings.tokens.create': 'Create token',
-  'settings.tokens.label': 'Label',
 
   // Documentation links
   'docs.helpPage': 'Open the documentation for this page (new tab)',
@@ -293,7 +264,7 @@ const base = {
   'docs.trash': 'How the trash and retention work',
 } as const
 
-const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation, ...enBranding, ...enUI, ...enShell, ...enDashboard, ...enSettings, ...enArtifact, ...enSecurity, ...enSearch, ...enRepoList } satisfies Record<string, string>
+const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation, ...enBranding, ...enUI, ...enShell, ...enDashboard, ...enSettings, ...enArtifact, ...enSecurity, ...enSearch, ...enRepoList, ...enTokens, ...enSettingsX } satisfies Record<string, string>
 
 export type TranslationKey = keyof typeof catalog
 

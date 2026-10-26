@@ -18,7 +18,6 @@ import type {
   ProjectGroup,
   ProjectGroupUpdateRequest,
   ProjectMember as GeneratedProjectMember,
-  ProjectToken as GeneratedProjectToken,
   ProjectTokenCreateRequest as GeneratedProjectTokenCreateRequest,
   ProjectTokenCreateResponse as GeneratedProjectTokenCreateResponse,
   ProjectUpdateRequest,
@@ -185,26 +184,12 @@ export const getProjectSettings = () => request<ProjectSettings>('/api/v1/admin/
 export const updateProjectSettings = (body: ProjectSettings) =>
   send<ProjectSettings>('/api/v1/admin/projects/settings', 'PUT', body)
 
-/** Roles a project token can carry, lowest first. */
-export const PROJECT_TOKEN_ROLES = ['viewer', 'developer'] as const
-export type ProjectTokenRole = (typeof PROJECT_TOKEN_ROLES)[number]
-
-export type ProjectToken = GeneratedProjectToken
 type ProjectTokenCreateRequest = GeneratedProjectTokenCreateRequest
 type ProjectTokenCreated = GeneratedProjectTokenCreateResponse
-
-/** Maintainers and owners see every token of the project, other members only their own. */
-export async function listProjectTokens(project: string): Promise<ProjectToken[]> {
-  const res = await request<{ tokens?: ProjectToken[] }>(`${base(project)}/tokens`)
-  return res?.tokens ?? []
-}
 
 /** Session only (API tokens get 403). The clear-text secret is in the response, once. */
 export const createProjectToken = (project: string, body: ProjectTokenCreateRequest) =>
   send<ProjectTokenCreated>(`${base(project)}/tokens`, 'POST', body)
-
-export const revokeProjectToken = (project: string, tokenId: string) =>
-  request<void>(`${base(project)}/tokens/${enc(tokenId)}`, { method: 'DELETE' })
 
 export type ProjectQuota = GeneratedProjectQuota
 export type ProjectUsage = GeneratedProjectUsage
