@@ -188,6 +188,7 @@ func TestHandleTarball_Quarantine(t *testing.T) {
 		path string
 		want int
 	}{
+		{"by version row id", "v1", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
 		{"by name@version", "lodash@1.0.0", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
 		{"by package path", "lodash/-/lodash-1.0.0.tgz", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
 		{"by filename", "lodash-1.0.0.tgz", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
