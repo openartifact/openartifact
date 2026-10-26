@@ -218,7 +218,7 @@ export const enRepos = {
   'repoDetail.copy': 'Copy',
   'repoDetail.copied': 'Copied',
   'repoDetail.connect.title': 'Connect a client',
-  'repoDetail.connect.hint': 'No packages yet. Configure your client, then publish. Replace the placeholders with your own credentials.',
+  'repoDetail.connect.hint': 'Configure your client, then publish. Replace the placeholders with your own credentials.',
   'repoDetail.connect.docs': 'All client commands in the docs',
   'repoDetail.connect.configure': 'Configure',
   'repoDetail.connect.publish': 'Publish',
