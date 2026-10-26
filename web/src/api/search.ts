@@ -10,6 +10,8 @@ export interface SearchPackageHit {
   format: string
   repository: string
   description?: string
+  /** Only with `group=package`: how many versions of the package matched. */
+  version_count?: number
 }
 
 export interface SearchRepoHit {
@@ -91,10 +93,19 @@ export async function searchPackageGroups(
   if (params.flagged) qs.set('flagged', 'true')
   if (params.limit != null) qs.set('limit', String(params.limit))
   if (params.page != null && params.page > 1) qs.set('page', String(params.page))
-  const res = await request<{ packages?: PackageGroup[]; total?: number }>(`/api/v1/search?${qs}`, {
+  const res = await request<{ packages?: SearchPackageHit[]; total?: number }>(`/api/v1/search?${qs}`, {
     signal: params.signal,
   })
-  const packages = res?.packages ?? []
+  // With group=package the hit's `version` is the package's latest version.
+  const packages = (res?.packages ?? []).map(
+    (h): PackageGroup => ({
+      repository: h.repository,
+      format: h.format,
+      name: h.name,
+      latest_version: h.version,
+      version_count: h.version_count ?? 1,
+    }),
+  )
   return { packages, total: res?.total ?? packages.length }
 }
 

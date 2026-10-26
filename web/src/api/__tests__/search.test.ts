@@ -16,13 +16,13 @@ afterEach(() => undefined)
 
 describe('grouped and checksum search', () => {
   it('asks for grouped packages with the filters and the page', async () => {
-    const f = mockFetch({ packages: [{ repository: 'r', format: 'npm', name: 'a', latest_version: '1', version_count: 2 }], total: 41 })
+    const f = mockFetch({ packages: [{ repository: 'r', format: 'npm', name: 'a', version: '1.2.0', path: 'a-1.2.0.tgz', version_count: 2 }], total: 41 })
     const res = await searchPackageGroups({ q: 'a', format: 'npm', repo: 'r', flagged: true, limit: 20, page: 3 })
     const q = urlOf(f).searchParams
     expect(urlOf(f).pathname).toBe('/api/v1/search')
     expect([q.get('q'), q.get('group'), q.get('format'), q.get('repo'), q.get('flagged'), q.get('limit'), q.get('page')]).toEqual(['a', 'package', 'npm', 'r', 'true', '20', '3'])
     expect(res.total).toBe(41)
-    expect(res.packages[0]!.version_count).toBe(2)
+    expect(res.packages[0]).toEqual({ repository: 'r', format: 'npm', name: 'a', latest_version: '1.2.0', version_count: 2 })
   })
 
   it('omits unset filters and page one', async () => {
