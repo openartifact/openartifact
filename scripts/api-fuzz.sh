@@ -138,13 +138,25 @@ run() {
 builtin=not_a_server_error,response_schema_conformance,status_code_conformance,ignored_auth
 passes=" ${OA_FUZZ_PASSES:-admin developer anonymous} "
 
+# The developer logs in before any fuzzing: the admin pass hammers
+# POST /auth/login and would leave the login rate limiter closed. Minting first
+# also puts the token among the ids protected from the admin pass's deletes.
+dev_tok=""
+case "$passes" in *" developer "*)
+	dev_tok="$(dev_token)"
+	if [ -z "$dev_tok" ] || [ "$dev_tok" = null ]; then
+		echo "api-fuzz: could not mint the developer token" >&2
+		exit 1
+	fi
+	;;
+esac
+
 case "$passes" in *" admin "*)
 	run admin "$builtin" -H "Authorization: Bearer $OA_ADMIN_TOKEN"
 	;;
 esac
 
 case "$passes" in *" developer "*)
-	dev_tok="$(dev_token)"
 	OA_FUZZ_PRINCIPAL=developer run developer "$builtin,admin_forbidden_for_developer" \
 		-H "Authorization: Bearer $dev_tok"
 	;;
