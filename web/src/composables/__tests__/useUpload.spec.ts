@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { nextTick, watchEffect } from 'vue'
 import { useUpload } from '../useUpload'
 
 interface MockXHRListeners {
@@ -122,5 +123,22 @@ describe('useUpload', () => {
     lastXhr!.fireLoad(502, '<html>bad gateway</html>')
     await expect(promise).rejects.toBeDefined()
     expect(entry.error).toBe('HTTP 502')
+  })
+})
+
+describe('useUpload reactivity', () => {
+  it('lets a view observe status and progress of the entry returned by add()', async () => {
+    const { add, start, entries } = useUpload()
+    const entry = add(new File(['hello'], 'a.txt'))
+    const seen: string[] = []
+    const stop = watchEffect(() => seen.push(`${entries.value[0].status}:${entries.value[0].loaded}`))
+    const promise = start(entry, { url: '/upload' })
+    lastXhr!.fireProgress(2, 5)
+    lastXhr!.fireLoad(200)
+    await promise
+    await nextTick()
+    stop()
+    expect(entries.value[0].status).toBe('complete')
+    expect(seen[seen.length - 1]).toBe('complete:5')
   })
 })

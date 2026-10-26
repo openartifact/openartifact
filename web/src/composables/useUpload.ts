@@ -54,7 +54,8 @@ export function useUpload() {
       total: file.size,
     }
     entries.value.push(entry)
-    return entry
+    // Hand back the reactive proxy: later status/progress writes on the raw object would never reach the view.
+    return entries.value[entries.value.length - 1]
   }
 
   function start(entry: UploadEntry, opts: UploadStartOptions): Promise<void> {
