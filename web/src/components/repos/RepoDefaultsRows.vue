@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p v-else class="text-sm text-muted">{{ t('rl.project.moveHint') }}</p>
     </FormRow>
 
-    <FormRow v-if="form.type === 'proxy'" id="upstream" :label="t('rl.row.upstream')" :summary="upstreamSummary(form)">
+    <FormRow v-if="form.type === 'proxy'" v-model:open="upstreamOpen" id="upstream" :label="t('rl.row.upstream')" :summary="upstreamSummary(form, upstreamUrlRequired(form.format))">
       <FormField :label="t('repos.new.upstreamUrl')" id="rl-upstream-url" :hint="upstreamHint">
         <input id="rl-upstream-url" v-model="form.upstreamUrl" type="url" :placeholder="upstreamUrlPlaceholder(form.format)" :class="INPUT_CLASS" />
       </FormField>
@@ -119,7 +119,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import FormField from '../FormField.vue'
 import ProjectSelect from '../ProjectSelect.vue'
 import FormRow from './FormRow.vue'
@@ -154,6 +154,15 @@ const props = defineProps<{
 }>()
 const form = defineModel<RepoForm>({ required: true })
 const emit = defineEmits<{ project: [project: Project | null] }>()
+
+const upstreamOpen = ref(false)
+// A proxy whose format has no default upstream cannot be created without one: put the field in front of the user.
+watch(
+  () => [form.value.type, form.value.format] as const,
+  ([type, format]) => {
+    if (props.mode === 'create' && type === 'proxy' && upstreamUrlRequired(format) && form.value.upstreamUrl.trim() === '') upstreamOpen.value = true
+  },
+)
 
 const publicAllowed = computed(() => policyAllowsPublic(props.policy))
 const signable = computed(() => form.value.type === 'hosted' && form.value.format === 'rpm')

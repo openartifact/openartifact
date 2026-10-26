@@ -19,6 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           autocomplete="off"
           spellcheck="false"
           required
+          data-autofocus
           :aria-invalid="nameErr !== ''"
           :aria-describedby="nameErr ? 'rl-name-error' : undefined"
           :class="[INPUT_CLASS, 'font-mono']"

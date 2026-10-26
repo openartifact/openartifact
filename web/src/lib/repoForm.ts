@@ -210,8 +210,8 @@ export function policiesSummary(form: RepoForm): string {
   return parts.join(' · ')
 }
 
-export function upstreamSummary(form: Pick<RepoForm, 'upstreamUrl' | 'upstreamUsername'>): string {
-  if (form.upstreamUrl.trim() === '') return t('rl.upstream.default')
+export function upstreamSummary(form: Pick<RepoForm, 'upstreamUrl' | 'upstreamUsername'>, required: boolean): string {
+  if (form.upstreamUrl.trim() === '') return t(required ? 'rl.upstream.needed' : 'rl.upstream.default')
   return form.upstreamUsername ? `${form.upstreamUrl.trim()} · ${form.upstreamUsername}` : form.upstreamUrl.trim()
 }
 

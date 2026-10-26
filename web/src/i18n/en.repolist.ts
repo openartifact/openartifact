@@ -67,6 +67,7 @@ export const enRepoList = {
   'rl.policies.mutable': 'Mutable releases',
   'rl.policies.federated': 'Federated',
   'rl.upstream.default': 'Format default',
+  'rl.upstream.needed': 'Required, set it to continue',
   'rl.upstream.required': 'Required for this format.',
   'rl.upstream.optional': 'Leave empty to use the format default.',
   'rl.upstream.passwordKeep': 'Leave empty to keep the current password.',

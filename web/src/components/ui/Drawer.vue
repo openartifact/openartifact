@@ -35,6 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           leave-to="translate-x-full"
         >
           <DialogPanel
+            ref="panel"
             class="flex h-full w-full flex-col border-l border-border bg-surface shadow-2xl shadow-black/30 transition-transform"
             :class="wide ? 'md:max-w-2xl' : 'md:max-w-md'"
           >
@@ -79,7 +80,7 @@ import {
   TransitionRoot,
 } from '@headlessui/vue'
 import { XMarkIcon } from '@heroicons/vue/24/outline'
-import { toRef } from 'vue'
+import { ref, toRef, watch } from 'vue'
 import { useRestoreFocus } from '../../composables/useRestoreFocus'
 import { t } from '../../i18n/en'
 
@@ -100,6 +101,17 @@ const props = withDefaults(
 const emit = defineEmits<{ close: []; 'update:open': [open: boolean] }>()
 
 const { restoreFocus } = useRestoreFocus(toRef(props, 'open'))
+
+// A form drawer marks the field to start in (`data-autofocus`); otherwise the dialog keeps its first control.
+const panel = ref<{ $el: HTMLElement } | null>(null)
+watch(
+  () => props.open,
+  (open) => {
+    // After the dialog's own focus trap has picked its first control.
+    if (open) setTimeout(() => panel.value?.$el.querySelector<HTMLElement>('[data-autofocus]')?.focus(), 0)
+  },
+  { immediate: true },
+)
 
 function requestClose(): void {
   if (props.busy) return

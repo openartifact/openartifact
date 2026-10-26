@@ -3,10 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'bun:test'
-import { buildCreateBody, buildUpdateBody, emptyRepoForm, formValid, nameError, repoFormFrom } from '../repoForm'
+import { buildCreateBody, buildUpdateBody, emptyRepoForm, formValid, nameError, repoFormFrom, upstreamSummary } from '../repoForm'
 import type { Repository } from '../../api/repositories'
 
 describe('repo form', () => {
+  it('summarises an empty upstream as required only when the format has no default', () => {
+    const form = emptyRepoForm({})
+    expect(upstreamSummary(form, true)).toBe('Required, set it to continue')
+    expect(upstreamSummary(form, false)).toBe('Format default')
+    expect(upstreamSummary({ ...form, upstreamUrl: ' https://r.example/ ' }, true)).toBe('https://r.example/')
+  })
+
   it('validates the name and the project prefix', () => {
     expect(nameError('', '')).toBe('')
     expect(nameError('bad name', '')).not.toBe('')
