@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 // removes rows for good, with the cleanup worker over it.
 type cleanupSeed struct {
 	*purgeSeed
+
 	w *CleanupWorker
 }
 
@@ -170,7 +172,7 @@ func TestCleanupPolicySelection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s.t = t
 
-			repoID := s.repo("sel-" + fmt.Sprint(time.Now().UnixNano()))
+			repoID := s.repo("sel-" + strconv.FormatInt(time.Now().UnixNano(), 10))
 			ids := map[string]string{}
 
 			for _, r := range rows {
@@ -540,6 +542,6 @@ func TestCleanupCycleRunsOnlyDuePolicies(t *testing.T) {
 	s.w.runCleanupCycle(ctx)
 
 	if !s.rowExists(again) {
-		t.Error("a policy that just ran ran again")
+		t.Error("a policy that just ran a second time")
 	}
 }
