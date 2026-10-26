@@ -43,6 +43,7 @@ curl -u USERNAME:<TOKEN> -F file=@my-package-1.0.x86_64.rpm HOST/api/v1/reposito
 - Header limits: at most 65535 header index entries and 100000 elements per array tag. A package that declares more dependencies (requires, provides, ...) or more index entries is `400 invalid rpm package: ...`. A longer file list is accepted but truncated: at most 100000 files and 16 MiB of path strings are stored, so `filelists.xml` lists a prefix of the package's files (the package itself is stored whole and installs normally).
 - The same NEVRA, or the same SHA-256 in the repository, is `409 CONFLICT`: packages are immutable. The stored name is `name-version-release.arch.rpm`.
 - `DELETE /api/v1/repositories/REPO/packages/<id>` deletes one package by id (only if it belongs to `REPO`).
+- There is no `/repos/REPO/upload` route: `POST` or `PUT` there answers `404` with a message naming `POST /api/v1/repositories/REPO/packages`.
 - `PUT /api/v1/repositories/REPO/comps` uploads a `comps.xml` (max 10 MiB, validated as comps XML). It is served at `repodata/comps.xml` and listed in `repomd.xml` as a `group` entry.
 
 ## Generated metadata

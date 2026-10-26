@@ -52,6 +52,7 @@ For private repositories apt also needs credentials, for example in `/etc/apt/au
 - Success: `{"success": true, "data": {id, name, version, architecture, sha256, blob_id, size, distribution, component}}`.
 - `DELETE /api/v1/repositories/REPO/debs/<id>` deletes one package by id (only if it belongs to `REPO`).
 - Uploads to a non-`deb` repository are `400`; to a proxy repository `405`.
+- There is no `/repos/REPO/upload` route: `POST` or `PUT` there answers `404` with a message naming `POST /api/v1/repositories/REPO/debs`.
 
 ## Generated layout
 
