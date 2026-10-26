@@ -10,3 +10,10 @@ rules:
       # (contents: read, plus security-events: write in the `security` job only).
       # Publishing happens in release.yml, where all caches are disabled.
       - ci.yml
+  dangerous-triggers:
+    ignore:
+      # Posts the coverage comment on pull requests from forks, whose CI token
+      # is read-only. It checks out the default branch only, never runs code
+      # from the pull request, and renders the CI artifact as validated data
+      # (see the header of the workflow).
+      - coverage-comment.yml

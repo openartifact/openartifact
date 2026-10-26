@@ -43,7 +43,7 @@ help:
 	@echo "  run             - Build and run the application"
 	@echo "  test            - Run unit tests with race detector"
 	@echo "  test-integration- Run integration tests"
-	@echo "  test-coverage   - Run tests with HTML coverage report"
+	@echo "  test-coverage   - Run tests with a filtered HTML coverage report (same as CI)"
 	@echo "  test-race       - Run tests with race detector only"
 	@echo "  bench           - Run Go micro-benchmarks (-benchmem)"
 	@echo "  bench-load      - Seed a running instance and run the HTTP load scenarios (bench/run.sh)"
@@ -101,14 +101,16 @@ test-integration:
 
 test-coverage:
 	@echo "Running tests with coverage..."
-	$(GO) test -v -race -timeout 10m -coverprofile=coverage.out ./...
-	$(GO) tool cover -html=coverage.out -o coverage.html
+	$(GO) test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out -timeout 10m ./...
+	scripts/coverage/merge-go.sh coverage.filtered.out coverage.out
+	$(GO) tool cover -html=coverage.filtered.out -o coverage.html
+	$(GO) tool cover -func=coverage.filtered.out | tail -n 1
 	@echo "Coverage report: coverage.html"
 
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf bin/
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.filtered.out coverage.html
 	$(GO) clean
 
 lint:

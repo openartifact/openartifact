@@ -47,7 +47,7 @@ bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them b
 | `make run` | `make build`, then runs the server |
 | `make test` | `go test -short -race -timeout 5m ./...` |
 | `make test-integration` | `go test -tags=integration -race -count=1 ./tests/...` (10 min timeout) |
-| `make test-coverage` | Tests with `coverage.html` report |
+| `make test-coverage` | Race tests with `-coverpkg=./...`, filtered like CI (see [Coverage](#coverage)), writes `coverage.html` and prints the total |
 | `make lint` | `golangci-lint run ./...` (needs golangci-lint v2 on `PATH`) |
 | `make vet` | `go vet ./...` |
 | `make check` | `fmt` + `vet` + `lint`; run before opening a PR |
@@ -113,6 +113,19 @@ make test-integration
 ```
 
 Write tests that assert behavior, not mock round-trips; poll with deadlines instead of fixed sleeps. gocyclo limit 20 applies to tests too, so prefer table-driven subtests.
+
+## Coverage
+
+CI measures coverage for Go and the web UI and reports it on every run; there is no fixed threshold, only a regression guard.
+
+- **Go.** The `go` job writes a unit profile and the `integration` job an integration profile, both `-race -covermode=atomic -coverpkg=./...`, so a package is credited for tests anywhere in the module. The `coverage` job merges them with `scripts/coverage/merge-go.sh`, which sums identical blocks and drops generated or non-product code (`internal/database/dbsqlc`, `bench/`, `cmd/docgen/testdata/`). A statement is covered when any run executed it.
+- **Web.** `bun test --coverage` writes lcov. The number is line-weighted over product code (test files, `test/` and `src/api/generated` are excluded), so it differs from the per-file average in bun's own table. Files no test imports are not in bun's lcov and therefore not counted.
+- **Where to read it.** The run's job summary has totals (Go unit, Go integration, Go merged, web lines and functions) and a per-area table (`internal/worker`, `cmd/server`, `src/pages`, ...). The `coverage-report` artifact has `coverage.json`, the annotated `go.html`, the per-file `web.html` and the merged profile. Pull requests get a sticky comment with totals and the change against `main`.
+- **Baseline.** A push to `main` stores its `coverage.json` in the Actions cache (`coverage-base-<sha>`); pull requests restore the newest one. If none exists (first run, cache evicted after seven idle days) deltas show `n/a` and the guard is skipped.
+- **Regression guard.** On pull requests the `coverage` job fails when the merged Go total or the web line coverage is more than 1 percentage point below `main` (`scripts/coverage/gate.sh`, `MAX_DROP` to change it). A deliberate drop, for example deleting a well-tested feature, is merged by an admin with the numbers explained in the PR.
+- **Fork pull requests.** The comment is posted by `coverage-comment.yml` on `workflow_run`, because a fork's token cannot write. That workflow runs the default branch's code, never the PR's, and renders the CI artifact as data only; it takes effect once it is on `main`. The report itself needs no secrets or external service.
+- **Locally.** `make test-coverage` produces the filtered Go report (`coverage.html`); integration coverage needs the variables from [Testing](#testing) and the same flags as the CI job.
+- No README badge: a badge needs either an external service or a generated file committed to `main` on every merge, and `main` is never pushed to directly.
 
 ## Fuzzing
 
@@ -214,16 +227,19 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 
 | Job | Checks |
 |---|---|
-| `go` | `go build`, `go vet`, `go mod tidy -diff` (root and `tools/`), `govulncheck ./...`, [dead-code gate](#dead-code-gate), `go test -race ./...` |
-| `integration` | Postgres + Garage service; `go test -race -tags integration ./tests/...` |
+| `go` | `go build`, `go vet`, `go mod tidy -diff` (root and `tools/`), `govulncheck ./...`, [dead-code gate](#dead-code-gate), `go test -race ./...` (writes the unit coverage profile) |
+| `integration` | Postgres + Garage service; `go test -race -tags integration` over every package with an integration-tagged test (writes the integration coverage profile) |
 | `lint` | golangci-lint with `.golangci.yaml` (includes gofmt/goimports) |
 | `reuse` | REUSE license compliance |
 | `sqlc` | `sqlc generate` leaves no diff in `internal/database/dbsqlc` |
-| `web` | `bun install --frozen-lockfile`, typecheck, generated API client up to date, `bun test`, build, bundle-size check |
+| `web` | `bun install --frozen-lockfile`, typecheck, generated API client up to date, `bun test` (with lcov coverage), build, bundle-size check |
+| `coverage` | Merges the Go profiles, reports totals and per-area coverage and compares with `main`; see [Coverage](#coverage) |
 | `security` | Builds the image, then Trivy: image, filesystem (Go and bun lockfiles, secrets) and config (Dockerfile, compose) scans. Each runs twice: a SARIF upload to code scanning, then a gate that fails on fixable HIGH/CRITICAL findings (config gate: any HIGH/CRITICAL). Fork and Dependabot PRs skip the upload but keep the gate. Ignores in `.trivyignore.yaml` |
 | `docs` | `go run ./cmd/docgen -check` (generated reference up to date; `.env.example` and `openartifact.example.yaml` list every config key), then builds the docs site from this checkout with the VitePress project of [openartifact.github.io](https://github.com/openartifact/openartifact.github.io); a dead internal link fails the build |
 | `workflow-lint` | `actionlint` and zizmor (rules in [`.github/zizmor.yml`](../../.github/zizmor.yml)) |
 | `dependency-review` | PRs only; fails on high-severity dependency changes |
+
+`coverage-comment.yml` posts the coverage comment on pull requests (see [Coverage](#coverage)).
 
 ### Other security workflows
 

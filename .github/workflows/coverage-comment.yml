@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Sticky pull request comment with the coverage numbers of the CI run.
+#
+# Runs on workflow_run so that it can write to pull requests from forks, whose
+# own CI token is read-only. It therefore never executes anything from the pull
+# request: it checks out the default branch (scripts/coverage/render.sh), takes
+# only coverage.json and base.json from the CI artifact and treats them as data
+# (every value goes through jq tonumber, area names are filtered), and finds the
+# pull request from the head commit instead of trusting artifact content.
+
+name: Coverage comment
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  comment:
+    name: comment coverage on pull request
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # download the coverage artifact of the CI run
+      pull-requests: write # create or update the comment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: download coverage report
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          # The CI run has no report when a test job failed; nothing to comment then.
+          if gh run download "$RUN_ID" --repo "$REPO" --name coverage-report --dir report; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: find pull request
+        id: pr
+        if: ${{ steps.download.outputs.found == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          number=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" \
+            --jq '[.[] | select(.state == "open" and .base.repo.full_name == "'"$REPO"'")] | first | .number // empty')
+          if [[ "$number" =~ ^[0-9]+$ ]]; then
+            echo "number=$number" >> "$GITHUB_OUTPUT"
+          else
+            echo "no open pull request for $HEAD_SHA"
+          fi
+
+      - name: render and post comment
+        if: ${{ steps.pr.outputs.number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          {
+            echo "<!-- oa-coverage -->"
+            scripts/coverage/render.sh report/coverage.json report/base.json
+            echo "[Full report (HTML, merged profile) in the CI run artifacts]($RUN_URL)"
+          } > comment.md
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- oa-coverage -->"))) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$id" --field body=@comment.md >/dev/null
+          else
+            gh api --method POST "repos/$REPO/issues/$PR/comments" --field body=@comment.md >/dev/null
+          fi
