@@ -117,7 +117,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </AppButton>
         </form>
         <p v-if="status.tokens.length === 0" class="px-5 py-6 text-sm text-muted text-center">{{ t('federation.tokens.empty') }}</p>
-        <div v-else class="overflow-x-auto">
+        <div v-else class="relative overflow-x-auto">
           <table class="w-full" :aria-label="t('federation.tokens.table')" data-testid="federation-tokens">
             <thead>
               <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
