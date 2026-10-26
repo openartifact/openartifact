@@ -553,7 +553,9 @@ func FuzzNuGetProxyServe(f *testing.F) {
 func nugetFuzzProxyServe(t *testing.T, indexDoc, regDoc, flatDoc []byte, gzipped bool) {
 	var feed atomic.Pointer[nugetFuzzFeed]
 
-	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) { feed.Load().handler(w, r) })
+	f, release := newFuzzFixture(t, func(w http.ResponseWriter, r *http.Request) { feed.Load().handler(w, r) })
+	defer release()
+
 	base := strings.TrimSuffix(f.repo.UpstreamURL, "/maven2/")
 
 	substitute := func(b []byte) []byte { return bytes.ReplaceAll(b, []byte(nugetFuzzUpstreamToken), []byte(base)) }
@@ -727,7 +729,7 @@ func nugetFuzzProxyPackage(t *testing.T, nupkg, nuspec []byte, catalog string) {
 	sum := sha512.Sum512(nupkg)
 	catalogDoc := strings.NewReplacer("HASH64", base64.StdEncoding.EncodeToString(sum[:])).Replace(catalog)
 
-	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
+	f, release := newFuzzFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		origin := *base.Load()
 
 		switch r.URL.Path {
@@ -748,6 +750,7 @@ func nugetFuzzProxyPackage(t *testing.T, nupkg, nuspec []byte, catalog string) {
 			http.NotFound(w, r)
 		}
 	})
+	defer release()
 
 	origin := strings.TrimSuffix(f.repo.UpstreamURL, "/maven2/")
 	base.Store(&origin)
