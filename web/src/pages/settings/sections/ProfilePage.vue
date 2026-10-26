@@ -66,15 +66,39 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
     </div>
+
+    <!-- Credentials -->
+    <section class="bg-surface rounded-xl border border-border overflow-hidden" data-testid="profile-credentials" aria-labelledby="profile-credentials-title">
+      <div class="px-5 py-3.5 border-b border-border">
+        <h3 id="profile-credentials-title" class="text-sm font-semibold tracking-tight">{{ t('sx.profile.credentials.title') }}</h3>
+        <p class="text-sm text-muted">{{ t('sx.profile.credentials.desc') }}</p>
+      </div>
+      <ul class="divide-y divide-border">
+        <li v-for="link in links" :key="link.to" class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-foreground">{{ link.label }}</div>
+            <div class="text-sm text-muted">{{ link.hint }}</div>
+          </div>
+          <AppButton variant="secondary" size="sm" class="max-md:h-11" :to="link.to">{{ link.label }}</AppButton>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import AppButton from '../../../components/AppButton.vue'
+import { PASSWORD_PATH, PERSONAL_TOKENS_PATH } from '../../../lib/navigation'
 import { useSessionStore } from '../../../stores/session'
 import { t } from '../../../i18n/en'
 
 const session = useSessionStore()
+
+const links = [
+  { to: PASSWORD_PATH, label: t('sx.profile.password'), hint: t('sx.profile.passwordHint') },
+  { to: PERSONAL_TOKENS_PATH, label: t('sx.profile.tokens'), hint: t('sx.profile.tokensHint') },
+]
 
 const initials = computed(() => {
   const name = session.user?.full_name || session.user?.username || '?'
