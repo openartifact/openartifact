@@ -103,7 +103,9 @@ schemathesis() {
 		# shellcheck disable=SC2086
 		(cd "$report_dir" && SCHEMATHESIS_HOOKS="$fuzz/hooks.py" $SCHEMATHESIS "$@")
 	else
-		docker run --rm --network host \
+		# Run as the caller so the mounted report dir is writable (the image user is not).
+		docker run --rm --network host --user "$(id -u):$(id -g)" -w /report \
+			-e HOME=/report -e PYTHONDONTWRITEBYTECODE=1 \
 			-e SCHEMATHESIS_HOOKS=/fuzz/hooks.py -e OA_FUZZ_PRINCIPAL -e OA_FUZZ_PUBLIC_REPOS -e OA_FUZZ_PROTECTED_IDS \
 			-v "$root/internal/api/openapi.json:/spec/openapi.json:ro" \
 			-v "$root/tests/apifuzz:/fuzz:ro" \
