@@ -554,6 +554,16 @@ func (p *PostgresDB) MarkRepoStale(ctx context.Context, repositoryID string) err
 	return p.q.MarkRepoStale(ctx, repositoryID)
 }
 
+// orNow returns t, or the current time when the caller left it unset, so an
+// upsert never persists the zero time.
+func orNow(t time.Time) time.Time {
+	if t.IsZero() {
+		return time.Now().UTC()
+	}
+
+	return t
+}
+
 // createdAtOrNil maps an unset (zero) timestamp to SQL NULL so the INSERT's
 // COALESCE(..., now()) applies; callers that carry an origin timestamp (the
 // admin-only import path) keep it.
@@ -3627,8 +3637,8 @@ func (p *PostgresDB) CreateBackupJob(ctx context.Context, job *models.BackupJob)
 		ErrorMessage: strPtr(job.ErrorMessage),
 		StartedAt:    job.StartedAt,
 		CompletedAt:  job.CompletedAt,
-		CreatedAt:    job.CreatedAt,
-		UpdatedAt:    job.UpdatedAt,
+		CreatedAt:    orNow(job.CreatedAt),
+		UpdatedAt:    orNow(job.UpdatedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create backup job: %w", err)
@@ -4612,8 +4622,8 @@ func (p *PostgresDB) CreateLicensePolicy(ctx context.Context, policy *models.Lic
 		AllowedLicenses: nonNilStrings(policy.AllowedLicenses),
 		DeniedLicenses:  nonNilStrings(policy.DeniedLicenses),
 		Enabled:         policy.Enabled,
-		CreatedAt:       policy.CreatedAt,
-		UpdatedAt:       policy.UpdatedAt,
+		CreatedAt:       orNow(policy.CreatedAt),
+		UpdatedAt:       orNow(policy.UpdatedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create license policy: %w", err)
@@ -5092,8 +5102,8 @@ func (p *PostgresDB) CreateStorageBackend(ctx context.Context, backend *models.S
 		Config:        backend.Config,
 		Status:        backend.Status,
 		StatusMessage: backend.StatusMessage,
-		CreatedAt:     backend.CreatedAt,
-		UpdatedAt:     backend.UpdatedAt,
+		CreatedAt:     orNow(backend.CreatedAt),
+		UpdatedAt:     orNow(backend.UpdatedAt),
 	})
 }
 
