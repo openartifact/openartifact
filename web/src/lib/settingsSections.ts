@@ -51,7 +51,7 @@ export interface SettingsSection {
   keywords: readonly string[]
   /** Only global administrators open it; everybody else is sent to the dashboard. */
   adminOnly: boolean
-  /** Page component. Sections without a page yet point at the placeholder; the slice that builds the page swaps the loader. */
+  /** Page component. */
   load: Loader
   /** Page for administrators when it differs from `load` (the personal view is the default). */
   loadAdmin?: Loader
@@ -67,7 +67,6 @@ export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; titleKey: Translat
   { id: 'system', titleKey: 'ui.settings.group.system', descKey: 'ui.settings.group.system.desc' },
 ]
 
-const placeholder: Loader = () => import('../pages/settings/SettingsPlaceholder.vue')
 
 function section(
   id: SettingsSectionId,
@@ -97,27 +96,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     'tokens',
     'access',
     false,
-    () => import('../pages/settings/TokensPage.vue'),
+    () => import('../pages/settings/sections/TokensSection.vue'),
     ['personal', 'ci', 'deploy', 'service', 'api key', 'project token', 'federation token', 'expiry', 'rotate', 'revoke'],
-    () => import('../pages/admin/TokensPage.vue'),
   ),
   section('users', 'access', true, () => import('../pages/settings/sections/UsersPage.vue'), ['sign-in', 'disable', 'invite', 'email', 'password reset', 'create user']),
   section('groups', 'access', true, () => import('../pages/settings/sections/GroupsPage.vue'), ['members', 'team']),
   section('permissions', 'access', true, () => import('../pages/settings/sections/PermissionsPage.vue'), ['acl', 'roles', 'targets']),
   section('sso', 'access', true, () => import('../pages/settings/sections/SSOPage.vue'), ['sso', 'single sign-on', 'oidc', 'google', 'okta', 'login provider', 'saml', 'issuer', 'client id']),
-  section('project-policy', 'access', true, placeholder, ['project creation', 'self-create', 'allowed formats', 'default quota']),
+  section('project-policy', 'access', true, () => import('../pages/settings/sections/ProjectPolicySection.vue'), ['project creation', 'self-create', 'allowed formats', 'default quota']),
   section('backends', 'storage', true, () => import('../pages/settings/sections/StorageBackendsPage.vue'), ['s3 bucket', 'filesystem', 'gcs', 'azure', 'endpoint', 'credentials', 'region']),
   section('tiers', 'storage', true, () => import('../pages/settings/sections/StorageTiersPage.vue'), ['cold', 'hot', 'mover', 'placement', 'age', 'policy']),
-  section('quotas', 'storage', true, placeholder, ['limit', 'usage', 'over quota', 'size']),
-  section('cleanup', 'storage', true, placeholder, ['retention', 'keep last', 'age', 'prune', 'dry run']),
+  section('quotas', 'storage', true, () => import('../pages/settings/sections/QuotasSection.vue'), ['limit', 'usage', 'over quota', 'size']),
+  section('cleanup', 'storage', true, () => import('../pages/settings/sections/CleanupSection.vue'), ['retention', 'keep last', 'age', 'prune', 'dry run']),
   section('trash', 'storage', true, () => import('../pages/settings/sections/TrashSection.vue'), ['restore', 'purge', 'retention', 'deleted', 'recover']),
   section('backup', 'storage', true, () => import('../pages/settings/sections/BackupPage.vue'), ['snapshot', 'restore', 'schedule', 'download']),
-  section('scanners', 'security', true, placeholder, ['trivy', 'osv', 'scan schedule', 'severity threshold', 'auto scan']),
-  section('policies', 'security', true, placeholder, ['license policy', 'quarantine', 'block', 'deny list', 'allow list', 'copyleft']),
+  section('scanners', 'security', true, () => import('../pages/settings/sections/ScannersSection.vue'), ['trivy', 'osv', 'scan schedule', 'severity threshold', 'auto scan']),
+  section('policies', 'security', true, () => import('../pages/settings/sections/PoliciesSection.vue'), ['license policy', 'quarantine', 'block', 'deny list', 'allow list', 'copyleft']),
   section('signing', 'security', true, () => import('../pages/settings/sections/GpgKeysPage.vue'), ['gpg', 'key', 'sign packages', 'public key', 'fingerprint']),
   section('dependency-track', 'security', true, () => import('../pages/settings/sections/DependencyTrackPage.vue'), ['dt', 'sbom push', 'api key', 'url', 'project']),
   section('webhooks', 'integrations', true, () => import('../pages/settings/sections/WebhooksPage.vue'), ['events', 'secret', 'delivery', 'url', 'payload']),
-  section('federation', 'integrations', true, placeholder, ['peers', 'replicate', 'sync', 'inbound token']),
+  section('federation', 'integrations', true, () => import('../pages/settings/sections/FederationSection.vue'), ['peers', 'replicate', 'sync', 'inbound token']),
   section('ai', 'integrations', true, () => import('../pages/settings/sections/AISettingsPage.vue'), ['llm', 'provider', 'model', 'api key', 'openai', 'anthropic', 'endpoint']),
   section('branding', 'appearance', true, () => import('../pages/settings/sections/BrandingPage.vue'), ['logo', 'colour', 'color', 'accent', 'product name', 'login message', 'favicon', 'white label', 'support url']),
   section('audit', 'system', true, () => import('../pages/settings/sections/AuditLogPage.vue'), ['events', 'export', 'retention', 'actor', 'csv', 'http requests']),

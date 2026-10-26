@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, JSON_HEADERS } from './client'
+import type { QuotaOverviewItem, QuotaOverviewList } from './generated/types.gen'
+
+export type { QuotaOverviewItem }
 
 /** A repository quota with its current usage; a limit of 0 means unlimited. */
 export interface RepoQuota {
@@ -34,4 +37,13 @@ export function setRepoQuota(repo: string, maxSizeBytes: number): Promise<RepoQu
 
 export async function removeRepoQuota(repo: string): Promise<void> {
   await request<void>(quotaUrl(repo), { method: 'DELETE' })
+}
+
+/** Most entries one request returns (server maximum). */
+export const QUOTA_OVERVIEW_MAX = 2000
+
+/** Every quota of the instance (admin), most used first as the server returns them; only entries with a limit. */
+export function listQuotas(params: { limit?: number } = {}): Promise<QuotaOverviewList> {
+  const qs = new URLSearchParams({ limited: 'true', limit: String(params.limit ?? QUOTA_OVERVIEW_MAX) })
+  return request<QuotaOverviewList>(`/api/v1/admin/quotas?${qs}`)
 }
