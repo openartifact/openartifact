@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <section aria-labelledby="artifact-sbom">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 id="artifact-sbom" class="text-base font-semibold text-foreground">{{ t('artifact.sbom.title') }}</h2>
-        <form v-if="ctx.caps.value.write" class="flex items-center gap-2" @submit.prevent="generate">
+        <form class="flex items-center gap-2" @submit.prevent="generate">
           <select v-model="format" :aria-label="t('artifact.sbom.format')" class="h-9 rounded-lg border border-border-strong bg-surface px-2 text-sm text-foreground focus:ring-2 focus:ring-primary max-md:h-11">
             <option v-for="f in SBOM_FORMATS" :key="f" :value="f">{{ f }}</option>
           </select>
@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         row-key="id"
         :caption="t('artifact.sbom.title')"
         :empty-title="t('artifact.sbom.empty')"
-        :empty-hint="ctx.caps.value.write ? t('artifact.sbom.emptyHint') : t('artifact.sbom.emptyReadOnly')"
+        :empty-hint="t('artifact.sbom.emptyHint')"
       >
         <template #cell-file="{ row }"><span class="break-all font-mono text-xs">{{ fileName(row.artifact_id) }}</span></template>
         <template #cell-format="{ row }"><span class="font-mono text-xs">{{ row.format }}{{ row.spec_version ? ` ${row.spec_version}` : '' }}</span></template>
@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <AppButton variant="ghost" size="sm" class="max-md:h-11" :aria-label="tp('artifact.sbom.download', { file: fileName(row.artifact_id), format: row.format })" @click="download(row)">
               <ArrowDownTrayIcon class="h-4 w-4" aria-hidden="true" /><span class="md:sr-only">{{ t('artifact.action.download') }}</span>
             </AppButton>
-            <AppButton v-if="ctx.caps.value.write" variant="ghost" size="sm" class="max-md:h-11" :aria-label="tp('artifact.sbom.delete', { file: fileName(row.artifact_id), format: row.format })" @click="remove(row)">
+            <AppButton variant="ghost" size="sm" class="max-md:h-11" :aria-label="tp('artifact.sbom.delete', { file: fileName(row.artifact_id), format: row.format })" @click="remove(row)">
               <TrashIcon class="h-4 w-4" aria-hidden="true" /><span class="md:sr-only">{{ t('common.delete') }}</span>
             </AppButton>
           </div>

@@ -19,6 +19,8 @@ interface PackageTabInputs {
   securityFlag?: string
   /** Activity is for admins and project maintainers; hidden for everyone else. */
   canSeeActivity: boolean
+  /** SBOM reports are served to global admins only. */
+  canSeeSbom: boolean
 }
 
 /** The tab bar of the artifact page. Counts are shown only once they are known. */
@@ -34,6 +36,8 @@ export function packageTabDefs(input: PackageTabInputs): TabDef[] {
         return { id, label, flag: input.securityFlag }
       case 'activity':
         return { id, label, hidden: !input.canSeeActivity }
+      case 'sbom':
+        return { id, label, hidden: !input.canSeeSbom }
       default:
         return { id, label }
     }

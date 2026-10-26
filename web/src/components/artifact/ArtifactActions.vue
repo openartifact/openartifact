@@ -30,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <LinkIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />{{ t('artifact.action.permalink') }}
           </button>
         </MenuItem>
-        <MenuItem v-if="ctx.caps.value.maintain" v-slot="{ active }">
+        <MenuItem v-if="ctx.caps.value.admin" v-slot="{ active }">
           <button type="button" :class="[ITEM, active && 'bg-surface-hover']" data-testid="action-quarantine" @click="toggleQuarantine">
             <component :is="quarantined ? ArrowUturnLeftIcon : LockClosedIcon" class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
             {{ quarantined ? t('artifact.action.release') : t('artifact.action.quarantine') }}

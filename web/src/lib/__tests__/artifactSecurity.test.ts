@@ -18,13 +18,16 @@ const summary = (over: Partial<SecuritySummary> = {}): SecuritySummary => ({
 
 describe('artifactCapabilities', () => {
   it('gives admins everything and readers nothing', () => {
-    expect(artifactCapabilities({ isAdmin: true })).toEqual({ maintain: true, write: true, remove: true })
-    expect(artifactCapabilities({ isAdmin: false })).toEqual({ maintain: false, write: false, remove: false })
+    expect(artifactCapabilities({ isAdmin: true })).toEqual({ maintain: true, admin: true, write: true, remove: true })
+    expect(artifactCapabilities({ isAdmin: false })).toEqual({ maintain: false, admin: false, write: false, remove: false })
   })
   it('follows the repository permissions of a non-admin', () => {
     const caps = artifactCapabilities({ isAdmin: false, permissions: { write: true, delete: false, manage: false, admin: false } })
-    expect(caps).toEqual({ maintain: false, write: true, remove: false })
-    expect(artifactCapabilities({ isAdmin: false, permissions: { write: true, delete: true, manage: true, admin: true } }).maintain).toBe(true)
+    expect(caps).toEqual({ maintain: false, admin: false, write: true, remove: false })
+    // A project maintainer reads the activity feed, but the scan routes stay global-admin only.
+    const maintainer = artifactCapabilities({ isAdmin: false, permissions: { write: true, delete: true, manage: true, admin: true } })
+    expect(maintainer.maintain).toBe(true)
+    expect(maintainer.admin).toBe(false)
   })
 })
 

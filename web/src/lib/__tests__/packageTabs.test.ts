@@ -7,7 +7,7 @@ import { resolveTab } from '../../composables/useUrlTab'
 import { PACKAGE_TABS, packageTabDefs } from '../packageTabs'
 
 describe('packageTabDefs', () => {
-  const tabs = packageTabDefs({ canSeeActivity: true, versionCount: 12, fileCount: 3, securityFlag: '2 critical' })
+  const tabs = packageTabDefs({ canSeeActivity: true, canSeeSbom: true, versionCount: 12, fileCount: 3, securityFlag: '2 critical' })
 
   it('lists the seven tabs with overview first', () => {
     expect(tabs.map((tab) => tab.id)).toEqual([...PACKAGE_TABS])
@@ -22,13 +22,18 @@ describe('packageTabDefs', () => {
   })
 
   it('hides activity from people who cannot read it', () => {
-    expect(packageTabDefs({ canSeeActivity: false }).find((tab) => tab.id === 'activity')!.hidden).toBe(true)
+    expect(packageTabDefs({ canSeeActivity: false, canSeeSbom: true }).find((tab) => tab.id === 'activity')!.hidden).toBe(true)
     expect(tabs.find((tab) => tab.id === 'activity')!.hidden).toBe(false)
+  })
+
+  it('hides the SBOM tab from everyone but admins, whom the server serves it to', () => {
+    expect(packageTabDefs({ canSeeActivity: true, canSeeSbom: false }).find((tab) => tab.id === 'sbom')!.hidden).toBe(true)
+    expect(tabs.find((tab) => tab.id === 'sbom')!.hidden).toBe(false)
   })
 })
 
 describe('tab resolution', () => {
-  const tabs = packageTabDefs({ canSeeActivity: false })
+  const tabs = packageTabDefs({ canSeeActivity: false, canSeeSbom: true })
 
   it('opens the tab the URL names', () => {
     expect(resolveTab(tabs, 'files')).toBe('files')

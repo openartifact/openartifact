@@ -93,8 +93,18 @@ describe('ArtifactPage', () => {
     serve({ write: false, delete: false, manage: false, admin: false })
     const { wrapper } = await mountAt('/repos/web/packages/@acme/widget?tab=security')
     expect(tabNames(wrapper).some((n) => n.startsWith('Activity'))).toBe(false)
-    expect(wrapper.get('[data-testid=sec-restricted]').text()).toContain('maintainers')
+    expect(wrapper.get('[data-testid=sec-restricted]').text()).toContain('administrators')
     expect(sent().some((c) => c.includes('/vuln/scans'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lets a project maintainer read the activity but requests no scan results or SBOMs', async () => {
+    serve({ write: true, delete: true, manage: false, admin: true })
+    const { wrapper } = await mountAt('/repos/web/packages/@acme/widget?tab=security')
+    expect(tabNames(wrapper).some((n) => n.startsWith('Activity'))).toBe(true)
+    expect(tabNames(wrapper).some((n) => n.startsWith('SBOM'))).toBe(false)
+    expect(wrapper.get('[data-testid=sec-inbox-link]').attributes('href')).toContain('/security?repo=web')
+    expect(sent().some((c) => c.includes('/vuln/scans') || c.includes('/sbom'))).toBe(false)
     wrapper.unmount()
   })
 

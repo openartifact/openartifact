@@ -60,7 +60,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <section aria-labelledby="artifact-sec-findings">
       <h2 id="artifact-sec-findings" class="mb-3 text-base font-semibold text-foreground">{{ t('artifact.security.findings') }}</h2>
-      <p v-if="!ctx.caps.value.maintain" class="max-w-2xl text-sm text-muted" data-testid="sec-restricted">{{ t('artifact.security.restricted') }}</p>
+      <p v-if="!ctx.caps.value.admin" class="max-w-2xl text-sm text-muted" data-testid="sec-restricted">
+        {{ t('artifact.security.restricted') }}
+        <router-link v-if="ctx.caps.value.maintain" :to="inboxLink" class="text-primary hover:underline" data-testid="sec-inbox-link">{{ t('artifact.security.openInbox') }}</router-link>
+      </p>
       <StateBlock v-else-if="error" variant="error" :title="t('artifact.security.loadFailed')" :hint="error">
         <template #action><AppButton variant="secondary" @click="load">{{ t('ui.state.retry') }}</AppButton></template>
       </StateBlock>
@@ -115,6 +118,8 @@ function scanLink(type: 'license' | 'secret') {
   return { path: '/security', query: { type, repo: ctx.repoName.value } }
 }
 
+const inboxLink = computed(() => ({ path: '/security', query: { repo: ctx.repoName.value, q: ctx.pkgName.value } }))
+
 const scans = ref<VulnScan[]>([])
 const vexByScan = ref<Record<string, Map<string, VexRecord>>>({})
 const loading = ref(false)
@@ -128,7 +133,7 @@ async function load(): Promise<void> {
   vexByScan.value = {}
   error.value = ''
   const entry = ctx.entry.value
-  if (!ctx.caps.value.maintain || !entry) return
+  if (!ctx.caps.value.admin || !entry) return
   loading.value = true
   try {
     const ids = new Set(entry.files.map((f) => f.id))
@@ -156,5 +161,5 @@ async function afterDecision(): Promise<void> {
   await load()
 }
 
-watch(() => [ctx.entry.value?.version, ctx.caps.value.maintain, ctx.summary.value?.scanned_at], () => void load(), { immediate: true })
+watch(() => [ctx.entry.value?.version, ctx.caps.value.admin, ctx.summary.value?.scanned_at], () => void load(), { immediate: true })
 </script>

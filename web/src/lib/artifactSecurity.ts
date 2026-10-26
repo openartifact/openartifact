@@ -17,8 +17,13 @@ export interface ArtifactAccess {
  * only decides which controls and tabs to offer.
  */
 export interface ArtifactCapabilities {
-  /** Findings detail, VEX, scan-now, quarantine, activity: global admins and project maintainers. */
+  /** Activity feed and the security inbox links: global admins and project maintainers. */
   maintain: boolean
+  /**
+   * Scan results, VEX, quarantine and SBOMs: the server answers these routes to global
+   * admins only (a project maintainer gets 403), so the controls and requests are gated by it.
+   */
+  admin: boolean
   /** Properties edit, SBOM generate. */
   write: boolean
   /** Delete the version (to the trash when the repository keeps one). */
@@ -29,6 +34,7 @@ export function artifactCapabilities(access: ArtifactAccess): ArtifactCapabiliti
   const p = access.permissions
   return {
     maintain: access.isAdmin || p?.admin === true,
+    admin: access.isAdmin,
     write: access.isAdmin || p?.write === true,
     remove: access.isAdmin || p?.delete === true,
   }

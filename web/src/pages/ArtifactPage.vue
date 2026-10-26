@@ -148,6 +148,7 @@ const tabs = computed(() =>
     fileCount: detail.value?.files.length ?? entry.value?.files.length,
     securityFlag: securityFlag(summary.value),
     canSeeActivity: caps.value.maintain,
+    canSeeSbom: caps.value.admin,
   }),
 )
 
