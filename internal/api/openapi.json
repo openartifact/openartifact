@@ -14527,25 +14527,6 @@
         }
       }
     },
-    "/api/v1/repositories/{name}/packages/{id}": {
-      "get": {
-        "summary": "Get a package version",
-        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
-        "tags": ["Repositories", "Packages"],
-        "parameters": [
-          { "name": "name", "in": "path", "required": true, "description": "Repository name", "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "description": "Row id from the package listing", "schema": { "type": "string", "format": "uuid" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "The package version",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PackageDetail" } } }
-          },
-          "403": { "description": "No read access to the repository" },
-          "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
-        }
-      }
-    },
     "/api/v1/packages/recent": {
       "get": {
         "summary": "Recent packages",
@@ -18057,6 +18038,23 @@
       }
     },
     "/api/v1/repositories/{name}/packages/{id}": {
+      "get": {
+        "summary": "Get a package version",
+        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
+        "tags": ["Repositories", "Packages"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "description": "Repository name", "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "description": "Row id from the package listing", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The package version",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PackageDetail" } } }
+          },
+          "403": { "description": "No read access to the repository" },
+          "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
+        }
+      },
       "delete": {
         "summary": "Delete a package",
         "description": "Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires write access.",
