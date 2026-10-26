@@ -1,0 +1,2 @@
+go test fuzz v1
+string("github.com/example/mymodule/@v/v1.0.0.info")

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<metadata>\n  <groupId>org.example</groupId>\n  <artifactId>demo</artifactId>\n  <versioning>\n    <latest>2.0.0</latest>\n    <release>2.0.0</release>\n    <versions>\n      <version>1.0.0</version>\n      <version>1.1.0-SNAPSHOT</version>\n      <version>2.0.0</version>\n    </versions>\n    <lastUpdated>20260102030405</lastUpdated>\n  </versioning>\n</metadata>\n")

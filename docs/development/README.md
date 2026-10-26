@@ -114,10 +114,34 @@ When the fuzzer finds a failing input it writes it to `testdata/fuzz/FuzzX/<hash
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `clusterfuzzlite-pr.yml` | pull requests touching Go files, `go.mod`/`go.sum` or `.clusterfuzzlite/` | Builds all targets and fuzzes them for 10 minutes in `code-change` mode; a crash fails the check and is uploaded as an artifact, SARIF goes to code scanning (same-repository PRs) |
-| `clusterfuzzlite-batch.yml` | weekly (Sun), manual | 1 hour of `batch` fuzzing of `main` that grows the corpus (kept in GitHub Actions artifacts), then corpus pruning |
+| `clusterfuzzlite-pr.yml` | pull requests touching Go files, `go.mod`/`go.sum` or `.clusterfuzzlite/` | Builds all targets and fuzzes them for 10 minutes in `code-change` mode, starting from the stored corpus and fuzzing only the targets whose covered code the PR changes (every target until the first coverage report exists); a crash fails the check and is uploaded as an artifact, SARIF goes to code scanning (same-repository PRs). Reads the [storage repository](#corpus-and-coverage-storage) anonymously, so it needs no secret and works for fork PRs |
+| `clusterfuzzlite-batch.yml` | daily (02:41 UTC), manual | Three sequential jobs on `main`: `batch` fuzzes for 1 hour and adds what it finds to the stored corpus, `prune` minimizes the corpus, `coverage` builds the coverage report that the PR job uses to pick the affected targets. One concurrency group serializes them, so nothing else writes the storage repository at the same time |
 
-The build is defined in [`.clusterfuzzlite/`](../../.clusterfuzzlite): `Dockerfile` (the OSS-Fuzz Go builder image, pinned by digest and bumped by Dependabot), `build.sh` and `project.yaml` (`language: go`). `build.sh` finds every `func FuzzX(f *testing.F)` in a non-build-tagged `*_test.go` file and compiles it with `compile_native_go_fuzzer_v2` into a binary named `<package path>_<FuzzX>`, so a new target needs no registration. The compiler needs each fuzz function to be defined in exactly one file of its package directory, and it compiles all test files of that directory into one package: `build.sh` therefore deletes the external-test-package files (`package x_test`) of those directories from the image's copy of the tree, so a fuzz target must not depend on them.
+The build is defined in [`.clusterfuzzlite/`](../../.clusterfuzzlite): `Dockerfile` (the OSS-Fuzz Go builder image, pinned by digest and bumped by Dependabot; it downloads the Go modules in a layer of its own, so a change that leaves `go.mod`/`go.sum` alone reuses it), `build.sh`, `project.yaml` (`language: go`), and the `dicts/` directory. `build.sh` finds every `func FuzzX(f *testing.F)` in a non-build-tagged `*_test.go` file and compiles it with `compile_native_go_fuzzer_v2` into a binary named `<package path>_<FuzzX>`, so a new target needs no registration. Targets are compiled in parallel, at most `min(nproc, free memory / 1.5 GiB)` at a time (`FUZZ_BUILD_JOBS=<n>` overrides it; the build is CPU-bound, so it shortens a run only on a machine with more cores than the 4-vCPU hosted runner, where it takes 13 to 19 minutes with any number of jobs), each in its own scratch directory that is merged into the output in sorted order afterwards; the first failure stops the remaining targets and fails the build. The compiler needs each fuzz function to be defined in exactly one file of its package directory, and it compiles all test files of that directory into one package: `build.sh` therefore deletes the external-test-package files (`package x_test`) of those directories from the image's copy of the tree, so a fuzz target must not depend on them.
+
+### Seeds and dictionaries
+
+The libFuzzer binaries do not read `f.Add` calls or `testdata/fuzz/`: the OSS-Fuzz Go builder replaces `*testing.F`, and its `Add` does nothing. Without help every target would start from an empty corpus. `build.sh` therefore gives each binary two companion files next to it in the output:
+
+| File | Source | Effect |
+|---|---|---|
+| `<name>_seed_corpus.zip` | `<package>/testdata/fuzz/<FuzzX>/`, encoded by the image's `addStdLibCorpusToFuzzer` | the fuzzer starts from these inputs; the same files are the seeds of the plain `go test` run |
+| `<name>.dict` | `.clusterfuzzlite/dicts/<name>.dict`, else the package dictionary `.clusterfuzzlite/dicts/<package path with / as _>.dict` | libFuzzer splices these tokens (magic numbers, field names, format keywords) into inputs |
+
+`<name>` is `<package path with / as _>_<FuzzX>`, for example `pkg_npm_FuzzParseTarball`. To add seeds, put files in the target's `testdata/fuzz/FuzzX/` directory in the `go test fuzz v1` format (the same files the Go fuzzer writes when it finds a failure). Only `string`, `[]byte`, `bool`, `intN`/`uintN`, `int`/`uint` and `floatN` values written in plain decimal are supported; `build.sh` fails when a seed uses another form (`byte(...)`, `rune(...)`, hexadecimal) instead of dropping it silently. Keep seeds small, one per feature of the format.
+
+A dictionary is a plain libFuzzer `.dict` file: one `"token"` per line (`\xNN` escapes allowed, 1 to 64 bytes), `#` comments, the SPDX header on top. Add tokens that the parser matches literally and that a mutator would take long to invent. Dictionaries are shared by package, so add a per-target file only when the target needs different tokens.
+
+### Corpus and coverage storage
+
+ClusterFuzzLite keeps the corpus and the coverage reports in a git repository, [`openartifact/openartifact-fuzz-storage`](https://github.com/openartifact/openartifact-fuzz-storage), instead of in GitHub Actions artifacts that expire:
+
+- branch `main`: the corpus, `corpus/<target>/<input>`, written by the `batch` and `prune` jobs;
+- branch `gh-pages`: the coverage report, `coverage/`, written by the `coverage` job. The PR job reads it to learn which targets cover the lines a PR touches and fuzzes only those.
+
+The repository is public, so the PR workflow reads it without credentials, also for pull requests from forks. Only `clusterfuzzlite-batch.yml` writes to it, through the `FUZZ_STORAGE_TOKEN` repository secret: a fine-grained personal access token with the resource owner `openartifact`, access to the `openartifact-fuzz-storage` repository only and the permission *Contents: read and write*. Every job of that workflow fails with an explicit message until the secret exists, and the PR job keeps working (it then fuzzes every target from the seeds alone). Each upload is a commit and the corpus grows, so when the repository gets large, squash its history: ClusterFuzzLite only uses the latest content.
+
+### Running the targets locally
 
 To build and run the exact CI binaries locally (docker or podman):
 
@@ -125,10 +149,13 @@ To build and run the exact CI binaries locally (docker or podman):
 docker build -f .clusterfuzzlite/Dockerfile -t oa-cfl .
 mkdir -p out && docker run --rm -e FUZZING_ENGINE=libfuzzer -e SANITIZER=address -e ARCHITECTURE=x86_64 \
   -e FUZZING_LANGUAGE=go -e PROJECT_NAME=openartifact -v "$PWD/out:/out" oa-cfl compile
-mkdir -p corpus && ./out/pkg_npm_FuzzParseTarball corpus -max_total_time=60
+mkdir -p corpus && unzip -q -o out/pkg_npm_FuzzParseTarball_seed_corpus.zip -d corpus
+./out/pkg_npm_FuzzParseTarball corpus -dict=out/pkg_npm_FuzzParseTarball.dict -max_total_time=60
 ```
 
-A crash artifact from CI reproduces with `./out/<binary> <crash-file>`. Convert it into a regression seed by adding the input to the target's seed corpus (`f.Add`) or as a `testdata/fuzz/FuzzX/` file.
+With rootless podman add `--pids-limit=-1` to `run`: the parallel build starts more processes than podman's default limit allows. `FUZZ_BUILD_JOBS=2` (as `-e`) limits the parallelism on a small machine; `SANITIZER=coverage` builds the binaries of the `coverage` job instead.
+
+A crash artifact from CI reproduces with `./out/<binary> <crash-file>`. Keep it as a regression seed by adding the decoded arguments as a `testdata/fuzz/FuzzX/` file in the `go test fuzz v1` form: the artifact holds the raw libFuzzer bytes, which the OSS-Fuzz shim splits into the arguments of the fuzz function (fixed-size values first, then one weight byte per `string`/`[]byte` argument, then their data).
 
 ## Conventions
 
@@ -187,7 +214,7 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 |---|---|---|
 | `codeql.yml` | push to `main`, PRs, weekly (Mon) | CodeQL for Go and JavaScript/TypeScript |
 | `scorecard.yml` | push to `main`, branch-protection changes, weekly (Tue) | OpenSSF Scorecard, results published and uploaded as SARIF |
-| `clusterfuzzlite-pr.yml`, `clusterfuzzlite-batch.yml` | PRs touching Go, weekly (Sun) | ClusterFuzzLite fuzzing of the Go fuzz targets, see [Fuzzing](#fuzzing) |
+| `clusterfuzzlite-pr.yml`, `clusterfuzzlite-batch.yml` | PRs touching Go, daily | ClusterFuzzLite fuzzing of the Go fuzz targets, see [Fuzzing](#fuzzing) |
 | `scheduled-scan.yml` | weekly (Mon), manual | Trivy scan of the *published* `latest` and latest stable semver images on ghcr.io, so new CVEs in released images are noticed |
 
 ### Documentation site

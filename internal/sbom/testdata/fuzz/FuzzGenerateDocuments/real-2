@@ -1,0 +1,5 @@
+go test fuzz v1
+string("nuget")
+string("Newtonsoft.Json@13.0.3")
+string("{\"licenses\":[\"MIT\"],\"dependencies\":[{\"name\":\"System.Memory\",\"version\":\"4.5.5\",\"purl\":\"pkg:nuget/System.Memory@4.5.5\"}]}")
+uint8(0)

@@ -1,0 +1,5 @@
+go test fuzz v1
+string("pypi")
+string("requests@2.31.0")
+string("{\"license\":\"Apache-2.0\",\"dependencies\":[{\"name\":\"urllib3\",\"version\":\"2.2.1\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"license\":\"MIT\"},{\"name\":\"idna\",\"version\":\"3.6\",\"license\":[\"BSD-3-Clause\"]}]}")
+uint8(2)

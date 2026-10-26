@@ -1,0 +1,4 @@
+go test fuzz v1
+string("{\"name\":\"scipy\",\"version\":\"1.11.4\",\"depends\":[\"numpy >=1.21.6,<2.0a0\",\"libgfortran5 >=11.2.0\",\"openblas * *openmp*\",\"python 3.9.* *_cpython\",\"libstdcxx-ng\"]}")
+string("{}")
+bool(false)

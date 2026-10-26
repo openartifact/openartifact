@@ -1,0 +1,2 @@
+go test fuzz v1
+string("application/vnd.docker.distribution.manifest.list.v2+json")

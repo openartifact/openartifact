@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -104,11 +105,12 @@ func (d *memDB) entry(repoID, key string) *models.ProxyCacheEntry {
 }
 
 type fixture struct {
-	t    *testing.T
-	svc  *Service
-	db   *memDB
-	repo *models.Repository
-	hits atomic.Int32
+	t        *testing.T
+	svc      *Service
+	db       *memDB
+	repo     *models.Repository
+	upstream *httptest.Server
+	hits     atomic.Int32
 }
 
 // newFixture serves upstream through a maven proxy repository. handler is
@@ -117,13 +119,48 @@ func newFixture(t *testing.T, handler http.HandlerFunc) *fixture {
 	t.Helper()
 	t.Setenv(allowPrivateEnv, "true") // httptest upstreams are loopback
 
+	f := startFixture(t, handler)
+	t.Cleanup(f.upstream.Close)
+
+	return f
+}
+
+// newFuzzFixture is newFixture for fuzz targets: the libFuzzer build runs them
+// with a testing shim that calls a t.Cleanup function at once and ignores
+// t.Setenv, which would close the upstream before the first request and refuse
+// its loopback address. The caller defers the returned release instead.
+func newFuzzFixture(t *testing.T, handler http.HandlerFunc) (*fixture, func()) {
+	t.Helper()
+
+	prev, had := os.LookupEnv(allowPrivateEnv)
+	if err := os.Setenv(allowPrivateEnv, "true"); err != nil { // httptest upstreams are loopback
+		t.Fatalf("setenv: %v", err)
+	}
+
+	f := startFixture(t, handler)
+
+	return f, func() {
+		f.upstream.Close()
+
+		if had {
+			_ = os.Setenv(allowPrivateEnv, prev)
+		} else {
+			_ = os.Unsetenv(allowPrivateEnv)
+		}
+	}
+}
+
+// startFixture builds the fixture around a running upstream; the caller closes it.
+func startFixture(t *testing.T, handler http.HandlerFunc) *fixture {
+	t.Helper()
+
 	f := &fixture{t: t, db: newMemDB()}
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.hits.Add(1)
 		handler(w, r)
 	}))
-	t.Cleanup(upstream.Close)
+	f.upstream = upstream
 
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {

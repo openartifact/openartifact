@@ -1,0 +1,4 @@
+go test fuzz v1
+string("requests")
+string("2.31.0")
+string("requests-2.31.0.tar.gz")

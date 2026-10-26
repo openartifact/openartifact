@@ -1,0 +1,2 @@
+go test fuzz v1
+string("[package]\nname = \"ring\"\nversion = \"0.17.8\"\nlicense-file = \"LICENSE\"\n")

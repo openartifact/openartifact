@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\x04\bo:\x14Gem::Dependency\b:\v@@nameI\"\trake\x06:\x06ET:\v@@type:\fruntime:\x11@@prereleaseF")

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("!<arch>\ndebian-binary   0           0     0     100644  4         `\n2.0\n")

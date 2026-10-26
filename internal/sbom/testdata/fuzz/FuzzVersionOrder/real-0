@@ -1,0 +1,4 @@
+go test fuzz v1
+string("1.2.3")
+string("1.2.10")
+string("1.10.0")

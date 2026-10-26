@@ -1,0 +1,4 @@
+go test fuzz v1
+string("v1.9.0")
+string("v1.10.0")
+string("v1.10.0-rc.1")

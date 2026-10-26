@@ -1,0 +1,4 @@
+go test fuzz v1
+string("fmt/10.*@acme/*")
+string("fmt/10.2.1@acme/stable")
+bool(false)

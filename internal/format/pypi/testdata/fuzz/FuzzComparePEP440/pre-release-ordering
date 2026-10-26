@@ -1,0 +1,4 @@
+go test fuzz v1
+string("1.0.0rc1")
+string("1.0.0a2")
+string("1.0.0")

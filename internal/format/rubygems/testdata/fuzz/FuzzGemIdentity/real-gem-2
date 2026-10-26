@@ -1,0 +1,4 @@
+go test fuzz v1
+string("ffi")
+string("1.16.3")
+string("x86-mingw32")

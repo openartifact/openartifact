@@ -1,0 +1,2 @@
+go test fuzz v1
+string("apiVersion: v2\nname: old\nversion: 2.0.0\ndeprecated: true\nappVersion: \"1.0\"\ndescription: Deprecated chart\n")

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("v3/registration/newtonsoft.json/13.0.3.json")

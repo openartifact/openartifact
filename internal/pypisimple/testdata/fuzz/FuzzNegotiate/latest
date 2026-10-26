@@ -1,0 +1,2 @@
+go test fuzz v1
+string("application/vnd.pypi.simple.latest+json;q=0.9, text/html;q=0.1")

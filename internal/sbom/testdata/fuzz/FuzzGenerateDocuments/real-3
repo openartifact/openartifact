@@ -1,0 +1,5 @@
+go test fuzz v1
+string("deb")
+string("libc6@2.36-9+deb12u4")
+string("{\"license\":\"LGPL-2.1-or-later\",\"dependencies\":[{\"name\":\"libgcc-s1\",\"version\":\"12.2.0-14\"},{\"name\":\"libcrc\",\"version\":\"1:1.0\"}]}")
+uint8(1)

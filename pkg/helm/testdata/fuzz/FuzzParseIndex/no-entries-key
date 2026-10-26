@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("apiVersion: v1\ngenerated: \"2026-01-01T00:00:00Z\"\n")

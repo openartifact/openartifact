@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("<metadata modelVersion=\"1.1.0\"><groupId>g</groupId><artifactId>a</artifactId><version>1.0-SNAPSHOT</version><versioning><snapshot><timestamp>20260102.030405</timestamp><buildNumber>3</buildNumber></snapshot><snapshotVersions><snapshotVersion><extension>jar</extension><value>1.0-20260102.030405-3</value><updated>20260102030405</updated></snapshotVersion></snapshotVersions></versioning></metadata>")

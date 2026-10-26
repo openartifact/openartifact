@@ -1,0 +1,4 @@
+go test fuzz v1
+string("latest\nsha256-abc.sig\nv1.2.3-rc.1")
+string("latest")
+string("1")

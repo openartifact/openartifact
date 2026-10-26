@@ -1,0 +1,4 @@
+go test fuzz v1
+string("My_Demo-Pkg")
+string("1.0.0rc1")
+string("my_demo_pkg-1.0.0rc1-py3-none-any.whl")

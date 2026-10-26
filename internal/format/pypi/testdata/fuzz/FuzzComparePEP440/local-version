@@ -1,0 +1,4 @@
+go test fuzz v1
+string("1.0+ubuntu.1")
+string("1.0+abc.5")
+string("1.0")

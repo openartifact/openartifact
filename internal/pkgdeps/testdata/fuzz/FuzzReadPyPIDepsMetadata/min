@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Metadata-Version: 2.1\nName: a\nVersion: 1\n")

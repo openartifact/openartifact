@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Bearer realm=\"https://auth.example.com/token\",service=\"registry\",scope=\"repository:a/b:pull,push repository:c/d:pull\",error=\"insufficient_scope\"")

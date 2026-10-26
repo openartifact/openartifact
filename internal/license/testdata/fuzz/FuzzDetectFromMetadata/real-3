@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"license_expression\":\"MIT OR Apache-2.0\",\"spdx_id\":\"MIT\"}")

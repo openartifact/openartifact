@@ -1,0 +1,2 @@
+go test fuzz v1
+string("<package><metadata><id>a</id><version>2.0.0-preview.1</version><authors>x</authors></metadata></package>")

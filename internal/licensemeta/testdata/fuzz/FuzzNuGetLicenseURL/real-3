@@ -1,0 +1,2 @@
+go test fuzz v1
+string("https://github.com/dotnet/runtime/blob/main/LICENSE.TXT")

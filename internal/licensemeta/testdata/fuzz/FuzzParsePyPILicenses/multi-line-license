@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Metadata-Version: 2.1\nName: x\nVersion: 1\nLicense: MIT License\n        Copyright (c) 2020\nClassifier: License :: OSI Approved :: MIT License\nClassifier: License :: OSI Approved :: BSD License\n")

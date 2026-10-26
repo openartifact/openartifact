@@ -1,0 +1,4 @@
+go test fuzz v1
+string("{\"name\":\"library/alpine\",\"tags\":[\"3.17\",\"3.18\"]}\x00{\"name\":\"library/alpine\",\"tags\":[\"3.19\",\"latest\"]}")
+string("</v2/library/alpine/tags/list?last=3.18&n=2>; rel=\"next\"\x00")
+[]byte("\x00\x00")

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Package: hello\nVersion: 2.10-3\nArchitecture: all\nMaintainer: A <a@example.org>\nDescription: hi\n")

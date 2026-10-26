@@ -1,0 +1,2 @@
+go test fuzz v1
+string("[{\"name\":\"serde\",\"version_req\":\"^1.0\",\"features\":[\"derive\"],\"optional\":false,\"default_features\":true,\"target\":null,\"kind\":\"normal\",\"registry\":null},{\"name\":\"criterion\",\"version_req\":\"^0.5\",\"features\":[],\"optional\":false,\"default_features\":true,\"target\":null,\"kind\":\"dev\"},{\"name\":\"cc\",\"version_req\":\"^1\",\"features\":[],\"optional\":false,\"default_features\":true,\"target\":\"cfg(windows)\",\"kind\":\"build\"}]")

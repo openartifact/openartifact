@@ -1,0 +1,5 @@
+go test fuzz v1
+string("Apache-2.0 AND (MIT OR ISC)")
+string("Apache-2.0,MIT,ISC")
+string("")
+bool(true)

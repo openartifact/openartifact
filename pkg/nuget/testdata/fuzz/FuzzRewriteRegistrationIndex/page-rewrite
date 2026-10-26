@@ -1,0 +1,5 @@
+go test fuzz v1
+[]byte("{\"@id\":\"https://up.example/reg/demo/index.json\",\"count\":2,\"items\":[{\"@id\":\"https://up.example/reg/demo/page/1.0.0/2.0.0.json\",\"lower\":\"1.0.0\",\"upper\":\"2.0.0\",\"count\":2,\"items\":[{\"@id\":\"https://up.example/reg/demo/1.0.0.json\",\"catalogEntry\":{\"@id\":\"https://up.example/cat/1\",\"version\":\"1.0.0\"}},{\"@id\":\"https://up.example/reg/demo/2.0.0-Beta.json\",\"catalogEntry\":{\"version\":\"2.0.0-Beta+meta\"}}]},{\"@id\":\"https://up.example/reg/demo/page/3.0.0/4.0.0.json\",\"lower\":\"3.0.0\",\"upper\":\"4.0.0\",\"count\":2}]}")
+string("http://oa.test/repos/r/v3/registration/demo/page/")
+string("https://up.example/reg/demo/")
+string("http://oa.test/repos/r/v3/registration/demo/")

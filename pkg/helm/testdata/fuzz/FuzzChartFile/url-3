@@ -1,0 +1,2 @@
+go test fuzz v1
+string("oci://ghcr.io/example/charts/nginx:15.4.2")

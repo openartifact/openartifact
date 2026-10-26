@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("<metadata><groupId>g</groupId><artifactId>a</artifactId><versioning/></metadata>")

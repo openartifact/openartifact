@@ -1,0 +1,3 @@
+go test fuzz v1
+[]byte("apiVersion: v1\ngenerated: \"2026-01-01T00:00:00Z\"\nentries:\n  app:\n  - name: app\n    version: 1.0.0\n    digest: aaaa\n    annotations:\n      category: Test\n    urls:\n    - app-1.0.0.tgz\n    - https://mirror.example/app-1.0.0.tgz\n  - name: app\n    version: 0.9.0\n    urls:\n    - oci://registry.example/app:0.9.0\n  gone:\n  - name: gone\n    version: 1.0.0\n    urls:\n    - oci://registry.example/gone:1.0.0\n")
+[]byte("apiVersion: v1\nentries:\n  app:\n  - {name: app, version: 1.0.0, digest: bbbb, urls: [https://b.example/app-1.0.0.tgz]}\n  - {name: app, version: 2.0.0-rc.1, urls: [app-2.0.0-rc.1.tgz]}\n  other:\n  - {name: other, version: 0.1.0, urls: [other-0.1.0.tgz]}\n")

@@ -1,0 +1,5 @@
+go test fuzz v1
+string("20")
+int(20)
+int(0)
+int(100)

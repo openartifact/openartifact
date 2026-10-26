@@ -1,0 +1,4 @@
+go test fuzz v1
+string("1.2.3-beta.1+sha.5114f85")
+string("1.2.3-beta.2")
+string("1.2.3")

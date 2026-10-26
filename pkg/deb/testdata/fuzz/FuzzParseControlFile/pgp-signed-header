@@ -1,0 +1,2 @@
+go test fuzz v1
+string("-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nPackage: signed\nVersion: 1.0\n-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n")

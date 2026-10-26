@@ -1,0 +1,4 @@
+go test fuzz v1
+string("{\"arch\":\"x86_64\",\"build\":\"py311h06a4308_0\",\"build_number\":0,\"depends\":[\"python >=3.11,<3.12.0a0\",\"numpy >=1.23.5,<2.0a0\",\"libgcc-ng >=11.2.0\",\"python_abi 3.11.* *_cp311\"],\"license\":\"BSD-3-Clause\",\"license_family\":\"BSD\",\"name\":\"pandas\",\"platform\":\"linux\",\"subdir\":\"linux-64\",\"timestamp\":1690000000000,\"version\":\"2.0.3\"}")
+string("{\"home\":\"https://pandas.pydata.org\",\"license\":\"BSD-3-Clause\",\"license_family\":\"BSD\",\"summary\":\"Powerful data structures\",\"dev_url\":\"https://github.com/pandas-dev/pandas\",\"doc_url\":\"https://pandas.pydata.org/docs\",\"conda_version\":\"23.7.2\"}")
+bool(false)

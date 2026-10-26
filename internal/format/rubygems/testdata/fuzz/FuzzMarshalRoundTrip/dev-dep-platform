@@ -1,0 +1,13 @@
+go test fuzz v1
+string("nokogiri")
+string("1.16.2")
+string("x86_64-linux")
+string("HTML parser")
+string("")
+string("")
+string("")
+string("Mike Dalessio")
+string("MIT")
+string("rake")
+string("~> 13.0, >= 13.0.1")
+string("development")

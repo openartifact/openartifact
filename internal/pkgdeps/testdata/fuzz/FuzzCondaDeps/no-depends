@@ -1,0 +1,4 @@
+go test fuzz v1
+string("{\"name\":\"a\",\"version\":\"1\",\"build\":\"0\",\"build_number\":0}")
+string("")
+bool(true)

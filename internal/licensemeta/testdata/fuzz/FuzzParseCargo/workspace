@@ -1,0 +1,2 @@
+go test fuzz v1
+string("[package]\nname = \"member\"\nversion.workspace = true\nlicense.workspace = true\nauthors = [\"The Rust Project Developers\"]\n\n[dependencies]\nsibling = { workspace = true }\n")

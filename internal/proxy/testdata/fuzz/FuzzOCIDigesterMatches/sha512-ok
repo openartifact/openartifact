@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("{\"schemaVersion\":2,\"layers\":[]}")
+string("sha512:5cd0fcce05d0e621cb45f2d1550d733d28876970866fa9633ffd3103d0818c056b011a0cda1e921f11a331cc5ec52be4e4821d6599d4d8127cca7062a9799b64")
+string("sha256:6ece6defe7067e1c5455a7720c1189ad30f7f8efe78587bd7c06e64a80fe7770")

@@ -1,0 +1,5 @@
+go test fuzz v1
+string("{\"name\":\"openssl\",\"version\":\"3.2.1\",\"depends\":[\"ca-certificates\"],\"constrains\":[\"pyopenssl >=22.1\"],\"license\":\"Apache-2.0\"}")
+string("{\"license\":\"Apache-2.0\",\"license_file\":[\"LICENSE.txt\"],\"summary\":\"TLS/SSL toolkit\"}")
+string("info/recipe/meta.yaml")
+bool(true)

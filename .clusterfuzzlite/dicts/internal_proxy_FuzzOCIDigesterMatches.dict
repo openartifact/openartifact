@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"sha256:"
+"sha512:"
+"sha384:"
+"SHA256:"
+"md5:"
+"{\"schemaVersion\":2}"

@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# urls
+"https://licenses.nuget.org/"
+"http://licenses.nuget.org/"
+"https://www.apache.org/licenses/LICENSE-2.0"
+"http://www.apache.org/licenses/LICENSE-2.0.html"
+"http://opensource.org/licenses/MIT"
+"https://opensource.org/licenses/BSD-3-Clause"
+"https://github.com/"
+"/blob/master/LICENSE"
+"/blob/main/LICENSE.txt"
+"https://aka.ms/deprecateLicenseUrl"
+"%20"
+"%28"
+"%29"
+"%zz"
+"MIT"
+"Apache-2.0"
+" OR "
+" AND "

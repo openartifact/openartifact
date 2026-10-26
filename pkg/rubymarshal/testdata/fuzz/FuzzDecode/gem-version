@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\x04\bU:\x11Gem::Version[\x06I\"\n3.4.5\x06:\x06ET")

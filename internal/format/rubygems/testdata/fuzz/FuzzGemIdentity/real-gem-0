@@ -1,0 +1,4 @@
+go test fuzz v1
+string("rails")
+string("7.0.0")
+string("ruby")
