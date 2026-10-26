@@ -317,7 +317,7 @@ func (p *PostgresDB) AddBundleItems(ctx context.Context, bundleID string, items 
 			SELECT COALESCE(
 				(SELECT id FROM ins),
 				(SELECT id FROM release_bundle_items WHERE bundle_id = $1 AND sha256 = $3))`,
-			bundleID, item.SourceRepoID, item.SHA256, item.ArtifactPath, item.Format, item.SizeBytes, item.AddedBy, item.AddedAt,
+			bundleID, item.SourceRepoID, item.SHA256, item.ArtifactPath, item.Format, item.SizeBytes, item.AddedBy, orNow(item.AddedAt),
 		).Scan(&item.ID)
 		if err != nil {
 			return fmt.Errorf("failed to add bundle item %q: %w", item.SHA256, err)

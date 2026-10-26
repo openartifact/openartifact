@@ -294,7 +294,7 @@ func (p *PostgresDB) AddBundleItem(ctx context.Context, item *models.ReleaseBund
 		 FROM ref
 		 ON CONFLICT (bundle_id, sha256) DO NOTHING`,
 		item.ID, item.BundleID, item.SourceRepoID,
-		item.SHA256, item.ArtifactPath, item.Format, item.SizeBytes, item.AddedBy, item.AddedAt,
+		item.SHA256, item.ArtifactPath, item.Format, item.SizeBytes, item.AddedBy, orNow(item.AddedAt),
 	)
 
 	return err
