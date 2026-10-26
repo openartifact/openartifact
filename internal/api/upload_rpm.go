@@ -678,7 +678,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	err = trash.Delete(r.Context(), h.db, trash.Request{
-		RepoID: repoID, Kind: models.TrashKindRPM, IDs: []string{packageID}, Resource: comp.Filename,
+		RepoID: repoID, Kind: models.TrashKindRPM, IDs: []string{packageID}, Resource: comp.Filename, Package: comp.Name, Version: comp.Version,
 	}, func() error {
 		if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
 			return err

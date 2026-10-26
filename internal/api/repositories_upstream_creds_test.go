@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -152,5 +153,49 @@ func TestCreateMergeProxyVersions(t *testing.T) {
 	db = newProxyGroupDB()
 	if rw := createRepo(t, db, `{"name":"g2","format":"maven","repo_type":"group"}`); rw.Code != http.StatusCreated || db.created.MergeProxyVersions {
 		t.Errorf("default must be hosted-wins: %d %s", rw.Code, rw.Body.String())
+	}
+}
+
+func TestRepositoryResponseNeverCarriesUpstreamPassword(t *testing.T) {
+	const secret = "stored-secret"
+
+	cases := []struct {
+		name    string
+		enc     string
+		wantSet bool
+	}{
+		{"password stored", secret, true},
+		{"no password", "", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repo := &models.Repository{
+				ID: "r1", Name: "px", Format: "maven", RepoType: "proxy",
+				UpstreamURL: "https://93.184.216.34/maven", UpstreamUsername: "svc", UpstreamPasswordEnc: c.enc,
+			}
+
+			raw, err := json.Marshal(RepositoryToResponse(repo))
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+
+			if strings.Contains(string(raw), secret) || strings.Contains(string(raw), "upstream_password\"") {
+				t.Fatalf("response carries the password: %s", raw)
+			}
+
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+
+			if got["upstream_username"] != "svc" {
+				t.Errorf("upstream_username = %v", got["upstream_username"])
+			}
+
+			if set, _ := got["upstream_password_set"].(bool); set != c.wantSet {
+				t.Errorf("upstream_password_set = %v, want %v", got["upstream_password_set"], c.wantSet)
+			}
+		})
 	}
 }

@@ -2671,6 +2671,24 @@ func auditFilterWhere(params models.AuditListParams) (string, []any) {
 		where += fmt.Sprintf(" AND (project_id = $%[1]d::uuid OR repository_id = ANY(ARRAY(SELECT id FROM repositories WHERE project_id = $%[1]d::uuid)))", len(args))
 	}
 
+	// One repository's own activity: its entries only, no project fold-in.
+	if params.RepositoryID != "" {
+		args = append(args, params.RepositoryID)
+		where += fmt.Sprintf(" AND repository_id = $%d::uuid", len(args))
+	}
+
+	// Entries that record the package (and version) they concern, see
+	// audit.Event.Package.
+	if params.PackageName != "" {
+		args = append(args, params.PackageName)
+		where += fmt.Sprintf(" AND details_json->>'package' = $%d", len(args))
+	}
+
+	if params.PackageVersion != "" {
+		args = append(args, params.PackageVersion)
+		where += fmt.Sprintf(" AND details_json->>'version' = $%d", len(args))
+	}
+
 	// Project token mint/revoke events are for maintainers and above only.
 	if params.HideProjectTokenEvents {
 		where += ` AND action NOT LIKE 'project.token\_%'`

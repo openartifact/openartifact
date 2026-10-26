@@ -54,7 +54,7 @@ func (h *RPMUploadHandler) deleteOtherFormat(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	trash.AuditDeleted(r.Context(), repo.ID, res.Kind, res.ID, res.Trashed, res.Name+" "+res.Version)
+	trash.AuditDeleted(r.Context(), repo.ID, res.Kind, res.ID, res.Trashed, res.Name+" "+res.Version, res.Name, res.Version)
 
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
 		Repository: repo.Name,

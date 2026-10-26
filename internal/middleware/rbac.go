@@ -681,7 +681,8 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 
 	switch {
 	case isFilteredListRoute(method, segs):
-		// Handlers filter per repository (RepoReadFilter / per-hit Evaluate).
+		// Handlers filter per repository (RepoReadFilter / per-hit Evaluate) or
+		// per caller (the unified token list).
 		// The action stays "manage" so that an anonymous principal, which the
 		// pass-through does not cover, can never satisfy it (the handlers'
 		// anonymous branch is unfiltered).
@@ -717,8 +718,9 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 }
 
 // isFilteredListRoute reports whether segs (of an /api/v1/ path) is a list the
-// handler filters per repository: the repositories, the search and the recent
-// packages.
+// handler filters for the caller: the repositories, the search and the recent
+// packages (per repository), and the unified token list (own personal tokens,
+// the tokens of the caller's projects, everything for an admin).
 func isFilteredListRoute(method string, segs []string) bool {
 	if !isSafeMethod(method) {
 		return false
@@ -726,7 +728,7 @@ func isFilteredListRoute(method string, segs []string) bool {
 
 	switch len(segs) {
 	case 1:
-		return segs[0] == "repositories" || segs[0] == "search"
+		return segs[0] == "repositories" || segs[0] == "search" || (method == http.MethodGet && segs[0] == "tokens")
 	case 2:
 		return segs[0] == "packages" && segs[1] == "recent"
 	}
@@ -773,16 +775,30 @@ func isRepoSecuritySummaryRoute(method string, segs []string) bool {
 		segs[2] == "security" && segs[3] == "summary"
 }
 
+// isDelegatedRepoReadOrQuota reports whether {name}/{leaf} is a delegated
+// route of a repository: any quota route but the reconcile POST (a different
+// path depth), and the GET usage and activity feeds.
+func isDelegatedRepoReadOrQuota(method, leaf string) bool {
+	switch leaf {
+	case "quota":
+		return method != http.MethodPost
+	case "usage", "activity":
+		return method == http.MethodGet
+	default:
+		return false
+	}
+}
+
 // delegatedRepoName returns the repository of a route whose administration is
 // delegated to project maintainers and owners (global manage still passes):
-// PATCH/DELETE repository/{name}, the cleanup-policy routes and the quota
-// routes of the repository, or "" for any other route. The one exception in the
+// PATCH/DELETE repository/{name}, the cleanup-policy routes, the quota routes
+// and the GET usage and activity routes of the repository, or "" for any other route. The one exception in the
 // quota family, POST .../quota/reconcile, stays administrative.
 func delegatedRepoName(method string, segs []string) string {
 	switch {
 	case len(segs) == 2 && segs[0] == "repository" && (method == http.MethodPatch || method == http.MethodDelete):
 	case len(segs) >= 3 && len(segs) <= 5 && segs[0] == "repositories" && segs[2] == "cleanup-policies":
-	case len(segs) == 3 && segs[0] == "repositories" && segs[2] == "quota" && method != http.MethodPost:
+	case len(segs) == 3 && segs[0] == "repositories" && isDelegatedRepoReadOrQuota(method, segs[2]):
 	default:
 		return ""
 	}

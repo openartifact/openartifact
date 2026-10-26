@@ -107,17 +107,19 @@ func (h *TrashHandler) RegisterAuthed(r chi.Router) {
 
 func trashItemResponse(it *models.TrashItem) responses.TrashItemResponse {
 	return responses.TrashItemResponse{
-		ID:           it.ID,
-		Kind:         string(it.Kind),
-		RepositoryID: it.RepositoryID,
-		Repository:   it.RepositoryName,
-		Format:       it.Format,
-		Name:         it.Name,
-		Version:      it.Version,
-		SizeBytes:    it.SizeBytes,
-		DeletedAt:    it.DeletedAt.UTC().Format(time.RFC3339),
-		DeletedBy:    it.DeletedBy,
-		PurgeAt:      it.PurgeAt.UTC().Format(time.RFC3339),
+		ID:            it.ID,
+		Kind:          string(it.Kind),
+		RepositoryID:  it.RepositoryID,
+		Repository:    it.RepositoryName,
+		Format:        it.Format,
+		Name:          it.Name,
+		Version:       it.Version,
+		SizeBytes:     it.SizeBytes,
+		DeletedAt:     it.DeletedAt.UTC().Format(time.RFC3339),
+		DeletedBy:     it.DeletedBy,
+		DeletedByName: it.DeletedBy,
+		ExpiresAt:     it.PurgeAt.UTC().Format(time.RFC3339),
+		PurgeAt:       it.PurgeAt.UTC().Format(time.RFC3339),
 	}
 }
 

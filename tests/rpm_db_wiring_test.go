@@ -1806,6 +1806,14 @@ func (m *MockDatabase) CreateStorageBackend(ctx context.Context, backend *models
 	return nil
 }
 
+func (m *MockDatabase) StorageTierUsage(ctx context.Context) ([]models.TierUsage, error) {
+	return nil, nil
+}
+
+func (m *MockDatabase) ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {
+	return map[string]*models.ProjectStats{}, nil
+}
+
 func (m *MockDatabase) ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

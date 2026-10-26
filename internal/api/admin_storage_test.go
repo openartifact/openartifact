@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -148,5 +149,77 @@ func TestHealthCheckStoreReportsConnectivity(t *testing.T) {
 	res := h.healthCheckStore(context.Background(), "x", "gcs", fakeHealthStore{err: context.DeadlineExceeded})
 	if res.ok || res.code != "connection_failed" {
 		t.Errorf("failing store: %+v", res)
+	}
+}
+
+type storageUsageMockDB struct {
+	databasetest.BaseMockDB
+}
+
+func (storageUsageMockDB) ListStorageBackends(context.Context) ([]*models.StorageBackend, error) {
+	return []*models.StorageBackend{
+		{ID: "b1", Name: "cold", Kind: "filesystem", Config: []byte(`{"path":"/data"}`)},
+		{ID: "b2", Name: "empty", Kind: "filesystem", Config: []byte(`{"path":"/e"}`)},
+	}, nil
+}
+
+func (storageUsageMockDB) GetStorageBackend(_ context.Context, name string) (*models.StorageBackend, error) {
+	return &models.StorageBackend{ID: "b1", Name: name, Kind: "filesystem", Config: []byte(`{"path":"/data"}`)}, nil
+}
+
+func (storageUsageMockDB) StorageTierUsage(context.Context) ([]models.TierUsage, error) {
+	return []models.TierUsage{{BackendID: "", Blobs: 9, Bytes: 90}, {BackendID: "b1", Blobs: 3, Bytes: 300}}, nil
+}
+
+func TestStorageBackendsReportUsage(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{IsLegacy: true})))
+		})
+	})
+	NewAdminStorageHandler(&storageUsageMockDB{}, log, nil).Register(r)
+
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil))
+
+		return rec
+	}
+
+	list := get("/api/v1/admin/storage")
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d: %s", list.Code, list.Body)
+	}
+
+	var body struct {
+		Items []struct {
+			Name  string `json:"name"`
+			Usage struct {
+				BlobCount int64 `json:"blob_count"`
+				SizeBytes int64 `json:"size_bytes"`
+			} `json:"usage"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(body.Items) != 2 || body.Items[0].Usage.BlobCount != 3 || body.Items[0].Usage.SizeBytes != 300 {
+		t.Errorf("busy backend usage wrong: %+v", body.Items)
+	}
+
+	if body.Items[1].Usage.BlobCount != 0 || body.Items[1].Usage.SizeBytes != 0 {
+		t.Errorf("idle backend must report zeros: %+v", body.Items[1])
+	}
+
+	one := get("/api/v1/admin/storage/cold")
+	if one.Code != http.StatusOK || !strings.Contains(one.Body.String(), `"usage":{"blob_count":3,"size_bytes":300}`) {
+		t.Errorf("get: %d %s", one.Code, one.Body)
 	}
 }

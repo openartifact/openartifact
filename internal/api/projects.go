@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -511,6 +512,8 @@ func (h *ProjectsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	projects = filterProjectsByName(projects, r.URL.Query().Get("q"))
+
 	ids := make([]string, len(projects))
 	for i, project := range projects {
 		ids[i] = project.ID
@@ -522,7 +525,13 @@ func (h *ProjectsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := make([]responses.ProjectResponse, 0, len(projects))
+	stats, err := h.db.ListProjectStats(r.Context(), ids)
+	if err != nil {
+		h.dbError(w, "project stats", err)
+		return
+	}
+
+	result := make([]responses.ProjectListItem, 0, len(projects))
 
 	for _, project := range projects {
 		role := roles[project.ID]
@@ -530,7 +539,7 @@ func (h *ProjectsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 			role = models.ProjectRoleOwner
 		}
 
-		result = append(result, projectToResponse(project, role, counts[project.ID]))
+		result = append(result, projectListItem(projectToResponse(project, role, counts[project.ID]), stats[project.ID]))
 	}
 
 	canCreate, err := h.canCreate(r, p, admin)
@@ -680,6 +689,44 @@ func (h *ProjectsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // Helper functions
+
+// filterProjectsByName keeps the projects whose name, slug or display name
+// contains q (case-insensitive); an empty q keeps all.
+func filterProjectsByName(projects []*models.Project, q string) []*models.Project {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return projects
+	}
+
+	kept := make([]*models.Project, 0, len(projects))
+
+	for _, p := range projects {
+		if strings.Contains(strings.ToLower(p.Name), q) || strings.Contains(p.Slug, q) ||
+			(p.DisplayName != nil && strings.Contains(strings.ToLower(*p.DisplayName), q)) {
+			kept = append(kept, p)
+		}
+	}
+
+	return kept
+}
+
+// projectListItem adds the grouped list stats to a project response; a project
+// without a size ceiling carries no quota object.
+func projectListItem(base responses.ProjectResponse, st *models.ProjectStats) responses.ProjectListItem {
+	item := responses.ProjectListItem{ProjectResponse: base}
+	if st == nil {
+		return item
+	}
+
+	item.MemberCount = st.MemberCount
+	item.Usage = responses.ProjectListUsage{SizeBytes: st.SizeBytes}
+
+	if st.MaxSizeBytes > 0 {
+		item.Quota = &responses.ProjectListQuota{LimitBytes: st.MaxSizeBytes}
+	}
+
+	return item
+}
 
 func projectToResponse(project *models.Project, myRole string, repositories int) responses.ProjectResponse {
 	return responses.ProjectResponse{

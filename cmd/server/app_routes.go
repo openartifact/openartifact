@@ -451,6 +451,9 @@ func (a *app) registerScanningRoutes() {
 
 	quotasHandler := api.NewQuotasHandler(log, db, evaluator)
 	quotasHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
+	quotasHandler.RegisterAdminRoutes(authedAPI)
+
+	api.NewRepositoryActivityHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 
 	propertiesHandler := api.NewPropertiesHandler(log, db, blobStore)
 	propertiesHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")

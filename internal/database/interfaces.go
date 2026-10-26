@@ -412,6 +412,12 @@ type Database interface {
 	InsertAuditLog(ctx context.Context, event *models.AuditLog) error
 	ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error)
 	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
+	// ListUnifiedTokens pages the personal, project and federation tokens the
+	// caller may see (params.Admin: all), newest first, with the matching total.
+	ListUnifiedTokens(ctx context.Context, params models.TokenListParams) ([]*models.TokenListItem, int, error)
+	// ResolveAuditNames looks up the display names of the entities one audit
+	// page refers to with a single query; entities that were deleted are absent.
+	ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error)
 
 	// Cleanup policy methods
 	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
@@ -553,6 +559,12 @@ type Database interface {
 	GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
+	// ListQuotaOverview pages every live repository and project with its limits
+	// and live usage, largest usage first, with the matching total.
+	ListQuotaOverview(ctx context.Context, params models.QuotaListParams) ([]*models.QuotaOverview, int, error)
+	// GetRepositoryUsage counts the packages and versions a repository holds
+	// and when the newest was created (scans that repository's rows).
+	GetRepositoryUsage(ctx context.Context, repoID string) (*models.RepositoryUsage, error)
 	// ListStorageQuotas returns the limits of every repository quota row (backup export).
 	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
@@ -582,6 +594,8 @@ type Database interface {
 	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
 	// StorageBackendBusyReason says why a backend must not change kind/config ("" = idle).
 	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
+	// StorageTierUsage returns blob counts and bytes per placement ("" = primary store).
+	StorageTierUsage(ctx context.Context) ([]models.TierUsage, error)
 	UpdateStorageBackendStatus(ctx context.Context, id, status string, message *string) error
 
 	DeleteArtifactProperty(ctx context.Context, repoID, artifactID, key string) error
@@ -612,6 +626,9 @@ type Database interface {
 	ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error
 	// ListProjectRepositories returns one page of the project's live repositories and their total.
 	ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error)
+	// ListProjectStats returns the member count, usage and size ceiling of the
+	// given projects with grouped queries (one round trip for the whole page).
+	ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error)
 	// CountRepositoriesByProject returns the live repository count per project ID.
 	CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error)
 	// CreateProjectToken mints a project token: service user, membership and

@@ -630,6 +630,26 @@ func (m *BaseMockDB) InsertAuditLog(ctx context.Context, event *models.AuditLog)
 func (m *BaseMockDB) ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error) {
 	return nil, errNotImpl("ListAuditLogs")
 }
+func (m *BaseMockDB) ListUnifiedTokens(ctx context.Context, params models.TokenListParams) ([]*models.TokenListItem, int, error) {
+	return nil, 0, errNotImpl("ListUnifiedTokens")
+}
+
+func (m *BaseMockDB) ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error) {
+	return nil, errNotImpl("ResolveAuditNames")
+}
+
+func (m *BaseMockDB) ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {
+	return nil, errNotImpl("ListProjectStats")
+}
+
+func (m *BaseMockDB) ListQuotaOverview(ctx context.Context, params models.QuotaListParams) ([]*models.QuotaOverview, int, error) {
+	return nil, 0, errNotImpl("ListQuotaOverview")
+}
+
+func (m *BaseMockDB) GetRepositoryUsage(ctx context.Context, repoID string) (*models.RepositoryUsage, error) {
+	return nil, errNotImpl("GetRepositoryUsage")
+}
+
 func (m *BaseMockDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error) {
 	return nil, 0, errNotImpl("ListAllTokens")
 }
@@ -855,6 +875,9 @@ func (m *BaseMockDB) UpdateStorageQuota(ctx context.Context, quota *models.Stora
 }
 func (m *BaseMockDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	return errNotImpl("DecrementStorageUsage")
+}
+func (m *BaseMockDB) StorageTierUsage(ctx context.Context) ([]models.TierUsage, error) {
+	return nil, errNotImpl("StorageTierUsage")
 }
 func (m *BaseMockDB) StorageBackendBusyReason(ctx context.Context, backendID string) (string, error) {
 	return "", errNotImpl("StorageBackendBusyReason")

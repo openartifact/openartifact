@@ -111,6 +111,11 @@ type Request struct {
 	// Resource is a human-readable description for the audit trail
 	// (e.g. "com/acme/lib/1.0/lib-1.0.jar").
 	Resource string
+	// Package and Version name the package version being deleted when the
+	// handler knows them; they make the delete findable in the per-package
+	// activity of a repository. Optional.
+	Package string
+	Version string
 }
 
 // Delete deletes the rows of req: it moves them to the trash when the
@@ -139,7 +144,7 @@ func Delete(ctx context.Context, db database.Database, req Request, hard func() 
 		}
 	}
 
-	AuditDeleted(ctx, req.RepoID, req.Kind, firstOrEmpty(req.IDs), soft, req.Resource)
+	AuditDeleted(ctx, req.RepoID, req.Kind, firstOrEmpty(req.IDs), soft, req.Resource, req.Package, req.Version)
 
 	return nil
 }
@@ -147,13 +152,13 @@ func Delete(ctx context.Context, db database.Database, req Request, hard func() 
 // AuditDeleted records one artifact.deleted event: soft when the row went to
 // the trash, permanent otherwise. Delete does it for its callers; a caller
 // that deletes by other means (the generic package delete) calls it itself.
-func AuditDeleted(ctx context.Context, repoID string, kind models.TrashKind, id string, soft bool, resource string) {
+func AuditDeleted(ctx context.Context, repoID string, kind models.TrashKind, id string, soft bool, resource, pkg, version string) {
 	verb := "deleted"
 	if soft {
 		verb = "moved to trash"
 	}
 
-	auditEvent(ctx, audit.ActionArtifactDeleted, repoID, string(kind), id, verb+": "+resource)
+	auditEvent(ctx, audit.ActionArtifactDeleted, repoID, string(kind), id, verb+": "+resource, pkg, version, resource)
 }
 
 func firstOrEmpty(ids []string) string {
@@ -171,7 +176,12 @@ func AuditRestored(ctx context.Context, item *models.TrashItem) {
 		action = audit.ActionRepositoryRestored
 	}
 
-	auditEvent(ctx, action, item.RepositoryID, string(item.Kind), item.ID, "restored: "+Describe(item))
+	pkg, version := item.Name, item.Version
+	if item.Kind == models.TrashKindRepository {
+		pkg, version = "", ""
+	}
+
+	auditEvent(ctx, action, item.RepositoryID, string(item.Kind), item.ID, "restored: "+Describe(item), pkg, version, Describe(item))
 }
 
 // AuditPurged records that a trashed item was permanently removed. ctx may
@@ -195,7 +205,12 @@ func AuditPurged(ctx context.Context, res *models.TrashPurgeResult, reason strin
 		repoID = ""
 	}
 
-	auditEvent(ctx, action, repoID, string(res.Kind), res.ID, fmt.Sprintf("purged (%s): %s", reason, desc))
+	pkg, version := res.Name, res.Version
+	if res.Kind == models.TrashKindRepository {
+		pkg, version = "", ""
+	}
+
+	auditEvent(ctx, action, repoID, string(res.Kind), res.ID, fmt.Sprintf("purged (%s): %s", reason, desc), pkg, version, desc)
 }
 
 // Describe renders an item as "name version" for audit messages.
@@ -207,7 +222,7 @@ func Describe(item *models.TrashItem) string {
 	return item.Name + " " + item.Version
 }
 
-func auditEvent(ctx context.Context, action, repoID, resourceType, resourceID, details string) {
+func auditEvent(ctx context.Context, action, repoID, resourceType, resourceID, details, pkg, version, subject string) {
 	l := audit.Default()
 	if l == nil {
 		return
@@ -218,6 +233,9 @@ func auditEvent(ctx context.Context, action, repoID, resourceType, resourceID, d
 		ActorType:    "system",
 		Details:      details,
 		ResourceType: &resourceType,
+		Package:      pkg,
+		Version:      version,
+		Subject:      subject,
 	}
 
 	if repoID != "" {

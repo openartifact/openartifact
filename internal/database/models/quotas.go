@@ -77,3 +77,51 @@ type ProjectUsage struct {
 	ArtifactCount int64
 	Repositories  []ProjectRepoUsage
 }
+
+// ProjectStats is what the project list shows next to each project: direct
+// members, live usage (the sum of its repositories' counters, trashed ones
+// included, as ProjectUsage) and the size ceiling (0: no quota).
+type ProjectStats struct {
+	MemberCount  int
+	SizeBytes    int64
+	MaxSizeBytes int64
+}
+
+// Quota scopes of QuotaOverview.
+const (
+	QuotaScopeRepository = "repository"
+	QuotaScopeProject    = "project"
+)
+
+// QuotaListParams selects a page of the instance-wide quota overview.
+type QuotaListParams struct {
+	// Scope keeps one scope only ("" for both).
+	Scope string
+	// LimitedOnly keeps only quotas that enforce a limit.
+	LimitedOnly bool
+	// Query is a case-insensitive substring of the repository or project name.
+	Query string
+	Page  int
+	Limit int
+}
+
+// QuotaOverview is one line of the instance-wide quota overview: a
+// repository's or a project's limits next to its live usage. A limit of 0 means
+// unlimited.
+type QuotaOverview struct {
+	Scope                string
+	Name                 string
+	Project              string // owning project of a repository ("" when none)
+	MaxSizeBytes         int64
+	MaxArtifactCount     int64
+	WarnThresholdPercent int
+	UsedBytes            int64
+	ArtifactCount        int64
+}
+
+// RepositoryUsage summarises what a repository holds.
+type RepositoryUsage struct {
+	PackageCount    int64
+	VersionCount    int64
+	LastPublishedAt *time.Time
+}

@@ -223,8 +223,28 @@ func TestLogAfterShutdownDoesNotPanic(t *testing.T) {
 }
 
 func TestBuildDetailsJSONValidWithControlChars(t *testing.T) {
-	out := buildDetailsJSON("bad\x00\x01\"\\ msg", "us\ber\u2028")
+	out := buildDetailsJSON(AuditEvent{Details: "bad\x00\x01\"\\ msg", Actor: "us\ber\u2028", Package: "p\x00", Version: "v\u2028", Subject: "s\""})
 	if !json.Valid([]byte(out)) {
 		t.Fatalf("invalid JSON: %q", out)
+	}
+}
+
+func TestBuildDetailsJSONKeys(t *testing.T) {
+	var got map[string]string
+
+	out := buildDetailsJSON(AuditEvent{Details: "m", Actor: "a", Package: "pkg", Version: "1.0", Subject: "pkg 1.0"})
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]string{"message": "m", "actor": "a", "package": "pkg", "version": "1.0", "subject": "pkg 1.0"}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("details[%q] = %q, want %q", k, got[k], v)
+		}
+	}
+
+	if out := buildDetailsJSON(AuditEvent{Details: "only"}); out != `{"message":"only"}` {
+		t.Errorf("empty keys must be omitted, got %s", out)
 	}
 }

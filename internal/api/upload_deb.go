@@ -516,7 +516,7 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	err = trash.Delete(r.Context(), h.db, trash.Request{
-		RepoID: repoID, Kind: models.TrashKindDeb, IDs: []string{packageID}, Resource: comp.Filename,
+		RepoID: repoID, Kind: models.TrashKindDeb, IDs: []string{packageID}, Resource: comp.Filename, Package: comp.Name, Version: comp.Version,
 	}, func() error {
 		return h.hardDelete(r.Context(), repoID, repoName, packageID, sha, size)
 	})

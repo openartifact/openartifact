@@ -1626,6 +1626,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		ttl, negTTL, maxStale := r.CacheTTLSeconds, r.NegativeCacheTTLSeconds, r.MaxStaleSeconds
 		resp.UpstreamURL = r.UpstreamURL
 		resp.UpstreamUsername = r.UpstreamUsername
+		resp.UpstreamPasswordSet = r.UpstreamPasswordEnc != ""
 		resp.CacheTTLSeconds = &ttl
 		resp.NegativeCacheTTLSeconds = &negTTL
 		resp.MaxStaleSeconds = &maxStale

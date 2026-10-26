@@ -74,3 +74,75 @@ func (q *Queries) PurgeAuditLogsBefore(ctx context.Context, arg PurgeAuditLogsBe
 	}
 	return result.RowsAffected(), nil
 }
+
+const resolveAuditNames = `-- name: ResolveAuditNames :many
+SELECT 'user'::text AS kind, id::text AS id, username::text AS name
+FROM auth_users WHERE id = ANY($1::uuid[])
+UNION ALL
+SELECT 'group', id::text, name::text FROM auth_groups WHERE id = ANY($2::uuid[])
+UNION ALL
+SELECT 'repository', id::text, name::text FROM repositories WHERE id = ANY($3::uuid[])
+UNION ALL
+SELECT 'project', id::text, name::text FROM projects WHERE id = ANY($4::uuid[])
+UNION ALL
+SELECT 'permission_target', id::text, name::text FROM permission_targets WHERE id = ANY($5::uuid[])
+UNION ALL
+SELECT 'gpg_key', id::text, name::text FROM gpg_keys WHERE id = ANY($6::uuid[])
+UNION ALL
+SELECT 'sso_provider', id::text, slug::text FROM auth_sso_providers WHERE id = ANY($7::uuid[])
+UNION ALL
+SELECT 'bundle', id::text, (name || ' ' || version)::text FROM release_bundles WHERE id = ANY($8::uuid[])
+UNION ALL
+SELECT 'token', id::text, name::text FROM auth_tokens WHERE id = ANY($9::uuid[])
+`
+
+type ResolveAuditNamesParams struct {
+	UserIds             []string `db:"user_ids" json:"user_ids"`
+	GroupIds            []string `db:"group_ids" json:"group_ids"`
+	RepositoryIds       []string `db:"repository_ids" json:"repository_ids"`
+	ProjectIds          []string `db:"project_ids" json:"project_ids"`
+	PermissionTargetIds []string `db:"permission_target_ids" json:"permission_target_ids"`
+	GpgKeyIds           []string `db:"gpg_key_ids" json:"gpg_key_ids"`
+	SsoProviderIds      []string `db:"sso_provider_ids" json:"sso_provider_ids"`
+	BundleIds           []string `db:"bundle_ids" json:"bundle_ids"`
+	TokenIds            []string `db:"token_ids" json:"token_ids"`
+}
+
+type ResolveAuditNamesRow struct {
+	Kind string `db:"kind" json:"kind"`
+	ID   string `db:"id" json:"id"`
+	Name string `db:"name" json:"name"`
+}
+
+// Display names of the entities one audit page refers to, one primary-key
+// lookup arm per kind so a page costs a single round trip however many rows it
+// has. Entities that no longer exist simply yield no row.
+func (q *Queries) ResolveAuditNames(ctx context.Context, arg ResolveAuditNamesParams) ([]ResolveAuditNamesRow, error) {
+	rows, err := q.db.Query(ctx, resolveAuditNames,
+		arg.UserIds,
+		arg.GroupIds,
+		arg.RepositoryIds,
+		arg.ProjectIds,
+		arg.PermissionTargetIds,
+		arg.GpgKeyIds,
+		arg.SsoProviderIds,
+		arg.BundleIds,
+		arg.TokenIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolveAuditNamesRow{}
+	for rows.Next() {
+		var i ResolveAuditNamesRow
+		if err := rows.Scan(&i.Kind, &i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

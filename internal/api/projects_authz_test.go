@@ -71,6 +71,11 @@ type projectsMockDB struct {
 	settings     map[string]string
 	projectRepos []*models.Repository // live repositories of project acme, newest first
 
+	// stats is what ListProjectStats returns (by project ID); statsCalls counts
+	// the calls: the list must batch them.
+	stats      map[string]*models.ProjectStats
+	statsCalls int
+
 	// memberLookups counts the user and member reads and writes a handler
 	// issued: a malformed id must be rejected before any of them.
 	memberLookups int
@@ -310,6 +315,20 @@ func (db *projectsMockDB) CountRepositoriesByProject(_ context.Context, projectI
 	}
 
 	return counts, nil
+}
+
+func (db *projectsMockDB) ListProjectStats(_ context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {
+	db.statsCalls++
+
+	out := map[string]*models.ProjectStats{}
+
+	for _, id := range projectIDs {
+		if st, ok := db.stats[id]; ok {
+			out[id] = st
+		}
+	}
+
+	return out, nil
 }
 
 // ListProjectGrantsByUser derives the evaluator's grants the way the real
