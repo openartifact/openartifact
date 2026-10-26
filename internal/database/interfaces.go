@@ -73,6 +73,26 @@ type Database interface {
 	// GetRepoComponentBlob resolves a package-listing row id (any format) to its
 	// blob, scoped to repoID. Returns nil, nil when the id is not in that repository.
 	GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error)
+	// GetRepoComponentDetail resolves a package-listing row id (any format) to
+	// the row with its stored metadata, scoped to repoID. Returns nil, nil when
+	// the id is not in that repository.
+	GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error)
+	// RepoCatalogStats returns the stored size, quota and security aggregates of
+	// the repositories, one entry per id, and the newest-package time when
+	// withLastPublished.
+	RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error)
+	// CountRepoPackageNames returns the number of distinct package names of
+	// each repository, one entry per id.
+	CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error)
+	// ListRepoPackageRollup lists a repository's packages, one row per package
+	// (latest version, version count, latest size), with the total.
+	ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error)
+	// ArtifactSecurity returns the scan state of the listed package rows of a
+	// repository by row id; rows never scanned have no entry.
+	ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error)
+	// ListRecentPackages returns the newest package versions across repoIDs,
+	// newest first, at most limit.
+	ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error)
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
 	// GetComponentBySHA256 returns the live rpm or deb package in a repository whose blob has the given sha256, or nil.

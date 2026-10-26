@@ -91,6 +91,28 @@ func (m *BaseMockDB) GetComponentByID(ctx context.Context, id string) (*models.C
 func (m *BaseMockDB) GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error) {
 	return nil, errNotImpl("GetRepoComponentBlob")
 }
+func (m *BaseMockDB) GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error) {
+	return nil, errNotImpl("GetRepoComponentDetail")
+}
+
+// The catalog aggregates below default to "nothing recorded": the repository and
+// package listings decorate their rows with them, and a test of the listing
+// itself should not have to stub them.
+func (m *BaseMockDB) RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error) {
+	return map[string]models.RepoStats{}, nil
+}
+func (m *BaseMockDB) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+func (m *BaseMockDB) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
+	return nil, 0, errNotImpl("ListRepoPackageRollup")
+}
+func (m *BaseMockDB) ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error) {
+	return map[string]models.ArtifactSecurity{}, nil
+}
+func (m *BaseMockDB) ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error) {
+	return nil, errNotImpl("ListRecentPackages")
+}
 func (m *BaseMockDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
 	return nil, errNotImpl("GetComponentByFilename")
 }
