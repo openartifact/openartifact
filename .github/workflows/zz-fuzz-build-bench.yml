@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Temporary diagnostic. Removed before merge.
+name: zz fuzz build bench
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/zz-fuzz-build-bench.yml"
+      - ".github/zz-diag.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build -f .clusterfuzzlite/Dockerfile -t oa-cfl .
+
+      - name: Repro
+        run: |
+          chmod +x .github/zz-diag.sh
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm -e FUZZING_ENGINE=libfuzzer -e SANITIZER=address -e ARCHITECTURE=x86_64 \
+            -e FUZZING_LANGUAGE=go -e PROJECT_NAME=openartifact \
+            -v "$PWD/.github/zz-diag.sh:/src/build.sh:ro" -v "$PWD/.github/zz-crash:/src/openartifact/.github/zz-crash:ro" \
+            -v "$RUNNER_TEMP/out:/out" oa-cfl compile 2>&1 | grep -E '^DIAG|rror|panic|upstream' || true
