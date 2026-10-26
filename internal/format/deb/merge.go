@@ -229,7 +229,9 @@ func (r UpstreamRelease) HasIndex(comp, arch string) bool {
 func DecompressIndex(r io.ReadCloser, path string) (io.ReadCloser, error) {
 	switch {
 	case strings.HasSuffix(path, ".xz"):
-		xr, err := xz.NewReader(r)
+		// The xz decoder reads its input a byte at a time; unbuffered that is
+		// one read syscall per byte of a blob file.
+		xr, err := xz.NewReader(bufio.NewReaderSize(r, 64<<10))
 		if err != nil {
 			_ = r.Close()
 			return nil, fmt.Errorf("deb: xz index: %w", err)

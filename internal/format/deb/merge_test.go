@@ -158,3 +158,51 @@ func TestDecompressIndex(t *testing.T) {
 		t.Error("a corrupt gzip index must be an error")
 	}
 }
+
+// countingReader counts the Read calls that reach the underlying source.
+type countingReader struct {
+	r     io.Reader
+	reads int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	c.reads++
+	return c.r.Read(p)
+}
+
+// TestDecompressIndexReadsInLargeChunks: the xz decoder pulls its input one
+// byte at a time, which on a file-backed proxy blob is one read system call per
+// byte, so DecompressIndex must buffer the source.
+func TestDecompressIndexReadsInLargeChunks(t *testing.T) {
+	var plain strings.Builder
+
+	for i := range 20000 {
+		plain.WriteString("Package: p")
+		plain.WriteString(strings.Repeat(string(rune('a'+i%26)), 1+i%7))
+		plain.WriteString("\nVersion: 1\n\n")
+	}
+
+	var xzBuf bytes.Buffer
+
+	xw, _ := xz.NewWriter(&xzBuf)
+	_, _ = xw.Write([]byte(plain.String()))
+	_ = xw.Close()
+
+	src := &countingReader{r: bytes.NewReader(xzBuf.Bytes())}
+
+	rc, err := DecompressIndex(io.NopCloser(src), "main/binary-amd64/Packages.xz")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := io.ReadAll(rc)
+	_ = rc.Close()
+
+	if err != nil || string(out) != plain.String() {
+		t.Fatalf("decompressed %d bytes, err %v", len(out), err)
+	}
+
+	if limit := xzBuf.Len()/1024 + 8; src.reads > limit {
+		t.Errorf("%d reads of the source for %d compressed bytes, want at most %d", src.reads, xzBuf.Len(), limit)
+	}
+}
