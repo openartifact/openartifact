@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Development
 
-How to build, test and release OpenArtifact, and what CI enforces. For the code layout see [architecture](architecture.md); for contribution rules see [CONTRIBUTING.md](../../CONTRIBUTING.md) and [AGENTS.md](../../AGENTS.md) (conventions and invariants for humans and coding agents alike).
+How to build, test and release OpenArtifact, and what CI enforces. For the code layout see [architecture](architecture.md); for the black-box suites (API fuzzing, e2e, monkey walk, property tests) see [testing](testing.md); for contribution rules see [CONTRIBUTING.md](../../CONTRIBUTING.md) and [AGENTS.md](../../AGENTS.md) (conventions and invariants for humans and coding agents alike).
 
 ```sh
 make test              # unit tests (race detector)
