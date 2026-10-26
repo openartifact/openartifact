@@ -12,7 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -45,7 +46,7 @@ func (m *loginExpiryDB) UpdateUserLastLogin(context.Context, string, time.Time) 
 func TestLoginRejectsExpiredGeneratedPassword(t *testing.T) {
 	const password = "generated-password-123"
 
-	hash, err := auth.HashPassword(password)
+	hash, err := passwd.HashPassword(password)
 	if err != nil {
 		t.Fatal(err)
 	}

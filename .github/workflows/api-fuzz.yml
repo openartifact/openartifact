@@ -66,7 +66,7 @@ jobs:
       - name: Build the server
         env:
           OA_BIN: ${{ runner.temp }}/oa-server
-        run: go build -o "$OA_BIN" ./cmd/server
+        run: go build -tags grpcnotrace -o "$OA_BIN" ./cmd/server
 
       - name: Start and seed the server
         env:

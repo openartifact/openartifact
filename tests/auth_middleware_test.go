@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -35,7 +37,7 @@ func setupMWUser(t *testing.T, db *MockDatabase) (*models.User, string) {
 
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword("mw-password-123")
+	hash, err := passwd.HashPassword("mw-password-123")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -100,7 +102,7 @@ func TestMiddleware_CookieTakesPriorityOverBearer(t *testing.T) {
 	log := newMWLogger(t)
 	user, cookieValue := setupMWUser(t, db)
 
-	hash2, _ := auth.HashPassword("other-pass-456")
+	hash2, _ := passwd.HashPassword("other-pass-456")
 	now := time.Now()
 
 	otherUser := &models.User{
@@ -155,7 +157,7 @@ func TestMiddleware_BearerTokenResolvedUser(t *testing.T) {
 	db := newMockDatabase()
 	log := newMWLogger(t)
 
-	hash, _ := auth.HashPassword("bearer-pass-789")
+	hash, _ := passwd.HashPassword("bearer-pass-789")
 	now := time.Now()
 
 	user := &models.User{

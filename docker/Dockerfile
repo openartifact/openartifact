@@ -26,7 +26,8 @@ COPY web/ ./
 
 # Skip vue-tsc type-check (known musl compat issue with TS 6 + project references).
 # Vite build catches broken imports; run `vue-tsc --noEmit` locally or in CI.
-RUN bunx vite build
+# precompress.js gzips dist/ once so the binary embeds each asset a single time.
+RUN bunx vite build && bun scripts/precompress.js
 # ---- Backend build stage ----------------------------------------------------
 FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
 
@@ -54,13 +55,16 @@ ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 ARG TARGETOS=linux
 ARG TARGETARCH
+# grpcnotrace drops gRPC's net/trace debug pages (unused: EnableTracing is
+# never set), which keeps html/template out of the server and lets the linker
+# discard unreachable methods (about 9 MB).
 # The binary reports the 7-character short SHA and an RFC 3339 UTC build time
 # (second precision), whatever form the caller passed; the OCI revision/created
 # labels below keep the values exactly as given.
 RUN COMMIT_SHORT="$(printf '%.7s' "${COMMIT}")"; \
     BUILD_TIME_RFC3339="${BUILD_TIME}"; \
     case "${BUILD_TIME}" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z) BUILD_TIME_RFC3339="$(printf '%.19sZ' "${BUILD_TIME}")" ;; esac; \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -tags grpcnotrace \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_SHORT} -X main.buildTime=${BUILD_TIME_RFC3339}" \
     -o openartifact ./cmd/server
 

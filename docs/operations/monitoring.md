@@ -236,7 +236,7 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 
 ### Overhead and binary size
 
-The OpenTelemetry SDK and the OTLP exporters are always compiled in, enabled or not (about 14 MB: the stripped server binary grows from 32.3 to 45.9 MB, and `go list -m all` from 159 to 217 modules, most of them OpenTelemetry, gRPC and protobuf). With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
+The OpenTelemetry SDK and the OTLP exporters are always compiled in, enabled or not (about 5 MB of the 44 MB stripped `linux/amd64` server binary: OpenTelemetry 1.7 MB, gRPC 1.1 MB, protobuf 1.6 MB and the `telemetry` package 0.3 MB, measured with go-size-analyzer; `go list -m all` grew from 159 to 221 modules). The release builds use the `grpcnotrace` build tag, which drops gRPC's `net/trace` debug pages (`EnableTracing` is never set, so nothing changes at runtime); without it the same dependencies cost about 14 MB, because `net/trace` pulls in `html/template` and the linker then keeps every exported method of every reachable type. With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
 
 ### Trying it locally
 

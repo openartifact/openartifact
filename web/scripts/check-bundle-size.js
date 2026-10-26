@@ -7,14 +7,15 @@
 import { readFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { gzipSync } from 'zlib'
+import { gunzipSync, gzipSync } from 'zlib'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const assetsDir = join(__dirname, '..', 'dist', 'assets')
 
+// dist/ is precompressed by scripts/precompress.js: foo.js is stored as foo.js.gz.
 let files
 try {
-  files = readdirSync(assetsDir)
+  files = readdirSync(assetsDir).map((f) => f.replace(/\.gz$/, ''))
 } catch {
   console.error('dist/assets not found — run npm run build first')
   process.exit(1)
@@ -24,9 +25,10 @@ try {
 // lazy chunks are excluded. Falls back to all assets if the manifest is absent.
 let initial = files.filter((f) => f.endsWith('.js') || f.endsWith('.css'))
 try {
-  const manifest = JSON.parse(
-    readFileSync(join(assetsDir, '..', '.vite', 'manifest.json'), 'utf8'),
-  )
+  const manifestDir = join(assetsDir, '..', '.vite')
+  const manifestName = readdirSync(manifestDir).includes('manifest.json.gz') ? 'manifest.json.gz' : 'manifest.json'
+  const raw = readFileSync(join(manifestDir, manifestName))
+  const manifest = JSON.parse((manifestName.endsWith('.gz') ? gunzipSync(raw) : raw).toString('utf8'))
   const seen = new Set()
   const walk = (key) => {
     const c = manifest[key]
@@ -46,9 +48,17 @@ try {
   console.warn('dist/.vite/manifest.json not found — counting all assets')
 }
 
+function readAsset(file) {
+  try {
+    return gunzipSync(readFileSync(join(assetsDir, `${file}.gz`)))
+  } catch {
+    return readFileSync(join(assetsDir, file))
+  }
+}
+
 let totalGzip = 0
 for (const file of initial) {
-  totalGzip += gzipSync(readFileSync(join(assetsDir, file))).length
+  totalGzip += gzipSync(readAsset(file)).length
 }
 
 const kb = (totalGzip / 1024).toFixed(1)

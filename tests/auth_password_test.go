@@ -9,13 +9,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/passwd"
 )
 
 var argon2idTestPattern = regexp.MustCompile(`^\$argon2id\$v=19\$m=65536,t=1,p=4\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$`)
 
 func TestPasswordHash_Format(t *testing.T) {
-	hash, err := auth.HashPassword("hunter2")
+	hash, err := passwd.HashPassword("hunter2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -26,12 +26,12 @@ func TestPasswordHash_Format(t *testing.T) {
 }
 
 func TestPasswordVerify_Correct(t *testing.T) {
-	hash, err := auth.HashPassword("hunter2")
+	hash, err := passwd.HashPassword("hunter2")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
 
-	ok, err := auth.VerifyPassword("hunter2", hash)
+	ok, err := passwd.VerifyPassword("hunter2", hash)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -42,12 +42,12 @@ func TestPasswordVerify_Correct(t *testing.T) {
 }
 
 func TestPasswordVerify_Wrong(t *testing.T) {
-	hash, err := auth.HashPassword("correct-horse-battery")
+	hash, err := passwd.HashPassword("correct-horse-battery")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
 
-	ok, err := auth.VerifyPassword("wrong-password", hash)
+	ok, err := passwd.VerifyPassword("wrong-password", hash)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,12 +58,12 @@ func TestPasswordVerify_Wrong(t *testing.T) {
 }
 
 func TestPasswordHash_DifferentSalts(t *testing.T) {
-	h1, err := auth.HashPassword("same-password")
+	h1, err := passwd.HashPassword("same-password")
 	if err != nil {
 		t.Fatalf("hash1: %v", err)
 	}
 
-	h2, err := auth.HashPassword("same-password")
+	h2, err := passwd.HashPassword("same-password")
 	if err != nil {
 		t.Fatalf("hash2: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestPasswordHash_Concurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			h, err := auth.HashPassword(plaintexts[i])
+			h, err := passwd.HashPassword(plaintexts[i])
 			results[i] = h
 			errs[i] = err
 		}()

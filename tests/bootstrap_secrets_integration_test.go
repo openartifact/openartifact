@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -297,7 +299,7 @@ func TestPasswordChangeClearsExpiry(t *testing.T) {
 		t.Fatalf("expiry = %v (%v), want %v", at, err, now.Add(time.Hour))
 	}
 
-	hash, err := auth.HashPassword("a-new-password-123")
+	hash, err := passwd.HashPassword("a-new-password-123")
 	if err != nil {
 		t.Fatal(err)
 	}

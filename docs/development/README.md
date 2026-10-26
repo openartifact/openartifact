@@ -72,6 +72,23 @@ bun run generate-api   # regenerate src/api/generated from internal/api/openapi.
 
 Start the server on `:8080` for the dev server to talk to. Build the server with `-tags dev` and set `OPENARTIFACT_DEV=1` to make it proxy UI requests to `http://localhost:5173` instead of serving the embedded build (release binaries ignore the variable).
 
+### Binary size
+
+`make build`, `docker/Dockerfile` and `.goreleaser.yml` produce the same shape of binary: `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` (no symbol table, no DWARF) plus the version `-X` flags. The server is additionally built with `-tags grpcnotrace`, which drops gRPC's `net/trace` debug pages: `EnableTracing` is never set, and with the pages gone `html/template` leaves the binary and the linker can discard methods nothing calls (about 9 MB). Add the tag when you build the server by hand for a size comparison.
+
+Three more rules keep the binaries small:
+
+- `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` serves that gzip as it is and expands it once at startup for clients that do not accept gzip. Source maps are not emitted.
+- `cmd/oa` and `cmd/resetpw` link no server code: no database, storage, telemetry, web or cloud-SDK packages (`internal/passwd` holds the password hashing `resetpw` needs; `internal/auth` pulls in the whole server). `tests/binary_deps_test.go` fails when an import brings one back, and when the server links `golang.org/x/net/trace` again.
+- UPX and feature-removing build tags are not used: the official image carries every documented feature.
+
+To see where the bytes go, build the server without `-s -w` and analyse it with [go-size-analyzer](https://github.com/Zxilly/go-size-analyzer) (it needs the symbol table; stripped binaries are not analysed):
+
+```sh
+CGO_ENABLED=0 go build -trimpath -tags grpcnotrace -o /tmp/oa-server.sym ./cmd/server
+go install github.com/Zxilly/go-size-analyzer/cmd/gsa@latest && gsa /tmp/oa-server.sym
+```
+
 If you change the HTTP API, update `internal/api/openapi.json` and run `bun run generate-api`; CI fails when `web/src/api/generated` drifts.
 
 ## Testing

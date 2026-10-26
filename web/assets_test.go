@@ -10,8 +10,10 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -426,5 +428,68 @@ func TestEmbeddedDistCompiles(t *testing.T) {
 		if _, err2 := fs.Stat(distFS, "dist/index.html"); err2 != nil {
 			t.Fatalf("embedded dist has neither .gitkeep nor index.html: %v", err)
 		}
+	}
+}
+
+// TestSPA_PrecompressedBuild covers the layout scripts/precompress.js leaves in
+// dist/: compressible files are stored only as name.gz. Every response must be
+// identical to the one for the same files stored plain: the same headers and
+// validators, the stored gzip for clients that accept it and the expanded
+// bytes for the rest.
+func TestSPA_PrecompressedBuild(t *testing.T) {
+	plainH, plainFS := testSPA()
+
+	stored := fstest.MapFS{}
+
+	for name, f := range plainFS {
+		if !compressible(mime.TypeByExtension(path.Ext(name))) {
+			stored[name] = f
+
+			continue
+		}
+
+		stored[name+".gz"] = &fstest.MapFile{Data: gzipBytes(f.Data)}
+	}
+
+	if _, ok := stored["index.html.gz"]; !ok {
+		t.Fatal("fixture did not precompress index.html")
+	}
+
+	h := newSPAHandler(stored, nil)
+
+	for _, p := range []string{"/", "/assets/index-AbCd1234.js", "/assets/index-AbCd1234.css", "/favicon.svg", "/assets/logo-ZyXw9876.png"} {
+		for _, enc := range []string{"", "gzip"} {
+			hdr := map[string]string{"Accept-Encoding": enc}
+			want, got := do(plainH, http.MethodGet, p, hdr), do(h, http.MethodGet, p, hdr)
+
+			if got.Code != http.StatusOK || got.Code != want.Code {
+				t.Fatalf("GET %s (%q) = %d, want %d", p, enc, got.Code, want.Code)
+			}
+
+			for _, k := range []string{"Content-Type", "Content-Encoding", "Cache-Control", "ETag", "Vary", "Content-Length"} {
+				if got.Header().Get(k) != want.Header().Get(k) {
+					t.Errorf("GET %s (%q) %s = %q, want %q", p, enc, k, got.Header().Get(k), want.Header().Get(k))
+				}
+			}
+
+			if !bytes.Equal(got.Body.Bytes(), want.Body.Bytes()) {
+				t.Errorf("GET %s (%q): body differs from the plain build", p, enc)
+			}
+		}
+	}
+
+	// The stored file name is not a public URL.
+	if rw := do(h, http.MethodGet, "/assets/index-AbCd1234.js.gz", nil); rw.Code != http.StatusNotFound {
+		t.Errorf("GET of the stored .gz name = %d, want 404", rw.Code)
+	}
+}
+
+// TestSPA_CorruptPrecompressedFileIsSkipped keeps a damaged .gz from being
+// served as garbage.
+func TestSPA_CorruptPrecompressedFileIsSkipped(t *testing.T) {
+	h := newSPAHandler(fstest.MapFS{"assets/app-AbCd1234.js.gz": {Data: []byte("not gzip")}}, nil)
+
+	if rw := do(h, http.MethodGet, "/assets/app-AbCd1234.js", nil); rw.Code != http.StatusNotFound {
+		t.Errorf("GET = %d, want 404", rw.Code)
 	}
 }

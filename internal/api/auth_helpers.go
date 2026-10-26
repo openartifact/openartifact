@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
@@ -125,11 +127,11 @@ func requireRepoAdmin(w http.ResponseWriter, r *http.Request, evaluator *auth.Ev
 }
 
 // checkPasswordPolicy validates plain against the shared password policy
-// (auth.ValidatePassword) and writes a 400 invalid_request carrying the
+// (passwd.ValidatePassword) and writes a 400 invalid_request carrying the
 // sentinel's message when it fails. It returns true when the password is
 // acceptable.
 func checkPasswordPolicy(w http.ResponseWriter, plain string) bool {
-	if err := auth.ValidatePassword(plain); err != nil {
+	if err := passwd.ValidatePassword(plain); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return false
 	}

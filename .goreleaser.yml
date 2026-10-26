@@ -15,6 +15,8 @@ builds:
     binary: openartifact
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
+    # Drops gRPC's net/trace debug pages (unused), see docker/Dockerfile.
+    tags: [grpcnotrace]
     ldflags:
       - -s -w
       - -X main.version={{.Version}}

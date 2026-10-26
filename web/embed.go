@@ -85,11 +85,11 @@ func shellFor(ctx context.Context, src ShellSource, cur *atomic.Pointer[shell], 
 
 	c := &shell{
 		etag:     snap.ETag,
-		manifest: newAsset("application/manifest+json", branding.Manifest(snap), false),
+		manifest: newAsset("application/manifest+json", branding.Manifest(snap), false, nil),
 	}
 
 	if rawIndex != nil {
-		c.index = newAsset("text/html; charset=utf-8", branding.PatchIndex(rawIndex, snap), false)
+		c.index = newAsset("text/html; charset=utf-8", branding.PatchIndex(rawIndex, snap), false, nil)
 	}
 
 	cur.Store(c)

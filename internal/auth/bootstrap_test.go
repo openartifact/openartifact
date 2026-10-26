@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -94,7 +96,7 @@ func TestBootstrapSuppliedPasswordPrintsNothing(t *testing.T) {
 				t.Errorf("supplied password must not force a change or expire: %+v", spec)
 			}
 
-			if ok, err := VerifyPassword(pw, spec.PasswordHash); err != nil || !ok {
+			if ok, err := passwd.VerifyPassword(pw, spec.PasswordHash); err != nil || !ok {
 				t.Errorf("stored hash does not match the supplied password (trailing newline trimmed): %v", err)
 			}
 		})
@@ -119,7 +121,7 @@ func TestBootstrapPasswordFileWinsAndForceFlag(t *testing.T) {
 		t.Error("forcePasswordChange must force a change of a supplied password")
 	}
 
-	if ok, _ := VerifyPassword("from-the-file-123", spec.PasswordHash); !ok {
+	if ok, _ := passwd.VerifyPassword("from-the-file-123", spec.PasswordHash); !ok {
 		t.Error("the file must win over the plain value")
 	}
 }

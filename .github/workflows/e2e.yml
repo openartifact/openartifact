@@ -82,7 +82,7 @@ jobs:
 
       # The SPA is embedded at build time, so the UI is built first.
       - name: Build the server
-        run: go build -o "$RUNNER_TEMP/oa-server" ./cmd/server
+        run: go build -tags grpcnotrace -o "$RUNNER_TEMP/oa-server" ./cmd/server
 
       - name: Install Lightpanda
         env:
@@ -203,7 +203,7 @@ jobs:
 
       # The SPA is embedded at build time, so the UI is built first.
       - name: Build the server
-        run: go build -o "$RUNNER_TEMP/oa-server" ./cmd/server
+        run: go build -tags grpcnotrace -o "$RUNNER_TEMP/oa-server" ./cmd/server
 
       - name: Install Lightpanda
         env:

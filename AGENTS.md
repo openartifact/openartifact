@@ -25,6 +25,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/netutil` | SSRF-safe outbound HTTP helpers (webhooks, proxy upstreams) |
 | `internal/middleware` | RBAC, CSRF, audit, CORS, logging |
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
+| `internal/passwd` | Local-password policy and Argon2id hashing; imports nothing from the server so `cmd/resetpw` stays small (`tests/binary_deps_test.go` guards the import graphs of `oa` and `resetpw`) |
 | `internal/database` | `Database` interface (`interfaces.go`), Postgres impl (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
 | `internal/storage` | Blob stores: filesystem, S3, GCS, Azure, OCI; `SafeDeleteBlob` refcounting |
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, AI analysis |

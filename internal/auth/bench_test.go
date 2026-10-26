@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/passwd"
+
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -316,7 +318,7 @@ func (d *benchSessionDB) GetSessionByTokenHash(_ context.Context, hash string) (
 // BenchmarkVerifyPassword is the Argon2id login cost (intentionally slow;
 // reported so login throughput can be reasoned about).
 func BenchmarkVerifyPassword(b *testing.B) {
-	hash, err := HashPassword("correct horse battery staple")
+	hash, err := passwd.HashPassword("correct horse battery staple")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -324,7 +326,7 @@ func BenchmarkVerifyPassword(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if ok, err := VerifyPassword("correct horse battery staple", hash); err != nil || !ok {
+		if ok, err := passwd.VerifyPassword("correct horse battery staple", hash); err != nil || !ok {
 			b.Fatalf("VerifyPassword = %v, %v", ok, err)
 		}
 	}
