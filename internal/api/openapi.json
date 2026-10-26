@@ -718,6 +718,9 @@
           "federated": {
             "type": "boolean",
             "description": "True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation."
+          },
+          "stats": {
+            "$ref": "#/components/schemas/RepositoryStats"
           }
         },
         "required": [
@@ -725,6 +728,178 @@
           "name",
           "format"
         ]
+      },
+      "RepositoryStats": {
+        "type": "object",
+        "description": "Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).",
+        "properties": {
+          "package_count": { "type": "integer", "format": "int64", "description": "Number of distinct package names, counted as the package listing names them." },
+          "size_bytes": { "type": "integer", "format": "int64", "description": "Stored size, from the repository's quota counter (equals quota.used_bytes)." },
+          "last_published_at": { "type": "string", "format": "date-time", "description": "Time of the newest package; absent for an empty repository." },
+          "security": {
+            "type": "object",
+            "description": "Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any.",
+            "properties": {
+              "critical": { "type": "integer", "format": "int64" },
+              "high": { "type": "integer", "format": "int64" },
+              "medium": { "type": "integer", "format": "int64" },
+              "low": { "type": "integer", "format": "int64" },
+              "secrets": { "type": "integer", "format": "int64", "description": "Secret findings." },
+              "license_violations": { "type": "integer", "format": "int64", "description": "Artifacts whose license scan is quarantined (the server stores no other license violation count)." },
+              "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan; absent when never scanned." }
+            },
+            "required": ["critical", "high", "medium", "low", "secrets", "license_violations"]
+          },
+          "quota": {
+            "type": "object",
+            "properties": {
+              "limit_bytes": { "type": "integer", "format": "int64", "description": "Size quota; absent when unlimited." },
+              "used_bytes": { "type": "integer", "format": "int64" }
+            },
+            "required": ["used_bytes"]
+          }
+        },
+        "required": ["package_count", "size_bytes", "security", "quota"]
+      },
+      "PackageSecurity": {
+        "type": "object",
+        "description": "Vulnerability counts by severity.",
+        "properties": {
+          "critical": { "type": "integer", "format": "int64" },
+          "high": { "type": "integer", "format": "int64" },
+          "medium": { "type": "integer", "format": "int64" },
+          "low": { "type": "integer", "format": "int64" }
+        },
+        "required": ["critical", "high", "medium", "low"]
+      },
+      "PackageFile": {
+        "type": "object",
+        "description": "One row (file) of a repository's package listing.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Row id; the key of the package detail, download and scan endpoints." },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "format": { "type": "string" },
+          "arch": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" },
+          "sha256": { "type": "string" },
+          "filename": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "security": { "$ref": "#/components/schemas/PackageSecurity" },
+          "flagged": { "type": "boolean", "description": "A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type)." },
+          "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan; absent when never scanned (security is then all zero)." }
+        },
+        "required": ["id", "name", "version", "format", "arch", "size", "sha256", "filename", "created_at", "security", "flagged"]
+      },
+      "PackageGroup": {
+        "type": "object",
+        "description": "One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.",
+        "properties": {
+          "name": { "type": "string" },
+          "format": { "type": "string" },
+          "latest_version": { "type": "string", "description": "The most recently published version." },
+          "version_count": { "type": "integer" },
+          "size_bytes": { "type": "integer", "format": "int64", "description": "Size of the latest version, all its files summed." },
+          "updated_at": { "type": "string", "format": "date-time", "description": "Latest modification of any version." },
+          "security": { "$ref": "#/components/schemas/PackageSecurity" },
+          "flagged": { "type": "boolean" },
+          "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan of the latest version; absent when never scanned." }
+        },
+        "required": ["name", "format", "latest_version", "version_count", "size_bytes", "updated_at", "security", "flagged"]
+      },
+      "RecentPackage": {
+        "type": "object",
+        "properties": {
+          "repository": { "type": "string" },
+          "format": { "type": "string" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "created_by_name": { "type": "string", "description": "Never set: the server does not record who published a package." }
+        },
+        "required": ["repository", "format", "name", "version", "created_at"]
+      },
+      "PackageDetail": {
+        "type": "object",
+        "description": "One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "format": { "type": "string" },
+          "arch": { "type": "string" },
+          "filename": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" },
+          "sha256": { "type": "string" },
+          "md5": { "type": "string", "description": "Only for the formats that record it." },
+          "sha1": { "type": "string", "description": "Only for the formats that record it." },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "summary": { "type": "string" },
+          "description": { "type": "string" },
+          "license": { "type": "string" },
+          "homepage": { "type": "string" },
+          "metadata": {
+            "type": "array",
+            "description": "Format-specific fields, ordered by key; empty values are left out.",
+            "items": {
+              "type": "object",
+              "properties": { "key": { "type": "string" }, "value": { "type": "string" } },
+              "required": ["key", "value"]
+            }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "type": "string", "description": "Version requirement as the format writes it." },
+                "kind": { "type": "string", "description": "Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it." }
+              },
+              "required": ["name"]
+            }
+          },
+          "files": {
+            "type": "array",
+            "description": "All the files of this version (one per architecture, classifier or distribution), this one included; at most 200.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "format": "uuid" },
+                "filename": { "type": "string" },
+                "arch": { "type": "string" },
+                "size": { "type": "integer", "format": "int64" },
+                "sha256": { "type": "string" }
+              },
+              "required": ["id", "filename", "arch", "size", "sha256"]
+            }
+          },
+          "version_count": { "type": "integer", "description": "Versions of the package this one belongs to." },
+          "latest_version": { "type": "string" }
+        },
+        "required": ["id", "name", "version", "format", "arch", "filename", "size", "sha256", "created_at", "updated_at", "metadata", "dependencies", "files", "version_count", "latest_version"]
+      },
+      "ChecksumResult": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer", "description": "Number of files carrying the checksum." },
+          "packages": { "type": "array", "items": { "$ref": "#/components/schemas/ChecksumHit" } }
+        },
+        "required": ["total", "packages"]
+      },
+      "ChecksumHit": {
+        "type": "object",
+        "properties": {
+          "repository": { "type": "string" },
+          "format": { "type": "string" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "filename": { "type": "string", "description": "File within the package; empty for the formats with no file name of their own (conda, conan, docker, go)." },
+          "checksum": { "type": "string", "description": "The checksum searched for, lowercase." },
+          "algorithm": { "type": "string", "enum": ["sha256", "sha1", "md5"] }
+        },
+        "required": ["repository", "format", "name", "version", "filename", "checksum", "algorithm"]
       },
       "RepositoryMember": {
         "type": "object",
@@ -1126,6 +1301,10 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "version_count": {
+            "type": "integer",
+            "description": "Only with group=package: the number of versions of the package that match the search"
           }
         }
       },
@@ -5782,6 +5961,54 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only repositories whose name contains this text (case-insensitive, at most 200 characters)",
+            "schema": { "type": "string", "maxLength": 200 }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only repositories of this type",
+            "schema": { "type": "string", "enum": ["hosted", "proxy", "group"] }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only repositories of the project with this name; an unknown project matches nothing",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "description": "true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts)",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "near_quota",
+            "in": "query",
+            "description": "true keeps the repositories that have a size quota and have used at least quota_threshold of it",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "quota_threshold",
+            "in": "query",
+            "description": "Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8)",
+            "schema": { "type": "number", "minimum": 0, "exclusiveMinimum": true, "maximum": 1 }
+          },
+          {
+            "name": "unscanned",
+            "in": "query",
+            "description": "true keeps the repositories that were never scanned (no completed scan of any of their artifacts)",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name.",
+            "schema": { "type": "string", "enum": ["name", "updated", "last_published", "size"] }
           }
         ],
         "responses": {
@@ -6138,11 +6365,23 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "description": "package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped.",
+            "schema": { "type": "string", "enum": ["package"] }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "description": "With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.",
+            "schema": { "type": "boolean" }
           }
         ],
         "responses": {
           "200": {
-            "description": "List of packages",
+            "description": "List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package",
             "content": {
               "application/json": {
                 "schema": {
@@ -6151,16 +6390,28 @@
                     "total": {
                       "type": "integer"
                     },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
                     "packages": {
                       "type": "array",
                       "items": {
-                        "type": "object"
+                        "oneOf": [
+                          { "$ref": "#/components/schemas/PackageFile" },
+                          { "$ref": "#/components/schemas/PackageGroup" }
+                        ]
                       }
                     }
                   }
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid sort, group, flagged or q"
           },
           "404": {
             "description": "Repository not found"
@@ -9068,8 +9319,7 @@
           {
             "name": "q",
             "in": "query",
-            "required": true,
-            "description": "Search query: free text plus optional name:, format:, repo: and sha256: qualifiers",
+            "description": "Search query: free text plus optional name:, format:, repo: and sha256: qualifiers. Required unless checksum is given or flagged=true.",
             "schema": {
               "type": "string"
             }
@@ -9119,21 +9369,36 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "description": "true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "description": "Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.",
+            "schema": { "type": "string" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Search results",
+            "description": "Search results (SearchResult), or with checksum the files that carry it",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SearchResult"
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/SearchResult" },
+                    { "$ref": "#/components/schemas/ChecksumResult" }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, or query_too_broad (more than 10000 matching packages; add filters)"
+            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)"
           }
         }
       }
@@ -14259,6 +14524,53 @@
           "403": {
             "description": "Administrator access required"
           }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/packages/{id}": {
+      "get": {
+        "summary": "Get a package version",
+        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
+        "tags": ["Repositories", "Packages"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "description": "Repository name", "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "description": "Row id from the package listing", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The package version",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PackageDetail" } } }
+          },
+          "403": { "description": "No read access to the repository" },
+          "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
+        }
+      }
+    },
+    "/api/v1/packages/recent": {
+      "get": {
+        "summary": "Recent packages",
+        "description": "The most recently published package versions across the repositories the caller can read, newest first. A version with several files (architectures, classifiers, distributions) appears once. Proxy cache entries are not publications and are left out. The server records no publisher, so created_by_name is never set; mine=true narrows the list to the repositories the caller can write to.",
+        "tags": ["Packages"],
+        "parameters": [
+          { "name": "mine", "in": "query", "description": "true keeps the repositories the caller has write permission on", "schema": { "type": "boolean" } },
+          { "name": "limit", "in": "query", "description": "Maximum entries (default 10, at most 50)", "schema": { "type": "integer", "minimum": 1, "maximum": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent package versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "packages": { "type": "array", "items": { "$ref": "#/components/schemas/RecentPackage" } }
+                  },
+                  "required": ["packages"]
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid mine" }
         }
       }
     },

@@ -95,6 +95,10 @@ type RepositoryResponse struct {
 	// the API would accept (the trash tab needs delete, emptying it manage).
 	Permissions *RepositoryPermissions `json:"permissions,omitempty"`
 
+	// Stats is the repository's catalog figures. It is only set by the
+	// repository list.
+	Stats *RepositoryStats `json:"stats,omitempty"`
+
 	// PresignDownloads overrides the global storage.presignDownloads setting:
 	// null inherits it, true redirects blob downloads to presigned URLs, false
 	// always streams through the server.

@@ -686,6 +686,10 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		// pass-through does not cover, can never satisfy it (the handlers'
 		// anonymous branch is unfiltered).
 		return routeScope{action: "manage", anyAuthenticated: true}
+	case isSafeMethod(method) && len(segs) == 2 && segs[0] == "packages" && segs[1] == "recent":
+		// Same filtering as the lists above: the handler reads only
+		// repositories the caller may read.
+		return routeScope{action: "manage", anyAuthenticated: true}
 	case isReadOnlyRoute(method, segs):
 		return classifyReadOnlyRoute(segs)
 	case len(segs) >= 3 && segs[0] == "repositories" && isPlainName(segs[1]) && slices.Contains(repoDataSegments(), segs[2]):

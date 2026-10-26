@@ -56,6 +56,10 @@ func TestClassifyAPIRoute(t *testing.T) {
 		describe string
 	}{
 		{http.MethodGet, "/api/v1/repositories", routeScope{action: "manage", anyAuthenticated: true}, "list filters per repo itself; anonymous never passes"},
+		{http.MethodGet, "/api/v1/packages/recent", routeScope{action: "manage", anyAuthenticated: true}, "recent packages filter per repo itself; anonymous never passes"},
+		{http.MethodPost, "/api/v1/packages/recent", routeScope{action: "manage"}, "recent packages is read-only"},
+		{http.MethodGet, "/api/v1/packages/other", routeScope{action: "manage"}, "unknown packages route stays administrative"},
+		{http.MethodGet, "/api/v1/repositories/app/packages/123", routeScope{action: "read", repoName: "app"}, "package detail needs repo read"},
 		{http.MethodPost, "/api/v1/repositories", routeScope{action: "manage"}, "creating a repo is administrative"},
 		{http.MethodGet, "/api/v1/repository/app", routeScope{action: "read", repoName: "app"}, "get repo"},
 		{http.MethodPatch, "/api/v1/repository/app", routeScope{action: "manage", delegateRepo: "app"}, "update repo: global manage or the repo's project maintainers"},
