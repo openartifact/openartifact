@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { formatDate, formatDateTime, formatTimestamp, isExpired, timeAgo } from '../datetime'
+import { formatDate, formatDateTime, formatTimestamp, formatUtc, isExpired, timeAgo } from '../datetime'
 import { formatDuration } from '../duration'
 
 describe('datetime', () => {
@@ -73,5 +73,17 @@ describe('isExpired', () => {
     expect(isExpired(undefined)).toBe(false)
     expect(isExpired('')).toBe(false)
     expect(isExpired('garbage')).toBe(false)
+  })
+})
+
+describe('formatUtc', () => {
+  it('renders the instant in UTC whatever the offset it was written with', () => {
+    expect(formatUtc('2026-03-05T23:30:00+02:00')).toBe('2026-03-05 21:30:00')
+    expect(formatUtc('2026-03-05T21:30:00Z')).toBe('2026-03-05 21:30:00')
+  })
+
+  it('falls back for missing or invalid values', () => {
+    expect(formatUtc(undefined)).toBe('—')
+    expect(formatUtc('nope', 'n/a')).toBe('n/a')
   })
 })

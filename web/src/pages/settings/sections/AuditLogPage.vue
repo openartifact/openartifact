@@ -4,229 +4,232 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+<!-- Settings > System > Audit log: who did what, newest first. Times are UTC; HTTP request rows are hidden unless asked for. -->
 <template>
-  <div class="space-y-5">
-    <!-- PageHead -->
+  <div>
     <SectionActions>
-        <AuditExportButtons :download="exportAudit" />
-      </SectionActions>
+      <AuditExportButtons :download="exportAudit" />
+    </SectionActions>
 
-    <!-- Filter Panel (the server filters by actor and action) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div>
-        <label for="audit-actor" class="block text-caption text-muted font-semibold mb-1.5">{{ t('admin.audit.filter.actor') }}</label>
-        <input
-          id="audit-actor"
-          v-model="actor"
-          type="text"
-          :placeholder="t('adm.audit.filterActor')"
-          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
-        />
-      </div>
-      <div>
-        <label for="audit-action" class="block text-caption text-muted font-semibold mb-1.5">{{ t('admin.audit.filter.action') }}</label>
-        <input
-          id="audit-action"
-          v-model="action"
-          type="text"
-          :placeholder="t('adm.audit.filterAction')"
-          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
-        />
-      </div>
-    </div>
+    <FilterBar
+      :search="list.text.actor"
+      :search-label="t('sx.audit.filter.actor')"
+      :placeholder="t('sx.audit.filter.actor')"
+      :active="list.filtered.value"
+      @update:search="list.setFilter('actor', $event)"
+      @clear="list.clear"
+    >
+      <input
+        type="search"
+        :value="list.text.action"
+        :aria-label="t('sx.audit.filter.action')"
+        :placeholder="t('sx.audit.filter.action')"
+        class="h-9 w-full min-w-0 rounded-lg border border-border-strong bg-surface px-3 text-sm text-foreground placeholder:text-muted focus:ring-2 focus:ring-primary sm:w-56 max-md:h-11"
+        data-testid="audit-action-filter"
+        @input="list.setFilter('action', ($event.target as HTMLInputElement).value)"
+      />
+      <button
+        type="button"
+        :aria-pressed="hideHttp"
+        class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11"
+        :class="hideHttp ? 'border-primary bg-primary-soft text-primary' : 'border-border-strong bg-surface text-muted hover:text-foreground'"
+        data-testid="audit-http-toggle"
+        @click="list.setFilter('http', hideHttp)"
+      >
+        <CheckIcon v-if="hideHttp" class="h-4 w-4" aria-hidden="true" />
+        {{ t('sx.audit.http.hide') }}
+      </button>
+    </FilterBar>
 
-    <!-- TableCard -->
-    <div class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.audit.entries') }}</h3>
-      </div>
-      <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
-      <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
-      <div v-else-if="entries.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.audit.empty') }}</div>
-      <div v-else class="relative overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
-              <th scope="col" class="text-left px-4 py-2.5 font-medium w-40">{{ t('admin.audit.column.timestamp') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium w-32">{{ t('admin.audit.column.actor') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium w-28">{{ t('admin.audit.column.action') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium flex-1">{{ t('admin.audit.column.target') }}</th>
-              <th scope="col" class="text-center px-4 py-2.5 font-medium w-10"><span class="sr-only">{{ t('adm.audit.details') }}</span></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <template v-for="entry in entries" :key="entry.id">
-              <tr class="hover:bg-surface-hover/40 transition-colors">
-                <td class="px-4 py-3">
-                  <span class="font-mono text-xs text-muted">{{ formatTimestamp(entry.timestamp) }}</span>
-                </td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-primary/20 text-primary text-micro font-bold flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                      {{ (entry.actor || '?')[0].toUpperCase() }}
-                    </div>
-                    <span class="font-mono text-ui font-medium truncate">{{ entry.actor || '—' }}</span>
-                  </div>
-                </td>
-                <td class="px-4 py-3">
-                  <span :class="['inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium', getActionPillClass(entry.action)]">
-                    {{ entry.action || '—' }}
-                  </span>
-                </td>
-                <td class="px-4 py-3">
-                  <span class="text-sm text-muted truncate max-w-[200px] block" :title="entry.target ?? undefined">{{ entry.target || '—' }}</span>
-                </td>
-                <td class="px-4 py-3 text-center">
-                  <button
-                    type="button"
-                    :aria-expanded="!!entry.id && expanded.has(entry.id)"
-                    :aria-label="t('adm.audit.details')"
-                    @click="toggleExpand(entry.id)"
-                    :class="[
-                      'p-1 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-all',
-                      entry.id && expanded.has(entry.id) ? 'rotate-90' : '',
-                    ]"
-                  >
-                    <ChevronRightIcon class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="entry.id && expanded.has(entry.id)" class="bg-surface-hover/20">
-                <td colspan="5" class="px-4 py-3">
-                  <div class="space-y-2">
-                    <div v-if="entry.ip" class="flex gap-2">
-                      <span class="text-caption text-muted font-semibold min-w-fit">{{ t('adm.audit.ip') }}:</span>
-                      <span class="text-caption text-foreground font-mono">{{ entry.ip }}</span>
-                    </div>
-                    <div v-if="entry.details" class="flex flex-col gap-1">
-                      <span class="text-caption text-muted font-semibold">{{ t('adm.audit.details') }}:</span>
-                      <pre class="font-mono text-caption bg-surface-hover rounded-lg p-3 overflow-x-auto text-foreground/80">{{ JSON.stringify(entry.details, null, 2) }}</pre>
-                    </div>
-                  </div>
-                </td>
-              </tr>
+    <p v-if="hiddenCount > 0 && hideHttp" class="mb-3 text-sm text-muted" role="status" data-testid="audit-hidden">
+      {{ tp('sx.audit.http.hidden', { n: String(hiddenCount) }) }}
+      <button
+        type="button"
+        class="rounded text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:min-h-11"
+        @click="list.setFilter('http', true)"
+      >{{ t('sx.audit.http.show') }}</button>
+    </p>
+
+    <ListTable
+      :columns="columns"
+      :caption="t('sx.audit.table')"
+      :query="list"
+      :row-key="entryKey"
+      :empty-title="t('sx.audit.empty')"
+      :empty-hint="t('sx.audit.emptyHint')"
+    >
+      <template #cell-time="{ row }">
+        <time :datetime="(row as AuditEntry).timestamp" class="whitespace-nowrap font-mono text-xs text-muted" data-testid="audit-time">{{ formatUtc((row as AuditEntry).timestamp) }}</time>
+      </template>
+
+      <template #cell-actor="{ row }">
+        <span class="font-medium text-foreground" :title="(row as AuditEntry).actor || undefined">{{ actorLabel(row as AuditEntry) }}</span>
+      </template>
+
+      <template #cell-action="{ row }">
+        <span :class="['inline-flex items-center rounded-full px-2 py-0.5 font-mono text-xs font-medium', getActionPillClass((row as AuditEntry).action)]">
+          {{ (row as AuditEntry).action || '—' }}
+        </span>
+      </template>
+
+      <template #cell-subject="{ row }">
+        <template v-for="s in [auditSubjectView(row as AuditEntry)]" :key="(row as AuditEntry).id">
+          <div v-if="s" class="min-w-0">
+            <RouterLink
+              v-if="s.to"
+              :to="s.to"
+              class="break-all font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >{{ s.label }}</RouterLink>
+            <span v-else class="break-all text-foreground">{{ s.label }}</span>
+            <p class="text-xs text-muted">{{ s.kind }}</p>
+          </div>
+          <span v-else class="break-all text-sm text-muted">{{ auditSubject(row as AuditEntry) || '—' }}</span>
+        </template>
+      </template>
+
+      <template #cell-actions="{ row }">
+        <AppButton
+          variant="ghost"
+          size="sm"
+          class="max-md:min-h-11"
+          :aria-label="tp('sx.audit.open', { action: (row as AuditEntry).action ?? '', time: formatUtc((row as AuditEntry).timestamp) })"
+          @click="opened = row as AuditEntry"
+        >{{ t('adm.audit.details') }}</AppButton>
+      </template>
+    </ListTable>
+
+    <Drawer :open="opened !== null" :eyebrow="t('sx.audit.drawer.eyebrow')" :title="opened?.action ?? ''" @close="opened = null">
+      <dl v-if="opened" class="space-y-4 text-sm" data-testid="audit-detail">
+        <div>
+          <dt class="text-muted">{{ t('sx.audit.field.time') }}</dt>
+          <dd class="font-mono text-foreground">{{ formatUtc(opened.timestamp) }} · <RelativeTime :value="opened.timestamp" /></dd>
+        </div>
+        <div>
+          <dt class="text-muted">{{ t('sx.audit.field.actor') }}</dt>
+          <dd class="text-foreground">
+            {{ actorLabel(opened) }}
+            <span v-if="opened.actor && opened.actor !== opened.actor_name" class="font-mono text-xs text-muted">({{ opened.actor }})</span>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted">{{ t('sx.audit.field.subject') }}</dt>
+          <dd class="break-all text-foreground">
+            <template v-for="s in [auditSubjectView(opened)]" :key="opened.id">
+              <template v-if="s">
+                <RouterLink v-if="s.to" :to="s.to" class="text-primary hover:underline" @click="opened = null">{{ s.label }}</RouterLink>
+                <template v-else>{{ s.label }}</template>
+                <span class="text-xs text-muted"> · {{ s.kind }}</span>
+              </template>
+              <template v-else>{{ auditSubject(opened) || t('sx.audit.subject.none') }}</template>
             </template>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Pagination -->
-    <div v-if="entries.length || pageIndex > 0" class="flex items-center justify-between">
-      <span class="text-sm text-muted">{{ t('adm.audit.page') }} {{ pageIndex + 1 }}</span>
-      <div class="flex items-center gap-2">
-        <AppButton variant="secondary" size="sm" @click="goTo(pageIndex - 1)" :disabled="pageIndex <= 0">
-          {{ t('adm.audit.previous') }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted">{{ t('sx.audit.field.ip') }}</dt>
+          <dd class="font-mono text-foreground">{{ opened.ip || t('sx.audit.field.noIp') }}</dd>
+        </div>
+        <div v-if="opened.id">
+          <dt class="text-muted">{{ t('sx.audit.field.id') }}</dt>
+          <dd class="break-all font-mono text-xs text-foreground">{{ opened.id }}</dd>
+        </div>
+        <div v-if="opened.details">
+          <dt class="text-muted">{{ t('sx.audit.field.details') }}</dt>
+          <dd><pre class="mt-1 overflow-x-auto rounded-lg bg-surface-hover p-3 font-mono text-xs text-foreground">{{ JSON.stringify(opened.details, null, 2) }}</pre></dd>
+        </div>
+      </dl>
+      <template #footer>
+        <AppButton v-if="opened?.actor" variant="secondary" data-testid="audit-by-actor" @click="filterByActor(opened!)">
+          {{ tp('sx.audit.byActor', { actor: actorLabel(opened) }) }}
         </AppButton>
-        <AppButton variant="secondary" size="sm" @click="goTo(pageIndex + 1)" :disabled="!hasMore">
-          {{ t('adm.audit.next') }}
-        </AppButton>
-      </div>
-    </div>
+        <AppButton variant="ghost" @click="opened = null">{{ t('common.close') }}</AppButton>
+      </template>
+    </Drawer>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { CheckIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../../../components/AppButton.vue'
 import AuditExportButtons from '../../../components/AuditExportButtons.vue'
 import SectionActions from '../../../components/SectionActions.vue'
-import { formatTimestamp } from '../../../lib/datetime'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import Drawer from '../../../components/ui/Drawer.vue'
+import FilterBar from '../../../components/ui/FilterBar.vue'
+import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RelativeTime from '../../../components/ui/RelativeTime.vue'
 import { downloadAuditExport, listAudit, type AuditEntry, type ExportFormat } from '../../../api/audit'
-import { ChevronRightIcon } from '@heroicons/vue/24/outline'
-import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { useListQuery } from '../../../composables/useListQuery'
+import { boolParam, strParam } from '../../../composables/useUrlState'
+import { auditSubject, auditSubjectView, isHttpNoise } from '../../../lib/auditSubject'
+import { formatUtc } from '../../../lib/datetime'
+import { t, tp } from '../../../i18n/en'
 
-const PAGE_SIZE = 25
+/** Entries asked of the server per request. */
+const CHUNK = 50
+/** Requests one "load more" may chain to find visible rows among hidden ones. */
+const MAX_CHUNKS = 5
 
-const toasts = useToastStore()
-const entries = ref<AuditEntry[]>([])
-const loading = ref(true)
-const loadError = ref('')
-const expanded = ref<Set<string>>(new Set())
+const opened = ref<AuditEntry | null>(null)
+const hiddenCount = ref(0)
 
-// Keyset paging: the server returns no total, only whether more entries follow
-// and the cursor of the next page. pageCursors[i] is the cursor that loads page
-// i ('' is the newest entry), so going back is a lookup.
-const pageCursors = ref<string[]>([''])
-const pageIndex = ref(0)
-const hasMore = ref(false)
-const actor = ref('')
-const action = ref('')
+const list = useListQuery({
+  filters: { actor: strParam(), action: strParam(), http: boolParam(false) },
+  debounce: ['actor', 'action'],
+  paging: 'cursor',
+  limit: 25,
+  async fetch(req) {
+    // The server has no filter for the per-request rows, so they are dropped here; a chunk made only of them
+    // would look like an empty page, hence the loop.
+    const hide = !req.filters.http
+    if (req.cursor === undefined) hiddenCount.value = 0
+    const rows: AuditEntry[] = []
+    let cursor = req.cursor
+    let hasMore = true
+    for (let i = 0; i < MAX_CHUNKS && hasMore && rows.length < req.limit; i++) {
+      const page = await listAudit({ cursor, limit: CHUNK, actor: req.filters.actor.trim(), action: req.filters.action.trim() })
+      for (const entry of page.items) {
+        if (hide && isHttpNoise(entry)) hiddenCount.value++
+        else rows.push(entry)
+      }
+      hasMore = page.hasMore && page.nextCursor !== null
+      cursor = page.nextCursor ?? undefined
+    }
+    return { rows, hasMore, nextCursor: cursor }
+  },
+})
 
-// The export covers the whole log narrowed by the current filters, not the
-// loaded page.
+const hideHttp = computed(() => !list.filters.value.http)
+
+const columns: ListColumn[] = [
+  { key: 'time', label: t('sx.audit.col.time') },
+  { key: 'actor', label: t('sx.audit.col.actor') },
+  { key: 'action', label: t('sx.audit.col.action') },
+  { key: 'subject', label: t('sx.audit.col.subject') },
+  { key: 'actions', label: t('sx.audit.col.actions'), actions: true },
+]
+
+const entryKey = (e: AuditEntry): string => e.id ?? `${e.timestamp}:${e.action}:${e.actor}`
+
+function actorLabel(e: AuditEntry): string {
+  return e.actor_name || e.actor || t('sx.audit.actor.unknown')
+}
+
+function filterByActor(e: AuditEntry): void {
+  opened.value = null
+  list.setFilter('actor', e.actor ?? '')
+}
+
+// The export covers the whole log narrowed by the current filters, not the loaded rows.
 function exportAudit(format: ExportFormat): Promise<void> {
-  return downloadAuditExport(format, { actor: actor.value.trim(), action: action.value.trim() })
+  return downloadAuditExport(format, { actor: list.filters.value.actor.trim(), action: list.filters.value.action.trim() })
 }
-
-function toggleExpand(id: string | undefined): void {
-  if (id == null) return
-  const s = new Set(expanded.value)
-  if (!s.delete(id)) s.add(id)
-  expanded.value = s
-}
-
 
 function getActionPillClass(entryAction?: string): string {
-  if (!entryAction) return 'bg-surface-hover/40 text-muted'
+  if (!entryAction) return 'bg-surface-hover text-muted'
   const a = entryAction.toLowerCase()
-  if (a.includes('create')) return 'bg-success-soft/40 text-success'
-  if (a.includes('delete')) return 'bg-danger-soft/40 text-danger'
-  if (a.includes('update')) return 'bg-warning-soft/40 text-warning'
-  return 'bg-primary-soft/40 text-primary'
+  if (a.includes('creat') || a.includes('upload') || a.includes('publish')) return 'bg-success-soft text-success'
+  if (a.includes('delet') || a.includes('revok') || a.includes('fail')) return 'bg-danger-soft text-danger'
+  if (a.includes('updat')) return 'bg-warning-soft text-warning'
+  return 'bg-primary-soft text-primary'
 }
-
-// Only the latest request may write state, so a slow earlier page cannot
-// overwrite a newer one.
-let requestSeq = 0
-
-async function load(): Promise<void> {
-  const seq = ++requestSeq
-  loading.value = true
-  loadError.value = ''
-  try {
-    const res = await listAudit({
-      cursor: pageCursors.value[pageIndex.value],
-      limit: PAGE_SIZE,
-      actor: actor.value.trim(),
-      action: action.value.trim(),
-    })
-    if (seq !== requestSeq) return
-    entries.value = res.items
-    hasMore.value = res.hasMore
-    // Remember where the following page starts so Next needs no extra state.
-    pageCursors.value = pageCursors.value.slice(0, pageIndex.value + 1)
-    if (res.nextCursor) pageCursors.value.push(res.nextCursor)
-  } catch (err) {
-    if (seq !== requestSeq) return
-    loadError.value = err instanceof Error ? err.message : t('adm.audit.loadFailed')
-    toasts.error(loadError.value)
-  } finally {
-    if (seq === requestSeq) loading.value = false
-  }
-}
-
-let debounceHandle: ReturnType<typeof setTimeout> | null = null
-
-watch([actor, action], () => {
-  if (debounceHandle) clearTimeout(debounceHandle)
-  debounceHandle = setTimeout(() => {
-    // Changing a filter returns to the newest entries.
-    pageCursors.value = ['']
-    pageIndex.value = 0
-    void load()
-  }, 300)
-})
-
-function goTo(index: number): void {
-  if (index < 0 || index >= pageCursors.value.length) return
-  pageIndex.value = index
-  void load()
-}
-
-onMounted(load)
-onUnmounted(() => {
-  if (debounceHandle) clearTimeout(debounceHandle)
-})
 </script>

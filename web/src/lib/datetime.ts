@@ -35,6 +35,15 @@ export function formatTimestamp(value: DateInput, fallback = '—'): string {
   return d ? d.toLocaleString(FORMAT_LOCALE, { dateStyle: 'medium', timeStyle: 'medium' }) : fallback
 }
 
+/**
+ * Timestamp in UTC regardless of the viewer's zone ("2026-10-22 14:03:07"), for logs that are
+ * compared with server logs and exports, which are always UTC.
+ */
+export function formatUtc(value: DateInput, fallback = '—'): string {
+  const d = toDate(value)
+  return d ? d.toISOString().slice(0, 19).replace('T', ' ') : fallback
+}
+
 export function formatTime(value: DateInput, fallback = '—'): string {
   const d = toDate(value)
   return d ? d.toLocaleTimeString(FORMAT_LOCALE) : fallback
