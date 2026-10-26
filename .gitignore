@@ -31,6 +31,11 @@ Thumbs.db
 # Coverage
 coverage.html
 coverage.out
+coverage.filtered.out
+coverage-unit.out
+coverage-integration.out
+/cov/
+web/coverage/
 coverage.txt
 
 # Logs / scratch
