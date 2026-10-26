@@ -203,6 +203,12 @@ func parseNuGetRegistrationPath(segs []string) (nugetPath, bool) {
 
 		version, _ := pkgnuget.Normalize(raw)
 
+		// "Index.json" is not a version: its canonical key, <id>/index.json, is
+		// the registration index's.
+		if version == "index" {
+			return nugetPath{}, false
+		}
+
 		return nugetPath{kind: nugetRegLeaf, id: id, version: version}, true
 	case len(segs) == 4 && segs[1] == "page":
 		upper, ok := strings.CutSuffix(segs[3], ".json")
