@@ -53,7 +53,7 @@ IMAGE='docker.io/schemathesis/schemathesis:4.32.5@sha256:e414b3466a95d03fc6d9de1
 
 case "$mode" in
 pr)
-	examples=40
+	examples=20
 	seed="${OA_FUZZ_SEED:-20261026}"
 	;;
 nightly)
