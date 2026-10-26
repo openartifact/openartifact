@@ -16,6 +16,6 @@ export const bundleRoutes: RouteRecordRaw[] = [
     path: '/bundles/:name/:version',
     name: 'bundle-detail',
     component: () => import('../../pages/BundleDetailPage.vue'),
-    meta: { crumbs: [...bundlesTrail, { param: 'name' }, { param: 'version' }], requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...bundlesTrail, { dynamic: (route) => `${String(route.params.name)} ${String(route.params.version)}` }], requiresAuth: true, requiresAdmin: true },
   },
 ]

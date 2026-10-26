@@ -10,6 +10,7 @@ import {
   promoteBundle,
   removeBundleItem,
   sealBundle,
+  searchItemCandidates,
   signatureUrl,
 } from '../bundles'
 
@@ -58,5 +59,15 @@ describe('bundles api', () => {
     await promoteBundle('shop', '1', { to_stage: 'prod', target_repo: 'releases', notes: 'go' })
     expect(call(1).url).toBe('/api/v1/bundles/shop/1/promote')
     expect(JSON.parse(call(1).init.body as string)).toEqual({ to_stage: 'prod', target_repo: 'releases', notes: 'go' })
+  })
+
+  it('searches stored files by free text or digest, ungrouped', async () => {
+    const hit = { repository: 'r', format: 'maven', name: 'shop', version: '1', path: 'a.jar', sha256: 'ab', size: 1 }
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ packages: [hit], total: 1 }))
+    expect(await searchItemCandidates('sha256:ab cd')).toEqual([hit])
+    expect(call().url).toBe('/api/v1/search?q=sha256%3Aab+cd&limit=25')
+
+    spy.mockResolvedValue(json({}))
+    expect(await searchItemCandidates('x')).toEqual([])
   })
 })
