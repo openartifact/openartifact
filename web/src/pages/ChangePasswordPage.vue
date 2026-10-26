@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="max-w-md w-full space-y-8">
       <div class="text-center">
         <div class="flex justify-center"><BrandLogo variant="stacked" :size="144" /></div>
-        <h2 class="mt-2 text-xl text-foreground">{{ t('auth.changePassword') }}</h2>
+        <h1 class="mt-2 text-2xl font-bold tracking-tight text-foreground">{{ t('auth.changePassword') }}</h1>
         <p class="mt-2 text-sm text-muted">
           {{ t('auth.changePasswordRequired') }}
         </p>
