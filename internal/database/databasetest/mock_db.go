@@ -1107,6 +1107,59 @@ func (m *BaseMockDB) ListCondaPackages(ctx context.Context, repoID, platform str
 func (m *BaseMockDB) ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error) {
 	return nil, errNotImpl("ListAllCondaPackages")
 }
+func (m *BaseMockDB) CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error {
+	return errNotImpl("CreateTerraformModule")
+}
+func (m *BaseMockDB) GetTerraformModule(ctx context.Context, repoID, name, system, version string) (*models.TerraformModule, error) {
+	return nil, errNotImpl("GetTerraformModule")
+}
+func (m *BaseMockDB) ListTerraformModuleVersions(ctx context.Context, repoID, name, system string) ([]*models.TerraformModule, error) {
+	return nil, errNotImpl("ListTerraformModuleVersions")
+}
+func (m *BaseMockDB) ListTerraformModules(ctx context.Context, repoID string) ([]*models.TerraformModule, error) {
+	return nil, errNotImpl("ListTerraformModules")
+}
+func (m *BaseMockDB) DeleteTerraformModule(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteTerraformModule")
+}
+func (m *BaseMockDB) IncrementTerraformModuleDownloadCount(ctx context.Context, repoID, id string) error {
+	return errNotImpl("IncrementTerraformModuleDownloadCount")
+}
+func (m *BaseMockDB) TerraformModuleStamp(ctx context.Context, repoID, name, system string) (string, error) {
+	return "", errNotImpl("TerraformModuleStamp")
+}
+func (m *BaseMockDB) CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error {
+	return errNotImpl("CreateTerraformProvider")
+}
+
+func (m *BaseMockDB) GetTerraformProvider(
+	ctx context.Context,
+	repoID, typ, version, osName, arch string,
+) (*models.TerraformProvider, error) {
+	return nil, errNotImpl("GetTerraformProvider")
+}
+func (m *BaseMockDB) ListTerraformProviderPlatforms(ctx context.Context, repoID, typ string) ([]*models.TerraformProvider, error) {
+	return nil, errNotImpl("ListTerraformProviderPlatforms")
+}
+
+func (m *BaseMockDB) ListTerraformProviderVersionPlatforms(
+	ctx context.Context,
+	repoID, typ, version string,
+) ([]*models.TerraformProvider, error) {
+	return nil, errNotImpl("ListTerraformProviderVersionPlatforms")
+}
+func (m *BaseMockDB) ListTerraformProviders(ctx context.Context, repoID string) ([]*models.TerraformProvider, error) {
+	return nil, errNotImpl("ListTerraformProviders")
+}
+func (m *BaseMockDB) DeleteTerraformProvider(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteTerraformProvider")
+}
+func (m *BaseMockDB) IncrementTerraformProviderDownloadCount(ctx context.Context, repoID, id string) error {
+	return errNotImpl("IncrementTerraformProviderDownloadCount")
+}
+func (m *BaseMockDB) TerraformProviderStamp(ctx context.Context, repoID, typ string) (string, error) {
+	return "", errNotImpl("TerraformProviderStamp")
+}
 func (m *BaseMockDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error {
 	return errNotImpl("CreateConanPackage")
 }

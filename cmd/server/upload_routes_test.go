@@ -63,6 +63,12 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 	"nuget":    {http.MethodPut, "/repos/{name}/v3/package", "PUT /v3/package", "`PackagePublish/2.0.0` | `/v3/package`"},
 	"rubygems": {http.MethodPost, "/repos/{name}/api/v1/gems", "POST /api/v1/gems", "| `POST /api/v1/gems` | push"},
 	"conda":    {http.MethodPost, "/repos/{name}/{platform}", "POST /<platform>", "| `POST /<platform>` | upload"},
+	"terraform": {
+		http.MethodPut,
+		"/repos/{name}/_api/modules/{mod}/{system}/{version}",
+		"PUT /_api/modules/MODULE/SYSTEM/VERSION",
+		"| `PUT /_api/modules/MODULE/SYSTEM/VERSION` |",
+	},
 	"conan": {
 		http.MethodPut,
 		"/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/files/*",
@@ -71,10 +77,9 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 	},
 }
 
-// uploadRouteTable registers the real upload-capable routes the way the
-// server does (repository protocol handlers, the REST upload handlers and the
-// isolated /repos/<format>/{name} prefixes) on a chi router.
-func uploadRouteTable(t *testing.T) chi.Router {
+// routeTestApp is an app with the format handlers built and nothing mounted,
+// the way the route tables are assembled without a database.
+func routeTestApp(t *testing.T) *app {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")
@@ -93,6 +98,17 @@ func uploadRouteTable(t *testing.T) chi.Router {
 	a.store.blobs = storage.NewMetricsBlobStore(fsStore, a.reg)
 
 	a.newFormatHandlers()
+
+	return a
+}
+
+// uploadRouteTable registers the real upload-capable routes the way the
+// server does (repository protocol handlers, the REST upload handlers and the
+// isolated /repos/<format>/{name} prefixes) on a chi router.
+func uploadRouteTable(t *testing.T) chi.Router {
+	t.Helper()
+
+	a := routeTestApp(t)
 	a.registerUploadRoutes()
 
 	dispatcher := repodispatch.New(a.log, a.db, nil, nil, a.hostedRouters())

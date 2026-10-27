@@ -32,6 +32,7 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -63,6 +64,7 @@ func serverRoutes(t *testing.T) chi.Router {
 		formatrubygems.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconda.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconan.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
+		formatterraform.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatgomod.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		api.NewNPMUploadHandler(log, nil, nil, "", nil).RegisterRepoRoutes(r)
 		// cmd/server dispatches PUT "/*" to npm publish or the GOPROXY upload.
@@ -145,7 +147,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"helm": metrics.FormatHelm, "ivy": metrics.FormatIvy, "maven": metrics.FormatMaven,
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pypi": metrics.FormatPyPI,
 		"raw": metrics.FormatRaw, "rpm": metrics.FormatRPM, "rubygems": metrics.FormatRubyGems,
-		"sbt": metrics.FormatSBT,
+		"sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform,
 	}
 
 	entries, err := os.ReadDir("../format")
@@ -224,7 +226,7 @@ func TestUploadRoutesCounted(t *testing.T) {
 		for _, f := range []string{
 			metrics.FormatCargo, metrics.FormatRubyGems, metrics.FormatHelm, metrics.FormatPyPI,
 			metrics.FormatNuGet, metrics.FormatConda, metrics.FormatConan, metrics.FormatRaw,
-			metrics.FormatIvy, metrics.FormatSBT,
+			metrics.FormatIvy, metrics.FormatSBT, metrics.FormatTerraform,
 		} {
 			if got := testutil.ToFloat64(reg.UploadsTotal.WithLabelValues(f, result)); got < 1 {
 				t.Errorf("status %d: format %s counted %v times, want >= 1", status, f, got)

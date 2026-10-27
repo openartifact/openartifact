@@ -15,7 +15,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 - Every repository is served under `/repos/REPO/...`.
 - Maven, sbt, Ivy and raw are served under a format prefix: `/repos/maven/REPO`, `/repos/sbt/REPO`, `/repos/ivy/REPO`, `/repos/raw/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
-- Set `BASE_URL` (`baseUrl`) to the externally visible URL: npm tarball URLs, Helm `index.yaml`, PyPI JSON and the Cargo `config.json` are built from it.
+- Set `BASE_URL` (`baseUrl`) to the externally visible URL: npm tarball URLs, Helm `index.yaml`, PyPI JSON, the Cargo `config.json` and the Terraform download URLs are built from it.
 
 ## Format matrix
 
@@ -26,6 +26,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Maven | `maven` | `HOST/repos/maven/REPO` | hosted, proxy, group | `PUT` per file (`mvn deploy`) | [maven](maven.md) |
 | sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted, proxy, group | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
 | Ivy | `ivy` | `HOST/repos/ivy/REPO` | hosted, proxy, group | `PUT` per file (`ivy:publish`) | [ivy-sbt](ivy-sbt.md) |
+| Terraform / OpenTofu | `terraform` | registry host `HOST`, source `HOST/REPO/...` (discovery at `/.well-known/terraform.json`) | hosted | `PUT /_api/modules/MODULE/SYSTEM/VERSION`, `PUT /_api/providers/TYPE/VERSION/OS/ARCH` (relative to `HOST/repos/REPO`) | [terraform](terraform.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
@@ -57,5 +58,5 @@ Read requests map to the `read` action and writes (`PUT`, `POST`, `PATCH`, `DELE
 - Hosted repositories of raw, Maven, npm, Docker, Helm, PyPI, Cargo, Go and NuGet can be replicated between instances ([federation](../operations/federation.md)).
 - Uploads emit `artifact.uploaded` and deletes `artifact.deleted` webhook events ([webhooks](../operations/webhooks.md)).
 - Storage quotas are enforced on upload for every hosted format; proxy caches are not metered ([quotas](../repositories/cleanup-and-quotas.md#what-counts)).
-- A repository with a [license policy](../security/scanning.md#blocking-licenses) whose action is `block` rejects an upload whose declared license is denied (`403`, code `LICENSE_BLOCKED`). The license is read from the package metadata; Conan, Go and raw uploads carry none and are not checked.
+- A repository with a [license policy](../security/scanning.md#blocking-licenses) whose action is `block` rejects an upload whose declared license is denied (`403`, code `LICENSE_BLOCKED`). The license is read from the package metadata; Conan, Go, Terraform and raw uploads carry none and are not checked.
 - [Client setup](client-setup.md) renders the snippets for every client with your own server URL and repository name. Client snippets in the web UI and in the MCP `repository` tool come from [`internal/clientsetup`](../../internal/clientsetup/clientsetup.go) (UI counterpart: `web/src/lib/installCommands.ts`). Where this documentation differs from those snippets (Go format id), the page says so.

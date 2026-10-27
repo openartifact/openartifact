@@ -412,7 +412,7 @@ func (s *Service) Delete(ctx context.Context, id string, force bool) error {
 	return nil
 }
 
-// Activate makes the key sign one repository (repo != nil, a deb or rpm repo)
+// Activate makes the key sign one repository (repo != nil, a deb, rpm or terraform repo)
 // or, otherwise, every repository without a key of its own.
 func (s *Service) Activate(ctx context.Context, id string, repo *models.GPGSigningRepo, by string) error {
 	if id == ConfigKeyID {

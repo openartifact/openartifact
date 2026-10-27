@@ -14,7 +14,7 @@ A background worker checks every minute which enabled policies are due (their cr
 
 ### Supported formats
 
-Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, maven, ivy, sbt, cargo, rubygems, conda, conan, raw and docker. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
+Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, maven, ivy, sbt, cargo, rubygems, conda, conan, terraform, raw and docker. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
 
 | Format | What is ranked and removed | After a run |
 |---|---|---|
@@ -26,6 +26,7 @@ Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, m
 | rubygems | Versions per gem and platform. | Specs and the compact index are computed live. |
 | conda | Builds per package and platform (`version-build_string`); the `.tar.bz2` and `.conda` files of one build count together. | `repodata.json` is computed live. |
 | conan | Recipe versions (`version@user/channel`) per package; all revisions of a version count together. | Computed live. |
+| terraform | Versions per module (name and system) and per provider type; all platforms of a provider version count together. | Nothing to regenerate: the registry answers are computed live. |
 | raw | Files ranked against the other files of **their directory**, newest first (a raw file has no version; `name_pattern` is matched against the whole path and restricts what is removed, not how files are ranked). | none |
 | docker | **Tags** per image, aged by their last update (re-tagging counts as activity). | When tags were removed permanently, [registry garbage collection](#docker-registry-garbage-collection) reclaims the manifests and layers they left unreferenced (subject to its grace period). Tags moved to the trash keep their manifests until the purge. |
 
@@ -132,12 +133,13 @@ Usage is the sum, over the repository's packages, of each package's blob size, p
 
 ### What counts
 
-Quotas are enforced on the upload paths of every **hosted** format: Maven (and Ivy and sbt), npm, Debian, RPM, Helm, RubyGems, PyPI, Cargo, Go, NuGet, Conda, Conan, raw and Docker. The unit is one stored row and the size of its blob:
+Quotas are enforced on the upload paths of every **hosted** format: Maven (and Ivy and sbt), npm, Debian, RPM, Helm, RubyGems, PyPI, Cargo, Go, NuGet, Conda, Conan, Terraform, raw and Docker. The unit is one stored row and the size of its blob:
 
 | Format | Counted as |
 |---|---|
 | Maven, Ivy, sbt, npm, deb, rpm, Helm, RubyGems, PyPI, Cargo, NuGet, Conda, raw | one artifact per file/version row, with its file size. Replacing a raw file, a Maven snapshot or a Conan file releases the previous content. |
 | Conan | one artifact per stored file (recipe files and package files each count). |
+| Terraform | one artifact per module version, and one per provider platform (each zip counts, with its own size). |
 | Go | one artifact per module version, with the size of its zip plus its `go.mod`. |
 | Docker | the bytes of every blob (layer or config) the repository holds, **without** an artifact slot, plus one artifact with the manifest's size per manifest. An image with many layers is therefore one artifact, and a layer shared by several images of the repository, or pushed or mounted again into it, counts once. A blob mounted from another repository counts in the destination repository. Tags are free. |
 

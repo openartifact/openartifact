@@ -82,6 +82,12 @@ SELECT $1, 'cnd' || g, '12.' || g, 'h' || g, 'linux-64', b.id, ts, ts AS ts_upda
 INSERT INTO conan_packages (repository_id, name, version, blob_id, created_at, updated_at)
 SELECT $1, 'cn' || g, '13.' || g, CASE WHEN g % 2 = 0 THEN b.id END, ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
 
+INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at, updated_at)
+SELECT $1, 'tfm' || g, 'aws', '15.' || g, CASE WHEN g % 2 = 0 THEN 'zip' ELSE 'tar.gz' END, b.id, ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
+
+INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id, created_at, updated_at)
+SELECT $1, 'tfp' || g, '16.' || g, 'linux', CASE WHEN g % 2 = 0 THEN 'amd64' ELSE 'arm64' END, b.id, ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
+
 INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at, updated_at)
 SELECT $1, 'ch' || g, '14.' || g, b.id, ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
 
@@ -184,7 +190,7 @@ func TestListRepoComponentsMatchesLegacyQuery(t *testing.T) {
 	pg := freshPostgres(t, 5)
 	repo := seedEquivalenceRepo(t, pg)
 
-	for _, format := range []string{"", "maven", "rpm", "rubygems", "conan", "docker", "raw", "npm", "go", "deb"} {
+	for _, format := range []string{"", "maven", "rpm", "rubygems", "conan", "terraform", "docker", "raw", "npm", "go", "deb"} {
 		for _, limit := range []int{1, 7, 25, 1000} {
 			for page := 1; page <= 4; page++ {
 				name := fmt.Sprintf("format=%q/limit=%d/page=%d", format, limit, page)

@@ -397,11 +397,12 @@ func TestVersionAtLeast(t *testing.T) {
 
 func TestGeneratePURL(t *testing.T) {
 	cases := map[[3]string]string{
-		{"npm", "@babel/core", "7.0.0"}:    "pkg:npm/%40babel/core@7.0.0",
-		{"maven", "org.x:lib", "1.0+b"}:    "pkg:maven/org.x/lib@1.0%2Bb",
-		{"pypi", "My_Pkg", "1.0"}:          "pkg:pypi/my-pkg@1.0",
-		{"go", "github.com/a/b", "v1.2.3"}: "pkg:golang/github.com/a/b@v1.2.3",
-		{"raw", "file.bin", "unknown"}:     "pkg:generic/file.bin",
+		{"npm", "@babel/core", "7.0.0"}:           "pkg:npm/%40babel/core@7.0.0",
+		{"maven", "org.x:lib", "1.0+b"}:           "pkg:maven/org.x/lib@1.0%2Bb",
+		{"pypi", "My_Pkg", "1.0"}:                 "pkg:pypi/my-pkg@1.0",
+		{"go", "github.com/a/b", "v1.2.3"}:        "pkg:golang/github.com/a/b@v1.2.3",
+		{"raw", "file.bin", "unknown"}:            "pkg:generic/file.bin",
+		{"terraform", "modules/vpc/aws", "1.2.0"}: "pkg:generic/modules/vpc/aws@1.2.0",
 	}
 
 	for in, want := range cases {

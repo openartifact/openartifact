@@ -182,6 +182,7 @@ var auditPackageKinds = map[string]bool{
 	string(models.TrashKindConda): true, string(models.TrashKindConan): true, string(models.TrashKindHelm): true,
 	string(models.TrashKindRaw): true, string(models.TrashKindDockerManifest): true, string(models.TrashKindDockerTag): true,
 	string(models.TrashKindRPM): true, string(models.TrashKindDeb): true,
+	string(models.TrashKindTerraformModule): true, string(models.TrashKindTerraformProvider): true,
 }
 
 func derefOr(p *string) string {

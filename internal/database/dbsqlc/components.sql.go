@@ -64,6 +64,14 @@ SELECT COUNT(*)::bigint FROM (
     SELECT 1 FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
     UNION ALL
+    -- terraform modules
+    SELECT 1 FROM terraform_modules t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('modules/' || name || '/' || system) = $3::text) AND ($4::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
+    UNION ALL
+    -- terraform providers
+    SELECT 1 FROM terraform_providers t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('providers/' || type) = $3::text) AND ($4::text = '' OR strpos(lower(('providers/' || type)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
+    UNION ALL
     -- helm
     SELECT 1 FROM helm_charts t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'helm') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
@@ -346,6 +354,16 @@ FROM (
     FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    SELECT t.id::uuid, 'terraform'::text, t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text, ('modules/' || t.name || '/' || t.system)::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM terraform_modules t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'terraform'::text, 'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text, ('providers/' || t.type)::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM terraform_providers t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     SELECT t.id::uuid, 'helm'::text, t.name || '-' || t.version || '.tgz'::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM helm_charts t LEFT JOIN blobs b ON b.id = t.blob_id
@@ -512,6 +530,20 @@ FROM (
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT id, repository_id, name, version, user_channel, recipe_revision, conanfile, conaninfo, created_at, updated_at, blob_id, deleted_at, deleted_by, package_id, package_revision, filename, md5, sha1 FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
+    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
+           'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, system, version, archive_ext, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('modules/' || name || '/' || system) = $3::text) AND ($4::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
+    -- terraform providers: one row per platform zip; name = providers/TYPE, arch = OS_ARCH.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'providers/' || t.type::text AS name, t.version::text AS version,
+           'terraform'::text AS format, t.os || '_' || t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, type, version, os, arch, protocols, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_providers WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('providers/' || type) = $3::text) AND ($4::text = '' OR strpos(lower(('providers/' || type)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
     UNION ALL
     -- helm: one row per chart version.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
@@ -748,6 +780,20 @@ FROM (
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT id, repository_id, name, version, user_channel, recipe_revision, conanfile, conaninfo, created_at, updated_at, blob_id, deleted_at, deleted_by, package_id, package_revision, filename, md5, sha1 FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
     UNION ALL
+    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
+           'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, system, version, archive_ext, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('modules/' || name || '/' || system) = $3::text) AND ($4::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY ('modules/' || name || '/' || system), version, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
+    -- terraform providers: one row per platform zip; name = providers/TYPE, arch = OS_ARCH.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'providers/' || t.type::text AS name, t.version::text AS version,
+           'terraform'::text AS format, t.os || '_' || t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, type, version, os, arch, protocols, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM terraform_providers WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform') AND ($3::text = '' OR ('providers/' || type) = $3::text) AND ($4::text = '' OR strpos(lower(('providers/' || type)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY ('providers/' || type), version, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
     -- helm: one row per chart version.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
            'helm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
@@ -900,6 +946,12 @@ FROM (
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM conan_packages t WHERE t.id = ANY($1::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, ('modules/' || t.name || '/' || t.system)::text, t.version::text
+    FROM terraform_modules t WHERE t.id = ANY($1::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, ('providers/' || t.type)::text, t.version::text
+    FROM terraform_providers t WHERE t.id = ANY($1::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM helm_charts t WHERE t.id = ANY($1::uuid[])

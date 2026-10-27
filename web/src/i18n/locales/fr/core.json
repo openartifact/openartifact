@@ -76,6 +76,7 @@
   "upload.hint.maven": "Téléversez des artefacts .jar / .pom ; le chemin encode les coordonnées.",
   "upload.hint.npm": "Téléversez les archives .tgz publiées par `npm pack`.",
   "upload.hint.generic": "Téléversez les fichiers de paquet pour ce dépôt.",
+  "upload.terraform.body": "Les modules et fournisseurs Terraform et OpenTofu sont publiés avec une requête PUT par version de module ou par plateforme de fournisseur, authentifiée par un jeton d'API. Les coordonnées font partie de l'URL :",
   "pwa.updateAvailable": "Nouvelle version disponible",
   "pwa.updateHint": "Rechargez pour basculer vers celle-ci. Votre page actuelle reste intacte tant que vous ne le faites pas.",
   "pwa.reload": "Recharger",

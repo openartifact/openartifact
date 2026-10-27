@@ -189,6 +189,7 @@ A cached document is served only while its validator is unchanged, so every chan
 | RubyGems specs indexes | count and ID hash of the listed (not yanked) gems | publish, yank, unyank, delete, trash, restore |
 | Cargo sparse index entry | count and hash of ID plus `yanked` of the crate's live versions | publish, yank, unyank, delete, trash, restore (a download does not) |
 | NuGet registration index | repository, base URL, and ID and version of every live row | publish, delete, trash, restore |
+| Terraform `versions` documents (module and provider) | the live rows of that module or provider | publish, delete, trash, restore |
 | npm packument (full and abbreviated) | `npm_packages.updated_at` | publish, unpublish, dist-tag change, deprecation, manifest edit, trash, restore |
 | `maven-metadata.xml` and checksums | SHA-256 of the metadata blob | regeneration that produces different bytes |
 | npm group merge | SHA-256 of the member documents it merges | any change of a member's document |
