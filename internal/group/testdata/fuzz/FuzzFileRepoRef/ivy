@@ -1,0 +1,2 @@
+go test fuzz v1
+string("org.example/lib/1.0/jars/lib.jar")

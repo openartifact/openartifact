@@ -6168,6 +6168,24 @@ func (p *PostgresDB) ListIvyArtifacts(ctx context.Context, repoID string) ([]*mo
 	return artifacts, nil
 }
 
+func (p *PostgresDB) IvyModuleExists(ctx context.Context, repoID, organisation, module string) (bool, error) {
+	exists, err := p.q.IvyModuleExists(ctx, dbsqlc.IvyModuleExistsParams{RepositoryID: repoID, Organisation: organisation, Module: module})
+	if err != nil {
+		return false, fmt.Errorf("failed to check ivy module: %w", err)
+	}
+
+	return exists, nil
+}
+
+func (p *PostgresDB) SBTModuleExists(ctx context.Context, repoID, groupID, artifactID string) (bool, error) {
+	exists, err := p.q.SBTModuleExists(ctx, dbsqlc.SBTModuleExistsParams{RepositoryID: repoID, GroupID: groupID, ArtifactID: artifactID})
+	if err != nil {
+		return false, fmt.Errorf("failed to check sbt artifact: %w", err)
+	}
+
+	return exists, nil
+}
+
 // CreateSBTArtifact stores an SBT artifact; a live artifact with the same
 // coordinates is repointed at the new blob.
 func (p *PostgresDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error {

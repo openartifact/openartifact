@@ -1147,6 +1147,12 @@ func (m *BaseMockDB) DeleteIvyArtifact(ctx context.Context, id string) error {
 func (m *BaseMockDB) ListIvyArtifacts(ctx context.Context, repoID string) ([]*models.IvyArtifact, error) {
 	return nil, errNotImpl("ListIvyArtifacts")
 }
+func (m *BaseMockDB) IvyModuleExists(ctx context.Context, repoID, organisation, module string) (bool, error) {
+	return false, errNotImpl("IvyModuleExists")
+}
+func (m *BaseMockDB) SBTModuleExists(ctx context.Context, repoID, groupID, artifactID string) (bool, error) {
+	return false, errNotImpl("SBTModuleExists")
+}
 func (m *BaseMockDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error {
 	return errNotImpl("CreateSBTArtifact")
 }

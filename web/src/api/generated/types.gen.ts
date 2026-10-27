@@ -3418,7 +3418,7 @@ export type PostApiV1RepositoriesData = {
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm, docker, go, npm, nuget, pypi, cargo, helm and raw; group repositories for maven, deb, rpm, docker, go, npm, nuget, pypi, cargo, helm and raw (deb and rpm groups serve generated Release/Packages or repodata merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, docker, go, npm, nuget, pypi, cargo, helm and raw; group repositories for maven, sbt, ivy, deb, rpm, docker, go, npm, nuget, pypi, cargo, helm and raw (deb and rpm groups serve generated Release/Packages or repodata merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**

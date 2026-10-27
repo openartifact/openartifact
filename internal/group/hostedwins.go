@@ -40,6 +40,8 @@ import (
 //	helm    index.yaml of each hosted member     (charts/<file> only; index.yaml is
 //	                                              filtered in serveHelm instead)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
+//	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
+//	                                              member's table; no document to probe)
 //	raw     none: no versions are merged, the first member in order wins.
 //
 // Requests for a file of an owned name are answered by the hosted members
@@ -72,6 +74,11 @@ type pkgRef struct {
 	file bool
 	// pathFor is the member path a file request is made with.
 	pathFor func(*models.Repository) string
+	// modules, when set, are the (group, module) readings of the request path:
+	// a hosted member holds the package iff it has a file of any of them. Ivy
+	// and sbt repositories serve plain files and have no package-level
+	// document to probe.
+	modules []fileModule
 }
 
 // packageRef extracts the package a request of a group of format names. ok is
@@ -98,6 +105,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = mavenRef(relPath)
 	case "helm":
 		ref, ok = helmRef(relPath)
+	case "ivy", "sbt":
+		ref, ok = fileRepoRef(relPath)
 	}
 
 	if !ok {
@@ -431,6 +440,10 @@ func probeRequest(r *http.Request, ref pkgRef) *http.Request {
 func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Backend) ownership {
 	if ref.chartFile != "" {
 		return h.ownsChart(mr, m, ref.chartFile, be)
+	}
+
+	if len(ref.modules) > 0 {
+		return h.ownsFileModule(mr.Context(), m, ref.modules)
 	}
 
 	sw := &statusWriter{header: make(http.Header)}

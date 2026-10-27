@@ -6,14 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Ivy and sbt
 
-Hosted-only repositories for Ivy and sbt on isolated URL prefixes.
+Hosted, proxy and group repositories for Ivy and sbt on isolated URL prefixes.
 
 | Format | Repo URL |
 |---|---|
 | Ivy | `HOST/repos/ivy/REPO` |
 | sbt | `HOST/repos/sbt/REPO` |
 
-Proxy and group are not supported for either format (see the [format matrix](README.md#format-matrix): neither Ivy nor sbt is a proxy or group format). Creating one is rejected with `400 validation_failed`. A proxy or group of these formats can only exist if restored from a backup; requests to it answer `501`. See [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+Proxy and group repositories are supported for both formats; see [proxy and group](#proxy-and-group) below and [hosted, proxy, group](../repositories/hosted-proxy-group.md).
 
 ## Client setup
 
@@ -59,3 +59,35 @@ The Maven layout is recognised when the path has more than four segments and its
 - Content-addressed storage with a sha256 per file; extension is taken from the file name.
 - No `ivy.xml`, POM, `maven-metadata.xml` or checksum files are generated: only the files you `PUT` are served.
 - Quarantine and webhooks (`artifact.uploaded`, `artifact.deleted`) apply as for other formats.
+
+## Proxy and group
+
+An Ivy or sbt proxy mirrors an upstream by path, like a [raw or Maven proxy](../repositories/hosted-proxy-group.md#proxy-repositories): `upstream_url` is the root of an Ivy-layout or Maven-layout repository and `HOST/repos/<format>/PROXY/<path>` is fetched from `<upstream_url>/<path>`. There is no default upstream. Both layouts above work, so the same proxy serves Ivy resolvers, sbt (including plugin resolution) and coursier. `https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases` is the sbt plugin repository (Ivy layout):
+
+```sh
+curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"sbt-plugins","format":"sbt","repo_type":"proxy",
+       "upstream_url":"https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases"}'
+```
+
+```
+# ~/.sbt/repositories (start sbt with -Dsbt.override.build.repos=true to use only these)
+[repositories]
+  local
+  maven-central
+  oa-plugins: HOST/repos/sbt/sbt-plugins/, [organization]/[module]/(scala_[scalaVersion]/)(sbt_[sbtVersion]/)[revision]/[type]s/[artifact](-[classifier]).[ext]
+```
+
+```scala
+// project/credentials.sbt: plugins are resolved by the build definition, so the credentials
+// of a private repository belong here (realm and host as in the client setup above)
+credentials += Credentials("openartifact", "<HOST>", "<USERNAME>", "<TOKEN>")
+```
+
+Ivy takes the same layout as an `url` resolver with `m2compatible="false"` and the pattern `[organisation]/[module]/(scala_[scalaVersion]/)(sbt_[sbtVersion]/)[revision]/[type]s/[artifact](-[classifier]).[ext]` under `HOST/repos/ivy/PROXY`; coursier takes it as `-r 'ivy:HOST/repos/sbt/PROXY/<pattern>'`.
+
+- **Checksums.** A file is hashed while it is spooled. Once the upstream has answered `200`, the proxy asks it for the checksum published next to the file, `.sha256`, then `.sha1`, then `.md5` (the first one the upstream has), and compares. A mismatch, or a checksum request failing with anything other than `404`/`410`, answers `502` and caches nothing. A verified release file is immutable once cached (never revalidated, served with the upstream down). The checksum comes from the same upstream, so this detects corruption and truncated transfers, not an upstream that is itself compromised. A file with no usable checksum upstream is served and cached for `cache_ttl_seconds` only. A missing file costs one upstream request: checksums are fetched after the file exists.
+- **Checksum, signature and metadata files** (`.md5`, `.sha1`, `.sha256`, `.sha512`, `.asc`, `maven-metadata*.xml`) and `-SNAPSHOT` files are mirrored as the upstream has them and cached for `cache_ttl_seconds`. A `200` HTML answer for a `.jar`, `.pom`, `.xml`, `.zip`, `.war`, `.ear`, `.aar`, `.module`, `.gz`, `.tgz` or checksum path (a captive portal) is refused with `502`.
+- **Group.** Members are tried in order and the first one with the file answers (a `404` member is passed over, a failing one makes the group answer `502` when no member has it). `maven-metadata.xml` is not merged in Ivy and sbt groups: the first member that has it wins. The [hosted-wins rule](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name) applies as for other formats: when a readable hosted member holds a module (organisation or group, and module name) of the requested path, proxy members no longer answer for it, unless `merge_proxy_versions` is `true`. Ownership is read from the hosted member's records for either layout reading of the path, so it cannot be bypassed by writing a group in dotted or slashed form. A database error while checking ownership makes the group answer `502` rather than risk serving the proxy's file.
+- **Not supported.** Dynamic revisions (`latest.integration`, `1.+`, version ranges) need a listing of an upstream directory, which neither the proxy nor the hosted repositories serve: pin versions or resolve them through `maven-metadata.xml` where the upstream publishes one. Uploads (`PUT`, `DELETE`) to a proxy or group answer `405`.

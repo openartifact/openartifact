@@ -10,8 +10,8 @@ import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
-const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
+const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm', 'sbt']
+const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm', 'sbt']
 
 // Formats a hosted repository can federate. Mirrors FederationSupported in
 // internal/repotype; the server stays authoritative.
@@ -39,6 +39,7 @@ export function upstreamUrlPlaceholder(format: FormatId): string {
   if (format === 'pypi') return 'https://pypi.org/simple'
   if (format === 'cargo') return 'https://index.crates.io'
   if (format === 'go') return 'https://proxy.golang.org'
+  if (format === 'sbt') return 'https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases'
   return 'https://registry.example.com'
 }
 

@@ -19,3 +19,11 @@ SELECT ia.id, ia.repository_id, ia.organisation, ia.module, ia.revision, ia.arti
 FROM ivy_artifacts ia
 JOIN blobs b ON b.id = ia.blob_id
 WHERE ia.repository_id = $1 AND ia.deleted_at IS NULL ORDER BY ia.organisation, ia.module, ia.revision;
+
+-- name: IvyModuleExists :one
+-- Whether the repository holds a live file of the module: a group asks it to
+-- tell a module its hosted members own from one only a proxy has.
+SELECT EXISTS (
+    SELECT 1 FROM ivy_artifacts
+    WHERE repository_id = $1 AND organisation = $2 AND module = $3 AND deleted_at IS NULL
+);

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("com/example/lib/1.0-SNAPSHOT/maven-metadata.xml.sha1")
