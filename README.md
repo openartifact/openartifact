@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <h1 align="center">OpenArtifact</h1>
 
 <p align="center">
-  <b>Self-hosted artifact repository for 16 package formats.</b><br>
+  <b>Self-hosted artifact repository for many package formats.</b><br>
   One Go binary, embedded web UI, PostgreSQL. Hosted, proxy and group repositories with RBAC, SSO and security scanning.
 </p>
 
@@ -59,7 +59,7 @@ Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 
 ## Features
 
-- Native client protocols for 16 formats; hosted, proxy (with serve-stale) and group repositories
+- Native client protocols for Maven, npm, PyPI, Docker/OCI, Helm and more (see the [format matrix](docs/formats/README.md)); hosted, proxy (with serve-stale) and group repositories
 - RBAC with users, groups, permission targets and API tokens; SSO via OIDC and SAML; projects
 - SBOM (CycloneDX/SPDX), vulnerability scanning (OSV, Trivy, Grype), license compliance, secret detection
 - Cleanup policies, storage quotas, artifact properties, release bundles with promotion pipelines

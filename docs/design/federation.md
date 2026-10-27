@@ -6,11 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Design: federated repositories
 
-Status: implemented (issue [#33](https://github.com/openartifact/openartifact/issues/33)). Hosted repositories of nine formats federate with pull replication, last-writer-wins conflicts, tombstones, resync and rebuild, peer tokens, health views, metrics and resumable blob transfers. The operator guide is [Federation](../operations/federation.md). What is still open is listed under [Future work](#future-work-not-v1); where the shipped behaviour differs from the first proposal the text below says so.
+Status: implemented (issue [#33](https://github.com/openartifact/openartifact/issues/33)). Hosted repositories of the formats listed below federate with pull replication, last-writer-wins conflicts, tombstones, resync and rebuild, peer tokens, health views, metrics and resumable blob transfers. The operator guide is [Federation](../operations/federation.md). What is still open is listed under [Future work](#future-work-not-v1); where the shipped behaviour differs from the first proposal the text below says so.
 
 Shipped:
 
-- Everything in [Replication](#replication), [Security](#security), [Formats](#formats) (the nine formats of the table), [Observability](#observability) and [Configuration](#configuration), including the web UI Federation section of the repository's Settings tab and the admin API.
+- Everything in [Replication](#replication), [Security](#security), [Formats](#formats) (the formats of the table), [Observability](#observability) and [Configuration](#configuration), including the web UI Federation section of the repository's Settings tab and the admin API.
 - Resumable blob pulls, see [Resumable blob transfers](#resumable-blob-transfers).
 - Integration tests with two real server instances and, in CI, with three instances federated in a triangle (raw, npm and Docker) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
 

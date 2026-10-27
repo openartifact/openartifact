@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # OpenArtifact documentation
 
-Self-hosted artifact repository for 16 package formats. The [project README](../README.md) is the short overview; the details are here.
+Self-hosted artifact repository for many package formats. The [project README](../README.md) is the short overview; the details are here.
 
 These pages are also published, one version per release, at <https://openartifact.github.io/> with search and a version switcher; the markdown stays readable on GitHub. `latest` follows `main`.
 
