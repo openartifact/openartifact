@@ -48,8 +48,8 @@ help:
 	@echo "  bench           - Run Go micro-benchmarks (-benchmem)"
 	@echo "  bench-load      - Seed a running instance and run the HTTP load scenarios (bench/run.sh)"
 	@echo "  clean           - Remove build artifacts"
-	@echo "  lint            - Run golangci-lint"
-	@echo "  fmt             - Format code (gofmt + goimports)"
+	@echo "  lint            - Run golangci-lint (also fails on unformatted code)"
+	@echo "  fmt             - Format code (golangci-lint fmt: gofmt, goimports, golines at 140 columns)"
 	@echo "  vet             - Run go vet"
 	@echo "  sec             - Run gosec security scanner"
 	@echo "  check           - Run fmt + vet + lint (pre-commit gate)"
@@ -120,8 +120,8 @@ lint:
 
 fmt:
 	@echo "Formatting code..."
-	$(GO) fmt ./...
-	@which goimports > /dev/null && goimports -w . || true
+	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Install: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0" && exit 1)
+	golangci-lint fmt
 	@echo "Code formatted"
 
 vet:

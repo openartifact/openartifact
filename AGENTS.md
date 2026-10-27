@@ -48,7 +48,8 @@ make build            # web + server binary → bin/
 make build-cli        # bin/oa
 make test             # go test -short -race ./...
 make test-integration # -tags=integration tests (Postgres/S3 env or a container runtime)
-make lint             # golangci-lint v2
+make lint             # golangci-lint v2 (also fails on unformatted code, 140-column limit)
+make fmt              # golangci-lint fmt (gofmt, goimports, golines); run before committing
 make vet
 make deadcode         # unreachable-code gate (scripts/deadcode-check.sh); docs/development/README.md#dead-code-gate
 make generate         # go tool -modfile=tools/go.mod sqlc generate (after editing internal/database/queries/*.sql)

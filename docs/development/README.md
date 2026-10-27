@@ -11,7 +11,8 @@ How to build, test and release OpenArtifact, and what CI enforces. For the code 
 ```sh
 make test              # unit tests (race detector)
 make test-integration  # integration tests (testcontainers; needs a container runtime)
-make lint              # golangci-lint v2
+make lint              # golangci-lint v2 (linters + formatter check)
+make fmt               # golangci-lint fmt: gofmt, goimports, golines (140 columns)
 make generate          # sqlc code generation
 cd web && bun install && bun run dev
 ```
@@ -48,7 +49,8 @@ bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them b
 | `make test` | `go test -short -race -timeout 5m ./...` |
 | `make test-integration` | `go test -tags=integration -race -count=1 ./tests/...` (10 min timeout) |
 | `make test-coverage` | Race tests with `-coverpkg=./...`, filtered like CI (see [Coverage](#coverage)), writes `coverage.html` and prints the total |
-| `make lint` | `golangci-lint run ./...` (needs golangci-lint v2 on `PATH`) |
+| `make lint` | `golangci-lint run ./...` (needs golangci-lint v2 on `PATH`); also fails on unformatted code and on lines over 140 columns (`lll`) |
+| `make fmt` | `golangci-lint fmt`: gofmt, goimports and golines (wraps code at 140 columns, struct tags untouched); run it before committing, `make lint` rejects unformatted files. Comments, strings and SQL are not wrapped automatically: split them by hand (`lll` flags them) |
 | `make vet` | `go vet ./...` |
 | `make check` | `fmt` + `vet` + `lint`; run before opening a PR |
 | `make generate` | sqlc generate; run after editing `internal/database/queries/*.sql` or the schema, and commit `internal/database/dbsqlc/` |
@@ -229,7 +231,7 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 |---|---|
 | `go` | `go build`, `go vet`, `go mod tidy -diff` (root and `tools/`), `govulncheck ./...`, [dead-code gate](#dead-code-gate), `go test -race ./...` (writes the unit coverage profile) |
 | `integration` | Postgres + Garage service; `go test -race -tags integration` over every package with an integration-tagged test (writes the integration coverage profile) |
-| `lint` | golangci-lint with `.golangci.yaml` (includes gofmt/goimports) |
+| `lint` | golangci-lint with `.golangci.yaml` (includes the gofmt/goimports/golines formatter check and the 140-column `lll` limit) |
 | `reuse` | REUSE license compliance |
 | `sqlc` | `sqlc generate` leaves no diff in `internal/database/dbsqlc` |
 | `web` | `bun install --frozen-lockfile`, typecheck, generated API client up to date, `bun test` (with lcov coverage), build, bundle-size check |
