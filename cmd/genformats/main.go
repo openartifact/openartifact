@@ -85,7 +85,9 @@ func render() []byte {
 
 	upstreams := map[string]string{}
 
-	for _, s := range repotype.All() {
+	for _, name := range repotype.Names() {
+		s, _ := repotype.Lookup(name)
+
 		for _, sel := range []struct {
 			on   bool
 			list *[]string
