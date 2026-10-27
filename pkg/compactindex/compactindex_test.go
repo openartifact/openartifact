@@ -6,11 +6,10 @@ package compactindex
 
 import (
 	"bytes"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -29,23 +28,23 @@ func TestParseInfo(t *testing.T) {
 		"0.9 \n"
 
 	lines, err := ParseInfoBytes([]byte(body))
-	require.NoError(t, err)
-	require.Len(t, lines, 3)
+	noErr(t, err)
+	length(t, lines, 3)
 
-	assert.Equal(t, "1.0.0", lines[0].Version)
-	assert.Equal(t, sumA, lines[0].Checksum)
-	assert.Equal(t, "1.0.0-java", lines[1].Version)
-	assert.Equal(t, sumB, lines[1].Checksum)
-	assert.Empty(t, lines[2].Checksum)
+	equal(t, "1.0.0", lines[0].Version)
+	equal(t, sumA, lines[0].Checksum)
+	equal(t, "1.0.0-java", lines[1].Version)
+	equal(t, sumB, lines[1].Checksum)
+	empty(t, lines[2].Checksum)
 
 	l, ok := FindInfo(lines, "1.0.0-java")
-	require.True(t, ok)
-	assert.Equal(t, lines[1], l)
+	isTrue(t, ok)
+	equal(t, lines[1], l)
 
 	_, ok = FindInfo(lines, "2.0")
-	assert.False(t, ok)
+	isFalse(t, ok)
 
-	assert.Equal(t, strings.TrimSuffix(body, "0.9 \n")+"0.9 \n", string(RenderInfo(lines)))
+	equal(t, strings.TrimSuffix(body, "0.9 \n")+"0.9 \n", string(RenderInfo(lines)))
 }
 
 func TestParseInfoRejects(t *testing.T) {
@@ -65,8 +64,8 @@ func TestParseInfoRejects(t *testing.T) {
 			t.Parallel()
 
 			_, err := ParseInfoBytes([]byte(body))
-			require.Error(t, err)
-			assert.Error(t, VerifyInfo(strings.NewReader(body)))
+			hasErr(t, err)
+			hasErr(t, VerifyInfo(strings.NewReader(body)))
 		})
 	}
 }
@@ -75,16 +74,16 @@ func TestMergeInfo(t *testing.T) {
 	t.Parallel()
 
 	a, err := ParseInfoBytes([]byte("---\n1.0 |checksum:" + sumA + "\n2.0 |checksum:" + sumA + "\n"))
-	require.NoError(t, err)
+	noErr(t, err)
 
 	b, err := ParseInfoBytes([]byte("---\n2.0 |checksum:" + sumB + "\n3.0 |checksum:" + sumB + "\n"))
-	require.NoError(t, err)
+	noErr(t, err)
 
 	merged := MergeInfo(a, b)
-	require.Len(t, merged, 3)
-	assert.Equal(t, "2.0", merged[1].Version)
-	assert.Equal(t, sumA, merged[1].Checksum, "the first source wins a duplicate version")
-	assert.Equal(t, "3.0", merged[2].Version)
+	length(t, merged, 3)
+	equal(t, "2.0", merged[1].Version)
+	equal(t, sumA, merged[1].Checksum, "the first source wins a duplicate version")
+	equal(t, "3.0", merged[2].Version)
 }
 
 func TestParseVersions(t *testing.T) {
@@ -98,17 +97,17 @@ func TestParseVersions(t *testing.T) {
 		"gone -1.0 " + md5A + "\n"
 
 	v, err := ParseVersions(strings.NewReader(body))
-	require.NoError(t, err)
-	assert.Equal(t, "2026-10-01T00:00:04Z", v.CreatedAt)
-	require.Len(t, v.Entries, 3)
-	assert.Equal(t, Entry{Name: "rake", Versions: []string{"13.0", "14.0"}, InfoMD5: md5B}, v.Entries[0])
-	assert.Equal(t, "json", v.Entries[1].Name)
-	assert.Empty(t, v.Entries[2].Versions)
+	noErr(t, err)
+	equal(t, "2026-10-01T00:00:04Z", v.CreatedAt)
+	length(t, v.Entries, 3)
+	equal(t, Entry{Name: "rake", Versions: []string{"13.0", "14.0"}, InfoMD5: md5B}, v.Entries[0])
+	equal(t, "json", v.Entries[1].Name)
+	empty(t, v.Entries[2].Versions)
 
-	assert.Equal(t, "created_at: 2026-10-01T00:00:04Z\n---\n"+
+	equal(t, "created_at: 2026-10-01T00:00:04Z\n---\n"+
 		"json 2.0 "+md5B+"\n"+
 		"rake 13.0,14.0 "+md5B+"\n", string(v.Render()))
-	require.NoError(t, VerifyVersions(strings.NewReader(body)))
+	noErr(t, VerifyVersions(strings.NewReader(body)))
 }
 
 func TestParseVersionsRejects(t *testing.T) {
@@ -127,8 +126,8 @@ func TestParseVersionsRejects(t *testing.T) {
 			t.Parallel()
 
 			_, err := ParseVersions(strings.NewReader(body))
-			require.ErrorIs(t, err, ErrMalformed)
-			require.ErrorIs(t, VerifyVersions(strings.NewReader(body)), ErrMalformed)
+			errIs(t, err, ErrMalformed)
+			errIs(t, VerifyVersions(strings.NewReader(body)), ErrMalformed)
 		})
 	}
 }
@@ -137,22 +136,22 @@ func TestNames(t *testing.T) {
 	t.Parallel()
 
 	names, err := ParseNames(strings.NewReader("---\n_\n-\nrake\n.cat\n"))
-	require.NoError(t, err)
-	assert.Equal(t, []string{"_", "-", "rake", ".cat"}, names)
-	assert.Equal(t, "---\n-\n.cat\n_\nrake\n", string(RenderNames(append(names, "rake"))))
+	noErr(t, err)
+	equal(t, []string{"_", "-", "rake", ".cat"}, names)
+	equal(t, "---\n-\n.cat\n_\nrake\n", string(RenderNames(append(names, "rake"))))
 
 	for _, body := range []string{"", "rake\n", "---\nra ke\n", "---\n..\n", "---\n\n"} {
 		_, err := ParseNames(strings.NewReader(body))
-		require.ErrorIs(t, err, ErrMalformed, body)
-		require.ErrorIs(t, VerifyNames(strings.NewReader(body)), ErrMalformed, body)
+		errIs(t, err, ErrMalformed, body)
+		errIs(t, VerifyNames(strings.NewReader(body)), ErrMalformed, body)
 	}
 }
 
 func TestInfoMD5(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "d41d8cd98f00b204e9800998ecf8427e", InfoMD5(nil))
-	assert.Equal(t, "5eb63bbbe01eeed093cb22bb8f5acdc3", InfoMD5([]byte("hello world")))
+	equal(t, "d41d8cd98f00b204e9800998ecf8427e", InfoMD5(nil))
+	equal(t, "5eb63bbbe01eeed093cb22bb8f5acdc3", InfoMD5([]byte("hello world")))
 }
 
 func TestParsePath(t *testing.T) {
@@ -170,8 +169,8 @@ func TestParsePath(t *testing.T) {
 		"prerelease_specs.4.8.gz":          {Kind: KindSpecs, File: "prerelease_specs.4.8.gz"},
 	} {
 		got, ok := ParsePath(rel)
-		require.True(t, ok, rel)
-		assert.Equal(t, want, got, rel)
+		isTrue(t, ok, rel)
+		equal(t, want, got, rel)
 	}
 
 	for _, rel := range []string{
@@ -179,34 +178,106 @@ func TestParsePath(t *testing.T) {
 		"quick/Marshal.4.8/rake-1.gemspec", "quick/Marshal.4.8/rake-1.0.gem", "versions/", "api/v1/dependencies", "../versions",
 	} {
 		_, ok := ParsePath(rel)
-		assert.False(t, ok, rel)
+		isFalse(t, ok, rel)
 	}
 }
 
 func TestSplitFile(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, []FileSplit{{"rake", "13.0.6"}}, SplitFile("rake-13.0.6"))
-	assert.Equal(t, []FileSplit{{"foo-bar", "1.0-java"}}, SplitFile("foo-bar-1.0-java"))
-	assert.Equal(t, []FileSplit{{"a", "1-2"}, {"a-1", "2"}}, SplitFile("a-1-2"))
-	assert.Equal(t, []FileSplit{{"nokogiri", "1.16.0-x86_64-linux"}}, SplitFile("nokogiri-1.16.0-x86_64-linux"))
-	assert.Empty(t, SplitFile("rake"))
-	assert.Empty(t, SplitFile("rake-"))
-	assert.Empty(t, SplitFile("-1.0"))
+	equal(t, []FileSplit{{"rake", "13.0.6"}}, SplitFile("rake-13.0.6"))
+	equal(t, []FileSplit{{"foo-bar", "1.0-java"}}, SplitFile("foo-bar-1.0-java"))
+	equal(t, []FileSplit{{"a", "1-2"}, {"a-1", "2"}}, SplitFile("a-1-2"))
+	equal(t, []FileSplit{{"nokogiri", "1.16.0-x86_64-linux"}}, SplitFile("nokogiri-1.16.0-x86_64-linux"))
+	empty(t, SplitFile("rake"))
+	empty(t, SplitFile("rake-"))
+	empty(t, SplitFile("-1.0"))
 }
 
 func TestErrMalformedIsWrapped(t *testing.T) {
 	t.Parallel()
 
 	_, err := ParseInfoBytes(bytes.Repeat([]byte("x"), 3))
-	assert.ErrorIs(t, err, ErrMalformed)
+	errIs(t, err, ErrMalformed)
 }
 
 func TestParseVersionsAcceptsLineWithoutMD5(t *testing.T) {
 	// rubygems.org lists some platform releases with an empty checksum field.
 	v, err := ParseVersions(strings.NewReader("---\nyeptris 0.6.28.3-x86_64-linux \nrake 1.0 " + md5A + "\n"))
-	require.NoError(t, err)
-	require.Len(t, v.Entries, 2)
-	assert.Empty(t, v.Entries[0].InfoMD5)
-	assert.Contains(t, string(v.Render()), "yeptris 0.6.28.3-x86_64-linux \n")
+	noErr(t, err)
+	length(t, v.Entries, 2)
+	empty(t, v.Entries[0].InfoMD5)
+	contains(t, string(v.Render()), "yeptris 0.6.28.3-x86_64-linux \n")
+}
+
+func noErr(t *testing.T, err error) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func hasErr(t *testing.T, err error) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func errIs(t *testing.T, err, target error, msg ...any) {
+	t.Helper()
+
+	if !errors.Is(err, target) {
+		t.Fatalf("error %v is not %v %v", err, target, msg)
+	}
+}
+
+func length[T any](t *testing.T, s []T, n int) {
+	t.Helper()
+
+	if len(s) != n {
+		t.Fatalf("length %d, want %d", len(s), n)
+	}
+}
+
+func isTrue(t *testing.T, ok bool, msg ...any) {
+	t.Helper()
+
+	if !ok {
+		t.Fatalf("expected true %v", msg)
+	}
+}
+
+func isFalse(t *testing.T, ok bool, msg ...any) {
+	t.Helper()
+
+	if ok {
+		t.Fatalf("expected false %v", msg)
+	}
+}
+
+func equal(t *testing.T, want, got any, msg ...any) {
+	t.Helper()
+
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("got %#v, want %#v %v", got, want, msg)
+	}
+}
+
+func empty(t *testing.T, v any) {
+	t.Helper()
+
+	if rv := reflect.ValueOf(v); rv.IsValid() && rv.Len() != 0 {
+		t.Fatalf("expected empty, got %#v", v)
+	}
+}
+
+func contains(t *testing.T, s, sub string) {
+	t.Helper()
+
+	if !strings.Contains(s, sub) {
+		t.Fatalf("%q does not contain %q", s, sub)
+	}
 }
