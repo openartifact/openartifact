@@ -792,12 +792,12 @@ func TestRepositoryValidate(t *testing.T) {
 		{name: "sign_packages on hosted rpm", obj: &Object{Name: "r", Spec: map[string]any{"format": "rpm", "sign_packages": true}}},
 		{
 			name:    "proxy of an unsupported format",
-			obj:     &Object{Name: "r", Spec: map[string]any{"format": "rubygems", "repo_type": "proxy"}},
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "bogus", "repo_type": "proxy"}},
 			wantErr: "proxy repositories are not supported",
 		},
 		{
 			name:    "group of an unsupported format",
-			obj:     &Object{Name: "r", Spec: map[string]any{"format": "rubygems", "repo_type": "group"}},
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "bogus", "repo_type": "group"}},
 			wantErr: "group repositories are not supported",
 		},
 		{

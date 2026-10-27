@@ -143,6 +143,8 @@ func (h *Handler) serveMerged(
 		return h.serveGo(w, r, grp, relPath, readable, be)
 	case "nuget":
 		return h.serveNuGet(w, r, grp, relPath, readable, be)
+	case "rubygems":
+		return h.serveRubyGems(w, r, grp, relPath, readable, be)
 	case "conan":
 		return h.serveConan(w, r, grp, relPath, readable, be)
 	case "conda":

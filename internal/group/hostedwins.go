@@ -15,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
+	"github.com/openartifact/openartifact/pkg/compactindex"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
@@ -66,6 +67,10 @@ type pkgRef struct {
 	// probe is the member path of a package-level document a hosted member
 	// answers 200 for iff it holds the package.
 	probe string
+	// altProbes are further probe documents; the package is held when any of
+	// them (or probe) answers 200. A rubygems file name is ambiguous between
+	// gem names ("a-1-2.gem" is a-1 2 or a 1-2), so each reading is probed.
+	altProbes []string
 	// query is the raw query the probe is made with.
 	query string
 	// holds, when set, decides ownership from the probe's 200 answer: the
@@ -122,6 +127,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = helmRef(relPath)
 	case "ivy", "sbt":
 		ref, ok = fileRepoRef(relPath)
+	case "rubygems":
+		ref, ok = rubygemsRef(relPath)
 	case "conan":
 		ref, ok = conanRef(relPath)
 	case "conda":
@@ -168,6 +175,33 @@ func pypiRef(relPath string) (pkgRef, bool) {
 			},
 		}, true
 	case pypisimple.PathIndex, pypisimple.PathOther:
+	}
+
+	return pkgRef{}, false
+}
+
+func rubygemsRef(relPath string) (pkgRef, bool) {
+	p, ok := compactindex.ParsePath(relPath)
+	if !ok {
+		return pkgRef{}, false
+	}
+
+	switch p.Kind {
+	case compactindex.KindInfo:
+		return pkgRef{probe: "info/" + p.Gem}, true
+	case compactindex.KindGem, compactindex.KindGemspec:
+		split := compactindex.SplitFile(p.File)
+		if len(split) == 0 {
+			return pkgRef{}, false
+		}
+
+		ref := pkgRef{probe: "info/" + split[0].Name, file: true}
+		for _, c := range split[1:] {
+			ref.altProbes = append(ref.altProbes, "info/"+c.Name)
+		}
+
+		return ref, true
+	case compactindex.KindVersions, compactindex.KindNames, compactindex.KindSpecs:
 	}
 
 	return pkgRef{}, false
@@ -473,8 +507,25 @@ func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Ba
 		return h.ownsCondaName(mr, m, ref.condaName)
 	}
 
+	result := ownsNot
+
+	for _, probe := range append([]string{ref.probe}, ref.altProbes...) {
+		switch h.ownsProbe(mr, m, ref, probe, be) {
+		case ownsYes:
+			return ownsYes
+		case ownsUnknown:
+			result = ownsUnknown
+		case ownsNot:
+		}
+	}
+
+	return result
+}
+
+// ownsProbe asks hosted member m for one probe document.
+func (h *Handler) ownsProbe(mr *http.Request, m *models.Repository, ref pkgRef, probe string, be Backend) ownership {
 	sw := &statusWriter{header: make(http.Header)}
-	be.ServeMember(sw, mr, m, ref.probe)
+	be.ServeMember(sw, mr, m, probe)
 
 	// A handler that wrote nothing answers an empty 200, as net/http does.
 	if sw.status == 0 {

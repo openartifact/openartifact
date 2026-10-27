@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("---\n1.0.0 |checksum:ceab46efc69e21259f97393a92d1f4ec29582ec1137545183abbd11b26459e94,ruby:>= 2.0.0\n1.0.0-java rake:>= 0&< 14,json:~> 2.0|checksum:0e0d9357893053a369e7f9f3fc13eb4a61aff3058dd419fcb61f73d762e0b9ed\n")

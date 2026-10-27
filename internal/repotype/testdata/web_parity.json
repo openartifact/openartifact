@@ -43,10 +43,10 @@
   },
   {
     "format": "rubygems",
-    "proxy": false,
-    "group": false,
+    "proxy": true,
+    "group": true,
     "federation": false,
-    "default_upstream": ""
+    "default_upstream": "https://rubygems.org"
   },
   {
     "format": "deb",

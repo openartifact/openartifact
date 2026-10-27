@@ -125,8 +125,8 @@ func (s *Service) serveCargoCrate(w http.ResponseWriter, r *http.Request, repo *
 	s.serveResolved(w, r, repo, key, res, resolve)
 }
 
-// readCargoBlob loads a cached index file or config.json.
-func (s *Service) readCargoBlob(ctx context.Context, entry *models.ProxyCacheEntry, limit int64) ([]byte, error) {
+// readCachedDoc loads a cached index file or config document (at most limit bytes).
+func (s *Service) readCachedDoc(ctx context.Context, entry *models.ProxyCacheEntry, limit int64) ([]byte, error) {
 	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
 	if err != nil {
 		return nil, fmt.Errorf("open cached cargo metadata: %w", err)
@@ -167,7 +167,7 @@ func (s *Service) cargoDownloadTemplate(ctx context.Context, repo *models.Reposi
 		return "", err
 	}
 
-	doc, err := s.readCargoBlob(ctx, res.entry, 1<<20)
+	doc, err := s.readCachedDoc(ctx, res.entry, 1<<20)
 	if err != nil {
 		s.log.Errorw("failed to read cached cargo config", "repo", repo.Name, "error", err)
 		return "", errInternal
@@ -204,7 +204,7 @@ func (s *Service) fetchCargoCrate(
 		return nil, aerr //nolint:wrapcheck // caller checks for cancellation
 	}
 
-	doc, err := s.readCargoBlob(ctx, res.entry, pkgcargo.MaxIndexBytes)
+	doc, err := s.readCachedDoc(ctx, res.entry, pkgcargo.MaxIndexBytes)
 	if err != nil {
 		s.packuments.Release()
 		s.log.Errorw("failed to read cached cargo index", "repo", repo.Name, "crate", p.Crate, "error", err)

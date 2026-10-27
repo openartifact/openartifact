@@ -33,8 +33,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
 	case "go":
 		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
-	case "nuget":
-		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
+	case "nuget", "rubygems":
+		return isPackageArchive(format, relPath, base)
 	case "conan", "conda":
 		return isConanCondaBlob(format, relPath, base)
 	case "raw":
@@ -57,6 +57,16 @@ func isConanCondaBlob(format, relPath, base string) bool {
 	}
 
 	return strings.Contains(relPath, "/files/") && isConanArchive(base)
+}
+
+// isPackageArchive is IsProxyBlobPath for nuget (.nupkg of the flat container)
+// and rubygems (gems/<file>.gem).
+func isPackageArchive(format, relPath, base string) bool {
+	if format == "nuget" {
+		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
+	}
+
+	return strings.HasPrefix(relPath, "gems/") && strings.HasSuffix(base, ".gem")
 }
 
 func isConanArchive(base string) bool {
