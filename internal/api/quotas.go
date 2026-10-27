@@ -19,24 +19,11 @@ import (
 )
 
 type QuotasHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
+	repoAccess
 }
 
 func NewQuotasHandler(log *logger.Logger, db database.Database, evaluator *auth.Evaluator) *QuotasHandler {
-	return &QuotasHandler{db: db, log: log, evaluator: evaluator}
-}
-
-// requireRepoAdmin gates the quota limit writes on {name}: a global admin or a
-// maintainer/owner of the repository's project may set them; the usage
-// reconcile stays admin-only (requireAdmin).
-func (h *QuotasHandler) requireRepoAdmin(w http.ResponseWriter, r *http.Request) bool {
-	return requireRepoAdmin(w, r, h.evaluator, urlparams.Vars(r)["name"])
-}
-
-func (h *QuotasHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	return requireAdmin(w, r, h.evaluator)
+	return &QuotasHandler{repoAccess: newRepoAccess(db, log, evaluator)}
 }
 
 func (h *QuotasHandler) RegisterRoutes(r chi.Router, pathPrefix string) {
@@ -67,24 +54,14 @@ func (h *QuotasHandler) handleGetQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get quota: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+	repo, ok := h.loadRepo(w, r, "get quota")
+	if !ok {
 		return
 	}
 
 	quota, err := h.db.GetOrCreateStorageQuota(ctx, repo.ID)
 	if err != nil {
-		h.log.Errorw("get quota: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "get quota: db error", err)
 		return
 	}
 
@@ -92,25 +69,12 @@ func (h *QuotasHandler) handleGetQuota(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request) {
-	if !h.requireRepoAdmin(w, r) {
+	repo, ok := h.repoAdminFirst(w, r, "update quota")
+	if !ok {
 		return
 	}
 
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("update quota: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
 
 	var body struct {
 		MaxSizeBytes         *int64 `json:"max_size_bytes"`
@@ -135,9 +99,7 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 
 	quota, err := h.db.GetOrCreateStorageQuota(ctx, repo.ID)
 	if err != nil {
-		h.log.Errorw("update quota: db error getting quota", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "update quota: db error getting quota", err)
 		return
 	}
 
@@ -154,9 +116,7 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 	}
 
 	if msg, err := h.projectCeilingViolation(ctx, repo, quota); err != nil {
-		h.log.Errorw("update quota: project quota lookup failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "update quota: project quota lookup failed", err)
 		return
 	} else if msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
@@ -164,9 +124,7 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.db.UpdateStorageQuota(ctx, quota); err != nil {
-		h.log.Errorw("update quota: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "update quota: db error", err)
 		return
 	}
 
@@ -199,31 +157,16 @@ func (h *QuotasHandler) projectCeilingViolation(ctx context.Context, repo *model
 }
 
 func (h *QuotasHandler) handleDeleteQuota(w http.ResponseWriter, r *http.Request) {
-	if !h.requireRepoAdmin(w, r) {
+	repo, ok := h.repoAdminFirst(w, r, "delete quota")
+	if !ok {
 		return
 	}
 
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete quota: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
 
 	quota, err := h.db.GetOrCreateStorageQuota(ctx, repo.ID)
 	if err != nil {
-		h.log.Errorw("delete quota: db error getting quota", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "delete quota: db error getting quota", err)
 		return
 	}
 
@@ -232,9 +175,7 @@ func (h *QuotasHandler) handleDeleteQuota(w http.ResponseWriter, r *http.Request
 	quota.MaxArtifactCount = 0
 
 	if err := h.db.UpdateStorageQuota(ctx, quota); err != nil {
-		h.log.Errorw("delete quota: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "delete quota: db error", err)
 		return
 	}
 
@@ -246,29 +187,14 @@ func (h *QuotasHandler) handleDeleteQuota(w http.ResponseWriter, r *http.Request
 // commits, so a database crash (or a restore) can leave them off; this repairs
 // them without touching the limits.
 func (h *QuotasHandler) handleReconcileQuota(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	repo, ok := h.adminFirstRepo(w, r, "reconcile quota")
+	if !ok {
 		return
 	}
 
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
+	quota, err := h.db.ReconcileStorageUsage(r.Context(), repo.ID)
 	if err != nil {
-		h.log.Errorw("reconcile quota: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	quota, err := h.db.ReconcileStorageUsage(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("reconcile quota: db error", "repository", name, "error", err)
+		h.log.Errorw("reconcile quota: db error", "repository", urlparams.Vars(r)["name"], "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return

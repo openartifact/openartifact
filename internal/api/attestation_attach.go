@@ -321,11 +321,10 @@ func (a *AttestationAttacher) OnScan(ctx context.Context, repoID, artifactID str
 
 // AttestationAttachHandler serves the attach endpoints and the per-repository switch.
 type AttestationAttachHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
-	attacher  *AttestationAttacher
-	blobs     storage.BlobStore
+	repoAccess
+
+	attacher *AttestationAttacher
+	blobs    storage.BlobStore
 }
 
 // NewAttestationAttachHandler builds the handler.
@@ -336,7 +335,7 @@ func NewAttestationAttachHandler(
 	attacher *AttestationAttacher,
 	blobs storage.BlobStore,
 ) *AttestationAttachHandler {
-	return &AttestationAttachHandler{db: db, log: log, evaluator: evaluator, attacher: attacher, blobs: blobs}
+	return &AttestationAttachHandler{repoAccess: newRepoAccess(db, log, evaluator), attacher: attacher, blobs: blobs}
 }
 
 // RegisterAuthed registers the admin routes.
@@ -349,25 +348,9 @@ func (h *AttestationAttachHandler) RegisterAuthed(r chi.Router) {
 	r.Post(repo+"/vex/attach", h.handleAttachVEX)
 }
 
+// adminRepo is adminFirstRepo logging failures under the "attestation attach" prefix.
 func (h *AttestationAttachHandler) adminRepo(w http.ResponseWriter, r *http.Request, op string) (*models.Repository, bool) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return nil, false
-	}
-
-	repo, err := h.db.GetRepositoryByName(r.Context(), urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("attestation attach "+op+": db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return nil, false
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return nil, false
-	}
-
-	return repo, true
+	return h.adminFirstRepo(w, r, "attestation attach "+op)
 }
 
 func (h *AttestationAttachHandler) handleGetSetting(w http.ResponseWriter, r *http.Request) {

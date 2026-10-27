@@ -20,7 +20,6 @@ import (
 	"github.com/openartifact/openartifact/internal/dtrack"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/sbom"
-	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -41,10 +40,9 @@ type DTrackPusher interface {
 // DependencyTrackHandler manages the Dependency-Track integration: the global
 // settings, per-repository overrides, connection tests and manual pushes.
 type DependencyTrackHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
-	pusher    DTrackPusher
+	repoAccess
+
+	pusher DTrackPusher
 }
 
 // NewDependencyTrackHandler creates the handler; pusher may be nil (manual pushes then answer 501).
@@ -54,7 +52,7 @@ func NewDependencyTrackHandler(
 	evaluator *auth.Evaluator,
 	pusher DTrackPusher,
 ) *DependencyTrackHandler {
-	return &DependencyTrackHandler{db: db, log: log, evaluator: evaluator, pusher: pusher}
+	return &DependencyTrackHandler{repoAccess: newRepoAccess(db, log, evaluator), pusher: pusher}
 }
 
 // RegisterAuthed registers the admin routes.
@@ -255,25 +253,9 @@ func (h *DependencyTrackHandler) testConnection(w http.ResponseWriter, r *http.R
 
 // ---- per-repository --------------------------------------------------------
 
+// adminRepo is adminFirstRepo logging failures under the "dependency-track" prefix.
 func (h *DependencyTrackHandler) adminRepo(w http.ResponseWriter, r *http.Request, op string) (*models.Repository, bool) {
-	if !requireAdmin(w, r, h.evaluator) {
-		return nil, false
-	}
-
-	repo, err := h.db.GetRepositoryByName(r.Context(), urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("dependency-track "+op+": db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return nil, false
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return nil, false
-	}
-
-	return repo, true
+	return h.adminFirstRepo(w, r, "dependency-track "+op)
 }
 
 func overrideResponse(o *models.RepositoryDependencyTrack) *responses.DependencyTrackOverrideResponse {

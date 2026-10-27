@@ -25,9 +25,8 @@ import (
 )
 
 type WebhooksHandler struct {
-	db         database.Database
-	log        *logger.Logger
-	evaluator  *auth.Evaluator
+	repoAccess
+
 	dispatcher *webhook.Dispatcher
 }
 
@@ -38,9 +37,7 @@ func NewWebhooksHandler(
 	dispatcher *webhook.Dispatcher,
 ) *WebhooksHandler {
 	return &WebhooksHandler{
-		db:         db,
-		log:        log,
-		evaluator:  evaluator,
+		repoAccess: newRepoAccess(db, log, evaluator),
 		dispatcher: dispatcher,
 	}
 }
@@ -101,12 +98,7 @@ func webhookToResponse(wh *models.Webhook) responses.WebhookResponse {
 }
 
 func webhooksToResponse(list []*models.Webhook) []responses.WebhookResponse {
-	out := make([]responses.WebhookResponse, 0, len(list))
-	for _, wh := range list {
-		out = append(out, webhookToResponse(wh))
-	}
-
-	return out
+	return mapList(list, webhookToResponse)
 }
 
 func clampInt(v, lo, hi int) int {
@@ -115,13 +107,7 @@ func clampInt(v, lo, hi int) int {
 
 // requireAdmin writes a 403 and returns false unless the caller is an admin.
 func (h *WebhooksHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	isAdmin, err := principalIsAdmin(r.Context(), currentPrincipal(r), h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return false
-	}
-
-	return true
+	return h.adminGate(w, r)
 }
 
 // decodeWebhookBody decodes a size-capped JSON body, writing 413/400 on failure.
@@ -237,9 +223,7 @@ func (h *WebhooksHandler) handleListGlobal(w http.ResponseWriter, r *http.Reques
 
 	webhooks, err := h.db.ListWebhooks(r.Context(), "")
 	if err != nil {
-		h.log.Errorw("list webhooks: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "list webhooks: db error", err)
 		return
 	}
 
@@ -259,26 +243,14 @@ func (h *WebhooksHandler) handleListRepo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("get repository: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoNamed(w, r, "get repository: db error")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	webhooks, err := h.db.ListWebhooks(ctx, repo.ID)
+	webhooks, err := h.db.ListWebhooks(r.Context(), repo.ID)
 	if err != nil {
-		h.log.Errorw("list webhooks: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "list webhooks: db error", err)
 		return
 	}
 
@@ -293,16 +265,8 @@ func (h *WebhooksHandler) handleCreateRepo(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	repo, err := h.db.GetRepositoryByName(r.Context(), urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("get repository: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+	repo, ok := h.repoNamed(w, r, "get repository: db error")
+	if !ok {
 		return
 	}
 
@@ -402,9 +366,7 @@ func (h *WebhooksHandler) createWebhook(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err := h.db.CreateWebhook(r.Context(), wh); err != nil {
-		h.log.Errorw("create webhook: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "create webhook: db error", err)
 		return
 	}
 
@@ -420,9 +382,7 @@ func (h *WebhooksHandler) loadWebhook(w http.ResponseWriter, r *http.Request) *m
 
 	wh, err := h.db.GetWebhook(r.Context(), urlparams.Vars(r)["id"])
 	if err != nil {
-		h.log.Errorw("get webhook: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "get webhook: db error", err)
 		return nil
 	}
 
@@ -545,9 +505,7 @@ func (h *WebhooksHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.UpdateWebhook(r.Context(), wh); err != nil {
-		h.log.Errorw("update webhook: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "update webhook: db error", err)
 		return
 	}
 
@@ -562,9 +520,7 @@ func (h *WebhooksHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.DeleteWebhook(r.Context(), wh.ID); err != nil {
-		h.log.Errorw("delete webhook: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "delete webhook: db error", err)
 		return
 	}
 
@@ -582,9 +538,7 @@ func (h *WebhooksHandler) handleListDeliveries(w http.ResponseWriter, r *http.Re
 
 	deliveries, err := h.db.ListWebhookDeliveries(r.Context(), wh.ID, limit)
 	if err != nil {
-		h.log.Errorw("list webhook deliveries: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "list webhook deliveries: db error", err)
 		return
 	}
 

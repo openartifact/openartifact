@@ -22,8 +22,8 @@ import (
 )
 
 type PropertiesHandler struct {
-	db       database.Database
-	log      *logger.Logger
+	repoAccess
+
 	licenses artifactLicenseSource
 }
 
@@ -32,8 +32,8 @@ type PropertiesHandler struct {
 // licenses when a license property changes.
 func NewPropertiesHandler(log *logger.Logger, db database.Database, blobs storage.BlobStore) *PropertiesHandler {
 	return &PropertiesHandler{
-		db: db, log: log,
-		licenses: artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)},
+		repoAccess: newRepoAccess(db, log, nil),
+		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)},
 	}
 }
 
@@ -111,41 +111,39 @@ func (h *PropertiesHandler) RegisterRoutes(r chi.Router, pathPrefix string) {
 	r.Get(pathPrefix+"/artifacts/search", h.handleSearchByProperty)
 }
 
-func (h *PropertiesHandler) handleGetProperties(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	artifactIDEncoded := urlparams.Vars(r)["artifact_id"]
-	ctx := r.Context()
-
-	// Decode the artifact ID from URL encoding
-	artifactID, err := url.PathUnescape(artifactIDEncoded)
+// artifactIDParam decodes and validates the URL-encoded {artifact_id}; it
+// answers 400 and reports false when it is unusable.
+func artifactIDParam(w http.ResponseWriter, r *http.Request) (string, bool) {
+	artifactID, err := url.PathUnescape(urlparams.Vars(r)["artifact_id"])
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid artifact_id")
-		return
+		return "", false
 	}
 
 	if msg := validateArtifactID(artifactID); msg != "" {
 		writeError(w, http.StatusBadRequest, "bad_request", msg)
+		return "", false
+	}
+
+	return artifactID, true
+}
+
+func (h *PropertiesHandler) handleGetProperties(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	artifactID, ok := artifactIDParam(w, r)
+	if !ok {
 		return
 	}
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get properties: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+	repo, ok := h.loadRepo(w, r, "get properties")
+	if !ok {
 		return
 	}
 
 	props, err := h.db.ListArtifactProperties(ctx, repo.ID, artifactID)
 	if err != nil {
-		h.log.Errorw("get properties: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "get properties: db error", err)
 		return
 	}
 
@@ -157,32 +155,13 @@ func (h *PropertiesHandler) handleGetProperties(w http.ResponseWriter, r *http.R
 }
 
 func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	artifactIDEncoded := urlparams.Vars(r)["artifact_id"]
-	ctx := r.Context()
-
-	// Decode the artifact ID from URL encoding
-	artifactID, err := url.PathUnescape(artifactIDEncoded)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid artifact_id")
+	artifactID, ok := artifactIDParam(w, r)
+	if !ok {
 		return
 	}
 
-	if msg := validateArtifactID(artifactID); msg != "" {
-		writeError(w, http.StatusBadRequest, "bad_request", msg)
-		return
-	}
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("set properties: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+	repo, ok := h.loadRepo(w, r, "set properties")
+	if !ok {
 		return
 	}
 
@@ -194,10 +173,8 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 
 	// Replace atomically: delete-all + insert in one transaction so a failure
 	// midway can never leave the artifact with a partial property set.
-	if err := h.db.SetArtifactProperties(ctx, repo.ID, artifactID, body, true); err != nil {
-		h.log.Errorw("set properties: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	if err := h.db.SetArtifactProperties(r.Context(), repo.ID, artifactID, body, true); err != nil {
+		h.dbError(w, "set properties: db error", err)
 		return
 	}
 
@@ -255,32 +232,15 @@ func (h *PropertiesHandler) applyLicensePolicy(
 }
 
 func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	artifactIDEncoded := urlparams.Vars(r)["artifact_id"]
 	ctx := r.Context()
 
-	// Decode the artifact ID from URL encoding
-	artifactID, err := url.PathUnescape(artifactIDEncoded)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid artifact_id")
+	artifactID, ok := artifactIDParam(w, r)
+	if !ok {
 		return
 	}
 
-	if msg := validateArtifactID(artifactID); msg != "" {
-		writeError(w, http.StatusBadRequest, "bad_request", msg)
-		return
-	}
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("patch properties: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+	repo, ok := h.loadRepo(w, r, "patch properties")
+	if !ok {
 		return
 	}
 
@@ -292,9 +252,7 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 
 	// Upsert all properties in one transaction.
 	if err := h.db.SetArtifactProperties(ctx, repo.ID, artifactID, body, false); err != nil {
-		h.log.Errorw("patch properties: db error setting properties", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "patch properties: db error setting properties", err)
 		return
 	}
 
@@ -305,9 +263,7 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 	// Return all properties
 	props, err := h.db.ListArtifactProperties(ctx, repo.ID, artifactID)
 	if err != nil {
-		h.log.Errorw("patch properties: db error getting properties", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "patch properties: db error getting properties", err)
 		return
 	}
 
@@ -319,45 +275,24 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 }
 
 func (h *PropertiesHandler) handleDeleteProperty(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	artifactIDEncoded := urlparams.Vars(r)["artifact_id"]
+	artifactID, ok := artifactIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	repo, ok := h.loadRepo(w, r, "delete property")
+	if !ok {
+		return
+	}
+
 	key := urlparams.Vars(r)["key"]
-	ctx := r.Context()
-
-	// Decode the artifact ID from URL encoding
-	artifactID, err := url.PathUnescape(artifactIDEncoded)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid artifact_id")
-		return
-	}
-
-	if msg := validateArtifactID(artifactID); msg != "" {
-		writeError(w, http.StatusBadRequest, "bad_request", msg)
-		return
-	}
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete property: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
 	if msg := validatePropertyKey(key); msg != "" {
 		writeError(w, http.StatusBadRequest, "bad_request", msg)
 		return
 	}
 
-	if err := h.db.DeleteArtifactProperty(ctx, repo.ID, artifactID, key); err != nil {
-		h.log.Errorw("delete property: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	if err := h.db.DeleteArtifactProperty(r.Context(), repo.ID, artifactID, key); err != nil {
+		h.dbError(w, "delete property: db error", err)
 		return
 	}
 
@@ -365,9 +300,6 @@ func (h *PropertiesHandler) handleDeleteProperty(w http.ResponseWriter, r *http.
 }
 
 func (h *PropertiesHandler) handleSearchByProperty(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
 	key := r.URL.Query().Get("key")
 	value := r.URL.Query().Get("value")
 
@@ -381,24 +313,14 @@ func (h *PropertiesHandler) handleSearchByProperty(w http.ResponseWriter, r *htt
 		return
 	}
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("search by property: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.loadRepo(w, r, "search by property")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	artifactIDs, err := h.db.SearchByProperty(ctx, repo.ID, key, value)
+	artifactIDs, err := h.db.SearchByProperty(r.Context(), repo.ID, key, value)
 	if err != nil {
-		h.log.Errorw("search by property: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "search by property: db error", err)
 		return
 	}
 

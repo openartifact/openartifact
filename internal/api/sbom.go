@@ -27,9 +27,8 @@ import (
 )
 
 type SBOMHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
+	repoAccess
+
 	generator *sbom.Generator
 	blobStore storage.BlobStore
 	attest    *attest.Service
@@ -57,11 +56,9 @@ func NewSBOMHandler(
 	blobStore storage.BlobStore,
 ) *SBOMHandler {
 	return &SBOMHandler{
-		db:        db,
-		log:       log,
-		evaluator: evaluator,
-		generator: generator,
-		blobStore: blobStore,
+		repoAccess: newRepoAccess(db, log, evaluator),
+		generator:  generator,
+		blobStore:  blobStore,
 	}
 }
 
@@ -114,27 +111,10 @@ func sbomFileExtension(format string) string {
 }
 
 func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("generate SBOM: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "generate SBOM")
+	if !ok {
 		return
 	}
 
@@ -165,9 +145,7 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	metadata, err := storedArtifactMetadata(ctx, h.db, repo.ID, body.ArtifactID)
 	if err != nil {
-		h.log.Errorw("generate SBOM: db error reading artifact properties", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "generate SBOM: db error reading artifact properties", err)
 		return
 	}
 
@@ -260,96 +238,23 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, reportToMap(report))
 }
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *SBOMHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("list SBOMs: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "list SBOMs")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	reports, err := h.db.ListSBOMReports(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("list SBOMs: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if reports == nil {
-		reports = []*models.SBOMReport{}
-	}
-
-	result := []responses.SBOMReportResponse{}
-	for _, report := range reports {
-		result = append(result, reportToMap(report))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"reports": result,
-	})
+	writeRepoList(w, r, h.repoAccess, repo, "list SBOMs", "reports", h.db.ListSBOMReports, reportToMap)
 }
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *SBOMHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get SBOM: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "get SBOM")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
-		return
-	}
-
-	report, err := h.db.GetSBOMReportByID(ctx, repo.ID, id)
-	if err != nil {
-		h.log.Errorw("get SBOM: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if report == nil {
-		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
+	report, ok := fetchInRepo(w, r, h.repoAccess, repo, "get SBOM: db error", "SBOM report", h.db.GetSBOMReportByID)
+	if !ok {
 		return
 	}
 
@@ -357,46 +262,15 @@ func (h *SBOMHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("download SBOM: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "download SBOM")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
-		return
-	}
-
-	report, err := h.db.GetSBOMReportByID(ctx, repo.ID, id)
-	if err != nil {
-		h.log.Errorw("download SBOM: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if report == nil {
-		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
+	report, ok := fetchInRepo(w, r, h.repoAccess, repo, "download SBOM: db error", "SBOM report", h.db.GetSBOMReportByID)
+	if !ok {
 		return
 	}
 
@@ -498,33 +372,15 @@ func (h *SBOMHandler) writeAttested(ctx context.Context, w http.ResponseWriter, 
 }
 
 func (h *SBOMHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete SBOM: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "delete SBOM")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
+	id := urlparams.Vars(r)["id"]
+	if !requireUUID(w, id, "SBOM report") {
 		return
 	}
 
@@ -536,9 +392,7 @@ func (h *SBOMHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.log.Errorw("delete SBOM: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "delete SBOM: db error", err)
 		return
 	}
 

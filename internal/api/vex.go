@@ -32,9 +32,8 @@ const (
 // VEXHandler serves VEX documents built from the scan results and manages the
 // admin VEX decisions.
 type VEXHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
+	repoAccess
+
 	generator *sbom.Generator
 	attest    *attest.Service
 }
@@ -46,7 +45,7 @@ func (h *VEXHandler) WithAttestation(svc *attest.Service) *VEXHandler {
 }
 
 func NewVEXHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator) *VEXHandler {
-	return &VEXHandler{db: db, log: log, evaluator: evaluator, generator: generator}
+	return &VEXHandler{repoAccess: newRepoAccess(db, log, evaluator), generator: generator}
 }
 
 func (h *VEXHandler) RegisterAuthed(r chi.Router) {
@@ -54,33 +53,6 @@ func (h *VEXHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repositories/{name}/vex/statements", h.handleListStatements)
 	r.Put("/api/v1/repositories/{name}/vex/statements", h.handleUpsertStatement)
 	r.Delete("/api/v1/repositories/{name}/vex/statements/{id}", h.handleDeleteStatement)
-}
-
-// adminRepo resolves the repository of the request and requires an admin
-// principal; on failure it has already written the response.
-func (h *VEXHandler) adminRepo(w http.ResponseWriter, r *http.Request, op string) (*models.Repository, bool) {
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw(op+": db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return nil, false
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return nil, false
-	}
-
-	isAdmin, err := principalIsAdmin(ctx, currentPrincipal(r), h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return nil, false
-	}
-
-	return repo, true
 }
 
 // handleDocument returns the OpenVEX (default) or CycloneDX VEX document of

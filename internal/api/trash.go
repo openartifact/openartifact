@@ -42,9 +42,8 @@ const (
 // permission and only ever touch items of that repository; emptying a
 // repository's trash needs the repository-scoped `manage` permission.
 type TrashHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
+	repoAccess
+
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
 	regen     TrashRegenerator
@@ -56,7 +55,7 @@ type TrashHandler struct {
 }
 
 func NewTrashHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
-	return &TrashHandler{db: db, log: log, evaluator: evaluator, tasks: bgtask.New(context.Background())}
+	return &TrashHandler{repoAccess: newRepoAccess(db, log, evaluator), tasks: bgtask.New(context.Background())}
 }
 
 // WithTasks runs the background orphan-blob collections under the server
@@ -153,9 +152,7 @@ func (h *TrashHandler) handleListGlobal(w http.ResponseWriter, r *http.Request) 
 	if name := r.URL.Query().Get("repository"); name != "" {
 		repo, err := h.db.GetRepositoryByName(r.Context(), name)
 		if err != nil {
-			h.log.Errorw("list trash: db error getting repo", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+			h.dbError(w, "list trash: db error getting repo", err)
 			return
 		}
 
@@ -178,7 +175,7 @@ func (h *TrashHandler) handleListGlobal(w http.ResponseWriter, r *http.Request) 
 //
 //	GET /api/v1/repositories/{name}/trash?kind=&page=&limit=
 func (h *TrashHandler) handleListRepo(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repoForDelete(w, r)
+	repo, ok := h.permittedRepo(w, r, "trash", "delete", false)
 	if !ok {
 		return
 	}
@@ -207,78 +204,15 @@ func trashFilterFromQuery(r *http.Request) models.TrashFilter {
 func (h *TrashHandler) writeList(ctx context.Context, w http.ResponseWriter, store database.TrashStore, filter models.TrashFilter) {
 	items, total, err := store.ListTrash(ctx, filter)
 	if err != nil {
-		h.log.Errorw("list trash: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "list trash: db error", err)
 		return
 	}
 
-	out := make([]responses.TrashItemResponse, 0, len(items))
-	for _, it := range items {
-		out = append(out, trashItemResponse(it))
-	}
-
-	writeJSON(w, http.StatusOK, responses.TrashListResponse{Items: out, Total: total, Page: filter.Page, Limit: filter.Limit})
-}
-
-// repoForDelete authorizes a repository-scoped trash request: the caller needs
-// the repository-scoped `delete` permission on {name} (RBAC already checked it
-// at the gate; this keeps the handler safe on its own) and the repository must
-// be live. It writes the error response and returns false otherwise.
-func (h *TrashHandler) repoForDelete(w http.ResponseWriter, r *http.Request) (*models.Repository, bool) {
-	return h.repoFor(w, r, "delete")
-}
-
-// repoFor is repoForDelete for an arbitrary repository-scoped action.
-func (h *TrashHandler) repoFor(w http.ResponseWriter, r *http.Request, action string) (*models.Repository, bool) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return nil, false
-	}
-
-	allowed, err := h.evaluator.Evaluate(ctx, *p, name, "", action)
-	if err != nil {
-		h.log.Errorw("trash: auth evaluation failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-
-		return nil, false
-	}
-
-	if !allowed && action == "manage" {
-		// Emptying a repository's trash is also open to the maintainers and
-		// owners of its project.
-		allowed, err = h.evaluator.EvaluateRepoAdmin(ctx, *p, name)
-		if err != nil {
-			h.log.Errorw("trash: auth evaluation failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-
-			return nil, false
-		}
-	}
-
-	if !allowed {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return nil, false
-	}
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("trash: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return nil, false
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return nil, false
-	}
-
-	return repo, true
+	writeJSON(
+		w,
+		http.StatusOK,
+		responses.TrashListResponse{Items: mapList(items, trashItemResponse), Total: total, Page: filter.Page, Limit: filter.Limit},
+	)
 }
 
 // trashTarget parses {kind}/{id} of the URL. An id that is not a UUID cannot
@@ -320,7 +254,7 @@ func (h *TrashHandler) handleRestoreGlobal(w http.ResponseWriter, r *http.Reques
 //
 //	POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore
 func (h *TrashHandler) handleRestoreRepo(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repoForDelete(w, r)
+	repo, ok := h.permittedRepo(w, r, "trash", "delete", false)
 	if !ok {
 		return
 	}
@@ -436,8 +370,7 @@ func (h *TrashHandler) writeTrashError(w http.ResponseWriter, op string, err err
 		writeError(w, http.StatusConflict, "conflict",
 			"the repository is still referenced (for example by a release bundle or promotion); remove the reference first")
 	default:
-		h.log.Errorw("trash: "+op+" failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "trash: "+op+" failed", err)
 	}
 }
 
@@ -481,7 +414,9 @@ func (h *TrashHandler) handlePurge(w http.ResponseWriter, r *http.Request) {
 //
 //	DELETE /api/v1/repositories/{name}/trash
 func (h *TrashHandler) handleEmptyRepo(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repoFor(w, r, "manage")
+	// Emptying a repository's trash is also open to the maintainers and owners
+	// of its project.
+	repo, ok := h.permittedRepo(w, r, "trash", "manage", true)
 	if !ok {
 		return
 	}

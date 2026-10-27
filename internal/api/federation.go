@@ -102,10 +102,9 @@ type FederationStatusResponse struct {
 
 // FederationHandler serves the federation admin API of a repository.
 type FederationHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
-	store     *federation.Store
+	repoAccess
+
+	store *federation.Store
 	// serverEnabled is federation.enabled: without it no pull worker or peer
 	// endpoint runs, so a repository cannot be federated.
 	serverEnabled bool
@@ -122,7 +121,9 @@ func NewFederationHandler(
 	serverEnabled bool,
 	kick func(),
 ) *FederationHandler {
-	return &FederationHandler{db: db, log: log, evaluator: evaluator, store: store, serverEnabled: serverEnabled, kick: kick}
+	return &FederationHandler{
+		repoAccess: newRepoAccess(db, log, evaluator), store: store, serverEnabled: serverEnabled, kick: kick,
+	}
 }
 
 // RegisterAuthed mounts the routes on the authenticated API router.
@@ -138,67 +139,19 @@ func (h *FederationHandler) RegisterAuthed(r chi.Router) {
 	r.Delete("/api/v1/repositories/{name}/federation/tokens/{id}", h.handleRevokeToken)
 }
 
-// repo authorizes the caller (repository `manage`, or project maintainer) and
-// loads the repository; it answers the error itself and reports false.
-func (h *FederationHandler) repo(w http.ResponseWriter, r *http.Request) (*models.Repository, bool) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-
-		return nil, false
-	}
-
-	allowed, err := h.evaluator.Evaluate(ctx, *p, name, "", "manage")
-	if err == nil && !allowed {
-		allowed, err = h.evaluator.EvaluateRepoAdmin(ctx, *p, name)
-	}
-
-	if err != nil {
-		h.log.Errorw("federation: auth evaluation failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-
-		return nil, false
-	}
-
-	if !allowed {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-
-		return nil, false
-	}
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("federation: load repository", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return nil, false
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-
-		return nil, false
-	}
-
-	return repo, true
-}
-
 func (h *FederationHandler) supported(repo *models.Repository) bool {
 	return h.serverEnabled && repo.RepoType == repotype.Hosted && repotype.FederationSupported(repo.Format)
 }
 
 func (h *FederationHandler) internalError(w http.ResponseWriter, what string, err error) {
-	h.log.Errorw("federation: "+what, "error", err)
-	writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+	h.dbError(w, "federation: "+what, err)
 }
 
-// enabledRepo is repo for the routes that need a federated repository: 409
+// enabledRepo authorizes the caller (repository `manage`, or project
+// maintainer), loads the repository and requires it to be federated: 409
 // otherwise.
 func (h *FederationHandler) enabledRepo(w http.ResponseWriter, r *http.Request) (*models.Repository, bool) {
-	repo, ok := h.repo(w, r)
+	repo, ok := h.permittedRepo(w, r, "federation", "manage", true)
 	if !ok {
 		return nil, false
 	}
@@ -272,18 +225,14 @@ func (h *FederationHandler) status(ctx context.Context, repo *models.Repository)
 
 	now := time.Now()
 
-	for _, p := range peers {
-		out.Peers = append(out.Peers, peerResponse(p, now))
-	}
+	out.Peers = mapList(peers, func(p *federation.Peer) FederationPeerResponse { return peerResponse(p, now) })
 
 	tokens, err := h.store.ListTokens(ctx, repo.ID)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // logged by the caller
 	}
 
-	for _, t := range tokens {
-		out.Tokens = append(out.Tokens, tokenResponse(t))
-	}
+	out.Tokens = mapList(tokens, tokenResponse)
 
 	return out, nil
 }
@@ -300,7 +249,7 @@ func (h *FederationHandler) writeStatus(ctx context.Context, w http.ResponseWrit
 }
 
 func (h *FederationHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repo(w, r)
+	repo, ok := h.permittedRepo(w, r, "federation", "manage", true)
 	if !ok {
 		return
 	}
@@ -309,7 +258,7 @@ func (h *FederationHandler) handleStatus(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Request) {
-	repo, ok := h.repo(w, r)
+	repo, ok := h.permittedRepo(w, r, "federation", "manage", true)
 	if !ok {
 		return
 	}
@@ -572,13 +521,12 @@ func (h *FederationHandler) handleDeferred(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	items := make([]FederationDeferredResponse, 0, len(rows))
-	for _, d := range rows {
-		items = append(items, FederationDeferredResponse{
+	items := mapList(rows, func(d federation.Deferred) FederationDeferredResponse {
+		return FederationDeferredResponse{
 			UnitKey: d.UnitKey, Seq: d.Seq, Attempts: d.Attempts, Reason: d.Reason, LastError: d.LastError,
 			FirstSeenAt: d.FirstSeenAt, NextAttemptAt: d.NextAttemptAt,
-		})
-	}
+		}
+	})
 
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

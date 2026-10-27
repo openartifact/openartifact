@@ -30,14 +30,13 @@ type CleanupRunner interface {
 }
 
 type CleanupHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
-	runner    CleanupRunner
+	repoAccess
+
+	runner CleanupRunner
 }
 
 func NewCleanupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, runner CleanupRunner) *CleanupHandler {
-	return &CleanupHandler{db: db, log: log, evaluator: evaluator, runner: runner}
+	return &CleanupHandler{repoAccess: newRepoAccess(db, log, evaluator), runner: runner}
 }
 
 func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
@@ -50,67 +49,40 @@ func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
 	r.With(requireUUIDParams("id")).Post("/api/v1/repositories/{name}/cleanup-policies/{id}/dry-run", h.handleDryRun)
 }
 
+// policyInRepo resolves the cleanup policy id of repo: a policy that does not
+// exist, or belongs to another repository, is 404; a lookup failure is logged
+// as logMsg and answered 500.
+func (h *CleanupHandler) policyInRepo(
+	w http.ResponseWriter, r *http.Request, repo *models.Repository, logMsg, id string,
+) (*models.CleanupPolicy, bool) {
+	policy, ok := fetchByID(w, h.repoAccess, logMsg, "cleanup policy", id,
+		func(id string) (*models.CleanupPolicy, error) { return h.db.GetCleanupPolicy(r.Context(), id) })
+	if !ok {
+		return nil, false
+	}
+
+	if policy.RepositoryID != repo.ID {
+		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+		return nil, false
+	}
+
+	return policy, true
+}
+
 func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("list cleanup policies: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoThenRepoAdmin(w, r, "list cleanup policies")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
-		return
-	}
-
-	policies, err := h.db.ListCleanupPolicies(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("list cleanup policies: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policies == nil {
-		policies = []*models.CleanupPolicy{}
-	}
-
-	result := []responses.CleanupPolicyResponse{}
-	for _, policy := range policies {
-		result = append(result, policyToMap(policy))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"policies": result,
-	})
+	writeRepoList(w, r, h.repoAccess, repo, "list cleanup policies", "policies", h.db.ListCleanupPolicies, policyToMap)
 }
 
 func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("create cleanup policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
+	repo, ok := h.repoThenRepoAdmin(w, r, "create cleanup policy")
+	if !ok {
 		return
 	}
 
@@ -156,8 +128,7 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.CreateCleanupPolicy(ctx, policy); err != nil {
-		h.log.Errorw("create cleanup policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "create cleanup policy: db error", err)
 
 		return
 	}
@@ -166,37 +137,15 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CleanupHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get cleanup policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoThenRepoAdmin(w, r, "get cleanup policy")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
-		return
-	}
-
-	policy, err := h.db.GetCleanupPolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("get cleanup policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policy == nil || policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+	policy, ok := h.policyInRepo(w, r, repo, "get cleanup policy: db error", id)
+	if !ok {
 		return
 	}
 
@@ -272,24 +221,11 @@ func requireCleanupFormat(w http.ResponseWriter, repo *models.Repository) bool {
 }
 
 func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("update cleanup policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
+	repo, ok := h.repoThenRepoAdmin(w, r, "update cleanup policy")
+	if !ok {
 		return
 	}
 
@@ -297,16 +233,8 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policy, err := h.db.GetCleanupPolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("update cleanup policy: db error getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policy == nil || policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+	policy, ok := h.policyInRepo(w, r, repo, "update cleanup policy: db error getting policy", id)
+	if !ok {
 		return
 	}
 
@@ -328,8 +256,7 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.UpdateCleanupPolicy(ctx, policy); err != nil {
-		h.log.Errorw("update cleanup policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "update cleanup policy: db error", err)
 
 		return
 	}
@@ -338,43 +265,21 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CleanupHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete cleanup policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoThenRepoAdmin(w, r, "delete cleanup policy")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
-		return
-	}
-
-	policy, err := h.db.GetCleanupPolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("delete cleanup policy: db error getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policy == nil || policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+	_, ok = h.policyInRepo(w, r, repo, "delete cleanup policy: db error getting policy", id)
+	if !ok {
 		return
 	}
 
 	if err := h.db.DeleteCleanupPolicy(ctx, id); err != nil {
-		h.log.Errorw("delete cleanup policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "delete cleanup policy: db error", err)
 
 		return
 	}
@@ -383,37 +288,16 @@ func (h *CleanupHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("run cleanup policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoThenRepoAdmin(w, r, "run cleanup policy")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
-		return
-	}
-
-	policy, err := h.db.GetCleanupPolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("run cleanup policy: db error getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policy == nil || policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+	policy, ok := h.policyInRepo(w, r, repo, "run cleanup policy: db error getting policy", id)
+	if !ok {
 		return
 	}
 
@@ -470,37 +354,16 @@ type cleanupPreviewItemResponse struct {
 // keeps (immutable releases, release bundles, quarantine, dist-tagged npm
 // versions, the newest build of a maven snapshot). Nothing is changed.
 func (h *CleanupHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("dry-run cleanup policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoThenRepoAdmin(w, r, "dry-run cleanup policy")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
-		return
-	}
-
-	policy, err := h.db.GetCleanupPolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("dry-run cleanup policy: db error getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policy == nil || policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+	_, ok = h.policyInRepo(w, r, repo, "dry-run cleanup policy: db error getting policy", id)
+	if !ok {
 		return
 	}
 
