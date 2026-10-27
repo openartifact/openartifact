@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Package formats
 
-OpenArtifact serves 16 package formats natively, each on the URL its client expects, behind one permission model.
+OpenArtifact serves many package formats natively, each on the URL its client expects, behind one permission model.
 
 ## URL conventions
 
@@ -42,7 +42,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 
 Debian and RPM have no upload route under `/repos/REPO/`: they are uploaded through the REST endpoints under `/api/v1/repositories/REPO/`. `POST` or `PUT` to `HOST/repos/REPO/upload` of such a repository answers `404` and names the endpoint to use.
 
-Proxy repositories exist for 11 formats (Maven, npm, PyPI, Helm, Go, Cargo, NuGet, Debian, RPM, Docker and raw); group repositories for the same 11. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
+Proxy repositories exist for these formats (Maven, npm, PyPI, Helm, Go, Cargo, NuGet, Debian, RPM, Docker and raw); group repositories for the same formats. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
 
 ## Authentication
 

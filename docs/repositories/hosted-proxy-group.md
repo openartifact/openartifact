@@ -10,7 +10,7 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 
 ## Type and format support
 
-11 formats can be proxied and 9 can be grouped (every proxy format except deb and rpm).
+Every proxy format can be grouped except deb and rpm; see the [format matrix](../formats/README.md#format-matrix).
 
 | Format | Hosted | Proxy | Group |
 |---|---|---|---|
