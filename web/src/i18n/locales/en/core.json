@@ -79,6 +79,7 @@
   "upload.hint.pacman": "Upload .pkg.tar.zst, .pkg.tar.xz or .pkg.tar.gz packages and optional .sig signature files.",
   "upload.pacman.arch": "Architecture directory",
   "upload.pacman.archHint": "Used for \"any\" packages and for files whose name carries no architecture.",
+  "upload.terraform.body": "Terraform and OpenTofu modules and providers are published with one PUT request per module version or provider platform, authenticated with an API token. The coordinates are part of the URL:",
   "pwa.updateAvailable": "New version available",
   "pwa.updateHint": "Reload to switch to it. Your current page is left untouched until you do.",
   "pwa.reload": "Reload",

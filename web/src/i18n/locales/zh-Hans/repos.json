@@ -184,6 +184,8 @@
   "trash.kind.rpm_package": "RPM 软件包",
   "trash.kind.deb_package": "deb 软件包",
   "trash.kind.pacman": "pacman 软件包",
+  "trash.kind.terraform_module": "Terraform 模块",
+  "trash.kind.terraform_provider": "Terraform 提供商",
   "repoDelete.title": "删除仓库",
   "repoDelete.body": "您即将删除仓库“{name}”。",
   "repoDelete.trashHint": "仓库及其内容会被移入回收站，并在配置的保留期内保留。管理员可以在其被清除之前从回收站恢复。",

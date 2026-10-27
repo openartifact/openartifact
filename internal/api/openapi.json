@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.1.1",
   "info": {
     "title": "OpenArtifact API",
     "description": "REST API of the OpenArtifact artifact repository manager.",
@@ -10,7 +10,7 @@
     },
     "license": {
       "name": "AGPL-3.0-or-later",
-      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+      "identifier": "AGPL-3.0-or-later"
     }
   },
   "servers": [
@@ -148,42 +148,34 @@
             ]
           },
           "pipeline_id": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "current_stage": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "created_by": {
             "type": "string"
           },
           "sealed_at": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "sealed_by": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "archived_at": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "archived_by": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "gpg_key_id": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Fingerprint of the key that signed the manifest; null when unsigned."
           },
           "gpg_signature": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Armored detached signature of the manifest; null when unsigned."
           },
           "created_at": {
@@ -221,8 +213,7 @@
             "type": "string"
           },
           "component_id": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "sha256": {
             "type": "string"
@@ -270,8 +261,7 @@
             "type": "string"
           },
           "from_stage": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "to_stage": {
             "type": "string"
@@ -294,8 +284,7 @@
             "type": "string"
           },
           "error_message": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "item_count": {
             "type": "integer"
@@ -305,8 +294,7 @@
             "format": "date-time"
           },
           "completed_at": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "format": "date-time"
           }
         }
@@ -329,13 +317,13 @@
       "PromotionPipeline": {
         "type": "object",
         "required": [
-        "id",
-        "name",
-        "description",
-        "stages",
-        "created_by",
-        "created_at",
-        "updated_at"
+          "id",
+          "name",
+          "description",
+          "stages",
+          "created_by",
+          "created_at",
+          "updated_at"
         ],
         "properties": {
           "id": {
@@ -493,13 +481,11 @@
             "type": "string"
           },
           "email": {
-            "type": "string",
-            "format": "email",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "email"
           },
           "full_name": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "disabled": {
             "type": "boolean"
@@ -508,9 +494,8 @@
             "type": "boolean"
           },
           "last_login_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "created_at": {
             "type": "string",
@@ -562,8 +547,7 @@
             "type": "string"
           },
           "description": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "created_at": {
             "type": "string",
@@ -621,6 +605,7 @@
               "conan",
               "ivy",
               "sbt",
+              "terraform",
               "pacman"
             ],
             "description": "Package format"
@@ -694,21 +679,35 @@
             "type": "object",
             "description": "The caller's effective repository-scoped permissions. Only present in the single-repository GET (`/api/v1/repository/{name}`); global administrators have every flag set.",
             "properties": {
-              "write": { "type": "boolean" },
-              "delete": { "type": "boolean", "description": "Allows the repository's trash tab (list and restore)." },
-              "manage": { "type": "boolean", "description": "Allows emptying the repository's trash." },
-              "admin": { "type": "boolean", "description": "Allows configuring and deleting the repository and managing its cleanup policies and quota: global administrators and maintainers or owners of the repository's project." }
+              "write": {
+                "type": "boolean"
+              },
+              "delete": {
+                "type": "boolean",
+                "description": "Allows the repository's trash tab (list and restore)."
+              },
+              "manage": {
+                "type": "boolean",
+                "description": "Allows emptying the repository's trash."
+              },
+              "admin": {
+                "type": "boolean",
+                "description": "Allows configuring and deleting the repository and managing its cleanup policies and quota: global administrators and maintainers or owners of the repository's project."
+              }
             },
-            "required": ["write", "delete", "manage", "admin"]
+            "required": [
+              "write",
+              "delete",
+              "manage",
+              "admin"
+            ]
           },
           "presign_downloads": {
-            "type": "boolean",
-            "nullable": true,
+            "type": ["boolean", "null"],
             "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected."
           },
           "trash_retention_days": {
-            "type": "integer",
-            "nullable": true,
+            "type": ["integer", "null"],
             "minimum": 0,
             "maximum": 36500,
             "description": "Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent."
@@ -743,119 +742,338 @@
         "type": "object",
         "description": "Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).",
         "properties": {
-          "package_count": { "type": "integer", "format": "int64", "description": "Number of distinct package names, counted as the package listing names them." },
-          "size_bytes": { "type": "integer", "format": "int64", "description": "Stored size, from the repository's quota counter (equals quota.used_bytes)." },
-          "last_published_at": { "type": "string", "format": "date-time", "description": "Time of the newest package; absent for an empty repository." },
+          "package_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of distinct package names, counted as the package listing names them."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Stored size, from the repository's quota counter (equals quota.used_bytes)."
+          },
+          "last_published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time of the newest package; absent for an empty repository."
+          },
           "security": {
             "type": "object",
             "description": "Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any.",
             "properties": {
-              "critical": { "type": "integer", "format": "int64" },
-              "high": { "type": "integer", "format": "int64" },
-              "medium": { "type": "integer", "format": "int64" },
-              "low": { "type": "integer", "format": "int64" },
-              "secrets": { "type": "integer", "format": "int64", "description": "Secret findings." },
-              "license_violations": { "type": "integer", "format": "int64", "description": "Artifacts whose license scan is quarantined (the server stores no other license violation count)." },
-              "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan; absent when never scanned." }
+              "critical": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "high": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "medium": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "low": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "secrets": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Secret findings."
+              },
+              "license_violations": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Artifacts whose license scan is quarantined (the server stores no other license violation count)."
+              },
+              "scanned_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Latest completed scan; absent when never scanned."
+              }
             },
-            "required": ["critical", "high", "medium", "low", "secrets", "license_violations"]
+            "required": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "secrets",
+              "license_violations"
+            ]
           },
           "quota": {
             "type": "object",
             "properties": {
-              "limit_bytes": { "type": "integer", "format": "int64", "description": "Size quota; absent when unlimited." },
-              "used_bytes": { "type": "integer", "format": "int64" }
+              "limit_bytes": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Size quota; absent when unlimited."
+              },
+              "used_bytes": {
+                "type": "integer",
+                "format": "int64"
+              }
             },
-            "required": ["used_bytes"]
+            "required": [
+              "used_bytes"
+            ]
           }
         },
-        "required": ["package_count", "size_bytes", "security", "quota"]
+        "required": [
+          "package_count",
+          "size_bytes",
+          "security",
+          "quota"
+        ]
       },
       "PackageSecurity": {
         "type": "object",
         "description": "Vulnerability counts by severity.",
         "properties": {
-          "critical": { "type": "integer", "format": "int64" },
-          "high": { "type": "integer", "format": "int64" },
-          "medium": { "type": "integer", "format": "int64" },
-          "low": { "type": "integer", "format": "int64" }
+          "critical": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "high": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "medium": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "low": {
+            "type": "integer",
+            "format": "int64"
+          }
         },
-        "required": ["critical", "high", "medium", "low"]
+        "required": [
+          "critical",
+          "high",
+          "medium",
+          "low"
+        ]
       },
       "PackageFile": {
         "type": "object",
         "description": "One row (file) of a repository's package listing.",
         "properties": {
-          "id": { "type": "string", "format": "uuid", "description": "Row id; the key of the package detail, download and scan endpoints." },
-          "name": { "type": "string" },
-          "version": { "type": "string" },
-          "format": { "type": "string" },
-          "arch": { "type": "string" },
-          "size": { "type": "integer", "format": "int64" },
-          "sha256": { "type": "string" },
-          "filename": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" },
-          "security": { "$ref": "#/components/schemas/PackageSecurity" },
-          "flagged": { "type": "boolean", "description": "A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type)." },
-          "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan; absent when never scanned (security is then all zero)." }
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Row id; the key of the package detail, download and scan endpoints."
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "arch": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "security": {
+            "$ref": "#/components/schemas/PackageSecurity"
+          },
+          "flagged": {
+            "type": "boolean",
+            "description": "A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type)."
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest completed scan; absent when never scanned (security is then all zero)."
+          }
         },
-        "required": ["id", "name", "version", "format", "arch", "size", "sha256", "filename", "created_at", "security", "flagged"]
+        "required": [
+          "id",
+          "name",
+          "version",
+          "format",
+          "arch",
+          "size",
+          "sha256",
+          "filename",
+          "created_at",
+          "security",
+          "flagged"
+        ]
       },
       "PackageGroup": {
         "type": "object",
         "description": "One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.",
         "properties": {
-          "name": { "type": "string" },
-          "format": { "type": "string" },
-          "latest_version": { "type": "string", "description": "The most recently published version." },
-          "version_count": { "type": "integer" },
-          "size_bytes": { "type": "integer", "format": "int64", "description": "Size of the latest version, all its files summed." },
-          "updated_at": { "type": "string", "format": "date-time", "description": "Latest modification of any version." },
-          "security": { "$ref": "#/components/schemas/PackageSecurity" },
-          "flagged": { "type": "boolean" },
-          "scanned_at": { "type": "string", "format": "date-time", "description": "Latest completed scan of the latest version; absent when never scanned." }
+          "name": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "latest_version": {
+            "type": "string",
+            "description": "The most recently published version."
+          },
+          "version_count": {
+            "type": "integer"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size of the latest version, all its files summed."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest modification of any version."
+          },
+          "security": {
+            "$ref": "#/components/schemas/PackageSecurity"
+          },
+          "flagged": {
+            "type": "boolean"
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest completed scan of the latest version; absent when never scanned."
+          }
         },
-        "required": ["name", "format", "latest_version", "version_count", "size_bytes", "updated_at", "security", "flagged"]
+        "required": [
+          "name",
+          "format",
+          "latest_version",
+          "version_count",
+          "size_bytes",
+          "updated_at",
+          "security",
+          "flagged"
+        ]
       },
       "RecentPackage": {
         "type": "object",
         "properties": {
-          "repository": { "type": "string" },
-          "format": { "type": "string" },
-          "name": { "type": "string" },
-          "version": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" },
-          "created_by_name": { "type": "string", "description": "Never set: the server does not record who published a package." }
+          "repository": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by_name": {
+            "type": "string",
+            "description": "Never set: the server does not record who published a package."
+          }
         },
-        "required": ["repository", "format", "name", "version", "created_at"]
+        "required": [
+          "repository",
+          "format",
+          "name",
+          "version",
+          "created_at"
+        ]
       },
       "PackageDetail": {
         "type": "object",
         "description": "One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "name": { "type": "string" },
-          "version": { "type": "string" },
-          "format": { "type": "string" },
-          "arch": { "type": "string" },
-          "filename": { "type": "string" },
-          "size": { "type": "integer", "format": "int64" },
-          "sha256": { "type": "string" },
-          "md5": { "type": "string", "description": "Only for the formats that record it." },
-          "sha1": { "type": "string", "description": "Only for the formats that record it." },
-          "created_at": { "type": "string", "format": "date-time" },
-          "updated_at": { "type": "string", "format": "date-time" },
-          "summary": { "type": "string" },
-          "description": { "type": "string" },
-          "license": { "type": "string" },
-          "homepage": { "type": "string" },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "arch": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "md5": {
+            "type": "string",
+            "description": "Only for the formats that record it."
+          },
+          "sha1": {
+            "type": "string",
+            "description": "Only for the formats that record it."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "homepage": {
+            "type": "string"
+          },
           "metadata": {
             "type": "array",
             "description": "Format-specific fields, ordered by key; empty values are left out.",
             "items": {
               "type": "object",
-              "properties": { "key": { "type": "string" }, "value": { "type": "string" } },
-              "required": ["key", "value"]
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
             }
           },
           "dependencies": {
@@ -863,11 +1081,21 @@
             "items": {
               "type": "object",
               "properties": {
-                "name": { "type": "string" },
-                "version": { "type": "string", "description": "Version requirement as the format writes it." },
-                "kind": { "type": "string", "description": "Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it." }
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Version requirement as the format writes it."
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it."
+                }
               },
-              "required": ["name"]
+              "required": [
+                "name"
+              ]
             }
           },
           "files": {
@@ -876,40 +1104,119 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "format": "uuid" },
-                "filename": { "type": "string" },
-                "arch": { "type": "string" },
-                "size": { "type": "integer", "format": "int64" },
-                "sha256": { "type": "string" }
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "arch": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "sha256": {
+                  "type": "string"
+                }
               },
-              "required": ["id", "filename", "arch", "size", "sha256"]
+              "required": [
+                "id",
+                "filename",
+                "arch",
+                "size",
+                "sha256"
+              ]
             }
           },
-          "version_count": { "type": "integer", "description": "Versions of the package this one belongs to." },
-          "latest_version": { "type": "string" }
+          "version_count": {
+            "type": "integer",
+            "description": "Versions of the package this one belongs to."
+          },
+          "latest_version": {
+            "type": "string"
+          }
         },
-        "required": ["id", "name", "version", "format", "arch", "filename", "size", "sha256", "created_at", "updated_at", "metadata", "dependencies", "files", "version_count", "latest_version"]
+        "required": [
+          "id",
+          "name",
+          "version",
+          "format",
+          "arch",
+          "filename",
+          "size",
+          "sha256",
+          "created_at",
+          "updated_at",
+          "metadata",
+          "dependencies",
+          "files",
+          "version_count",
+          "latest_version"
+        ]
       },
       "ChecksumResult": {
         "type": "object",
         "properties": {
-          "total": { "type": "integer", "description": "Number of files carrying the checksum." },
-          "packages": { "type": "array", "items": { "$ref": "#/components/schemas/ChecksumHit" } }
+          "total": {
+            "type": "integer",
+            "description": "Number of files carrying the checksum."
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChecksumHit"
+            }
+          }
         },
-        "required": ["total", "packages"]
+        "required": [
+          "total",
+          "packages"
+        ]
       },
       "ChecksumHit": {
         "type": "object",
         "properties": {
-          "repository": { "type": "string" },
-          "format": { "type": "string" },
-          "name": { "type": "string" },
-          "version": { "type": "string" },
-          "filename": { "type": "string", "description": "File within the package; empty for the formats with no file name of their own (conda, conan, docker, go)." },
-          "checksum": { "type": "string", "description": "The checksum searched for, lowercase." },
-          "algorithm": { "type": "string", "enum": ["sha256", "sha1", "md5"] }
+          "repository": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string",
+            "description": "File within the package; empty for the formats with no file name of their own (conda, conan, docker, go)."
+          },
+          "checksum": {
+            "type": "string",
+            "description": "The checksum searched for, lowercase."
+          },
+          "algorithm": {
+            "type": "string",
+            "enum": [
+              "sha256",
+              "sha1",
+              "md5"
+            ]
+          }
         },
-        "required": ["repository", "format", "name", "version", "filename", "checksum", "algorithm"]
+        "required": [
+          "repository",
+          "format",
+          "name",
+          "version",
+          "filename",
+          "checksum",
+          "algorithm"
+        ]
       },
       "RepositoryMember": {
         "type": "object",
@@ -962,12 +1269,10 @@
             "type": "boolean"
           },
           "keep_since_days": {
-            "type": "integer",
-            "nullable": true
+            "type": ["integer", "null"]
           },
           "keep_downloaded_since_days": {
-            "type": "integer",
-            "nullable": true
+            "type": ["integer", "null"]
           },
           "name_pattern": {
             "type": "string"
@@ -984,22 +1289,18 @@
             "format": "date-time"
           },
           "keep_last_n": {
-            "type": "integer",
-            "minimum": 1,
-            "nullable": true
+            "type": ["integer", "null"],
+            "minimum": 1
           },
           "last_run_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "last_run_deleted": {
-            "type": "integer",
-            "nullable": true
+            "type": ["integer", "null"]
           },
           "last_run_error": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "repo_id": {
             "type": "string",
@@ -1021,9 +1322,8 @@
             "format": "uuid"
           },
           "repository_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "uuid"
           },
           "name": {
             "type": "string"
@@ -1152,14 +1452,12 @@
             }
           },
           "expires_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "last_used_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "created_at": {
             "type": "string",
@@ -1196,21 +1494,19 @@
                 "format": "uuid"
               },
               "project": {
-                "type": "string",
-                "nullable": true,
+                "type": ["string", "null"],
                 "description": "Project of a project token"
               },
               "project_role": {
-                "type": "string",
+                "type": ["string", "null"],
                 "enum": [
                   "viewer",
-                  "developer"
-                ],
-                "nullable": true
+                  "developer",
+                  null
+                ]
               },
               "created_by": {
-                "type": "string",
-                "nullable": true,
+                "type": ["string", "null"],
                 "description": "Username that minted a project token"
               }
             }
@@ -1245,9 +1541,8 @@
             "format": "date-time"
           },
           "completed_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "size_bytes": {
             "type": "integer"
@@ -1393,8 +1688,7 @@
             "description": "True for the tier backed by the server's configured storage."
           },
           "backend": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Name of the storage backend the tier maps to; null for the primary tier."
           },
           "backend_kind": {
@@ -1451,32 +1745,26 @@
             "type": "string"
           },
           "from_tier": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "min_age_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "min_idle_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "min_size_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "max_size_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "repo_glob": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "formats": {
             "type": "array",
@@ -1485,8 +1773,7 @@
             }
           },
           "path_glob": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "created_at": {
             "type": "string",
@@ -1521,33 +1808,27 @@
             "description": "Name of the tier matching blobs belong on."
           },
           "from_tier": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Only blobs currently on this tier."
           },
           "min_age_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "min_idle_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "min_size_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "max_size_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "repo_glob": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Repository name glob: * matches within a segment, ** across '/', ? one character."
           },
           "formats": {
@@ -1557,8 +1838,7 @@
             }
           },
           "path_glob": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Package path glob (same syntax as repo_glob)."
           }
         }
@@ -1653,9 +1933,8 @@
                   "format": "date-time"
                 },
                 "last_accessed_at": {
-                  "type": "string",
-                  "format": "date-time",
-                  "nullable": true
+                  "type": ["string", "null"],
+                  "format": "date-time"
                 }
               }
             }
@@ -1670,9 +1949,8 @@
             "format": "date-time"
           },
           "finished_at": {
-            "type": "string",
+            "type": ["string", "null"],
             "format": "date-time",
-            "nullable": true,
             "description": "Null while the pass runs."
           },
           "deep": {
@@ -1741,8 +2019,7 @@
             "description": "False when no replica is configured (storage.replica.type is empty); every other field is then empty."
           },
           "replica": {
-            "type": "object",
-            "nullable": true,
+            "type": ["object", "null"],
             "properties": {
               "type": {
                 "type": "string"
@@ -1755,7 +2032,12 @@
           },
           "read_fallback": {
             "type": "string",
-            "enum": ["", "notfound", "error", "off"]
+            "enum": [
+              "",
+              "notfound",
+              "error",
+              "off"
+            ]
           },
           "backlog_copy": {
             "type": "integer",
@@ -1789,21 +2071,32 @@
             "type": "string"
           },
           "last_error_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "verify_requested": {
             "type": "boolean",
             "description": "True while an admin-requested verify pass waits to start."
           },
           "verify_running": {
-            "$ref": "#/components/schemas/ReplicationVerifyResult",
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplicationVerifyResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "last_verify": {
-            "$ref": "#/components/schemas/ReplicationVerifyResult",
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplicationVerifyResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -1878,8 +2171,7 @@
             "format": "int64"
           },
           "last_pass": {
-            "type": "object",
-            "nullable": true,
+            "type": ["object", "null"],
             "properties": {
               "started_at": {
                 "type": "string",
@@ -1961,86 +2253,86 @@
         }
       },
       "StoragePrimary": {
-      "type": "object",
-      "description": "The primary blob store the server is configured with (storage.* settings). Read-only; holds no credentials.",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "The reserved name \"primary\", usable in /api/v1/admin/storage/{name}.",
-          "example": "primary"
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "filesystem",
-            "s3",
-            "garage",
-            "seaweedfs",
-            "gcs",
-            "azure",
-            "oci"
-          ]
-        },
-        "source": {
-          "type": "string",
-          "enum": [
-            "config"
-          ],
-          "description": "Always config: the store is set by the server configuration."
-        },
-        "location": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
+        "type": "object",
+        "description": "The primary blob store the server is configured with (storage.* settings). Read-only; holds no credentials.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The reserved name \"primary\", usable in /api/v1/admin/storage/{name}.",
+            "examples": [
+              "primary"
+            ]
           },
-          "description": "Where the blobs live (path, endpoint, bucket, region, account, container, repository). Never a credential."
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "healthy",
-            "unreachable",
-            "unknown"
-          ],
-          "description": "Result of a live health check through the process's own store, cached for 10 seconds."
-        },
-        "status_message": {
-          "type": "string",
-          "nullable": true
-        },
-        "last_checked_at": {
-          "type": "string",
-          "format": "date-time",
-          "nullable": true
-        },
-        "usage": {
-          "type": "object",
-          "description": "The blobs placed on the primary store, that is those not moved to a tier.",
-          "properties": {
-            "blob_count": {
-              "type": "integer",
-              "format": "int64"
+          "kind": {
+            "type": "string",
+            "enum": [
+              "filesystem",
+              "s3",
+              "garage",
+              "seaweedfs",
+              "gcs",
+              "azure",
+              "oci"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "config"
+            ],
+            "description": "Always config: the store is set by the server configuration."
+          },
+          "location": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
             },
-            "size_bytes": {
-              "type": "integer",
-              "format": "int64"
-            }
+            "description": "Where the blobs live (path, endpoint, bucket, region, account, container, repository). Never a credential."
           },
-          "required": [
-            "blob_count",
-            "size_bytes"
-          ]
-        }
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unreachable",
+              "unknown"
+            ],
+            "description": "Result of a live health check through the process's own store, cached for 10 seconds."
+          },
+          "status_message": {
+            "type": ["string", "null"]
+          },
+          "last_checked_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "usage": {
+            "type": "object",
+            "description": "The blobs placed on the primary store, that is those not moved to a tier.",
+            "properties": {
+              "blob_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "format": "int64"
+              }
+            },
+            "required": [
+              "blob_count",
+              "size_bytes"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "source",
+          "location",
+          "status"
+        ]
       },
-      "required": [
-        "name",
-        "kind",
-        "source",
-        "location",
-        "status"
-      ]
-    },
-    "StorageBackend": {
+      "StorageBackend": {
         "type": "object",
         "properties": {
           "id": {
@@ -2072,13 +2364,11 @@
             ]
           },
           "status_message": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "last_checked_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "created_at": {
             "type": "string",
@@ -2132,39 +2422,35 @@
             "description": "Display name of the actor: the recorded name, else the user's current name, else `system` for background work; empty when unknown."
           },
           "subject": {
-            "allOf": [
+            "description": "What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows).",
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AuditSubject"
+              },
+              {
+                "type": "null"
               }
-            ],
-            "nullable": true,
-            "description": "What the event acted on, resolved from ids. Null for events that name nothing (logins, generic request rows)."
+            ]
           },
           "target": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "The raw resource id."
           },
           "ip": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "details": {
-            "type": "object",
-            "nullable": true
+            "type": ["object", "null"]
           },
           "repository_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "uuid"
           },
           "resource_type": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "resource_id": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           }
         },
         "required": [
@@ -2185,8 +2471,7 @@
             "description": "`repository`, `package`, `project`, `user`, `group`, `token`, `bundle`, `permission_target`, `gpg_key`, `sso_provider`, `setting`, or the raw resource type of an event kind without a dedicated one (`storage_tier`, `storage_policy`, ...)."
           },
           "name": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "version": {
             "type": "string",
@@ -2220,12 +2505,14 @@
                 "description": "Display name of the actor: the recorded name, else the user's current name, else `system`; empty when unknown."
               },
               "subject": {
-                "allOf": [
+                "anyOf": [
                   {
                     "$ref": "#/components/schemas/AuditSubject"
+                  },
+                  {
+                    "type": "null"
                   }
-                ],
-                "nullable": true
+                ]
               }
             },
             "required": [
@@ -2519,14 +2806,12 @@
             "type": "string"
           },
           "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "expires_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           }
         }
       },
@@ -2738,439 +3023,431 @@
           }
         }
       },
-        "Project": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "name": {
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "owner_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-safe unique identifier derived from the name: lowercased, runs of characters outside a-z0-9 collapsed to '-', at most 64 characters. A name or slug collision on create returns 409."
+          },
+          "allowed_formats": {
+            "type": ["array", "null"],
+            "items": {
               "type": "string"
             },
-            "display_name": {
-              "type": "string",
-              "nullable": true
-            },
-            "description": {
-              "type": "string",
-              "nullable": true
-            },
-            "owner_id": {
-              "type": "string",
-              "format": "uuid",
-              "nullable": true
-            },
-            "slug": {
-              "type": "string",
-              "description": "URL-safe unique identifier derived from the name: lowercased, runs of characters outside a-z0-9 collapsed to '-', at most 64 characters. A name or slug collision on create returns 409."
-            },
-            "allowed_formats": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "nullable": true,
-              "description": "Package formats repositories of this project may use. null allows every format."
-            },
-            "allowed_repo_types": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "hosted",
-                  "proxy",
-                  "group"
-                ]
-              },
-              "description": "Repository types allowed in this project."
-            },
-            "repo_name_prefix": {
-              "type": "string",
-              "description": "Prefix every repository name in this project must start with. Empty means no prefix is required."
-            },
-            "allow_public_repos": {
-              "type": "boolean",
-              "description": "Whether repositories of this project may be public."
-            },
-            "max_repositories": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum number of repositories the project may own. 0 means unlimited."
-            },
-            "token_max_ttl_days": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
-            },
-            "created_at": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "updated_at": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "my_role": {
+            "description": "Package formats repositories of this project may use. null allows every format."
+          },
+          "allowed_repo_types": {
+            "type": "array",
+            "items": {
               "type": "string",
               "enum": [
-                "owner",
-                "maintainer",
-                "developer",
-                "viewer"
-              ],
-              "description": "The caller's effective role in the project; a global admin without a role is an implicit owner."
-            },
-            "repository_count": {
-              "type": "integer",
-              "description": "Number of live (not trashed) repositories."
-            },
-            "is_system": {
-              "type": "boolean",
-              "description": "The built-in system project: it grants nothing and cannot be deleted."
-            }
-          }
-        },
-        "ProjectToken": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "name": {
-              "type": "string"
-            },
-            "project": {
-              "type": "string"
-            },
-            "role": {
-              "type": "string",
-              "enum": [
-                "viewer",
-                "developer"
+                "hosted",
+                "proxy",
+                "group"
               ]
             },
-            "expires_at": {
-              "type": "string",
-              "format": "date-time",
-              "nullable": true
-            },
-            "last_used_at": {
-              "type": "string",
-              "format": "date-time",
-              "nullable": true
-            },
-            "created_at": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "created_by": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "created_by_username": {
-              "type": "string"
-            }
+            "description": "Repository types allowed in this project."
+          },
+          "repo_name_prefix": {
+            "type": "string",
+            "description": "Prefix every repository name in this project must start with. Empty means no prefix is required."
+          },
+          "allow_public_repos": {
+            "type": "boolean",
+            "description": "Whether repositories of this project may be public."
+          },
+          "max_repositories": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum number of repositories the project may own. 0 means unlimited."
+          },
+          "token_max_ttl_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "my_role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "maintainer",
+              "developer",
+              "viewer"
+            ],
+            "description": "The caller's effective role in the project; a global admin without a role is an implicit owner."
+          },
+          "repository_count": {
+            "type": "integer",
+            "description": "Number of live (not trashed) repositories."
+          },
+          "is_system": {
+            "type": "boolean",
+            "description": "The built-in system project: it grants nothing and cannot be deleted."
           }
-        },
-        "ProjectTokenCreateResponse": {
-          "allOf": [
-            {
-              "$ref": "#/components/schemas/ProjectToken"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "token": {
-                  "type": "string",
-                  "description": "Clear-text token, shown once"
-                }
+        }
+      },
+      "ProjectToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "developer"
+            ]
+          },
+          "expires_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_by_username": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectTokenCreateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProjectToken"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string",
+                "description": "Clear-text token, shown once"
               }
             }
-          ]
-        },
-        "ProjectTokenCreateRequest": {
-          "type": "object",
-          "required": [
-            "name",
-            "role"
-          ],
-          "properties": {
-            "name": {
-              "type": "string",
-              "maxLength": 100
-            },
-            "role": {
-              "type": "string",
-              "enum": [
-                "viewer",
-                "developer"
-              ]
-            },
-            "expires_at": {
-              "type": "string",
-              "format": "date-time"
-            }
+          }
+        ]
+      },
+      "ProjectTokenCreateRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "role"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "developer"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProjectMember": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Membership id: the project id and the user id joined by a colon"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "maintainer",
+              "developer",
+              "viewer"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProjectRole": {
+        "type": "object",
+        "description": "One project role of the caller.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "maintainer",
+              "developer",
+              "viewer"
+            ]
+          }
+        }
+      },
+      "ProjectSettings": {
+        "type": "object",
+        "properties": {
+          "self_create": {
+            "type": "boolean",
+            "description": "Whether any human user may create a project (and become its owner)."
           }
         },
-        "ProjectMember": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Membership id: the project id and the user id joined by a colon"
-            },
-            "project_id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "user_id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "username": {
+        "required": [
+          "self_create"
+        ]
+      },
+      "ProjectGroup": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "developer",
+              "maintainer"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProjectCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "allowed_formats": {
+            "type": ["array", "null"],
+            "items": {
               "type": "string"
             },
-            "role": {
+            "description": "Package formats repositories of this project may use. null allows every format."
+          },
+          "allowed_repo_types": {
+            "type": "array",
+            "items": {
               "type": "string",
               "enum": [
-                "owner",
-                "maintainer",
-                "developer",
-                "viewer"
+                "hosted",
+                "proxy",
+                "group"
               ]
             },
-            "created_at": {
-              "type": "string",
-              "format": "date-time"
-            }
+            "description": "Repository types allowed in this project."
+          },
+          "repo_name_prefix": {
+            "type": "string",
+            "description": "Prefix every repository name in this project must start with. Empty means no prefix is required."
+          },
+          "allow_public_repos": {
+            "type": "boolean",
+            "description": "Whether repositories of this project may be public."
+          },
+          "max_repositories": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum number of repositories the project may own. 0 means unlimited."
+          },
+          "token_max_ttl_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Username of the owner. Global admins only; defaults to the caller."
           }
         },
-        "ProjectRole": {
-          "type": "object",
-          "description": "One project role of the caller.",
-          "properties": {
-            "name": {
+        "required": [
+          "name"
+        ]
+      },
+      "ProjectUpdateRequest": {
+        "type": "object",
+        "description": "Partial update: omitted fields stay unchanged.",
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "allowed_formats": {
+            "type": ["array", "null"],
+            "items": {
               "type": "string"
             },
-            "role": {
+            "description": "Package formats repositories of this project may use. null allows every format."
+          },
+          "allowed_repo_types": {
+            "type": "array",
+            "items": {
               "type": "string",
               "enum": [
-                "owner",
-                "maintainer",
-                "developer",
-                "viewer"
+                "hosted",
+                "proxy",
+                "group"
               ]
-            }
+            },
+            "description": "Repository types allowed in this project."
+          },
+          "repo_name_prefix": {
+            "type": "string",
+            "description": "Prefix every repository name in this project must start with. Empty means no prefix is required."
+          },
+          "allow_public_repos": {
+            "type": "boolean",
+            "description": "Whether repositories of this project may be public."
+          },
+          "max_repositories": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum number of repositories the project may own. 0 means unlimited."
+          },
+          "token_max_ttl_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
+          }
+        }
+      },
+      "ProjectMemberCreateRequest": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string",
+            "description": "Alternative to user_id; exactly one of the two is required."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "maintainer",
+              "developer",
+              "viewer"
+            ],
+            "default": "viewer"
           }
         },
-        "ProjectSettings": {
-          "type": "object",
-          "properties": {
-            "self_create": {
-              "type": "boolean",
-              "description": "Whether any human user may create a project (and become its owner)."
-            }
-          },
-          "required": [
-            "self_create"
-          ]
-        },
-        "ProjectGroup": {
-          "type": "object",
-          "properties": {
-            "project_id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "group_id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "group_name": {
-              "type": "string"
-            },
-            "role": {
-              "type": "string",
-              "enum": [
-                "viewer",
-                "developer",
-                "maintainer"
-              ]
-            },
-            "created_at": {
-              "type": "string",
-              "format": "date-time"
-            }
+        "description": "Exactly one of user_id and username."
+      },
+      "ProjectMemberUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "maintainer",
+              "developer",
+              "viewer"
+            ]
           }
         },
-        "ProjectCreateRequest": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "display_name": {
-              "type": "string"
-            },
-            "description": {
-              "type": "string"
-            },
-            "allowed_formats": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "nullable": true,
-              "description": "Package formats repositories of this project may use. null allows every format."
-            },
-            "allowed_repo_types": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "hosted",
-                  "proxy",
-                  "group"
-                ]
-              },
-              "description": "Repository types allowed in this project."
-            },
-            "repo_name_prefix": {
-              "type": "string",
-              "description": "Prefix every repository name in this project must start with. Empty means no prefix is required."
-            },
-            "allow_public_repos": {
-              "type": "boolean",
-              "description": "Whether repositories of this project may be public."
-            },
-            "max_repositories": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum number of repositories the project may own. 0 means unlimited."
-            },
-            "token_max_ttl_days": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
-            },
-            "owner": {
-              "type": "string",
-              "description": "Username of the owner. Global admins only; defaults to the caller."
-            }
-          },
-          "required": [
-            "name"
-          ]
-        },
-        "ProjectUpdateRequest": {
-          "type": "object",
-          "description": "Partial update: omitted fields stay unchanged.",
-          "properties": {
-            "display_name": {
-              "type": "string"
-            },
-            "description": {
-              "type": "string"
-            },
-            "allowed_formats": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "nullable": true,
-              "description": "Package formats repositories of this project may use. null allows every format."
-            },
-            "allowed_repo_types": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "hosted",
-                  "proxy",
-                  "group"
-                ]
-              },
-              "description": "Repository types allowed in this project."
-            },
-            "repo_name_prefix": {
-              "type": "string",
-              "description": "Prefix every repository name in this project must start with. Empty means no prefix is required."
-            },
-            "allow_public_repos": {
-              "type": "boolean",
-              "description": "Whether repositories of this project may be public."
-            },
-            "max_repositories": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum number of repositories the project may own. 0 means unlimited."
-            },
-            "token_max_ttl_days": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
-            }
+        "required": [
+          "role"
+        ]
+      },
+      "ProjectGroupUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "viewer",
+              "developer",
+              "maintainer"
+            ]
           }
         },
-        "ProjectMemberCreateRequest": {
-          "type": "object",
-          "properties": {
-            "user_id": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "username": {
-              "type": "string",
-              "description": "Alternative to user_id; exactly one of the two is required."
-            },
-            "role": {
-              "type": "string",
-              "enum": [
-                "owner",
-                "maintainer",
-                "developer",
-                "viewer"
-              ],
-              "default": "viewer"
-            }
-          },
-          "description": "Exactly one of user_id and username."
-        },
-        "ProjectMemberUpdateRequest": {
-          "type": "object",
-          "properties": {
-            "role": {
-              "type": "string",
-              "enum": [
-                "owner",
-                "maintainer",
-                "developer",
-                "viewer"
-              ]
-            }
-          },
-          "required": [
-            "role"
-          ]
-        },
-        "ProjectGroupUpdateRequest": {
-          "type": "object",
-          "properties": {
-            "role": {
-              "type": "string",
-              "enum": [
-                "viewer",
-                "developer",
-                "maintainer"
-              ]
-            }
-          },
-          "required": [
-            "role"
-          ]
-        },
+        "required": [
+          "role"
+        ]
+      },
       "SBOMReport": {
         "type": "object",
         "properties": {
@@ -3316,30 +3593,27 @@
             "description": "Username or token name of the actor; empty when unknown."
           },
           "actor_type": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "enum": [
               "user",
               "system",
               "token",
-              "sso"
+              "sso",
+              null
             ]
           },
           "message": {
             "type": "string"
           },
           "resource_type": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "resource_id": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "repository_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "uuid"
           }
         },
         "required": [
@@ -3524,12 +3798,10 @@
             "type": "string"
           },
           "description": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "action": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "allowed_licenses": {
             "type": "array",
@@ -3547,9 +3819,8 @@
             "type": "boolean"
           },
           "repo_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "uuid"
           },
           "created_at": {
             "type": "string",
@@ -3841,9 +4112,8 @@
             "description": "Repositories of the scope that hold artifacts."
           },
           "last_scan_at": {
-            "type": "string",
+            "type": ["string", "null"],
             "format": "date-time",
-            "nullable": true,
             "description": "When the latest scan of the scope finished; null when none did."
           }
         },
@@ -3885,9 +4155,8 @@
             }
           },
           "last_scan_at": {
-            "type": "string",
+            "type": ["string", "null"],
             "format": "date-time",
-            "nullable": true,
             "description": "When the latest vulnerability, license, secret or AI scan finished; null when none did."
           },
           "scans_pending": {
@@ -3950,9 +4219,8 @@
         "description": "Counts only; no finding ids, titles or other details.",
         "properties": {
           "scanned_at": {
-            "type": "string",
+            "type": ["string", "null"],
             "format": "date-time",
-            "nullable": true,
             "description": "Latest completed scan of the selection; null when nothing was scanned."
           },
           "vuln": {
@@ -4103,13 +4371,11 @@
             "format": "date-time"
           },
           "scanned_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "scan_error": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Sanitized summary of the failing scanners."
           },
           "failed_scanners": {
@@ -4235,13 +4501,11 @@
             "format": "date-time"
           },
           "scanned_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "scan_error": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. A scanner that is not installed or has no vulnerability database names its code (`scanner_unavailable`, `scanner_db_unavailable`) and the setup guide. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`."
           },
           "failed_scanners": {
@@ -4300,52 +4564,49 @@
             "description": "True when a scan can run now: `osv` always; `trivy` and `grype` when the binary is available and its vulnerability database is present."
           },
           "db_state": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "enum": [
               "ready",
               "updating",
               "failed",
-              "missing"
+              "missing",
+              null
             ],
             "description": "State of the vulnerability database of an available `trivy` / `grype`; null otherwise."
           },
           "db_updated_at": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "When the vulnerability database was last refreshed; null when there is none or the time is unknown."
           },
           "install_state": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "enum": [
               "installing",
               "ready",
-              "failed"
+              "failed",
+              null
             ],
             "description": "State of the automatic installer (`scanners.<name>.install: auto`) for a `trivy` / `grype` binary that is being or was downloaded by the server; null when the binary is not managed by the installer."
           },
           "code": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "enum": [
               "scanner_unavailable",
               "scanner_installing",
               "scanner_install_failed",
               "scanner_install_noexec",
-              "scanner_db_unavailable"
+              "scanner_db_unavailable",
+              null
             ],
             "description": "Why the scanner is not ready; null when it is."
           },
           "message": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "What the operator must do when the scanner is not ready."
           },
           "docs_url": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Link to the scanner installation guide when the scanner is not ready."
           }
         },
@@ -4481,13 +4742,11 @@
             ]
           },
           "scan_error": {
-            "type": "string",
-            "nullable": true
+            "type": ["string", "null"]
           },
           "scanned_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "created_at": {
             "type": "string",
@@ -4681,9 +4940,8 @@
             ]
           },
           "scanned_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "created_at": {
             "type": "string",
@@ -5108,6 +5366,8 @@
               "maven_artifact",
               "ivy_artifact",
               "sbt_artifact",
+              "terraform_module",
+              "terraform_provider",
               "npm_version",
               "pypi_package",
               "nuget_package",
@@ -5232,31 +5492,99 @@
         "type": "object",
         "description": "A remote instance this repository pulls changes from. Secrets (token, client key) are never returned; has_ca_pem and has_client_cert tell whether TLS material is stored.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "name": { "type": "string" },
-          "base_url": { "type": "string", "description": "Base URL of the peer instance." },
-          "enabled": { "type": "boolean", "description": "A disabled peer is not polled." },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL of the peer instance."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "A disabled peer is not polled."
+          },
           "state": {
             "type": "string",
-            "enum": ["ok", "lagging", "error", "pending", "disabled"],
+            "enum": [
+              "ok",
+              "lagging",
+              "error",
+              "pending",
+              "disabled"
+            ],
             "description": "ok: caught up. lagging: behind the peer's head. error: the last attempt failed. pending: never synced yet. disabled: not polled."
           },
-          "cursor_seq": { "type": "integer", "format": "int64", "description": "Last peer log sequence applied locally." },
-          "remote_head_seq": { "type": "integer", "format": "int64", "description": "Peer's log head sequence as of the last successful contact." },
-          "backlog_units": { "type": "integer", "format": "int64", "description": "Logged units still to apply." },
-          "lag_seconds": { "type": "number", "description": "Age in seconds of the oldest unapplied change; 0 when caught up." },
-          "last_attempt_at": { "type": "string", "format": "date-time" },
-          "last_success_at": { "type": "string", "format": "date-time" },
-          "next_attempt_at": { "type": "string", "format": "date-time" },
-          "last_error": { "type": "string", "description": "Error of the last failed attempt; empty when the last attempt succeeded." },
-          "error_count": { "type": "integer", "description": "Consecutive failed attempts." },
-          "applied_total": { "type": "integer", "format": "int64", "description": "Units applied from this peer since the peer was added." },
-          "conflicts_total": { "type": "integer", "format": "int64", "description": "Units that conflicted with local content and were resolved by the merge rules." },
-          "deferred_units": { "type": "integer", "description": "Units waiting for a dependency or a retry." },
-          "resync_requested": { "type": "boolean", "description": "A resync is queued and not yet started." },
-          "has_ca_pem": { "type": "boolean" },
-          "has_client_cert": { "type": "boolean" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "cursor_seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Last peer log sequence applied locally."
+          },
+          "remote_head_seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Peer's log head sequence as of the last successful contact."
+          },
+          "backlog_units": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Logged units still to apply."
+          },
+          "lag_seconds": {
+            "type": "number",
+            "description": "Age in seconds of the oldest unapplied change; 0 when caught up."
+          },
+          "last_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Error of the last failed attempt; empty when the last attempt succeeded."
+          },
+          "error_count": {
+            "type": "integer",
+            "description": "Consecutive failed attempts."
+          },
+          "applied_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Units applied from this peer since the peer was added."
+          },
+          "conflicts_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Units that conflicted with local content and were resolved by the merge rules."
+          },
+          "deferred_units": {
+            "type": "integer",
+            "description": "Units waiting for a dependency or a retry."
+          },
+          "resync_requested": {
+            "type": "boolean",
+            "description": "A resync is queued and not yet started."
+          },
+          "has_ca_pem": {
+            "type": "boolean"
+          },
+          "has_client_cert": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         },
         "required": [
           "id",
@@ -5283,99 +5611,260 @@
         "type": "object",
         "description": "An inbound token a peer presents to pull this repository's log. The secret is shown once at creation and never again.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "name": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" },
-          "last_used_at": { "type": "string", "format": "date-time" },
-          "revoked_at": { "type": "string", "format": "date-time", "description": "Set once the token is revoked." }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Set once the token is revoked."
+          }
         },
-        "required": ["id", "name", "created_at"]
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ]
       },
       "FederationTokenCreated": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "name": { "type": "string" },
-          "token": { "type": "string", "description": "Clear-text token, returned only by this response." },
-          "created_at": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "Clear-text token, returned only by this response."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         },
-        "required": ["id", "name", "token", "created_at"]
+        "required": [
+          "id",
+          "name",
+          "token",
+          "created_at"
+        ]
       },
       "FederationDeferredUnit": {
         "type": "object",
         "description": "A unit that could not be applied yet and is retried.",
         "properties": {
-          "unit_key": { "type": "string" },
-          "seq": { "type": "integer", "format": "int64", "description": "Peer log sequence of the unit." },
-          "attempts": { "type": "integer" },
-          "reason": { "type": "string", "description": "Why it was deferred (for example a missing dependency)." },
-          "last_error": { "type": "string" },
-          "first_seen_at": { "type": "string", "format": "date-time" },
-          "next_attempt_at": { "type": "string", "format": "date-time" }
+          "unit_key": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Peer log sequence of the unit."
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why it was deferred (for example a missing dependency)."
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         },
-        "required": ["unit_key", "seq", "attempts", "reason", "last_error", "first_seen_at", "next_attempt_at"]
+        "required": [
+          "unit_key",
+          "seq",
+          "attempts",
+          "reason",
+          "last_error",
+          "first_seen_at",
+          "next_attempt_at"
+        ]
       },
       "FederationDeferredList": {
         "type": "object",
         "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/FederationDeferredUnit" } }
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FederationDeferredUnit"
+            }
+          }
         },
-        "required": ["items"]
+        "required": [
+          "items"
+        ]
       },
       "FederationStatus": {
         "type": "object",
         "properties": {
-          "enabled": { "type": "boolean", "description": "Federation is on: the repository keeps a change log." },
-          "supported": { "type": "boolean", "description": "Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server." },
-          "server_enabled": { "type": "boolean", "description": "Federation is enabled on the server (federation.enabled); when false no repository can be federated." },
-          "instance_id": { "type": "string", "description": "Identifier of this instance." },
-          "log_id": { "type": "string", "description": "Identifier of this repository's log; changes when federation is disabled and enabled again." },
-          "head_seq": { "type": "integer", "format": "int64", "description": "Highest sequence in the log." },
-          "units": { "type": "integer", "format": "int64", "description": "Logged units." },
-          "tombstones": { "type": "integer", "format": "int64", "description": "Logged deletions." },
-          "peers": { "type": "array", "items": { "$ref": "#/components/schemas/FederationPeer" } },
-          "tokens": { "type": "array", "items": { "$ref": "#/components/schemas/FederationToken" } }
+          "enabled": {
+            "type": "boolean",
+            "description": "Federation is on: the repository keeps a change log."
+          },
+          "supported": {
+            "type": "boolean",
+            "description": "Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server."
+          },
+          "server_enabled": {
+            "type": "boolean",
+            "description": "Federation is enabled on the server (federation.enabled); when false no repository can be federated."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Identifier of this instance."
+          },
+          "log_id": {
+            "type": "string",
+            "description": "Identifier of this repository's log; changes when federation is disabled and enabled again."
+          },
+          "head_seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Highest sequence in the log."
+          },
+          "units": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Logged units."
+          },
+          "tombstones": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Logged deletions."
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FederationPeer"
+            }
+          },
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FederationToken"
+            }
+          }
         },
-        "required": ["enabled", "supported", "server_enabled", "instance_id", "log_id", "head_seq", "units", "tombstones", "peers", "tokens"]
+        "required": [
+          "enabled",
+          "supported",
+          "server_enabled",
+          "instance_id",
+          "log_id",
+          "head_seq",
+          "units",
+          "tombstones",
+          "peers",
+          "tokens"
+        ]
       },
       "UpdateFederationRequest": {
         "type": "object",
         "properties": {
-          "enabled": { "type": "boolean", "description": "true backfills the log from the existing content; false removes the log and all peers." }
+          "enabled": {
+            "type": "boolean",
+            "description": "true backfills the log from the existing content; false removes the log and all peers."
+          }
         },
-        "required": ["enabled"]
+        "required": [
+          "enabled"
+        ]
       },
       "CreateFederationPeerRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "base_url": { "type": "string", "description": "Base URL of the peer instance; validated against the outbound (SSRF) policy." },
-          "token": { "type": "string", "description": "Token the peer issued for this repository." },
-          "ca_pem": { "type": "string", "description": "PEM CA bundle to trust for the peer's TLS certificate." },
-          "client_cert": { "type": "string", "description": "PEM client certificate for mutual TLS." },
-          "client_key": { "type": "string", "description": "PEM private key of the client certificate." }
+          "name": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL of the peer instance; validated against the outbound (SSRF) policy."
+          },
+          "token": {
+            "type": "string",
+            "description": "Token the peer issued for this repository."
+          },
+          "ca_pem": {
+            "type": "string",
+            "description": "PEM CA bundle to trust for the peer's TLS certificate."
+          },
+          "client_cert": {
+            "type": "string",
+            "description": "PEM client certificate for mutual TLS."
+          },
+          "client_key": {
+            "type": "string",
+            "description": "PEM private key of the client certificate."
+          }
         },
-        "required": ["name", "base_url", "token"]
+        "required": [
+          "name",
+          "base_url",
+          "token"
+        ]
       },
       "UpdateFederationPeerRequest": {
         "type": "object",
         "description": "Absent fields stay unchanged.",
         "properties": {
-          "name": { "type": "string" },
-          "base_url": { "type": "string" },
-          "token": { "type": "string" },
-          "ca_pem": { "type": "string" },
-          "client_cert": { "type": "string" },
-          "client_key": { "type": "string" },
-          "enabled": { "type": "boolean" }
+          "name": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "ca_pem": {
+            "type": "string"
+          },
+          "client_cert": {
+            "type": "string"
+          },
+          "client_key": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
         }
       },
       "CreateFederationTokenRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" }
+          "name": {
+            "type": "string"
+          }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "PackageUploadResult": {
         "type": "object",
@@ -5583,12 +6072,10 @@
             "type": "string"
           },
           "auto_push": {
-            "type": "boolean",
-            "nullable": true
+            "type": ["boolean", "null"]
           },
           "push_vex": {
-            "type": "boolean",
-            "nullable": true
+            "type": ["boolean", "null"]
           }
         }
       },
@@ -5634,12 +6121,14 @@
         "type": "object",
         "properties": {
           "override": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/DependencyTrackOverride"
+              },
+              {
+                "type": "null"
               }
-            ],
-            "nullable": true
+            ]
           },
           "effective": {
             "$ref": "#/components/schemas/DependencyTrackEffective"
@@ -5743,14 +6232,12 @@
             "description": "Findings carrying an analysis in Dependency-Track after the import."
           },
           "bom_pushed_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "vex_pushed_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "updated_at": {
             "type": "string",
@@ -5789,7 +6276,9 @@
         "properties": {
           "primary": {
             "type": "string",
-            "example": "#4f46e5"
+            "examples": [
+              "#4f46e5"
+            ]
           },
           "primary_contrast": {
             "type": "string",
@@ -5833,20 +6322,24 @@
         "properties": {
           "product_name": {
             "type": "string",
-            "example": "OpenArtifact"
+            "examples": [
+              "OpenArtifact"
+            ]
           },
           "primary_color": {
             "type": "string",
             "description": "#rrggbb, empty for the built-in colour"
           },
           "theme": {
-            "allOf": [
+            "description": "Present only with a custom primary_color",
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/BrandingTheme"
+              },
+              {
+                "type": "null"
               }
-            ],
-            "nullable": true,
-            "description": "Present only with a custom primary_color"
+            ]
           },
           "logo_light_url": {
             "type": "string",
@@ -5870,7 +6363,9 @@
           "source_url": {
             "type": "string",
             "description": "Where the running source is offered (AGPL-3.0 section 13); never empty",
-            "example": "https://github.com/openartifact/openartifact"
+            "examples": [
+              "https://github.com/openartifact/openartifact"
+            ]
           },
           "revision": {
             "type": "string",
@@ -5970,31 +6465,28 @@
         "description": "Partial update: an absent field is left alone, a string sets the runtime override, null removes the override (back to the configured default).",
         "properties": {
           "product_name": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "1-64 characters, no control characters",
             "maxLength": 64
           },
           "primary_color": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "#rrggbb",
-            "example": "#0f766e"
+            "examples": [
+              "#0f766e"
+            ]
           },
           "login_message": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "Up to 2000 characters",
             "maxLength": 2000
           },
           "support_url": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "http(s) or mailto URL; empty string hides the link"
           },
           "source_url": {
-            "type": "string",
-            "nullable": true,
+            "type": ["string", "null"],
             "description": "http(s) URL; cannot be empty"
           }
         }
@@ -6461,7 +6953,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["providers"],
+                  "required": [
+                    "providers"
+                  ],
                   "properties": {
                     "providers": {
                       "type": "array",
@@ -6476,7 +6970,10 @@
                           },
                           "kind": {
                             "type": "string",
-                            "enum": ["oidc", "saml"]
+                            "enum": [
+                              "oidc",
+                              "saml"
+                            ]
                           }
                         }
                       }
@@ -6520,6 +7017,7 @@
                 "conan",
                 "ivy",
                 "sbt",
+                "terraform",
                 "pacman"
               ]
             }
@@ -6547,49 +7045,79 @@
             "name": "q",
             "in": "query",
             "description": "Only repositories whose name contains this text (case-insensitive, at most 200 characters)",
-            "schema": { "type": "string", "maxLength": 200 }
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
           },
           {
             "name": "type",
             "in": "query",
             "description": "Only repositories of this type",
-            "schema": { "type": "string", "enum": ["hosted", "proxy", "group"] }
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hosted",
+                "proxy",
+                "group"
+              ]
+            }
           },
           {
             "name": "project",
             "in": "query",
             "description": "Only repositories of the project with this name; an unknown project matches nothing",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "flagged",
             "in": "query",
             "description": "true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts)",
-            "schema": { "type": "boolean" }
+            "schema": {
+              "type": "boolean"
+            }
           },
           {
             "name": "near_quota",
             "in": "query",
             "description": "true keeps the repositories that have a size quota and have used at least quota_threshold of it",
-            "schema": { "type": "boolean" }
+            "schema": {
+              "type": "boolean"
+            }
           },
           {
             "name": "quota_threshold",
             "in": "query",
             "description": "Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8)",
-            "schema": { "type": "number", "minimum": 0, "exclusiveMinimum": true, "maximum": 1 }
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
           },
           {
             "name": "unscanned",
             "in": "query",
             "description": "true keeps the repositories that were never scanned (no completed scan of any of their artifacts)",
-            "schema": { "type": "boolean" }
+            "schema": {
+              "type": "boolean"
+            }
           },
           {
             "name": "sort",
             "in": "query",
             "description": "Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name.",
-            "schema": { "type": "string", "enum": ["name", "updated", "last_published", "size"] }
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "updated",
+                "last_published",
+                "size"
+              ]
+            }
           }
         ],
         "responses": {
@@ -6668,6 +7196,7 @@
                       "conan",
                       "ivy",
                       "sbt",
+                      "terraform",
                       "pacman"
                     ]
                   },
@@ -6721,13 +7250,11 @@
                     "description": "Name of the owning project. Defaults to the built-in system project, whose membership grants nothing. Unknown project: 404."
                   },
                   "presign_downloads": {
-                    "type": "boolean",
-                    "nullable": true,
+                    "type": ["boolean", "null"],
                     "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected."
                   },
                   "trash_retention_days": {
-                    "type": "integer",
-                    "nullable": true,
+                    "type": ["integer", "null"],
                     "minimum": 0,
                     "maximum": 36500,
                     "description": "Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent."
@@ -6824,8 +7351,8 @@
                 "properties": {
                   "file": {
                     "type": "string",
-                    "format": "binary",
-                    "description": "The .rpm package"
+                    "description": "The .rpm package",
+                    "contentMediaType": "application/octet-stream"
                   }
                 },
                 "required": [
@@ -6982,13 +7509,20 @@
             "name": "group",
             "in": "query",
             "description": "package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped.",
-            "schema": { "type": "string", "enum": ["package"] }
+            "schema": {
+              "type": "string",
+              "enum": [
+                "package"
+              ]
+            }
           },
           {
             "name": "flagged",
             "in": "query",
             "description": "With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.",
-            "schema": { "type": "boolean" }
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -7012,8 +7546,12 @@
                       "type": "array",
                       "items": {
                         "oneOf": [
-                          { "$ref": "#/components/schemas/PackageFile" },
-                          { "$ref": "#/components/schemas/PackageGroup" }
+                          {
+                            "$ref": "#/components/schemas/PackageFile"
+                          },
+                          {
+                            "$ref": "#/components/schemas/PackageGroup"
+                          }
                         ]
                       }
                     }
@@ -7581,7 +8119,12 @@
                   },
                   "format": {
                     "type": "string",
-                    "enum": ["cyclonedx", "spdx", "spdx-json", "spdx3-json"],
+                    "enum": [
+                      "cyclonedx",
+                      "spdx",
+                      "spdx-json",
+                      "spdx3-json"
+                    ],
                     "description": "`cyclonedx` (JSON), `spdx` (2.3 tag-value), `spdx-json` (2.3 JSON) or `spdx3-json` (SPDX 3.0.1 JSON-LD)."
                   },
                   "spec_version": {
@@ -7861,7 +8404,10 @@
             "description": "`true` returns the document as a signed in-toto attestation in a DSSE envelope; `bundle` returns a Sigstore bundle, the input of `cosign verify-blob-attestation`. Verify with the key from `/.well-known/openartifact/attestation-key.pem`.",
             "schema": {
               "type": "string",
-              "enum": ["true", "bundle"]
+              "enum": [
+                "true",
+                "bundle"
+              ]
             }
           }
         ],
@@ -7872,7 +8418,7 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "contentMediaType": "application/octet-stream"
                 }
               },
               "application/vnd.dsse.envelope.v1+json": {
@@ -7960,7 +8506,10 @@
             "description": "`true` returns the document as a signed in-toto attestation in a DSSE envelope; `bundle` returns a Sigstore bundle, the input of `cosign verify-blob-attestation`. Verify with the key from `/.well-known/openartifact/attestation-key.pem`.",
             "schema": {
               "type": "string",
-              "enum": ["true", "bundle"]
+              "enum": [
+                "true",
+                "bundle"
+              ]
             }
           }
         ],
@@ -10992,13 +11541,17 @@
             "name": "flagged",
             "in": "query",
             "description": "true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned.",
-            "schema": { "type": "boolean" }
+            "schema": {
+              "type": "boolean"
+            }
           },
           {
             "name": "checksum",
             "in": "query",
             "description": "Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -12796,7 +13349,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "properties": {
                     "data": {
                       "type": "array",
@@ -13927,7 +14482,7 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "contentMediaType": "application/octet-stream"
                 }
               }
             }
@@ -13975,8 +14530,8 @@
                 "properties": {
                   "file": {
                     "type": "string",
-                    "format": "binary",
-                    "description": "Backup file to restore"
+                    "description": "Backup file to restore",
+                    "contentMediaType": "application/octet-stream"
                   }
                 },
                 "required": [
@@ -15653,7 +16208,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["providers"],
+                  "required": [
+                    "providers"
+                  ],
                   "properties": {
                     "providers": {
                       "type": "array",
@@ -16326,9 +16883,18 @@
       "post": {
         "summary": "Create a repository in a project",
         "description": "Create a repository owned by the project. Requires the maintainer or owner role in the project, or global admin; a non-member gets 404. The body is the one of POST /api/v1/repositories without `project` (the URL names it). For a caller who is not a global admin the project policy applies: format in allowed_formats (when set), repo_type in allowed_repo_types, name starting with repo_name_prefix (400 validation_failed), `public` only when allow_public_repos (403), member_repos readable by the caller (403) and the project below max_repositories (409 project_repository_limit).",
-        "tags": ["Projects"],
+        "tags": [
+          "Projects"
+        ],
         "parameters": [
-          { "name": "project", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
@@ -16336,23 +16902,64 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["name", "format"],
+                "required": [
+                  "name",
+                  "format"
+                ],
                 "properties": {
-                  "name": { "type": "string" },
-                  "format": { "type": "string" },
-                  "description": { "type": "string" },
-                  "public": { "type": "boolean" },
-                  "repo_type": { "type": "string", "enum": ["hosted", "proxy", "group"] },
-                  "upstream_url": { "type": "string" },
-                  "upstream_username": { "type": "string" },
-                  "upstream_password": { "type": "string" },
-                  "cache_ttl_seconds": { "type": "integer" },
-                  "negative_cache_ttl_seconds": { "type": "integer" },
-                  "max_stale_seconds": { "type": "integer" },
-                  "member_repos": { "type": "array", "items": { "type": "string" } },
-                  "presign_downloads": { "type": "boolean", "nullable": true },
-                  "trash_retention_days": { "type": "integer", "nullable": true },
-                  "immutable_releases": { "type": "boolean" },
+                  "name": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "public": {
+                    "type": "boolean"
+                  },
+                  "repo_type": {
+                    "type": "string",
+                    "enum": [
+                      "hosted",
+                      "proxy",
+                      "group"
+                    ]
+                  },
+                  "upstream_url": {
+                    "type": "string"
+                  },
+                  "upstream_username": {
+                    "type": "string"
+                  },
+                  "upstream_password": {
+                    "type": "string"
+                  },
+                  "cache_ttl_seconds": {
+                    "type": "integer"
+                  },
+                  "negative_cache_ttl_seconds": {
+                    "type": "integer"
+                  },
+                  "max_stale_seconds": {
+                    "type": "integer"
+                  },
+                  "member_repos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "presign_downloads": {
+                    "type": ["boolean", "null"]
+                  },
+                  "trash_retention_days": {
+                    "type": ["integer", "null"]
+                  },
+                  "immutable_releases": {
+                    "type": "boolean"
+                  },
                   "merge_proxy_versions": {
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
@@ -16373,12 +16980,26 @@
         "responses": {
           "201": {
             "description": "Repository created",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Repository" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository"
+                }
+              }
+            }
           },
-          "400": { "description": "Invalid request or a project policy violation (format, type, name prefix)" },
-          "403": { "description": "Role below maintainer, public repository not allowed, or a member repository the caller cannot read" },
-          "404": { "description": "Project not found or the caller is not a member" },
-          "409": { "description": "Name already taken, or the project reached max_repositories (project_repository_limit)" }
+          "400": {
+            "description": "Invalid request or a project policy violation (format, type, name prefix)"
+          },
+          "403": {
+            "description": "Role below maintainer, public repository not allowed, or a member repository the caller cannot read"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          },
+          "409": {
+            "description": "Name already taken, or the project reached max_repositories (project_repository_limit)"
+          }
         }
       }
     },
@@ -16386,10 +17007,26 @@
       "post": {
         "summary": "Transfer a repository to another project",
         "description": "Move a repository of {project} to the project named in the body. Requires the owner role in both projects (global admin holds both); a caller with no role in one of them gets 404 for it, a lower role 403. For a caller who is not a global admin the target project's policy applies as at creation (format, type, name prefix, public) and its max_repositories (409). Access of both projects' members changes immediately.",
-        "tags": ["Projects"],
+        "tags": [
+          "Projects"
+        ],
         "parameters": [
-          { "name": "project", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
@@ -16397,8 +17034,14 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["to_project"],
-                "properties": { "to_project": { "type": "string" } }
+                "required": [
+                  "to_project"
+                ],
+                "properties": {
+                  "to_project": {
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -16406,12 +17049,26 @@
         "responses": {
           "200": {
             "description": "Repository transferred",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Repository" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository"
+                }
+              }
+            }
           },
-          "400": { "description": "Missing to_project, same project, or a target policy violation" },
-          "403": { "description": "Not an owner of the source or the target project, or the target forbids public repositories" },
-          "404": { "description": "Project or repository not found, or the caller has no role in a project" },
-          "409": { "description": "The target project reached max_repositories" }
+          "400": {
+            "description": "Missing to_project, same project, or a target policy violation"
+          },
+          "403": {
+            "description": "Not an owner of the source or the target project, or the target forbids public repositories"
+          },
+          "404": {
+            "description": "Project or repository not found, or the caller has no role in a project"
+          },
+          "409": {
+            "description": "The target project reached max_repositories"
+          }
         }
       }
     },
@@ -17784,10 +18441,28 @@
       "get": {
         "summary": "Recent packages",
         "description": "The most recently published package versions across the repositories the caller can read, newest first. A version with several files (architectures, classifiers, distributions) appears once. Proxy cache entries are not publications and are left out. The server records no publisher, so created_by_name is never set; mine=true narrows the list to the repositories the caller can write to.",
-        "tags": ["Packages"],
+        "tags": [
+          "Packages"
+        ],
         "parameters": [
-          { "name": "mine", "in": "query", "description": "true keeps the repositories the caller has write permission on", "schema": { "type": "boolean" } },
-          { "name": "limit", "in": "query", "description": "Maximum entries (default 10, at most 50)", "schema": { "type": "integer", "minimum": 1, "maximum": 50 } }
+          {
+            "name": "mine",
+            "in": "query",
+            "description": "true keeps the repositories the caller has write permission on",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum entries (default 10, at most 50)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -17797,14 +18472,23 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "packages": { "type": "array", "items": { "$ref": "#/components/schemas/RecentPackage" } }
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RecentPackage"
+                      }
+                    }
                   },
-                  "required": ["packages"]
+                  "required": [
+                    "packages"
+                  ]
                 }
               }
             }
           },
-          "400": { "description": "Invalid mine" }
+          "400": {
+            "description": "Invalid mine"
+          }
         }
       }
     },
@@ -17841,7 +18525,7 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "contentMediaType": "application/octet-stream"
                 }
               }
             }
@@ -18008,13 +18692,11 @@
                     "description": "Move the repository to the named project (global admin only; unknown project: 404). Access of the old and new project's members changes immediately."
                   },
                   "presign_downloads": {
-                    "type": "boolean",
-                    "nullable": true,
+                    "type": ["boolean", "null"],
                     "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Omit to leave unchanged; send null to inherit."
                   },
                   "trash_retention_days": {
-                    "type": "integer",
-                    "nullable": true,
+                    "type": ["integer", "null"],
                     "minimum": 0,
                     "maximum": 36500,
                     "description": "Absent leaves it unchanged; an explicit null resets it to the server default; 0..36500 sets it (0 = no trash)."
@@ -19760,16 +20442,37 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "enabled": { "type": "boolean" },
-                    "auto_analyze": { "type": "boolean" },
-                    "provider": { "type": "string" },
-                    "base_url": { "type": "string" },
-                    "api_key": { "type": "string", "description": "Always masked." },
-                    "has_api_key": { "type": "boolean" },
-                    "model": { "type": "string" },
-                    "max_tokens": { "type": "integer" },
-                    "timeout_secs": { "type": "integer" },
-                    "system_prompt": { "type": "string" }
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "auto_analyze": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "base_url": {
+                      "type": "string"
+                    },
+                    "api_key": {
+                      "type": "string",
+                      "description": "Always masked."
+                    },
+                    "has_api_key": {
+                      "type": "boolean"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "max_tokens": {
+                      "type": "integer"
+                    },
+                    "timeout_secs": {
+                      "type": "integer"
+                    },
+                    "system_prompt": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -19809,7 +20512,12 @@
                   },
                   "provider": {
                     "type": "string",
-                    "enum": ["openai", "azure", "ollama", "custom"],
+                    "enum": [
+                      "openai",
+                      "azure",
+                      "ollama",
+                      "custom"
+                    ],
                     "description": "custom is any OpenAI-compatible endpoint and requires base_url."
                   },
                   "base_url": {
@@ -19892,7 +20600,12 @@
                 "properties": {
                   "provider": {
                     "type": "string",
-                    "enum": ["openai", "azure", "ollama", "custom"]
+                    "enum": [
+                      "openai",
+                      "azure",
+                      "ollama",
+                      "custom"
+                    ]
                   },
                   "base_url": {
                     "type": "string"
@@ -20551,6 +21264,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20643,6 +21358,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20739,6 +21456,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20836,6 +21555,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20976,6 +21697,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -21061,12 +21784,25 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "Federation status",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationStatus" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationStatus"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request, including a NUL byte in the URL or the body",
@@ -21078,8 +21814,12 @@
               }
             }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository not found" }
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
         }
       },
       "put": {
@@ -21089,23 +21829,52 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateFederationRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFederationRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "The new federation status",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationStatus" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationStatus"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request, or the repository is not hosted or its format has no federation (error code validation_failed)",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
           "409": {
             "description": "Conflict with the current state",
             "content": {
@@ -21127,26 +21896,61 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateFederationPeerRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFederationPeerRequest"
+              }
+            }
+          }
         },
         "responses": {
           "201": {
             "description": "Peer added",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationPeer"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request (error code validation_failed)",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
           "409": {
             "description": "Federation is not enabled, or a peer with this name already exists",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -21159,27 +21963,71 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Peer id."
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateFederationPeerRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFederationPeerRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "The updated peer",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationPeer"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request (error code validation_failed)",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository or peer not found"
+          },
           "409": {
             "description": "A peer with this name already exists",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -21190,11 +22038,29 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Peer id."
+          }
         ],
         "responses": {
-          "204": { "description": "Peer deleted" },
+          "204": {
+            "description": "Peer deleted"
+          },
           "400": {
             "description": "Invalid request, including a NUL byte in the URL or the body",
             "content": {
@@ -21205,8 +22071,12 @@
               }
             }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository or peer not found"
+          },
           "409": {
             "description": "Conflict with the current state",
             "content": {
@@ -21228,13 +22098,35 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Peer id."
+          }
         ],
         "responses": {
           "202": {
             "description": "Resync queued",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationPeer"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request, including a NUL byte in the URL or the body",
@@ -21246,8 +22138,12 @@
               }
             }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository or peer not found"
+          },
           "409": {
             "description": "Conflict with the current state",
             "content": {
@@ -21269,13 +22165,35 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Peer id."
+          }
         ],
         "responses": {
           "200": {
             "description": "The deferred units",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationDeferredList" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationDeferredList"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request, including a NUL byte in the URL or the body",
@@ -21287,8 +22205,12 @@
               }
             }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or peer not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository or peer not found"
+          },
           "409": {
             "description": "Conflict with the current state",
             "content": {
@@ -21310,26 +22232,61 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateFederationTokenRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFederationTokenRequest"
+              }
+            }
+          }
         },
         "responses": {
           "201": {
             "description": "Token created",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationTokenCreated" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FederationTokenCreated"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request (error code validation_failed)",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
           "409": {
             "description": "Federation is not enabled",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -21342,11 +22299,29 @@
           "Federation"
         ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Token id." }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Token id."
+          }
         ],
         "responses": {
-          "204": { "description": "Token revoked" },
+          "204": {
+            "description": "Token revoked"
+          },
           "400": {
             "description": "Invalid request, including a NUL byte in the URL or the body",
             "content": {
@@ -21357,8 +22332,12 @@
               }
             }
           },
-          "403": { "description": "Manage permission on the repository required" },
-          "404": { "description": "Repository or token not found" },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository or token not found"
+          },
           "409": {
             "description": "Conflict with the current state",
             "content": {
@@ -21399,8 +22378,8 @@
                 "properties": {
                   "file": {
                     "type": "string",
-                    "format": "binary",
-                    "description": "The .deb package"
+                    "description": "The .deb package",
+                    "contentMediaType": "application/octet-stream"
                   },
                   "distribution": {
                     "type": "string",
@@ -21577,16 +22556,42 @@
     "/api/v1/repositories/{name}/packages/{id}": {
       "get": {
         "summary": "Get a package version",
-        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, pacman (depends), deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
-        "tags": ["Repositories", "Packages"],
+        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
+        "tags": [
+          "Repositories",
+          "Packages"
+        ],
         "parameters": [
-          { "name": "name", "in": "path", "required": true, "description": "Repository name", "schema": { "type": "string" } },
-          { "name": "id", "in": "path", "required": true, "description": "Row id from the package listing", "schema": { "type": "string", "format": "uuid" } }
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Row id from the package listing",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "The package version",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PackageDetail" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageDetail"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request, including a NUL byte in the URL or the body",
@@ -21598,8 +22603,12 @@
               }
             }
           },
-          "403": { "description": "No read access to the repository" },
-          "404": { "description": "Repository or package not found (a package of another repository is not found either)" }
+          "403": {
+            "description": "No read access to the repository"
+          },
+          "404": {
+            "description": "Repository or package not found (a package of another repository is not found either)"
+          }
         },
         "security": [
           {
@@ -21831,7 +22840,7 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "contentMediaType": "application/octet-stream"
                 }
               }
             }
@@ -22172,12 +23181,10 @@
                     "type": "string"
                   },
                   "auto_push": {
-                    "type": "boolean",
-                    "nullable": true
+                    "type": ["boolean", "null"]
                   },
                   "push_vex": {
-                    "type": "boolean",
-                    "nullable": true
+                    "type": ["boolean", "null"]
                   }
                 },
                 "required": [
@@ -22803,13 +23810,13 @@
               "image/png": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "contentMediaType": "image/png"
                 }
               },
               "image/svg+xml": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "contentMediaType": "image/svg+xml"
                 }
               }
             }
@@ -22956,13 +23963,13 @@
             "image/png": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "contentMediaType": "image/png"
               }
             },
             "image/svg+xml": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "contentMediaType": "image/svg+xml"
               }
             }
           }

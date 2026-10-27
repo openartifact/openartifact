@@ -48,6 +48,8 @@ func TestIsRelease(t *testing.T) {
 		{"rpm", "1.0", true},
 		{"conda", "1.0.dev0", true},
 		{"pacman", "1:1.0rc1-1", true},
+		{"terraform", "1.2.0", true},
+		{"terraform", "1.2.0-rc1", false},
 		{"docker", "latest", true},
 	}
 

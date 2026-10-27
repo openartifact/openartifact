@@ -12,7 +12,7 @@ The management API lives under `/api/v1`; the web UI, the [CLI](cli.md) and the 
 
 | URL | Content |
 |---|---|
-| `/api/v1/openapi.json` | OpenAPI 3 spec (embedded from [`internal/api/openapi.json`](../../internal/api/openapi.json)) |
+| `/api/v1/openapi.json` | OpenAPI 3.1 spec (embedded from [`internal/api/openapi.json`](../../internal/api/openapi.json)) |
 | `/api/v1/openapi.yaml` | same spec rendered as YAML |
 | `/api/reference` | Interactive API reference ([Scalar](https://github.com/scalar/scalar)), also linked from the About dialog |
 | `/swagger`, `/swagger/` | `301` redirects to `/api/reference` (the old Swagger UI path) |
@@ -68,7 +68,7 @@ curl -sS -H "Authorization: Bearer <TOKEN>" "$HOST/api/v1/repositories?limit=10"
 
 From a repository checkout, `scripts/dev-token.sh` does steps 1 and 2 and prints only the token: `OA_PASS=<PASSWORD> scripts/dev-token.sh http://localhost:8080` (`--password-stdin` reads the password from stdin; `--change-password` with `OA_NEW_PASS` completes the forced password change of a fresh bootstrap admin; `OA_USER`, `OA_TOKEN_NAME` and `OA_TOKEN_KIND` override the defaults). It needs `curl` and `jq`.
 
-Token body fields: `name` (required, max 100 characters), `kind` (`access` or `deploy`), optional `scopes` (permission target IDs; a scope can only narrow the owner's access) and `expires_at` (RFC 3339, in the future, at most 2 years out). Creating repositories requires an administrator. Valid `format` values: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`. The proxy/group options (`repo_type`, ...) are in the spec; see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
+Token body fields: `name` (required, max 100 characters), `kind` (`access` or `deploy`), optional `scopes` (permission target IDs; a scope can only narrow the owner's access) and `expires_at` (RFC 3339, in the future, at most 2 years out). Creating repositories requires an administrator. Valid `format` values: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`. The proxy/group options (`repo_type`, ...) are in the spec; see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
 
 ## Conventions
 
@@ -212,6 +212,8 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 `/admin/pprof/` is also registered when `server.pprofEnabled` is set (admin only; for diagnostics, see [performance](../operations/performance.md)).
 
 ## Regenerating the web client types
+
+The spec is OpenAPI 3.1.1 (JSON Schema 2020-12): nullable values are `type: [T, "null"]` or `anyOf` with `{"type": "null"}`, not the 3.0 `nullable` keyword. `go test ./internal/api` validates it against the official 3.1 meta-schema.
 
 The SPA's types are generated from the spec. After changing routes or schemas, keep `internal/api/openapi.json` in sync with the handlers, then:
 

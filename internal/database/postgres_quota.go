@@ -296,6 +296,8 @@ UNION ALL SELECT repository_id, blob_id, 1 FROM nuget_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM conda_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM pacman_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM conan_packages
+UNION ALL SELECT repository_id, blob_id, 1 FROM terraform_modules
+UNION ALL SELECT repository_id, blob_id, 1 FROM terraform_providers
 UNION ALL SELECT repository_id, blob_id, 1 FROM ivy_artifacts
 UNION ALL SELECT repository_id, blob_id, 1 FROM sbt_artifacts
 UNION ALL SELECT repository_id, blob_id, 1 FROM raw_artifacts

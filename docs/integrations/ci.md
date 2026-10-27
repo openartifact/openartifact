@@ -37,7 +37,7 @@ oa --format json promote     shop "$VERSION" --stage prod --notes "build $BUILD_
 
 Every command exits `0` on success and `1` on failure and prints one JSON document with `--format json`; the exact shapes, the remote path rules of `upload` and the semantics of `--from-build` are in the [CLI reference](cli.md#ci-commands). Promotion adds metadata rows that reference the same blobs, so it costs the same for a 1 KiB or a 10 GiB bundle ([details](../repositories/release-bundles.md#what-a-copy-is)).
 
-Supported by `oa upload`: hosted `raw`, `maven`, `ivy`, `sbt`, `deb` and `rpm` repositories. For every other format publish with the native client in the job (`npm publish`, `docker push`, `twine upload`, `helm push`, `cargo publish`, ...). `bundle add` resolves artifacts of the same six formats, so bundles built by the CLI contain raw, Maven, Ivy, sbt, Debian and RPM artifacts; items of other formats can be added through the [bundles API](../repositories/release-bundles.md#bundles-api).
+Supported by `oa upload`: hosted `raw`, `maven`, `ivy`, `sbt`, `deb` and `rpm` repositories. For every other format publish with the native client in the job (`npm publish`, `docker push`, `twine upload`, `helm push`, `cargo publish`, ...; Terraform and OpenTofu have no publish command, use `curl` against the [publish API](../formats/terraform.md#publish-api)). `bundle add` resolves artifacts of the same six formats, so bundles built by the CLI contain raw, Maven, Ivy, sbt, Debian and RPM artifacts; items of other formats can be added through the [bundles API](../repositories/release-bundles.md#bundles-api).
 
 ## Installing `oa`
 

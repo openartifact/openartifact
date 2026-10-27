@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </p>
 
 OpenArtifact stores and serves npm, PyPI, Maven, Docker/OCI, Helm, Debian, RPM,
-Arch Linux (pacman), Go, Cargo, NuGet, RubyGems, Conda, Conan, Ivy, sbt and raw files behind one URL
+Arch Linux (pacman), Go, Cargo, NuGet, RubyGems, Conda, Conan, Terraform/OpenTofu, Ivy, sbt and raw files behind one URL
 scheme and one permission model, on your own infrastructure. Free software under
 the AGPL.
 
@@ -95,7 +95,7 @@ More: [installation](docs/getting-started/installation.md),
 | Section | Contents |
 |---|---|
 | [Getting started](docs/getting-started/installation.md) | [Installation](docs/getting-started/installation.md) (Compose, Helm, binaries, first login), [configuration](docs/getting-started/configuration.md) (every setting), [upgrading](docs/getting-started/upgrading.md) |
-| [Formats](docs/formats/README.md) | Client URLs and setup per format: [Maven](docs/formats/maven.md), [npm](docs/formats/npm.md), [PyPI](docs/formats/pypi.md), [Docker](docs/formats/docker.md), [Helm](docs/formats/helm.md), [Debian](docs/formats/debian.md), [RPM](docs/formats/rpm.md), [Arch Linux](docs/formats/pacman.md), [Go](docs/formats/go.md), [Cargo](docs/formats/cargo.md), [NuGet](docs/formats/nuget.md), [RubyGems](docs/formats/rubygems.md), [Conda](docs/formats/conda.md), [Conan](docs/formats/conan.md), [Ivy/sbt](docs/formats/ivy-sbt.md), [raw](docs/formats/raw.md) |
+| [Formats](docs/formats/README.md) | Client URLs and setup per format: [Maven](docs/formats/maven.md), [npm](docs/formats/npm.md), [PyPI](docs/formats/pypi.md), [Docker](docs/formats/docker.md), [Helm](docs/formats/helm.md), [Debian](docs/formats/debian.md), [RPM](docs/formats/rpm.md), [Arch Linux](docs/formats/pacman.md), [Go](docs/formats/go.md), [Cargo](docs/formats/cargo.md), [NuGet](docs/formats/nuget.md), [RubyGems](docs/formats/rubygems.md), [Conda](docs/formats/conda.md), [Conan](docs/formats/conan.md), [Terraform/OpenTofu](docs/formats/terraform.md), [Ivy/sbt](docs/formats/ivy-sbt.md), [raw](docs/formats/raw.md) |
 | [Repositories](docs/repositories/hosted-proxy-group.md) | [Hosted, proxy and group](docs/repositories/hosted-proxy-group.md), [cleanup and quotas](docs/repositories/cleanup-and-quotas.md), [properties](docs/repositories/properties.md), [release bundles](docs/repositories/release-bundles.md) |
 | [Security](docs/security/authentication.md) | [Authentication](docs/security/authentication.md), [SSO](docs/security/sso.md), [RBAC](docs/security/rbac.md), [scanning](docs/security/scanning.md), [signing and release verification](docs/security/signing.md) |
 | [Operations](docs/operations/storage.md) | [Storage](docs/operations/storage.md), [backup](docs/operations/backup.md), [monitoring](docs/operations/monitoring.md), [webhooks](docs/operations/webhooks.md), [performance](docs/operations/performance.md) |

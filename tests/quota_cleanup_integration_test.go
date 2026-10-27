@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,12 +67,14 @@ func (e *cleanupQuotaEnv) queryID(query string, args ...any) string {
 	return id
 }
 
+// repo creates a hosted repository for a seeded format; "terraform-provider" is
+// the provider table of a terraform repository (its modules are "terraform").
 func (e *cleanupQuotaEnv) repo(format string) string {
 	e.t.Helper()
 
 	org := models.SystemProjectID
 
-	repo := &models.Repository{Name: format + "-repo", Format: format, RepoType: "hosted", ProjectID: &org}
+	repo := &models.Repository{Name: format + "-repo", Format: strings.TrimSuffix(format, "-provider"), RepoType: "hosted", ProjectID: &org}
 	if err := e.pg.CreateRepository(context.Background(), repo); err != nil {
 		e.t.Fatalf("CreateRepository: %v", err)
 	}

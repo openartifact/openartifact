@@ -42,8 +42,8 @@ func TestOpenAPISpecMetadataPatched(t *testing.T) {
 			Version     string `json:"version"`
 			Description string `json:"description"`
 			License     struct {
-				Name string `json:"name"`
-				URL  string `json:"url"`
+				Name       string `json:"name"`
+				Identifier string `json:"identifier"`
 			} `json:"license"`
 		} `json:"info"`
 		Components struct {
@@ -69,7 +69,7 @@ func TestOpenAPISpecMetadataPatched(t *testing.T) {
 		t.Errorf("info.version = %q", doc.Info.Version)
 	}
 
-	if doc.Info.License.Name != "AGPL-3.0-or-later" || doc.Info.License.URL != "https://www.gnu.org/licenses/agpl-3.0.html" {
+	if doc.Info.License.Name != "AGPL-3.0-or-later" || doc.Info.License.Identifier != "AGPL-3.0-or-later" {
 		t.Errorf("info.license = %+v", doc.Info.License)
 	}
 

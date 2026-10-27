@@ -477,6 +477,38 @@ type Database interface {
 	YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error
 	IncrementCargoDownloadCount(ctx context.Context, repoID, name, version string) error
 
+	// Terraform/OpenTofu registry methods (docs/formats/terraform.md). The
+	// registry namespace is the repository, so rows carry no namespace.
+	//
+	// CreateTerraformModule and CreateTerraformProvider store a version that is
+	// not live yet; a live row with the same coordinates is a unique violation
+	// (IsUniqueViolation). The Get methods return (nil, nil) when there is none.
+	CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error
+	GetTerraformModule(ctx context.Context, repoID, name, system, version string) (*models.TerraformModule, error)
+	// ListTerraformModuleVersions returns the live versions of one module,
+	// oldest first.
+	ListTerraformModuleVersions(ctx context.Context, repoID, name, system string) ([]*models.TerraformModule, error)
+	// ListTerraformModules returns every live module version of a repository.
+	ListTerraformModules(ctx context.Context, repoID string) ([]*models.TerraformModule, error)
+	DeleteTerraformModule(ctx context.Context, repoID, id string) error
+	IncrementTerraformModuleDownloadCount(ctx context.Context, repoID, id string) error
+	// TerraformModuleStamp is a cheap validator of one module's version list.
+	TerraformModuleStamp(ctx context.Context, repoID, name, system string) (string, error)
+	CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error
+	GetTerraformProvider(ctx context.Context, repoID, typ, version, osName, arch string) (*models.TerraformProvider, error)
+	// ListTerraformProviderPlatforms returns every live platform zip of one
+	// provider type, ordered by version, os and arch.
+	ListTerraformProviderPlatforms(ctx context.Context, repoID, typ string) ([]*models.TerraformProvider, error)
+	// ListTerraformProviderVersionPlatforms returns every live platform zip of
+	// one provider version, ordered by os and arch.
+	ListTerraformProviderVersionPlatforms(ctx context.Context, repoID, typ, version string) ([]*models.TerraformProvider, error)
+	// ListTerraformProviders returns every live provider zip of a repository.
+	ListTerraformProviders(ctx context.Context, repoID string) ([]*models.TerraformProvider, error)
+	DeleteTerraformProvider(ctx context.Context, repoID, id string) error
+	IncrementTerraformProviderDownloadCount(ctx context.Context, repoID, id string) error
+	// TerraformProviderStamp is a cheap validator of one provider's platforms.
+	TerraformProviderStamp(ctx context.Context, repoID, typ string) (string, error)
+
 	// RubyGems methods
 	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
 	GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error)

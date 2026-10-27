@@ -79,6 +79,8 @@ var Tables = []Table{
 	{Name: "conda_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "pacman_packages", Key: idKey(), Exclude: []string{"file_list"}, BlobRefs: []string{"blob_id"}},
 	{Name: "conan_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
+	{Name: "terraform_modules", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
+	{Name: "terraform_providers", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "helm_charts", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "raw_artifacts", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "docker_blobs", Key: idKey(), Exclude: []string{"last_used_at"}, BlobRefs: []string{"blob_id"}},

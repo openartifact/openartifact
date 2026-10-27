@@ -25,6 +25,8 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 		"cargo",
 		"conda",
 		"conan",
+		"terraform",
+		"terraform",
 		"docker",
 		"go",
 		"helm",

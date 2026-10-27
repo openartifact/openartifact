@@ -74,6 +74,13 @@ precedence = "override"
 SPDX-FileCopyrightText = "Microsoft Corporation (https://github.com/microsoft/AdaptiveCards)"
 SPDX-License-Identifier = "MIT"
 
+# OpenAPI 3.1 meta-schemas vendored unmodified (internal/api/openapi_valid_test.go).
+[[annotations]]
+path = "internal/api/testdata/oas31/*.json"
+precedence = "override"
+SPDX-FileCopyrightText = "The OpenAPI Initiative (https://spec.openapis.org/oas/3.1/)"
+SPDX-License-Identifier = "Apache-2.0"
+
 # Golden webhook bodies compared byte for byte by internal/webhook/format_test.go.
 [[annotations]]
 path = "internal/webhook/testdata/golden/**"

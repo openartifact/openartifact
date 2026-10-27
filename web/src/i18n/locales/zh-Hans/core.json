@@ -79,6 +79,7 @@
   "upload.hint.pacman": "上传 .pkg.tar.zst、.pkg.tar.xz 或 .pkg.tar.gz 软件包以及可选的 .sig 签名文件。",
   "upload.pacman.arch": "架构目录",
   "upload.pacman.archHint": "用于“any”软件包以及文件名中不含架构的文件。",
+  "upload.terraform.body": "Terraform 和 OpenTofu 的模块与提供商通过 PUT 请求发布，每个模块版本或提供商平台一个请求，并使用 API 令牌认证。坐标包含在 URL 中：",
   "pwa.updateAvailable": "有新版本可用",
   "pwa.updateHint": "重新加载即可切换。在此之前，当前页面不会受到影响。",
   "pwa.reload": "重新加载",
