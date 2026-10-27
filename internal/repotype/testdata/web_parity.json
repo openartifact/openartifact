@@ -85,8 +85,8 @@
   },
   {
     "format": "conda",
-    "proxy": false,
-    "group": false,
+    "proxy": true,
+    "group": true,
     "federation": false,
     "default_upstream": ""
   },

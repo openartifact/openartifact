@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
@@ -39,6 +40,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/telemetry"
+	"github.com/openartifact/openartifact/pkg/conda"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -147,6 +149,10 @@ type Service struct {
 	// maxMeta caps an index or metadata response; DefaultMaxMetadata unless a
 	// test lowers it.
 	maxMeta int64
+
+	// maxCondaIndex caps a conda repodata file, plain or decompressed;
+	// DefaultMaxCondaIndex unless a test lowers it.
+	maxCondaIndex int64
 }
 
 // NewService creates the proxy service. Upstream requests use an SSRF-safe
@@ -156,12 +162,15 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 	client := telemetry.WrapClient(netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout))
 
 	return &Service{
-		log:        log,
-		db:         db,
-		blobStore:  blobStore,
-		client:     client,
-		maxBody:    DefaultMaxBody,
-		maxMeta:    DefaultMaxMetadata,
+		log:       log,
+		db:        db,
+		blobStore: blobStore,
+		client:    client,
+		maxBody:   DefaultMaxBody,
+		maxMeta:   DefaultMaxMetadata,
+
+		maxCondaIndex: DefaultMaxCondaIndex,
+
 		packuments: base.NewGate(maxConcurrentPackuments),
 		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
@@ -196,6 +205,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if serve := s.formatServer(repo.Format); serve != nil {
 		serve(w, r, repo, relPath)
+		return
+	}
+
+	if repo.Format == "conda" {
+		s.serveConda(w, r, repo, relPath)
 		return
 	}
 
@@ -358,7 +372,7 @@ func writeEntry(w http.ResponseWriter, r *http.Request, entry *models.ProxyCache
 	h.Set("Content-Type", ct)
 	h.Set("ETag", etag)
 
-	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+	if httpcache.ETagMatches(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -678,7 +692,11 @@ func (s *Service) store(
 	o fetchOpts,
 ) (*models.ProxyCacheEntry, error) {
 	limit := s.maxBody
-	if isMetadataKey(repo.Format, key) {
+
+	switch {
+	case repo.Format == "conda" && isCondaIndexKey(key):
+		limit = min(limit, s.maxCondaIndex)
+	case isMetadataKey(repo.Format, key):
 		limit = min(limit, s.maxMeta)
 	}
 
@@ -906,6 +924,9 @@ func Immutable(format, key string) bool {
 		return goImmutable(key)
 	case "nuget", "rubygems":
 		return packageFileImmutable(format, key, name)
+	case "conda":
+		// Package files, verified against the repodata digest; repodata moves.
+		return condaImmutable(name)
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
@@ -945,6 +966,11 @@ func conanRevisionFile(key string) bool {
 	return strings.Contains(key, "/revisions/") && (strings.HasSuffix(key, "/files") || strings.Contains(key, "/files/"))
 }
 
+// condaImmutable reports whether name is a conda package file.
+func condaImmutable(name string) bool {
+	return strings.HasSuffix(name, conda.ExtConda) || strings.HasSuffix(name, conda.ExtTarBz2)
+}
+
 // isMetadataKey reports whether key names an index or metadata file of format
 // (small by nature, capped at DefaultMaxMetadata) rather than a package file.
 func isMetadataKey(format, key string) bool {
@@ -971,6 +997,9 @@ func isMetadataKey(format, key string) bool {
 		return name == "list" || strings.HasSuffix(key, "/@latest")
 	case "nuget":
 		return !strings.HasPrefix(key, "v3/package/")
+	case "conda":
+		// Repodata is capped by maxCondaIndex instead; this covers channeldata.json.
+		return !strings.HasSuffix(name, conda.ExtConda) && !strings.HasSuffix(name, conda.ExtTarBz2)
 	case "rubygems":
 		return !strings.HasPrefix(key, "gems/")
 	case "conan":
@@ -1014,6 +1043,7 @@ var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only ta
 	"rpm":   {".rpm"},
 	"ivy":   ivyPackageExts,
 	"sbt":   ivyPackageExts,
+	"conda": {conda.ExtConda, conda.ExtTarBz2},
 }
 
 // isHTMLForPackage reports whether the upstream answered a package file's path
