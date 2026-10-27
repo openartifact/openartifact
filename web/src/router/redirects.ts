@@ -12,6 +12,7 @@ import type {
   RouteRecordRedirectOption,
 } from 'vue-router'
 import { artifactPath } from '../lib/artifactPath'
+import { FORMAT_IDS } from '../lib/formats.generated'
 
 // Every legacy URL keeps working. Redirects preserve the query string and hash
 // unless a query key is remapped; function redirects are used so params with
@@ -59,13 +60,10 @@ const SECURITY_TYPES: Record<string, string> = {
 
 /**
  * Format ids that prefixed the old artifact URL (`/repos/:n/packages/:format/:pkg`).
- * Duplicated from `lib/formats` on purpose: importing it would put every brand
- * icon in the initial chunk. A test keeps the two in sync.
+ * Taken from `lib/formats.generated` rather than `lib/formats`: importing the
+ * latter would put every brand icon in the initial chunk.
  */
-export const LEGACY_FORMAT_IDS: ReadonlySet<string> = new Set([
-  'docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb',
-  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman',
-])
+export const LEGACY_FORMAT_IDS: ReadonlySet<string> = new Set(FORMAT_IDS)
 
 const LEGACY_ARTIFACT = /^\/repos\/[^/]+\/packages\/([^/]+)\/([^/]+)\/?$/
 

@@ -237,6 +237,9 @@ jobs:
             exit 1
           fi
 
+      - name: Web format constants are up to date (cmd/genformats)
+        run: go run ./cmd/genformats -check
+
   web:
     name: web build
     runs-on: ubuntu-latest

@@ -21,6 +21,9 @@ import (
 	"strings"
 )
 
+// The web UI consumes the format lists as web/src/lib/formats.generated.ts.
+//go:generate go run ../../cmd/genformats -root ../..
+
 const (
 	Hosted = "hosted"
 	Proxy  = "proxy"
