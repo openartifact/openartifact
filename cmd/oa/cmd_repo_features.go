@@ -784,7 +784,10 @@ func handleSystem(args []string, client *Client, outFmt string) {
 
 	w := newTabWriter()
 
-	for _, k := range []string{"version", "status", "commit", "build_time", "go_version", "os", "arch", "uptime", "db_status", "storage_kind", "storage_status"} {
+	for _, k := range []string{
+		"version", "status", "commit", "build_time", "go_version", "os", "arch", "uptime",
+		"db_status", "storage_kind", "storage_status",
+	} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
 		}

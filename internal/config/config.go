@@ -46,7 +46,8 @@ var (
 		"audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive",
 	)
 	errFederationSettings = errors.New(
-		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, tombstoneRetention must not be negative",
+		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, " +
+			"tombstoneRetention must not be negative",
 	)
 	errBlobDeletionBatch    = errors.New("blobDeletion.sweepBatch must be at least 1")
 	errBlobDeletionNegative = errors.New("blobDeletion.grace must not be negative")
@@ -58,13 +59,15 @@ var (
 	errTieringBatch    = errors.New("tiering.batch and tiering.concurrency must be at least 1")
 	errTieringNegative = errors.New("tiering.maxBytesPerSecond, accessFlushInterval and refreshInterval must not be negative")
 	errTieringPoolSize = errors.New(
-		"database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each",
+		"database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: " +
+			"a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each",
 	)
 	errPlaceholderDBPassword = errors.New(
 		"database.password is still the CHANGE_ME placeholder from the example files: set a real password",
 	)
 	errMaxOpenConnsTooSmall = errors.New(
-		"database.maxOpenConns must be 0 (driver default) or at least 2: a blob-lock transaction pins one connection and its callback needs another",
+		"database.maxOpenConns must be 0 (driver default) or at least 2: " +
+			"a blob-lock transaction pins one connection and its callback needs another",
 	)
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")

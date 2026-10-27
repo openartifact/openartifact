@@ -220,12 +220,12 @@ func (j *groupJob) fetchRepomd(ctx context.Context, m *models.Repository) (map[s
 func (j *groupJob) openRPMDocument(ctx context.Context, src *rpmSource, typ string) (io.ReadCloser, error) {
 	href, ok := formatrpm.SafeLocation(src.hrefs[typ])
 	if !ok {
-		return nil, fmt.Errorf(
+		return nil, fmt.Errorf( //nolint:err113 // dynamic context
 			"group worker: unsafe %s location %q of %s",
 			typ,
 			src.hrefs[typ],
 			src.member.Name,
-		) //nolint:err113 // dynamic context
+		)
 	}
 
 	rc, err := j.w.opener.Open(ctx, src.member, href)

@@ -346,7 +346,8 @@ func nugetFuzzCheckUpstreamURL(t *testing.T, p nugetPath, dir, key string) {
 	}
 
 	u, err := url.Parse(want)
-	if err != nil || u.Host != "up.example" || u.RawQuery != "" || u.Fragment != "" || u.Path != strings.TrimPrefix(want, "https://up.example") ||
+	if err != nil || u.Host != "up.example" || u.RawQuery != "" || u.Fragment != "" ||
+		u.Path != strings.TrimPrefix(want, "https://up.example") ||
 		path.Clean(u.Path) != u.Path ||
 		!strings.HasPrefix(u.Path, strings.TrimPrefix(base, "https://up.example")) {
 		t.Fatalf("%+v maps to %q, which leaves the upstream's base (%v)", p, want, err)

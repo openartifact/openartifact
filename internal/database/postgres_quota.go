@@ -331,7 +331,8 @@ WITH counted AS (
            COALESCE(SUM(size_bytes), 0)::bigint AS size_bytes,
            COALESCE(SUM(artifact_count), 0)::bigint AS artifacts
       FROM quota_pending
-     WHERE created_at > now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL + `' ELSE interval '` + quotaPendingReleaseTTL + `' END`
+     WHERE created_at > now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL +
+		`' ELSE interval '` + quotaPendingReleaseTTL + `' END`
 
 	reconcilePendingEndSQL = `
      GROUP BY repository_id
@@ -395,7 +396,8 @@ const (
 // repository is gone) so the table does not keep what no partner will consume.
 const purgeStalePendingSQL = `
 DELETE FROM quota_pending
- WHERE created_at <= now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL + `' ELSE interval '` + quotaPendingReleaseTTL + `' END
+ WHERE created_at <= now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL +
+	`' ELSE interval '` + quotaPendingReleaseTTL + `' END
     OR NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = quota_pending.repository_id)`
 
 // reconcileProjectsSQL rewrites the counters of every project with a ceiling

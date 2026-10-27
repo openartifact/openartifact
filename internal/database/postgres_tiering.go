@@ -119,8 +119,8 @@ func (p *PostgresDB) CreateStorageTier(ctx context.Context, t *models.StorageTie
 		ID:            t.ID,
 		Name:          t.Name,
 		BackendID:     nullableBackendID(t.BackendID),
-		Rank:          int32(t.Rank),
-		PromoteOnRead: t.PromoteOnRead, //nolint:gosec // rank is validated by the API
+		Rank:          int32(t.Rank), //nolint:gosec // rank is validated by the API
+		PromoteOnRead: t.PromoteOnRead,
 	})
 }
 
@@ -775,7 +775,8 @@ func buildBlobRefsSQL() string {
 	parts := make([]string, len(blobRefScopeSpecs))
 	for i, s := range blobRefScopeSpecs {
 		parts[i] = fmt.Sprintf(
-			`SELECT b.sha256, r.name, r.format, %s::text FROM blobs b JOIN %s ON %s JOIN repositories r ON r.id = %s WHERE b.sha256 = ANY($1::text[])`,
+			`SELECT b.sha256, r.name, r.format, %s::text FROM blobs b JOIN %s ON %s JOIN repositories r ON r.id = %s WHERE b.sha256 =
+				ANY($1::text[])`,
 			s.path,
 			s.from,
 			s.blobCond,

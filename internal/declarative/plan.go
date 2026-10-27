@@ -191,7 +191,8 @@ func planObject(in PlanInput, k Kind, o *Object, key string, live []*Live) *Item
 
 	if len(res.Immutable) > 0 {
 		it.Err = fmt.Errorf(
-			"%w %s cannot be changed on an existing object; revert the manifest, or delete the object (oa apply --prune after removing it, or via the API) and apply again to recreate it",
+			"%w %s cannot be changed on an existing object; revert the manifest, or delete the object "+
+				"(oa apply --prune after removing it, or via the API) and apply again to recreate it",
 			errImmutable,
 			strings.Join(res.Immutable, ", "),
 		)

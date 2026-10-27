@@ -400,7 +400,8 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 	// Never serve (or presign) anything that is not addressed by a real digest.
 	if !database.IsValidBlobSHA256(mod.ZipHash) {
 		h.Log.Warnw(
-			"refusing to serve go module zip: its blob has no valid sha256; re-upload the version or run the gomod repair (openartifact-server -repair-gomod)",
+			"refusing to serve go module zip: its blob has no valid sha256; "+
+				"re-upload the version or run the gomod repair (openartifact-server -repair-gomod)",
 			"repo",
 			repoName,
 			"module",

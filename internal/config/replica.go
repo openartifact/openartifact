@@ -23,10 +23,13 @@ var (
 		"storage.replica.interval and storage.replica.maxBackoff must be positive and storage.replica.verifyInterval must not be negative",
 	)
 	errReplicaPool = errors.New(
-		"database.maxOpenConns is too small for storage.replica: each blob being copied or verified pins a connection for its blob lock and needs another to run its queries, plus one for the verify lock; use 0 (driver default) or at least 2 * storage.replica.concurrency + 2",
+		"database.maxOpenConns is too small for storage.replica: each blob being copied or verified pins a connection " +
+			"for its blob lock and needs another to run its queries, plus one for the verify lock; " +
+			"use 0 (driver default) or at least 2 * storage.replica.concurrency + 2",
 	)
 	errReplicaLocation = errors.New(
-		"storage.replica needs the location of the backend: path (filesystem), bucket (s3, garage, seaweedfs), gcsBucket or bucket (gcs), azureAccountName and azureContainerName (azure), endpoint (oci)",
+		"storage.replica needs the location of the backend: path (filesystem), bucket (s3, garage, seaweedfs), " +
+			"gcsBucket or bucket (gcs), azureAccountName and azureContainerName (azure), endpoint (oci)",
 	)
 )
 

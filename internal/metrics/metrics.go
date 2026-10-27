@@ -101,14 +101,16 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		//
 		//	histogram_quantile(0.95, sum by (le) (rate(openartifact_blob_operation_duration_seconds_bucket{operation="put"}[5m])))
 		BlobOperationDurationSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "openartifact_blob_operation_duration_seconds",
-			Help:    "Blob store operation latency by operation (put, get, exists, exists_by_sha256, delete, size, metadata) and result (ok, error).",
+			Name: "openartifact_blob_operation_duration_seconds",
+			Help: "Blob store operation latency by operation (put, get, exists, exists_by_sha256, delete, size, metadata) and " +
+				"result (ok, error).",
 			Buckets: []float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 10, 60},
 		}, []string{"operation", "result"}),
 
 		BlobDownloadsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_blob_downloads_total",
-			Help: "Blob download GET requests by delivery mode: mode=redirect (307 to a presigned URL) or mode=stream (served by this server); reason says why a download was streamed.",
+			Help: "Blob download GET requests by delivery mode: mode=redirect (307 to a presigned URL) or mode=stream (served by this " +
+				"server); reason says why a download was streamed.",
 		}, []string{"mode", "reason"}),
 
 		MetadataRegenerationsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -178,14 +180,16 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		}),
 		BlobDeletionsSwept: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_blob_deletions_swept_total",
-			Help: "Queued blob deletions the sweeper finished, by result: deleted (bytes removed) or kept (the blob was re-uploaded or the copy is authoritative again).",
+			Help: "Queued blob deletions the sweeper finished, by result: deleted (bytes removed) or kept (the blob was re-uploaded " +
+				"or the copy is authoritative again).",
 		}, []string{"result"}),
 
 		Replication: NewReplicationMetrics(),
 
 		ScannerInstallAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_scanner_install_attempts_total",
-			Help: "Runtime installs of the Trivy and Grype binaries, by scanner and result (installed, reused, unsupported_platform, download_failed, checksum_mismatch, extract_failed, noexec, insecure_location, failed).",
+			Help: "Runtime installs of the Trivy and Grype binaries, by scanner and result (installed, reused, unsupported_platform, " +
+				"download_failed, checksum_mismatch, extract_failed, noexec, insecure_location, failed).",
 		}, []string{"scanner", "result"}),
 
 		ScannerDBUpdateAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{

@@ -132,14 +132,14 @@ func composeStatus(resp *http.Response, src, dst string) error {
 
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 
-	return fmt.Errorf(
+	return fmt.Errorf( //nolint:err113 // dynamic context
 		"gcs: %s %s to %s: HTTP %d: %s",
 		resp.Request.Method,
 		src,
 		dst,
 		resp.StatusCode,
 		strings.TrimSpace(string(msg)),
-	) //nolint:err113 // dynamic context
+	)
 }
 
 // do sends a signed path-style request for key in the bucket.

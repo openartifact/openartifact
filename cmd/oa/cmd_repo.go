@@ -29,7 +29,8 @@ func handleRepo(args []string, client *Client, outFmt string) {
 	case "create":
 		if len(args) < 2 {
 			dief(
-				"Usage: oa repo create <name> [--format fmt] [--description D] [--public] [--trash-retention-days N] [--immutable-releases] [--sign-packages]",
+				"Usage: oa repo create <name> [--format fmt] [--description D] [--public] " +
+					"[--trash-retention-days N] [--immutable-releases] [--sign-packages]",
 			)
 		}
 
@@ -43,7 +44,8 @@ func handleRepo(args []string, client *Client, outFmt string) {
 	case "update":
 		if len(args) < 2 {
 			dief(
-				"Usage: oa repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]",
+				"Usage: oa repo update <name> [--description D] [--public[=false]] " +
+					"[--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]",
 			)
 		}
 
@@ -140,7 +142,10 @@ func repoShow(client *Client, name, outFmt string) {
 
 	w := newTabWriter()
 
-	for _, k := range []string{"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days", "immutable_releases", "merge_proxy_versions", "sign_packages", "created_at", "updated_at"} {
+	for _, k := range []string{
+		"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days",
+		"immutable_releases", "merge_proxy_versions", "sign_packages", "created_at", "updated_at",
+	} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
 		}
@@ -168,7 +173,8 @@ func repoUpdate(client *Client, name string, args []string) {
 	mergeProxy := fs.Bool(
 		"merge-proxy-versions",
 		false,
-		"Group repositories, administrators only: merge proxy members' versions of names a hosted member holds (--merge-proxy-versions=false restores hosted-wins)",
+		"Group repositories, administrators only: merge proxy members' versions of names a hosted member holds "+
+			"(--merge-proxy-versions=false restores hosted-wins)",
 	)
 	signPkgs := fs.Bool(
 		"sign-packages",
@@ -211,7 +217,8 @@ func repoUpdate(client *Client, name string, args []string) {
 
 	if len(body) == 0 {
 		dief(
-			"nothing to update: pass --description, --public[=false], --trash-retention-days, --immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]",
+			"nothing to update: pass --description, --public[=false], --trash-retention-days, " +
+				"--immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]",
 		)
 	}
 

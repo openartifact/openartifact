@@ -391,7 +391,8 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		writePublishError(
 			w,
 			http.StatusBadRequest,
-			"missing or invalid 'name' field: a crate name starts with a letter or '_' and holds only ASCII letters, digits, '-' and '_' (at most 64)",
+			"missing or invalid 'name' field: a crate name starts with a letter or '_' and holds only ASCII letters, "+
+				"digits, '-' and '_' (at most 64)",
 		)
 		return
 	}

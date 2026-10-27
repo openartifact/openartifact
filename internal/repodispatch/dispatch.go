@@ -168,7 +168,8 @@ func wrongUploadHint(repo *models.Repository, r *http.Request) string {
 		return ""
 	}
 
-	return "no upload endpoint at /repos/" + repo.Name + "/upload: upload packages with POST /api/v1/repositories/" + repo.Name + "/" + endpoint
+	return "no upload endpoint at /repos/" + repo.Name + "/upload: upload packages with POST " +
+		"/api/v1/repositories/" + repo.Name + "/" + endpoint
 }
 
 // OCIMiddleware is Middleware for the registry routes (/v2/<name>/...): a

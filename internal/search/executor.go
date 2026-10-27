@@ -62,7 +62,8 @@ func NewExecutor(db *sql.DB) *Executor {
 // blob_id (every format but docker) or a manifest_digest (docker), so the
 // COALESCEs pick whichever join matched; rows with neither report ” and 0.
 const searchBlobJoins = `LEFT JOIN blobs b ON b.id = %[1]s.blob_id
-		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image AND dm.digest = %[1]s.manifest_digest AND dm.deleted_at IS NULL`
+		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image
+			AND dm.digest = %[1]s.manifest_digest AND dm.deleted_at IS NULL`
 
 const (
 	searchSHA256Expr = `COALESCE(b.sha256, regexp_replace(dm.digest, '^sha256:', ''), '')`

@@ -164,7 +164,8 @@ func (c *tableCodec) loadRow(ctx context.Context, q Querier, repoID, key string,
 		return nil, "", fmt.Errorf("%w: malformed unit key %q", ErrInvalid, key)
 	}
 
-	query := `SELECT to_jsonb(t), t.id::text FROM ` + c.spec.table + ` t WHERE t.repository_id = $1::uuid AND t.deleted_at IS NULL AND ` + clause
+	query := `SELECT to_jsonb(t), t.id::text FROM ` + c.spec.table +
+		` t WHERE t.repository_id = $1::uuid AND t.deleted_at IS NULL AND ` + clause
 	if lock {
 		query += ` FOR UPDATE`
 	}

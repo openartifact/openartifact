@@ -46,7 +46,7 @@ var (
 	pypiEggName    = regexp.MustCompile(`^(.+)-([^-]+)-py\d+\.\d+(?:-.+)?$`)
 
 	// pypiExtensions are the distribution file types that are imported.
-	pypiExtensions = []string{
+	pypiExtensions = []string{ //nolint:gochecknoglobals // immutable lookup table
 		".whl",
 		".tar.gz",
 		".zip",
@@ -54,10 +54,10 @@ var (
 		".tar.bz2",
 		".tar.xz",
 		".tar",
-	} //nolint:gochecknoglobals // immutable lookup table
+	}
 	// pypiServerExtensions are the endings the server strips from a file name
 	// before splitting it into project and version.
-	pypiServerExtensions = []string{
+	pypiServerExtensions = []string{ //nolint:gochecknoglobals // immutable lookup table
 		".tar.gz",
 		".tar.bz2",
 		".tar.xz",
@@ -69,7 +69,7 @@ var (
 		".msi",
 		".rpm",
 		".dmg",
-	} //nolint:gochecknoglobals // immutable lookup table
+	}
 )
 
 func init() { //nolint:gochecknoinits // every format registers itself with the importer
@@ -419,7 +419,8 @@ func pypiIdentity(a sourceAsset, filename string, md pypiMetadata) (string, stri
 	}
 
 	return "", "", fmt.Errorf(
-		"%w of %s: none of the source's record, the archive metadata or the file name gives a pair the server accepts for this file name (it must read <project>-<version>.<ext>)",
+		"%w of %s: none of the source's record, the archive metadata or the file name gives a pair "+
+			"the server accepts for this file name (it must read <project>-<version>.<ext>)",
 		errPyPIIdentity,
 		filename,
 	)

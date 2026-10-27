@@ -88,7 +88,9 @@ func stderrPrompt(s string) { fmt.Fprint(os.Stderr, s) }
 func handleTrash(args []string, client *Client, outFmt string) {
 	if len(args) < 1 {
 		dief(
-			"Usage: oa trash <list|restore|purge>\n  oa trash purge <kind> <id> [--yes]            purge one item (admin)\n  oa trash purge --repo NAME --all [--yes]      empty a repository's trash (repository manage permission)",
+			"Usage: oa trash <list|restore|purge>\n" +
+				"  oa trash purge <kind> <id> [--yes]            purge one item (admin)\n" +
+				"  oa trash purge --repo NAME --all [--yes]      empty a repository's trash (repository manage permission)",
 		)
 	}
 

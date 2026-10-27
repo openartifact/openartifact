@@ -194,7 +194,11 @@ func (p *PostgresDB) Migrate(ctx context.Context) error {
 
 // repoColumns is the column list every repository read selects; repoScanDest
 // returns the matching Scan destinations.
-const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages, federated, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
+const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false),
+	COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc,
+	''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800),
+	COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions,
+	sign_packages, federated, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
 
 func repoScanDest(r *models.Repository) []any {
 	return []any{
@@ -371,7 +375,11 @@ type repoExecer interface {
 func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository) error {
 	_, err := db.ExecContext(
 		ctx,
-		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12, immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now() WHERE id = $14 AND deleted_at IS NULL`,
+		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username =
+			NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8,
+			max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12, immutable_releases = $13,
+			presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now() WHERE id = $14 AND deleted_at
+			IS NULL`,
 		repo.Description,
 		repo.Public,
 		repo.RepoType,
@@ -557,7 +565,11 @@ func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Reposito
 
 	return p.db.QueryRowContext(
 		ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id, trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions, sign_packages) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id, created_at, updated_at`,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username,
+			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id,
+			trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions, sign_packages)
+			VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19) RETURNING id, created_at, updated_at`,
 		repo.Name,
 		repo.Format,
 		repo.Description,
@@ -648,7 +660,8 @@ func createdAtOrNil(t time.Time) *time.Time {
 func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error {
 	err := p.db.QueryRowContext(
 		ctx,
-		`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, description, summary, license, maintainer, homepage, filename, installed_size, created_at)
+		`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, description,
+			summary, license, maintainer, homepage, filename, installed_size, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::timestamptz, now()))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
@@ -679,8 +692,13 @@ func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component
 func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {
 	err := p.db.QueryRowContext(
 		ctx,
-		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename, header_start, header_end, rpm_extra, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb),COALESCE($25::timestamptz, now()))
+		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url,
+			vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename,
+			header_start, header_end, rpm_extra, created_at)
+		 VALUES
+			($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+			to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb),
+			COALESCE($25::timestamptz, now()))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
 		pkg.RepositoryID,
@@ -1038,7 +1056,9 @@ func (p *PostgresDB) GetRepoMetadataByRepo(ctx context.Context, repositoryID str
 func (p *PostgresDB) UpsertRepoMetadata(ctx context.Context, meta *models.RepoMetadata) error {
 	return p.db.QueryRowContext(
 		ctx,
-		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, $2, $3, $4) ON CONFLICT (repository_id, path) DO UPDATE SET blob_sha256 = $3, blob_size = $4, last_generated = now() RETURNING id, last_generated`,
+		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, $2, $3, $4) ON CONFLICT
+			(repository_id, path) DO UPDATE SET blob_sha256 = $3, blob_size = $4, last_generated = now() RETURNING id,
+			last_generated`,
 		meta.RepositoryID,
 		meta.Path,
 		meta.BlobSHA256,
@@ -1858,7 +1878,9 @@ func (p *PostgresDB) ArtifactExists(ctx context.Context, sha256 string, reposito
 	var exists bool
 	err := p.db.QueryRowContext(
 		ctx,
-		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id = $2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
+		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id =
+			$2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1
+			AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
 		sha256,
 		repositoryID,
 	).Scan(&exists)
@@ -1918,10 +1940,10 @@ var blobRefSumExpr = buildBlobRefExpr(" +\n", "(SELECT COUNT(*) FROM %s WHERE %s
 // blobUnreferencedExpr is true when no table references blob alias b. NOT
 // EXISTS short-circuits at the first hit and never counts, unlike
 // blobRefSumExpr = 0.
-var blobUnreferencedExpr = buildBlobRefExpr(
+var blobUnreferencedExpr = buildBlobRefExpr( //nolint:gochecknoglobals // built once, read-only
 	" AND\n",
 	"NOT EXISTS (SELECT 1 FROM %s WHERE %s)",
-) //nolint:gochecknoglobals // built once, read-only
+)
 
 func buildBlobRefExpr(sep, format string) string {
 	parts := make([]string, len(blobRefSpecs))
@@ -2901,12 +2923,13 @@ func (p *PostgresDB) ListAuditLogs(ctx context.Context, params models.AuditListP
 	// The formatted parts are the predicate built by auditFilterWhere from
 	// constant clauses and $n placeholders (values are always bound
 	// arguments) and placeholder numbers; no caller input reaches the text.
-	query := fmt.Sprintf(
-		"SELECT id, action, project_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d",
+	query := fmt.Sprintf( //nolint:gosec // G201: where is built from constant clauses with bound placeholders
+		"SELECT id, action, project_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, "+
+			"host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d",
 		where,
 		len(args)-1,
 		len(args),
-	) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
+	)
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -3017,11 +3040,11 @@ func (p *PostgresDB) auditTotal(
 
 	var counted int
 
-	countQuery := fmt.Sprintf(
+	countQuery := fmt.Sprintf( //nolint:gosec // G201: where is built from constant clauses with bound placeholders
 		"SELECT count(*) FROM (SELECT 1 FROM audit_logs %s LIMIT $%d) s",
 		where,
 		len(args)+1,
-	) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
+	)
 	if err := p.db.QueryRowContext(ctx, countQuery, append(args, auditExactCountMax+1)...).Scan(&counted); err != nil {
 		return 0, false, fmt.Errorf("count audit logs: %w", err)
 	}
@@ -4714,7 +4737,8 @@ func (p *PostgresDB) CreateLicenseScanResult(ctx context.Context, result *models
 				completed_at = EXCLUDED.completed_at, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved, unresolved_licenses, license_source)
+		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved,
+			unresolved_licenses, license_source)
 		SELECT job.id, $6, $7, $8, $9, $10, $11 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			licenses = EXCLUDED.licenses, spdx_expressions = EXCLUDED.spdx_expressions,
@@ -5103,7 +5127,8 @@ func (p *PostgresDB) CreateVulnScanResult(ctx context.Context, result *models.Vu
 				completed_at = EXCLUDED.completed_at, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count, quarantined, package_name, package_version, ecosystem, failed_scanners)
+		INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
+			quarantined, package_name, package_version, ecosystem, failed_scanners)
 		SELECT job.id, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
@@ -6275,7 +6300,8 @@ func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 				status = EXCLUDED.status, error_message = EXCLUDED.error_message, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO ai_results (scan_job_id, summary, tags, license_status, license_name, security_notes, quarantine_recommended, model_used, prompt_tokens, completion_tokens, artifact_name, artifact_version)
+		INSERT INTO ai_results (scan_job_id, summary, tags, license_status, license_name, security_notes, quarantine_recommended,
+			model_used, prompt_tokens, completion_tokens, artifact_name, artifact_version)
 		SELECT job.id, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			summary = CASE WHEN $4::text = 'completed' THEN EXCLUDED.summary ELSE ai_results.summary END,
@@ -6283,7 +6309,8 @@ func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 			license_status = CASE WHEN $4::text = 'completed' THEN EXCLUDED.license_status ELSE ai_results.license_status END,
 			license_name = CASE WHEN $4::text = 'completed' THEN EXCLUDED.license_name ELSE ai_results.license_name END,
 			security_notes = CASE WHEN $4::text = 'completed' THEN EXCLUDED.security_notes ELSE ai_results.security_notes END,
-			quarantine_recommended = CASE WHEN $4::text = 'completed' THEN EXCLUDED.quarantine_recommended ELSE ai_results.quarantine_recommended END,
+			quarantine_recommended = CASE WHEN $4::text = 'completed' THEN EXCLUDED.quarantine_recommended ELSE
+				ai_results.quarantine_recommended END,
 			model_used = CASE WHEN $4::text = 'completed' THEN EXCLUDED.model_used ELSE ai_results.model_used END,
 			prompt_tokens = CASE WHEN $4::text = 'completed' THEN EXCLUDED.prompt_tokens ELSE ai_results.prompt_tokens END,
 			completion_tokens = CASE WHEN $4::text = 'completed' THEN EXCLUDED.completion_tokens ELSE ai_results.completion_tokens END,

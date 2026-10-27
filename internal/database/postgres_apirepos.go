@@ -150,7 +150,11 @@ func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Reposito
 
 	err = tx.QueryRowContext(
 		ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id, created_at, updated_at`,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username,
+			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id,
+			presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages) VALUES
+			(gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18) RETURNING id, created_at, updated_at`,
 		repo.Name,
 		repo.Format,
 		repo.Description,

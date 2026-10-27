@@ -187,7 +187,8 @@ func pypiSnippets(c target) []Snippet {
 		{
 			Client: "twine",
 			Configure: fmt.Sprintf(
-				"# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = %s/legacy/\nusername = <USERNAME>\npassword = <TOKEN>",
+				"# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\n"+
+					"repository = %s/legacy/\nusername = <USERNAME>\npassword = <TOKEN>",
 				c.base,
 			),
 			Publish: "twine upload --repository openartifact dist/*",
@@ -200,7 +201,9 @@ func mavenSnippets(c target) []Snippet {
 		{
 			Client: "Maven",
 			Configure: fmt.Sprintf(
-				"<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>%s</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>",
+				"<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>%s</id>\n"+
+					"      <username><USERNAME></username>\n      <password><TOKEN></password>\n"+
+					"    </server>\n  </servers>\n</settings>",
 				c.repo,
 			),
 			Publish: fmt.Sprintf("mvn deploy -DaltDeploymentRepository=%s::default::%s", c.repo, c.base),
@@ -221,7 +224,9 @@ func debSnippets(c target) []Snippet {
 		{
 			Client: "apt",
 			Configure: fmt.Sprintf(
-				"curl -fsSL %[1]s/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/%[2]s.gpg\necho \"deb [signed-by=/etc/apt/keyrings/%[2]s.gpg] %[1]s stable main\" | sudo tee /etc/apt/sources.list.d/%[2]s.list\nsudo apt update",
+				"curl -fsSL %[1]s/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/%[2]s.gpg\n"+
+					"echo \"deb [signed-by=/etc/apt/keyrings/%[2]s.gpg] %[1]s stable main\" | "+
+					"sudo tee /etc/apt/sources.list.d/%[2]s.list\nsudo apt update",
 				c.base,
 				c.repo,
 			),
@@ -321,7 +326,8 @@ func sbtSnippets(c target) []Snippet {
 		{
 			Client: "sbt",
 			Configure: fmt.Sprintf(
-				"// build.sbt\nresolvers += \"%[1]s\" at \"%[2]s\"\ncredentials += Credentials(\"openartifact\", \"%[3]s\", \"<USERNAME>\", \"<TOKEN>\")",
+				"// build.sbt\nresolvers += \"%[1]s\" at \"%[2]s\"\n"+
+					"credentials += Credentials(\"openartifact\", \"%[3]s\", \"<USERNAME>\", \"<TOKEN>\")",
 				c.repo,
 				c.base,
 				c.name,
@@ -337,7 +343,8 @@ func ivySnippets(c target) []Snippet {
 			Client:    "Ivy",
 			Configure: fmt.Sprintf("<ibiblio name=\"%s\" m2compatible=\"true\" root=\"%s\"/>", c.repo, c.base),
 			Publish: fmt.Sprintf(
-				"<ivy:publish resolver=\"%s\" pubrevision=\"1.0\" overwrite=\"true\">\n  <artifacts pattern=\"dist/[artifact]-[revision].[ext]\"/>\n</ivy:publish>",
+				"<ivy:publish resolver=\"%s\" pubrevision=\"1.0\" overwrite=\"true\">\n"+
+					"  <artifacts pattern=\"dist/[artifact]-[revision].[ext]\"/>\n</ivy:publish>",
 				c.repo,
 			),
 		},

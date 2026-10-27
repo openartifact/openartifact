@@ -806,7 +806,8 @@ type Database interface {
 	ListRepositoriesForGPGKey(ctx context.Context, keyID string) ([]models.GPGSigningRepo, error)
 	// ListSigningRepositoriesWithoutKey returns the hosted deb/rpm repositories that follow the global key.
 	ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error)
-	// ResolveGPGKeyForRepository returns the repository's own key, else the global active one, with its sealed private part; nil when unsigned.
+	// ResolveGPGKeyForRepository returns the repository's own key, else the global active one, with its sealed private
+	// part; nil when unsigned.
 	ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error)
 
 	// GetRepositoryDependencyTrack returns the repository's Dependency-Track override, nil when none is set.
@@ -819,7 +820,8 @@ type Database interface {
 	UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error
 	// GetDependencyTrackPush returns the push state of an artifact, nil when never pushed.
 	GetDependencyTrackPush(ctx context.Context, repoID, artifactID string) (*models.DependencyTrackPush, error)
-	// GetRepositoryAttestationAttach reports whether the repository attaches signed attestations to docker images as OCI referrers (false when never set).
+	// GetRepositoryAttestationAttach reports whether the repository attaches signed attestations to docker images as OCI
+	// referrers (false when never set).
 	GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error)
 	// SetRepositoryAttestationAttach stores that switch.
 	SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error

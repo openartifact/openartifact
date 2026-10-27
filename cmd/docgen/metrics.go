@@ -183,7 +183,8 @@ func describeRegistered() ([]describedMetric, error) {
 // has no accessor, so the string form is the only way to read the help text and
 // the label names; the unit test pins the format against client_golang.
 var descPattern = regexp.MustCompile(
-	`^Desc\{fqName: ("(?:[^"\\]|\\.)*"), help: ("(?:[^"\\]|\\.)*"), (?:unit: "(?:[^"\\]|\\.)*", )?constLabels: \{(.*)\}, variableLabels: \{(.*)\}\}$`,
+	`^Desc\{fqName: ("(?:[^"\\]|\\.)*"), help: ("(?:[^"\\]|\\.)*"), ` +
+		`(?:unit: "(?:[^"\\]|\\.)*", )?constLabels: \{(.*)\}, variableLabels: \{(.*)\}\}$`,
 )
 
 // parseDesc extracts name, help and variable label names from Desc.String.
@@ -862,10 +863,15 @@ func renderMetrics(defs []metricDef) ([]byte, error) {
 
 	b.Write(header("Metrics reference", "the Prometheus collectors in the server code"))
 	b.WriteString(
-		"The server exposes Prometheus metrics at `GET /metrics`. Access fails closed: the endpoint answers `401` unless `METRICS_AUTH_TOKEN` is set (scrapers then send it as a bearer token) or `METRICS_ALLOW_ANONYMOUS=true`. See [Monitoring](../operations/monitoring.md#metrics) for the scrape configuration and how to read the families.\n\n",
+		"The server exposes Prometheus metrics at `GET /metrics`. Access fails closed: " +
+			"the endpoint answers `401` unless `METRICS_AUTH_TOKEN` is set " +
+			"(scrapers then send it as a bearer token) or `METRICS_ALLOW_ANONYMOUS=true`. " +
+			"See [Monitoring](../operations/monitoring.md#metrics) for the scrape configuration " +
+			"and how to read the families.\n\n",
 	)
 	b.WriteString(
-		"Labelled metrics only appear after their first observation. Gauges of the database pools and of federation peers are read at scrape time.\n\n",
+		"Labelled metrics only appear after their first observation. " +
+			"Gauges of the database pools and of federation peers are read at scrape time.\n\n",
 	)
 	b.WriteString(
 		"The Go runtime (`go_*`) and process (`process_*`) metrics of the standard client library are exposed as well and not listed here.\n\n",

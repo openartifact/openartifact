@@ -19,7 +19,8 @@ import (
 func (p *PostgresDB) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	err := p.db.QueryRowContext(
 		ctx,
-		`INSERT INTO auth_users (username, email, password_hash, full_name, disabled, must_change_password, external_id, provider_slug, sso_managed_groups)
+		`INSERT INTO auth_users (username, email, password_hash, full_name, disabled, must_change_password, external_id,
+			provider_slug, sso_managed_groups)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at, updated_at`,
 		user.Username,
@@ -51,10 +52,12 @@ func (p *PostgresDB) GetUserByIDUncached(ctx context.Context, id string) (*model
 
 	err := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
+			updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
 		FROM auth_users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
+	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt,
+		&u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
@@ -106,10 +109,12 @@ func (p *PostgresDB) GetUserByUsername(ctx context.Context, username string) (*m
 
 	err := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
+			updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
 		FROM auth_users WHERE username = $1`,
 		username,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
+	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt,
+		&u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
@@ -162,7 +167,8 @@ func (p *PostgresDB) UpdateUser(ctx context.Context, user *models.User) error {
 
 	_, err = tx.ExecContext(
 		ctx,
-		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7, last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11,
+		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7,
+			last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11,
 		password_expires_at = CASE WHEN password_hash IS DISTINCT FROM $4 THEN NULL ELSE password_expires_at END
 		WHERE id=$1`,
 		user.ID,
@@ -244,7 +250,8 @@ func (p *PostgresDB) ListUsers(ctx context.Context, page, perPage int) ([]*model
 
 	rows, err := p.db.QueryContext(
 		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
+			updated_at, external_id, provider_slug, sso_managed_groups
 		FROM auth_users WHERE kind = 'human' ORDER BY created_at ASC, id LIMIT $1 OFFSET $2`,
 		perPage,
 		offset,
@@ -528,7 +535,8 @@ func (p *PostgresDB) ListGroupsByUserUncached(ctx context.Context, userID string
 func (p *PostgresDB) ListUsersByGroup(ctx context.Context, groupID string) ([]*models.User, error) {
 	rows, err := p.db.QueryContext(
 		ctx,
-		`SELECT u.id, u.username, u.email, u.password_hash, u.full_name, u.disabled, u.must_change_password, u.last_login_at, u.created_at, u.updated_at, u.external_id, u.provider_slug, u.sso_managed_groups
+		`SELECT u.id, u.username, u.email, u.password_hash, u.full_name, u.disabled, u.must_change_password, u.last_login_at,
+			u.created_at, u.updated_at, u.external_id, u.provider_slug, u.sso_managed_groups
 		FROM auth_users u
 		JOIN auth_user_groups ug ON ug.user_id = u.id
 		WHERE ug.group_id = $1

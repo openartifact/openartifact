@@ -267,8 +267,10 @@ func TestBranding_AdminUpdateReset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.Effective.ProductName != "Acme" || got.Effective.PrimaryColor != "#0f766e" || got.Effective.SupportURL != "mailto:it@acme.test" ||
-		got.Defaults.ProductName != "OpenArtifact" || !got.Overrides["product_name"] ||
+	if got.Effective.ProductName != "Acme" || got.Effective.PrimaryColor != "#0f766e" ||
+		got.Effective.SupportURL != "mailto:it@acme.test" ||
+		got.Defaults.ProductName != "OpenArtifact" ||
+		!got.Overrides["product_name"] ||
 		got.Overrides["source_url"] {
 		t.Errorf("response = %s", rw.Body)
 	}

@@ -424,8 +424,8 @@ func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, re
 	defer func() { base.CloseLog(reader, h.log) }()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().
-		Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.delta"`, strings.NewReplacer("\"", "", "\r", "", "\n", "").Replace(d.ToFilename)))
+	filename := strings.NewReplacer("\"", "", "\r", "", "\n", "").Replace(d.ToFilename)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.delta"`, filename))
 	w.Header().Set("ETag", `"`+d.DeltaSHA256+`"`)
 	w.Header().Set("X-Delta-From", d.FromSHA256)
 	w.Header().Set("X-Delta-To", d.ToSHA256)

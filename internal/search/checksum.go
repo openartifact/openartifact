@@ -95,7 +95,8 @@ const (
 		JOIN repositories pr ON pr.id = pc.repository_id AND pr.deleted_at IS NULL
 		WHERE pc.blob_key = $1 AND pc.status_code = 200`
 
-	checksumSHA1Branches = `SELECT ma.repository_id, 'maven'::text AS format, ma.group_id || ':' || ma.artifact_id_coord AS name, ma.version, ma.repo_path AS filename
+	checksumSHA1Branches = `SELECT ma.repository_id, 'maven'::text AS format,
+		ma.group_id || ':' || ma.artifact_id_coord AS name, ma.version, ma.repo_path AS filename
 		FROM maven_artifacts ma WHERE ma.sha1 = $1 AND ma.sha1 <> '' AND ma.deleted_at IS NULL
 	UNION ALL
 	SELECT np.repository_id, 'npm'::text, np.full_name, nv.version, nv.tarball_filename
@@ -105,7 +106,8 @@ const (
 	SELECT co.repository_id, 'conan'::text, co.name, co.version, co.filename
 		FROM conan_packages co WHERE co.sha1 = $1 AND co.sha1 <> '' AND co.deleted_at IS NULL`
 
-	checksumMD5Branches = `SELECT ma.repository_id, 'maven'::text AS format, ma.group_id || ':' || ma.artifact_id_coord AS name, ma.version, ma.repo_path AS filename
+	checksumMD5Branches = `SELECT ma.repository_id, 'maven'::text AS format,
+		ma.group_id || ':' || ma.artifact_id_coord AS name, ma.version, ma.repo_path AS filename
 		FROM maven_artifacts ma WHERE ma.md5 = $1 AND ma.md5 <> '' AND ma.deleted_at IS NULL
 	UNION ALL
 	SELECT co.repository_id, 'conan'::text, co.name, co.version, co.filename

@@ -19,9 +19,11 @@ type Repository struct {
 	UpstreamPasswordEnc     string // proxy only — AES-256-GCM encrypted
 	CacheTTLSeconds         int    // proxy only, default 3600
 	NegativeCacheTTLSeconds int    // proxy only, default 60
-	MaxStaleSeconds         int    // proxy only: how long past expiry a cached copy may be served when the upstream fails; 0 disables, default 604800
-	Blocked                 bool   // proxy only
-	ProjectID               *string
+	// MaxStaleSeconds is proxy only: how long past expiry a cached copy may be served when the upstream fails; 0 disables,
+	// default 604800.
+	MaxStaleSeconds int
+	Blocked         bool // proxy only
+	ProjectID       *string
 	// PresignDownloads overrides storage.presignDownloads for this repository:
 	// nil inherits the global setting, true/false force redirect/streaming.
 	PresignDownloads *bool

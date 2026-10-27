@@ -424,7 +424,8 @@ func dropInvalidBlobRows(ctx context.Context, db RepairDB, affected []database.G
 func logRepairSummary(log *logger.Logger, res *RepairResult) {
 	if res.ListUnsupported {
 		log.Warnw(
-			"gomod repair: the storage backend cannot list objects; rows whose zip is not the shared row's own object stay unservable until re-uploaded",
+			"gomod repair: the storage backend cannot list objects; " +
+				"rows whose zip is not the shared row's own object stay unservable until re-uploaded",
 		)
 	}
 

@@ -152,7 +152,8 @@ func newSPAHandler(sub fs.FS, src ShellSource) http.Handler {
 		// docs/hello.txt, com.example.app), so the extension says nothing. The
 		// same goes for /bundles/NAME/VERSION, whose version is usually semver
 		// (1.0.0).
-		if strings.HasPrefix(clean, "assets/") || (!strings.HasPrefix(clean, "repos/") && !strings.HasPrefix(clean, "bundles/") && path.Ext(clean) != "") {
+		if strings.HasPrefix(clean, "assets/") || (!strings.HasPrefix(clean, "repos/") &&
+			!strings.HasPrefix(clean, "bundles/") && path.Ext(clean) != "") {
 			notFound(w, false)
 			return
 		}

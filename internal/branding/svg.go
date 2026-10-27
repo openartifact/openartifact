@@ -79,7 +79,10 @@ func cssSafe(css string) bool {
 		return false
 	}
 
-	for _, bad := range []string{"expression", "javascript", "vbscript", "behavior", "binding", "image-set", "src(", "attr(", "image(", "data:"} {
+	badCSS := []string{
+		"expression", "javascript", "vbscript", "behavior", "binding", "image-set", "src(", "attr(", "image(", "data:",
+	}
+	for _, bad := range badCSS {
 		if strings.Contains(css, bad) {
 			return false
 		}

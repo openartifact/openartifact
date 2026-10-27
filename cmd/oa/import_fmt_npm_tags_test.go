@@ -30,15 +30,15 @@ func npmReplaceFile(files []fakeFile, path, data string) []fakeFile {
 // npmWantTags is what the default Nexus fixture ends with: the tags of the
 // packuments plus the latest derived from the versions.
 var (
-	npmWantLeftPadTags = map[string]string{
+	npmWantLeftPadTags = map[string]string{ //nolint:gochecknoglobals // read-only expectations shared by the tests
 		"latest": "1.1.0",
 		"beta":   "2.0.0-beta.1",
 		"legacy": "1.0.0",
-	} //nolint:gochecknoglobals // read-only expectations shared by the tests
-	npmWantWidgetTags = map[string]string{
+	}
+	npmWantWidgetTags = map[string]string{ //nolint:gochecknoglobals // read-only expectations shared by the tests
 		"latest": "0.2.0-rc.2",
 		"rc":     "0.2.0-rc.1",
-	} //nolint:gochecknoglobals // read-only expectations shared by the tests
+	}
 )
 
 func TestImportNPMTagsNexusImportsEveryDistTag(t *testing.T) {

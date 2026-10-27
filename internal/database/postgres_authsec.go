@@ -180,10 +180,10 @@ func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, spec BootstrapAdm
 	}
 
 	if n, _ := res.RowsAffected(); n == 0 {
-		return false, fmt.Errorf(
+		return false, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
 			"bootstrap assign admin-all: permission target %q not found",
 			"admin-all",
-		) //nolint:err113 // dynamic error with runtime context
+		)
 	}
 
 	if spec.TokenHash != "" {

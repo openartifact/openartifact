@@ -43,6 +43,7 @@ func truncateUTF8(s string, limit int) string {
 	return s
 }
 
+//nolint:lll // the prompt is one verbatim raw string; wrapping would change the text sent to the model
 const defaultSystemPrompt = `You are an expert DevOps and Software Architecture AI embedded within a corporate Artifact Manager. Your job is to analyze uploaded software packages (via their manifest and dependency files), assess them for quality, and generate searchable metadata.
 
 You will be provided with the raw text of package manifests (e.g., package.json, pom.xml), readmes, or dependency trees.

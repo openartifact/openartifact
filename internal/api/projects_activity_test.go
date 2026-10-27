@@ -65,7 +65,8 @@ func TestProjectsActivityMapsEntriesAndScopesQuery(t *testing.T) {
 		t.Fatalf("status = %d, body = %v", code, body)
 	}
 
-	if db.listParams.ProjectID != testAcmeID || db.listParams.Limit != activityDefaultPerPage || !db.listParams.NoTotal || db.listParams.After != nil ||
+	if db.listParams.ProjectID != testAcmeID || db.listParams.Limit != activityDefaultPerPage || !db.listParams.NoTotal ||
+		db.listParams.After != nil ||
 		db.listParams.Actor != "own" ||
 		db.listParams.Action != "project." {
 		t.Errorf("query = %+v", db.listParams)

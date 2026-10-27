@@ -90,7 +90,8 @@ const (
 	conanV1Export            = "/repos/{name}/v1/files/{pkg}/{version}/{user}/{channel}/{rrev}/export/*"
 	conanV1Package           = "/repos/{name}/v1/files/{pkg}/{version}/{user}/{channel}/{rrev}/package/{pid}/{prev}/*"
 	conanV2Recipe            = "/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/files/*"
-	conanV2Package           = "/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/packages/{pid}/revisions/{prev}/files/*"
+	conanV2Package           = "/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/packages/{pid}" +
+		"/revisions/{prev}/files/*"
 )
 
 // uploadFormat reports the format label of a request that MetricsMiddleware

@@ -112,11 +112,11 @@ func LoadSAMLProviderRow(
 	slug := row.Slug
 
 	if row.Kind != "saml" {
-		return nil, fmt.Errorf(
+		return nil, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
 			"provider %q is not a saml provider (kind=%s)",
 			slug,
 			row.Kind,
-		) //nolint:err113 // dynamic error with runtime context
+		)
 	}
 
 	var samlCfg models.SAMLConfig
@@ -407,9 +407,9 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 		return "", false
 	}
 
-	dec := xml.NewDecoder(
+	dec := xml.NewDecoder( //nolint:gosec // G709: stops at the root start element; body capped by net/http ParseForm (10 MiB)
 		bytes.NewReader(raw),
-	) //nolint:gosec // G709: stops at the root start element; body capped by net/http ParseForm (10 MiB)
+	)
 
 	for {
 		tok, err := dec.Token()

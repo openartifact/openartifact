@@ -176,6 +176,10 @@ linters:
           - errchkjson
           - forcetypeassert
           - err113
+      # A trailing //nolint explanation cannot be wrapped, and URLs in comments are unsplittable
+      - source: "//nolint:|https?://"
+        linters:
+          - lll
       # Migration files are SQL strings, not Go
       - path: "migrations/"
         linters:

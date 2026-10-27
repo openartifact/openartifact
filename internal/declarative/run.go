@@ -78,9 +78,9 @@ func Preflight(ctx context.Context, c *Client) (Markers, error) {
 	if err := c.Get(ctx, markersPath, &resp); err != nil {
 		switch {
 		case IsStatus(err, http.StatusUnauthorized):
-			return nil, errors.New(
+			return nil, errors.New( //nolint:err113 // user-facing message
 				"not authenticated: the server rejected the token (set OA_TOKEN / --token or run `oa auth login`)",
-			) //nolint:err113 // user-facing message
+			)
 		case IsStatus(err, http.StatusForbidden):
 			return nil, fmt.Errorf("%w: the server answered 403 for %s", ErrNotAdmin, markersPath)
 		case IsStatus(err, http.StatusNotFound):

@@ -115,9 +115,9 @@ func requireHTTPSIdentityURL(raw string) error {
 // validateSAMLConfig applies the create-time rules to a SAML config.
 func validateSAMLConfig(ctx context.Context, cfg *models.SAMLConfig) error {
 	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataXML == "" {
-		return errors.New(
+		return errors.New( //nolint:err113 // validation message surfaced to the admin
 			"saml_config requires idp_metadata_url or idp_metadata_xml",
-		) //nolint:err113 // validation message surfaced to the admin
+		)
 	}
 
 	if cfg.IDPMetadataURL != "" {
@@ -139,8 +139,8 @@ func validateSAMLConfig(ctx context.Context, cfg *models.SAMLConfig) error {
 	// 0 means "use the default"; anything else must be a sane interval.
 	if s := cfg.IDPMetadataRefreshSeconds; s != 0 &&
 		(s < auth.MinIDPMetadataRefreshSeconds || s > auth.MaxIDPMetadataRefreshSeconds) {
-		return fmt.Errorf(
-			"saml_config.idp_metadata_refresh_seconds must be 0 (default) or between %d and %d", //nolint:err113 // validation message surfaced to the admin
+		return fmt.Errorf( //nolint:err113 // validation message surfaced to the admin
+			"saml_config.idp_metadata_refresh_seconds must be 0 (default) or between %d and %d",
 			auth.MinIDPMetadataRefreshSeconds,
 			auth.MaxIDPMetadataRefreshSeconds,
 		)
@@ -175,10 +175,10 @@ func validateStringMap(field string, m map[string]string) error {
 
 	for k, v := range m {
 		if k == "" || v == "" || len(k) > maxSSOFieldLen || len(v) > maxSSOFieldLen {
-			return fmt.Errorf(
+			return fmt.Errorf( //nolint:err113 // validation message surfaced to the admin
 				"%s entries must have non-empty keys and values",
 				field,
-			) //nolint:err113 // validation message surfaced to the admin
+			)
 		}
 	}
 
@@ -739,9 +739,9 @@ func ssoProviderToResponse(p *models.SSOProvider) responses.SSOProviderResponse 
 			hasSecret := cfg.ClientSecret != ""
 			cfg.ClientSecret = ""
 
-			if b, err := json.Marshal(
+			if b, err := json.Marshal( //nolint:gosec // G117: ClientSecret is cleared above; the value is never serialized
 				cfg,
-			); err == nil { //nolint:gosec // G117: ClientSecret is cleared above; the value is never serialized
+			); err == nil {
 				_ = json.Unmarshal(b, &oidcCfg)
 			}
 

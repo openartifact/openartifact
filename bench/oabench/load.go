@@ -249,7 +249,8 @@ func runLoad(args []string) error {
 		results = append(results, r)
 
 		fmt.Printf(
-			"%-40s c=%-3d n=%-7d err=%-5.1f%% rps=%-9.1f p50=%-8.2f p95=%-8.2f p99=%-8.2f MB/s=%-7.1f cpu=%-5.0f%% rss=%-6.0fMB allocs/req=%-8.0f B/req=%.0f\n",
+			"%-40s c=%-3d n=%-7d err=%-5.1f%% rps=%-9.1f p50=%-8.2f p95=%-8.2f p99=%-8.2f "+
+				"MB/s=%-7.1f cpu=%-5.0f%% rss=%-6.0fMB allocs/req=%-8.0f B/req=%.0f\n",
 			r.Name,
 			r.Concurrency,
 			r.Requests,

@@ -264,7 +264,8 @@ func bootstrapTokenDigest(secret string) (string, error) {
 
 	if len(distinct) < minBootstrapTokenDistinct {
 		return "", fmt.Errorf(
-			"%w: bootstrap.adminTokenFile: token looks low-entropy (fewer than %d distinct characters); generate one with: echo oa_pat_$(openssl rand -hex 32)",
+			"%w: bootstrap.adminTokenFile: token looks low-entropy (fewer than %d distinct characters); "+
+				"generate one with: echo oa_pat_$(openssl rand -hex 32)",
 			ErrBootstrapSecret,
 			minBootstrapTokenDistinct,
 		)
@@ -285,7 +286,11 @@ func printGeneratedPassword(w io.Writer, password string, ttl time.Duration) {
 
 	fmt.Fprintf(
 		w,
-		"\n===== OPENARTIFACT BOOTSTRAP =====\n admin password: %s\n %s\n Change immediately at /api/v1/auth/change-password\n To choose the password instead, set OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE\n (bootstrap.adminPasswordFile) before the first start.\n===================================\n",
+		"\n===== OPENARTIFACT BOOTSTRAP =====\n admin password: %s\n %s\n"+
+			" Change immediately at /api/v1/auth/change-password\n"+
+			" To choose the password instead, set OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE\n"+
+			" (bootstrap.adminPasswordFile) before the first start.\n"+
+			"===================================\n",
 		password,
 		expiry,
 	)

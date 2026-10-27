@@ -169,7 +169,8 @@ func NewRegistry(log *logger.Logger, opts Options) *Registry {
 		// that is shared by everyone on the host.
 		if t.installAuto && tempCache {
 			t.installAuto = false
-			t.installRefusal = "Runtime install of " + t.name + " is disabled: no persistent, private scanner cache directory is configured. Set OPENARTIFACT_SCANNER_CACHE_DIR."
+			t.installRefusal = "Runtime install of " + t.name + " is disabled: no persistent, private scanner cache directory is " +
+				"configured. Set OPENARTIFACT_SCANNER_CACHE_DIR."
 
 			log.Errorw("scanner install refused: the cache directory would be in the shared temp directory",
 				"scanner", t.name,

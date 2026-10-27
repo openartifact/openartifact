@@ -23,7 +23,8 @@ const (
 		LEFT JOIN license_results fl ON fj.scan_type = 'license' AND fl.scan_job_id = fj.id`
 
 	flaggedScanWhere = `fj.artifact_ref_id = fr.id
-		AND NOT EXISTS (SELECT 1 FROM scan_jobs fn WHERE fn.artifact_ref_id = fj.artifact_ref_id AND fn.scan_type = fj.scan_type AND fn.created_at > fj.created_at)
+		AND NOT EXISTS (SELECT 1 FROM scan_jobs fn WHERE fn.artifact_ref_id = fj.artifact_ref_id AND fn.scan_type = fj.scan_type
+			AND fn.created_at > fj.created_at)
 		AND (fv.critical_count + fv.high_count > 0 OR fv.quarantined OR fs.finding_count > 0 OR fs.quarantined OR fl.quarantined)`
 )
 

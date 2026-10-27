@@ -209,7 +209,8 @@ func moveRepositoryUsage(ctx context.Context, tx *sql.Tx, repoID, toProjectID st
 
 		if _, err := tx.ExecContext(
 			ctx,
-			`UPDATE project_quotas SET current_size_bytes = current_size_bytes + $2, current_artifact_count = current_artifact_count + $3 WHERE project_id = $1`,
+			`UPDATE project_quotas SET current_size_bytes = current_size_bytes + $2, current_artifact_count = current_artifact_count +
+				$3 WHERE project_id = $1`,
 			toProjectID,
 			size,
 			count,

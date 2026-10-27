@@ -348,7 +348,8 @@ func (p *PostgresDB) ListTrash(ctx context.Context, f models.TrashFilter) ([]*mo
 	rows, err := p.db.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			`SELECT kind, id, repo_id, repo_name, format, name, version, size_bytes, deleted_at, deleted_by, purge_at FROM (%s) u ORDER BY deleted_at DESC, id LIMIT $%d OFFSET $%d`,
+			`SELECT kind, id, repo_id, repo_name, format, name, version, size_bytes, deleted_at, deleted_by, purge_at FROM (%s) u
+				ORDER BY deleted_at DESC, id LIMIT $%d OFFSET $%d`,
 			union,
 			len(args)-1,
 			len(args),

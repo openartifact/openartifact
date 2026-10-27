@@ -1277,15 +1277,20 @@ func renderConfig(keys []configKey, groups []configGroup, intros map[string]stri
 }
 
 // configIntro explains the page and the table columns.
-const configIntro = "This page lists every configuration key with its type, built-in default and the environment variable that overrides it. " +
-	"It is generated from the code (`internal/config` and the packages whose settings it embeds), so it cannot drift from what the server reads. " +
-	"For the load order (defaults, then the YAML file, then the environment), validation and how to start the server with a file, see [Configuration](../getting-started/configuration.md). " +
-	"Annotated copies of every key are in [`openartifact.example.yaml`](../../openartifact.example.yaml) and [`.env.example`](../../.env.example).\n\n" +
+const configIntro = "This page lists every configuration key with its type, built-in default and " +
+	"the environment variable that overrides it. " +
+	"It is generated from the code (`internal/config` and the packages whose settings it embeds), " +
+	"so it cannot drift from what the server reads. " +
+	"For the load order (defaults, then the YAML file, then the environment), validation and " +
+	"how to start the server with a file, see [Configuration](../getting-started/configuration.md). " +
+	"Annotated copies of every key are in [`openartifact.example.yaml`](../../openartifact.example.yaml) " +
+	"and [`.env.example`](../../.env.example).\n\n" +
 	"- **YAML key**: the dotted path in the configuration file; `server.port` is `port` under `server:`.\n" +
 	"- **Env**: the environment variable that overrides the key; it takes precedence over the file. " +
 	"When several variables are listed, they are aliases and the first one that is set wins.\n" +
 	"- **Type**: `string`, `int`, `bool`, `float`, `duration` (Go syntax such as `5m` or `90s`), " +
-	"`list` (a YAML sequence; comma-separated in the environment) or `map` (a YAML mapping; comma-separated `key=value` pairs in the environment).\n" +
+	"`list` (a YAML sequence; comma-separated in the environment) or " +
+	"`map` (a YAML mapping; comma-separated `key=value` pairs in the environment).\n" +
 	"- **Default**: the value used when neither the file nor the environment sets the key; `empty` is an empty string, list or map.\n" +
 	"- Credentials are marked **Secret**: keep them in environment variables or in a file only the server can read.\n\n"
 
@@ -1349,7 +1354,8 @@ func writeConfigEnvOnly(b *bytes.Buffer, sc *configEnvScan) {
 	}
 
 	b.WriteString(
-		"Variables read outside the configuration loader, such as the secret-encryption key, the metrics scrape token and the migration switch, " +
+		"Variables read outside the configuration loader, such as the secret-encryption key, " +
+			"the metrics scrape token and the migration switch, " +
 			"are described in [Environment-only variables](../getting-started/configuration.md#environment-only-variables).\n",
 	)
 }

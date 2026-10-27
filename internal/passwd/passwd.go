@@ -111,10 +111,10 @@ func VerifyPassword(plain, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")
 	// Expected: ["", "argon2id", "v=19", "m=65536,t=1,p=4", "<salt>", "<hash>"]
 	if len(parts) != 6 {
-		return false, fmt.Errorf(
+		return false, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
 			"invalid encoded hash: expected 6 segments, got %d",
 			len(parts),
-		) //nolint:err113 // dynamic error with runtime context
+		)
 	}
 
 	if parts[1] != "argon2id" {
@@ -147,8 +147,8 @@ func VerifyPassword(plain, encoded string) (bool, error) {
 		time,
 		memory,
 		threads,
-		uint32(len(expectedHash)),
-	) //nolint:gosec // argon2 requires uint32 for key length
+		uint32(len(expectedHash)), //nolint:gosec // argon2 requires uint32 for key length
+	)
 
 	<-argonSemaphore
 

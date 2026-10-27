@@ -237,14 +237,14 @@ func (j *Journal) reconcileMissing(ctx context.Context, t *Table, st reconcileSt
 		where = fmt.Sprintf("WHERE (%s) > (%s)", strings.Join(cols, ", "), strings.Join(ph, ", "))
 	}
 
-	q := fmt.Sprintf(
+	q := fmt.Sprintf( //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
 		`SELECT %s FROM %s t %s ORDER BY %s LIMIT %d`,
 		t.KeyExpr("t"),
 		t.Name,
 		where,
 		t.KeyCols("t"),
 		n,
-	) //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
+	)
 
 	rows, err := j.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -355,13 +355,13 @@ func (j *Journal) existingKeys(ctx context.Context, t *Table, keys []string) (ma
 		return out, nil
 	}
 
-	q := fmt.Sprintf(
+	q := fmt.Sprintf( //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
 		`SELECT %s FROM %s t JOIN %s ON %s`,
 		t.KeyExpr("t"),
 		t.Name,
 		t.unnestSQL(),
 		t.joinSQL(),
-	) //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
+	)
 
 	rows, err := j.db.QueryContext(ctx, q, args2any(args)...)
 	if err != nil {

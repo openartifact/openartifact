@@ -25,7 +25,8 @@ import (
 	"golang.org/x/term"
 )
 
-const uploadUsage = "Usage: oa artifact upload [--presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N]] <repo> <file>"
+const uploadUsage = "Usage: oa artifact upload " +
+	"[--presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N]] <repo> <file>"
 
 // maxSinglePutBytes is the largest object one presigned PUT can carry (the S3
 // limit); anything bigger has to be uploaded in parts.

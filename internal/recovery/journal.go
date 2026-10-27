@@ -342,8 +342,8 @@ func (j *Journal) loadRows(ctx context.Context, t *Table, keys []string) (map[st
 		return map[string]string{}, nil
 	}
 
-	q := fmt.Sprintf(
-		`SELECT %s, (to_jsonb(t) - %s)::text FROM %s t JOIN %s ON %s`, //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
+	q := fmt.Sprintf( //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
+		`SELECT %s, (to_jsonb(t) - %s)::text FROM %s t JOIN %s ON %s`,
 		t.KeyExpr("t"),
 		t.ExcludeSQL(),
 		t.Name,

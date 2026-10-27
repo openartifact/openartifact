@@ -879,7 +879,8 @@ func (r *apiRenderer) tagPage(p *apiTagPage) []byte {
 
 	fmt.Fprintf(
 		&b,
-		"%d %s. Request and response schemas are described on the [schemas page](%s); the other tags are listed in the [API index](README.md).\n\n",
+		"%d %s. Request and response schemas are described on the [schemas page](%s); "+
+			"the other tags are listed in the [API index](README.md).\n\n",
 		len(p.ops),
 		noun,
 		apiSchemasPage,
@@ -1116,7 +1117,8 @@ func (r *apiRenderer) schemasPage() []byte {
 
 	b.Write(header("API schemas", apiSpecFile))
 	b.WriteString(
-		"Named request and response objects of the [REST API](README.md), sorted by name. Field names of nested inline objects are dotted; `[]` marks array elements and `*` map values.\n\n",
+		"Named request and response objects of the [REST API](README.md), sorted by name. " +
+			"Field names of nested inline objects are dotted; `[]` marks array elements and `*` map values.\n\n",
 	)
 	b.WriteString("## Schemas\n\n")
 
@@ -1183,7 +1185,9 @@ func (r *apiRenderer) indexPage(pages []apiTagPage) []byte {
 
 	fmt.Fprintf(
 		&b,
-		"This reference is generated from the embedded OpenAPI document `%s` and lists %d endpoints in %d tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).\n\n",
+		"This reference is generated from the embedded OpenAPI document `%s` and lists %d endpoints in %d tags. "+
+			"Authentication, token kinds, CSRF handling and worked examples are in the "+
+			"[REST API guide](../../integrations/api.md).\n\n",
 		apiSpecFile,
 		len(r.doc.ops),
 		len(pages),

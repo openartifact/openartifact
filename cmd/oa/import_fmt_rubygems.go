@@ -18,7 +18,8 @@ import (
 // errGemYanked is what a failed-verification cleanup reports once the gem was
 // hidden: RubyGems hosting has no hard delete, so the record stays.
 var errGemYanked = errors.New(
-	"RubyGems has no hard delete: the gem was yanked instead, which hides it from clients but keeps the version recorded until an administrator purges it",
+	"RubyGems has no hard delete: the gem was yanked instead, which hides it from clients " +
+		"but keeps the version recorded until an administrator purges it",
 )
 
 // Gems are pushed as the raw .gem; the server reads name, version and platform

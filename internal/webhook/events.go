@@ -71,8 +71,8 @@ func newInsecureClient(timeout time.Duration) *http.Client {
 	if tr, ok := c.Transport.(*http.Transport); ok {
 		tr.TLSClientConfig = &tls.Config{
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true,
-		} //nolint:gosec // explicit per-webhook opt-out (ssl_verify=false)
+			InsecureSkipVerify: true, //nolint:gosec // explicit per-webhook opt-out (ssl_verify=false)
+		}
 	}
 
 	return telemetry.WrapClient(c)

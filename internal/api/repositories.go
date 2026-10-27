@@ -585,7 +585,8 @@ func (h *RepositoriesHandler) checkFederated(body *createRepositoryBody, repoTyp
 	case actor != nil:
 		return "only an administrator can create a federated repository", http.StatusForbidden
 	case repoType != repotype.Hosted || !repotype.FederationSupported(body.Format):
-		return "federated is only valid for hosted repositories of a format with federation support: " + repotype.FederationFormats(), http.StatusBadRequest
+		return "federated is only valid for hosted repositories of a format with federation support: " +
+			repotype.FederationFormats(), http.StatusBadRequest
 	case h.fed == nil:
 		return "federation is turned off on this server (federation.enabled / OPENARTIFACT_FEDERATION_ENABLED)", http.StatusBadRequest
 	}

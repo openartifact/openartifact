@@ -90,10 +90,10 @@ func (s *S3BlobStore) StatStaging(ctx context.Context, id string) (StagedObject,
 	}
 
 	if out.ContentLength == nil || out.ETag == nil || *out.ETag == "" {
-		return StagedObject{}, fmt.Errorf(
+		return StagedObject{}, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
 			"s3: head %s: missing ContentLength or ETag",
 			key,
-		) //nolint:err113 // dynamic error with runtime context
+		)
 	}
 
 	return StagedObject{Size: *out.ContentLength, Version: *out.ETag}, nil

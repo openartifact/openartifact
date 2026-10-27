@@ -686,7 +686,8 @@ func repoCheckCredentials(live *Live, o *Object, scalar []Change) error {
 
 	if retarget {
 		return fmt.Errorf(
-			"update repository %q: changing upstream_url origin or upstream_username makes the server drop the stored upstream_password; re-run with --force-secrets to send it again: %w",
+			"update repository %q: changing upstream_url origin or upstream_username makes the server drop the stored "+
+				"upstream_password; re-run with --force-secrets to send it again: %w",
 			live.Key,
 			errRepositoryInvalid,
 		)

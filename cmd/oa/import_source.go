@@ -517,7 +517,9 @@ func aqlQuery(repo string, offset int, sorted bool) string {
 	}
 
 	return fmt.Sprintf(
-		`items.find({"repo":%s,"type":"file"}).include("repo","path","name","size","created","modified","sha256","actual_sha1","property.*")%s.offset(%d).limit(%d)`,
+		`items.find({"repo":%s,"type":"file"})`+
+			`.include("repo","path","name","size","created","modified","sha256","actual_sha1","property.*")`+
+			`%s.offset(%d).limit(%d)`,
 		strconv.Quote(repo),
 		order,
 		offset,
