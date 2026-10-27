@@ -311,17 +311,19 @@ jobs:
 
       # Pull requests compare against the numbers main stored on its last run.
       # Restoring a cache is allowed for fork pull requests; only main saves one.
+      # Restore and save must use the same path: the path is part of the cache
+      # version, so a different one never matches even with restore-keys.
       - name: restore baseline from main
         if: ${{ github.event_name == 'pull_request' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: cov/base
+          path: cov/baseline
           key: coverage-base-none
           restore-keys: coverage-base-
 
       - name: report
         run: |
-          base=cov/base/coverage.json
+          base=cov/baseline/coverage.json
           [ -s "$base" ] && cp "$base" cov/report/base.json
           scripts/coverage/render.sh cov/report/coverage.json "$base" | tee cov/report/summary.md >> "$GITHUB_STEP_SUMMARY"
           cp cov/merged.out cov/report/go-merged.out
@@ -335,18 +337,18 @@ jobs:
 
       - name: store baseline for pull requests
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: mkdir -p cov/save && cp cov/report/coverage.json cov/save/coverage.json
+        run: mkdir -p cov/baseline && cp cov/report/coverage.json cov/baseline/coverage.json
 
       - name: save baseline cache
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: cov/save
+          path: cov/baseline
           key: coverage-base-${{ github.sha }}
 
       - name: coverage gate (total must not drop more than 1 point vs main)
         if: ${{ github.event_name == 'pull_request' }}
-        run: scripts/coverage/gate.sh cov/report/coverage.json cov/base/coverage.json
+        run: scripts/coverage/gate.sh cov/report/coverage.json cov/baseline/coverage.json
 
   security:
     name: security (trivy image + repo)
