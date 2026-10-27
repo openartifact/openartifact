@@ -85,6 +85,14 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### 0.13.1
+
+No migrations and no configuration changes; a rolling upgrade from 0.13.0 works. Maintenance release:
+
+- **The web UI offers package delete for `apk` and `terraform` repositories** and lets you activate GPG keys on `pacman` and `terraform` repositories; the server already supported both. The vulnerability ecosystem dropdown follows the format registry order.
+- **Package formats now come from one registry** (`internal/repotype`), and the web format lists are generated from it. There is no behaviour change except that the `only hosted ... repositories are signed` error message lists the signing formats alphabetically.
+- Test fixes for two flaky tests (federation conflict counters, an unknown-blob fixture); no product change.
+
 ### 0.13.0
 
 Migrations `087` to `090`, all rolling-safe: **a rolling upgrade from 0.12.x works** (0.12.x replicas keep serving against the migrated schema). Upgrading from 0.10.x or older still needs the 0.11/0.12 steps below first. `087` deletes the unused seeded `local` storage backend row (a single guarded `DELETE`, no schema change). `088` (Terraform), `089` (apk) and `090` (pacman) each widen the `chk_repo_format` check with `NOT VALID` in a short transaction (10 s `lock_timeout`), validate it in a separate `*_validate.no_tx` file without blocking writes, and create new tables; no existing table is rewritten. Replicas still on 0.12.x do not know the new formats or tables until they are replaced, so create the first Terraform, apk or pacman repository only after the rollout has finished.
