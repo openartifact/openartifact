@@ -495,7 +495,12 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 		return nil, errInternal
 	}
 
-	return s.fetchURL(ctx, repo, key, target, fetchOpts{})
+	var o fetchOpts
+	if isIvyFormat(repo.Format) {
+		o = s.ivyFetchOpts(ctx, repo, key)
+	}
+
+	return s.fetchURL(ctx, repo, key, target, o)
 }
 
 // fetchOpts tunes one upstream fetch.
@@ -821,6 +826,10 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 //     (both are regenerated in place) or -SNAPSHOT files; a checksum or
 //     signature file (.md5 .sha1 .sha256 .sha512 .asc) is as immutable as the
 //     file it belongs to.
+//   - ivy, sbt: released files, not checksum or signature files, maven-metadata*.xml
+//     or -SNAPSHOT files; a file is pinned only when its body matched the
+//     checksum the upstream publishes (ivy.go), otherwise the repository TTL
+//     applies.
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
 //     a file name is never reused); the same names in a flat repository, where
 //     a publisher may overwrite a package, use the repository TTL.
@@ -860,6 +869,9 @@ func Immutable(format, key string) bool {
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
+	case "ivy", "sbt":
+		// Released files that matched the upstream's checksum; see ivyFetchOpts.
+		return ivyImmutable(key)
 	}
 
 	return false
@@ -877,6 +889,8 @@ func isMetadataKey(format, key string) bool {
 		return inDir(key, "repodata")
 	case "maven":
 		return strings.HasPrefix(name, "maven-metadata")
+	case "ivy", "sbt":
+		return isIvyMetadata(key) || isIvySidecar(key) || name == "ivy.xml"
 	case "pypi":
 		return !strings.HasPrefix(key, "files/")
 	case "npm":
@@ -926,6 +940,8 @@ var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only ta
 	"maven": {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
 	"deb":   {".deb", ".udeb"},
 	"rpm":   {".rpm"},
+	"ivy":   ivyPackageExts,
+	"sbt":   ivyPackageExts,
 }
 
 // isHTMLForPackage reports whether the upstream answered a package file's path

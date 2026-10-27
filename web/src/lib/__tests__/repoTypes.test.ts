@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw'])
+  it('restricts proxy to cargo, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm and sbt in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'ivy', 'sbt'])
   })
-  it('restricts group to cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw and rpm', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw'])
+  it('restricts group to cargo, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm and sbt', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'ivy', 'sbt'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(false)
@@ -60,6 +60,9 @@ describe('upstream URL', () => {
     expect(upstreamUrlPlaceholder('pypi')).toBe('https://pypi.org/simple')
     expect(upstreamUrlPlaceholder('cargo')).toBe('https://index.crates.io')
     expect(upstreamUrlPlaceholder('nuget')).toBe('https://api.nuget.org/v3/index.json')
+    expect(upstreamUrlRequired('sbt')).toBe(true)
+    expect(upstreamUrlRequired('ivy')).toBe(true)
+    expect(upstreamUrlPlaceholder('sbt')).toBe('https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases')
   })
 })
 

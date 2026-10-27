@@ -19,3 +19,11 @@ SELECT sa.id, sa.repository_id, sa.group_id, sa.artifact_id, sa.version, sa.file
 FROM sbt_artifacts sa
 JOIN blobs b ON b.id = sa.blob_id
 WHERE sa.repository_id = $1 AND sa.deleted_at IS NULL ORDER BY sa.group_id, sa.artifact_id, sa.version;
+
+-- name: SBTModuleExists :one
+-- Whether the repository holds a live file of the artifact: a group asks it to
+-- tell an artifact its hosted members own from one only a proxy has.
+SELECT EXISTS (
+    SELECT 1 FROM sbt_artifacts
+    WHERE repository_id = $1 AND group_id = $2 AND artifact_id = $3 AND deleted_at IS NULL
+);

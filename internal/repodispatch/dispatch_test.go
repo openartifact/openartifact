@@ -119,12 +119,12 @@ func newEnv(t *testing.T, authz Authorizer) *env {
 
 	db := &fakeDB{
 		repos: map[string]*models.Repository{
-			"hosted":  repo("1", "hosted", "raw", "hosted"),
-			"private": repo("2", "private", "raw", "hosted"),
-			"mirror":  mirror,
-			"all":     repo("4", "all", "raw", "group"),
-			"dockerx": repo("5", "dockerx", "docker", "proxy"),
-			"ivyx":    repo("6", "ivyx", "ivy", "proxy"),
+			"hosted":      repo("1", "hosted", "raw", "hosted"),
+			"private":     repo("2", "private", "raw", "hosted"),
+			"mirror":      mirror,
+			"all":         repo("4", "all", "raw", "group"),
+			"dockerx":     repo("5", "dockerx", "docker", "proxy"),
+			"unsupported": repo("6", "unsupported", "bogus", "proxy"),
 		},
 		links: map[string][]*models.RepositoryGroupMember{
 			"4": {{MemberRepoID: "2", Priority: 0}, {MemberRepoID: "1", Priority: 1}, {MemberRepoID: "3", Priority: 2}},
@@ -228,7 +228,7 @@ func TestWritesToProxyAndGroupAreRefusedBeforeFormatHandler(t *testing.T) {
 func TestUnsupportedProxyFormatIs501(t *testing.T) {
 	e := newEnv(t, denyAuthorizer{})
 
-	if w := e.do(http.MethodGet, "/repos/raw/ivyx/f"); w.Code != http.StatusNotImplemented {
+	if w := e.do(http.MethodGet, "/repos/raw/unsupported/f"); w.Code != http.StatusNotImplemented {
 		t.Errorf("status = %d, want 501", w.Code)
 	}
 }

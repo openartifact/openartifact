@@ -99,15 +99,15 @@
   },
   {
     "format": "ivy",
-    "proxy": false,
-    "group": false,
+    "proxy": true,
+    "group": true,
     "federation": false,
     "default_upstream": ""
   },
   {
     "format": "sbt",
-    "proxy": false,
-    "group": false,
+    "proxy": true,
+    "group": true,
     "federation": false,
     "default_upstream": ""
   }

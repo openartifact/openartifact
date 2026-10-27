@@ -706,12 +706,16 @@ type Database interface {
 	) (*models.IvyArtifact, error)
 	DeleteIvyArtifact(ctx context.Context, id string) error
 	ListIvyArtifacts(ctx context.Context, repoID string) ([]*models.IvyArtifact, error)
+	// IvyModuleExists reports whether the repository holds a live file of the module.
+	IvyModuleExists(ctx context.Context, repoID, organisation, module string) (bool, error)
 
 	// SBT methods
 	CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error
 	GetSBTArtifact(ctx context.Context, repoID, groupID, artifactID, version, filename string) (*models.SBTArtifact, error)
 	DeleteSBTArtifact(ctx context.Context, id string) error
 	ListSBTArtifacts(ctx context.Context, repoID string) ([]*models.SBTArtifact, error)
+	// SBTModuleExists reports whether the repository holds a live file of the artifact.
+	SBTModuleExists(ctx context.Context, repoID, groupID, artifactID string) (bool, error)
 
 	// Release bundle and promotion pipeline methods
 	CreatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error

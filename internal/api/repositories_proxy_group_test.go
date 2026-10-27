@@ -60,13 +60,7 @@ func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
 			`{"name":"p","format":"conda","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`,
 			"not supported for format",
 		},
-		{
-			"proxy ivy",
-			`{"name":"p","format":"ivy","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`,
-			"not supported for format",
-		},
 		{"group conda", `{"name":"g","format":"conda","repo_type":"group"}`, "not supported for format"},
-		{"group ivy", `{"name":"g","format":"ivy","repo_type":"group"}`, "not supported for format"},
 	}
 
 	for _, c := range cases {
@@ -106,7 +100,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget", "ivy", "sbt"} {
 		db := newProxyGroupDB()
 		rw := createRepo(
 			t,

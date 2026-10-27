@@ -25,7 +25,9 @@ Every proxy format can be grouped except deb and rpm; see the [format matrix](..
 | cargo | yes | yes | yes |
 | go | yes | yes | yes |
 | helm | yes | yes | yes |
-| rubygems, conda, conan, ivy, sbt | yes | no | no |
+| ivy | yes | yes | yes |
+| sbt | yes | yes | yes |
+| rubygems, conda, conan | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -94,8 +96,8 @@ Requests are mirrored by path from `upstream_url` (npm, cargo and Helm proxies a
 
 ### Cache TTLs
 
-- `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml`, `archetype-catalog.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, Helm `index.yaml` and `.prov` files, Go `@v/list`, `@latest` and branch-query `.info` files, and everything in raw repositories.
-- Released Maven artifacts (and their `.md5`/`.sha1`/`.sha256`/`.sha512`/`.asc` files; not `maven-metadata*.xml`, `archetype-catalog.xml` or `-SNAPSHOT` files), `.deb`/`.udeb` files below a `pool/` directory, `.rpm` files below a `Packages/` directory and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files, Helm chart archives, Go `.info`/`.mod`/`.zip` of a canonical version and NuGet `.nupkg`/`.nuspec` files are immutable once cached and never revalidated.
+- `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml`, `archetype-catalog.xml` and `-SNAPSHOT` files (also in Ivy and sbt proxies, where checksum and signature files are included), Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, Helm `index.yaml` and `.prov` files, Go `@v/list`, `@latest` and branch-query `.info` files, and everything in raw repositories.
+- Released Maven artifacts (and their `.md5`/`.sha1`/`.sha256`/`.sha512`/`.asc` files; not `maven-metadata*.xml`, `archetype-catalog.xml` or `-SNAPSHOT` files), `.deb`/`.udeb` files below a `pool/` directory, `.rpm` files below a `Packages/` directory, Ivy and sbt release files [that pass their published checksum](../formats/ivy-sbt.md#proxy-and-group) and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files, Helm chart archives, Go `.info`/`.mod`/`.zip` of a canonical version and NuGet `.nupkg`/`.nuspec` files are immutable once cached and never revalidated.
 - Maven, Debian and RPM files are not checked against a digest, so they are pinned only where the layout guarantees a file name is never reused. `.deb`/`.udeb` files outside `pool/` (flat repositories) and `.rpm` files outside a `Packages/` directory are cached with `cache_ttl_seconds` instead. A `200` answer with an HTML `Content-Type` for a Maven `.jar`/`.pom`/`.zip`/`.war`/`.ear`/`.aar`/`.module`/`.gz`, `.deb`/`.udeb` or `.rpm` path (a captive portal or WAF page) is refused with `502` and not cached.
 - A file the upstream publishes no digest for is cached with `cache_ttl_seconds` instead, so it is fetched and checked again once it expires: a PyPI file with no sha256 in the index, an npm tarball with neither `dist.integrity` nor `dist.shasum`, a Helm chart without `digest`, a NuGet `.nupkg` without a `packageHash`, and a Go `.mod`/`.zip` of a module version the checksum database has no record of. (With the checksum database switched off on the server, Go files stay immutable.)
 - An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any cached copy of the file (it is never served stale).
@@ -186,6 +188,10 @@ A nuget proxy is a v3 feed, not a path mirror. `upstream_url` is the upstream **
 
 A go proxy mirrors a GOPROXY (`upstream_url`, default `https://proxy.golang.org`); clients use `GOPROXY=HOST/repos/REPO`. Module paths and versions are forwarded in the case-encoded form the go command uses (`!x`). `@v/list` and `@latest` use the repository TTL with serve-stale on upstream failure; `.info`, `.mod` and `.zip` of a canonical version are immutable. Fetched `.mod` and `.zip` files are verified against the Go checksum database, and bodies that are not what their path claims are refused (`502`, not cached). `GET /sumdb/...` is not proxied (`404`): the go command then asks `sum.golang.org` directly. Details and limits: [Go modules](../formats/go.md#proxy-and-group-repositories).
 
+### Ivy and sbt proxies
+
+An Ivy or sbt proxy is a path mirror (`upstream_url` has no default; `https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases` is the sbt plugin repository). A release file is checked against the `.sha256`, `.sha1` or `.md5` the upstream publishes next to it before it is cached, and is then immutable; directory listings and dynamic revisions are not served. Details, client setup and group behavior: [Ivy and sbt](../formats/ivy-sbt.md#proxy-and-group).
+
 ### Docker / OCI proxies
 
 A docker proxy is a pull-through cache of an OCI registry and is served under `/v2/` like hosted docker repositories (it has no `/repos/{name}/...` file URLs). `docker pull HOSTPORT/REPO/library/alpine:3.20` fetches `library/alpine:3.20` from the upstream. On Docker Hub (`registry-1.docker.io`, the default) a single-segment image such as `HOSTPORT/REPO/alpine` is mapped to `library/alpine`. Only the scheme and host of `upstream_url` are used. See [Docker / OCI](../formats/docker.md#proxy-and-group-repositories) for client setup and behavior.
@@ -213,10 +219,11 @@ A group is an ordered list of hosted and proxy members of the same format. Group
   - nuget: registration and flat-container version lists (and leaves, `.nupkg`, `.nuspec`) of the id come only from hosted members;
   - maven: `maven-metadata.xml` of the artifact is built from hosted members only, and files under that group/artifact path are served only from hosted members;
   - helm: `index.yaml` lists only hosted versions of a chart name, and chart/`.prov` downloads of that name come only from hosted members;
-  - docker: `tags/list`, manifests and blobs of a repository path held by a hosted member come only from hosted members.
+  - docker: `tags/list`, manifests and blobs of a repository path held by a hosted member come only from hosted members;
+  - ivy and sbt: files of an organisation/group and module held by a hosted member come only from hosted members.
   
   raw groups (and any other format whose group answers first-hit) do not merge versions: the first member by order that has the file wins, unchanged by this setting.
-- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `GOPROXY=HOST/repos/GROUP` for Go, `HOST/repos/GROUP` for Helm, `HOST/repos/GROUP/v3/index.json` for NuGet, `HOSTPORT/GROUP/<image>:<tag>` for docker, `HOST/repos/GROUP` for Debian (`deb [signed-by=…] HOST/repos/GROUP <dist> <component>`) and RPM (`baseurl=HOST/repos/GROUP`).
+- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/sbt/GROUP` and `HOST/repos/ivy/GROUP` for sbt and Ivy, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `GOPROXY=HOST/repos/GROUP` for Go, `HOST/repos/GROUP` for Helm, `HOST/repos/GROUP/v3/index.json` for NuGet, `HOSTPORT/GROUP/<image>:<tag>` for docker, `HOST/repos/GROUP` for Debian (`deb [signed-by=…] HOST/repos/GROUP <dist> <component>`) and RPM (`baseurl=HOST/repos/GROUP`).
 
 ### Deb and RPM groups
 

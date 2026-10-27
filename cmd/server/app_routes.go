@@ -255,11 +255,13 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f := &a.web.formats
 
 	routers := map[string]*chi.Mux{}
-	for _, name := range []string{"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm"} {
+	for _, name := range []string{"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt"} {
 		routers[name] = chi.NewRouter()
 	}
 
 	f.maven.RegisterRepoRoutes(routers["maven"])
+	f.ivy.RegisterRepoRoutes(routers["ivy"])
+	f.sbt.RegisterRepoRoutes(routers["sbt"])
 	f.raw.RegisterRepoRoutes(routers["raw"])
 	f.npm.RegisterRepoRoutes(routers["npm"])
 	f.nuget.RegisterRepoRoutes(routers["nuget"])
@@ -347,8 +349,14 @@ func (a *app) mountIsolatedRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 		r.Use(repoDispatch.Middleware)
 		f.maven.RegisterRepoRoutes(r)
 	})
-	authedAPI.Route("/repos/sbt/{name}", func(r chi.Router) { f.sbt.RegisterRepoRoutes(r) })
-	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) { f.ivy.RegisterRepoRoutes(r) })
+	authedAPI.Route("/repos/sbt/{name}", func(r chi.Router) {
+		r.Use(repoDispatch.Middleware)
+		f.sbt.RegisterRepoRoutes(r)
+	})
+	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) {
+		r.Use(repoDispatch.Middleware)
+		f.ivy.RegisterRepoRoutes(r)
+	})
 	a.log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")
 	// The registry (/v2/...) sits behind the dispatcher too: docker proxy and
 	// group repositories are served there, hosted ones by dockerHTTP.

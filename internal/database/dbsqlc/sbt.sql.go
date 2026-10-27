@@ -164,3 +164,25 @@ func (q *Queries) ListSBTArtifacts(ctx context.Context, repositoryID string) ([]
 	}
 	return items, nil
 }
+
+const sBTModuleExists = `-- name: SBTModuleExists :one
+SELECT EXISTS (
+    SELECT 1 FROM sbt_artifacts
+    WHERE repository_id = $1 AND group_id = $2 AND artifact_id = $3 AND deleted_at IS NULL
+)
+`
+
+type SBTModuleExistsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	GroupID      string `db:"group_id" json:"group_id"`
+	ArtifactID   string `db:"artifact_id" json:"artifact_id"`
+}
+
+// Whether the repository holds a live file of the artifact: a group asks it to
+// tell an artifact its hosted members own from one only a proxy has.
+func (q *Queries) SBTModuleExists(ctx context.Context, arg SBTModuleExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, sBTModuleExists, arg.RepositoryID, arg.GroupID, arg.ArtifactID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

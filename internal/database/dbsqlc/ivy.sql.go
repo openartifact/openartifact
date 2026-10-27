@@ -122,6 +122,28 @@ func (q *Queries) GetIvyArtifact(ctx context.Context, arg GetIvyArtifactParams) 
 	return i, err
 }
 
+const ivyModuleExists = `-- name: IvyModuleExists :one
+SELECT EXISTS (
+    SELECT 1 FROM ivy_artifacts
+    WHERE repository_id = $1 AND organisation = $2 AND module = $3 AND deleted_at IS NULL
+)
+`
+
+type IvyModuleExistsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Organisation string `db:"organisation" json:"organisation"`
+	Module       string `db:"module" json:"module"`
+}
+
+// Whether the repository holds a live file of the module: a group asks it to
+// tell a module its hosted members own from one only a proxy has.
+func (q *Queries) IvyModuleExists(ctx context.Context, arg IvyModuleExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, ivyModuleExists, arg.RepositoryID, arg.Organisation, arg.Module)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listIvyArtifacts = `-- name: ListIvyArtifacts :many
 SELECT ia.id, ia.repository_id, ia.organisation, ia.module, ia.revision, ia.artifact_name, ia.artifact_type, ia.artifact_ext, b.blob_key, b.size_bytes, b.sha256, ia.created_at, ia.updated_at
 FROM ivy_artifacts ia

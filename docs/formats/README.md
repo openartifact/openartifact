@@ -24,8 +24,8 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Format | Format id | Client URL | Types | Upload | Page |
 |---|---|---|---|---|---|
 | Maven | `maven` | `HOST/repos/maven/REPO` | hosted, proxy, group | `PUT` per file (`mvn deploy`) | [maven](maven.md) |
-| sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
-| Ivy | `ivy` | `HOST/repos/ivy/REPO` | hosted | `PUT` per file (`ivy:publish`) | [ivy-sbt](ivy-sbt.md) |
+| sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted, proxy, group | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
+| Ivy | `ivy` | `HOST/repos/ivy/REPO` | hosted, proxy, group | `PUT` per file (`ivy:publish`) | [ivy-sbt](ivy-sbt.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
@@ -42,7 +42,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 
 Debian and RPM have no upload route under `/repos/REPO/`: they are uploaded through the REST endpoints under `/api/v1/repositories/REPO/`. `POST` or `PUT` to `HOST/repos/REPO/upload` of such a repository answers `404` and names the endpoint to use.
 
-Proxy repositories exist for these formats (Maven, npm, PyPI, Helm, Go, Cargo, NuGet, Debian, RPM, Docker and raw); group repositories for the same formats. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
+Proxy repositories exist for these formats (Maven, sbt, Ivy, npm, PyPI, Helm, Go, Cargo, NuGet, Debian, RPM, Docker and raw); group repositories for the same formats. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
 
 ## Authentication
 

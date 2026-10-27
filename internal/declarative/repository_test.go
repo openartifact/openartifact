@@ -797,7 +797,7 @@ func TestRepositoryValidate(t *testing.T) {
 		},
 		{
 			name:    "group of an unsupported format",
-			obj:     &Object{Name: "r", Spec: map[string]any{"format": "sbt", "repo_type": "group"}},
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "conda", "repo_type": "group"}},
 			wantErr: "group repositories are not supported",
 		},
 		{
