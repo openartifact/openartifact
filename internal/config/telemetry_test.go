@@ -11,6 +11,8 @@ import (
 )
 
 func TestTelemetryDefaultsOff(t *testing.T) {
+	clearTelemetryEnv(t)
+
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatal(err)
@@ -29,6 +31,8 @@ func TestTelemetryDefaultsOff(t *testing.T) {
 // TestTelemetryEnabledKeepsTracesByDefault covers an existing file that only
 // sets enabled: tracing must stay on.
 func TestTelemetryEnabledKeepsTracesByDefault(t *testing.T) {
+	clearTelemetryEnv(t)
+
 	path := filepath.Join(t.TempDir(), "c.yaml")
 	if err := os.WriteFile(path, []byte("telemetry:\n  otlp:\n    enabled: true\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -45,6 +49,8 @@ func TestTelemetryEnabledKeepsTracesByDefault(t *testing.T) {
 }
 
 func TestTelemetrySignalEnv(t *testing.T) {
+	clearTelemetryEnv(t)
+
 	path := filepath.Join(t.TempDir(), "c.yaml")
 
 	yml := `telemetry:
@@ -107,6 +113,8 @@ func TestTelemetrySignalEnv(t *testing.T) {
 }
 
 func TestTelemetryYAMLAndEnvPrecedence(t *testing.T) {
+	clearTelemetryEnv(t)
+
 	path := filepath.Join(t.TempDir(), "c.yaml")
 
 	yml := `telemetry:
@@ -158,6 +166,8 @@ func TestTelemetryYAMLAndEnvPrecedence(t *testing.T) {
 }
 
 func TestTelemetryEnableAndKillSwitch(t *testing.T) {
+	clearTelemetryEnv(t)
+
 	t.Setenv("OPENARTIFACT_OTLP_ENABLED", "true")
 
 	cfg, err := Load("")
@@ -182,6 +192,8 @@ func TestTelemetryEnableAndKillSwitch(t *testing.T) {
 }
 
 func TestTelemetryEndpointOnlyDoesNotEnable(t *testing.T) {
+	clearTelemetryEnv(t)
+
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "collector:4317")
 
 	cfg, err := Load("")
@@ -205,5 +217,25 @@ func TestValidate_Telemetry(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Error("sampleRatio 2 accepted")
+	}
+}
+
+// clearTelemetryEnv unsets every variable applyTelemetryEnv reads for the
+// duration of the test, so the developer's shell cannot change the result.
+func clearTelemetryEnv(t *testing.T) {
+	t.Helper()
+
+	for _, k := range []string{
+		"OPENARTIFACT_OTLP_ENABLED", "OPENARTIFACT_OTLP_AUDIT", "OTEL_SDK_DISABLED",
+		"OTEL_TRACES_EXPORTER", "OTEL_METRICS_EXPORTER", "OTEL_LOGS_EXPORTER",
+		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL",
+		"OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_INSECURE",
+		"OTEL_SERVICE_NAME", "OTEL_TRACES_SAMPLER_ARG",
+	} {
+		t.Setenv(k, "") // restores the original value on cleanup
+
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
