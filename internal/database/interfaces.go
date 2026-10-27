@@ -693,6 +693,13 @@ type Database interface {
 	// CondaRepodataStamp is a cheap validator of one platform's repodata.json:
 	// it changes exactly when a live package is added or removed.
 	CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error)
+	// ListCondaPackageNames returns the distinct lowercase names of the live
+	// packages of a repository in every platform, sorted. A conda group uses
+	// it to hide proxy packages a hosted member publishes under the same name.
+	ListCondaPackageNames(ctx context.Context, repoID string) ([]string, error)
+	// HasCondaPackageName reports whether a live package of this name (compared
+	// case-insensitively) exists in any platform of the repository.
+	HasCondaPackageName(ctx context.Context, repoID, name string) (bool, error)
 
 	// ListAllCondaPackages is a bulk-list-by-repo method used only by backup
 	// export (no platform filter required).

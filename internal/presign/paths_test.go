@@ -61,6 +61,11 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files/conanfile.py", false},
 		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files", false},
 		{"conan", "v2/conans/zlib/1.3.1/_/_/latest", false},
+		{"conda", "linux-64/numpy-1.26.4-py312_0.conda", true},
+		{"conda", "noarch/six-1.16.0-pyh6c4a22f_0.tar.bz2", true},
+		{"conda", "linux-64/repodata.json", false},
+		{"conda", "linux-64/repodata.json.zst", false},
+		{"conda", "channeldata.json", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

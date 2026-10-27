@@ -24,6 +24,11 @@ type groupDB struct {
 
 	links []*models.RepositoryGroupMember
 	repos map[string]*models.Repository
+
+	// condaNames is the package names a hosted conda member (by ID) holds;
+	// condaErr fails the lookups.
+	condaNames map[string][]string
+	condaErr   error
 }
 
 func (d *groupDB) ListGroupMemberRepositories(context.Context, string) ([]*models.Repository, error) {

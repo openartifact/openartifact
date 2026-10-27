@@ -1404,6 +1404,14 @@ func (m *BaseMockDB) CondaRepodataStamp(ctx context.Context, repoID, platform st
 	return "", errNotImpl("CondaRepodataStamp")
 }
 
+func (m *BaseMockDB) ListCondaPackageNames(ctx context.Context, repoID string) ([]string, error) {
+	return nil, errNotImpl("ListCondaPackageNames")
+}
+
+func (m *BaseMockDB) HasCondaPackageName(ctx context.Context, repoID, name string) (bool, error) {
+	return false, errNotImpl("HasCondaPackageName")
+}
+
 // LiveSnapshot adapts an in-memory Database to SnapshotReader for tests: reads
 // go straight to the wrapped database (an in-memory fake is trivially
 // consistent) and the blobs table is the Blobs slice, which the test keeps
