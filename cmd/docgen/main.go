@@ -181,3 +181,5 @@ func header(title, source string) []byte {
 
 	return b.Bytes()
 }
+
+// fuzz selection probe.
