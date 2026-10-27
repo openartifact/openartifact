@@ -308,7 +308,10 @@ func TestTrashRepositoryHidesAndRestores(t *testing.T) {
 	}
 
 	var n int
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, s.repo).Scan(&n); err != nil || n != 0 {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, s.repo).
+		Scan(&n); err != nil ||
+		n != 0 {
 		t.Fatalf("repository contents survived the purge: %d, %v", n, err)
 	}
 }

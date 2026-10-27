@@ -232,7 +232,13 @@ func (npmCodec) Usage(_ context.Context, _ Querier, _, key string, c *Content) (
 
 // --- Import -----------------------------------------------------------------
 
-func (c npmCodec) Import(ctx context.Context, tx *sql.Tx, repoID, key string, content *Content, blobIDs map[string]string) (*Change, error) {
+func (c npmCodec) Import(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID, key string,
+	content *Content,
+	blobIDs map[string]string,
+) (*Change, error) {
 	fullName, rest, isTag, ok := parseNPMKey(key)
 	if !ok {
 		return nil, npmKeyError(key)
@@ -271,7 +277,13 @@ func (npmCodec) importTag(ctx context.Context, tx *sql.Tx, repoID, key, fullName
 	return &Change{Regen: npmRegen(repoID, pkgID)}, nil
 }
 
-func (npmCodec) importVersion(ctx context.Context, tx *sql.Tx, repoID, key, fullName, version string, content *Content, blobIDs map[string]string) (*Change, error) {
+func (npmCodec) importVersion(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID, key, fullName, version string,
+	content *Content,
+	blobIDs map[string]string,
+) (*Change, error) {
 	var d npmVersionData
 	if err := json.Unmarshal(content.Data, &d); err != nil {
 		return nil, fmt.Errorf("%w: decode unit data: %v", ErrInvalid, err) //nolint:errorlint // client-safe text only
@@ -397,7 +409,13 @@ func (npmCodec) deleteTag(ctx context.Context, tx *sql.Tx, repoID, fullName, tag
 	return &Change{Regen: npmRegen(repoID, pkgID)}, nil
 }
 
-func (npmCodec) deleteVersion(ctx context.Context, tx *sql.Tx, repoID, fullName, version string, soft bool, deletedBy string) (*Change, error) {
+func (npmCodec) deleteVersion(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID, fullName, version string,
+	soft bool,
+	deletedBy string,
+) (*Change, error) {
 	var (
 		id, pkgID, filename, blobID string
 	)

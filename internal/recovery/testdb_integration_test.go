@@ -159,18 +159,32 @@ func seedRaw(t *testing.T, db *sql.DB, store storage.BlobStore, repo, path strin
 
 	s := seededRaw{sha: sha}
 
-	if err := db.QueryRowContext(context.Background(),
-		`INSERT INTO repositories (name, format, project_id) VALUES ($1, 'raw', $2) RETURNING id`, repo, systemProjectID).Scan(&s.repoID); err != nil {
+	if err := db.QueryRowContext(
+		context.Background(),
+		`INSERT INTO repositories (name, format, project_id) VALUES ($1, 'raw', $2) RETURNING id`,
+		repo,
+		systemProjectID,
+	).Scan(&s.repoID); err != nil {
 		t.Fatalf("insert repository: %v", err)
 	}
 
-	if err := db.QueryRowContext(context.Background(),
-		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::varchar, $2, $3::text) RETURNING id`, sha, len(content), sha+"").Scan(&s.blobID); err != nil {
+	if err := db.QueryRowContext(
+		context.Background(),
+		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::varchar, $2, $3::text) RETURNING id`,
+		sha,
+		len(content),
+		sha+"",
+	).Scan(&s.blobID); err != nil {
 		t.Fatalf("insert blob: %v", err)
 	}
 
-	if err := db.QueryRowContext(context.Background(),
-		`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, $2, $3) RETURNING id`, s.repoID, path, s.blobID).Scan(&s.artifactID); err != nil {
+	if err := db.QueryRowContext(
+		context.Background(),
+		`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, $2, $3) RETURNING id`,
+		s.repoID,
+		path,
+		s.blobID,
+	).Scan(&s.artifactID); err != nil {
 		t.Fatalf("insert raw artifact: %v", err)
 	}
 

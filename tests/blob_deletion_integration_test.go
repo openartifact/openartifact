@@ -273,7 +273,12 @@ func TestBackupKeepsBlobsDeletedWhileItRuns(t *testing.T) {
 	}
 
 	if manifest.BlobCount != len(shas) || manifest.SnapshotAt.IsZero() {
-		t.Errorf("manifest = blob_count %d snapshot_at %v, want %d blobs and a snapshot time", manifest.BlobCount, manifest.SnapshotAt, len(shas))
+		t.Errorf(
+			"manifest = blob_count %d snapshot_at %v, want %d blobs and a snapshot time",
+			manifest.BlobCount,
+			manifest.SnapshotAt,
+			len(shas),
+		)
 	}
 
 	// The backup has ended and released its lease: the sweep may now delete.

@@ -430,7 +430,13 @@ func TestAdminGPG_ImportValidation(t *testing.T) {
 		}
 	}
 
-	if rw := e.do(t, e.admin, "POST", "/api/v1/admin/gpg/keys", gpgJSON(map[string]any{"private_key": armored, "passphrase": "pw"})); rw.Code != http.StatusCreated {
+	if rw := e.do(
+		t,
+		e.admin,
+		"POST",
+		"/api/v1/admin/gpg/keys",
+		gpgJSON(map[string]any{"private_key": armored, "passphrase": "pw"}),
+	); rw.Code != http.StatusCreated {
 		t.Errorf("right passphrase: %d %s", rw.Code, rw.Body.String())
 	}
 

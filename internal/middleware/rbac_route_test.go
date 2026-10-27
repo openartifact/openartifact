@@ -36,7 +36,12 @@ func TestExtractRepoAndPath(t *testing.T) {
 		// Isolated /repos/<marker>/{name}/... namespaces.
 		{"raw namespace", "/repos/raw/my-raw-repo/some/nested/path.txt", "my-raw-repo", "some/nested/path.txt"},
 		{"raw namespace bare", "/repos/raw/my-raw-repo", "my-raw-repo", ""},
-		{"maven namespace", "/repos/maven/my-maven-repo/com/example/lib/1.0/lib-1.0.jar", "my-maven-repo", "com/example/lib/1.0/lib-1.0.jar"},
+		{
+			"maven namespace",
+			"/repos/maven/my-maven-repo/com/example/lib/1.0/lib-1.0.jar",
+			"my-maven-repo",
+			"com/example/lib/1.0/lib-1.0.jar",
+		},
 		{"sbt namespace", "/repos/sbt/my-sbt-repo/com/example/lib_2.13/1.0/lib.jar", "my-sbt-repo", "com/example/lib_2.13/1.0/lib.jar"},
 		{"ivy namespace", "/repos/ivy/my-ivy-repo/org/module/ivys/ivy-1.0.xml", "my-ivy-repo", "org/module/ivys/ivy-1.0.xml"},
 
@@ -54,7 +59,12 @@ func TestExtractRepoAndPath(t *testing.T) {
 		{"docker blob upload chunk", "/v2/myimage/blobs/uploads/abc-123", "myimage", "blobs/uploads/abc-123"},
 		{"docker tags list", "/v2/myimage/tags/list", "myimage", "tags/list"},
 		{"docker referrers", "/v2/myimage/referrers/sha256:deadbeef", "myimage", "referrers/sha256:deadbeef"},
-		{"docker manifest name contains literal marker segment", "/v2/myrepo/manifests/latest/manifests/sha256:abcd", "myrepo", "manifests/latest/manifests/sha256:abcd"},
+		{
+			"docker manifest name contains literal marker segment",
+			"/v2/myrepo/manifests/latest/manifests/sha256:abcd",
+			"myrepo",
+			"manifests/latest/manifests/sha256:abcd",
+		},
 		{"docker version check", "/v2/", "", ""},
 
 		// Non-repo API paths.

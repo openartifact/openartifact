@@ -86,7 +86,15 @@ func TestSignProducesAVerifiablePackage(t *testing.T) {
 			}
 
 			if before.Name != after.Name || before.Version != after.Version || before.Arch != after.Arch {
-				t.Errorf("identity changed: %s-%s.%s -> %s-%s.%s", before.Name, before.Version, before.Arch, after.Name, after.Version, after.Arch)
+				t.Errorf(
+					"identity changed: %s-%s.%s -> %s-%s.%s",
+					before.Name,
+					before.Version,
+					before.Arch,
+					after.Name,
+					after.Version,
+					after.Arch,
+				)
 			}
 
 			if after.HeaderStart == 0 || after.HeaderEnd <= after.HeaderStart {

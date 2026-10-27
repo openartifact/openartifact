@@ -77,13 +77,19 @@ func TestRepositoryPresignOverride_TriState(t *testing.T) {
 		want bool
 	}{{`{"presign_downloads":true}`, true}, {`{"presign_downloads":false}`, false}} {
 		code, out = patchRepo(t, db, tc.body)
-		if code != http.StatusOK || db.repo.PresignDownloads == nil || *db.repo.PresignDownloads != tc.want || out["presign_downloads"] != tc.want {
+		if code != http.StatusOK || db.repo.PresignDownloads == nil || *db.repo.PresignDownloads != tc.want ||
+			out["presign_downloads"] != tc.want {
 			t.Fatalf("%s: status %d, response %v, stored %v", tc.body, code, out["presign_downloads"], db.repo.PresignDownloads)
 		}
 	}
 
 	// Absent leaves an explicit override alone.
-	if code, _ = patchRepo(t, db, `{"description":"y"}`); code != http.StatusOK || db.repo.PresignDownloads == nil || *db.repo.PresignDownloads {
+	if code, _ = patchRepo(
+		t,
+		db,
+		`{"description":"y"}`,
+	); code != http.StatusOK || db.repo.PresignDownloads == nil ||
+		*db.repo.PresignDownloads {
 		t.Fatalf("an unrelated PATCH changed the override: %v", db.repo.PresignDownloads)
 	}
 

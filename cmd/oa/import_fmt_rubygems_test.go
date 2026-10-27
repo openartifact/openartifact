@@ -168,7 +168,11 @@ func gemFakeRoutes(f *fakeOA, mux *http.ServeMux) {
 		it.name, it.version = name, version
 		it.sha = f.reported(it)
 
-		f.reply(w, http.StatusCreated, map[string]string{"name": name, "version": version, "message": "Successfully registered gem: " + name})
+		f.reply(
+			w,
+			http.StatusCreated,
+			map[string]string{"name": name, "version": version, "message": "Successfully registered gem: " + name},
+		)
 	})
 
 	mux.HandleFunc("DELETE /api/v1/gems/yank", func(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +226,12 @@ func gemNexusFiles(t *testing.T) []fakeFile {
 	t.Helper()
 
 	return []fakeFile{
-		{path: "gems/rake-13.0.6.gem", data: gemFile(t, "rake", "13.0.6", "ruby"), created: nexusStamp, contentType: "application/octet-stream"},
+		{
+			path:        "gems/rake-13.0.6.gem",
+			data:        gemFile(t, "rake", "13.0.6", "ruby"),
+			created:     nexusStamp,
+			contentType: "application/octet-stream",
+		},
 		{path: "gems/nokogiri-1.16.0-x86_64-linux.gem", data: gemFile(t, "nokogiri", "1.16.0", "x86_64-linux"), created: nexusStamp},
 		{path: "gems/nokogiri-1.16.0-java.gem", data: gemFile(t, "nokogiri", "1.16.0", "java"), created: nexusStamp},
 		{path: "gems/my-gem-2.0.0.gem", data: gemFile(t, "my-gem", "2.0.0", "ruby"), created: nexusStamp},
@@ -389,7 +398,8 @@ func TestImportRubyGemsServerDigestMismatchYanksTheCopy(t *testing.T) {
 
 	rep := runImportTest(t, cfg, nexus, oa)
 
-	if rep.Failed != 1 || !strings.Contains(rep.Failures[0].Error, "server stored") || !strings.Contains(rep.Failures[0].Error, "yanked instead") {
+	if rep.Failed != 1 || !strings.Contains(rep.Failures[0].Error, "server stored") ||
+		!strings.Contains(rep.Failures[0].Error, "yanked instead") {
 		t.Fatalf("report = %+v", rep)
 	}
 

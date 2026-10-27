@@ -40,7 +40,9 @@ func qrfNoise(seed, size int) []byte {
 
 // qrfMount serves a hosted format handler the way cmd/server does: relative
 // routes under /repos/{name}.
-func qrfMount(register func(*testing.T, *database.PostgresDB, storage.BlobStore) func(chi.Router)) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
+func qrfMount(
+	register func(*testing.T, *database.PostgresDB, storage.BlobStore) func(chi.Router),
+) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
 	return func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler {
 		t.Helper()
 
@@ -105,7 +107,14 @@ func qrfConda() qrfFormat {
 		format: "conda",
 		mount:  qrfMountConda,
 		upload: func(e *qrEnv, n, seed, size int) *httptest.ResponseRecorder {
-			return e.do(e.request(http.MethodPost, "/repos/"+e.repoName+"/linux-64?filename="+file(n), qrfNoise(seed, size), "application/octet-stream"))
+			return e.do(
+				e.request(
+					http.MethodPost,
+					"/repos/"+e.repoName+"/linux-64?filename="+file(n),
+					qrfNoise(seed, size),
+					"application/octet-stream",
+				),
+			)
 		},
 		remove: func(e *qrEnv, n int) *httptest.ResponseRecorder {
 			return e.do(e.request(http.MethodDelete, "/repos/"+e.repoName+"/linux-64/"+file(n), nil, ""))
@@ -122,7 +131,14 @@ func qrfConan() qrfFormat {
 		format: "conan",
 		mount:  qrfMountConan,
 		upload: func(e *qrEnv, n, seed, size int) *httptest.ResponseRecorder {
-			return e.do(e.request(http.MethodPut, "/repos/"+e.repoName+"/v2"+qrfConanRecipe(n)+"/revisions/"+qrfConanRev+"/files/conanfile.py", qrfNoise(seed, size), "application/octet-stream"))
+			return e.do(
+				e.request(
+					http.MethodPut,
+					"/repos/"+e.repoName+"/v2"+qrfConanRecipe(n)+"/revisions/"+qrfConanRev+"/files/conanfile.py",
+					qrfNoise(seed, size),
+					"application/octet-stream",
+				),
+			)
 		},
 		remove: func(e *qrEnv, n int) *httptest.ResponseRecorder {
 			return e.do(e.request(http.MethodDelete, "/repos/"+e.repoName+"/v2"+qrfConanRecipe(n), nil, ""))
@@ -198,7 +214,14 @@ func (e *qrEnv) rfWantReconciled(step string) {
 	}
 
 	if q.CurrentSizeBytes != size || q.CurrentArtifactCount != count {
-		e.t.Fatalf("%s: reconcile = (%d bytes, %d artifacts), incremental = (%d, %d)", step, q.CurrentSizeBytes, q.CurrentArtifactCount, size, count)
+		e.t.Fatalf(
+			"%s: reconcile = (%d bytes, %d artifacts), incremental = (%d, %d)",
+			step,
+			q.CurrentSizeBytes,
+			q.CurrentArtifactCount,
+			size,
+			count,
+		)
 	}
 }
 
@@ -331,7 +354,11 @@ func TestQuotaConanMultiFileRelease(t *testing.T) {
 	put := func(path string, seed, size int) int64 {
 		t.Helper()
 
-		e.wantStatus("put "+path, e.do(e.request(http.MethodPut, path, qrfNoise(seed, size), "application/octet-stream")), http.StatusCreated)
+		e.wantStatus(
+			"put "+path,
+			e.do(e.request(http.MethodPut, path, qrfNoise(seed, size), "application/octet-stream")),
+			http.StatusCreated,
+		)
 
 		return int64(size)
 	}

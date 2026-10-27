@@ -722,7 +722,11 @@ func (m *sessionMockDB) DeleteReleaseBundle(ctx context.Context, id string) erro
 	return nil
 }
 
-func (m *sessionMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error) {
+func (m *sessionMockDB) ListReleaseBundles(
+	ctx context.Context,
+	nameFilter, stateFilter string,
+	page, limit int,
+) ([]*models.ReleaseBundle, int, error) {
 	return nil, 0, nil
 }
 

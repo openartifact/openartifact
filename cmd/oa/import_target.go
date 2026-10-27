@@ -39,7 +39,13 @@ type importTarget struct {
 }
 
 // request sends a request to the server. length < 0 means "unknown" (chunked).
-func (t *importTarget) request(ctx context.Context, method, apiPath string, body io.Reader, length int64, hdr http.Header) (*http.Response, error) {
+func (t *importTarget) request(
+	ctx context.Context,
+	method, apiPath string,
+	body io.Reader,
+	length int64,
+	hdr http.Header,
+) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, t.c.baseURL+apiPath, body)
 	if err != nil {
 		return nil, err
@@ -67,7 +73,13 @@ func (t *importTarget) request(ctx context.Context, method, apiPath string, body
 // send issues a request and turns an error status into an error: 409 becomes
 // errUploadConflict, anything else outside 2xx a serverError. On success the
 // caller owns (and closes) the response body.
-func (t *importTarget) send(ctx context.Context, method, apiPath string, body io.Reader, length int64, hdr http.Header) (*http.Response, error) {
+func (t *importTarget) send(
+	ctx context.Context,
+	method, apiPath string,
+	body io.Reader,
+	length int64,
+	hdr http.Header,
+) (*http.Response, error) {
 	resp, err := t.request(ctx, method, apiPath, body, length, hdr)
 	if err != nil {
 		return nil, err
@@ -88,7 +100,13 @@ func (t *importTarget) send(ctx context.Context, method, apiPath string, body io
 
 // storedResult resolves the id and stored digest of a package that was just
 // uploaded, by finding it in the destination's listing (see findStored).
-func (t *importTarget) storedResult(ctx context.Context, dst string, f importFormat, q string, want func(listedPackage) bool) (uploadResult, error) {
+func (t *importTarget) storedResult(
+	ctx context.Context,
+	dst string,
+	f importFormat,
+	q string,
+	want func(listedPackage) bool,
+) (uploadResult, error) {
 	p, ok, err := t.findStored(ctx, dst, f, q, want)
 	if err != nil {
 		return uploadResult{}, err
@@ -291,7 +309,13 @@ func (t *importTarget) eachListed(ctx context.Context, name string, f importForm
 // stored digest of a package whose upload response carries neither: want should
 // match the package's identity (name, version, file name), not its digest, so
 // that a copy stored with different bytes is detected by verification.
-func (t *importTarget) findStored(ctx context.Context, dst string, f importFormat, q string, want func(listedPackage) bool) (listedPackage, bool, error) {
+func (t *importTarget) findStored(
+	ctx context.Context,
+	dst string,
+	f importFormat,
+	q string,
+	want func(listedPackage) bool,
+) (listedPackage, bool, error) {
 	var (
 		found listedPackage
 		ok    bool
@@ -361,7 +385,14 @@ func (m uploadMeta) header() http.Header {
 
 // upload streams body to the destination using the format's native upload
 // endpoint.
-func (t *importTarget) upload(ctx context.Context, f importFormat, dst string, a sourceAsset, body io.Reader, m uploadMeta) (uploadResult, error) {
+func (t *importTarget) upload(
+	ctx context.Context,
+	f importFormat,
+	dst string,
+	a sourceAsset,
+	body io.Reader,
+	m uploadMeta,
+) (uploadResult, error) {
 	def, ok := formatDefs[f]
 	if !ok || def.upload == nil {
 		return uploadResult{}, fmt.Errorf("%w: unsupported format %q", errImportUsage, f)
@@ -370,7 +401,14 @@ func (t *importTarget) upload(ctx context.Context, f importFormat, dst string, a
 	return def.upload(ctx, t, uploadRequest{Dst: dst, Asset: a, Body: body, Meta: m})
 }
 
-func (t *importTarget) putFile(ctx context.Context, apiPath string, a sourceAsset, body io.Reader, m uploadMeta, jsonReply bool) (uploadResult, error) {
+func (t *importTarget) putFile(
+	ctx context.Context,
+	apiPath string,
+	a sourceAsset,
+	body io.Reader,
+	m uploadMeta,
+	jsonReply bool,
+) (uploadResult, error) {
 	hdr := m.header()
 
 	ct := a.ContentType
@@ -449,7 +487,14 @@ func multipartStreamFields(fields [][2]string, file io.Reader, fieldName, fileNa
 	return pr, mw.FormDataContentType()
 }
 
-func (t *importTarget) postPackage(ctx context.Context, apiPath string, a sourceAsset, body io.Reader, m uploadMeta, fields [][2]string) (uploadResult, error) {
+func (t *importTarget) postPackage(
+	ctx context.Context,
+	apiPath string,
+	a sourceAsset,
+	body io.Reader,
+	m uploadMeta,
+	fields [][2]string,
+) (uploadResult, error) {
 	name := a.Path
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		name = name[i+1:]

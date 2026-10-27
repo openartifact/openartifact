@@ -76,7 +76,10 @@ func TestPushReservesQuotaAndDeleteReleasesIt(t *testing.T) {
 		t.Errorf("quota used=%d artifacts=%d, want %d/1", db.used, db.artifacts, size)
 	}
 
-	if w := formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/Newtonsoft.Json/13.0.3", nil)); w.Code != http.StatusNoContent {
+	if w := formattest.Do(
+		register(h),
+		formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/Newtonsoft.Json/13.0.3", nil),
+	); w.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d", w.Code)
 	}
 
@@ -95,7 +98,14 @@ func TestPushOverQuotaReturns507AndPersistsNothing(t *testing.T) {
 	}
 
 	if db.pkg != nil || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.used != 0 || db.artifacts != 0 {
-		t.Errorf("pkg=%v blobs=%d events=%d used=%d artifacts=%d; want nothing persisted", db.pkg, len(bs.Blobs), len(pub.Events()), db.used, db.artifacts)
+		t.Errorf(
+			"pkg=%v blobs=%d events=%d used=%d artifacts=%d; want nothing persisted",
+			db.pkg,
+			len(bs.Blobs),
+			len(pub.Events()),
+			db.used,
+			db.artifacts,
+		)
 	}
 }
 

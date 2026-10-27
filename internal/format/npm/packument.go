@@ -15,7 +15,12 @@ import (
 // {"_id","dist-tags","name","time","versions"}: every stored manifest is passed
 // through with whitespace removed and its dist object rewritten to carry the
 // server's tarball URL, integrity and shasum. See packument_json.go.
-func BuildPackument(repoName, packageName string, versions []*models.NPMVersion, distTags map[string]string, baseURL string) ([]byte, error) {
+func BuildPackument(
+	repoName, packageName string,
+	versions []*models.NPMVersion,
+	distTags map[string]string,
+	baseURL string,
+) ([]byte, error) {
 	sorted := newestPerVersion(versions)
 
 	w := newPackumentWriter(repoName, packageName, baseURL, estimatePackumentSize(sorted, 320))

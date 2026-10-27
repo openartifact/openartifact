@@ -205,7 +205,13 @@ func (h *harness) repo(format string, immutable bool) *models.Repository {
 	h.seq++
 	org := promoteOrgID
 
-	repo := &models.Repository{Name: fmt.Sprintf("%s-%d", format, h.seq), Format: format, RepoType: "hosted", ProjectID: &org, ImmutableReleases: immutable}
+	repo := &models.Repository{
+		Name:              fmt.Sprintf("%s-%d", format, h.seq),
+		Format:            format,
+		RepoType:          "hosted",
+		ProjectID:         &org,
+		ImmutableReleases: immutable,
+	}
 	if err := h.pg.CreateRepository(context.Background(), repo); err != nil {
 		h.t.Fatalf("CreateRepository: %v", err)
 	}

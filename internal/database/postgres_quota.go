@@ -116,7 +116,13 @@ SELECT pq.project_id
 // and returns the rows the last one affected. The setting and the statements
 // travel in one batch, i.e. one round trip; the batch is a single implicit
 // transaction, so either every statement applies or none does.
-func (p *PostgresDB) execQuota(ctx context.Context, sizeBytes int64, artifactCount int, repoID string, statements ...string) (int64, error) {
+func (p *PostgresDB) execQuota(
+	ctx context.Context,
+	sizeBytes int64,
+	artifactCount int,
+	repoID string,
+	statements ...string,
+) (int64, error) {
 	batch := &pgx.Batch{}
 	batch.Queue(`SELECT set_config('synchronous_commit', 'off', true)`)
 
@@ -325,7 +331,8 @@ WITH counted AS (
            COALESCE(SUM(size_bytes), 0)::bigint AS size_bytes,
            COALESCE(SUM(artifact_count), 0)::bigint AS artifacts
       FROM quota_pending
-     WHERE created_at > now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL + `' ELSE interval '` + quotaPendingReleaseTTL + `' END`
+     WHERE created_at > now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL +
+		`' ELSE interval '` + quotaPendingReleaseTTL + `' END`
 
 	reconcilePendingEndSQL = `
      GROUP BY repository_id
@@ -389,7 +396,8 @@ const (
 // repository is gone) so the table does not keep what no partner will consume.
 const purgeStalePendingSQL = `
 DELETE FROM quota_pending
- WHERE created_at <= now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL + `' ELSE interval '` + quotaPendingReleaseTTL + `' END
+ WHERE created_at <= now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL +
+	`' ELSE interval '` + quotaPendingReleaseTTL + `' END
     OR NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = quota_pending.repository_id)`
 
 // reconcileProjectsSQL rewrites the counters of every project with a ceiling
@@ -457,7 +465,9 @@ func (p *PostgresDB) ReconcileStorageUsage(ctx context.Context, repoID string) (
 	}
 
 	var projectID string
-	if err := p.pool.QueryRow(ctx, `SELECT COALESCE(project_id::text, '') FROM repositories WHERE id = $1`, repoID).Scan(&projectID); err == nil && projectID != "" {
+	if err := p.pool.QueryRow(ctx, `SELECT COALESCE(project_id::text, '') FROM repositories WHERE id = $1`, repoID).
+		Scan(&projectID); err == nil &&
+		projectID != "" {
 		if _, err := p.reconcileProjects(ctx, projectID); err != nil {
 			return nil, err
 		}

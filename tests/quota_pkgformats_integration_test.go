@@ -61,7 +61,9 @@ type qpfFormat struct {
 	kind  models.TrashKind
 }
 
-func qpfMount(register func(*testing.T, chi.Router, *database.PostgresDB, storage.BlobStore)) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
+func qpfMount(
+	register func(*testing.T, chi.Router, *database.PostgresDB, storage.BlobStore),
+) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
 	return func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler {
 		t.Helper()
 
@@ -200,7 +202,11 @@ func qpfCargoUpload(t *testing.T, e *qrEnv, n, pad int) (*httptest.ResponseRecor
 	_ = binary.Write(&body, binary.LittleEndian, uint32(len(crate)))
 	body.Write(crate)
 
-	return e.do(e.request(http.MethodPut, "/repos/"+e.repoName+"/api/v1/crates/new", body.Bytes(), "application/octet-stream")), int64(len(crate))
+	return e.do(
+			e.request(http.MethodPut, "/repos/"+e.repoName+"/api/v1/crates/new", body.Bytes(), "application/octet-stream"),
+		), int64(
+			len(crate),
+		)
 }
 
 // --- harness -----------------------------------------------------------------
@@ -296,7 +302,14 @@ func (e *qrEnv) wantReconciled(step string) {
 	}
 
 	if q.CurrentSizeBytes != size || q.CurrentArtifactCount != count {
-		e.t.Fatalf("%s: reconcile = (%d bytes, %d artifacts), incremental = (%d, %d)", step, q.CurrentSizeBytes, q.CurrentArtifactCount, size, count)
+		e.t.Fatalf(
+			"%s: reconcile = (%d bytes, %d artifacts), incremental = (%d, %d)",
+			step,
+			q.CurrentSizeBytes,
+			q.CurrentArtifactCount,
+			size,
+			count,
+		)
 	}
 }
 
@@ -370,7 +383,8 @@ func (e *qrEnv) purgeAll(f qpfFormat) {
 		e.t.Fatalf("TrashRows = %v, %v; want a soft delete", soft, err)
 	}
 
-	if _, err := e.pg.GetDB().ExecContext(ctx, `UPDATE `+f.table+` SET deleted_at = now() - interval '30 days' WHERE repository_id = $1`, e.repoID); err != nil {
+	if _, err := e.pg.GetDB().
+		ExecContext(ctx, `UPDATE `+f.table+` SET deleted_at = now() - interval '30 days' WHERE repository_id = $1`, e.repoID); err != nil {
 		e.t.Fatalf("age deletion: %v", err)
 	}
 
@@ -467,7 +481,11 @@ func TestQuotaPackageFormatsCargoYankKeepsUsage(t *testing.T) {
 	e.wantStatus("publish", rec, http.StatusOK)
 	e.wantUsage("after publish", size, 1)
 
-	e.wantStatus("yank", e.do(e.request(http.MethodDelete, "/repos/"+e.repoName+"/api/v1/crates/qrcrate1/0.1.0/yank", nil, "")), http.StatusOK)
+	e.wantStatus(
+		"yank",
+		e.do(e.request(http.MethodDelete, "/repos/"+e.repoName+"/api/v1/crates/qrcrate1/0.1.0/yank", nil, "")),
+		http.StatusOK,
+	)
 	e.wantUsage("after yank", size, 1)
 	e.wantReconciled("after yank")
 }

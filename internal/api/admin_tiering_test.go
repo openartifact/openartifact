@@ -438,7 +438,11 @@ func TestTieringPolicyReplaceListDelete(t *testing.T) {
 	url := "/api/v1/admin/tiering/policies/" + id
 
 	// Duplicate name conflicts.
-	if code, _ := rig.do(http.MethodPost, "/api/v1/admin/tiering/policies", `{"name":"p","target_tier":"cold","min_age_seconds":1}`); code != http.StatusConflict {
+	if code, _ := rig.do(
+		http.MethodPost,
+		"/api/v1/admin/tiering/policies",
+		`{"name":"p","target_tier":"cold","min_age_seconds":1}`,
+	); code != http.StatusConflict {
 		t.Errorf("duplicate name = %d, want 409", code)
 	}
 
@@ -456,7 +460,11 @@ func TestTieringPolicyReplaceListDelete(t *testing.T) {
 		t.Errorf("list = %d %v", code, list)
 	}
 
-	if code, _ := rig.do(http.MethodPut, "/api/v1/admin/tiering/policies/30000000-0000-0000-0000-000000000000", `{"name":"q","target_tier":"cold","min_age_seconds":1}`); code != http.StatusNotFound {
+	if code, _ := rig.do(
+		http.MethodPut,
+		"/api/v1/admin/tiering/policies/30000000-0000-0000-0000-000000000000",
+		`{"name":"q","target_tier":"cold","min_age_seconds":1}`,
+	); code != http.StatusNotFound {
 		t.Errorf("replace unknown = %d, want 404", code)
 	}
 
@@ -479,10 +487,14 @@ func TestTieringDryRun(t *testing.T) {
 	rig := newTieringRig(t)
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	rig.planner.plan = &tiering.Plan{
-		Scanned: 10, Count: 2, Bytes: 300,
+		Scanned:  10,
+		Count:    2,
+		Bytes:    300,
 		Routes:   []tiering.PlanRoute{{From: "hot", To: "cold", Count: 2, Bytes: 300}},
 		Policies: []tiering.PlanPolicy{{Policy: "draft", Count: 2, Bytes: 300}},
-		Sample:   []tiering.PlanSample{{SHA256: strings.Repeat("a", 64), SizeBytes: 100, From: "hot", To: "cold", Policy: "draft", CreatedAt: created}},
+		Sample: []tiering.PlanSample{
+			{SHA256: strings.Repeat("a", 64), SizeBytes: 100, From: "hot", To: "cold", Policy: "draft", CreatedAt: created},
+		},
 	}
 
 	code, body := rig.do(http.MethodPost, "/api/v1/admin/tiering/dry-run",
@@ -491,7 +503,8 @@ func TestTieringDryRun(t *testing.T) {
 		t.Fatalf("status %d %v", code, body)
 	}
 
-	if rig.planner.draft == nil || rig.planner.draft.Name != "draft" || rig.planner.draft.TargetTierID != tierColdID || rig.planner.limit != 5 {
+	if rig.planner.draft == nil || rig.planner.draft.Name != "draft" || rig.planner.draft.TargetTierID != tierColdID ||
+		rig.planner.limit != 5 {
 		t.Errorf("planner got draft=%+v limit=%d", rig.planner.draft, rig.planner.limit)
 	}
 
@@ -528,7 +541,9 @@ func TestTieringRunAndStatus(t *testing.T) {
 	t.Parallel()
 
 	rig := newTieringRig(t)
-	rig.db.moves = []*models.StorageTierMove{{SHA256: strings.Repeat("b", 64), FromBackendID: "", ToBackendID: cold1ID, State: models.TierMoveCopying, Attempts: 2}}
+	rig.db.moves = []*models.StorageTierMove{
+		{SHA256: strings.Repeat("b", 64), FromBackendID: "", ToBackendID: cold1ID, State: models.TierMoveCopying, Attempts: 2},
+	}
 
 	code, body := rig.do(http.MethodPost, "/api/v1/admin/tiering/run", "")
 	if code != http.StatusAccepted || body["started"] != true || rig.runner.triggered != 1 {

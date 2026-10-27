@@ -319,7 +319,11 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: pkg.SHA256Digest, Size: pkg.SizeBytes, Filename: pkg.Filename, ContentType: "application/octet-stream"}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{SHA256: pkg.SHA256Digest, Size: pkg.SizeBytes, Filename: pkg.Filename, ContentType: "application/octet-stream"},
+	) {
 		return
 	}
 
@@ -627,23 +631,35 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindPyPI, IDs: []string{pkg.ID}, Resource: pkg.Filename, Package: pkg.Name, Version: pkg.Version}, func() error {
-		if err := h.DB.DeletePyPIPackage(r.Context(), repoID, pkg.Name, pkg.Version, pkg.Filename); err != nil {
-			return fmt.Errorf("delete pypi package: %w", err)
-		}
+	err = trash.Delete(
+		r.Context(),
+		h.DB,
+		trash.Request{
+			RepoID:   repoID,
+			Kind:     models.TrashKindPyPI,
+			IDs:      []string{pkg.ID},
+			Resource: pkg.Filename,
+			Package:  pkg.Name,
+			Version:  pkg.Version,
+		},
+		func() error {
+			if err := h.DB.DeletePyPIPackage(r.Context(), repoID, pkg.Name, pkg.Version, pkg.Filename); err != nil {
+				return fmt.Errorf("delete pypi package: %w", err)
+			}
 
-		if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+			if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); relErr != nil {
+				h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
+			}
 
-		// Blob is content-addressed and may be shared by other artifacts; only
-		// remove it from storage once no other row references the same sha256.
-		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256Digest); delErr != nil {
-			h.Log.Warnw("failed to clean up blob after package delete", "sha256", pkg.SHA256Digest, "error", delErr)
-		}
+			// Blob is content-addressed and may be shared by other artifacts; only
+			// remove it from storage once no other row references the same sha256.
+			if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256Digest); delErr != nil {
+				h.Log.Warnw("failed to clean up blob after package delete", "sha256", pkg.SHA256Digest, "error", delErr)
+			}
 
-		return nil
-	})
+			return nil
+		},
+	)
 	if err != nil {
 		if errors.Is(err, database.ErrTrashNotFound) {
 			http.NotFound(w, r)

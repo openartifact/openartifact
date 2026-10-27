@@ -125,7 +125,10 @@ func TestAPIParseErrors(t *testing.T) {
 		{"no responses", apiTestSpec(`"/a":{"get":{"tags":["T"],"responses":{}}}`, ""), "no responses"},
 		{
 			"unresolved ref in response",
-			apiTestSpec(`"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Nope"}}}}}}}`, ""),
+			apiTestSpec(
+				`"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Nope"}}}}}}}`,
+				"",
+			),
 			"unresolved $ref",
 		},
 		{
@@ -142,7 +145,11 @@ func TestAPIParseErrors(t *testing.T) {
 		{"schema anchor collision", apiTestSpec(`"/a":{`+okOp+`}`, `"Foo":{"type":"string"},"FOO":{"type":"string"}`), "same anchor"},
 		{"schema reserved anchor", apiTestSpec(`"/a":{`+okOp+`}`, `"Schemas":{"type":"string"}`), "same anchor"},
 		{"path with tag", apiTestSpec(`"/a/<b>":{`+okOp+`}`, ""), "break markdown"},
-		{"parameter ref", apiTestSpec(`"/a":{"get":{"parameters":[{"$ref":"#/components/parameters/P"}],"responses":{"200":{"description":"ok"}}}}`, ""), "parameter $ref"},
+		{
+			"parameter ref",
+			apiTestSpec(`"/a":{"get":{"parameters":[{"$ref":"#/components/parameters/P"}],"responses":{"200":{"description":"ok"}}}}`, ""),
+			"parameter $ref",
+		},
 	}
 
 	for _, tt := range tests {
@@ -378,7 +385,9 @@ func TestAPIDepthLimit(t *testing.T) {
 		schema = `{"type":"object","properties":{"` + n + `":` + schema + `}}`
 	}
 
-	doc, err := apiParse(apiTestSpec(`"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":`+schema+`}}}}}}`, ""))
+	doc, err := apiParse(
+		apiTestSpec(`"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":`+schema+`}}}}}}`, ""),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

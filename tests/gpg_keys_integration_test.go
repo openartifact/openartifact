@@ -22,8 +22,15 @@ import (
 
 func gpgTestKey(name string) *models.GPGKey {
 	return &models.GPGKey{
-		Name: name, Fingerprint: fmt.Sprintf("%040s", name), KeyID: "0123456789ABCDEF", Algorithm: "ed25519",
-		UserID: "Test <t@example.com>", PublicKey: "pub", PrivateKeyEnc: "enc:v1:xxxx", Source: models.GPGKeySourceGenerated, CreatedBy: "test",
+		Name:          name,
+		Fingerprint:   fmt.Sprintf("%040s", name),
+		KeyID:         "0123456789ABCDEF",
+		Algorithm:     "ed25519",
+		UserID:        "Test <t@example.com>",
+		PublicKey:     "pub",
+		PrivateKeyEnc: "enc:v1:xxxx",
+		Source:        models.GPGKeySourceGenerated,
+		CreatedBy:     "test",
 	}
 }
 
@@ -130,7 +137,10 @@ func TestGPGKeyActivationAndResolution(t *testing.T) {
 
 	var active int
 
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT count(*) FROM gpg_keys WHERE is_global_active`).Scan(&active); err != nil || active != 1 {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT count(*) FROM gpg_keys WHERE is_global_active`).
+		Scan(&active); err != nil ||
+		active != 1 {
 		t.Fatalf("globally active keys = %d, err = %v; want 1", active, err)
 	}
 
@@ -195,7 +205,15 @@ func TestSealReleaseBundleStoresSignatureAndPinsItems(t *testing.T) {
 	add := func(sha string) {
 		t.Helper()
 
-		item := &models.ReleaseBundleItem{BundleID: b.ID, SourceRepoID: repoID, SHA256: sha, ArtifactPath: sha[:4], Format: "raw", SizeBytes: 1, AddedAt: time.Now()}
+		item := &models.ReleaseBundleItem{
+			BundleID:     b.ID,
+			SourceRepoID: repoID,
+			SHA256:       sha,
+			ArtifactPath: sha[:4],
+			Format:       "raw",
+			SizeBytes:    1,
+			AddedAt:      time.Now(),
+		}
 		if err := pg.AddBundleItems(ctx, b.ID, []*models.ReleaseBundleItem{item}); err != nil {
 			t.Fatal(err)
 		}

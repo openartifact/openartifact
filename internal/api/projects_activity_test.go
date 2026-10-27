@@ -52,14 +52,23 @@ func activityMock(more bool) *projectsMockDB {
 
 func TestProjectsActivityMapsEntriesAndScopesQuery(t *testing.T) {
 	db := activityMock(true)
-	code, body := projectJSON(t, newProjectsRouter(t, db), uView1, http.MethodGet, "/api/v1/projects/acme/activity?actor=own&action=project.", "")
+	code, body := projectJSON(
+		t,
+		newProjectsRouter(t, db),
+		uView1,
+		http.MethodGet,
+		"/api/v1/projects/acme/activity?actor=own&action=project.",
+		"",
+	)
 
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, body = %v", code, body)
 	}
 
-	if db.listParams.ProjectID != testAcmeID || db.listParams.Limit != activityDefaultPerPage || !db.listParams.NoTotal || db.listParams.After != nil ||
-		db.listParams.Actor != "own" || db.listParams.Action != "project." {
+	if db.listParams.ProjectID != testAcmeID || db.listParams.Limit != activityDefaultPerPage || !db.listParams.NoTotal ||
+		db.listParams.After != nil ||
+		db.listParams.Actor != "own" ||
+		db.listParams.Action != "project." {
 		t.Errorf("query = %+v", db.listParams)
 	}
 
@@ -81,7 +90,8 @@ func TestProjectsActivityEntryFields(t *testing.T) {
 	}
 
 	first := data[0].(map[string]any)
-	if first["actor"] != "owner" || first["message"] != activityMessage || first["repository_id"] != activityRepoID || first["actor_type"] != "user" {
+	if first["actor"] != "owner" || first["message"] != activityMessage || first["repository_id"] != activityRepoID ||
+		first["actor_type"] != "user" {
 		t.Errorf("entry = %v", first)
 	}
 
@@ -112,18 +122,33 @@ func TestProjectsActivityCursorAndPerPageReachTheQuery(t *testing.T) {
 	db := activityMock(false)
 	cursor := encodeAuditCursor(&models.AuditCursor{CreatedAt: activityCreated(), ID: activityLastID})
 
-	code, body := projectJSON(t, newProjectsRouter(t, db), uView1, http.MethodGet, "/api/v1/projects/acme/activity?per_page=500&cursor="+cursor, "")
+	code, body := projectJSON(
+		t,
+		newProjectsRouter(t, db),
+		uView1,
+		http.MethodGet,
+		"/api/v1/projects/acme/activity?per_page=500&cursor="+cursor,
+		"",
+	)
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, body = %v", code, body)
 	}
 
-	if db.listParams.Limit != activityMaxPerPage || db.listParams.After == nil || db.listParams.After.ID != activityLastID || !db.listParams.After.CreatedAt.Equal(activityCreated()) {
+	if db.listParams.Limit != activityMaxPerPage || db.listParams.After == nil || db.listParams.After.ID != activityLastID ||
+		!db.listParams.After.CreatedAt.Equal(activityCreated()) {
 		t.Errorf("query = %+v (after %+v)", db.listParams, db.listParams.After)
 	}
 }
 
 func TestProjectsActivityRejectsMalformedCursor(t *testing.T) {
-	code, _ := projectJSON(t, newProjectsRouter(t, activityMock(false)), uView1, http.MethodGet, "/api/v1/projects/acme/activity?cursor=%21%21", "")
+	code, _ := projectJSON(
+		t,
+		newProjectsRouter(t, activityMock(false)),
+		uView1,
+		http.MethodGet,
+		"/api/v1/projects/acme/activity?cursor=%21%21",
+		"",
+	)
 	if code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", code)
 	}
@@ -139,7 +164,14 @@ func TestProjectsActivityEmptyFeedIsAnEmptyList(t *testing.T) {
 func TestProjectsActivityHidesTokenEventsBelowMaintainer(t *testing.T) {
 	for user, hidden := range map[string]bool{uView1: true, uDev1: true, uMaint1: false, uOwner1: false} {
 		db := activityMock(false)
-		if code, body := projectJSON(t, newProjectsRouter(t, db), user, http.MethodGet, "/api/v1/projects/acme/activity", ""); code != http.StatusOK {
+		if code, body := projectJSON(
+			t,
+			newProjectsRouter(t, db),
+			user,
+			http.MethodGet,
+			"/api/v1/projects/acme/activity",
+			"",
+		); code != http.StatusOK {
 			t.Fatalf("%s: status = %d, body = %v", user, code, body)
 		}
 

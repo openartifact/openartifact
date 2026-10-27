@@ -186,7 +186,11 @@ func fuzzCondaFirst(data []byte, n int64) map[string]string {
 // a strict read refuses a longer one rather than cutting it.
 func FuzzCondaInfoTar(f *testing.F) {
 	both := fuzzCondaTar(fuzzCondaMember{"info/index.json", `{"name":"p"}`}, fuzzCondaMember{"info/about.json", `{"license":"MIT"}`})
-	twice := fuzzCondaTar(fuzzCondaMember{"info/index.json", "first"}, fuzzCondaMember{"./info/index.json", "second"}, fuzzCondaMember{"info/about.json", "about"})
+	twice := fuzzCondaTar(
+		fuzzCondaMember{"info/index.json", "first"},
+		fuzzCondaMember{"./info/index.json", "second"},
+		fuzzCondaMember{"info/about.json", "about"},
+	)
 
 	f.Add(both, uint16(fuzzCondaLimit), false)
 	f.Add(both, uint16(4), true)

@@ -181,7 +181,10 @@ func (p *PostgresDB) GetRepositoryAttestationAttach(ctx context.Context, repoID 
 
 // SetRepositoryAttestationAttach stores the repository's attach switch.
 func (p *PostgresDB) SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error {
-	if err := p.q.SetRepositoryAttestationAttach(ctx, dbsqlc.SetRepositoryAttestationAttachParams{RepositoryID: repoID, Enabled: enabled}); err != nil {
+	if err := p.q.SetRepositoryAttestationAttach(
+		ctx,
+		dbsqlc.SetRepositoryAttestationAttachParams{RepositoryID: repoID, Enabled: enabled},
+	); err != nil {
 		return fmt.Errorf("set attestation attach setting: %w", err)
 	}
 

@@ -22,7 +22,18 @@ var errInvalidVulnCursor = errors.New("invalid vulnerability scan cursor")
 // Postgres stores timestamptz at microsecond precision, so the round trip is
 // exact.
 func encodeVulnCursor(c *models.VulnScanCursor) string {
-	raw := strconv.Itoa(c.CriticalCount) + ":" + strconv.Itoa(c.HighCount) + ":" + strconv.Itoa(c.MediumCount) + ":" + strconv.Itoa(c.LowCount) + ":" + strconv.FormatInt(c.SortAt.UnixMicro(), 10) + ":" + c.ID
+	raw := strconv.Itoa(
+		c.CriticalCount,
+	) + ":" + strconv.Itoa(
+		c.HighCount,
+	) + ":" + strconv.Itoa(
+		c.MediumCount,
+	) + ":" + strconv.Itoa(
+		c.LowCount,
+	) + ":" + strconv.FormatInt(
+		c.SortAt.UnixMicro(),
+		10,
+	) + ":" + c.ID
 
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }

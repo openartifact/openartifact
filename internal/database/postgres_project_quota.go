@@ -47,7 +47,12 @@ func (p *PostgresDB) GetProjectQuota(ctx context.Context, projectID string) (*mo
 // returns it. Enabling a limit initialises the project counters from the
 // repository counters in the same transaction; disabling it zeroes them (they
 // are only maintained while a limit is set).
-func (p *PostgresDB) SetProjectQuota(ctx context.Context, projectID string, maxSizeBytes, maxArtifactCount int64, warnThresholdPercent int) (*models.ProjectQuota, error) {
+func (p *PostgresDB) SetProjectQuota(
+	ctx context.Context,
+	projectID string,
+	maxSizeBytes, maxArtifactCount int64,
+	warnThresholdPercent int,
+) (*models.ProjectQuota, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -160,7 +165,8 @@ func (p *PostgresDB) GetProjectUsage(ctx context.Context, projectID string) (*mo
 // repository counters.
 func moveRepositoryUsage(ctx context.Context, tx *sql.Tx, repoID, toProjectID string) error {
 	var fromProjectID sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM repositories WHERE id = $1 AND deleted_at IS NULL`, repoID).Scan(&fromProjectID); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM repositories WHERE id = $1 AND deleted_at IS NULL`, repoID).
+		Scan(&fromProjectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrRepositoryNotFound
 		}
@@ -201,9 +207,14 @@ func moveRepositoryUsage(ctx context.Context, tx *sql.Tx, repoID, toProjectID st
 			return ErrProjectQuotaExceeded
 		}
 
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE project_quotas SET current_size_bytes = current_size_bytes + $2, current_artifact_count = current_artifact_count + $3 WHERE project_id = $1`,
-			toProjectID, size, count); err != nil {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE project_quotas SET current_size_bytes = current_size_bytes + $2, current_artifact_count = current_artifact_count +
+				$3 WHERE project_id = $1`,
+			toProjectID,
+			size,
+			count,
+		); err != nil {
 			return fmt.Errorf("failed to add usage to target project: %w", err)
 		}
 	}

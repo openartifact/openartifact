@@ -27,13 +27,20 @@ func TestBlobReferencesCoverMetadataAndDeltas(t *testing.T) {
 	deltaSHA := strings.Repeat("b", 64)
 	bareSHA := strings.Repeat("c", 64)
 
-	s.exec(`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, 'maven-metadata.xml', $2, 1)`, s.repo, metaSHA)
+	s.exec(
+		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, 'maven-metadata.xml', $2, 1)`,
+		s.repo,
+		metaSHA,
+	)
 	s.exec(`INSERT INTO package_deltas (repository_id, from_sha256, from_filename, to_sha256, to_filename, delta_sha256, delta_size, format)
 	        VALUES ($1, $2, 'a', $3, 'b', $4, 1, 'rpm')`, s.repo, strings.Repeat("d", 64), strings.Repeat("e", 64), deltaSHA)
 
 	// A raw upload of the same bytes leaves a blobs row with no package row (after its delete).
 	for _, sha := range []string{metaSHA, deltaSHA, bareSHA} {
-		s.exec(`INSERT INTO blobs (sha256, size_bytes, blob_key, created_at) VALUES ($1::varchar, 1, $1::text, now() - interval '2 hours')`, sha)
+		s.exec(
+			`INSERT INTO blobs (sha256, size_bytes, blob_key, created_at) VALUES ($1::varchar, 1, $1::text, now() - interval '2 hours')`,
+			sha,
+		)
 	}
 
 	for name, sha := range map[string]string{"metadata": metaSHA, "delta": deltaSHA} {

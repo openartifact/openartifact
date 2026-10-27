@@ -253,7 +253,10 @@ func repoValidateRanges(o *Object) []error {
 
 	if q, ok := o.Spec[repoFieldQuota].(map[string]any); ok {
 		if v, ok := q["warn_threshold_percent"].(float64); ok && v > repoMaxWarnPct {
-			errs = append(errs, fmt.Errorf("%w: quota.warn_threshold_percent must be between 0 and %d", errRepositoryInvalid, repoMaxWarnPct))
+			errs = append(
+				errs,
+				fmt.Errorf("%w: quota.warn_threshold_percent must be between 0 and %d", errRepositoryInvalid, repoMaxWarnPct),
+			)
 		}
 	}
 
@@ -300,7 +303,16 @@ func repoValidateCleanup(o *Object) []error {
 
 		if pat := Str(p, "name_pattern"); pat != "" {
 			if _, err := regexp.Compile(pat); err != nil {
-				errs = append(errs, fmt.Errorf("%w: %s[%d].name_pattern is not a valid regular expression: %w", errRepositoryInvalid, repoFieldCleanup, i, err))
+				errs = append(
+					errs,
+					fmt.Errorf(
+						"%w: %s[%d].name_pattern is not a valid regular expression: %w",
+						errRepositoryInvalid,
+						repoFieldCleanup,
+						i,
+						err,
+					),
+				)
 			}
 		}
 	}
@@ -673,7 +685,12 @@ func repoCheckCredentials(live *Live, o *Object, scalar []Change) error {
 	}
 
 	if retarget {
-		return fmt.Errorf("update repository %q: changing upstream_url origin or upstream_username makes the server drop the stored upstream_password; re-run with --force-secrets to send it again: %w", live.Key, errRepositoryInvalid)
+		return fmt.Errorf(
+			"update repository %q: changing upstream_url origin or upstream_username makes the server drop the stored "+
+				"upstream_password; re-run with --force-secrets to send it again: %w",
+			live.Key,
+			errRepositoryInvalid,
+		)
 	}
 
 	return nil

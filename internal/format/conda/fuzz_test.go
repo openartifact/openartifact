@@ -203,7 +203,8 @@ func FuzzParsePackageIndex(f *testing.F) {
 
 		// A value is parsed the same whether it is the only field or one of many.
 		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) != nil && (idx.BuildNumber != 0 || idx.Timestamp != 0 || idx.License != "" || len(idx.Depends) != 0 || string(idx.Extra) != "{}") {
+		if json.Unmarshal(raw, &fields) != nil &&
+			(idx.BuildNumber != 0 || idx.Timestamp != 0 || idx.License != "" || len(idx.Depends) != 0 || string(idx.Extra) != "{}") {
 			t.Fatalf("%q is not an object but parsed as %+v", raw, idx)
 		}
 	})
@@ -322,7 +323,10 @@ func FuzzUploadRoundTrip(f *testing.F) {
 
 		target := (&url.URL{Path: "/repos/myrepo/" + platform + "/" + filename}).EscapedPath()
 
-		if del := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodDelete, target, nil)); del.Code != http.StatusNoContent {
+		if del := formattest.Do(
+			h.RegisterRepoRoutes,
+			formattest.Request(http.MethodDelete, target, nil),
+		); del.Code != http.StatusNoContent {
 			t.Fatalf("delete of %q answered %d", target, del.Code)
 		}
 

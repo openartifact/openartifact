@@ -134,10 +134,22 @@ func TestImportCargoYankedFromIndexEndpoint(t *testing.T) {
 }
 
 func TestImportCargoYankedFromProperty(t *testing.T) {
-	arti := cargoArtifactory(t,
-		fakeFile{path: "crates/a/a-1.0.0.crate", data: simpleCrate(t, "a", "1.0.0"), created: artiStamp, props: map[string][]string{"cargo.yanked": {"true"}}},
-		fakeFile{path: "crates/a/a-1.1.0.crate", data: simpleCrate(t, "a", "1.1.0"), created: artiStamp, props: map[string][]string{"cargo.yanked": {"false"}}},
-		fakeFile{path: "crates/a/a-1.2.0.crate", data: simpleCrate(t, "a", "1.2.0"), created: artiStamp})
+	arti := cargoArtifactory(
+		t,
+		fakeFile{
+			path:    "crates/a/a-1.0.0.crate",
+			data:    simpleCrate(t, "a", "1.0.0"),
+			created: artiStamp,
+			props:   map[string][]string{"cargo.yanked": {"true"}},
+		},
+		fakeFile{
+			path:    "crates/a/a-1.1.0.crate",
+			data:    simpleCrate(t, "a", "1.1.0"),
+			created: artiStamp,
+			props:   map[string][]string{"cargo.yanked": {"false"}},
+		},
+		fakeFile{path: "crates/a/a-1.2.0.crate", data: simpleCrate(t, "a", "1.2.0"), created: artiStamp},
+	)
 	oa := cargoOA(t)
 
 	rep := runImportTest(t, cargoCfg(t, "artifactory", arti), arti, oa)
@@ -251,8 +263,15 @@ func TestImportCargoDryRunDoesNotYank(t *testing.T) {
 }
 
 func TestImportCargoYankRefusedIsReported(t *testing.T) {
-	arti := cargoArtifactory(t,
-		fakeFile{path: "crates/a/a-1.0.0.crate", data: simpleCrate(t, "a", "1.0.0"), created: artiStamp, props: map[string][]string{"cargo.yanked": {"true"}}})
+	arti := cargoArtifactory(
+		t,
+		fakeFile{
+			path:    "crates/a/a-1.0.0.crate",
+			data:    simpleCrate(t, "a", "1.0.0"),
+			created: artiStamp,
+			props:   map[string][]string{"cargo.yanked": {"true"}},
+		},
+	)
 	oa := cargoOA(t)
 	cargoFakeState(oa).yankStatus = 409
 
@@ -336,7 +355,11 @@ func TestImportCargoIndexPath(t *testing.T) {
 }
 
 func TestImportCargoIndexURLs(t *testing.T) {
-	a := sourceAsset{Repo: "cargo-local", Path: "crates/demo/demo-1.0.0.crate", URL: "http://arti.example:8081/artifactory/cargo-local/crates/demo/demo-1.0.0.crate"}
+	a := sourceAsset{
+		Repo: "cargo-local",
+		Path: "crates/demo/demo-1.0.0.crate",
+		URL:  "http://arti.example:8081/artifactory/cargo-local/crates/demo/demo-1.0.0.crate",
+	}
 
 	want := []string{
 		"http://arti.example:8081/artifactory/api/cargo/cargo-local/index/de/mo/demo",

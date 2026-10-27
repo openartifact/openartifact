@@ -201,10 +201,20 @@ func TestAdminHandlers_RejectNonAdminSession(t *testing.T) {
 		{groupsRouter, "GET", "/api/v1/groups", ""},
 		{groupsRouter, "POST", "/api/v1/groups", `{"name":"evil"}`},
 		{groupsRouter, "POST", "/api/v1/groups/67073eed-f57d-56d9-8782-704cd33325ea/members/7a4dbbc3-3291-5713-8acd-d8de34f3e7a7", ""},
-		{groupsRouter, "PUT", "/api/v1/groups/67073eed-f57d-56d9-8782-704cd33325ea/members", `{"members":["7a4dbbc3-3291-5713-8acd-d8de34f3e7a7"]}`},
+		{
+			groupsRouter,
+			"PUT",
+			"/api/v1/groups/67073eed-f57d-56d9-8782-704cd33325ea/members",
+			`{"members":["7a4dbbc3-3291-5713-8acd-d8de34f3e7a7"]}`,
+		},
 		{permsRouter, "GET", "/api/v1/permission-targets", ""},
 		{permsRouter, "POST", "/api/v1/permission-targets", `{"name":"x","repository_filter":"*","path_pattern":"*","actions":["manage"]}`},
-		{permsRouter, "POST", "/api/v1/permission-targets/981948bd-de8f-5c65-b90b-23d72cf37aab/assignments", `{"principal_type":"user","principal_id":"7a4dbbc3-3291-5713-8acd-d8de34f3e7a7"}`},
+		{
+			permsRouter,
+			"POST",
+			"/api/v1/permission-targets/981948bd-de8f-5c65-b90b-23d72cf37aab/assignments",
+			`{"principal_type":"user","principal_id":"7a4dbbc3-3291-5713-8acd-d8de34f3e7a7"}`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -267,18 +277,21 @@ func TestAdminPermissions_CreateValidation(t *testing.T) {
 	router, _ := setupPermissionsRouter(t, db)
 
 	bad := map[string]string{
-		"empty path pattern":      `{"name":"a","repository_filter":"app","path_pattern":"","actions":["read"]}`,
-		"missing path pattern":    `{"name":"a","repository_filter":"app","actions":["read"]}`,
-		"empty repo filter":       `{"name":"a","repository_filter":"","path_pattern":"*","actions":["read"]}`,
-		"whitespace pattern":      `{"name":"a","repository_filter":"  ","path_pattern":"*","actions":["read"]}`,
-		"missing name":            `{"repository_filter":"app","path_pattern":"*","actions":["read"]}`,
-		"empty actions":           `{"name":"a","repository_filter":"app","path_pattern":"*","actions":[]}`,
-		"missing actions":         `{"name":"a","repository_filter":"app","path_pattern":"*"}`,
-		"unknown action":          `{"name":"a","repository_filter":"app","path_pattern":"*","actions":["root"]}`,
-		"invalid repo regex":      `{"name":"a","repository_filter":"(","path_pattern":"*","actions":["read"]}`,
-		"invalid path regex":      `{"name":"a","repository_filter":"app","path_pattern":"[","actions":["read"]}`,
-		"only name and actions":   `{"name":"a","actions":["read","write","delete","manage"]}`,
-		"name too long":           `{"name":"` + strings.Repeat("n", 200) + `","repository_filter":"app","path_pattern":"*","actions":["read"]}`,
+		"empty path pattern":    `{"name":"a","repository_filter":"app","path_pattern":"","actions":["read"]}`,
+		"missing path pattern":  `{"name":"a","repository_filter":"app","actions":["read"]}`,
+		"empty repo filter":     `{"name":"a","repository_filter":"","path_pattern":"*","actions":["read"]}`,
+		"whitespace pattern":    `{"name":"a","repository_filter":"  ","path_pattern":"*","actions":["read"]}`,
+		"missing name":          `{"repository_filter":"app","path_pattern":"*","actions":["read"]}`,
+		"empty actions":         `{"name":"a","repository_filter":"app","path_pattern":"*","actions":[]}`,
+		"missing actions":       `{"name":"a","repository_filter":"app","path_pattern":"*"}`,
+		"unknown action":        `{"name":"a","repository_filter":"app","path_pattern":"*","actions":["root"]}`,
+		"invalid repo regex":    `{"name":"a","repository_filter":"(","path_pattern":"*","actions":["read"]}`,
+		"invalid path regex":    `{"name":"a","repository_filter":"app","path_pattern":"[","actions":["read"]}`,
+		"only name and actions": `{"name":"a","actions":["read","write","delete","manage"]}`,
+		"name too long": `{"name":"` + strings.Repeat(
+			"n",
+			200,
+		) + `","repository_filter":"app","path_pattern":"*","actions":["read"]}`,
 		"duplicate of seed admin": `{"name":"admin-all","repository_filter":"*","path_pattern":"*","actions":["read"]}`,
 	}
 
@@ -525,7 +538,13 @@ func TestAdminTokens_OwnershipChecks(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if rw = doJSON(router, "POST", "/api/v1/users/"+alice.ID+"/tokens", `{"name":"steal","kind":"access"}`, bobP); rw.Code != http.StatusForbidden {
+	if rw = doJSON(
+		router,
+		"POST",
+		"/api/v1/users/"+alice.ID+"/tokens",
+		`{"name":"steal","kind":"access"}`,
+		bobP,
+	); rw.Code != http.StatusForbidden {
 		t.Errorf("minting for another user as non-admin: expected 403, got %d", rw.Code)
 	}
 
@@ -585,7 +604,13 @@ func TestTokens_ScopeAndInputValidation(t *testing.T) {
 		t.Fatalf("assign: %v", err)
 	}
 
-	rw := doJSON(router, "POST", "/api/v1/auth/tokens", `{"name":"scoped","kind":"access","scopes":["981948bd-de8f-5c65-b90b-23d72cf37aab"]}`, principal)
+	rw := doJSON(
+		router,
+		"POST",
+		"/api/v1/auth/tokens",
+		`{"name":"scoped","kind":"access","scopes":["981948bd-de8f-5c65-b90b-23d72cf37aab"]}`,
+		principal,
+	)
 	if rw.Code != http.StatusCreated {
 		t.Errorf("held scope: expected 201, got %d (%s)", rw.Code, rw.Body.String())
 	}
@@ -594,7 +619,13 @@ func TestTokens_ScopeAndInputValidation(t *testing.T) {
 	adminDB := newMockDatabase()
 	adminRouter, adminP := setupAdminTokensRouter(t, adminDB)
 
-	rw = doJSON(adminRouter, "POST", "/api/v1/users/"+*adminP.UserID+"/tokens", `{"name":"t","kind":"access","scopes":["790201a0-c7e6-58d2-9cf7-4802241e1e6d"]}`, adminP)
+	rw = doJSON(
+		adminRouter,
+		"POST",
+		"/api/v1/users/"+*adminP.UserID+"/tokens",
+		`{"name":"t","kind":"access","scopes":["790201a0-c7e6-58d2-9cf7-4802241e1e6d"]}`,
+		adminP,
+	)
 	if rw.Code != http.StatusBadRequest {
 		t.Errorf("admin unknown scope: expected 400, got %d (%s)", rw.Code, rw.Body.String())
 	}

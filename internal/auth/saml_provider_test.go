@@ -114,7 +114,14 @@ func TestLoadSAMLProviderRow_ServiceProviderSetup(t *testing.T) {
 	ctx := context.Background()
 	base := models.SAMLConfig{IDPMetadataURL: testMetadataURL}
 
-	strictOnly, err := LoadSAMLProviderRow(ctx, store, samlProviderRow(t, "strict", base, clock.now()), "https://oa.example.com", &config.Config{}, nil)
+	strictOnly, err := LoadSAMLProviderRow(
+		ctx,
+		store,
+		samlProviderRow(t, "strict", base, clock.now()),
+		"https://oa.example.com",
+		&config.Config{},
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +146,14 @@ func TestLoadSAMLProviderRow_ServiceProviderSetup(t *testing.T) {
 	enabled := base
 	enabled.AllowIDPInitiated = true
 
-	both, err := LoadSAMLProviderRow(ctx, store, samlProviderRow(t, "both", enabled, clock.now()), "https://oa.example.com", &config.Config{}, nil)
+	both, err := LoadSAMLProviderRow(
+		ctx,
+		store,
+		samlProviderRow(t, "both", enabled, clock.now()),
+		"https://oa.example.com",
+		&config.Config{},
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -250,7 +250,8 @@ func TestServeMigrateOnStartDisabledLeavesSchemaAlone(t *testing.T) {
 	}
 
 	var tables int
-	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM information_schema.tables WHERE table_schema='public'`).Scan(&tables); err != nil {
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM information_schema.tables WHERE table_schema='public'`).
+		Scan(&tables); err != nil {
 		t.Fatal(err)
 	}
 

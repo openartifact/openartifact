@@ -175,7 +175,17 @@ func (h *Handler[A]) handleDownload(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	if r.Method != http.MethodHead && h.TryPresign(w, r, presign.Blob{SHA256: row.BlobKey, Size: row.SizeBytes, Filename: path.Base(cur.Filename), ContentType: "application/octet-stream"}) {
+	if r.Method != http.MethodHead &&
+		h.TryPresign(
+			w,
+			r,
+			presign.Blob{
+				SHA256:      row.BlobKey,
+				Size:        row.SizeBytes,
+				Filename:    path.Base(cur.Filename),
+				ContentType: "application/octet-stream",
+			},
+		) {
 		return
 	}
 

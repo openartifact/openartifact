@@ -132,7 +132,12 @@ func TestOIDC_CallbackHappyPath_CreatesSession(t *testing.T) {
 
 	router := setupOIDCRouter(t, db, "http://localhost:8080")
 
-	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/oidc/test/callback?code=valid-code-1&state=test-state-xyz", nil)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"GET",
+		"/api/v1/auth/sso/oidc/test/callback?code=valid-code-1&state=test-state-xyz",
+		nil,
+	)
 	req.AddCookie(&http.Cookie{Name: "oa_oidc_pkce_test", Value: "fake-verifier"})
 	req.AddCookie(&http.Cookie{Name: "oa_oidc_state_test", Value: "test-state-xyz"})
 	req.AddCookie(&http.Cookie{Name: "oa_oidc_nonce_test", Value: nonce})
@@ -172,7 +177,12 @@ func TestOIDC_Callback_StateMismatch(t *testing.T) {
 
 	router := setupOIDCRouter(t, db, "http://localhost:8080")
 
-	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/oidc/test/callback?code=some-code&state=wrong-state", nil)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"GET",
+		"/api/v1/auth/sso/oidc/test/callback?code=some-code&state=wrong-state",
+		nil,
+	)
 	req.AddCookie(&http.Cookie{Name: "oa_oidc_pkce_test", Value: "fake-verifier"})
 	req.AddCookie(&http.Cookie{Name: "oa_oidc_state_test", Value: "correct-state"})
 	req.AddCookie(&http.Cookie{Name: "oa_oidc_nonce_test", Value: "some-nonce"})

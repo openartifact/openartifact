@@ -108,7 +108,14 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 // serveMerged answers the requests a group of a version-merging format
 // (maven, pypi, npm, helm, cargo, go, nuget, deb, rpm) merges over its members; false
 // means the request is a plain first-hit one.
-func (h *Handler) serveMerged(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, relPath string, be Backend) bool {
+func (h *Handler) serveMerged(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	readable []*models.Repository,
+	relPath string,
+	be Backend,
+) bool {
 	switch grp.Format {
 	case "maven":
 		base, suffix, ok := mavenMetadataPath(relPath)
@@ -185,7 +192,13 @@ func (h *Handler) serveFirstHit(w http.ResponseWriter, r *http.Request, members 
 
 // serveFirstHitAs is serveFirstHit for formats whose member paths differ by
 // member type: pathFor returns the path to ask each member for.
-func (h *Handler) serveFirstHitAs(w http.ResponseWriter, r *http.Request, members []*models.Repository, pathFor func(*models.Repository) string, be Backend) {
+func (h *Handler) serveFirstHitAs(
+	w http.ResponseWriter,
+	r *http.Request,
+	members []*models.Repository,
+	pathFor func(*models.Repository) string,
+	be Backend,
+) {
 	served, memberFailed := firstHit(w, r, members, pathFor, be)
 
 	switch {
@@ -201,7 +214,13 @@ func (h *Handler) serveFirstHitAs(w http.ResponseWriter, r *http.Request, member
 // 404 nor a 5xx to w; served reports that one did. memberFailed reports that a
 // member answered with a 5xx on the way (so a missing file may still exist).
 // It writes nothing when served is false.
-func firstHit(w http.ResponseWriter, r *http.Request, members []*models.Repository, pathFor func(*models.Repository) string, be Backend) (bool, bool) {
+func firstHit(
+	w http.ResponseWriter,
+	r *http.Request,
+	members []*models.Repository,
+	pathFor func(*models.Repository) string,
+	be Backend,
+) (bool, bool) {
 	memberFailed := false
 
 	for _, m := range members {

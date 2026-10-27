@@ -225,19 +225,45 @@ func TestBundleAuthzCreateAndOwnership(t *testing.T) {
 	db.grant("other-id", "src", "read")
 
 	// A caller that can read nothing may not create drafts.
-	expectStatus(t, "create without any read access", nobody.do(t, h, http.MethodPost, "/api/v1/bundles", `{"name":"b","version":"1"}`), http.StatusForbidden)
-	expectStatus(t, "create as ci", ci.do(t, h, http.MethodPost, "/api/v1/bundles", `{"name":"b","version":"1","pipeline":"release"}`), http.StatusCreated)
+	expectStatus(
+		t,
+		"create without any read access",
+		nobody.do(t, h, http.MethodPost, "/api/v1/bundles", `{"name":"b","version":"1"}`),
+		http.StatusForbidden,
+	)
+	expectStatus(
+		t,
+		"create as ci",
+		ci.do(t, h, http.MethodPost, "/api/v1/bundles", `{"name":"b","version":"1","pipeline":"release"}`),
+		http.StatusCreated,
+	)
 
 	if got := db.bundles["b/1"]; got == nil || got.CreatedBy != "ci" || got.PipelineID == nil || *got.PipelineID != authzPipeID {
 		t.Fatalf("stored bundle = %+v, want created by ci with pipeline", got)
 	}
 
-	expectStatus(t, "unknown pipeline name", ci.do(t, h, http.MethodPost, "/api/v1/bundles", `{"name":"c","version":"1","pipeline":"nope"}`), http.StatusBadRequest)
+	expectStatus(
+		t,
+		"unknown pipeline name",
+		ci.do(t, h, http.MethodPost, "/api/v1/bundles", `{"name":"c","version":"1","pipeline":"nope"}`),
+		http.StatusBadRequest,
+	)
 
 	// The owner adds items from a repository it can read, but not from one it cannot.
-	expectStatus(t, "add from readable repo", ci.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", authzItemBody(authzSrcID)), http.StatusCreated)
+	expectStatus(
+		t,
+		"add from readable repo",
+		ci.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", authzItemBody(authzSrcID)),
+		http.StatusCreated,
+	)
 
-	rw := ci.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", `{"items":[{"source_repo_id":"`+authzOtherID+`","sha256":"`+strings.Repeat("b", 64)+`","artifact_path":"y"}]}`)
+	rw := ci.do(
+		t,
+		h,
+		http.MethodPost,
+		"/api/v1/bundles/b/1/items",
+		`{"items":[{"source_repo_id":"`+authzOtherID+`","sha256":"`+strings.Repeat("b", 64)+`","artifact_path":"y"}]}`,
+	)
 	expectStatus(t, "add from unreadable repo", rw, http.StatusBadRequest)
 
 	if !strings.Contains(rw.Body.String(), "does not reference an existing repository") {
@@ -247,7 +273,12 @@ func TestBundleAuthzCreateAndOwnership(t *testing.T) {
 	// Somebody who can read the sources sees the bundle but may not change it.
 	expectStatus(t, "view by reader of sources", other.do(t, h, http.MethodGet, "/api/v1/bundles/b/1", ""), http.StatusOK)
 	expectStatus(t, "items by reader of sources", other.do(t, h, http.MethodGet, "/api/v1/bundles/b/1/items", ""), http.StatusOK)
-	expectStatus(t, "add items by non-owner", other.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", authzItemBody(authzSrcID)), http.StatusForbidden)
+	expectStatus(
+		t,
+		"add items by non-owner",
+		other.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", authzItemBody(authzSrcID)),
+		http.StatusForbidden,
+	)
 	expectStatus(t, "seal by non-owner", other.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/seal", ""), http.StatusForbidden)
 	expectStatus(t, "delete by non-owner", other.do(t, h, http.MethodDelete, "/api/v1/bundles/b/1", ""), http.StatusForbidden)
 
@@ -263,7 +294,18 @@ func TestBundleAuthzCreateAndOwnership(t *testing.T) {
 	expectStatus(t, "list by admin", admin.do(t, h, http.MethodGet, "/api/v1/bundles", ""), http.StatusOK)
 
 	// An administrator may reference any repository and change any bundle.
-	expectStatus(t, "admin adds from any repo", admin.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", `{"items":[{"source_repo_id":"`+authzOtherID+`","sha256":"`+strings.Repeat("c", 64)+`","artifact_path":"z"}]}`), http.StatusCreated)
+	expectStatus(
+		t,
+		"admin adds from any repo",
+		admin.do(
+			t,
+			h,
+			http.MethodPost,
+			"/api/v1/bundles/b/1/items",
+			`{"items":[{"source_repo_id":"`+authzOtherID+`","sha256":"`+strings.Repeat("c", 64)+`","artifact_path":"z"}]}`,
+		),
+		http.StatusCreated,
+	)
 
 	// The owner lost read on a source repository added by an administrator: it
 	// cannot seal what it cannot read.
@@ -293,7 +335,14 @@ func TestBundleAuthzPromote(t *testing.T) {
 	h := newAuthzHandler(t, db)
 
 	pipe := authzPipeID
-	db.bundles["b/1"] = &models.ReleaseBundle{ID: "cccccccc-0000-4000-8000-000000000099", Name: "b", Version: "1", State: models.BundleStateSealed, PipelineID: &pipe, CreatedBy: "owner"}
+	db.bundles["b/1"] = &models.ReleaseBundle{
+		ID:         "cccccccc-0000-4000-8000-000000000099",
+		Name:       "b",
+		Version:    "1",
+		State:      models.BundleStateSealed,
+		PipelineID: &pipe,
+		CreatedBy:  "owner",
+	}
 	db.items[db.bundles["b/1"].ID] = []*models.ReleaseBundleItem{{SourceRepoID: authzSrcID, SHA256: strings.Repeat("a", 64)}}
 
 	body := `{"to_stage":"prod","target_repo":"target"}`
@@ -305,13 +354,31 @@ func TestBundleAuthzPromote(t *testing.T) {
 		want   int
 		hint   string
 	}{
-		{"read sources and write target", map[string][]string{"src": {"read"}, "target": {"write"}}, "u1", http.StatusConflict, "pipeline no longer exists"},
+		{
+			"read sources and write target",
+			map[string][]string{"src": {"read"}, "target": {"write"}},
+			"u1",
+			http.StatusConflict,
+			"pipeline no longer exists",
+		},
 		{"write only on target", map[string][]string{"target": {"read", "write"}}, "u2", http.StatusNotFound, "bundle not found"},
 		{"read sources only", map[string][]string{"src": {"read"}}, "u3", http.StatusNotFound, "target repository not found"},
-		{"read sources and read target", map[string][]string{"src": {"read"}, "target": {"read"}}, "u4", http.StatusForbidden, "write access to the target"},
+		{
+			"read sources and read target",
+			map[string][]string{"src": {"read"}, "target": {"read"}},
+			"u4",
+			http.StatusForbidden,
+			"write access to the target",
+		},
 		{"write target but no read on sources", map[string][]string{"target": {"write"}}, "u5", http.StatusNotFound, "bundle not found"},
 		{"no access", nil, "u6", http.StatusNotFound, "bundle not found"},
-		{"owner without read on sources", map[string][]string{"target": {"write"}}, "owner", http.StatusForbidden, "read access to every source"},
+		{
+			"owner without read on sources",
+			map[string][]string{"target": {"write"}},
+			"owner",
+			http.StatusForbidden,
+			"read access to every source",
+		},
 	}
 
 	for _, tt := range tests {

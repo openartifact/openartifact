@@ -115,7 +115,9 @@ func (e *cleanupQuotaEnv) pkg(repoID, format, name, version string, size, ageDay
 	// Reserve first, as an upload does: the row insert then consumes the
 	// reservation's pending entry.
 	var blobBytes int64
-	if err := e.pg.GetDB().QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, blobID).Scan(&blobBytes); err != nil {
+	if err := e.pg.GetDB().
+		QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, blobID).
+		Scan(&blobBytes); err != nil {
 		e.t.Fatalf("blob size: %v", err)
 	}
 
@@ -187,7 +189,8 @@ func (e *cleanupQuotaEnv) usage(repoID string) (int64, int64) {
 
 	err := e.pg.GetDB().QueryRowContext(context.Background(),
 		`SELECT COALESCE(SUM(current_size_bytes), 0), COALESCE(SUM(current_artifact_count), 0) FROM storage_quotas WHERE repository_id = $1`, repoID,
-	).Scan(&size, &count)
+	).
+		Scan(&size, &count)
 	if err != nil {
 		e.t.Fatalf("read usage: %v", err)
 	}
@@ -218,7 +221,11 @@ func TestCleanupPolicyReleasesQuota(t *testing.T) {
 
 			got := e.runPolicy(repoID, 1)
 			if got.LastRunError != "" || got.LastRunDeleted == nil || *got.LastRunDeleted != 2 {
-				t.Fatalf("policy run: deleted = %v, error = %q; want 2 deleted (the two older pkg versions), no error", got.LastRunDeleted, got.LastRunError)
+				t.Fatalf(
+					"policy run: deleted = %v, error = %q; want 2 deleted (the two older pkg versions), no error",
+					got.LastRunDeleted,
+					got.LastRunError,
+				)
 			}
 
 			wantAfter := newBytes + otherBytes

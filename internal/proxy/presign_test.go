@@ -76,7 +76,13 @@ func TestServe_MetadataIsNeverRedirected(t *testing.T) {
 		for range 2 {
 			w := f.do(http.MethodGet, key)
 			if w.Code != http.StatusOK || w.Header().Get("Location") != "" || w.Body.String() != "<metadata/>" {
-				t.Fatalf("%s: status %d, Location %q, body %q; want the streamed file", key, w.Code, w.Header().Get("Location"), w.Body.String())
+				t.Fatalf(
+					"%s: status %d, Location %q, body %q; want the streamed file",
+					key,
+					w.Code,
+					w.Header().Get("Location"),
+					w.Body.String(),
+				)
 			}
 		}
 	}

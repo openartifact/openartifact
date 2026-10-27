@@ -186,9 +186,21 @@ func TestNuGetPackage(t *testing.T) {
 		want         []string
 	}{
 		{"expression", nuspec(`<license type="expression">MIT</license>`), []string{"MIT"}},
-		{"expression wins over licenseUrl", nuspec(`<license type="expression">MIT</license><licenseUrl>https://licenses.nuget.org/GPL-3.0-only</licenseUrl>`), []string{"MIT"}},
-		{"nuget.org licenseUrl", nuspec(`<licenseUrl>https://licenses.nuget.org/Apache-2.0%20OR%20MIT</licenseUrl>`), []string{"Apache-2.0 OR MIT"}},
-		{"canonical licenseUrl", nuspec(`<licenseUrl>http://www.apache.org/licenses/LICENSE-2.0.html</licenseUrl>`), []string{"Apache-2.0"}},
+		{
+			"expression wins over licenseUrl",
+			nuspec(`<license type="expression">MIT</license><licenseUrl>https://licenses.nuget.org/GPL-3.0-only</licenseUrl>`),
+			[]string{"MIT"},
+		},
+		{
+			"nuget.org licenseUrl",
+			nuspec(`<licenseUrl>https://licenses.nuget.org/Apache-2.0%20OR%20MIT</licenseUrl>`),
+			[]string{"Apache-2.0 OR MIT"},
+		},
+		{
+			"canonical licenseUrl",
+			nuspec(`<licenseUrl>http://www.apache.org/licenses/LICENSE-2.0.html</licenseUrl>`),
+			[]string{"Apache-2.0"},
+		},
 		{"unknown licenseUrl names no license", nuspec(`<licenseUrl>https://example.com/eula</licenseUrl>`), nil},
 		{"file license", nuspec(`<license type="file">LICENSE.txt</license>`), nil},
 		{"none", nuspec(``), nil},

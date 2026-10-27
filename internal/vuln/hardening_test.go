@@ -594,7 +594,8 @@ func TestStatus_InstalledBinaryGoneIsReportedAsFailedNotInstalling(t *testing.T)
 	}
 
 	st := statusByName(t, r, "trivy")
-	if st.Available || st.InstallState != InstallStateFailed || st.Code != CodeScannerInstallFailed || !strings.Contains(st.Message, "missing") {
+	if st.Available || st.InstallState != InstallStateFailed || st.Code != CodeScannerInstallFailed ||
+		!strings.Contains(st.Message, "missing") {
 		t.Errorf("status = %+v, want a failed install that asks for a restart", st)
 	}
 }
@@ -658,7 +659,8 @@ func TestNewRegistry_RefusesAutoInstallIntoTheSharedTempDirectory(t *testing.T) 
 
 	for _, name := range []string{"trivy", "grype"} {
 		st := statusByName(t, r, name)
-		if st.Code != CodeScannerInstallFailed || st.InstallState != InstallStateFailed || !strings.Contains(st.Message, "OPENARTIFACT_SCANNER_CACHE_DIR") {
+		if st.Code != CodeScannerInstallFailed || st.InstallState != InstallStateFailed ||
+			!strings.Contains(st.Message, "OPENARTIFACT_SCANNER_CACHE_DIR") {
 			t.Errorf("%s status = %+v", name, st)
 		}
 	}

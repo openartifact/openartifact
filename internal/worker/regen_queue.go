@@ -376,7 +376,17 @@ func (q *regenQueue[K]) retryLocked(key K, e *regenEntry) bool {
 func (q *regenQueue[K]) runSafe(key K) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			q.log.Errorw("panic in metadata regeneration", "format", q.format, "key", fmt.Sprint(key), "panic", r, "stack", string(debug.Stack()))
+			q.log.Errorw(
+				"panic in metadata regeneration",
+				"format",
+				q.format,
+				"key",
+				fmt.Sprint(key),
+				"panic",
+				r,
+				"stack",
+				string(debug.Stack()),
+			)
 
 			err = fmt.Errorf("%w: %v", errRegenPanic, r)
 		}

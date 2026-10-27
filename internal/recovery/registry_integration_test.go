@@ -114,7 +114,12 @@ func TestRegistryCoversSchema(t *testing.T) {
 	t.Run("registry columns exist and generated ones are excluded", func(t *testing.T) {
 		for i := range Tables {
 			tbl := &Tables[i]
-			cols := queryStrings(t, db, `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1`, tbl.Name)
+			cols := queryStrings(
+				t,
+				db,
+				`SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1`,
+				tbl.Name,
+			)
 
 			if len(cols) == 0 {
 				t.Errorf("table %s does not exist", tbl.Name)
@@ -150,7 +155,11 @@ func TestRegistryCoversSchema(t *testing.T) {
 	t.Run("parents come before children", func(t *testing.T) { checkParentOrder(t, db) })
 
 	t.Run("every journaled table has the journal trigger", func(t *testing.T) {
-		have := queryStrings(t, db, `SELECT c.relname FROM pg_trigger g JOIN pg_class c ON c.oid = g.tgrelid WHERE g.tgname = 'recovery_journal' AND NOT g.tgisinternal`)
+		have := queryStrings(
+			t,
+			db,
+			`SELECT c.relname FROM pg_trigger g JOIN pg_class c ON c.oid = g.tgrelid WHERE g.tgname = 'recovery_journal' AND NOT g.tgisinternal`,
+		)
 
 		for _, tbl := range Tables {
 			if !slices.Contains(have, tbl.Name) {

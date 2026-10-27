@@ -35,7 +35,8 @@ func TestNPMGroup_MergeFollowsMemberDocuments(t *testing.T) {
 	f.set("mirror", "lib", 200, packument(t, "mirror", "lib", map[string]string{"2.0.0": "BBB2"}, map[string]string{"latest": "2.0.0"}))
 
 	first, again := f.get(http.MethodGet, "lib"), f.get(http.MethodGet, "lib")
-	if first.Code != http.StatusOK || !bytes.Equal(first.Body.Bytes(), again.Body.Bytes()) || first.Header().Get("ETag") != again.Header().Get("ETag") {
+	if first.Code != http.StatusOK || !bytes.Equal(first.Body.Bytes(), again.Body.Bytes()) ||
+		first.Header().Get("ETag") != again.Header().Get("ETag") {
 		t.Fatalf("repeat request differs: %d, etags %q %q", first.Code, first.Header().Get("ETag"), again.Header().Get("ETag"))
 	}
 
@@ -45,7 +46,12 @@ func TestNPMGroup_MergeFollowsMemberDocuments(t *testing.T) {
 	}
 
 	// A member publishes: a client holding the old validator gets the new merge.
-	f.set("hosted", "lib", 200, packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA", "1.1.0": "AAA1"}, map[string]string{"latest": "1.1.0"}))
+	f.set(
+		"hosted",
+		"lib",
+		200,
+		packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA", "1.1.0": "AAA1"}, map[string]string{"latest": "1.1.0"}),
+	)
 
 	changed := getNPMWith(f, "lib", map[string]string{"If-None-Match": etag})
 	if changed.Code != http.StatusOK || changed.Header().Get("ETag") == etag || !strings.Contains(changed.Body.String(), `"1.1.0"`) {
@@ -65,7 +71,12 @@ func TestNPMGroup_RevalidationAndGzip(t *testing.T) {
 
 	plain := f.get(http.MethodGet, "lib")
 
-	if rec := getNPMWith(f, "lib", map[string]string{"If-None-Match": plain.Header().Get("ETag")}); rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+	if rec := getNPMWith(
+		f,
+		"lib",
+		map[string]string{"If-None-Match": plain.Header().Get("ETag")},
+	); rec.Code != http.StatusNotModified ||
+		rec.Body.Len() != 0 {
 		t.Errorf("revalidation = %d with %d body bytes, want 304 and none", rec.Code, rec.Body.Len())
 	}
 

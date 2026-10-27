@@ -151,7 +151,12 @@ func TestRun_Outcomes(t *testing.T) {
 func TestRun_FailedScannersNeverNil(t *testing.T) {
 	log, _ := logger.New("error", "json", "stderr")
 
-	out := Run(context.Background(), log, []ScannerBackend{stubBackend{name: "osv"}}, Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"})
+	out := Run(
+		context.Background(),
+		log,
+		[]ScannerBackend{stubBackend{name: "osv"}},
+		Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"},
+	)
 
 	if out.FailedScanners() == nil {
 		t.Error("FailedScanners must be an empty slice, not nil, so it serializes as []")
@@ -165,7 +170,11 @@ func TestClassify(t *testing.T) {
 		want FailureKind
 	}{
 		{"typed error keeps its kind", &ScanError{Scanner: "x", Kind: FailureExecution}, FailureExecution},
-		{"wrapped typed error keeps its kind", errors.Join(errors.New("ctx"), &ScanError{Scanner: "x", Kind: FailureUpstream}), FailureUpstream},
+		{
+			"wrapped typed error keeps its kind",
+			errors.Join(errors.New("ctx"), &ScanError{Scanner: "x", Kind: FailureUpstream}),
+			FailureUpstream,
+		},
 		{"deadline", context.DeadlineExceeded, FailureTimeout},
 		{"canceled", context.Canceled, FailureCanceled},
 		{"output too large", ErrScannerOutputTooLarge, FailureOutputTooLarge},

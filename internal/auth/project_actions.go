@@ -130,7 +130,12 @@ func (e *Evaluator) ProjectRole(ctx context.Context, principal Principal, projec
 // given name: a global admin always passes (a missing project is then the
 // handler's 404); anybody else needs a role that is high enough, and a caller
 // without any role sees ProjectHidden whether or not the project exists.
-func (e *Evaluator) DecideProject(ctx context.Context, principal Principal, projectName string, action ProjectAction) (ProjectDecision, error) {
+func (e *Evaluator) DecideProject(
+	ctx context.Context,
+	principal Principal,
+	projectName string,
+	action ProjectAction,
+) (ProjectDecision, error) {
 	if controlPlaneBlocked(principal) {
 		return ProjectHidden, nil
 	}

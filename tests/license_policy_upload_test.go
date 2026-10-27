@@ -40,7 +40,13 @@ func blockAllowListPolicy() policytest.Case {
 func buildLicensedNPMPublishBody(t *testing.T, packageName, version string, extra map[string]any) []byte {
 	t.Helper()
 
-	return buildNPMPublishBodyWithTarball(t, packageName, version, buildTarballBytes(t, map[string]any{"name": packageName, "version": version}), extra)
+	return buildNPMPublishBodyWithTarball(
+		t,
+		packageName,
+		version,
+		buildTarballBytes(t, map[string]any{"name": packageName, "version": version}),
+		extra,
+	)
 }
 
 // buildNPMPublishBodyWithTarball publishes the given tarball with extra merged
@@ -117,7 +123,12 @@ func TestNPMPublish_LicensePolicy(t *testing.T) {
 
 				if c.Stopped() {
 					if len(bs.blobs) != 0 || len(db.npmVersions) != 0 || len(db.npmPackages) != 0 {
-						t.Errorf("rejected publish stored data: blobs=%d versions=%d packages=%d", len(bs.blobs), len(db.npmVersions), len(db.npmPackages))
+						t.Errorf(
+							"rejected publish stored data: blobs=%d versions=%d packages=%d",
+							len(bs.blobs),
+							len(db.npmVersions),
+							len(db.npmPackages),
+						)
 					}
 
 					return
@@ -147,9 +158,24 @@ func TestNPMPublish_LicensePolicyReadsTheTarball(t *testing.T) {
 		want     policytest.Outcome
 	}{
 		{"manifest has no license", map[string]any{"license": "GPL-3.0-only"}, nil, policytest.Blocked},
-		{"manifest claims MIT, tarball is GPL", map[string]any{"license": "GPL-3.0-only"}, map[string]any{"license": "MIT"}, policytest.Blocked},
-		{"manifest claims GPL, tarball is MIT", map[string]any{"license": "MIT"}, map[string]any{"license": "GPL-3.0-only"}, policytest.Admitted},
-		{"legacy licenses array in the tarball", map[string]any{"licenses": []any{map[string]any{"type": "GPL-3.0-only"}}}, nil, policytest.Blocked},
+		{
+			"manifest claims MIT, tarball is GPL",
+			map[string]any{"license": "GPL-3.0-only"},
+			map[string]any{"license": "MIT"},
+			policytest.Blocked,
+		},
+		{
+			"manifest claims GPL, tarball is MIT",
+			map[string]any{"license": "MIT"},
+			map[string]any{"license": "GPL-3.0-only"},
+			policytest.Admitted,
+		},
+		{
+			"legacy licenses array in the tarball",
+			map[string]any{"licenses": []any{map[string]any{"type": "GPL-3.0-only"}}},
+			nil,
+			policytest.Blocked,
+		},
 		{"tarball declares nothing: the manifest is the fallback", nil, map[string]any{"license": "GPL-3.0-only"}, policytest.Blocked},
 	}
 
@@ -164,12 +190,21 @@ func TestNPMPublish_LicensePolicyReadsTheTarball(t *testing.T) {
 			maps.Copy(pkgJSON, tc.tarball)
 
 			tarball := buildTarballBytes(t, pkgJSON)
-			rec := publishNPM(t, newLicensedNPMRouter(c.DB(db), bs), buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, tc.manifest))
+			rec := publishNPM(
+				t,
+				newLicensedNPMRouter(c.DB(db), bs),
+				buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, tc.manifest),
+			)
 
 			c.AssertResponse(t, rec.Code, rec.Body.Bytes())
 
 			if c.Stopped() && (len(bs.blobs) != 0 || len(db.npmVersions) != 0 || len(db.npmPackages) != 0) {
-				t.Errorf("rejected publish stored data: blobs=%d versions=%d packages=%d", len(bs.blobs), len(db.npmVersions), len(db.npmPackages))
+				t.Errorf(
+					"rejected publish stored data: blobs=%d versions=%d packages=%d",
+					len(bs.blobs),
+					len(db.npmVersions),
+					len(db.npmPackages),
+				)
 			}
 
 			if !c.Stopped() && len(db.npmVersions) != 1 {
@@ -184,8 +219,13 @@ func TestNPMPublish_RejectsUnsafeTarballs(t *testing.T) {
 		"two package.json files": archivetest.TarGz(t,
 			archivetest.File("package/package.json", `{"name":"lodash","version":"1.0.0","license":"MIT"}`),
 			archivetest.File("evil/package.json", `{"name":"lodash","version":"1.0.0","license":"GPL-3.0-only"}`)),
-		"oversized package.json": archivetest.TarGz(t,
-			archivetest.File("package/package.json", `{"name":"lodash","version":"1.0.0","license":"MIT","x":"`+strings.Repeat("A", 2<<20)+`"}`)),
+		"oversized package.json": archivetest.TarGz(
+			t,
+			archivetest.File(
+				"package/package.json",
+				`{"name":"lodash","version":"1.0.0","license":"MIT","x":"`+strings.Repeat("A", 2<<20)+`"}`,
+			),
+		),
 	}
 
 	for name, tarball := range tarballs {
@@ -194,7 +234,11 @@ func TestNPMPublish_RejectsUnsafeTarballs(t *testing.T) {
 			bs := newMockBlobStore()
 			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
-			rec := publishNPM(t, newLicensedNPMRouter(db, bs), buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, map[string]any{"license": "MIT"}))
+			rec := publishNPM(
+				t,
+				newLicensedNPMRouter(db, bs),
+				buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, map[string]any{"license": "MIT"}),
+			)
 
 			if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), licensepolicy.CodeMetadataUnsafe) {
 				t.Fatalf("want 422 %s, got %d: %s", licensepolicy.CodeMetadataUnsafe, rec.Code, rec.Body.String())
@@ -235,7 +279,13 @@ func newLicensedNPMRouter(db database.Database, bs *MockBlobStore) chi.Router {
 	return router
 }
 
-func uploadRPMWithLicense(t *testing.T, db database.Database, bs *MockBlobStore, pub *recordingPublisher, license string) *httptest.ResponseRecorder {
+func uploadRPMWithLicense(
+	t *testing.T,
+	db database.Database,
+	bs *MockBlobStore,
+	pub *recordingPublisher,
+	license string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	router := newRPMUploadRouter(t, db, bs, pub)
@@ -257,7 +307,12 @@ func TestRPMUpload_LicensePolicy(t *testing.T) {
 
 			if c.Stopped() {
 				if len(db.components) != 0 || len(bs.blobs) != 0 || len(pub.snapshot()) != 0 {
-					t.Errorf("rejected upload stored data: components=%d blobs=%d events=%d", len(db.components), len(bs.blobs), len(pub.snapshot()))
+					t.Errorf(
+						"rejected upload stored data: components=%d blobs=%d events=%d",
+						len(db.components),
+						len(bs.blobs),
+						len(pub.snapshot()),
+					)
 				}
 
 				return
@@ -268,7 +323,12 @@ func TestRPMUpload_LicensePolicy(t *testing.T) {
 			}
 
 			if len(db.components) != 1 || len(bs.blobs) != 1 || len(pub.snapshot()) != 1 {
-				t.Errorf("admitted upload not stored: components=%d blobs=%d events=%d", len(db.components), len(bs.blobs), len(pub.snapshot()))
+				t.Errorf(
+					"admitted upload not stored: components=%d blobs=%d events=%d",
+					len(db.components),
+					len(bs.blobs),
+					len(pub.snapshot()),
+				)
 			}
 		})
 	}
@@ -329,7 +389,12 @@ func TestMavenUpload_LicensePolicy(t *testing.T) {
 			}
 
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, base+".pom", bytes.NewReader(mavenPom("GPL-3.0-only")))
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPut,
+				base+".pom",
+				bytes.NewReader(mavenPom("GPL-3.0-only")),
+			)
 			router.ServeHTTP(rec, req)
 
 			c.AssertResponse(t, rec.Code, rec.Body.Bytes())

@@ -175,7 +175,18 @@ type rowScanner interface{ Scan(dest ...any) error }
 func scanEntry(r rowScanner) (Entry, error) {
 	var e Entry
 
-	err := r.Scan(&e.Seq, &e.UnitKey, &e.Kind, &e.Event, &e.Tombstone, &e.Stamp.Wall, &e.Stamp.Counter, &e.Stamp.Origin, &e.ContentRef, &e.ChangedAt)
+	err := r.Scan(
+		&e.Seq,
+		&e.UnitKey,
+		&e.Kind,
+		&e.Event,
+		&e.Tombstone,
+		&e.Stamp.Wall,
+		&e.Stamp.Counter,
+		&e.Stamp.Origin,
+		&e.ContentRef,
+		&e.ChangedAt,
+	)
 
 	return e, err
 }

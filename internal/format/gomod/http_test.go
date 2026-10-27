@@ -170,7 +170,13 @@ func TestUploadEmitsEventAndServesMultiSegmentModule(t *testing.T) {
 		t.Fatal("zip blob not stored")
 	}
 
-	if w := serve(router, http.MethodGet, "/repos/myrepo/"+testModule+"/@v/list", nil); w.Code != http.StatusOK || w.Body.String() != "v1.0.0" {
+	if w := serve(
+		router,
+		http.MethodGet,
+		"/repos/myrepo/"+testModule+"/@v/list",
+		nil,
+	); w.Code != http.StatusOK ||
+		w.Body.String() != "v1.0.0" {
 		t.Fatalf("list = %d %q", w.Code, w.Body.String())
 	}
 }
@@ -243,7 +249,9 @@ func TestZipWithInvalidHashFailsClosed(t *testing.T) {
 func TestZipQuarantine(t *testing.T) {
 	router, db, bs, _ := newTestRouter(t)
 	zipKey := strings.Repeat("ab", 32)
-	db.mods = []*models.GoModule{{ModulePath: testModule, Version: "v1.0.0", ZipBlobKey: zipKey, ZipHash: zipKey, ZipSizeBytes: 3, GoModContent: "module x"}}
+	db.mods = []*models.GoModule{
+		{ModulePath: testModule, Version: "v1.0.0", ZipBlobKey: zipKey, ZipHash: zipKey, ZipSizeBytes: 3, GoModContent: "module x"},
+	}
 	bs.Blobs[zipKey] = []byte("xyz")
 
 	url := "/repos/myrepo/" + testModule + "/@v/v1.0.0.zip"
@@ -343,7 +351,13 @@ func TestCaseEncodedModuleAndVersion(t *testing.T) {
 		t.Fatalf(".info = %d %q", w.Code, w.Body.String())
 	}
 
-	if w := serve(router, http.MethodGet, base+escVer+".mod", nil); w.Code != http.StatusOK || !strings.HasPrefix(w.Body.String(), "module "+module) {
+	if w := serve(
+		router,
+		http.MethodGet,
+		base+escVer+".mod",
+		nil,
+	); w.Code != http.StatusOK ||
+		!strings.HasPrefix(w.Body.String(), "module "+module) {
 		t.Fatalf(".mod = %d %q", w.Code, w.Body.String())
 	}
 

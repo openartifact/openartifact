@@ -262,7 +262,10 @@ func TestRepairBootstrapAdmin(t *testing.T) {
 
 		hash, ext, slug := "x", "ext-1", "okta"
 
-		if _, err := pg.CreateUser(ctx, &models.User{Username: "sso-admin", PasswordHash: &hash, ExternalID: &ext, ProviderSlug: &slug}); err != nil {
+		if _, err := pg.CreateUser(
+			ctx,
+			&models.User{Username: "sso-admin", PasswordHash: &hash, ExternalID: &ext, ProviderSlug: &slug},
+		); err != nil {
 			t.Fatal(err)
 		}
 
@@ -404,7 +407,14 @@ func TestVEXStatements(t *testing.T) {
 	repoB := newQuotaRepo(t, pg, "vex-b", 0, 0)
 
 	stmt := func(repo, artifact, vuln, status, just string) *models.VEXStatement {
-		return &models.VEXStatement{RepositoryID: repo, ArtifactID: artifact, VulnID: vuln, Status: status, Justification: just, CreatedBy: "alice"}
+		return &models.VEXStatement{
+			RepositoryID:  repo,
+			ArtifactID:    artifact,
+			VulnID:        vuln,
+			Status:        status,
+			Justification: just,
+			CreatedBy:     "alice",
+		}
 	}
 
 	first := stmt(repoA, "pkg:1", "CVE-1", "under_investigation", "")
@@ -710,7 +720,14 @@ func testPresignedThePerUserCapCountsOnly(t *testing.T, env presignEnv) {
 	const user = "capped"
 
 	mk := func(expires time.Time) *models.PresignedUpload {
-		return &models.PresignedUpload{RepositoryID: env.repo, Path: "p", SizeBytes: 1, SHA256: env.sha, CreatedBy: user, ExpiresAt: expires}
+		return &models.PresignedUpload{
+			RepositoryID: env.repo,
+			Path:         "p",
+			SizeBytes:    1,
+			SHA256:       env.sha,
+			CreatedBy:    user,
+			ExpiresAt:    expires,
+		}
 	}
 
 	a, b := mk(time.Now().Add(time.Hour)), mk(time.Now().Add(time.Hour))
@@ -752,12 +769,24 @@ func testPresignedConstraintsRejectANegativeSizeAnd(t *testing.T, env presignEnv
 
 	ctx := context.Background()
 
-	bad := &models.PresignedUpload{RepositoryID: env.otherRepo, Path: "p", SizeBytes: -1, SHA256: env.sha, ExpiresAt: time.Now().Add(time.Hour)}
+	bad := &models.PresignedUpload{
+		RepositoryID: env.otherRepo,
+		Path:         "p",
+		SizeBytes:    -1,
+		SHA256:       env.sha,
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}
 	if err := env.pg.CreatePresignedUpload(ctx, bad); err == nil {
 		t.Error("a negative size was accepted")
 	}
 
-	bad = &models.PresignedUpload{RepositoryID: env.otherRepo, Path: "p", SizeBytes: 1, SHA256: "NOT-A-DIGEST", ExpiresAt: time.Now().Add(time.Hour)}
+	bad = &models.PresignedUpload{
+		RepositoryID: env.otherRepo,
+		Path:         "p",
+		SizeBytes:    1,
+		SHA256:       "NOT-A-DIGEST",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}
 	if err := env.pg.CreatePresignedUpload(ctx, bad); err == nil {
 		t.Error("a malformed digest was accepted")
 	}

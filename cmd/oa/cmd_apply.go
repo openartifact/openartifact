@@ -55,7 +55,12 @@ func newDeclFlagSet(name string, f *declFlags, withApply bool) *flag.FlagSet {
 	fs.BoolVar(&f.recursive, "R", false, "Descend into subdirectories of -f directories")
 	fs.Var(&f.kinds, "kind", "Only consider this kind (repeatable), e.g. Repository")
 	fs.BoolVar(&f.prune, "prune", false, "Delete objects previously applied by oa that are no longer in the manifests")
-	fs.BoolVar(&f.pruneAll, "prune-all", false, "Delete every object absent from the manifests, managed or not (never seeded objects; Users only with --kind User)")
+	fs.BoolVar(
+		&f.pruneAll,
+		"prune-all",
+		false,
+		"Delete every object absent from the manifests, managed or not (never seeded objects; Users only with --kind User)",
+	)
 	fs.BoolVar(&f.forceSecrets, "force-secrets", false, "Send every secret even if the server reports it as set")
 	fs.StringVar(&f.output, "o", "", "Output format: json (default: human readable)")
 

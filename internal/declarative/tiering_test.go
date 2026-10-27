@@ -111,7 +111,13 @@ func TestTierUpdateAndDelete(t *testing.T) {
 	k := NewStorageTierKind()
 	live := &Live{Key: "cold", ID: "t-cold"}
 
-	if _, err := k.Update(context.Background(), env, live, &Object{}, []Change{{Path: "rank", Old: float64(20), New: float64(40)}}); err != nil {
+	if _, err := k.Update(
+		context.Background(),
+		env,
+		live,
+		&Object{},
+		[]Change{{Path: "rank", Old: float64(20), New: float64(40)}},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -282,10 +288,13 @@ func TestPolicyRefsAndValidate(t *testing.T) {
 			},
 		},
 		{
-			name:     "same tier twice",
-			spec:     map[string]any{"target_tier": "cold", "from_tier": "cold"},
-			wantRefs: []Ref{{Kind: KindStorageTier, Key: "cold", Field: "target_tier"}, {Kind: KindStorageTier, Key: "cold", Field: "from_tier"}},
-			wantErr:  true,
+			name: "same tier twice",
+			spec: map[string]any{"target_tier": "cold", "from_tier": "cold"},
+			wantRefs: []Ref{
+				{Kind: KindStorageTier, Key: "cold", Field: "target_tier"},
+				{Kind: KindStorageTier, Key: "cold", Field: "from_tier"},
+			},
+			wantErr: true,
 		},
 	}
 

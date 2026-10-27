@@ -23,7 +23,13 @@ import (
 // promoteBundle copies the sealed bundle's items into targetRepo and moves the
 // bundle to toStage. The request is already authorized and the stage
 // transition validated; the promote engine does the copy atomically.
-func (h *BundlesHandler) promoteBundle(w http.ResponseWriter, r *http.Request, bundle *models.ReleaseBundle, targetRepo *models.Repository, toStage, notes string) {
+func (h *BundlesHandler) promoteBundle(
+	w http.ResponseWriter,
+	r *http.Request,
+	bundle *models.ReleaseBundle,
+	targetRepo *models.Repository,
+	toStage, notes string,
+) {
 	ctx := r.Context()
 
 	items, err := h.db.ListBundleItems(ctx, bundle.ID)
@@ -70,14 +76,28 @@ func promoteResponse(report *promote.Report) map[string]any {
 }
 
 // announcePromotion audits a committed promotion and emits bundle.promoted.
-func (h *BundlesHandler) announcePromotion(r *http.Request, bundle *models.ReleaseBundle, target *models.Repository, report *promote.Report) {
+func (h *BundlesHandler) announcePromotion(
+	r *http.Request,
+	bundle *models.ReleaseBundle,
+	target *models.Repository,
+	report *promote.Report,
+) {
 	from := ""
 	if report.Promotion.FromStage != nil {
 		from = *report.Promotion.FromStage
 	}
 
-	details := fmt.Sprintf("bundle %s %s promoted to stage %s (%s): %d items, %d artifacts copied, %d already present, %d replaced",
-		bundle.Name, bundle.Version, report.Promotion.ToStage, target.Name, report.Promotion.ItemCount, report.Copied, report.Existing, report.Replaced)
+	details := fmt.Sprintf(
+		"bundle %s %s promoted to stage %s (%s): %d items, %d artifacts copied, %d already present, %d replaced",
+		bundle.Name,
+		bundle.Version,
+		report.Promotion.ToStage,
+		target.Name,
+		report.Promotion.ItemCount,
+		report.Copied,
+		report.Existing,
+		report.Replaced,
+	)
 	auditPromotion(r, bundle.ID, target.ID, details)
 
 	webhook.Emit(r.Context(), h.publisher, target.ID, webhook.EventBundlePromoted, webhook.BundlePromotedPayload(webhook.BundlePromotion{
@@ -160,7 +180,12 @@ func (h *BundlesHandler) writePromoteError(w http.ResponseWriter, bundle *models
 	case errors.Is(err, promote.ErrEmpty):
 		writeError(w, http.StatusConflict, "conflict", "bundle has no items")
 	case errors.Is(err, promote.ErrDockerNotIndexed), errors.Is(err, promote.ErrDockerTagChanged):
-		writeError(w, http.StatusConflict, "conflict", "a docker image is not ready to be promoted (its references are not indexed yet, or a tag changed concurrently); retry later"+which)
+		writeError(
+			w,
+			http.StatusConflict,
+			"conflict",
+			"a docker image is not ready to be promoted (its references are not indexed yet, or a tag changed concurrently); retry later"+which,
+		)
 	case errors.Is(err, promote.ErrFormatMismatch), errors.Is(err, promote.ErrNotHosted),
 		errors.Is(err, promote.ErrSameRepository), errors.Is(err, promote.ErrUnsupportedFormat):
 		writeError(w, http.StatusBadRequest, "validation_failed", promoteInvalidMessage(err)+which)

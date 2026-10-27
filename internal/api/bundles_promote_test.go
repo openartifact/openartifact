@@ -36,11 +36,29 @@ func TestWritePromoteErrorMapsEveryFailure(t *testing.T) {
 		wantCode   string
 		wantInBody string
 	}{
-		{"immutable release", item(&promote.ConflictError{Format: "maven", Name: "g:a", Version: "1.0", Immutable: true}), http.StatusConflict, "immutable_release", "p/x.jar"},
-		{"different content", item(&promote.ConflictError{Format: "maven", Name: "g:a", Version: "1.0-SNAPSHOT"}), http.StatusConflict, "artifact_conflict", "g:a"},
+		{
+			"immutable release",
+			item(&promote.ConflictError{Format: "maven", Name: "g:a", Version: "1.0", Immutable: true}),
+			http.StatusConflict,
+			"immutable_release",
+			"p/x.jar",
+		},
+		{
+			"different content",
+			item(&promote.ConflictError{Format: "maven", Name: "g:a", Version: "1.0-SNAPSHOT"}),
+			http.StatusConflict,
+			"artifact_conflict",
+			"g:a",
+		},
 		{"quota", item(quota.ErrExceeded), http.StatusInsufficientStorage, "quota_exceeded", ""},
 		{"quarantined", item(promote.ErrQuarantined), http.StatusForbidden, "ARTIFACT_QUARANTINED", "quarantined"},
-		{"license", item(&promote.LicenseBlockedError{Licenses: []string{"GPL-3.0"}, Violations: []licensepolicy.Violation{{Action: "block"}}}), http.StatusForbidden, "LICENSE_BLOCKED", "GPL-3.0"},
+		{
+			"license",
+			item(&promote.LicenseBlockedError{Licenses: []string{"GPL-3.0"}, Violations: []licensepolicy.Violation{{Action: "block"}}}),
+			http.StatusForbidden,
+			"LICENSE_BLOCKED",
+			"GPL-3.0",
+		},
 		{"missing source artifact", item(promote.ErrItemNotFound), http.StatusConflict, "artifact_missing", "no longer exists"},
 		{"concurrent change", promote.ErrStageChanged, http.StatusConflict, "conflict", "concurrent"},
 		{"not sealed", promote.ErrBundleState, http.StatusConflict, "conflict", "concurrent"},
@@ -52,7 +70,13 @@ func TestWritePromoteErrorMapsEveryFailure(t *testing.T) {
 		{"same repository", item(promote.ErrSameRepository), http.StatusBadRequest, "validation_failed", "source repository"},
 		{"unsupported format", item(promote.ErrUnsupportedFormat), http.StatusBadRequest, "validation_failed", "not supported"},
 		{"concurrent insert", fmt.Errorf("copy: %w", &pgconn.PgError{Code: "23505"}), http.StatusConflict, "artifact_conflict", "retry"},
-		{"unexpected", errors.New("pq: connection refused to 10.0.0.1"), http.StatusInternalServerError, "internal_error", "promotion failed"},
+		{
+			"unexpected",
+			errors.New("pq: connection refused to 10.0.0.1"),
+			http.StatusInternalServerError,
+			"internal_error",
+			"promotion failed",
+		},
 	}
 
 	for _, tt := range tests {

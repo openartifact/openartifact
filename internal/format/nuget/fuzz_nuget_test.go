@@ -169,11 +169,23 @@ func FuzzNuspecReadersAgree(f *testing.F) {
 	f.Add(fuzzNuspec, uint8(4))
 	f.Add(`<package><metadata><id>a</id><version>1</version><license type="expression"> MIT </license></metadata></package>`, uint8(0))
 	f.Add(`<package><metadata><licenseUrl> https://licenses.nuget.org/MIT </licenseUrl></metadata></package>`, uint8(0))
-	f.Add(`<package><metadata><license type="file">LICENSE</license><licenseUrl>https://opensource.org/licenses/MIT</licenseUrl></metadata></package>`, uint8(0))
+	f.Add(
+		`<package><metadata><license type="file">LICENSE</license><licenseUrl>https://opensource.org/licenses/MIT</licenseUrl></metadata></package>`,
+		uint8(0),
+	)
 	f.Add(`<package><metadata><license type="expression">MIT</license><license>Apache-2.0</license></metadata></package>`, uint8(0))
-	f.Add(`<package><metadata><dependencies><dependency id="a" version="[1.0.0]"/><dependency id=" a " version="2"/><dependency id="b" version=" [ 1 ] "/><dependency id="c" version="[1,2]"/><dependency id="d"/></dependencies></metadata></package>`, uint8(0))
-	f.Add(`<package><metadata><dependencies><group targetFramework="net8.0"><dependency id="g" version="[1.0.0, 2.0.0)"/></group><dependency id="u" version="1"/></dependencies></metadata></package>`, uint8(0))
-	f.Add(`<package><metadata><dependencies><dependency id="" version="1"/><dependency id="  "/></dependencies></metadata></package>`, uint8(0))
+	f.Add(
+		`<package><metadata><dependencies><dependency id="a" version="[1.0.0]"/><dependency id=" a " version="2"/><dependency id="b" version=" [ 1 ] "/><dependency id="c" version="[1,2]"/><dependency id="d"/></dependencies></metadata></package>`,
+		uint8(0),
+	)
+	f.Add(
+		`<package><metadata><dependencies><group targetFramework="net8.0"><dependency id="g" version="[1.0.0, 2.0.0)"/></group><dependency id="u" version="1"/></dependencies></metadata></package>`,
+		uint8(0),
+	)
+	f.Add(
+		`<package><metadata><dependencies><dependency id="" version="1"/><dependency id="  "/></dependencies></metadata></package>`,
+		uint8(0),
+	)
 	f.Add(`<other><metadata><license type="expression">MIT</license></metadata></other>`, uint8(0))
 	f.Add(`<package><metadata><id>a</id>`, uint8(0))
 	f.Add(``, uint8(0))

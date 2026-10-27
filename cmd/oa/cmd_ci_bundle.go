@@ -246,7 +246,12 @@ func parseBundleAddArgs(args []string) (bundleAddOptions, error) {
 		o.paths = append(o.paths, s)
 		return nil
 	})
-	fs.StringVar(&o.fromBuild, "from-build", "", "Add every artifact recorded for build NAME/NUMBER (properties "+propBuildName+" and "+propBuildNumber+")")
+	fs.StringVar(
+		&o.fromBuild,
+		"from-build",
+		"",
+		"Add every artifact recorded for build NAME/NUMBER (properties "+propBuildName+" and "+propBuildNumber+")",
+	)
 
 	pos, err := parseInterspersed(fs, args)
 	if err != nil {
@@ -382,7 +387,11 @@ func listedMatcher(f importFormat, p string) (string, func(ciPackage) bool, erro
 		return "", func(c ciPackage) bool { return c.Filename == path.Base(p) }, nil
 	}
 
-	return "", nil, fmt.Errorf("%w: --path works for raw, maven, ivy, sbt, deb and rpm repositories, not %s (use --from-build)", errBundlePath, f)
+	return "", nil, fmt.Errorf(
+		"%w: --path works for raw, maven, ivy, sbt, deb and rpm repositories, not %s (use --from-build)",
+		errBundlePath,
+		f,
+	)
 }
 
 func sourcesFromPaths(ctx context.Context, api *ciAPI, repoName string, paths []string) ([]bundleSource, error) {
@@ -465,7 +474,14 @@ func sourcesFromBuild(ctx context.Context, api *ciAPI, names []string, name, num
 	}
 
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%w: no artifact carries %s=%s and %s=%s", errBundleNoArtifacts, propBuildName, name, propBuildNumber, number)
+		return nil, fmt.Errorf(
+			"%w: no artifact carries %s=%s and %s=%s",
+			errBundleNoArtifacts,
+			propBuildName,
+			name,
+			propBuildNumber,
+			number,
+		)
 	}
 
 	return out, nil
@@ -593,7 +609,10 @@ func bundleShowCmd(ctx context.Context, api *ciAPI, args []string) (bundleOut, e
 			repo = it.SourceRepoID
 		}
 
-		out.Items = append(out.Items, bundleItemOut{Repo: repo, Path: it.ArtifactPath, SHA256: it.SHA256, Size: it.SizeBytes, Format: it.Format})
+		out.Items = append(
+			out.Items,
+			bundleItemOut{Repo: repo, Path: it.ArtifactPath, SHA256: it.SHA256, Size: it.SizeBytes, Format: it.Format},
+		)
 	}
 
 	return out, nil

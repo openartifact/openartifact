@@ -112,10 +112,21 @@ func TestUploadLicensePolicy(t *testing.T) {
 func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
 	db := &condaDB{DB: formattest.NewDB()}
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
-	h := NewHTTPHandler(formattest.NewLogger(t), &policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}}, formattest.NewBlobStore(), "http://localhost")
+	h := NewHTTPHandler(
+		formattest.NewLogger(t),
+		&policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}},
+		formattest.NewBlobStore(),
+		"http://localhost",
+	)
 
-	w := formattest.Do(h.RegisterRepoRoutes,
-		formattest.Request(http.MethodPost, "/repos/myrepo/linux-64?filename=demo-1.0-py_0.conda", bytes.NewReader(condaArchive(t, `{"name":"demo"}`))))
+	w := formattest.Do(
+		h.RegisterRepoRoutes,
+		formattest.Request(
+			http.MethodPost,
+			"/repos/myrepo/linux-64?filename=demo-1.0-py_0.conda",
+			bytes.NewReader(condaArchive(t, `{"name":"demo"}`)),
+		),
+	)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}

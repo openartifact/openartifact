@@ -151,11 +151,31 @@ func TestMigration024GoFormatID(t *testing.T) {
 	const systemOrg = "00000000-0000-0000-0000-000000000001"
 
 	repo := mustScan[string](t, db, `INSERT INTO repositories (name, format, org_id) VALUES ('gomods', 'go', $1) RETURNING id`, systemOrg)
-	oldRef := mustScan[string](t, db, `INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'a', 'gomod') RETURNING id`, repo)
-	npmRef := mustScan[string](t, db, `INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'b', 'npm') RETURNING id`, repo)
+	oldRef := mustScan[string](
+		t,
+		db,
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'a', 'gomod') RETURNING id`,
+		repo,
+	)
+	npmRef := mustScan[string](
+		t,
+		db,
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'b', 'npm') RETURNING id`,
+		repo,
+	)
 
-	oldJob := mustScan[string](t, db, `INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner) VALUES ($1, 'vuln', 'osv') RETURNING id`, oldRef)
-	npmJob := mustScan[string](t, db, `INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner) VALUES ($1, 'vuln', 'osv') RETURNING id`, npmRef)
+	oldJob := mustScan[string](
+		t,
+		db,
+		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner) VALUES ($1, 'vuln', 'osv') RETURNING id`,
+		oldRef,
+	)
+	npmJob := mustScan[string](
+		t,
+		db,
+		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner) VALUES ($1, 'vuln', 'osv') RETURNING id`,
+		npmRef,
+	)
 
 	mustExec(t, db, `INSERT INTO vuln_results (scan_job_id, ecosystem) VALUES ($1, 'gomod')`, oldJob)
 	mustExec(t, db, `INSERT INTO vuln_results (scan_job_id, ecosystem) VALUES ($1, 'npm')`, npmJob)

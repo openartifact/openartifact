@@ -219,7 +219,8 @@ func checkFirstAdminRow(t *testing.T, line string, row map[string]any) {
 		t.Errorf("keys = %v, want %v", jsonlKeys(t, line), adminAuditExportColumns())
 	}
 
-	if row["timestamp"] != "2026-03-01T12:00:00.123456Z" || row["actor"] != "user-0" || row["ip"] != "203.0.113.7" || row["actor_id"] != nil {
+	if row["timestamp"] != "2026-03-01T12:00:00.123456Z" || row["actor"] != "user-0" || row["ip"] != "203.0.113.7" ||
+		row["actor_id"] != nil {
 		t.Errorf("first row = %v", row)
 	}
 
@@ -232,7 +233,13 @@ func TestAdminAuditExportStreamsEveryEntryInPages(t *testing.T) {
 	const total = 2*auditExportPageSize + 345
 
 	db := newExportDB(exportLogs(total))
-	rec, aborted := serveExport(t, newExportAdminRouter(t, db), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?format=jsonl")
+	rec, aborted := serveExport(
+		t,
+		newExportAdminRouter(t, db),
+		context.Background(),
+		testPrincipal(uAdmin1),
+		"/api/v1/admin/audit/export?format=jsonl",
+	)
 
 	if aborted || rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, aborted = %v, body = %s", rec.Code, aborted, rec.Body.String())
@@ -294,7 +301,13 @@ func TestAdminAuditExportDispositionAndHeaders(t *testing.T) {
 		{"csv", "text/csv; charset=utf-8", ".csv"},
 	} {
 		t.Run(tc.format, func(t *testing.T) {
-			rec, _ := serveExport(t, newExportAdminRouter(t, newExportDB(exportLogs(1))), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?format="+tc.format)
+			rec, _ := serveExport(
+				t,
+				newExportAdminRouter(t, newExportDB(exportLogs(1))),
+				context.Background(),
+				testPrincipal(uAdmin1),
+				"/api/v1/admin/audit/export?format="+tc.format,
+			)
 
 			disp, params, err := mime.ParseMediaType(rec.Header().Get("Content-Disposition"))
 			if err != nil || disp != "attachment" {
@@ -305,7 +318,8 @@ func TestAdminAuditExportDispositionAndHeaders(t *testing.T) {
 				t.Errorf("filename = %q", params["filename"])
 			}
 
-			if rec.Header().Get("Content-Type") != tc.ctype || rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			if rec.Header().Get("Content-Type") != tc.ctype || rec.Header().Get("Cache-Control") != "no-store" ||
+				rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 				t.Errorf("headers = %v", rec.Header())
 			}
 		})
@@ -313,7 +327,13 @@ func TestAdminAuditExportDispositionAndHeaders(t *testing.T) {
 }
 
 func TestAdminAuditExportDefaultsToJSONL(t *testing.T) {
-	rec, _ := serveExport(t, newExportAdminRouter(t, newExportDB(exportLogs(1))), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export")
+	rec, _ := serveExport(
+		t,
+		newExportAdminRouter(t, newExportDB(exportLogs(1))),
+		context.Background(),
+		testPrincipal(uAdmin1),
+		"/api/v1/admin/audit/export",
+	)
 	if rec.Header().Get("Content-Type") != "application/x-ndjson" {
 		t.Errorf("Content-Type = %q", rec.Header().Get("Content-Type"))
 	}
@@ -333,7 +353,13 @@ func TestAdminAuditExportCSVIsParseableAndInjectionSafe(t *testing.T) {
 		logs[i].DetailsJSON, _ = json.Marshal(map[string]string{"actor": h})
 	}
 
-	rec, _ := serveExport(t, newExportAdminRouter(t, newExportDB(logs)), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?format=csv")
+	rec, _ := serveExport(
+		t,
+		newExportAdminRouter(t, newExportDB(logs)),
+		context.Background(),
+		testPrincipal(uAdmin1),
+		"/api/v1/admin/audit/export?format=csv",
+	)
 
 	rows, err := csv.NewReader(rec.Body).ReadAll()
 	if err != nil {
@@ -344,7 +370,16 @@ func TestAdminAuditExportCSVIsParseableAndInjectionSafe(t *testing.T) {
 		t.Fatalf("rows = %d, header = %v", len(rows), rows[0])
 	}
 
-	actor, resource, details := slices.Index(adminAuditExportColumns(), "actor"), slices.Index(adminAuditExportColumns(), "resource_id"), slices.Index(adminAuditExportColumns(), "details")
+	actor, resource, details := slices.Index(
+		adminAuditExportColumns(),
+		"actor",
+	), slices.Index(
+		adminAuditExportColumns(),
+		"resource_id",
+	), slices.Index(
+		adminAuditExportColumns(),
+		"details",
+	)
 
 	for i, h := range hostile {
 		row := rows[i+1]
@@ -375,7 +410,13 @@ func TestAdminAuditExportCSVIsParseableAndInjectionSafe(t *testing.T) {
 }
 
 func TestAdminAuditExportCSVLeavesUnsetValuesEmpty(t *testing.T) {
-	rec, _ := serveExport(t, newExportAdminRouter(t, newExportDB(exportLogs(1))), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?format=csv")
+	rec, _ := serveExport(
+		t,
+		newExportAdminRouter(t, newExportDB(exportLogs(1))),
+		context.Background(),
+		testPrincipal(uAdmin1),
+		"/api/v1/admin/audit/export?format=csv",
+	)
 
 	rows, err := csv.NewReader(rec.Body).ReadAll()
 	if err != nil {
@@ -393,7 +434,13 @@ func TestAdminAuditExportPassesFiltersAndRange(t *testing.T) {
 	db := newExportDB(exportLogs(3))
 	target := "/api/v1/admin/audit/export?format=csv&actor=alice&action=auth&since=2026-03-01&until=2026-03-02T00:00:00%2B02:00"
 
-	if rec, _ := serveExport(t, newExportAdminRouter(t, db), context.Background(), testPrincipal(uAdmin1), target); rec.Code != http.StatusOK {
+	if rec, _ := serveExport(
+		t,
+		newExportAdminRouter(t, db),
+		context.Background(),
+		testPrincipal(uAdmin1),
+		target,
+	); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 
@@ -438,7 +485,13 @@ func TestAdminAuditExportRejectsBadQuery(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			db := newExportDB(exportLogs(1))
-			rec, aborted := serveExport(t, newExportAdminRouter(t, db), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?"+query)
+			rec, aborted := serveExport(
+				t,
+				newExportAdminRouter(t, db),
+				context.Background(),
+				testPrincipal(uAdmin1),
+				"/api/v1/admin/audit/export?"+query,
+			)
 
 			if aborted || rec.Code != http.StatusBadRequest || len(db.calls) != 0 {
 				t.Errorf("status = %d, queries = %d", rec.Code, len(db.calls))
@@ -520,7 +573,13 @@ func TestAdminAuditExportStopsWhenTheClientGoesAway(t *testing.T) {
 
 func TestAdminAuditExportEmptyLog(t *testing.T) {
 	for format, want := range map[string]string{"jsonl": "", "csv": strings.Join(adminAuditExportColumns(), ",") + "\n"} {
-		rec, aborted := serveExport(t, newExportAdminRouter(t, newExportDB(nil)), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?format="+format)
+		rec, aborted := serveExport(
+			t,
+			newExportAdminRouter(t, newExportDB(nil)),
+			context.Background(),
+			testPrincipal(uAdmin1),
+			"/api/v1/admin/audit/export?format="+format,
+		)
 
 		if aborted || rec.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d", format, rec.Code)
@@ -544,15 +603,29 @@ func projectExportLogs() []*models.AuditLog {
 			DetailsJSON: json.RawMessage(`{"message":"token ci created","actor":"owner-1"}`), IPAddress: &ip, CreatedAt: created,
 		},
 		{
-			ID: "22222222-2222-4222-8222-222222222222", Action: "project.repository_created", RepositoryID: &repo, ActorType: &actorType, ActorID: &actorID,
-			DetailsJSON: json.RawMessage(`{"message":"repository r created, \"quoted\"","actor":"owner-1"}`), IPAddress: &ip, CreatedAt: created.Add(-time.Minute),
+			ID:           "22222222-2222-4222-8222-222222222222",
+			Action:       "project.repository_created",
+			RepositoryID: &repo,
+			ActorType:    &actorType,
+			ActorID:      &actorID,
+			DetailsJSON: json.RawMessage(
+				`{"message":"repository r created, \"quoted\"","actor":"owner-1"}`,
+			),
+			IPAddress: &ip,
+			CreatedAt: created.Add(-time.Minute),
 		},
 	}
 }
 
 func TestProjectActivityExportColumnsAndNoClientAddress(t *testing.T) {
 	db := newExportDB(projectExportLogs())
-	rec, _ := serveExport(t, newExportProjectRouter(t, db), context.Background(), testPrincipal(uMaint1), "/api/v1/projects/acme/activity/export?format=csv")
+	rec, _ := serveExport(
+		t,
+		newExportProjectRouter(t, db),
+		context.Background(),
+		testPrincipal(uMaint1),
+		"/api/v1/projects/acme/activity/export?format=csv",
+	)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
@@ -586,7 +659,13 @@ func TestProjectActivityExportColumnsAndNoClientAddress(t *testing.T) {
 }
 
 func TestProjectActivityExportJSONLFields(t *testing.T) {
-	rec, _ := serveExport(t, newExportProjectRouter(t, newExportDB(projectExportLogs())), context.Background(), testPrincipal(uOwner1), "/api/v1/projects/acme/activity/export")
+	rec, _ := serveExport(
+		t,
+		newExportProjectRouter(t, newExportDB(projectExportLogs())),
+		context.Background(),
+		testPrincipal(uOwner1),
+		"/api/v1/projects/acme/activity/export",
+	)
 
 	line, _, _ := strings.Cut(rec.Body.String(), "\n")
 	if !slices.Equal(jsonlKeys(t, line), projectActivityExportColumns()) {
@@ -602,7 +681,13 @@ func TestProjectActivityExportJSONLFields(t *testing.T) {
 func TestProjectActivityExportHidesTokenEventsBelowMaintainer(t *testing.T) {
 	for user, hidden := range map[string]bool{uView1: true, uDev1: true, uMaint1: false, uOwner1: false, uAdmin1: false} {
 		db := newExportDB(projectExportLogs())
-		rec, _ := serveExport(t, newExportProjectRouter(t, db), context.Background(), testPrincipal(user), "/api/v1/projects/acme/activity/export")
+		rec, _ := serveExport(
+			t,
+			newExportProjectRouter(t, db),
+			context.Background(),
+			testPrincipal(user),
+			"/api/v1/projects/acme/activity/export",
+		)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d", user, rec.Code)

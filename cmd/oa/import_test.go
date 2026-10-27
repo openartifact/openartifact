@@ -266,7 +266,9 @@ func artifactoryRepos() []fakeSourceRepo {
 func artifactoryCfg(t *testing.T, srv *httptest.Server, extra ...string) importConfig {
 	t.Helper()
 
-	return parseCfg(t, append([]string{"artifactory", "--source-url", srv.URL, "--source-user", "svc", "--repo", "rpm-local:rpms"}, extra...)...)
+	return parseCfg(
+		t,
+		append([]string{"artifactory", "--source-url", srv.URL, "--source-user", "svc", "--repo", "rpm-local:rpms"}, extra...)...)
 }
 
 func TestImportArtifactoryAQLCopiesProperties(t *testing.T) {
@@ -321,7 +323,11 @@ func TestImportArtifactoryOSSRefusesAQLSorting(t *testing.T) {
 			if strings.Contains(string(body), ".sort(") {
 				sortedQueries++
 
-				http.Error(w, `{"errors":[{"status":400,"message":"Sorting is not supported by AQL in the open source version\n"}]}`, http.StatusBadRequest)
+				http.Error(
+					w,
+					`{"errors":[{"status":400,"message":"Sorting is not supported by AQL in the open source version\n"}]}`,
+					http.StatusBadRequest,
+				)
 
 				return
 			}
@@ -440,14 +446,38 @@ func TestParseImportFlags(t *testing.T) {
 		wantErr   string
 	}{
 		{"env token", []string{"nexus", "--source-url", "https://n.example", "--repo", "a"}, "", "tok-from-env", ""},
-		{"file token", []string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token-file", tokenFile}, "", "tok-from-file", ""},
-		{"stdin token", []string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token-file", "-"}, "tok-stdin\nmore", "tok-stdin", ""},
-		{"no token flag", []string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token", "x"}, "", "", "flag provided but not defined"},
+		{
+			"file token",
+			[]string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token-file", tokenFile},
+			"",
+			"tok-from-file",
+			"",
+		},
+		{
+			"stdin token",
+			[]string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token-file", "-"},
+			"tok-stdin\nmore",
+			"tok-stdin",
+			"",
+		},
+		{
+			"no token flag",
+			[]string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--source-token", "x"},
+			"",
+			"",
+			"flag provided but not defined",
+		},
 		{"userinfo url", []string{"nexus", "--source-url", "https://u:p@n.example", "--repo", "a"}, "", "", "must not embed credentials"},
 		{"plain http credentials", []string{"nexus", "--source-url", "http://n.example", "--repo", "a"}, "", "", "plain HTTP"},
 		{"unknown type", []string{"harbor", "--source-url", "https://n.example", "--repo", "a"}, "", "", "unknown source type"},
 		{"no repo", []string{"nexus", "--source-url", "https://n.example"}, "", "", "--repo is required"},
-		{"bad concurrency", []string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--concurrency", "0"}, "", "", "--concurrency"},
+		{
+			"bad concurrency",
+			[]string{"nexus", "--source-url", "https://n.example", "--repo", "a", "--concurrency", "0"},
+			"",
+			"",
+			"--concurrency",
+		},
 	}
 
 	for _, tc := range cases {

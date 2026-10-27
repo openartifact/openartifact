@@ -94,9 +94,22 @@ func checkMavenReading(t *testing.T, p string, cur ArtifactPath) {
 // files declare licenses, names are trimmed and non-empty, and there are no
 // more of them than the document has license elements.
 func FuzzDescriptorLicenses(f *testing.F) {
-	f.Add("ivy.xml", []byte(`<ivy-module><info organisation="o" module="m"><license name=" Apache-2.0 " url="u"/><license name=""/></info></ivy-module>`))
-	f.Add("lib-1.0.pom", []byte(`<project><licenses><license><name>MIT</name></license><license><name>  </name></license></licenses></project>`))
-	f.Add("a.pom", []byte(`<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name><![CDATA[BSD &amp; Co]]></name></license></licenses></project>`))
+	f.Add(
+		"ivy.xml",
+		[]byte(
+			`<ivy-module><info organisation="o" module="m"><license name=" Apache-2.0 " url="u"/><license name=""/></info></ivy-module>`,
+		),
+	)
+	f.Add(
+		"lib-1.0.pom",
+		[]byte(`<project><licenses><license><name>MIT</name></license><license><name>  </name></license></licenses></project>`),
+	)
+	f.Add(
+		"a.pom",
+		[]byte(
+			`<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name><![CDATA[BSD &amp; Co]]></name></license></licenses></project>`,
+		),
+	)
 	f.Add("lib.jar", []byte(`<info><license name="MIT"/></info>`))
 	f.Add("ivy.xml", []byte(`<!DOCTYPE x [<!ENTITY a "&a;&a;">]><info>&a;</info>`))
 	f.Add("ivy.xml", []byte(``))

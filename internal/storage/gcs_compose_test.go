@@ -40,7 +40,8 @@ func (f *fakeGCS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.signed = strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") && strings.Contains(r.Header.Get("Authorization"), "Credential=HMACKEY/")
+	f.signed = strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") &&
+		strings.Contains(r.Header.Get("Authorization"), "Credential=HMACKEY/")
 
 	switch {
 	case r.Method == http.MethodHead && r.URL.Path == "/"+gcsTestBucket+"/"+gcsTestSrcKey:

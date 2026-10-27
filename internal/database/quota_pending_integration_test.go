@@ -220,7 +220,8 @@ func TestReconcileKeepsConcurrentReservation(t *testing.T) {
 	for {
 		var waiting bool
 		if err := pg.GetDB().QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database())`).Scan(&waiting); err != nil {
+			`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database())`).
+			Scan(&waiting); err != nil {
 			t.Fatalf("poll lock waits: %v", err)
 		}
 
@@ -229,11 +230,19 @@ func TestReconcileKeepsConcurrentReservation(t *testing.T) {
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `UPDATE storage_quotas SET current_size_bytes = current_size_bytes + 7, current_artifact_count = current_artifact_count + 1 WHERE repository_id = $1`, s.repo); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE storage_quotas SET current_size_bytes = current_size_bytes + 7, current_artifact_count = current_artifact_count + 1 WHERE repository_id = $1`,
+		s.repo,
+	); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO quota_pending (repository_id, size_bytes, artifact_count) VALUES ($1, 7, 1)`, s.repo); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO quota_pending (repository_id, size_bytes, artifact_count) VALUES ($1, 7, 1)`,
+		s.repo,
+	); err != nil {
 		t.Fatalf("pending entry: %v", err)
 	}
 

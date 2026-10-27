@@ -255,7 +255,14 @@ func TestWorkerExtractsManifestFromStoredArtifact(t *testing.T) {
 	llm := newFakeLLM(t)
 	db := newAIFakeDB()
 	pkgJSON := `{"name":"left-pad","version":"1.2.3","license":"MIT"}`
-	db.blobs["art-1"] = &models.ComponentBlob{ID: "art-1", Format: "npm", Filename: "left-pad-1.2.3.tgz", Name: "left-pad", Version: "1.2.3", SHA256: "sha-1"}
+	db.blobs["art-1"] = &models.ComponentBlob{
+		ID:       "art-1",
+		Format:   "npm",
+		Filename: "left-pad-1.2.3.tgz",
+		Name:     "left-pad",
+		Version:  "1.2.3",
+		SHA256:   "sha-1",
+	}
 
 	w := startWorker(t, db, fakeBlobs{data: map[string][]byte{"sha-1": npmTgz(t, pkgJSON)}})
 	w.Configure(llm.settings("test-model", false))
@@ -289,7 +296,12 @@ func TestWorkerCallerManifestOverridesExtraction(t *testing.T) {
 	w.Configure(llm.settings("m", false))
 
 	w.Notify(AIAnalysisRequest{
-		RepositoryID: testRepo, ArtifactID: "ext-1", ArtifactFormat: "npm", ArtifactName: "x", ArtifactVersion: "9", ManifestText: "caller supplied",
+		RepositoryID:    testRepo,
+		ArtifactID:      "ext-1",
+		ArtifactFormat:  "npm",
+		ArtifactName:    "x",
+		ArtifactVersion: "9",
+		ManifestText:    "caller supplied",
 	})
 
 	got := db.awaitStatus(t, "ext-1", "completed")
@@ -306,8 +318,22 @@ func TestWorkerCallerManifestOverridesExtraction(t *testing.T) {
 func TestWorkerRecordsFixedFailureReasons(t *testing.T) {
 	llm := newFakeLLM(t)
 	db := newAIFakeDB()
-	db.blobs["docker-1"] = &models.ComponentBlob{ID: "docker-1", Format: "docker", Filename: "sha256:abc", Name: "img", Version: "1", SHA256: "sha-d"}
-	db.blobs["gone-1"] = &models.ComponentBlob{ID: "gone-1", Format: "npm", Filename: "g.tgz", Name: "g", Version: "1", SHA256: "sha-missing"}
+	db.blobs["docker-1"] = &models.ComponentBlob{
+		ID:       "docker-1",
+		Format:   "docker",
+		Filename: "sha256:abc",
+		Name:     "img",
+		Version:  "1",
+		SHA256:   "sha-d",
+	}
+	db.blobs["gone-1"] = &models.ComponentBlob{
+		ID:       "gone-1",
+		Format:   "npm",
+		Filename: "g.tgz",
+		Name:     "g",
+		Version:  "1",
+		SHA256:   "sha-missing",
+	}
 	db.blobs["nosha-1"] = &models.ComponentBlob{ID: "nosha-1", Format: "npm", Filename: "n.tgz", Name: "n", Version: "1"}
 
 	w := startWorker(t, db, fakeBlobs{data: map[string][]byte{"sha-d": []byte("{}")}})
@@ -377,7 +403,14 @@ func TestConfigureAppliesWithoutRestart(t *testing.T) {
 	w := startWorker(t, db, nil)
 
 	req := func(id string) AIAnalysisRequest {
-		return AIAnalysisRequest{RepositoryID: testRepo, ArtifactID: id, ArtifactFormat: "npm", ArtifactName: "n", ArtifactVersion: "1", ManifestText: "m"}
+		return AIAnalysisRequest{
+			RepositoryID:    testRepo,
+			ArtifactID:      id,
+			ArtifactFormat:  "npm",
+			ArtifactName:    "n",
+			ArtifactVersion: "1",
+			ManifestText:    "m",
+		}
 	}
 
 	w.Configure(first.settings("model-a", false))
@@ -450,7 +483,14 @@ func TestAutoAnalyzeOnUpload(t *testing.T) {
 	}
 
 	for _, c := range db.listing {
-		db.blobs[c.ID] = &models.ComponentBlob{ID: c.ID, Format: c.Format, Filename: c.Filename, Name: c.Name, Version: c.Version, SHA256: c.SHA256}
+		db.blobs[c.ID] = &models.ComponentBlob{
+			ID:       c.ID,
+			Format:   c.Format,
+			Filename: c.Filename,
+			Name:     c.Name,
+			Version:  c.Version,
+			SHA256:   c.SHA256,
+		}
 	}
 
 	blobs := fakeBlobs{data: map[string][]byte{
@@ -551,7 +591,14 @@ func TestParseConanReference(t *testing.T) {
 func TestConanAnalysisReadsRecipeSibling(t *testing.T) {
 	llm := newFakeLLM(t)
 	db := newAIFakeDB()
-	db.blobs["c-1"] = &models.ComponentBlob{ID: "c-1", Format: "conan", Filename: "zlib/1.3@_/_#rev1", Name: "zlib", Version: "1.3", SHA256: "sha-manifest"}
+	db.blobs["c-1"] = &models.ComponentBlob{
+		ID:       "c-1",
+		Format:   "conan",
+		Filename: "zlib/1.3@_/_#rev1",
+		Name:     "zlib",
+		Version:  "1.3",
+		SHA256:   "sha-manifest",
+	}
 	db.conanRow = &models.ConanPackage{BlobKey: "key-recipe"}
 
 	blobs := fakeBlobs{data: map[string][]byte{

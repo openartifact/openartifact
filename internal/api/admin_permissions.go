@@ -356,7 +356,11 @@ func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.
 
 // principalAndTargetExist writes a 404 and returns false when the permission
 // target or the user/group the assignment refers to does not exist.
-func (h *AdminPermissionsHandler) principalAndTargetExist(w http.ResponseWriter, r *http.Request, targetID, principalType, principalID string) bool {
+func (h *AdminPermissionsHandler) principalAndTargetExist(
+	w http.ResponseWriter,
+	r *http.Request,
+	targetID, principalType, principalID string,
+) bool {
 	ctx := r.Context()
 
 	target, err := h.db.GetPermissionTargetByID(ctx, targetID)

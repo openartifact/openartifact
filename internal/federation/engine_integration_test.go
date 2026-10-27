@@ -311,7 +311,12 @@ func (s *engSite) putIn(t *testing.T, repoID, path, content string) {
 func (s *engSite) trash(t *testing.T, path string) {
 	t.Helper()
 
-	s.exec(t, `UPDATE raw_artifacts SET deleted_at = now(), deleted_by = 'test' WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, s.repoID, path)
+	s.exec(
+		t,
+		`UPDATE raw_artifacts SET deleted_at = now(), deleted_by = 'test' WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`,
+		s.repoID,
+		path,
+	)
 }
 
 func (s *engSite) purge(t *testing.T, path string) {
@@ -870,7 +875,11 @@ func TestEngineRecordUnitOrdersStamps(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s.exec(t, `UPDATE federation_units SET tombstone = false, event = 'artifact_added' WHERE repo_id = $1 AND unit_key = 'f'`, s.repoID)
+			s.exec(
+				t,
+				`UPDATE federation_units SET tombstone = false, event = 'artifact_added' WHERE repo_id = $1 AND unit_key = 'f'`,
+				s.repoID,
+			)
 			s.setStamp(t, "f", local)
 
 			before, headBefore := s.entry(t, "f"), s.state(t).HeadSeq
@@ -1042,7 +1051,11 @@ func TestEngineDeleteIsAppliedLikeALocalDelete(t *testing.T) {
 				t.Errorf("b entry = %+v, want a's tombstone %+v", eb, ea)
 			}
 
-			trashed := b.scalar(t, `SELECT count(*) FROM raw_artifacts WHERE repository_id = $1 AND path = 'f' AND deleted_by = 'federation:site-a'`, b.repoID)
+			trashed := b.scalar(
+				t,
+				`SELECT count(*) FROM raw_artifacts WHERE repository_id = $1 AND path = 'f' AND deleted_by = 'federation:site-a'`,
+				b.repoID,
+			)
 			_, inTable := b.hasBlob(t, engSHA("payload"))
 
 			if tc.retention > 0 {
@@ -1098,7 +1111,8 @@ func TestEngineCorruptBlobIsRejectedAndParked(t *testing.T) {
 			engEqual(t, "deferred units", got.DeferredUnits, 1)
 
 			d := b.deferred(t, peer)
-			if len(d) != 1 || d[0].UnitKey != "bad" || d[0].Reason != "digest_mismatch" || d[0].Attempts != 1 || !strings.Contains(d[0].LastError, engSHA("payload")) {
+			if len(d) != 1 || d[0].UnitKey != "bad" || d[0].Reason != "digest_mismatch" || d[0].Attempts != 1 ||
+				!strings.Contains(d[0].LastError, engSHA("payload")) {
 				t.Fatalf("deferred = %+v, want bad parked with digest_mismatch", d)
 			}
 
@@ -1135,7 +1149,8 @@ func TestEngineBlobServerErrorIsAPeerErrorAndResumes(t *testing.T) {
 	engEqual(t, "cursor", got.CursorSeq, a.entry(t, "u1").Seq)
 	engEqual(t, "error count", got.ErrorCount, 1)
 
-	if !strings.Contains(got.LastError, "500") || got.NextAttemptAt == nil || !got.NextAttemptAt.After(time.Now()) || got.State() != PeerError {
+	if !strings.Contains(got.LastError, "500") || got.NextAttemptAt == nil || !got.NextAttemptAt.After(time.Now()) ||
+		got.State() != PeerError {
 		t.Errorf("peer = state %s, error %q, next attempt %v; want an error with a backoff", got.State(), got.LastError, got.NextAttemptAt)
 	}
 
@@ -1307,8 +1322,26 @@ func TestEngineBlobEndpointRanges(t *testing.T) {
 		{"malformed", blobURL("one", "0123456789"), a.token, "bytes=x-", http.StatusRequestedRangeNotSatisfiable, "", "bytes */10", ""},
 		{"no range", blobURL("one", "0123456789"), a.token, "", http.StatusOK, "0123456789", "", "10"},
 		{"range on a blob of another unit", blobURL("one", "other-repo-secret"), a.token, "bytes=3-", http.StatusNotFound, "", "", ""},
-		{"range under another repository's key", blobURL("theirs", "other-repo-secret"), a.token, "bytes=3-", http.StatusNotFound, "", "", ""},
-		{"range with the other repository's token", blobURL("theirs", "other-repo-secret"), otherToken, "bytes=3-", http.StatusPartialContent, "er-repo-secret", "bytes 3-16/17", "14"},
+		{
+			"range under another repository's key",
+			blobURL("theirs", "other-repo-secret"),
+			a.token,
+			"bytes=3-",
+			http.StatusNotFound,
+			"",
+			"",
+			"",
+		},
+		{
+			"range with the other repository's token",
+			blobURL("theirs", "other-repo-secret"),
+			otherToken,
+			"bytes=3-",
+			http.StatusPartialContent,
+			"er-repo-secret",
+			"bytes 3-16/17",
+			"14",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1810,7 +1843,13 @@ func TestEngineQuotaExceededDefersUnitAndLeavesUsageAlone(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			a, b := newEngSite(t, "site-a", "raw"), newEngSite(t, "site-b", "raw")
-			b.exec(t, `INSERT INTO storage_quotas (repository_id, max_size_bytes, max_artifact_count) VALUES ($1, $2, $3)`, b.repoID, tc.maxSize, tc.maxCount)
+			b.exec(
+				t,
+				`INSERT INTO storage_quotas (repository_id, max_size_bytes, max_artifact_count) VALUES ($1, $2, $3)`,
+				b.repoID,
+				tc.maxSize,
+				tc.maxCount,
+			)
 
 			a.put(t, "u1", "aaaa")
 			a.put(t, "u2", "bbbbbbbb")
@@ -1973,8 +2012,15 @@ func TestEngineRefusesAPeerThatIsThisInstance(t *testing.T) {
 			}
 
 			got := puller.peer(t, peer)
-			if got.ErrorCount != 1 || !strings.Contains(got.LastError, "this instance") || got.State() != PeerError || got.AppliedTotal != 0 {
-				t.Errorf("peer = state %s, errors %d, last error %q, applied %d", got.State(), got.ErrorCount, got.LastError, got.AppliedTotal)
+			if got.ErrorCount != 1 || !strings.Contains(got.LastError, "this instance") || got.State() != PeerError ||
+				got.AppliedTotal != 0 {
+				t.Errorf(
+					"peer = state %s, errors %d, last error %q, applied %d",
+					got.State(),
+					got.ErrorCount,
+					got.LastError,
+					got.AppliedTotal,
+				)
 			}
 
 			engEqual(t, "log pages requested", source.count(engLogPath, nil), 0)
@@ -2162,7 +2208,13 @@ type engPanicCodec struct {
 	armed atomic.Bool
 }
 
-func (c *engPanicCodec) Import(ctx context.Context, tx *sql.Tx, repoID, key string, content *Content, blobIDs map[string]string) (*Change, error) {
+func (c *engPanicCodec) Import(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID, key string,
+	content *Content,
+	blobIDs map[string]string,
+) (*Change, error) {
 	if c.armed.Load() {
 		panic("injected codec panic")
 	}
@@ -2203,7 +2255,12 @@ func TestEnginePanicInAPullIsRecordedAsPeerErrorAndTheEngineRecovers(t *testing.
 
 	if !strings.Contains(got.LastError, "panicked") || !strings.Contains(got.LastError, "injected codec panic") ||
 		got.NextAttemptAt == nil || got.State() != PeerError {
-		t.Errorf("peer = state %s, error %q, next attempt %v; want an error naming the panic, with a backoff", got.State(), got.LastError, got.NextAttemptAt)
+		t.Errorf(
+			"peer = state %s, error %q, next attempt %v; want an error naming the panic, with a backoff",
+			got.State(),
+			got.LastError,
+			got.NextAttemptAt,
+		)
 	}
 
 	b.mustBeAbsent(t, "u1")
@@ -2281,8 +2338,11 @@ func TestEngineNPMTagPulledBeforeItsVersionAppliesTheVersionFirst(t *testing.T) 
 
 	tags := map[string]string{}
 
-	rows, err := b.db.QueryContext(context.Background(),
-		`SELECT p.full_name || '#' || d.tag, d.version FROM npm_dist_tags d JOIN npm_packages p ON p.id = d.package_id WHERE p.repository_id = $1`, b.repoID)
+	rows, err := b.db.QueryContext(
+		context.Background(),
+		`SELECT p.full_name || '#' || d.tag, d.version FROM npm_dist_tags d JOIN npm_packages p ON p.id = d.package_id WHERE p.repository_id = $1`,
+		b.repoID,
+	)
 	if err != nil {
 		t.Fatalf("list tags: %v", err)
 	}

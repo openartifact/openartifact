@@ -27,8 +27,11 @@ const npmBase = "http://oa.test"
 
 func npmDoc(name, version, tarball string) string {
 	b, _ := json.Marshal(map[string]any{
-		"name": name, "dist-tags": map[string]string{"latest": version},
-		"versions": map[string]any{version: map[string]any{"name": name, "version": version, "dist": map[string]string{"tarball": tarball, "shasum": "x"}}},
+		"name":      name,
+		"dist-tags": map[string]string{"latest": version},
+		"versions": map[string]any{
+			version: map[string]any{"name": name, "version": version, "dist": map[string]string{"tarball": tarball, "shasum": "x"}},
+		},
 	})
 
 	return string(b)

@@ -109,7 +109,15 @@ func (a *app) setupReplication() (storage.BlobStore, error) {
 
 	s.replSvc, s.sweep, s.replAdmin, s.replStop = replSvc, replSvc.Store(), replSvc, replSvc.Stop
 
-	a.log.Infow("Blob replication enabled", "replica", a.cfg.StorageReplica.Type, "location", a.cfg.StorageReplica.Summary(), "read_fallback", a.cfg.StorageReplica.ReadFallback)
+	a.log.Infow(
+		"Blob replication enabled",
+		"replica",
+		a.cfg.StorageReplica.Type,
+		"location",
+		a.cfg.StorageReplica.Summary(),
+		"read_fallback",
+		a.cfg.StorageReplica.ReadFallback,
+	)
 
 	return replSvc.Store(), nil
 }
@@ -132,6 +140,10 @@ func (a *app) startGomodRepair() {
 func (a *app) setupServedStore() {
 	a.store.served = presign.Wrap(a.store.blobs, a.db, presign.SettingsFromConfig(a.cfg.Storage), a.reg, a.log)
 	if a.cfg.Storage.PresignDownloads && !a.store.served.Supported() {
-		a.log.Warnw("storage.presignDownloads is on but the storage backend cannot presign URLs; downloads are streamed", "type", a.cfg.Storage.Type)
+		a.log.Warnw(
+			"storage.presignDownloads is on but the storage backend cannot presign URLs; downloads are streamed",
+			"type",
+			a.cfg.Storage.Type,
+		)
 	}
 }

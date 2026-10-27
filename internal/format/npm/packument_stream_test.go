@@ -33,13 +33,29 @@ func edgeVersions() []*models.NPMVersion {
 	t0 := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
 
 	return []*models.NPMVersion{
-		manifestVersion("1.0.0", "{\n  \"name\": \"x\",\n\t\"version\": \"1.0.0\",\r\n  \"description\": \"a <b> & \\\"q\\\" \\u00e9 \u2028 日本 😀\",\n  \"readme\": \"line1\\nline2\"\n}", t0),
-		manifestVersion("1.1.0", `{"name":"x","version":"1.1.0","dist":{"fileCount":12,"unpackedSize":34567,"signatures":[{"keyid":"k","sig":"s"}],"npm-signature":"-----BEGIN PGP-----","tarball":"http://evil/x.tgz","shasum":"bad","integrity":"bad"}}`, t0.Add(time.Hour)),
+		manifestVersion(
+			"1.0.0",
+			"{\n  \"name\": \"x\",\n\t\"version\": \"1.0.0\",\r\n  \"description\": \"a <b> & \\\"q\\\" \\u00e9 \u2028 日本 😀\",\n  \"readme\": \"line1\\nline2\"\n}",
+			t0,
+		),
+		manifestVersion(
+			"1.1.0",
+			`{"name":"x","version":"1.1.0","dist":{"fileCount":12,"unpackedSize":34567,"signatures":[{"keyid":"k","sig":"s"}],"npm-signature":"-----BEGIN PGP-----","tarball":"http://evil/x.tgz","shasum":"bad","integrity":"bad"}}`,
+			t0.Add(time.Hour),
+		),
 		manifestVersion("1.2.0", `{"name":"x","version":"1.2.0","dist":"not-an-object"}`, t0.Add(2*time.Hour)),
 		manifestVersion("1.3.0", `{"name":"x","version":"1.3.0","dist":null}`, t0.Add(3*time.Hour)),
-		manifestVersion("1.4.0", `{"name":"x","version":"1.4.0","d\u0069st":{"x":1,"t\u0061rball":"drop"},"na\u006de":"y"}`, t0.Add(4*time.Hour)),
+		manifestVersion(
+			"1.4.0",
+			`{"name":"x","version":"1.4.0","d\u0069st":{"x":1,"t\u0061rball":"drop"},"na\u006de":"y"}`,
+			t0.Add(4*time.Hour),
+		),
 		manifestVersion("1.5.0", `{"dist":{"a":1},"name":"x","version":"1.5.0","dist":{"b":2,"shasum":"dup"}}`, t0.Add(5*time.Hour)),
-		manifestVersion("2.0.0-beta.1", `{"name":"x","version":"2.0.0-beta.1","big":12345678901234567890,"neg":-1.5e-3,"t":true,"f":false,"n":null,"arr":[1,[2,{"k":"v}"}],"]"],"deep":{"a":{"b":{"c":[]}}},"deprecated":"use 3","bin":{"x":"./b.js"},"engines":{"node":">=18"},"_hasShrinkwrap":false,"peerDependenciesMeta":{"r":{"optional":true}},"bundleDependencies":["a"],"directories":{"lib":"l"},"optionalDependencies":{"o":"1"},"scripts":{"test":"echo \"}\""}}`, t0.Add(6*time.Hour)),
+		manifestVersion(
+			"2.0.0-beta.1",
+			`{"name":"x","version":"2.0.0-beta.1","big":12345678901234567890,"neg":-1.5e-3,"t":true,"f":false,"n":null,"arr":[1,[2,{"k":"v}"}],"]"],"deep":{"a":{"b":{"c":[]}}},"deprecated":"use 3","bin":{"x":"./b.js"},"engines":{"node":">=18"},"_hasShrinkwrap":false,"peerDependenciesMeta":{"r":{"optional":true}},"bundleDependencies":["a"],"directories":{"lib":"l"},"optionalDependencies":{"o":"1"},"scripts":{"test":"echo \"}\""}}`,
+			t0.Add(6*time.Hour),
+		),
 		manifestVersion("3.0.0", `{}`, t0.Add(-time.Hour)),
 		manifestVersion("10.0.0", `{"name":"x","version":"10.0.0"}`, time.Time{}),
 	}
@@ -177,7 +193,14 @@ func TestPackumentRejectsMalformedManifests(t *testing.T) {
 			v := []*models.NPMVersion{manifestVersion("1.0.0", manifest, time.Now())}
 
 			for _, build := range []func(string, string, []*models.NPMVersion, map[string]string, string) ([]byte, error){BuildPackument, BuildAbbreviatedPackument} {
-				if _, err := build("r", "p", v, nil, "http://h"); err == nil || !strings.Contains(err.Error(), "unmarshal manifest for p@1.0.0") {
+				if _, err := build(
+					"r",
+					"p",
+					v,
+					nil,
+					"http://h",
+				); err == nil ||
+					!strings.Contains(err.Error(), "unmarshal manifest for p@1.0.0") {
 					t.Fatalf("want manifest error, got %v", err)
 				}
 			}

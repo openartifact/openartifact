@@ -117,9 +117,13 @@ func TestInheritPOMLicensesLookupError(t *testing.T) {
 
 	boom := errors.New("storage down")
 
-	_, _, err := licensemeta.InheritPOMLicenses(t.Context(), ref("x"), func(context.Context, string, string, string) (*pkgmaven.POM, error) {
-		return nil, boom
-	})
+	_, _, err := licensemeta.InheritPOMLicenses(
+		t.Context(),
+		ref("x"),
+		func(context.Context, string, string, string) (*pkgmaven.POM, error) {
+			return nil, boom
+		},
+	)
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the lookup error", err)
 	}

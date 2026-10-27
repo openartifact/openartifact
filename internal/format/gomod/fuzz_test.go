@@ -108,8 +108,18 @@ func FuzzParseModuleZip(f *testing.F) {
 	const goMod = "module example.com/m\n\ngo 1.21\n"
 
 	f.Add(fuzzModuleZip("example.com/m", "v1.0.0", goMod))
-	f.Add(fuzzZip(fuzzEntry{"example.com/m@v1.0.0/go.mod", goMod}, fuzzEntry{"example.com/m@v1.0.0/sub/go.mod", "module example.com/m/sub\n"}))
-	f.Add(fuzzZip(fuzzEntry{"example.com/m@v1.0.0/sub/go.mod", "module example.com/m/sub\n"}, fuzzEntry{"example.com/m@v1.0.0/go.mod", goMod}))
+	f.Add(
+		fuzzZip(
+			fuzzEntry{"example.com/m@v1.0.0/go.mod", goMod},
+			fuzzEntry{"example.com/m@v1.0.0/sub/go.mod", "module example.com/m/sub\n"},
+		),
+	)
+	f.Add(
+		fuzzZip(
+			fuzzEntry{"example.com/m@v1.0.0/sub/go.mod", "module example.com/m/sub\n"},
+			fuzzEntry{"example.com/m@v1.0.0/go.mod", goMod},
+		),
+	)
 	f.Add(fuzzZip(fuzzEntry{"example.com/m@v1.0.0/foo-go.mod", goMod}))
 	f.Add(fuzzZip(fuzzEntry{"example.com/m@v1.0.0/go.mod", "go 1.21\n"}))
 	f.Add(fuzzZip(fuzzEntry{"example.com/m@v1.0.0/go.mod", "module \"example.com/q\" // c\n"}))

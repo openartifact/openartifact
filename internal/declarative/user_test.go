@@ -138,7 +138,14 @@ func TestUserKindList(t *testing.T) {
 			name: "maps fields, nulls to empty strings and flags the bootstrap admin as seeded",
 			users: []map[string]any{
 				{"id": "u-admin", "username": "admin", "email": nil, "full_name": nil, "disabled": false, "must_change_password": true},
-				{"id": "u-bob", "username": "bob", "email": "bob@example.org", "full_name": "Bob B", "disabled": true, "must_change_password": false},
+				{
+					"id":                   "u-bob",
+					"username":             "bob",
+					"email":                "bob@example.org",
+					"full_name":            "Bob B",
+					"disabled":             true,
+					"must_change_password": false,
+				},
 			},
 			want: map[string]*Live{
 				"admin": {Kind: KindUser, Key: "admin", ID: "u-admin", Seeded: true, Spec: map[string]any{
@@ -227,7 +234,13 @@ func TestUserKindCreate(t *testing.T) {
 		{
 			name: "sends only the given fields and never a password",
 			spec: map[string]any{"email": "ci@example.org", "full_name": "CI", "disabled": true, "must_change_password": false},
-			want: map[string]any{"username": "ci", "email": "ci@example.org", "full_name": "CI", "disabled": true, "must_change_password": false},
+			want: map[string]any{
+				"username":             "ci",
+				"email":                "ci@example.org",
+				"full_name":            "CI",
+				"disabled":             true,
+				"must_change_password": false,
+			},
 		},
 		{
 			name: "leaves an empty email out so it stays NULL",

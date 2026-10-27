@@ -118,8 +118,18 @@ func (s *declServer) ciUser(t *testing.T, name, filter string, actions ...string
 	userID := jsonField[string](t, s.api(t, http.MethodPost, "/api/v1/users",
 		map[string]any{"username": name, "email": name + "@example.com", "password": "ci-password-12345"}, http.StatusCreated), "id")
 
-	targetID := jsonField[string](t, s.api(t, http.MethodPost, "/api/v1/permission-targets",
-		map[string]any{"name": name + "-target", "repository_filter": filter, "path_pattern": ".*", "actions": actions}, http.StatusCreated), "id")
+	targetID := jsonField[string](t, s.api(
+		t,
+		http.MethodPost,
+		"/api/v1/permission-targets",
+		map[string]any{
+			"name":              name + "-target",
+			"repository_filter": filter,
+			"path_pattern":      ".*",
+			"actions":           actions,
+		},
+		http.StatusCreated,
+	), "id")
 
 	s.api(t, http.MethodPost, "/api/v1/permission-targets/"+targetID+"/assignments",
 		map[string]any{"principal_type": "user", "principal_id": userID}, http.StatusNoContent)
@@ -239,10 +249,24 @@ func (f *ciFixture) upload(t *testing.T) {
 	}
 
 	// An older build that must not leak into the bundle.
-	f.ciOK(t, f.ci, f.ws, "upload", "ci-dev", "other.txt", "--target-path", "builds/41/", "--build-name", "shop/main", "--build-number", "41")
+	f.ciOK(
+		t,
+		f.ci,
+		f.ws,
+		"upload",
+		"ci-dev",
+		"other.txt",
+		"--target-path",
+		"builds/41/",
+		"--build-name",
+		"shop/main",
+		"--build-number",
+		"41",
+	)
 
 	code, body := f.statusAs(t, f.ci, http.MethodGet, "/api/v1/repositories/ci-dev/artifacts/"+firstID+"/properties", nil)
-	if code != http.StatusOK || !bytes.Contains(body, []byte("shop/main")) || !bytes.Contains(body, []byte("1a2b3c4")) || !bytes.Contains(body, []byte("core")) {
+	if code != http.StatusOK || !bytes.Contains(body, []byte("shop/main")) || !bytes.Contains(body, []byte("1a2b3c4")) ||
+		!bytes.Contains(body, []byte("core")) {
 		t.Fatalf("properties: HTTP %d %s", code, body)
 	}
 
@@ -322,7 +346,13 @@ func (f *ciFixture) sealAndPromote(t *testing.T) {
 	}
 
 	// Promotion needs write on the target: the reader cannot even see the target repository.
-	if code, _ := f.statusAs(t, f.reader, http.MethodPost, "/api/v1/bundles/shop/1.0.0/promote", []byte(`{"to_stage":"prod"}`)); code != http.StatusNotFound {
+	if code, _ := f.statusAs(
+		t,
+		f.reader,
+		http.MethodPost,
+		"/api/v1/bundles/shop/1.0.0/promote",
+		[]byte(`{"to_stage":"prod"}`),
+	); code != http.StatusNotFound {
 		t.Fatalf("promote by a token without access to the target = HTTP %d, want 404", code)
 	}
 

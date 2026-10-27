@@ -65,7 +65,13 @@ func (h *HTTPHandler) handleDeletePackageRevision(w http.ResponseWriter, r *http
 // trash when the repository keeps one, else for good together with their blobs.
 // Deleting nothing is a 404 (a 200 with allowEmpty); a repository with immutable releases refuses. The
 // conan client treats any status but 200 as failure.
-func (h *HTTPHandler) deleteScope(w http.ResponseWriter, r *http.Request, s *scope, allowEmpty bool, match func(*models.ConanPackage) bool) {
+func (h *HTTPHandler) deleteScope(
+	w http.ResponseWriter,
+	r *http.Request,
+	s *scope,
+	allowEmpty bool,
+	match func(*models.ConanPackage) bool,
+) {
 	files, ok := h.recipeFiles(w, r, s)
 	if !ok {
 		return

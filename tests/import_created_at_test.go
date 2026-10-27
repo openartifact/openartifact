@@ -65,7 +65,12 @@ func TestImportCreatedAt_MavenAndRPM(t *testing.T) {
 
 			router := withImportAuth(tc.user, newMavenUploadHandlerFor(t, db).Register)
 
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/repos/maven/maven-repo/com/example/app/1.0/app-1.0.jar", bytes.NewReader([]byte("jar")))
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPut,
+				"/repos/maven/maven-repo/com/example/app/1.0/app-1.0.jar",
+				bytes.NewReader([]byte("jar")),
+			)
 			req.Header.Set(importmeta.HeaderCreatedAt, origin.Format(time.RFC3339))
 
 			w := httptest.NewRecorder()

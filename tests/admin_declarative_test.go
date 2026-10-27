@@ -128,7 +128,10 @@ func setupDeclarativeRouter(t *testing.T) chi.Router {
 		t.Fatalf("CreateGroup: %v", err)
 	}
 
-	if _, err := db.CreatePermissionTarget(ctx, &models.PermissionTarget{ID: declTargetID, Name: "readers", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}}); err != nil {
+	if _, err := db.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{ID: declTargetID, Name: "readers", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}},
+	); err != nil {
 		t.Fatalf("CreatePermissionTarget: %v", err)
 	}
 
@@ -230,18 +233,51 @@ func TestAdminDeclarative_RoundTrip(t *testing.T) {
 func TestAdminDeclarative_Validation(t *testing.T) {
 	router := setupDeclarativeRouter(t)
 
-	tooMany := `{"items":[` + strings.Repeat(`{"kind":"User","name":"x","object_id":"1"},`, 1000) + `{"kind":"User","name":"x","object_id":"1"}]}`
+	tooMany := `{"items":[` + strings.Repeat(
+		`{"kind":"User","name":"x","object_id":"1"},`,
+		1000,
+	) + `{"kind":"User","name":"x","object_id":"1"}]}`
 
 	tests := []struct {
 		name, method, target, body string
 		want                       int
 	}{
 		{"bad json", http.MethodPut, "/api/v1/admin/declarative", `{`, http.StatusBadRequest},
-		{"unknown kind", http.MethodPut, "/api/v1/admin/declarative", `{"items":[{"kind":"Nope","name":"a","object_id":"1"}]}`, http.StatusBadRequest},
-		{"empty name", http.MethodPut, "/api/v1/admin/declarative", `{"items":[{"kind":"User","name":"","object_id":"1"}]}`, http.StatusBadRequest},
-		{"long name", http.MethodPut, "/api/v1/admin/declarative", `{"items":[{"kind":"User","name":"` + strings.Repeat("a", 513) + `","object_id":"1"}]}`, http.StatusBadRequest},
-		{"empty object id", http.MethodPut, "/api/v1/admin/declarative", `{"items":[{"kind":"User","name":"a","object_id":""}]}`, http.StatusBadRequest},
-		{"long hash", http.MethodPut, "/api/v1/admin/declarative", `{"items":[{"kind":"User","name":"a","object_id":"1","applied_hash":"` + strings.Repeat("h", 129) + `"}]}`, http.StatusBadRequest},
+		{
+			"unknown kind",
+			http.MethodPut,
+			"/api/v1/admin/declarative",
+			`{"items":[{"kind":"Nope","name":"a","object_id":"1"}]}`,
+			http.StatusBadRequest,
+		},
+		{
+			"empty name",
+			http.MethodPut,
+			"/api/v1/admin/declarative",
+			`{"items":[{"kind":"User","name":"","object_id":"1"}]}`,
+			http.StatusBadRequest,
+		},
+		{
+			"long name",
+			http.MethodPut,
+			"/api/v1/admin/declarative",
+			`{"items":[{"kind":"User","name":"` + strings.Repeat("a", 513) + `","object_id":"1"}]}`,
+			http.StatusBadRequest,
+		},
+		{
+			"empty object id",
+			http.MethodPut,
+			"/api/v1/admin/declarative",
+			`{"items":[{"kind":"User","name":"a","object_id":""}]}`,
+			http.StatusBadRequest,
+		},
+		{
+			"long hash",
+			http.MethodPut,
+			"/api/v1/admin/declarative",
+			`{"items":[{"kind":"User","name":"a","object_id":"1","applied_hash":"` + strings.Repeat("h", 129) + `"}]}`,
+			http.StatusBadRequest,
+		},
 		{"too many items", http.MethodPut, "/api/v1/admin/declarative", tooMany, http.StatusBadRequest},
 		{"delete without name", http.MethodDelete, "/api/v1/admin/declarative?kind=User", "", http.StatusBadRequest},
 		{"delete unknown kind", http.MethodDelete, "/api/v1/admin/declarative?kind=Nope&name=a", "", http.StatusBadRequest},
@@ -307,7 +343,13 @@ func TestAdminPermissions_ListAssignments(t *testing.T) {
 		}
 	}
 
-	if rw := declDo(router, http.MethodGet, "/api/v1/permission-targets/"+declMissing+"/assignments", "", ""); rw.Code != http.StatusNotFound {
+	if rw := declDo(
+		router,
+		http.MethodGet,
+		"/api/v1/permission-targets/"+declMissing+"/assignments",
+		"",
+		"",
+	); rw.Code != http.StatusNotFound {
 		t.Fatalf("missing target status = %d, want 404", rw.Code)
 	}
 

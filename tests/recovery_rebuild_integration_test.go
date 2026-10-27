@@ -68,7 +68,9 @@ func reRows(t *testing.T, pg *database.PostgresDB, tbl *recovery.Table) string {
 	}
 
 	// Identifiers come from the compiled-in registry.
-	q := `SELECT COALESCE(jsonb_agg(to_jsonb(t) - $1::text[] ORDER BY ` + tbl.KeyExpr("t") + `)::text, '[]') FROM ` + tbl.Name + ` t` + where
+	q := `SELECT COALESCE(jsonb_agg(to_jsonb(t) - $1::text[] ORDER BY ` + tbl.KeyExpr(
+		"t",
+	) + `)::text, '[]') FROM ` + tbl.Name + ` t` + where
 
 	var out string
 	if err := pg.GetDB().QueryRowContext(context.Background(), q, "{"+strings.Join(cols, ",")+"}").Scan(&out); err != nil {
@@ -132,7 +134,11 @@ func TestRecoveryRebuildAllFormats(t *testing.T) {
 	// Formats with a dedicated upload helper.
 	mvn := mk("maven", qrMountMaven)
 	ok("maven", mvn.src, mvn.src.mavenPut("com/example/app/1.0.0/app-1.0.0.jar", qpfNoise(1, 900)))
-	ok("maven pom", mvn.src, mvn.src.mavenPut("com/example/app/1.0.0/app-1.0.0.pom", []byte("<project><modelVersion>4.0.0</modelVersion></project>")))
+	ok(
+		"maven pom",
+		mvn.src,
+		mvn.src.mavenPut("com/example/app/1.0.0/app-1.0.0.pom", []byte("<project><modelVersion>4.0.0</modelVersion></project>")),
+	)
 
 	npm := mk("npm", qrMountNPM)
 	body, _ := qrNPMBody(t, "qrpkg", "1.0.0")
@@ -189,7 +195,8 @@ func TestRecoveryRebuildAllFormats(t *testing.T) {
 		t.Fatalf("status after drain: %+v err=%v", st, err)
 	}
 
-	rep, err := recovery.NewRebuilder(dstDB.GetDB(), bs, newTestLogger(t), recovery.RebuildOptions{Concurrency: 4}, recovery.Hooks{}).Run(context.Background())
+	rep, err := recovery.NewRebuilder(dstDB.GetDB(), bs, newTestLogger(t), recovery.RebuildOptions{Concurrency: 4}, recovery.Hooks{}).
+		Run(context.Background())
 	if err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
@@ -215,7 +222,8 @@ func TestRecoveryRebuildAllFormats(t *testing.T) {
 	}
 
 	// A second rebuild finds everything in place and changes nothing.
-	rep2, err := recovery.NewRebuilder(dstDB.GetDB(), bs, newTestLogger(t), recovery.RebuildOptions{}, recovery.Hooks{}).Run(context.Background())
+	rep2, err := recovery.NewRebuilder(dstDB.GetDB(), bs, newTestLogger(t), recovery.RebuildOptions{}, recovery.Hooks{}).
+		Run(context.Background())
 	if err != nil || rep2.ExitCode() != recovery.ExitOK {
 		t.Fatalf("second rebuild: %v exit=%d", err, rep2.ExitCode())
 	}
@@ -234,7 +242,9 @@ func reNormalise(body string) string {
 
 // reMountServed serves uploads and reads from separate routers (their route
 // patterns overlap), dispatching on the method.
-func reMountServed(upload, serve func(t *testing.T, r chi.Router, pg *database.PostgresDB, bs storage.BlobStore)) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
+func reMountServed(
+	upload, serve func(t *testing.T, r chi.Router, pg *database.PostgresDB, bs storage.BlobStore),
+) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
 	return func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler {
 		t.Helper()
 
@@ -348,7 +358,11 @@ func TestRecoveryRebuildServedMetadata(t *testing.T) {
 	for _, v := range []string{"1.0.0", "1.1.0"} {
 		body, _ := qrNPMBody(t, "qrpkg", v)
 		npm.src.wantStatus("npm "+v, npm.src.npmPublish("qrpkg", body), http.StatusOK, http.StatusCreated)
-		mvn.src.wantStatus("maven "+v, mvn.src.mavenPut("com/acme/app/"+v+"/app-"+v+".jar", qpfNoise(len(v)+int(v[2]), 500)), http.StatusCreated)
+		mvn.src.wantStatus(
+			"maven "+v,
+			mvn.src.mavenPut("com/acme/app/"+v+"/app-"+v+".jar", qpfNoise(len(v)+int(v[2]), 500)),
+			http.StatusCreated,
+		)
 	}
 
 	for _, ver := range []string{"1.0", "2.0"} {
@@ -361,7 +375,8 @@ func TestRecoveryRebuildServedMetadata(t *testing.T) {
 		t.Fatalf("drain: failed=%d err=%v", failed, err)
 	}
 
-	rep, err := recovery.NewRebuilder(dstDB.GetDB(), bs, newTestLogger(t), recovery.RebuildOptions{Concurrency: 4}, recovery.Hooks{}).Run(context.Background())
+	rep, err := recovery.NewRebuilder(dstDB.GetDB(), bs, newTestLogger(t), recovery.RebuildOptions{Concurrency: 4}, recovery.Hooks{}).
+		Run(context.Background())
 	if err != nil || rep.ExitCode() != recovery.ExitOK {
 		t.Fatalf("rebuild: %v", err)
 	}

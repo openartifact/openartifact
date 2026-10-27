@@ -267,8 +267,14 @@ func TestRepositoryDownloadByFormat(t *testing.T) {
 		wantCode     string
 	}{
 		{
-			name:         "npm tarball keeps its name and media type",
-			blob:         models.ComponentBlob{Format: "npm", Filename: "widget-1.0.0.tgz", SHA256: sha, Size: int64(len(body)), MediaType: "application/gzip"},
+			name: "npm tarball keeps its name and media type",
+			blob: models.ComponentBlob{
+				Format:    "npm",
+				Filename:  "widget-1.0.0.tgz",
+				SHA256:    sha,
+				Size:      int64(len(body)),
+				MediaType: "application/gzip",
+			},
 			wantStatus:   http.StatusOK,
 			wantFilename: "widget-1.0.0.tgz",
 			wantType:     "application/gzip",
@@ -288,8 +294,14 @@ func TestRepositoryDownloadByFormat(t *testing.T) {
 			wantType:     "application/octet-stream",
 		},
 		{
-			name:         "docker tag downloads the manifest named after its digest",
-			blob:         models.ComponentBlob{Format: "docker", Filename: "sha256:" + strings.Repeat("c", 64), SHA256: sha, Size: int64(len(body)), MediaType: "application/vnd.oci.image.manifest.v1+json"},
+			name: "docker tag downloads the manifest named after its digest",
+			blob: models.ComponentBlob{
+				Format:    "docker",
+				Filename:  "sha256:" + strings.Repeat("c", 64),
+				SHA256:    sha,
+				Size:      int64(len(body)),
+				MediaType: "application/vnd.oci.image.manifest.v1+json",
+			},
 			wantStatus:   http.StatusOK,
 			wantFilename: "sha256_" + strings.Repeat("c", 64) + ".json",
 			wantType:     "application/vnd.oci.image.manifest.v1+json",
@@ -302,8 +314,14 @@ func TestRepositoryDownloadByFormat(t *testing.T) {
 			wantType:     "application/octet-stream",
 		},
 		{
-			name:         "invalid stored media type falls back to octet-stream",
-			blob:         models.ComponentBlob{Format: "pypi", Filename: "a-1.whl", SHA256: sha, Size: int64(len(body)), MediaType: "not a media type"},
+			name: "invalid stored media type falls back to octet-stream",
+			blob: models.ComponentBlob{
+				Format:    "pypi",
+				Filename:  "a-1.whl",
+				SHA256:    sha,
+				Size:      int64(len(body)),
+				MediaType: "not a media type",
+			},
 			wantStatus:   http.StatusOK,
 			wantFilename: "a-1.whl",
 			wantType:     "application/octet-stream",
@@ -328,7 +346,11 @@ func TestRepositoryDownloadByFormat(t *testing.T) {
 			}
 
 			log := newFixTestLogger(t)
-			h := NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false)).WithBlobStore(&memBlobs{content: map[string]string{sha: body}})
+			h := NewRepositoriesHandler(
+				db,
+				log,
+				auth.NewEvaluator(db, log, false),
+			).WithBlobStore(&memBlobs{content: map[string]string{sha: body}})
 
 			router := chi.NewRouter()
 			router.Get("/api/v1/repositories/{name}/packages/{id}/download", h.handleDownloadPackage)

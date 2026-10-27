@@ -223,7 +223,9 @@ func TestLogAfterShutdownDoesNotPanic(t *testing.T) {
 }
 
 func TestBuildDetailsJSONValidWithControlChars(t *testing.T) {
-	out := buildDetailsJSON(AuditEvent{Details: "bad\x00\x01\"\\ msg", Actor: "us\ber\u2028", Package: "p\x00", Version: "v\u2028", Subject: "s\""})
+	out := buildDetailsJSON(
+		AuditEvent{Details: "bad\x00\x01\"\\ msg", Actor: "us\ber\u2028", Package: "p\x00", Version: "v\u2028", Subject: "s\""},
+	)
 	if !json.Valid([]byte(out)) {
 		t.Fatalf("invalid JSON: %q", out)
 	}

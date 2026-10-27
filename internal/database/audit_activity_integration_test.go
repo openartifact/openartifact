@@ -25,12 +25,14 @@ func TestAuditProjectActivityUsesBitmapOr(t *testing.T) {
 	db := pg.GetDB()
 
 	var projectID string
-	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('acme', 'acme') RETURNING id`).Scan(&projectID); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('acme', 'acme') RETURNING id`).
+		Scan(&projectID); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 
 	var otherID string
-	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('other', 'other') RETURNING id`).Scan(&otherID); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('other', 'other') RETURNING id`).
+		Scan(&otherID); err != nil {
 		t.Fatalf("insert other project: %v", err)
 	}
 
@@ -46,7 +48,11 @@ func TestAuditProjectActivityUsesBitmapOr(t *testing.T) {
 		t.Fatalf("insert audit rows: %v", err)
 	}
 
-	if _, err := db.ExecContext(ctx, `INSERT INTO audit_logs (action, project_id) SELECT 'project.updated', $1::uuid FROM generate_series(1, 10)`, projectID); err != nil {
+	if _, err := db.ExecContext(
+		ctx,
+		`INSERT INTO audit_logs (action, project_id) SELECT 'project.updated', $1::uuid FROM generate_series(1, 10)`,
+		projectID,
+	); err != nil {
 		t.Fatalf("insert project audit rows: %v", err)
 	}
 
@@ -85,7 +91,8 @@ func TestAuditHideProjectTokenEvents(t *testing.T) {
 	db := pg.GetDB()
 
 	var projectID string
-	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('acme', 'acme') RETURNING id`).Scan(&projectID); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO projects (name, slug) VALUES ('acme', 'acme') RETURNING id`).
+		Scan(&projectID); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 
@@ -96,7 +103,10 @@ func TestAuditHideProjectTokenEvents(t *testing.T) {
 	}
 
 	for hide, want := range map[bool]int{false: 3, true: 1} {
-		page, err := pg.ListAuditLogs(ctx, models.AuditListParams{ProjectID: projectID, Limit: 50, NoTotal: true, HideProjectTokenEvents: hide})
+		page, err := pg.ListAuditLogs(
+			ctx,
+			models.AuditListParams{ProjectID: projectID, Limit: 50, NoTotal: true, HideProjectTokenEvents: hide},
+		)
 		if err != nil || len(page.Logs) != want {
 			t.Errorf("hide=%v: rows = %v, err = %v, want %d", hide, page, err, want)
 		}

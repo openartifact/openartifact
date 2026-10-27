@@ -98,8 +98,24 @@ func TestSearchFreeTextQuery(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "my-repo", "npm", "lodash", "4.17.21", "lodash-4.17.21.tgz", "abc123", int64(100), now, nil, nil, nil, int64(1), int64(0))
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
+	rows := sqlmock.NewRows(cols).
+		AddRow(repoID, "my-repo", "npm", "lodash", "4.17.21", "lodash-4.17.21.tgz", "abc123", int64(100), now, nil, nil, nil, int64(1), int64(0))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -132,8 +148,24 @@ func TestSearchFormatFilter(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "npm-repo", "npm", "react", "18.0.0", "", "", int64(0), now, nil, nil, nil, int64(1), int64(0))
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
+	rows := sqlmock.NewRows(cols).
+		AddRow(repoID, "npm-repo", "npm", "react", "18.0.0", "", "", int64(0), now, nil, nil, nil, int64(1), int64(0))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -159,8 +191,24 @@ func TestSearchSHA256PrefixClause(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "repo", "rpm", "mypkg", "1.0", "", "deadbeef1234", int64(0), now, nil, nil, nil, int64(1), int64(0))
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
+	rows := sqlmock.NewRows(cols).
+		AddRow(repoID, "repo", "rpm", "mypkg", "1.0", "", "deadbeef1234", int64(0), now, nil, nil, nil, int64(1), int64(0))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -186,7 +234,22 @@ func TestSearchPostFilterRemovesUnreadableRepo(t *testing.T) {
 	readableID := uuid.New()
 	unreadableID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
 	rows := sqlmock.NewRows(cols).
 		AddRow(readableID, "repo-a", "rpm", "pkg-a", "1.0", "", "", int64(0), now, nil, nil, nil, int64(2), int64(0)).
 		AddRow(unreadableID, "repo-b", "rpm", "pkg-b", "2.0", "", "", int64(0), now, nil, nil, nil, int64(2), int64(0))
@@ -218,8 +281,24 @@ func TestSearchMavenMetadata(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "maven-repo", "maven", "myapp", "1.0.0", "", "", int64(0), now, "com.example", "myapp", nil, int64(1), int64(0))
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
+	rows := sqlmock.NewRows(cols).
+		AddRow(repoID, "maven-repo", "maven", "myapp", "1.0.0", "", "", int64(0), now, "com.example", "myapp", nil, int64(1), int64(0))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -403,11 +482,29 @@ func TestSearchPageReturnsTotalFromOneQuery(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	repoID := uuid.New()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "repo", "npm", "lodash", "1.0.0", "", "", int64(0), time.Now(), nil, nil, nil, int64(137), int64(0))
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
+	rows := sqlmock.NewRows(cols).
+		AddRow(repoID, "repo", "npm", "lodash", "1.0.0", "", "", int64(0), time.Now(), nil, nil, nil, int64(137), int64(0))
 	mock.ExpectQuery(`WITH matched AS MATERIALIZED .* count\(\*\) OVER \(\)`).WillReturnRows(rows)
 
-	results, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{}, 1, 0, map[uuid.UUID]struct{}{repoID: {}})
+	results, total, err := NewExecutor(
+		db,
+	).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{}, 1, 0, map[uuid.UUID]struct{}{repoID: {}})
 	if err != nil {
 		t.Fatalf("SearchPage: %v", err)
 	}
@@ -430,7 +527,22 @@ func TestSearchPageEmptyPageCounts(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
+	cols := []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
 	mock.ExpectQuery(`WITH matched`).WillReturnRows(sqlmock.NewRows(cols))
 	mock.ExpectQuery(`WITH matched`).WillReturnRows(sqlmock.NewRows(cols))
 	mock.ExpectQuery(`SELECT COUNT`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(30))

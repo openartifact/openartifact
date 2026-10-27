@@ -160,7 +160,14 @@ func (s *seeder) bootstrapToken(user, pass, newPass string) (string, error) {
 
 	// Forced password change on the bootstrap account; harmless otherwise.
 	cp, _ := json.Marshal(map[string]string{"current_password": pass, "new_password": newPass})
-	if r, _, err := s.do("POST", "/api/v1/auth/change-password", "application/json", cp, csrf()); err == nil && r.StatusCode == http.StatusOK {
+	if r, _, err := s.do(
+		"POST",
+		"/api/v1/auth/change-password",
+		"application/json",
+		cp,
+		csrf(),
+	); err == nil &&
+		r.StatusCode == http.StatusOK {
 		if _, err := login(newPass); err != nil {
 			return "", err
 		}
@@ -421,12 +428,20 @@ func (s *seeder) seedDocker(st *state) error {
 		"schemaVersion": 2,
 		"mediaType":     "application/vnd.docker.distribution.manifest.v2+json",
 		"config":        map[string]any{"mediaType": "application/vnd.docker.container.image.v1+json", "size": len(cfgData), "digest": cfg},
-		"layers":        []any{map[string]any{"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip", "size": 8 << 20, "digest": layer}},
+		"layers": []any{
+			map[string]any{"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip", "size": 8 << 20, "digest": layer},
+		},
 	})
 
 	// Re-pushing an identical manifest answers 500 today; skip when present.
 	if resp, _, err := s.do("HEAD", "/v2/"+name+"/manifests/latest", "", nil, nil); err != nil || resp.StatusCode != http.StatusOK {
-		if err := s.must("PUT", "/v2/"+name+"/manifests/latest", "application/vnd.docker.distribution.manifest.v2+json", manifest, 201); err != nil {
+		if err := s.must(
+			"PUT",
+			"/v2/"+name+"/manifests/latest",
+			"application/vnd.docker.distribution.manifest.v2+json",
+			manifest,
+			201,
+		); err != nil {
 			return err
 		}
 	}

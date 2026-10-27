@@ -152,7 +152,11 @@ func TestCargoGroup_NonRegistryPathsAre404WithoutAskingMembers(t *testing.T) {
 func TestCargoGroup_WritesAreRejected(t *testing.T) {
 	f := cargoGroup(t)
 
-	if w := f.get(http.MethodPut, "api/v1/crates/new"); w.Code != http.StatusMethodNotAllowed || !strings.Contains(w.Header().Get("Allow"), "GET") {
+	if w := f.get(
+		http.MethodPut,
+		"api/v1/crates/new",
+	); w.Code != http.StatusMethodNotAllowed ||
+		!strings.Contains(w.Header().Get("Allow"), "GET") {
 		t.Errorf("PUT = %d Allow %q", w.Code, w.Header().Get("Allow"))
 	}
 }

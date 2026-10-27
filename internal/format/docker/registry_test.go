@@ -678,13 +678,55 @@ func TestRegistry_MountBlob(t *testing.T) {
 	}
 
 	tests := []setup{
-		{"cross-repo, readable source", &fakeAuthz{allow: true}, "?mount=" + digest + "&from=src/lib/base", false, http.StatusCreated, true},
-		{"cross-repo, source unreadable falls back to upload", &fakeAuthz{allow: false}, "?mount=" + digest + "&from=src/lib/base", false, http.StatusAccepted, false},
+		{
+			"cross-repo, readable source",
+			&fakeAuthz{allow: true},
+			"?mount=" + digest + "&from=src/lib/base",
+			false,
+			http.StatusCreated,
+			true,
+		},
+		{
+			"cross-repo, source unreadable falls back to upload",
+			&fakeAuthz{allow: false},
+			"?mount=" + digest + "&from=src/lib/base",
+			false,
+			http.StatusAccepted,
+			false,
+		},
 		{"cross-repo, no authorizer configured", nil, "?mount=" + digest + "&from=src/lib/base", false, http.StatusAccepted, false},
-		{"cross-repo, quarantined source", &fakeAuthz{allow: true}, "?mount=" + digest + "&from=src/lib/base", true, http.StatusAccepted, false},
-		{"cross-repo, source lacks the blob", &fakeAuthz{allow: true}, "?mount=" + digestOf([]byte("other")) + "&from=src/lib/base", false, http.StatusAccepted, false},
-		{"cross-repo, unknown source repo", &fakeAuthz{allow: true}, "?mount=" + digest + "&from=ghost/x", false, http.StatusAccepted, false},
-		{"cross-repo, invalid source image", &fakeAuthz{allow: true}, "?mount=" + digest + "&from=src/Bad", false, http.StatusAccepted, false},
+		{
+			"cross-repo, quarantined source",
+			&fakeAuthz{allow: true},
+			"?mount=" + digest + "&from=src/lib/base",
+			true,
+			http.StatusAccepted,
+			false,
+		},
+		{
+			"cross-repo, source lacks the blob",
+			&fakeAuthz{allow: true},
+			"?mount=" + digestOf([]byte("other")) + "&from=src/lib/base",
+			false,
+			http.StatusAccepted,
+			false,
+		},
+		{
+			"cross-repo, unknown source repo",
+			&fakeAuthz{allow: true},
+			"?mount=" + digest + "&from=ghost/x",
+			false,
+			http.StatusAccepted,
+			false,
+		},
+		{
+			"cross-repo, invalid source image",
+			&fakeAuthz{allow: true},
+			"?mount=" + digest + "&from=src/Bad",
+			false,
+			http.StatusAccepted,
+			false,
+		},
 		{"mount without from", &fakeAuthz{allow: true}, "?mount=" + digest, false, http.StatusAccepted, false},
 	}
 
@@ -730,7 +772,12 @@ func TestRegistry_MountAuthorizesSourceImagePath(t *testing.T) {
 	layer := []byte("layer")
 	digest := digestOf(layer)
 	db := newRegFakeDB("dst", "src")
-	db.blobs[scoped("id-src", digest)] = &models.DockerBlob{ID: "b1", RepositoryID: "id-src", Digest: digest, BlobSHA256: strings.TrimPrefix(digest, "sha256:")}
+	db.blobs[scoped("id-src", digest)] = &models.DockerBlob{
+		ID:           "b1",
+		RepositoryID: "id-src",
+		Digest:       digest,
+		BlobSHA256:   strings.TrimPrefix(digest, "sha256:"),
+	}
 
 	authz := &fakeAuthz{allow: true}
 	g := newRegistry(t, db)
@@ -794,14 +841,22 @@ func TestRegistry_BlobsAreScopedToTheirImage(t *testing.T) {
 	}
 
 	// A mount without a source the caller can read does not link it.
-	if rec := g.do(http.MethodPost, "/v2/reg/team-b/app/blobs/uploads/?mount="+digest+"&from=reg/team-a/app", ""); rec.Code != http.StatusAccepted {
+	if rec := g.do(
+		http.MethodPost,
+		"/v2/reg/team-b/app/blobs/uploads/?mount="+digest+"&from=reg/team-a/app",
+		"",
+	); rec.Code != http.StatusAccepted {
 		t.Fatalf("mount without authorizer = %d, want 202 (fallback upload)", rec.Code)
 	}
 
 	// With read access to the source image the mount links it.
 	g.h.SetAuthorizer(&fakeAuthz{allow: true})
 
-	if rec := g.do(http.MethodPost, "/v2/reg/team-b/app/blobs/uploads/?mount="+digest+"&from=reg/team-a/app", ""); rec.Code != http.StatusCreated {
+	if rec := g.do(
+		http.MethodPost,
+		"/v2/reg/team-b/app/blobs/uploads/?mount="+digest+"&from=reg/team-a/app",
+		"",
+	); rec.Code != http.StatusCreated {
 		t.Fatalf("authorised same-repo mount = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
 

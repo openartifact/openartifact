@@ -59,13 +59,29 @@ func TestArtifactUploadPresigned(t *testing.T) {
 	replies := map[string]reply{
 		"POST /api/v1/repositories/{name}/uploads": {status: http.StatusCreated, body: `{"id":"u-1","method":"PUT","upload_url":"` +
 			storeSrv.URL + `/staging/u-1?X-Amz-Signature=secretsig","headers":{"X-Amz-Meta-Foo":"bar"}}`},
-		"POST /api/v1/repositories/{name}/uploads/{id}/complete": {status: http.StatusCreated, body: `{"id":"a-1","path":"dist/app.bin","size":17,"sha256":"` + hex.EncodeToString(sum[:]) + `"}`},
+		"POST /api/v1/repositories/{name}/uploads/{id}/complete": {
+			status: http.StatusCreated,
+			body:   `{"id":"a-1","path":"dist/app.bin","size":17,"sha256":"` + hex.EncodeToString(sum[:]) + `"}`,
+		},
 	}
 
 	cs, srv := newContractServer(t, replies)
 
 	// Flags after the positional arguments must work too.
-	res := runOA(t, srv, "", "artifact", "upload", "files", file, "--presigned", "--path", "dist/app.bin", "--content-type", "application/x-test")
+	res := runOA(
+		t,
+		srv,
+		"",
+		"artifact",
+		"upload",
+		"files",
+		file,
+		"--presigned",
+		"--path",
+		"dist/app.bin",
+		"--content-type",
+		"application/x-test",
+	)
 	if res.code != 0 {
 		t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
 	}
@@ -88,7 +104,8 @@ func TestArtifactUploadPresigned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if init.Path != "dist/app.bin" || init.Size != int64(len(content)) || init.SHA256 != hex.EncodeToString(sum[:]) || init.ContentType != "application/x-test" {
+	if init.Path != "dist/app.bin" || init.Size != int64(len(content)) || init.SHA256 != hex.EncodeToString(sum[:]) ||
+		init.ContentType != "application/x-test" {
 		t.Errorf("init body = %+v", init)
 	}
 
@@ -120,7 +137,10 @@ func TestArtifactUploadPresignedDefaultsPathAndRedactsURLErrors(t *testing.T) {
 
 	// An unreachable object store: the error must not echo the signed URL.
 	replies := map[string]reply{
-		"POST /api/v1/repositories/{name}/uploads": {status: http.StatusCreated, body: `{"id":"u-1","upload_url":"http://127.0.0.1:1/staging/u-1?X-Amz-Signature=secretsig"}`},
+		"POST /api/v1/repositories/{name}/uploads": {
+			status: http.StatusCreated,
+			body:   `{"id":"u-1","upload_url":"http://127.0.0.1:1/staging/u-1?X-Amz-Signature=secretsig"}`,
+		},
 	}
 	cs, srv := newContractServer(t, replies)
 

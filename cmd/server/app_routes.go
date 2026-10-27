@@ -101,7 +101,9 @@ func (a *app) registerPublicRoutes() error {
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 
-	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).WithDocsBaseURL(cfg.Docs.BaseURL).WithAPIReference(cfg.API.Docs.Enabled)
+	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).
+		WithDocsBaseURL(cfg.Docs.BaseURL).
+		WithAPIReference(cfg.API.Docs.Enabled)
 	w.public.sysInfo.RegisterPublic(router)
 
 	// Public branding (no auth required: the login page and the app shell need
@@ -201,7 +203,15 @@ func (a *app) registerUploadRoutes() {
 	u.deb.SetDebWorker(wk.deb)
 	u.deb.Register(a.web.authed)
 
-	u.presigned = api.NewPresignedUploadHandler(log, db, blobStore, a.web.evaluator, a.cfg.Storage.PresignUploadTTL, a.cfg.Storage.PresignMaxPendingUploads, reg)
+	u.presigned = api.NewPresignedUploadHandler(
+		log,
+		db,
+		blobStore,
+		a.web.evaluator,
+		a.cfg.Storage.PresignUploadTTL,
+		a.cfg.Storage.PresignMaxPendingUploads,
+		reg,
+	)
 	u.presigned.Register(a.web.authed)
 }
 
@@ -355,7 +365,11 @@ func (a *app) registerRepositoryRoutes() {
 	w := &a.workers
 	regenerator := func() api.TrashRegenerator { return api.NewWorkerRegenerator(w.deb, w.rpm, w.maven, w.npm) }
 
-	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(a.store.blobs).WithPublisher(w.webhook).WithGroupMetadata(w.groupMeta).WithTasks(a.tasks)
+	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).
+		WithBlobStore(a.store.blobs).
+		WithPublisher(w.webhook).
+		WithGroupMetadata(w.groupMeta).
+		WithTasks(a.tasks)
 	if a.cfg.Federation.Enabled {
 		repoHandler.WithFederation(a.feat.fed.store)
 	}

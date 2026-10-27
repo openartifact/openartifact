@@ -78,7 +78,12 @@ func (p *PostgresDB) MoveRepositoryToProject(ctx context.Context, repoID, toProj
 		return err
 	}
 
-	res, err := tx.ExecContext(ctx, `UPDATE repositories SET project_id = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, repoID, toProjectID)
+	res, err := tx.ExecContext(
+		ctx,
+		`UPDATE repositories SET project_id = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+		repoID,
+		toProjectID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to move repository: %w", err)
 	}
@@ -143,9 +148,31 @@ func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Reposito
 		repoType = "hosted"
 	}
 
-	err = tx.QueryRowContext(ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.PresignDownloads, repo.TrashRetentionDays, repo.ImmutableReleases, repo.MergeProxyVersions, repo.SignPackages,
+	err = tx.QueryRowContext(
+		ctx,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username,
+			upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id,
+			presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages) VALUES
+			(gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18) RETURNING id, created_at, updated_at`,
+		repo.Name,
+		repo.Format,
+		repo.Description,
+		repo.Public,
+		repoType,
+		repo.UpstreamURL,
+		repo.UpstreamUsername,
+		repo.UpstreamPasswordEnc,
+		repo.CacheTTLSeconds,
+		repo.NegativeCacheTTLSeconds,
+		repo.MaxStaleSeconds,
+		repo.Blocked,
+		repo.ProjectID,
+		repo.PresignDownloads,
+		repo.TrashRetentionDays,
+		repo.ImmutableReleases,
+		repo.MergeProxyVersions,
+		repo.SignPackages,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %w", err)

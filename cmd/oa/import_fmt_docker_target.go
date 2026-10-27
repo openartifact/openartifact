@@ -67,7 +67,12 @@ func (o ociRepo) hasBlob(ctx context.Context, digest string) (bool, error) {
 // asked to link it instead; it falls back to an upload when it cannot. The
 // bytes read from open are hashed on the way, so a blob that does not match its
 // digest is reported as the source's fault rather than the registry's.
-func (o ociRepo) pushBlob(ctx context.Context, d ociDescriptor, from string, open func(context.Context) (io.ReadCloser, error)) (int64, error) {
+func (o ociRepo) pushBlob(
+	ctx context.Context,
+	d ociDescriptor,
+	from string,
+	open func(context.Context) (io.ReadCloser, error),
+) (int64, error) {
 	session, mounted, err := o.startUpload(ctx, d.Digest, from)
 	if err != nil || mounted {
 		return 0, err

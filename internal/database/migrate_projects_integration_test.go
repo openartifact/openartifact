@@ -64,7 +64,13 @@ func seedPre025(t *testing.T, db *sql.DB) projectsSeed {
 	member("admin-org", "adm", "admin")
 
 	// The system organization keeps its (ignored) membership.
-	mustExec(t, db, `INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'member')`, projectsSystemID, s.users["sys-mem"])
+	mustExec(
+		t,
+		db,
+		`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'member')`,
+		projectsSystemID,
+		s.users["sys-mem"],
+	)
 
 	s.repo = mustScan[string](t, db,
 		`INSERT INTO repositories (name, format, org_id) VALUES ('owner-raw', 'raw', $1) RETURNING id`, s.orgs["owner-org"])
@@ -179,7 +185,13 @@ func assertProjectsRoles(t *testing.T, db *sql.DB, s projectsSeed) {
 	}
 
 	for _, tt := range tests {
-		got := mustScan[string](t, db, `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`, s.orgs[tt.org], s.users[tt.user])
+		got := mustScan[string](
+			t,
+			db,
+			`SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
+			s.orgs[tt.org],
+			s.users[tt.user],
+		)
 		if got != tt.want {
 			t.Errorf("%s: role = %q, want %q", tt.name, got, tt.want)
 		}
@@ -209,9 +221,12 @@ func assertProjectsPolicy(t *testing.T, db *sql.DB, s projectsSeed) {
 			formats sql.NullString
 		)
 
-		err := db.QueryRowContext(context.Background(),
+		err := db.QueryRowContext(
+			context.Background(),
 			`SELECT repo_name_prefix, max_repositories, token_max_ttl_days, allow_public_repos, allowed_repo_types::text, allowed_formats::text
-			   FROM projects WHERE id = $1`, id).Scan(&prefix, &maxRepo, &ttl, &public, &types, &formats)
+			   FROM projects WHERE id = $1`,
+			id,
+		).Scan(&prefix, &maxRepo, &ttl, &public, &types, &formats)
 		if err != nil {
 			t.Fatalf("%s: read policy: %v", name, err)
 		}
@@ -243,7 +258,12 @@ func assertProjectGroupsAndAudit(t *testing.T, db *sql.DB, s projectsSeed) {
 
 	group := mustScan[string](t, db, `INSERT INTO auth_groups (name) VALUES ('team') RETURNING id`)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO project_groups (project_id, group_id, role) VALUES ($1, $2, 'owner')`, s.orgs["owner-org"], group)
+	_, err := db.ExecContext(
+		ctx,
+		`INSERT INTO project_groups (project_id, group_id, role) VALUES ($1, $2, 'owner')`,
+		s.orgs["owner-org"],
+		group,
+	)
 	wantPgCode(t, err, pgCheckViolation, "project_groups accepting owner")
 
 	mustExec(t, db, `INSERT INTO project_groups (project_id, group_id, role) VALUES ($1, $2, 'developer')`, s.orgs["owner-org"], group)
@@ -255,7 +275,12 @@ func assertProjectGroupsAndAudit(t *testing.T, db *sql.DB, s projectsSeed) {
 	}
 
 	// Pre-existing org.* rows survive and are validated.
-	if n := mustScan[int](t, db, `SELECT count(*) FROM audit_logs WHERE action LIKE 'org.%' AND project_id = $1`, s.orgs["owner-org"]); n != 2 {
+	if n := mustScan[int](
+		t,
+		db,
+		`SELECT count(*) FROM audit_logs WHERE action LIKE 'org.%' AND project_id = $1`,
+		s.orgs["owner-org"],
+	); n != 2 {
 		t.Errorf("legacy org.* audit rows = %d, want 2", n)
 	}
 
@@ -348,7 +373,12 @@ func TestProjectsMigrationFreshInstall(t *testing.T) {
 
 	migrateAll(t, db)
 
-	if got := mustScan[string](t, db, `SELECT name || ':' || repo_name_prefix || ':' || max_repositories FROM projects WHERE id = $1`, projectsSystemID); got != "system::50" {
+	if got := mustScan[string](
+		t,
+		db,
+		`SELECT name || ':' || repo_name_prefix || ':' || max_repositories FROM projects WHERE id = $1`,
+		projectsSystemID,
+	); got != "system::50" {
 		t.Errorf("system project = %q, want system::50", got)
 	}
 }

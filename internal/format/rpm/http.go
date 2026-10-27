@@ -64,7 +64,14 @@ const (
 // digest is the ETag, so a matching If-None-Match is answered without reading
 // the blob. Returns true if served (or an error was written), false if not
 // found; nothing is written to w in the not-found case.
-func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, path string, contentType string, maxAge int) bool {
+func (h *HTTPHandler) tryServeRepoBlob(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	path string,
+	contentType string,
+	maxAge int,
+) bool {
 	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repo.ID, path)
 	if err != nil {
 		h.log.Errorw("failed to query repo metadata", "path", path, "error", err)
@@ -214,7 +221,12 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Size: comp.PackageSize, Filename: filename, ContentType: "application/x-rpm", Repository: repo}) {
+	if presign.Try(
+		h.blobStore,
+		w,
+		r,
+		presign.Blob{SHA256: comp.SHA256, Size: comp.PackageSize, Filename: filename, ContentType: "application/x-rpm", Repository: repo},
+	) {
 		return
 	}
 

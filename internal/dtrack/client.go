@@ -159,7 +159,13 @@ func multipartBody(fields map[string]string, fileField, fileName string, file []
 	return &buf, mw.FormDataContentType(), nil
 }
 
-func (c *Client) uploadToken(ctx context.Context, op, path string, fields map[string]string, fileField, fileName string, file []byte) (string, error) {
+func (c *Client) uploadToken(
+	ctx context.Context,
+	op, path string,
+	fields map[string]string,
+	fileField, fileName string,
+	file []byte,
+) (string, error) {
 	body, ct, err := multipartBody(fields, fileField, fileName, file)
 	if err != nil {
 		return "", err

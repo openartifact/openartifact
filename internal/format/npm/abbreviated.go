@@ -39,7 +39,12 @@ func isAbbreviatedField(raw []byte) bool {
 // BuildAbbreviatedPackument renders the application/vnd.npm.install-v1+json
 // packument: {"_id","dist-tags","name","versions"} with each version reduced to
 // abbreviatedFields and its dist rewritten as in BuildPackument.
-func BuildAbbreviatedPackument(repoName, packageName string, versions []*models.NPMVersion, distTags map[string]string, baseURL string) ([]byte, error) {
+func BuildAbbreviatedPackument(
+	repoName, packageName string,
+	versions []*models.NPMVersion,
+	distTags map[string]string,
+	baseURL string,
+) ([]byte, error) {
 	sorted := newestPerVersion(versions)
 
 	w := newPackumentWriter(repoName, packageName, baseURL, estimatePackumentSize(sorted, 320)*2/3)

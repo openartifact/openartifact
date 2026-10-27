@@ -59,7 +59,13 @@ func NewTokenSecret(kind string) (string, string, error) {
 	return prefix + body, lookupDigest(body), nil
 }
 
-func CreateToken(ctx context.Context, db database.Database, kind, name, userID string, scopes []string, expiresAt *time.Time) (string, *models.Token, error) {
+func CreateToken(
+	ctx context.Context,
+	db database.Database,
+	kind, name, userID string,
+	scopes []string,
+	expiresAt *time.Time,
+) (string, *models.Token, error) {
 	tokenString, tokenHash, err := NewTokenSecret(kind)
 	if err != nil {
 		return "", nil, err

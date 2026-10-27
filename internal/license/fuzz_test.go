@@ -147,7 +147,13 @@ func checkDenied(t *testing.T, d *Detector, list []string, policy *models.Licens
 
 		for _, id := range ids {
 			if _, bad := denied[id]; bad && ok {
-				t.Fatalf("license %q holds the denied identifier %q but the policy %v passes it (%v)", l, id, policy.DeniedLicenses, violations)
+				t.Fatalf(
+					"license %q holds the denied identifier %q but the policy %v passes it (%v)",
+					l,
+					id,
+					policy.DeniedLicenses,
+					violations,
+				)
 			}
 		}
 	}

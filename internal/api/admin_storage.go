@@ -805,10 +805,18 @@ func (h *AdminStorageHandler) testAzureBackend(ctx context.Context, name string,
 }
 
 // healthCheckStore runs the backend's own connectivity check.
-func (h *AdminStorageHandler) healthCheckStore(ctx context.Context, name, kind string, store interface{ HealthCheck(context.Context) error }) storageTestResult {
+func (h *AdminStorageHandler) healthCheckStore(
+	ctx context.Context,
+	name, kind string,
+	store interface{ HealthCheck(context.Context) error },
+) storageTestResult {
 	if err := store.HealthCheck(ctx); err != nil {
 		h.log.Warnw("storage test: health check failed", "backend", name, "kind", kind, "error", err)
-		return storageTestResult{false, "connection_failed", "could not access the " + kind + " bucket or container with the configured credentials"}
+		return storageTestResult{
+			false,
+			"connection_failed",
+			"could not access the " + kind + " bucket or container with the configured credentials",
+		}
 	}
 
 	return storageTestResult{ok: true}

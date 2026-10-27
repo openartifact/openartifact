@@ -255,7 +255,16 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		h.Log.Errorw("failed to increment download count", "name", crateName, "version", version, "error", err)
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: crate.BlobKey, Size: crate.SizeBytes, Filename: crateName + "-" + version + ".crate", ContentType: "application/octet-stream"}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{
+			SHA256:      crate.BlobKey,
+			Size:        crate.SizeBytes,
+			Filename:    crateName + "-" + version + ".crate",
+			ContentType: "application/octet-stream",
+		},
+	) {
 		return
 	}
 
@@ -292,7 +301,13 @@ const (
 // be read safely is refused, and so is one that cannot be read at all while the
 // repository has a blocking policy (false, response written). A crate that
 // only declares license_file has no enforceable license.
-func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, repoID, name, version string, crate *base.Spool, metadata map[string]any) ([]string, bool) {
+func (h *HTTPHandler) publishLicenses(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID, name, version string,
+	crate *base.Spool,
+	metadata map[string]any,
+) ([]string, bool) {
 	res, err := licensemeta.Read(r.Context(), "cargo", name+"-"+version+".crate", func() (io.ReadCloser, error) {
 		return io.NopCloser(crate.Reader()), nil
 	})
@@ -373,13 +388,22 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// Extract required fields
 	crateName, ok := metadata["name"].(string)
 	if !ok || !validCrateName(crateName) {
-		writePublishError(w, http.StatusBadRequest, "missing or invalid 'name' field: a crate name starts with a letter or '_' and holds only ASCII letters, digits, '-' and '_' (at most 64)")
+		writePublishError(
+			w,
+			http.StatusBadRequest,
+			"missing or invalid 'name' field: a crate name starts with a letter or '_' and holds only ASCII letters, "+
+				"digits, '-' and '_' (at most 64)",
+		)
 		return
 	}
 
 	version, ok := metadata["vers"].(string)
 	if !ok || !validCrateVersion(version) {
-		writePublishError(w, http.StatusBadRequest, "missing or invalid 'vers' field: expected a semantic version such as 1.2.3 or 1.2.3-rc.1")
+		writePublishError(
+			w,
+			http.StatusBadRequest,
+			"missing or invalid 'vers' field: expected a semantic version such as 1.2.3 or 1.2.3-rc.1",
+		)
 		return
 	}
 

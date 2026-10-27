@@ -61,7 +61,10 @@ func newPyPIFixture(t *testing.T, up *pypiUpstream) *fixture {
 		switch {
 		case r.URL.Path == "/simple/":
 			w.Header().Set("Content-Type", htmlContent)
-			_, _ = io.WriteString(w, `<html><body><a href="/simple/Requests/">Requests</a><a href="/simple/zope.interface/">zope.interface</a><a href="/simple/bad%2Fname/">bad/name</a></body></html>`)
+			_, _ = io.WriteString(
+				w,
+				`<html><body><a href="/simple/Requests/">Requests</a><a href="/simple/zope.interface/">zope.interface</a><a href="/simple/bad%2Fname/">bad/name</a></body></html>`,
+			)
 		case strings.HasPrefix(r.URL.Path, "/simple/"):
 			up.lastProject.Store(strings.Trim(strings.TrimPrefix(r.URL.Path, "/simple/"), "/"))
 
@@ -161,11 +164,41 @@ func TestPyPIProxy_Negotiation(t *testing.T) {
 		wantType string
 		wantJSON bool
 	}{
-		{"json upstream, no accept -> html", &pypiUpstream{page: jsonPage(sum(wheelBody)), pageType: pypisimple.ContentTypeJSON}, "", htmlContent, false},
-		{"json upstream, pip accept -> json", &pypiUpstream{page: jsonPage(sum(wheelBody)), pageType: pypisimple.ContentTypeJSON}, "application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html; q=0.1, text/html; q=0.01", pypisimple.ContentTypeJSON, true},
-		{"html upstream, json accept -> json", &pypiUpstream{page: htmlPage(sum(wheelBody))}, pypisimple.ContentTypeJSON, pypisimple.ContentTypeJSON, true},
-		{"html upstream, explicit html", &pypiUpstream{page: htmlPage(sum(wheelBody))}, pypisimple.ContentTypeHTMLv1, pypisimple.ContentTypeHTMLv1, false},
-		{"json upstream, wildcard -> html", &pypiUpstream{page: jsonPage(sum(wheelBody)), pageType: pypisimple.ContentTypeJSON}, "*/*", htmlContent, false},
+		{
+			"json upstream, no accept -> html",
+			&pypiUpstream{page: jsonPage(sum(wheelBody)), pageType: pypisimple.ContentTypeJSON},
+			"",
+			htmlContent,
+			false,
+		},
+		{
+			"json upstream, pip accept -> json",
+			&pypiUpstream{page: jsonPage(sum(wheelBody)), pageType: pypisimple.ContentTypeJSON},
+			"application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html; q=0.1, text/html; q=0.01",
+			pypisimple.ContentTypeJSON,
+			true,
+		},
+		{
+			"html upstream, json accept -> json",
+			&pypiUpstream{page: htmlPage(sum(wheelBody))},
+			pypisimple.ContentTypeJSON,
+			pypisimple.ContentTypeJSON,
+			true,
+		},
+		{
+			"html upstream, explicit html",
+			&pypiUpstream{page: htmlPage(sum(wheelBody))},
+			pypisimple.ContentTypeHTMLv1,
+			pypisimple.ContentTypeHTMLv1,
+			false,
+		},
+		{
+			"json upstream, wildcard -> html",
+			&pypiUpstream{page: jsonPage(sum(wheelBody)), pageType: pypisimple.ContentTypeJSON},
+			"*/*",
+			htmlContent,
+			false,
+		},
 	}
 
 	for _, tt := range tests {

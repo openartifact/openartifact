@@ -34,7 +34,14 @@ const goListMaxAge = 60
 // (and unless the group merges proxy versions) the list is the hosted
 // members' only, and .info/.mod/.zip/@latest requests are never answered by a
 // proxy.
-func (h *Handler) serveGo(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
+func (h *Handler) serveGo(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	relPath string,
+	members []*models.Repository,
+	be Backend,
+) bool {
 	if mod, ok := strings.CutSuffix(relPath, "/@v/list"); !ok || mod == "" {
 		return false
 	}

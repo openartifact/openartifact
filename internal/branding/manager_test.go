@@ -67,7 +67,8 @@ func TestManager_DefaultsAndOverrideLayering(t *testing.T) {
 	}
 
 	p := snap.Public
-	if p.ProductName != "Acme" || p.PrimaryColor != "#ff0000" || p.LoginMessage != "Hi **there**" || p.SupportURL != "https://help.example.com" {
+	if p.ProductName != "Acme" || p.PrimaryColor != "#ff0000" || p.LoginMessage != "Hi **there**" ||
+		p.SupportURL != "https://help.example.com" {
 		t.Fatalf("effective = %+v", p)
 	}
 
@@ -109,7 +110,8 @@ func TestManager_BlankNullReplicaAndReset(t *testing.T) {
 	}
 
 	snap, err = m.Reset(ctx)
-	if err != nil || snap.Public.ProductName != "FromConfig" || snap.Public.PrimaryColor != "#0f766e" || snap.Admin.Overrides != (Overrides{}) {
+	if err != nil || snap.Public.ProductName != "FromConfig" || snap.Public.PrimaryColor != "#0f766e" ||
+		snap.Admin.Overrides != (Overrides{}) {
 		t.Fatalf("reset: %+v, %v", snap.Public, err)
 	}
 }

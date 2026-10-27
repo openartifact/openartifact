@@ -49,7 +49,13 @@ func (h *SBOMHandler) WithAttestation(svc *attest.Service) *SBOMHandler {
 	return h
 }
 
-func NewSBOMHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator, blobStore storage.BlobStore) *SBOMHandler {
+func NewSBOMHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	generator *sbom.Generator,
+	blobStore storage.BlobStore,
+) *SBOMHandler {
 	return &SBOMHandler{
 		db:        db,
 		log:       log,

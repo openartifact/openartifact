@@ -90,7 +90,10 @@ func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 				return nil, err
 			}
 
-			res.Replaced = append(res.Replaced, Artifact{Name: c.name, Version: c.version, Path: pathOf(c), SHA256: existing, Size: dest.size})
+			res.Replaced = append(
+				res.Replaced,
+				Artifact{Name: c.name, Version: c.version, Path: pathOf(c), SHA256: existing, Size: dest.size},
+			)
 			existing = ""
 		}
 

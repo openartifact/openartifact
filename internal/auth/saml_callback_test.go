@@ -38,9 +38,24 @@ func TestPeekSAMLInResponseTo(t *testing.T) {
 		{"unsolicited response", b64(`<samlp:Response xmlns:samlp="` + samlProtocolNS + `" ID="r1"/>`), "", true},
 		{"solicited response", b64(`<samlp:Response xmlns:samlp="` + samlProtocolNS + `" InResponseTo="id-1"/>`), "id-1", true},
 		{"default namespace", b64(`<Response xmlns="` + samlProtocolNS + `" InResponseTo="id-2"/>`), "id-2", true},
-		{"leading xml declaration and comment", b64(`<?xml version="1.0"?><!-- c --><samlp:Response xmlns:samlp="` + samlProtocolNS + `" InResponseTo="id-3"/>`), "id-3", true},
-		{"only the root counts, not an InResponseTo deeper down", b64(`<samlp:Response xmlns:samlp="` + samlProtocolNS + `"><x InResponseTo="id-4"/></samlp:Response>`), "", true},
-		{"a namespaced lookalike attribute is not InResponseTo", b64(`<samlp:Response xmlns:samlp="` + samlProtocolNS + `" xmlns:evil="urn:evil" evil:InResponseTo="id-5"/>`), "", true},
+		{
+			"leading xml declaration and comment",
+			b64(`<?xml version="1.0"?><!-- c --><samlp:Response xmlns:samlp="` + samlProtocolNS + `" InResponseTo="id-3"/>`),
+			"id-3",
+			true,
+		},
+		{
+			"only the root counts, not an InResponseTo deeper down",
+			b64(`<samlp:Response xmlns:samlp="` + samlProtocolNS + `"><x InResponseTo="id-4"/></samlp:Response>`),
+			"",
+			true,
+		},
+		{
+			"a namespaced lookalike attribute is not InResponseTo",
+			b64(`<samlp:Response xmlns:samlp="` + samlProtocolNS + `" xmlns:evil="urn:evil" evil:InResponseTo="id-5"/>`),
+			"",
+			true,
+		},
 		{"wrong namespace is not a Response", b64(`<Response xmlns="urn:evil"/>`), "", false},
 		{"not a Response root", b64(`<samlp:AuthnRequest xmlns:samlp="` + samlProtocolNS + `"/>`), "", false},
 		{"not base64", "%%%", "", false},
@@ -111,8 +126,18 @@ func TestClassifySAMLParseError(t *testing.T) {
 		want []error
 		not  []error
 	}{
-		{"signature missing", wrap(fmt.Errorf("x: %w", saml.ErrSignatureMissing)), []error{ErrSAMLSignatureMissing, ErrSAMLSignatureInvalid}, nil},
-		{"signature invalid", wrap(fmt.Errorf("x: %w", saml.ErrSignatureInvalid)), []error{ErrSAMLSignatureInvalid}, []error{ErrSAMLSignatureMissing}},
+		{
+			"signature missing",
+			wrap(fmt.Errorf("x: %w", saml.ErrSignatureMissing)),
+			[]error{ErrSAMLSignatureMissing, ErrSAMLSignatureInvalid},
+			nil,
+		},
+		{
+			"signature invalid",
+			wrap(fmt.Errorf("x: %w", saml.ErrSignatureInvalid)),
+			[]error{ErrSAMLSignatureInvalid},
+			[]error{ErrSAMLSignatureMissing},
+		},
 		{"audience", wrap(saml.ErrAudienceMismatch), []error{ErrSAMLAudienceMismatch}, []error{ErrSAMLSignatureInvalid}},
 		{"expired", wrap(saml.ErrExpired), []error{ErrSAMLAssertionExpired}, []error{ErrSAMLAssertionNotYetValid}},
 		{"not yet valid", wrap(saml.ErrNotYetValid), []error{ErrSAMLAssertionNotYetValid}, []error{ErrSAMLAssertionExpired}},
@@ -121,7 +146,12 @@ func TestClassifySAMLParseError(t *testing.T) {
 		{"recipient", wrap(saml.ErrRecipientMismatch), []error{ErrSAMLDestinationMismatch}, nil},
 		{"issuer", wrap(saml.ErrIssuerMismatch), []error{ErrSAMLIssuerMismatch}, nil},
 		{"bad status", wrap(saml.ErrBadStatus{Status: "urn:status:Requester"}), []error{ErrSAMLBadStatus}, nil},
-		{"unrecognized stays unrecognized", wrap(unknown), []error{unknown}, []error{ErrSAMLSignatureInvalid, ErrSAMLAudienceMismatch, ErrSAMLAssertionExpired}},
+		{
+			"unrecognized stays unrecognized",
+			wrap(unknown),
+			[]error{unknown},
+			[]error{ErrSAMLSignatureInvalid, ErrSAMLAudienceMismatch, ErrSAMLAssertionExpired},
+		},
 		{"not an InvalidResponseError", unknown, []error{unknown}, []error{ErrSAMLSignatureInvalid}},
 		{
 			"message wording is irrelevant",

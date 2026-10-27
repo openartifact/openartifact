@@ -57,7 +57,13 @@ func TestPromotersCopyEveryFormat(t *testing.T) {
 			}
 
 			if len(res.Copied) != fx.wantCopies() || len(res.Existing) != 0 {
-				t.Fatalf("first promotion copied %d existing %d, want %d and 0: %+v", len(res.Copied), len(res.Existing), fx.wantCopies(), res)
+				t.Fatalf(
+					"first promotion copied %d existing %d, want %d and 0: %+v",
+					len(res.Copied),
+					len(res.Existing),
+					fx.wantCopies(),
+					res,
+				)
 			}
 
 			if res.Usage.Artifacts == 0 || res.Usage.Bytes == 0 {
@@ -108,7 +114,13 @@ func assertIdempotent(t *testing.T, h *harness, p Promoter, req Request, fx fixt
 	}
 
 	for _, table := range fx.tables {
-		if n := h.count(`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1`, req.Dst.ID); n != h.count(`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1`, req.Src.ID) {
+		if n := h.count(
+			`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1`,
+			req.Dst.ID,
+		); n != h.count(
+			`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1`,
+			req.Src.ID,
+		) {
 			t.Errorf("%s: target has %d rows after a retry, want the source's count", table, n)
 		}
 	}

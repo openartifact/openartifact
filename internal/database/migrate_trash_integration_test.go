@@ -238,8 +238,12 @@ func assertTrashSchema(t *testing.T, db *sql.DB) {
 	}
 
 	for _, table := range tables {
-		if n := mustScan[int](t, db,
-			`SELECT count(*) FROM pg_index WHERE indrelid = $1::regclass AND indisunique AND NOT indisprimary AND indpred IS NULL`, table); n != 0 {
+		if n := mustScan[int](
+			t,
+			db,
+			`SELECT count(*) FROM pg_index WHERE indrelid = $1::regclass AND indisunique AND NOT indisprimary AND indpred IS NULL`,
+			table,
+		); n != 0 {
 			t.Errorf("%s: %d unique indexes covering trashed rows remain", table, n)
 		}
 
@@ -248,13 +252,21 @@ func assertTrashSchema(t *testing.T, db *sql.DB) {
 			t.Errorf("%s: %d old unique constraints remain", table, n)
 		}
 
-		if n := mustScan[int](t, db,
-			`SELECT count(*) FROM pg_index WHERE indrelid = $1::regclass AND indisunique AND indisvalid AND indpred IS NOT NULL`, table); n != 1 {
+		if n := mustScan[int](
+			t,
+			db,
+			`SELECT count(*) FROM pg_index WHERE indrelid = $1::regclass AND indisunique AND indisvalid AND indpred IS NOT NULL`,
+			table,
+		); n != 1 {
 			t.Errorf("%s: %d live-row unique indexes, want 1", table, n)
 		}
 
-		if n := mustScan[int](t, db,
-			`SELECT count(*) FROM pg_index WHERE indexrelid = to_regclass($1) AND indisvalid AND indpred IS NOT NULL AND NOT indisunique`, "idx_"+table+"_deleted"); n != 1 {
+		if n := mustScan[int](
+			t,
+			db,
+			`SELECT count(*) FROM pg_index WHERE indexrelid = to_regclass($1) AND indisvalid AND indpred IS NOT NULL AND NOT indisunique`,
+			"idx_"+table+"_deleted",
+		); n != 1 {
 			t.Errorf("%s: deleted_at index missing or invalid", table)
 		}
 	}
@@ -312,7 +324,12 @@ func TestTrashMigrationsUpgradeFrom016(t *testing.T) {
 	migrateAll(t, db)
 
 	for table, id := range s.rows {
-		if n := mustScan[int](t, db, `SELECT count(*) FROM `+table+` WHERE id = $1 AND deleted_at IS NULL AND deleted_by IS NULL`, id); n != 1 {
+		if n := mustScan[int](
+			t,
+			db,
+			`SELECT count(*) FROM `+table+` WHERE id = $1 AND deleted_at IS NULL AND deleted_by IS NULL`,
+			id,
+		); n != 1 {
 			t.Errorf("%s: seeded row missing or altered after the upgrade", table)
 		}
 	}
@@ -321,7 +338,12 @@ func TestTrashMigrationsUpgradeFrom016(t *testing.T) {
 		t.Errorf("raw_artifacts holds %d rows, want 2", n)
 	}
 
-	if !mustScan[bool](t, db, `SELECT NOT immutable_releases AND deleted_at IS NULL AND trash_retention_days IS NULL FROM repositories WHERE id = $1`, s.repo["raw"]) {
+	if !mustScan[bool](
+		t,
+		db,
+		`SELECT NOT immutable_releases AND deleted_at IS NULL AND trash_retention_days IS NULL FROM repositories WHERE id = $1`,
+		s.repo["raw"],
+	) {
 		t.Error("existing repositories must default to no retention override and mutable releases")
 	}
 
@@ -396,7 +418,11 @@ func TestTrashMigrationsIntermediateStates(t *testing.T) {
 		mustExec(t, db, stmt)
 	}
 
-	if n := mustScan[int](t, db, `SELECT count(*) FROM pg_constraint WHERE conname = 'maven_artifacts_repository_id_repo_path_key'`); n != 1 {
+	if n := mustScan[int](
+		t,
+		db,
+		`SELECT count(*) FROM pg_constraint WHERE conname = 'maven_artifacts_repository_id_repo_path_key'`,
+	); n != 1 {
 		t.Fatalf("old constraint should still exist after the unique index build, found %d", n)
 	}
 

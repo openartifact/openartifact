@@ -158,8 +158,13 @@ func (h *ProjectsHandler) handleCreateToken(w http.ResponseWriter, r *http.Reque
 	record.CreatedByName = p.Username
 
 	h.emit(r, projectEvent{
-		action: audit.ActionProjectTokenCreated, projectID: &access.project.ID, resourceType: "project_token", resourceID: record.ID,
-		message: "token " + record.Name + " created in project " + access.project.Name + " (role " + body.Role + ", expires " + expiryLabel(record.ExpiresAt) + ")",
+		action:       audit.ActionProjectTokenCreated,
+		projectID:    &access.project.ID,
+		resourceType: "project_token",
+		resourceID:   record.ID,
+		message: "token " + record.Name + " created in project " + access.project.Name + " (role " + body.Role + ", expires " + expiryLabel(
+			record.ExpiresAt,
+		) + ")",
 	})
 
 	writeJSON(w, http.StatusCreated, responses.ProjectTokenCreateResponse{

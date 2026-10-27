@@ -364,7 +364,11 @@ func (m *tokenMockDB) DeleteReleaseBundle(ctx context.Context, id string) error 
 	return nil
 }
 
-func (m *tokenMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error) {
+func (m *tokenMockDB) ListReleaseBundles(
+	ctx context.Context,
+	nameFilter, stateFilter string,
+	page, limit int,
+) ([]*models.ReleaseBundle, int, error) {
 	return nil, 0, nil
 }
 

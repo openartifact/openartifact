@@ -31,7 +31,13 @@ type LicenseHandler struct {
 
 // NewLicenseHandler returns the license scan and policy handler. blobs is the
 // store the scan reads artifact files from to find their declared licenses.
-func NewLicenseHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, detector *license.Detector, blobs storage.BlobStore) *LicenseHandler {
+func NewLicenseHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	detector *license.Detector,
+	blobs storage.BlobStore,
+) *LicenseHandler {
 	return &LicenseHandler{
 		db:        db,
 		log:       log,

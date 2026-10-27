@@ -37,11 +37,20 @@ func TestLoadSettings(t *testing.T) {
 		{"nothing stored keeps env", mapSettings{}, func(s Settings) bool { return s == env }},
 		{"stored enabled=false disables even if env enables", mapSettings{SettingEnabled: "false"},
 			func(s Settings) bool { return !s.Enabled && s.Config.Model == "env-model" && s.AutoAnalyze }},
-		{"stored fields win, empty ones fall back", mapSettings{SettingEnabled: "true", SettingModel: "db-model", SettingProvider: "custom", SettingBaseURL: "http://x", SettingMaxTokens: "7"},
+		{
+			"stored fields win, empty ones fall back",
+			mapSettings{
+				SettingEnabled:   "true",
+				SettingModel:     "db-model",
+				SettingProvider:  "custom",
+				SettingBaseURL:   "http://x",
+				SettingMaxTokens: "7",
+			},
 			func(s Settings) bool {
 				return s.Enabled && s.Config.Model == "db-model" && s.Config.Provider == "custom" &&
 					s.Config.BaseURL == "http://x" && s.Config.MaxTokens == 7 && s.Config.TimeoutSecs == 5 && s.Config.APIKey == "env-key"
-			}},
+			},
+		},
 		{"stored fields are ignored until ai.enabled is saved", mapSettings{SettingModel: "db-model"},
 			func(s Settings) bool { return s.Config.Model == "env-model" }},
 		{"auto_analyze is independent of ai.enabled", mapSettings{SettingAutoAnalyze: "false"},

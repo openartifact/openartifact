@@ -64,7 +64,10 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	regen := &fakeRegen{}
 	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, regen), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen}
 
-	pipeline := &models.PromotionPipeline{Name: "pipe", Stages: []models.PipelineStage{{Name: "dev"}, {Name: "prod", RepositoryID: env.dst.ID}}}
+	pipeline := &models.PromotionPipeline{
+		Name:   "pipe",
+		Stages: []models.PipelineStage{{Name: "dev"}, {Name: "prod", RepositoryID: env.dst.ID}},
+	}
 	if err := h.pg.CreatePromotionPipeline(ctx, pipeline); err != nil {
 		t.Fatalf("CreatePromotionPipeline: %v", err)
 	}
@@ -163,7 +166,8 @@ func TestEnginePromoteRecordsAndCharges(t *testing.T) {
 	}
 
 	pr := report.Promotion
-	if pr.Status != models.PromotionStatusSuccess || pr.ItemCount != 2 || pr.ToStage != "prod" || pr.FromStage != nil || pr.CompletedAt == nil {
+	if pr.Status != models.PromotionStatusSuccess || pr.ItemCount != 2 || pr.ToStage != "prod" || pr.FromStage != nil ||
+		pr.CompletedAt == nil {
 		t.Errorf("promotion = %+v", pr)
 	}
 
@@ -192,7 +196,12 @@ func TestEnginePromoteRecordsAndCharges(t *testing.T) {
 	}
 
 	if q.CurrentArtifactCount != 2 || q.CurrentSizeBytes != int64(len("artifact 0")+len("artifact 1")) {
-		t.Errorf("quota = %d bytes / %d artifacts, want %d / 2", q.CurrentSizeBytes, q.CurrentArtifactCount, len("artifact 0")+len("artifact 1"))
+		t.Errorf(
+			"quota = %d bytes / %d artifacts, want %d / 2",
+			q.CurrentSizeBytes,
+			q.CurrentArtifactCount,
+			len("artifact 0")+len("artifact 1"),
+		)
 	}
 }
 
@@ -278,7 +287,13 @@ func TestEnginePromoteLicensePolicy(t *testing.T) {
 		"name": "shop", "version": "1.0", "filename": "shop-1.0.whl", "package_type": "bdist_wheel", "license": "GPL-3.0",
 	})
 
-	policy := &models.LicensePolicy{RepositoryID: &dst.ID, Name: "no gpl", Action: "block", DeniedLicenses: []string{"GPL-3.0"}, Enabled: true}
+	policy := &models.LicensePolicy{
+		RepositoryID:   &dst.ID,
+		Name:           "no gpl",
+		Action:         "block",
+		DeniedLicenses: []string{"GPL-3.0"},
+		Enabled:        true,
+	}
 	if err := h.pg.CreateLicensePolicy(ctx, policy); err != nil {
 		t.Fatalf("CreateLicensePolicy: %v", err)
 	}
@@ -303,7 +318,10 @@ func (e *bundleEnv) seal(shas []string, format string, paths ...string) {
 	e.h.t.Helper()
 
 	ctx := context.Background()
-	pipeline := &models.PromotionPipeline{Name: "pipe", Stages: []models.PipelineStage{{Name: "dev"}, {Name: "prod", RepositoryID: e.dst.ID}}}
+	pipeline := &models.PromotionPipeline{
+		Name:   "pipe",
+		Stages: []models.PipelineStage{{Name: "dev"}, {Name: "prod", RepositoryID: e.dst.ID}},
+	}
 
 	if err := e.h.pg.CreatePromotionPipeline(ctx, pipeline); err != nil {
 		e.h.t.Fatalf("CreatePromotionPipeline: %v", err)

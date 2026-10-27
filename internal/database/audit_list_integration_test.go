@@ -192,11 +192,13 @@ func TestListAuditLogsFilters(t *testing.T) {
 	}
 
 	var ownedRepo, foreignRepo string
-	if err := db.QueryRowContext(ctx, `INSERT INTO repositories (name, format, project_id) VALUES ('owned','raw',$1) RETURNING id`, projectID).Scan(&ownedRepo); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO repositories (name, format, project_id) VALUES ('owned','raw',$1) RETURNING id`, projectID).
+		Scan(&ownedRepo); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := db.QueryRowContext(ctx, `INSERT INTO repositories (name, format, project_id) VALUES ('foreign','raw',$1) RETURNING id`, otherProject).Scan(&foreignRepo); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO repositories (name, format, project_id) VALUES ('foreign','raw',$1) RETURNING id`, otherProject).
+		Scan(&foreignRepo); err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,7 +272,11 @@ func TestListAuditLogsFilters(t *testing.T) {
 		{"actor underscore is not a wildcard", models.AuditListParams{Actor: "pl_in"}, []string{}},
 		{"since is inclusive", models.AuditListParams{Since: at(4 * time.Minute)}, []string{"user.deleted", "user.created"}},
 		{"until is exclusive", models.AuditListParams{Until: at(time.Minute)}, []string{"project.updated"}},
-		{"since and until together", models.AuditListParams{Since: at(time.Minute), Until: at(3 * time.Minute)}, []string{"repository.updated", "repository.updated"}},
+		{
+			"since and until together",
+			models.AuditListParams{Since: at(time.Minute), Until: at(3 * time.Minute)},
+			[]string{"repository.updated", "repository.updated"},
+		},
 		{"nothing matches", models.AuditListParams{Actor: "nobody"}, []string{}},
 	}
 
@@ -299,7 +305,11 @@ func TestInsertAuditLogStoresAddressesAndToleratesGarbage(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 
 	for i, ip := range []*string{new("203.0.113.7"), new("2001:db8::1"), new("not-an-ip"), nil} {
-		ev := &models.AuditLog{Action: "user." + []string{"created", "updated", "deleted", "disabled"}[i], IPAddress: ip, DetailsJSON: []byte(`{}`)}
+		ev := &models.AuditLog{
+			Action:      "user." + []string{"created", "updated", "deleted", "disabled"}[i],
+			IPAddress:   ip,
+			DetailsJSON: []byte(`{}`),
+		}
 		if err := pg.InsertAuditLog(ctx, ev); err != nil {
 			t.Fatalf("InsertAuditLog(%v): %v", ip, err)
 		}
@@ -321,7 +331,12 @@ func TestInsertAuditLogStoresAddressesAndToleratesGarbage(t *testing.T) {
 		got[l.Action] = v
 	}
 
-	want := map[string]string{"user.created": "203.0.113.7", "user.updated": "2001:db8::1", "user.deleted": "<nil>", "user.disabled": "<nil>"}
+	want := map[string]string{
+		"user.created":  "203.0.113.7",
+		"user.updated":  "2001:db8::1",
+		"user.deleted":  "<nil>",
+		"user.disabled": "<nil>",
+	}
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("%s stored as %q, want %q", k, got[k], v)

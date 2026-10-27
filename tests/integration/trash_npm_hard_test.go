@@ -48,7 +48,11 @@ func tnhDistTags(t *testing.T, repoID, pkgName string) map[string]string {
 func TestTrashNPMHard_UnpublishRemovesDistTagsOfRemovedVersion(t *testing.T) {
 	e := tprNewEnv(t, "tnh-npm", "npm")
 
-	if _, err := harness.DB.ExecContext(t.Context(), `UPDATE repositories SET trash_retention_days = 0 WHERE id = $1`, e.repo.ID); err != nil {
+	if _, err := harness.DB.ExecContext(
+		t.Context(),
+		`UPDATE repositories SET trash_retention_days = 0 WHERE id = $1`,
+		e.repo.ID,
+	); err != nil {
 		t.Fatalf("disable the trash: %v", err)
 	}
 

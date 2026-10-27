@@ -238,10 +238,25 @@ func TestMaxCrateVersion(t *testing.T) {
 		c    models.CargoCrateSummary
 		want string
 	}{
-		{"highest stable wins", models.CargoCrateSummary{Versions: []string{"1.0.0", "2.0.0-beta.1", "1.10.0", "1.9.0"}, LiveVersions: []string{"1.0.0", "2.0.0-beta.1", "1.10.0", "1.9.0"}}, "1.10.0"},
-		{"only prereleases", models.CargoCrateSummary{Versions: []string{"1.0.0-rc.2", "1.0.0-rc.10"}, LiveVersions: []string{"1.0.0-rc.2", "1.0.0-rc.10"}}, "1.0.0-rc.10"},
+		{
+			"highest stable wins",
+			models.CargoCrateSummary{
+				Versions:     []string{"1.0.0", "2.0.0-beta.1", "1.10.0", "1.9.0"},
+				LiveVersions: []string{"1.0.0", "2.0.0-beta.1", "1.10.0", "1.9.0"},
+			},
+			"1.10.0",
+		},
+		{
+			"only prereleases",
+			models.CargoCrateSummary{Versions: []string{"1.0.0-rc.2", "1.0.0-rc.10"}, LiveVersions: []string{"1.0.0-rc.2", "1.0.0-rc.10"}},
+			"1.0.0-rc.10",
+		},
 		{"yanked skipped", models.CargoCrateSummary{Versions: []string{"1.0.0", "1.1.0"}, LiveVersions: []string{"1.0.0"}}, "1.0.0"},
-		{"stable yanked, prerelease live", models.CargoCrateSummary{Versions: []string{"1.0.0", "1.1.0-rc.1"}, LiveVersions: []string{"1.1.0-rc.1"}}, "1.1.0-rc.1"},
+		{
+			"stable yanked, prerelease live",
+			models.CargoCrateSummary{Versions: []string{"1.0.0", "1.1.0-rc.1"}, LiveVersions: []string{"1.1.0-rc.1"}},
+			"1.1.0-rc.1",
+		},
 		{"everything yanked", models.CargoCrateSummary{Versions: []string{"0.2.0", "0.10.0"}}, "0.10.0"},
 		{"unparsable rows", models.CargoCrateSummary{Versions: []string{"old", "newer"}, LiveVersions: []string{"old", "newer"}}, "newer"},
 	}
@@ -366,7 +381,11 @@ func TestPublishDuplicateVersionIsConflict(t *testing.T) {
 			} `json:"errors"`
 		}
 
-		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || len(resp.Errors) != 1 || !strings.Contains(resp.Errors[0].Detail, "already uploaded") {
+		if err := json.Unmarshal(
+			w.Body.Bytes(),
+			&resp,
+		); err != nil || len(resp.Errors) != 1 ||
+			!strings.Contains(resp.Errors[0].Detail, "already uploaded") {
 			t.Errorf("409 body = %q, want cargo's {\"errors\":[{\"detail\":...}]}", w.Body.String())
 		}
 	}

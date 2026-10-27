@@ -84,7 +84,12 @@ func mustNuspec(b *testing.B, nupkg []byte) *Nuspec {
 func benchRegistration(b *testing.B, h *HTTPHandler, router http.Handler, fresh func() (*HTTPHandler, http.Handler)) {
 	b.Helper()
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/v3/registration/contoso.lib/index.json", http.NoBody)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/repos/myrepo/v3/registration/contoso.lib/index.json",
+		http.NoBody,
+	)
 	w := &discardWriter{header: http.Header{}}
 
 	b.ReportAllocs()

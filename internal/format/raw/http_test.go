@@ -57,7 +57,10 @@ func newTestHandler(t *testing.T) (*HTTPHandler, *rawDB, *formattest.BlobStore, 
 func TestPutAndDeleteEmitEvents(t *testing.T) {
 	h, db, bs, pub := newTestHandler(t)
 
-	w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPut, "/repos/myrepo/dir/sub/file.txt", strings.NewReader("hello")))
+	w := formattest.Do(
+		h.RegisterRepoRoutes,
+		formattest.Request(http.MethodPut, "/repos/myrepo/dir/sub/file.txt", strings.NewReader("hello")),
+	)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("put status = %d: %s", w.Code, w.Body.String())
 	}
@@ -79,7 +82,10 @@ func TestPutAndDeleteEmitEvents(t *testing.T) {
 		t.Errorf("artifact = %v", a)
 	}
 
-	if w = formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodDelete, "/repos/myrepo/dir/sub/file.txt", nil)); w.Code != http.StatusNoContent {
+	if w = formattest.Do(
+		h.RegisterRepoRoutes,
+		formattest.Request(http.MethodDelete, "/repos/myrepo/dir/sub/file.txt", nil),
+	); w.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d", w.Code)
 	}
 

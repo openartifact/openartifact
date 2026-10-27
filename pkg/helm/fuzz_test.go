@@ -45,7 +45,11 @@ func FuzzParseChart(f *testing.F) {
 	f.Add(fuzzChartTarball(fuzzMember{"demo/Chart.yaml", "apiVersion: v2\nname: demo\nversion: 1.2.3\n"}))
 	f.Add(fuzzChartTarball(
 		fuzzMember{"demo/charts/sub/Chart.yaml", "apiVersion: v2\nname: sub\nversion: 9.9.9\n"},
-		fuzzMember{"demo/Chart.yaml", "apiVersion: v2\nname: demo\nversion: 1.0.0\nkeywords: [a, b]\nmaintainers:\n- name: x\n  email: x@example.com\nannotations:\n  k: v\n"}))
+		fuzzMember{
+			"demo/Chart.yaml",
+			"apiVersion: v2\nname: demo\nversion: 1.0.0\nkeywords: [a, b]\nmaintainers:\n- name: x\n  email: x@example.com\nannotations:\n  k: v\n",
+		},
+	))
 	f.Add(fuzzChartTarball(fuzzMember{"./demo/Chart.yaml", "name: [unterminated"}))
 	f.Add(fuzzChartTarball(fuzzMember{"/Chart.yaml", "name: abs\nversion: 1\n"}))
 	f.Add(fuzzChartTarball(fuzzMember{"demo/values.yaml", "a: b\n"}))
@@ -274,7 +278,9 @@ func FuzzParseIndex(f *testing.F) {
 		}
 
 		for i, cv := range got {
-			if !slices.Equal(cv.URLs, []string{"https://oa.test/charts/x.tgz"}) || cv.Name != want[i].Name || cv.Version != want[i].Version || cv.Digest != want[i].Digest {
+			if !slices.Equal(cv.URLs, []string{"https://oa.test/charts/x.tgz"}) || cv.Name != want[i].Name ||
+				cv.Version != want[i].Version ||
+				cv.Digest != want[i].Digest {
 				t.Fatalf("version %d after rewrite = %+v, from %+v", i, cv, want[i])
 			}
 		}
@@ -283,10 +289,18 @@ func FuzzParseIndex(f *testing.F) {
 
 // FuzzMergeIndexes merges two arbitrary indexes (two members' index.yaml).
 func FuzzMergeIndexes(f *testing.F) {
-	f.Add([]byte(fuzzSampleIndex), []byte("apiVersion: v1\nentries:\n  app:\n  - {name: app, version: 1.0.0, digest: other, urls: [b.tgz]}\n  - {name: app, version: 2.0.0, urls: [c.tgz]}\n"))
+	f.Add(
+		[]byte(fuzzSampleIndex),
+		[]byte(
+			"apiVersion: v1\nentries:\n  app:\n  - {name: app, version: 1.0.0, digest: other, urls: [b.tgz]}\n  - {name: app, version: 2.0.0, urls: [c.tgz]}\n",
+		),
+	)
 	f.Add([]byte("apiVersion: v1\nentries: {}\n"), []byte(fuzzSampleIndex))
 	f.Add([]byte("apiVersion: v1\nentries:\n  a: [{version: 1}, {version: 1}]\n  a: [{version: 1}]\n"), []byte("apiVersion: v2\n"))
-	f.Add([]byte("apiVersion: v1\nentries:\n  x: [{name: y, version: 1}]\n"), []byte("apiVersion: v1\nentries:\n  y: [{name: y, version: 1}]\n"))
+	f.Add(
+		[]byte("apiVersion: v1\nentries:\n  x: [{name: y, version: 1}]\n"),
+		[]byte("apiVersion: v1\nentries:\n  y: [{name: y, version: 1}]\n"),
+	)
 
 	f.Fuzz(func(t *testing.T, docA, docB []byte) {
 		a, errA := ParseIndex(docA)

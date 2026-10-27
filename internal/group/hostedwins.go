@@ -267,7 +267,14 @@ func httpReplies() replies {
 // See the comment above for the rules; it is a no-op for groups that merge
 // proxy versions, groups without both a hosted and a proxy member, and
 // requests that name no package.
-func (h *Handler) applyHostedWins(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, relPath string, be Backend) ([]*models.Repository, bool) {
+func (h *Handler) applyHostedWins(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	readable []*models.Repository,
+	relPath string,
+	be Backend,
+) ([]*models.Repository, bool) {
 	if grp.MergeProxyVersions {
 		return readable, false
 	}
@@ -282,7 +289,15 @@ func (h *Handler) applyHostedWins(w http.ResponseWriter, r *http.Request, grp *m
 
 // applyHostedWinsOCI is applyHostedWins for a docker group, answering in the
 // registry's error format.
-func (h *Handler) applyHostedWinsOCI(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, req ocipath.Request, relPath string, be Backend) ([]*models.Repository, bool) {
+func (h *Handler) applyHostedWinsOCI(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	readable []*models.Repository,
+	req ocipath.Request,
+	relPath string,
+	be Backend,
+) ([]*models.Repository, bool) {
 	if grp.MergeProxyVersions {
 		return readable, false
 	}
@@ -312,7 +327,14 @@ const (
 	ownsUnknown                  // it failed to say
 )
 
-func (h *Handler) resolveHostedWins(w http.ResponseWriter, r *http.Request, readable []*models.Repository, ref pkgRef, be Backend, rep replies) ([]*models.Repository, bool) {
+func (h *Handler) resolveHostedWins(
+	w http.ResponseWriter,
+	r *http.Request,
+	readable []*models.Repository,
+	ref pkgRef,
+	be Backend,
+	rep replies,
+) ([]*models.Repository, bool) {
 	hosted, hasProxy := splitHosted(readable)
 	if len(hosted) == 0 || !hasProxy {
 		return readable, false

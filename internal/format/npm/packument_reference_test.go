@@ -17,7 +17,12 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-func refBuildPackument(repoName, packageName string, versions []*models.NPMVersion, distTags map[string]string, baseURL string) ([]byte, error) {
+func refBuildPackument(
+	repoName, packageName string,
+	versions []*models.NPMVersion,
+	distTags map[string]string,
+	baseURL string,
+) ([]byte, error) {
 	versionMap := make(map[string]any, len(versions))
 	timeMap := make(map[string]string, len(versions)+2)
 
@@ -88,7 +93,12 @@ var refAbbreviatedFields = map[string]bool{
 	"deprecated":           true,
 }
 
-func refBuildAbbreviatedPackument(repoName, packageName string, versions []*models.NPMVersion, distTags map[string]string, baseURL string) ([]byte, error) {
+func refBuildAbbreviatedPackument(
+	repoName, packageName string,
+	versions []*models.NPMVersion,
+	distTags map[string]string,
+	baseURL string,
+) ([]byte, error) {
 	versionMap := make(map[string]any, len(versions))
 
 	for _, v := range versions {

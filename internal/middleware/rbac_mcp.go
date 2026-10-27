@@ -51,7 +51,13 @@ func isMCPPath(urlPath string, cfg RBACConfig) bool {
 // for this resource, or (deprecated) the legacy API key. The session cookie and
 // Basic credentials are ambient, so a page on another origin could make the
 // browser send them; ignoring them removes the CSRF surface of the endpoint.
-func resolveMCPPrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, db database.Database, log *logger.Logger) (*auth.Principal, string) {
+func resolveMCPPrincipal(
+	ctx context.Context,
+	r *http.Request,
+	cfg RBACConfig,
+	db database.Database,
+	log *logger.Logger,
+) (*auth.Principal, string) {
 	bearer, _ := authorizationSecrets(r)
 	if bearer == "" {
 		return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
@@ -61,12 +67,18 @@ func resolveMCPPrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, d
 		return p, auth.CredentialBearerToken
 	}
 
-	if cfg.MCPBearerVerifier != nil && !strings.HasPrefix(bearer, auth.TokenPrefixAccess) && !strings.HasPrefix(bearer, auth.TokenPrefixDeploy) {
+	if cfg.MCPBearerVerifier != nil && !strings.HasPrefix(bearer, auth.TokenPrefixAccess) &&
+		!strings.HasPrefix(bearer, auth.TokenPrefixDeploy) {
 		user, err := cfg.MCPBearerVerifier(ctx, bearer)
 
 		switch {
 		case err == nil && user != nil:
-			p := principalForUser(ctx, db, log, principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword})
+			p := principalForUser(
+				ctx,
+				db,
+				log,
+				principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword},
+			)
 			p.Credential = auth.CredentialBearerToken
 
 			return p, auth.CredentialBearerToken
@@ -93,7 +105,14 @@ func resolveMCPPrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, d
 // It does not decide what the caller may do: each MCP tool checks the caller's
 // own permission on the repository it touches, so a read-only token can use the
 // read tools. It reports whether the request may proceed.
-func gateMCP(w http.ResponseWriter, r *http.Request, cfg RBACConfig, log *logger.Logger, principal *auth.Principal, credential string) bool {
+func gateMCP(
+	w http.ResponseWriter,
+	r *http.Request,
+	cfg RBACConfig,
+	log *logger.Logger,
+	principal *auth.Principal,
+	credential string,
+) bool {
 	if principal.IsAnonymous {
 		challenge := `Bearer realm="` + AuthRealm + `"`
 
@@ -105,7 +124,19 @@ func gateMCP(w http.ResponseWriter, r *http.Request, cfg RBACConfig, log *logger
 			challenge += `, error="invalid_token"`
 		}
 
-		log.Warnw("access denied", "event", "auth_deny", "principal", "anonymous", "credential", credential, "path", r.URL.Path, "action", "mcp")
+		log.Warnw(
+			"access denied",
+			"event",
+			"auth_deny",
+			"principal",
+			"anonymous",
+			"credential",
+			credential,
+			"path",
+			r.URL.Path,
+			"action",
+			"mcp",
+		)
 		w.Header().Set("WWW-Authenticate", challenge)
 		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 
@@ -114,7 +145,19 @@ func gateMCP(w http.ResponseWriter, r *http.Request, cfg RBACConfig, log *logger
 
 	// A project token's service account is a repository credential only.
 	if principal.ServiceProjectID != "" {
-		log.Warnw("access denied", "event", "auth_deny", "principal", principal.Username, "credential", credential, "path", r.URL.Path, "action", "mcp")
+		log.Warnw(
+			"access denied",
+			"event",
+			"auth_deny",
+			"principal",
+			principal.Username,
+			"credential",
+			credential,
+			"path",
+			r.URL.Path,
+			"action",
+			"mcp",
+		)
 		httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 
 		return false

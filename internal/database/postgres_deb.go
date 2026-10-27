@@ -86,7 +86,8 @@ func (p *PostgresDB) GetDebBlobInfo(ctx context.Context, blobID string) (string,
 		size int64
 	)
 
-	err := p.db.QueryRowContext(ctx, `SELECT COALESCE(sha256, ''), COALESCE(size_bytes, 0) FROM blobs WHERE id = $1`, blobID).Scan(&sum, &size)
+	err := p.db.QueryRowContext(ctx, `SELECT COALESCE(sha256, ''), COALESCE(size_bytes, 0) FROM blobs WHERE id = $1`, blobID).
+		Scan(&sum, &size)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", 0, nil

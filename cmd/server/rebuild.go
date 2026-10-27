@@ -229,8 +229,11 @@ func newRebuildWorkers(db *database.PostgresDB, cfg *config.Config, log *logger.
 	keys := gpgkeys.New(db, log, fileSigner(cfg, log))
 
 	return &rebuildWorkers{
-		rpm:   worker.NewRPMetadataWorker(db, blobs, keys, log, reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
-		deb:   worker.NewDebMetadataWorker(db, blobs, keys, log).WithMetrics(reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
+		rpm: worker.NewRPMetadataWorker(db, blobs, keys, log, reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
+		deb: worker.NewDebMetadataWorker(db, blobs, keys, log).
+			WithMetrics(reg).
+			WithRegenLimiter(limiter).
+			WithDrainTimeout(rebuildRegenDrain),
 		maven: worker.NewMavenMetadataWorker(db, blobs, db.GetDB(), log, reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 		npm:   worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 	}

@@ -44,7 +44,8 @@ func TestResultsFromThirdPartiesAreMarkedUntrusted(t *testing.T) {
 			}
 
 			blocks := resp.Result.Content
-			if len(blocks) != 2 || !strings.HasPrefix(blocks[1].Text, "NOTE: ") || !strings.Contains(strings.ToLower(blocks[1].Text), "untrusted") {
+			if len(blocks) != 2 || !strings.HasPrefix(blocks[1].Text, "NOTE: ") ||
+				!strings.Contains(strings.ToLower(blocks[1].Text), "untrusted") {
 				t.Errorf("want the JSON block followed by an untrusted-data note, got %+v", blocks)
 			}
 		})

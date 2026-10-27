@@ -46,7 +46,14 @@ func (s *Server) listPackages(ctx context.Context, in listPackagesIn) (packageLi
 		items = append(items, toPackageDTO(c))
 	}
 
-	return packageListResult{provenance: newProvenance(), Repository: repo.Name, Total: total, Page: page, Limit: limit, Packages: items}, nil
+	return packageListResult{
+		provenance: newProvenance(),
+		Repository: repo.Name,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		Packages:   items,
+	}, nil
 }
 
 func (s *Server) getPackage(ctx context.Context, in getPackageIn) (packageDetailResult, error) {

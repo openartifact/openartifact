@@ -169,7 +169,8 @@ func NewRegistry(log *logger.Logger, opts Options) *Registry {
 		// that is shared by everyone on the host.
 		if t.installAuto && tempCache {
 			t.installAuto = false
-			t.installRefusal = "Runtime install of " + t.name + " is disabled: no persistent, private scanner cache directory is configured. Set OPENARTIFACT_SCANNER_CACHE_DIR."
+			t.installRefusal = "Runtime install of " + t.name + " is disabled: no persistent, private scanner cache directory is " +
+				"configured. Set OPENARTIFACT_SCANNER_CACHE_DIR."
 
 			log.Errorw("scanner install refused: the cache directory would be in the shared temp directory",
 				"scanner", t.name,
@@ -271,9 +272,12 @@ func (r *Registry) LogStatus() {
 
 		switch {
 		case !s.Available && s.InstallState == InstallStateInstalling:
-			r.log.Infow("vulnerability scanner is installed by the server (install: auto): an installed copy is reused, else the pinned release is downloaded",
-				"scanner", s.Name,
-				"offline", r.opts.Offline,
+			r.log.Infow(
+				"vulnerability scanner is installed by the server (install: auto): an installed copy is reused, else the pinned release is downloaded",
+				"scanner",
+				s.Name,
+				"offline",
+				r.opts.Offline,
 			)
 		case !s.Available:
 			r.log.Warnw("vulnerability scanner not available: scans selecting it will fail",

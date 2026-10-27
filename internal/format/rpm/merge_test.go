@@ -24,7 +24,15 @@ func testPackages() []rpm.Package {
 			Summary: "A & B <test>", PackageSize: 100, Files: []rpm.FileEntry{{Path: "/usr/bin/alpha"}},
 			Changelogs: []rpm.ChangelogEntry{{Author: "me", Time: 1700000000, Description: "first"}},
 		},
-		{Name: "beta", Version: "2.0", Release: "3.el9", Epoch: 1, Arch: "noarch", SHA256: "bbbb", Files: []rpm.FileEntry{{Path: "/etc/beta.conf"}}},
+		{
+			Name:    "beta",
+			Version: "2.0",
+			Release: "3.el9",
+			Epoch:   1,
+			Arch:    "noarch",
+			SHA256:  "bbbb",
+			Files:   []rpm.FileEntry{{Path: "/etc/beta.conf"}},
+		},
 	}
 }
 
@@ -93,7 +101,8 @@ func TestScanPrimaryIdentifiesPackages(t *testing.T) {
 	}
 
 	a, b := infos[0], infos[1]
-	if a.Name != "alpha" || a.Arch != "x86_64" || a.Ver != "1.0" || a.Rel != "1" || a.PkgID != "aaaa" || a.Href != "Packages/alpha-1.0-1.x86_64.rpm" {
+	if a.Name != "alpha" || a.Arch != "x86_64" || a.Ver != "1.0" || a.Rel != "1" || a.PkgID != "aaaa" ||
+		a.Href != "Packages/alpha-1.0-1.x86_64.rpm" {
 		t.Errorf("alpha = %+v", a)
 	}
 
@@ -232,7 +241,9 @@ func TestParseRepomd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got["primary"] != "repodata/a-primary.xml.zst" || got["filelists"] != "repodata/b-filelists.xml.gz" || got["modules"] != "repodata/c-modules.yaml.gz" || got["other"] != "" {
+	if got["primary"] != "repodata/a-primary.xml.zst" || got["filelists"] != "repodata/b-filelists.xml.gz" ||
+		got["modules"] != "repodata/c-modules.yaml.gz" ||
+		got["other"] != "" {
 		t.Errorf("got %v", got)
 	}
 

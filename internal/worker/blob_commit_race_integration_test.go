@@ -433,7 +433,12 @@ func TestCommitBlobVersusDeleteAndSweepStress(t *testing.T) {
 
 	for _, sha := range shas {
 		if s.hasObject(sha) || s.blobRowExists(sha) {
-			t.Errorf("blob %s left behind after every reference was removed (object %v, row %v)", sha, s.hasObject(sha), s.blobRowExists(sha))
+			t.Errorf(
+				"blob %s left behind after every reference was removed (object %v, row %v)",
+				sha,
+				s.hasObject(sha),
+				s.blobRowExists(sha),
+			)
 		}
 	}
 
@@ -477,7 +482,8 @@ func (s *purgeSeed) checkInvariantUntil(ctx context.Context, stop <-chan struct{
 			err := storage.WithBlobLock(ctx, s.pg, sha, func(ctx context.Context) error {
 				var refs int
 				if err := s.pg.GetDB().QueryRowContext(ctx,
-					`SELECT COUNT(*) FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha).Scan(&refs); err != nil {
+					`SELECT COUNT(*) FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha).
+					Scan(&refs); err != nil {
 					return err
 				}
 

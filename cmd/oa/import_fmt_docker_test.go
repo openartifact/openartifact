@@ -66,7 +66,9 @@ func newDockerArtifactoryEnv(t *testing.T, fx *dockerFixture, props map[string]m
 	src := newDockerArtifactory(t, reg, fakeSourceRepo{name: "docker-local", format: "docker", kind: "local", files: files})
 	oa, fk := newDockerOA(t)
 
-	cfg := parseCfg(t, append([]string{"artifactory", "--source-url", src.URL, "--source-user", "svc", "--repo", "docker-local:" + dockerDst}, args...)...)
+	cfg := parseCfg(
+		t,
+		append([]string{"artifactory", "--source-url", src.URL, "--source-user", "svc", "--repo", "docker-local:" + dockerDst}, args...)...)
 	cfg.SourceToken = "secret"
 
 	return &dockerEnv{t: t, fx: fx, oa: oa, fk: fk, reg: reg, src: src, cfg: cfg, files: files}
@@ -378,7 +380,8 @@ func TestImportDockerReportsTagConflict(t *testing.T) {
 
 	rep := env.run()
 
-	if len(rep.Failures) != 1 || rep.Failures[0].Path != "team/app:1.0" || !strings.Contains(rep.Failures[0].Error, errUploadConflict.Error()) {
+	if len(rep.Failures) != 1 || rep.Failures[0].Path != "team/app:1.0" ||
+		!strings.Contains(rep.Failures[0].Error, errUploadConflict.Error()) {
 		t.Fatalf("failures = %+v, want one conflict for team/app:1.0", rep.Failures)
 	}
 
@@ -454,7 +457,8 @@ func TestImportDockerCorruptBlobFailsOnlyItsTag(t *testing.T) {
 	}
 
 	f := rep.Failures[0]
-	if f.Path != "team/broken:1.0" || !strings.Contains(f.Error, "the source sent content of") || !strings.Contains(f.Error, shortDigest(brokenLayer)) {
+	if f.Path != "team/broken:1.0" || !strings.Contains(f.Error, "the source sent content of") ||
+		!strings.Contains(f.Error, shortDigest(brokenLayer)) {
 		t.Fatalf("failure = %+v, want the corrupt blob of team/broken:1.0 named", f)
 	}
 
@@ -510,7 +514,11 @@ func TestImportDockerFetchesAndUploadsSharedBlobOnce(t *testing.T) {
 	const tags = 8
 
 	for i := range tags {
-		fx.tag("team/app", fmt.Sprintf("v%d", i), fx.image(fmt.Sprintf("config %d", i), "the shared base layer", fmt.Sprintf("layer %d", i)))
+		fx.tag(
+			"team/app",
+			fmt.Sprintf("v%d", i),
+			fx.image(fmt.Sprintf("config %d", i), "the shared base layer", fmt.Sprintf("layer %d", i)),
+		)
 	}
 
 	env := newDockerArtifactoryEnv(t, fx, nil, "--concurrency", "8")
@@ -560,7 +568,9 @@ func TestImportDockerRejectsSchema1Manifests(t *testing.T) {
 	fx := newDockerFixture()
 	fx.tag("team/ok", "1.0", fx.image("config", "layer"))
 
-	legacy := []byte(`{"schemaVersion":1,"name":"team/legacy","tag":"1.0","fsLayers":[{"blobSum":"sha256:` + strings.Repeat("a", 64) + `"}]}`)
+	legacy := []byte(
+		`{"schemaVersion":1,"name":"team/legacy","tag":"1.0","fsLayers":[{"blobSum":"sha256:` + strings.Repeat("a", 64) + `"}]}`,
+	)
 	digest := ociDigestOf(legacy)
 	fx.manifests[digest] = legacy
 	fx.tag("team/legacy", "1.0", dockerFakeImage{digest: digest, manifest: legacy})
@@ -569,7 +579,8 @@ func TestImportDockerRejectsSchema1Manifests(t *testing.T) {
 
 	rep := env.run()
 
-	if rep.Uploaded != 1 || len(rep.Failures) != 1 || rep.Failures[0].Path != "team/legacy:1.0" || !strings.Contains(rep.Failures[0].Error, "schema 1") {
+	if rep.Uploaded != 1 || len(rep.Failures) != 1 || rep.Failures[0].Path != "team/legacy:1.0" ||
+		!strings.Contains(rep.Failures[0].Error, "schema 1") {
 		t.Fatalf("uploaded=%d failures=%+v, want the schema 1 tag refused", rep.Uploaded, rep.Failures)
 	}
 
@@ -585,7 +596,8 @@ func TestImportDockerRemovesManifestStoredWithOtherDigest(t *testing.T) {
 
 	rep := env.run()
 
-	if len(rep.Failures) != 1 || !strings.Contains(rep.Failures[0].Error, "was stored as") || !strings.Contains(rep.Failures[0].Error, "bad copy was removed") {
+	if len(rep.Failures) != 1 || !strings.Contains(rep.Failures[0].Error, "was stored as") ||
+		!strings.Contains(rep.Failures[0].Error, "bad copy was removed") {
 		t.Fatalf("failures = %+v, want a digest mismatch with the copy removed", rep.Failures)
 	}
 
@@ -642,7 +654,12 @@ func TestImportDockerNeedsARegistryAPI(t *testing.T) {
 
 	env := newDockerNexusEnv(t, fx, nil)
 
-	imp, err := newImporter(env.cfg, dockerPlainSource{newImportSource(env.cfg, env.src.Client())}, &importTarget{c: env.oa.client()}, io.Discard)
+	imp, err := newImporter(
+		env.cfg,
+		dockerPlainSource{newImportSource(env.cfg, env.src.Client())},
+		&importTarget{c: env.oa.client()},
+		io.Discard,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,7 +727,9 @@ func TestImportDockerIdentityPrefersTheComponent(t *testing.T) {
 		t.Fatalf("identity without a component = %+v, %v", id, ok)
 	}
 
-	if _, ok := dockerIdentity(sourceAsset{Path: "v2/-/blobs/sha256:x", Component: sourceComponent{Name: "smoke/hello", Version: "1.0"}}); ok {
+	if _, ok := dockerIdentity(
+		sourceAsset{Path: "v2/-/blobs/sha256:x", Component: sourceComponent{Name: "smoke/hello", Version: "1.0"}},
+	); ok {
 		t.Fatal("a blob became a tag through its component")
 	}
 }

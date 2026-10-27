@@ -85,11 +85,18 @@ func newPresignFixture(t *testing.T, public bool, override *bool, settings presi
 	local := newSigningStore(t)
 	// An unregistered registry: NewRegistry registers on the process-wide
 	// default registerer and may only be called once.
-	reg := &metrics.Registry{BlobDownloadsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "blob_downloads_total"}, []string{"mode", "reason"})}
+	reg := &metrics.Registry{
+		BlobDownloadsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "blob_downloads_total"}, []string{"mode", "reason"}),
+	}
 	served := presign.Wrap(local, db, settings, reg, newMWLogger(t))
 
 	digest := putBlob(t, local, "jar-bytes-0123456789")
-	db.mavenArtifacts["a1"] = &models.MavenArtifact{ID: "a1", RepositoryID: repo.ID, SHA256: digest, RepoPath: "com/example/app/1.0/app-1.0.jar"}
+	db.mavenArtifacts["a1"] = &models.MavenArtifact{
+		ID:           "a1",
+		RepositoryID: repo.ID,
+		SHA256:       digest,
+		RepoPath:     "com/example/app/1.0/app-1.0.jar",
+	}
 	seedMetadata(t, db, local, repo.ID, "com/example/app/maven-metadata.xml", "<metadata/>")
 
 	rpmDigest := putBlob(t, local, "rpm-bytes-0123456789")
@@ -293,7 +300,12 @@ func TestPresignDownloads_UnsupportedBackendStreams(t *testing.T) {
 	}
 
 	digest := putBlob(t, local, "jar-bytes")
-	db.mavenArtifacts["a1"] = &models.MavenArtifact{ID: "a1", RepositoryID: repo.ID, SHA256: digest, RepoPath: "com/example/app/1.0/app-1.0.jar"}
+	db.mavenArtifacts["a1"] = &models.MavenArtifact{
+		ID:           "a1",
+		RepositoryID: repo.ID,
+		SHA256:       digest,
+		RepoPath:     "com/example/app/1.0/app-1.0.jar",
+	}
 
 	router := chi.NewRouter()
 	router.Route("/repos/{name}", func(r chi.Router) {

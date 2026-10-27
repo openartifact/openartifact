@@ -51,7 +51,15 @@ func TestParseChecksum(t *testing.T) {
 
 func TestHandlerChecksum(t *testing.T) {
 	sha1 := strings.Repeat("cd", 20)
-	hit := ChecksumResult{Repository: "libs", Format: "maven", Name: "org.acme:core", Version: "1.0", Filename: "org/acme/core/1.0/core-1.0.jar", Checksum: sha1, Algorithm: AlgorithmSHA1}
+	hit := ChecksumResult{
+		Repository: "libs",
+		Format:     "maven",
+		Name:       "org.acme:core",
+		Version:    "1.0",
+		Filename:   "org/acme/core/1.0/core-1.0.jar",
+		Checksum:   sha1,
+		Algorithm:  AlgorithmSHA1,
+	}
 
 	tests := []struct {
 		name         string
@@ -63,12 +71,44 @@ func TestHandlerChecksum(t *testing.T) {
 		wantErrCode  string
 		wantSearched bool
 	}{
-		{name: "finds the file", url: "?checksum=" + sha1, searcher: mockSearcher{checksumResults: []ChecksumResult{hit}}, wantStatus: http.StatusOK, wantTotal: 1, wantAlgo: AlgorithmSHA1, wantSearched: true},
-		{name: "no match is an empty list", url: "?checksum=" + sha1, wantStatus: http.StatusOK, wantAlgo: AlgorithmSHA1, wantSearched: true},
-		{name: "q is not needed", url: "?checksum=" + strings.Repeat("0f", 16), wantStatus: http.StatusOK, wantAlgo: AlgorithmMD5, wantSearched: true},
+		{
+			name:         "finds the file",
+			url:          "?checksum=" + sha1,
+			searcher:     mockSearcher{checksumResults: []ChecksumResult{hit}},
+			wantStatus:   http.StatusOK,
+			wantTotal:    1,
+			wantAlgo:     AlgorithmSHA1,
+			wantSearched: true,
+		},
+		{
+			name:         "no match is an empty list",
+			url:          "?checksum=" + sha1,
+			wantStatus:   http.StatusOK,
+			wantAlgo:     AlgorithmSHA1,
+			wantSearched: true,
+		},
+		{
+			name:         "q is not needed",
+			url:          "?checksum=" + strings.Repeat("0f", 16),
+			wantStatus:   http.StatusOK,
+			wantAlgo:     AlgorithmMD5,
+			wantSearched: true,
+		},
 		{name: "prefix is rejected", url: "?checksum=abcdef", wantStatus: http.StatusBadRequest, wantErrCode: "invalid_checksum"},
-		{name: "bad limit is rejected first", url: "?checksum=" + sha1 + "&limit=0", wantStatus: http.StatusBadRequest, wantErrCode: "invalid_limit"},
-		{name: "too many matches", url: "?checksum=" + sha1, searcher: mockSearcher{checksumErr: ErrChecksumTooBroad}, wantStatus: http.StatusBadRequest, wantErrCode: "query_too_broad", wantSearched: true},
+		{
+			name:        "bad limit is rejected first",
+			url:         "?checksum=" + sha1 + "&limit=0",
+			wantStatus:  http.StatusBadRequest,
+			wantErrCode: "invalid_limit",
+		},
+		{
+			name:         "too many matches",
+			url:          "?checksum=" + sha1,
+			searcher:     mockSearcher{checksumErr: ErrChecksumTooBroad},
+			wantStatus:   http.StatusBadRequest,
+			wantErrCode:  "query_too_broad",
+			wantSearched: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -106,7 +146,15 @@ func TestHandlerChecksum(t *testing.T) {
 			}
 
 			if body.Total != tc.wantTotal || len(body.Packages) != tc.wantTotal || ms.gotAlgorithm != tc.wantAlgo {
-				t.Errorf("total = %d, packages = %d, algorithm = %q; want %d, %d, %q", body.Total, len(body.Packages), ms.gotAlgorithm, tc.wantTotal, tc.wantTotal, tc.wantAlgo)
+				t.Errorf(
+					"total = %d, packages = %d, algorithm = %q; want %d, %d, %q",
+					body.Total,
+					len(body.Packages),
+					ms.gotAlgorithm,
+					tc.wantTotal,
+					tc.wantTotal,
+					tc.wantAlgo,
+				)
 			}
 		})
 	}

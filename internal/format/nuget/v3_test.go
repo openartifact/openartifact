@@ -121,7 +121,8 @@ func (d *memDB) SearchNuGetPackages(_ context.Context, _, query string, skip, ta
 	var ids []string
 
 	for _, p := range d.pkgs {
-		if strings.Contains(strings.ToLower(p.PackageID+" "+p.Title+" "+p.Description+" "+p.Tags), strings.ToLower(query)) && !slices.Contains(ids, p.PackageID) {
+		if strings.Contains(strings.ToLower(p.PackageID+" "+p.Title+" "+p.Description+" "+p.Tags), strings.ToLower(query)) &&
+			!slices.Contains(ids, p.PackageID) {
 			ids = append(ids, p.PackageID)
 		}
 	}
@@ -569,7 +570,8 @@ func TestRegistrationIndexShape(t *testing.T) {
 	}
 
 	page := doc.Items[0]
-	if page.ID != indexURL+"#page/1.0.0/2.0.0" || page.Lower != "1.0.0" || page.Upper != "2.0.0" || page.Count != 3 || page.Parent != indexURL {
+	if page.ID != indexURL+"#page/1.0.0/2.0.0" || page.Lower != "1.0.0" || page.Upper != "2.0.0" || page.Count != 3 ||
+		page.Parent != indexURL {
 		t.Errorf("page = id %q lower %q upper %q count %d parent %q", page.ID, page.Lower, page.Upper, page.Count, page.Parent)
 	}
 

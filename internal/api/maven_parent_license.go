@@ -101,7 +101,12 @@ func repoPOMLookup(db database.Database, blobs storage.BlobStore, repoID string)
 
 // sourcePOMBlob returns the blob digest of the pom at path in src, or "" when
 // src does not hold it.
-func sourcePOMBlob(ctx context.Context, db database.Database, src *models.Repository, groupID, artifactID, version, path string) (string, error) {
+func sourcePOMBlob(
+	ctx context.Context,
+	db database.Database,
+	src *models.Repository,
+	groupID, artifactID, version, path string,
+) (string, error) {
 	if src.RepoType == repotype.Proxy {
 		entry, err := db.GetProxyCacheEntry(ctx, src.ID, path)
 		if err != nil {
@@ -159,7 +164,13 @@ func readStoredPOM(ctx context.Context, blobs storage.BlobStore, sha string) (*p
 // inheritedPOMLicenses resolves the licenses of a pom that declares none from
 // its parent chain in the repository. resolved is false when a parent is not
 // stored (yet).
-func inheritedPOMLicenses(ctx context.Context, db database.Database, blobs storage.BlobStore, repoID string, parent *pkgmaven.Parent) ([]string, bool, error) {
+func inheritedPOMLicenses(
+	ctx context.Context,
+	db database.Database,
+	blobs storage.BlobStore,
+	repoID string,
+	parent *pkgmaven.Parent,
+) ([]string, bool, error) {
 	return licensemeta.InheritPOMLicenses(ctx, parent, repoPOMLookup(db, blobs, repoID)) //nolint:wrapcheck // callers only log it
 }
 
@@ -179,7 +190,13 @@ func recordPOMLicenses(ctx context.Context, db database.Database, log *logger.Lo
 // reevaluateWaitingPOMs re-resolves the unresolved poms of the repository that
 // stored a possible parent and of the hosted repositories that share a group
 // with it (their poms may take that parent through the group).
-func reevaluateWaitingPOMs(ctx context.Context, db database.Database, blobs storage.BlobStore, log *logger.Logger, repoID string) (int, error) {
+func reevaluateWaitingPOMs(
+	ctx context.Context,
+	db database.Database,
+	blobs storage.BlobStore,
+	log *logger.Logger,
+	repoID string,
+) (int, error) {
 	sources, err := pomSources(ctx, db, repoID)
 	if err != nil {
 		return 0, err
@@ -208,7 +225,13 @@ func reevaluateWaitingPOMs(ctx context.Context, db database.Database, blobs stor
 // whose parent chain now resolves gets its scan result rewritten with the
 // inherited licenses (quarantining it, and the files stored beside it, when a
 // blocking policy is violated). It returns how many results it updated.
-func reevaluateUnresolvedPOMs(ctx context.Context, db database.Database, blobs storage.BlobStore, log *logger.Logger, repoID string) (int, error) {
+func reevaluateUnresolvedPOMs(
+	ctx context.Context,
+	db database.Database,
+	blobs storage.BlobStore,
+	log *logger.Logger,
+	repoID string,
+) (int, error) {
 	scans, err := db.ListLicenseScanResults(ctx, repoID)
 	if err != nil {
 		return 0, fmt.Errorf("list license scans: %w", err)
@@ -293,7 +316,13 @@ func mavenArtifactsByID(ctx context.Context, db database.Database, repoID string
 // quarantineSiblings records the (blocked) licenses against the other files
 // stored for the same group, artifact and version, best-effort, so the blocked
 // version cannot be downloaded through them.
-func quarantineSiblings(ctx context.Context, db database.Database, log *logger.Logger, repoID, groupID, artifactID, version, skipPath string, licenses []string) {
+func quarantineSiblings(
+	ctx context.Context,
+	db database.Database,
+	log *logger.Logger,
+	repoID, groupID, artifactID, version, skipPath string,
+	licenses []string,
+) {
 	siblings, err := db.GetMavenArtifactsByGAV(ctx, repoID, groupID, artifactID, version)
 	if err != nil {
 		log.Warnw("maven license block: failed to list sibling files", "path", skipPath, "error", err)

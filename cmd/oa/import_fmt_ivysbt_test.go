@@ -445,7 +445,13 @@ func TestImportIvySBTRepeatsAFailedUpload(t *testing.T) {
 		t.Run(fx.format, func(t *testing.T) {
 			cfg, src, d := fx.setup(t, "--path-prefix", fx.files[0].path)
 
-			flaky := newFlaky(t, d.handler(), func(r *http.Request) bool { return r.Method == http.MethodPut }, 1, failStatus(http.StatusServiceUnavailable))
+			flaky := newFlaky(
+				t,
+				d.handler(),
+				func(r *http.Request) bool { return r.Method == http.MethodPut },
+				1,
+				failStatus(http.StatusServiceUnavailable),
+			)
 			(&fakeSleeper{}).apply(cfg.retrier)
 
 			rep := d.runVia(t, cfg, src, flaky.Server)
@@ -526,7 +532,8 @@ func TestSplitIvySBTPathAgreesWithServer(t *testing.T) {
 		want, _, wantOK := base.SplitArtifactPath(p)
 		got, ok := splitIvySBTPath(p)
 
-		if ok != wantOK || got.group != want.Group || got.module != want.Module || got.version != want.Version || got.filename != want.Filename {
+		if ok != wantOK || got.group != want.Group || got.module != want.Module || got.version != want.Version ||
+			got.filename != want.Filename {
 			t.Errorf("splitIvySBTPath(%q) = %+v, %v; server reads %+v, %v", p, got, ok, want, wantOK)
 		}
 	}
@@ -564,7 +571,14 @@ func TestImportIvySBTPresentUsesListedCoordinates(t *testing.T) {
 		{"ivy: another version", formatIvy, ivyRows, "org.acme/lib/2.0/jars/lib-1.0.jar", shaB, "r3"},
 		{"ivy: maven layout", formatIvy, ivyRows, "com/acme/lib/1.0/lib-1.0.jar", shaA, "r4"},
 		{"ivy: other file of the module", formatIvy, ivyRows, "org.acme/lib/1.0/ivys/ivy-1.0.xml", shaA, ""},
-		{"ivy: the listing never shows the bare file name", formatIvy, []listedPackage{{ID: "x", SHA256: shaA, Name: "org.acme:lib", Version: "1.0", Filename: "jars/lib-1.0.jar"}}, "org.acme/lib/1.0/jars/lib-1.0.jar", shaA, ""},
+		{
+			"ivy: the listing never shows the bare file name",
+			formatIvy,
+			[]listedPackage{{ID: "x", SHA256: shaA, Name: "org.acme:lib", Version: "1.0", Filename: "jars/lib-1.0.jar"}},
+			"org.acme/lib/1.0/jars/lib-1.0.jar",
+			shaA,
+			"",
+		},
 		{"ivy: source without digest", formatIvy, ivyRows, "org.acme/lib/1.0/jars/lib-1.0.jar", "", ""},
 		{"ivy: invalid path", formatIvy, ivyRows, "lib-1.0.jar", shaA, ""},
 		{"sbt: jar", formatSBT, sbtRows, "com/acme/lib_2.13/1.0/lib_2.13-1.0.jar", shaA, "s1"},

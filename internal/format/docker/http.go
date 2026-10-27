@@ -549,15 +549,21 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 
 	repoName, _ := ocipath.SplitName(name)
 
-	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: repoName,
-		Format:     "docker",
-		Name:       name,
-		Version:    reference,
-		Path:       name + "/manifests/" + reference,
-		SHA256:     digestHex,
-		Size:       int64(len(body)),
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repo.ID,
+		webhook.EventArtifactUploaded,
+		webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+			Repository: repoName,
+			Format:     "docker",
+			Name:       name,
+			Version:    reference,
+			Path:       name + "/manifests/" + reference,
+			SHA256:     digestHex,
+			Size:       int64(len(body)),
+		}),
+	)
 
 	w.Header().Set("Location", "/v2/"+name+"/manifests/"+digest)
 	w.Header().Set("Docker-Content-Digest", digest)
@@ -572,7 +578,12 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 // re-checked under the per-blob lock, which covers only the row work, so a
 // concurrent unpublish cannot delete the blob in between. Both the store and the insert are idempotent, so
 // a re-push of the same manifest is a refresh.
-func (h *HTTPHandler) storeManifest(ctx context.Context, manifest *models.DockerManifest, digestHex, contentType string, body []byte) error {
+func (h *HTTPHandler) storeManifest(
+	ctx context.Context,
+	manifest *models.DockerManifest,
+	digestHex, contentType string,
+	body []byte,
+) error {
 	blob := storage.BytesBlob(digestHex, body, map[string]string{
 		"sha256":       digestHex,
 		"content-type": contentType,
@@ -601,7 +612,13 @@ func (h *HTTPHandler) storeManifest(ctx context.Context, manifest *models.Docker
 // (an idempotent refresh, or a tag move) reserves nothing; reserved is false
 // then (the first result). When the second result is false the response has been written: 507 when the quota has
 // no room, 500 otherwise.
-func (h *HTTPHandler) reserveManifest(w http.ResponseWriter, r *http.Request, repo *models.Repository, image, digest string, size int64) (bool, bool) {
+func (h *HTTPHandler) reserveManifest(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	image, digest string,
+	size int64,
+) (bool, bool) {
 	existing, err := h.db.GetDockerManifest(r.Context(), repo.ID, image, digest)
 	if err != nil {
 		h.log.Errorw("failed to look up manifest before push", "digest", digest, "error", err)
@@ -713,15 +730,21 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repoName,
-		Format:     "docker",
-		Name:       name,
-		Version:    reference,
-		Path:       name + "/manifests/" + reference,
-		SHA256:     manifestBlobKey(reference),
-		Size:       deleted.Size,
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repo.ID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repoName,
+			Format:     "docker",
+			Name:       name,
+			Version:    reference,
+			Path:       name + "/manifests/" + reference,
+			SHA256:     manifestBlobKey(reference),
+			Size:       deleted.Size,
+		}),
+	)
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -806,14 +829,20 @@ func (h *HTTPHandler) deleteTag(w http.ResponseWriter, r *http.Request, repo *mo
 
 	repoName, _ := ocipath.SplitName(name)
 
-	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repoName,
-		Format:     "docker",
-		Name:       name,
-		Version:    tagName,
-		Path:       name + "/manifests/" + tagName,
-		SHA256:     manifestBlobKey(tag.ManifestDigest),
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repo.ID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repoName,
+			Format:     "docker",
+			Name:       name,
+			Version:    tagName,
+			Path:       name + "/manifests/" + tagName,
+			SHA256:     manifestBlobKey(tag.ManifestDigest),
+		}),
+	)
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -1630,7 +1659,13 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 // would refuse. ok=false means the declared Content-Length alone cannot fit and
 // nothing may be staged. A completion whose digest is already stored in the
 // repository (an idempotent re-push, which reserves nothing) is not capped.
-func (h *HTTPHandler) quotaBoundedBody(w http.ResponseWriter, r *http.Request, repoID string, offset int64, digest string) (io.Reader, bool) {
+func (h *HTTPHandler) quotaBoundedBody(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID string,
+	offset int64,
+	digest string,
+) (io.Reader, bool) {
 	room, limited, err := quota.Room(r.Context(), h.db, repoID)
 	if err != nil {
 		// Advisory only: the reservation at completion stays authoritative.
@@ -1895,7 +1930,12 @@ func (h *HTTPHandler) discardOrphan(ctx context.Context, shaHex string) {
 
 // appendFinalChunk appends the request body to the staged file (after
 // truncating it to offset). On failure it has written the error response.
-func (h *HTTPHandler) appendFinalChunk(w http.ResponseWriter, r *http.Request, repoID, tempFile, uploadUUID, digest string, offset int64) bool {
+func (h *HTTPHandler) appendFinalChunk(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID, tempFile, uploadUUID, digest string,
+	offset int64,
+) bool {
 	f, err := openUploadFile(tempFile, offset)
 	if err != nil {
 		h.uploadFileError(w, uploadUUID, err)

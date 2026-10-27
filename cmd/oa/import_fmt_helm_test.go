@@ -154,7 +154,12 @@ func helmNexusFiles(t *testing.T) []fakeFile {
 	return []fakeFile{
 		{path: "index.yaml", data: []byte("apiVersion: v1\n"), created: nexusStamp},
 		{path: "web-1.0.0.tgz", data: helmChartTgz(t, "web", "1.0.0"), created: nexusStamp, contentType: "application/x-gzip"},
-		{path: "api-server-2.1.0.tgz", data: helmChartTgz(t, "api-server", "2.1.0"), created: nexusStamp, contentType: "application/x-gzip"},
+		{
+			path:        "api-server-2.1.0.tgz",
+			data:        helmChartTgz(t, "api-server", "2.1.0"),
+			created:     nexusStamp,
+			contentType: "application/x-gzip",
+		},
 		{path: "web-1.0.0.tgz.prov", data: []byte("-----BEGIN PGP SIGNED MESSAGE-----"), created: nexusStamp},
 	}
 }

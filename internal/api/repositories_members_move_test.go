@@ -175,14 +175,38 @@ func TestRepositoryGetMembers(t *testing.T) {
 		want   int
 		wantIn []string // member names in the answer, in order
 	}{
-		{"members in resolution order", "grp", func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-proxy", "id-hosted", "id-sys"} }, http.StatusOK, []string{"proxy", "hosted", "sys-maven"}},
+		{
+			"members in resolution order",
+			"grp",
+			func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-proxy", "id-hosted", "id-sys"} },
+			http.StatusOK,
+			[]string{"proxy", "hosted", "sys-maven"},
+		},
 		{"empty group", "grp", nil, http.StatusOK, []string{}},
-		{"member row of a deleted repository is skipped", "grp", func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-hosted", "id-gone", "id-proxy"} }, http.StatusOK, []string{"hosted", "proxy"}},
+		{
+			"member row of a deleted repository is skipped",
+			"grp",
+			func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-hosted", "id-gone", "id-proxy"} },
+			http.StatusOK,
+			[]string{"hosted", "proxy"},
+		},
 		{"hosted repository is not a group", "hosted", nil, http.StatusBadRequest, nil},
 		{"proxy repository is not a group", "proxy", nil, http.StatusBadRequest, nil},
 		{"unknown repository", "ghost", nil, http.StatusNotFound, nil},
-		{"repository lookup failure", "grp", func(d *repoOpsDB) { d.getErr = errors.New("connection reset") }, http.StatusInternalServerError, nil},
-		{"member listing failure", "grp", func(d *repoOpsDB) { d.listMembersErr = errors.New("connection reset") }, http.StatusInternalServerError, nil},
+		{
+			"repository lookup failure",
+			"grp",
+			func(d *repoOpsDB) { d.getErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			nil,
+		},
+		{
+			"member listing failure",
+			"grp",
+			func(d *repoOpsDB) { d.listMembersErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -193,7 +217,12 @@ func TestRepositoryGetMembers(t *testing.T) {
 			}
 
 			rw := httptest.NewRecorder()
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/repositories/"+tt.repo+"/members", http.NoBody)
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodGet,
+				"/api/v1/repositories/"+tt.repo+"/members",
+				http.NoBody,
+			)
 			db.router(t).ServeHTTP(rw, req.WithContext(middleware.WithPrincipal(req.Context(), testPrincipal(uAdmin1))))
 
 			if rw.Code != tt.want {
@@ -226,9 +255,33 @@ func TestRepositoryUpdateMembers(t *testing.T) {
 		want         int
 		wantReplaced []string // member repo IDs written; nil = no write
 	}{
-		{"admin sets the order", uAdmin1, "grp", `{"member_repos":["proxy","hosted"]}`, nil, http.StatusOK, []string{"id-proxy", "id-hosted"}},
-		{"order follows the request, not the names", uAdmin1, "grp", `{"member_repos":["sys-maven","hosted","proxy"]}`, nil, http.StatusOK, []string{"id-sys", "id-hosted", "id-proxy"}},
-		{"empty list clears the group", uAdmin1, "grp", `{"member_repos":[]}`, func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-hosted"} }, http.StatusOK, []string{}},
+		{
+			"admin sets the order",
+			uAdmin1,
+			"grp",
+			`{"member_repos":["proxy","hosted"]}`,
+			nil,
+			http.StatusOK,
+			[]string{"id-proxy", "id-hosted"},
+		},
+		{
+			"order follows the request, not the names",
+			uAdmin1,
+			"grp",
+			`{"member_repos":["sys-maven","hosted","proxy"]}`,
+			nil,
+			http.StatusOK,
+			[]string{"id-sys", "id-hosted", "id-proxy"},
+		},
+		{
+			"empty list clears the group",
+			uAdmin1,
+			"grp",
+			`{"member_repos":[]}`,
+			func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-hosted"} },
+			http.StatusOK,
+			[]string{},
+		},
 		{"project maintainer is not an administrator", uMaint1, "grp", `{"member_repos":["hosted"]}`, nil, http.StatusForbidden, nil},
 		{"project owner is not an administrator", uOwner1, "grp", `{"member_repos":["hosted"]}`, nil, http.StatusForbidden, nil},
 		{"developer", uDev1, "grp", `{"member_repos":["hosted"]}`, nil, http.StatusForbidden, nil},
@@ -239,13 +292,53 @@ func TestRepositoryUpdateMembers(t *testing.T) {
 		{"unknown member", uAdmin1, "grp", `{"member_repos":["hosted","ghost"]}`, nil, http.StatusBadRequest, nil},
 		{"group cannot contain itself", uAdmin1, "grp", `{"member_repos":["grp"]}`, nil, http.StatusBadRequest, nil},
 		{"groups cannot nest", uAdmin1, "grp", `{"member_repos":["grp2"]}`, nil, http.StatusBadRequest, nil},
-		{"two groups cannot contain each other", uAdmin1, "grp2", `{"member_repos":["grp"]}`, func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-hosted"} }, http.StatusBadRequest, nil},
+		{
+			"two groups cannot contain each other",
+			uAdmin1,
+			"grp2",
+			`{"member_repos":["grp"]}`,
+			func(d *repoOpsDB) { d.members["id-grp"] = []string{"id-hosted"} },
+			http.StatusBadRequest,
+			nil,
+		},
 		{"member of another format", uAdmin1, "grp", `{"member_repos":["hosted","npm-hosted"]}`, nil, http.StatusBadRequest, nil},
 		{"duplicate member", uAdmin1, "grp", `{"member_repos":["hosted","proxy","hosted"]}`, nil, http.StatusBadRequest, nil},
-		{"too many members", uAdmin1, "grp", `{"member_repos":[` + strings.TrimSuffix(strings.Repeat(`"hosted",`, maxGroupMembers+1), ",") + `]}`, nil, http.StatusBadRequest, nil},
-		{"repository lookup failure", uAdmin1, "grp", `{"member_repos":["hosted"]}`, func(d *repoOpsDB) { d.getErr = errors.New("connection reset") }, http.StatusInternalServerError, nil},
-		{"replace failure", uAdmin1, "grp", `{"member_repos":["hosted"]}`, func(d *repoOpsDB) { d.replaceErr = errors.New("connection reset") }, http.StatusInternalServerError, nil},
-		{"listing failure after the replace", uAdmin1, "grp", `{"member_repos":["hosted"]}`, func(d *repoOpsDB) { d.listMembersErr = errors.New("connection reset") }, http.StatusInternalServerError, []string{"id-hosted"}},
+		{
+			"too many members",
+			uAdmin1,
+			"grp",
+			`{"member_repos":[` + strings.TrimSuffix(strings.Repeat(`"hosted",`, maxGroupMembers+1), ",") + `]}`,
+			nil,
+			http.StatusBadRequest,
+			nil,
+		},
+		{
+			"repository lookup failure",
+			uAdmin1,
+			"grp",
+			`{"member_repos":["hosted"]}`,
+			func(d *repoOpsDB) { d.getErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			nil,
+		},
+		{
+			"replace failure",
+			uAdmin1,
+			"grp",
+			`{"member_repos":["hosted"]}`,
+			func(d *repoOpsDB) { d.replaceErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			nil,
+		},
+		{
+			"listing failure after the replace",
+			uAdmin1,
+			"grp",
+			`{"member_repos":["hosted"]}`,
+			func(d *repoOpsDB) { d.listMembersErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			[]string{"id-hosted"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -302,7 +395,12 @@ func TestRepositoryUpdateMembersAnswersWithStoredOrder(t *testing.T) {
 	db := newRepoOpsDB()
 
 	rw := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/repositories/grp/members", strings.NewReader(`{"member_repos":["proxy","hosted"]}`))
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPut,
+		"/api/v1/repositories/grp/members",
+		strings.NewReader(`{"member_repos":["proxy","hosted"]}`),
+	)
 	db.router(t).ServeHTTP(rw, req.WithContext(middleware.WithPrincipal(req.Context(), testPrincipal(uAdmin1))))
 
 	if rw.Code != http.StatusOK {
@@ -390,7 +488,15 @@ func TestRepositoryMovePermissions(t *testing.T) {
 		want      int
 		wantMoves []string
 	}{
-		{"admin moves out of the system project", uAdmin1, "sys-maven", `{"project":"acme"}`, nil, http.StatusOK, []string{"id-sys->" + testAcmeID}},
+		{
+			"admin moves out of the system project",
+			uAdmin1,
+			"sys-maven",
+			`{"project":"acme"}`,
+			nil,
+			http.StatusOK,
+			[]string{"id-sys->" + testAcmeID},
+		},
 		{"admin may move into the system project", uAdmin1, "hosted", `{"project":"system"}`, func(d *repoOpsDB) {
 			d.projects["system"] = &models.Project{ID: models.SystemProjectID, Name: "system"}
 		}, http.StatusOK, []string{"id-hosted->" + models.SystemProjectID}},
@@ -402,9 +508,33 @@ func TestRepositoryMovePermissions(t *testing.T) {
 		{"developer cannot move", uDev1, "hosted", `{"project":"acme"}`, nil, http.StatusForbidden, nil},
 		{"user without a role cannot move", uPlain1, "sys-maven", `{"project":"acme"}`, nil, http.StatusForbidden, nil},
 		{"unknown target project", uAdmin1, "sys-maven", `{"project":"ghost"}`, nil, http.StatusNotFound, nil},
-		{"target project quota cannot take the usage", uAdmin1, "sys-maven", `{"project":"acme"}`, func(d *repoOpsDB) { d.moveErr = database.ErrProjectQuotaExceeded }, http.StatusConflict, nil},
-		{"repository vanished during the move", uAdmin1, "sys-maven", `{"project":"acme"}`, func(d *repoOpsDB) { d.moveErr = database.ErrRepositoryNotFound }, http.StatusNotFound, nil},
-		{"database failure", uAdmin1, "sys-maven", `{"project":"acme"}`, func(d *repoOpsDB) { d.moveErr = errors.New("connection reset") }, http.StatusInternalServerError, nil},
+		{
+			"target project quota cannot take the usage",
+			uAdmin1,
+			"sys-maven",
+			`{"project":"acme"}`,
+			func(d *repoOpsDB) { d.moveErr = database.ErrProjectQuotaExceeded },
+			http.StatusConflict,
+			nil,
+		},
+		{
+			"repository vanished during the move",
+			uAdmin1,
+			"sys-maven",
+			`{"project":"acme"}`,
+			func(d *repoOpsDB) { d.moveErr = database.ErrRepositoryNotFound },
+			http.StatusNotFound,
+			nil,
+		},
+		{
+			"database failure",
+			uAdmin1,
+			"sys-maven",
+			`{"project":"acme"}`,
+			func(d *repoOpsDB) { d.moveErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -447,16 +577,70 @@ func TestRepositoryDelete(t *testing.T) {
 		wantDeleted []string
 		wantOrder   []string
 	}{
-		{"admin deletes after reading the metadata", uAdmin1, "hosted", "?confirm=hosted", nil, http.StatusNoContent, []string{"id-hosted"}, []string{"metadata", "delete"}},
-		{"project maintainer deletes a repository of the project", uMaint1, "hosted", "?confirm=hosted", nil, http.StatusNoContent, []string{"id-hosted"}, []string{"metadata", "delete"}},
-		{"maintainer cannot delete a repository of another project", uMaint1, "sys-maven", "?confirm=sys-maven", nil, http.StatusForbidden, nil, nil},
+		{
+			"admin deletes after reading the metadata",
+			uAdmin1,
+			"hosted",
+			"?confirm=hosted",
+			nil,
+			http.StatusNoContent,
+			[]string{"id-hosted"},
+			[]string{"metadata", "delete"},
+		},
+		{
+			"project maintainer deletes a repository of the project",
+			uMaint1,
+			"hosted",
+			"?confirm=hosted",
+			nil,
+			http.StatusNoContent,
+			[]string{"id-hosted"},
+			[]string{"metadata", "delete"},
+		},
+		{
+			"maintainer cannot delete a repository of another project",
+			uMaint1,
+			"sys-maven",
+			"?confirm=sys-maven",
+			nil,
+			http.StatusForbidden,
+			nil,
+			nil,
+		},
 		{"developer", uDev1, "hosted", "?confirm=hosted", nil, http.StatusForbidden, nil, nil},
 		{"no confirmation", uAdmin1, "hosted", "", nil, http.StatusBadRequest, nil, nil},
 		{"confirmation of another name", uAdmin1, "hosted", "?confirm=proxy", nil, http.StatusBadRequest, nil, nil},
 		{"unknown repository", uAdmin1, "ghost", "?confirm=ghost", nil, http.StatusNotFound, nil, nil},
-		{"a metadata listing failure does not block the delete", uAdmin1, "hosted", "?confirm=hosted", func(d *repoOpsDB) { d.metaErr = errors.New("connection reset") }, http.StatusNoContent, []string{"id-hosted"}, []string{"metadata", "delete"}},
-		{"still referenced", uAdmin1, "hosted", "?confirm=hosted", func(d *repoOpsDB) { d.deleteErr = fmt.Errorf("delete: %w", fk) }, http.StatusConflict, nil, []string{"metadata", "delete"}},
-		{"database failure", uAdmin1, "hosted", "?confirm=hosted", func(d *repoOpsDB) { d.deleteErr = errors.New("connection reset") }, http.StatusInternalServerError, nil, []string{"metadata", "delete"}},
+		{
+			"a metadata listing failure does not block the delete",
+			uAdmin1,
+			"hosted",
+			"?confirm=hosted",
+			func(d *repoOpsDB) { d.metaErr = errors.New("connection reset") },
+			http.StatusNoContent,
+			[]string{"id-hosted"},
+			[]string{"metadata", "delete"},
+		},
+		{
+			"still referenced",
+			uAdmin1,
+			"hosted",
+			"?confirm=hosted",
+			func(d *repoOpsDB) { d.deleteErr = fmt.Errorf("delete: %w", fk) },
+			http.StatusConflict,
+			nil,
+			[]string{"metadata", "delete"},
+		},
+		{
+			"database failure",
+			uAdmin1,
+			"hosted",
+			"?confirm=hosted",
+			func(d *repoOpsDB) { d.deleteErr = errors.New("connection reset") },
+			http.StatusInternalServerError,
+			nil,
+			[]string{"metadata", "delete"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -523,16 +707,31 @@ func TestRepositoryMembersRoutesRequireManage(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				db.tokens[hash] = &models.Token{ID: "tok-" + user, UserID: user, Kind: auth.TokenKindAccess, TokenHash: hash, Scopes: []string{}, CreatedAt: time.Now()}
+				db.tokens[hash] = &models.Token{
+					ID:        "tok-" + user,
+					UserID:    user,
+					Kind:      auth.TokenKindAccess,
+					TokenHash: hash,
+					Scopes:    []string{},
+					CreatedAt: time.Now(),
+				}
 				secrets[user] = secret
 			}
 
 			log := formattest.NewLogger(t)
 			router := chi.NewRouter()
 			router.Use(middleware.RBACMiddleware(middleware.RBACConfig{}, db, auth.NewEvaluator(db, log, false), log))
-			router.HandleFunc("/api/v1/repositories/{name}/members", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			router.HandleFunc(
+				"/api/v1/repositories/{name}/members",
+				func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
+			)
 
-			req := httptest.NewRequestWithContext(context.Background(), tt.method, "/api/v1/repositories/grp/members", strings.NewReader(`{"member_repos":[]}`))
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				tt.method,
+				"/api/v1/repositories/grp/members",
+				strings.NewReader(`{"member_repos":[]}`),
+			)
 			if tt.user != "" {
 				req.Header.Set("Authorization", "Bearer "+secrets[tt.user])
 			}

@@ -849,7 +849,12 @@ func TestAdminGroups_SetMembers(t *testing.T) {
 
 	// Set members
 	setBody := `{"members":["1e68c38e-690c-53a5-8e2e-1ca72a571fbf","a7d38fb1-22d9-5b02-a929-6132f297a2b9"]}`
-	req = httptest.NewRequestWithContext(context.Background(), "PUT", "/api/v1/groups/"+groupID+"/members", bytes.NewReader([]byte(setBody)))
+	req = httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/api/v1/groups/"+groupID+"/members",
+		bytes.NewReader([]byte(setBody)),
+	)
 	req.Header.Set("Content-Type", "application/json")
 
 	rw = httptest.NewRecorder()
@@ -1041,7 +1046,12 @@ func TestAdminPermissions_Patch(t *testing.T) {
 
 	// Patch the permission target
 	patchBody := `{"actions":["read","write","delete"]}`
-	req = httptest.NewRequestWithContext(context.Background(), "PATCH", "/api/v1/permission-targets/"+permID, bytes.NewReader([]byte(patchBody)))
+	req = httptest.NewRequestWithContext(
+		context.Background(),
+		"PATCH",
+		"/api/v1/permission-targets/"+permID,
+		bytes.NewReader([]byte(patchBody)),
+	)
 	req.Header.Set("Content-Type", "application/json")
 
 	rw = httptest.NewRecorder()
@@ -1136,7 +1146,12 @@ func TestAdminPermissions_Assign(t *testing.T) {
 
 	// Assign permission
 	assignBody := `{"principal_type":"user","principal_id":"4ae7c3eb-3f1a-5b39-b85b-357a37b629bd"}`
-	req = httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/permission-targets/"+permID+"/assignments", bytes.NewReader([]byte(assignBody)))
+	req = httptest.NewRequestWithContext(
+		context.Background(),
+		"POST",
+		"/api/v1/permission-targets/"+permID+"/assignments",
+		bytes.NewReader([]byte(assignBody)),
+	)
 	req.Header.Set("Content-Type", "application/json")
 
 	rw = httptest.NewRecorder()
@@ -1185,14 +1200,24 @@ func TestAdminPermissions_Unassign(t *testing.T) {
 
 	// Assign permission
 	assignBody := `{"principal_type":"user","principal_id":"da845ce7-5094-5807-b647-f162cf591f0e"}`
-	req = httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/permission-targets/"+permID+"/assignments", bytes.NewReader([]byte(assignBody)))
+	req = httptest.NewRequestWithContext(
+		context.Background(),
+		"POST",
+		"/api/v1/permission-targets/"+permID+"/assignments",
+		bytes.NewReader([]byte(assignBody)),
+	)
 	req.Header.Set("Content-Type", "application/json")
 
 	rw = httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
 	// Unassign permission
-	req = httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/v1/permission-targets/"+permID+"/assignments?principal_type=user&principal_id=da845ce7-5094-5807-b647-f162cf591f0e", nil)
+	req = httptest.NewRequestWithContext(
+		context.Background(),
+		"DELETE",
+		"/api/v1/permission-targets/"+permID+"/assignments?principal_type=user&principal_id=da845ce7-5094-5807-b647-f162cf591f0e",
+		nil,
+	)
 	rw = httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 

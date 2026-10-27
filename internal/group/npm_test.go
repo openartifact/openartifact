@@ -73,7 +73,12 @@ func decodeMerged(t *testing.T, body []byte) merged {
 
 func TestNPMGroup_MergePrecedence(t *testing.T) {
 	f := npmGroup(t)
-	f.set("hosted", "lib", 200, packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA", "1.1.0": "AAA1"}, map[string]string{"latest": "1.1.0"}))
+	f.set(
+		"hosted",
+		"lib",
+		200,
+		packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA", "1.1.0": "AAA1"}, map[string]string{"latest": "1.1.0"}),
+	)
 	f.set("mirror", "lib", 200, packument(t, "mirror", "lib",
 		map[string]string{"1.0.0": "BBBB", "2.0.0": "BBB2"},
 		map[string]string{"latest": "2.0.0", "next": "2.0.0"}))
@@ -142,7 +147,12 @@ func keys[V any](m map[string]V) []string {
 
 func TestNPMGroup_ScopedPackageIsRequestedEscapedAndRewritten(t *testing.T) {
 	f := npmGroup(t)
-	f.set("mirror", "@s%2fname", 200, packument(t, "mirror", "@s/name", map[string]string{"1.0.0": "BBBB"}, map[string]string{"latest": "1.0.0"}))
+	f.set(
+		"mirror",
+		"@s%2fname",
+		200,
+		packument(t, "mirror", "@s/name", map[string]string{"1.0.0": "BBBB"}, map[string]string{"latest": "1.0.0"}),
+	)
 
 	for _, path := range []string{"@s%2fname", "@s/name", "@s%2Fname"} {
 		w := f.get(http.MethodGet, path)

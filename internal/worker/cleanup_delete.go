@@ -42,7 +42,13 @@ type DeletedPackage struct {
 // applies no release-bundle or quarantine protection: an administrator chose
 // this row. actor is the username recorded as the trash entry's deleted_by (the
 // requester, never the cleanup policy).
-func (w *CleanupWorker) DeletePackage(ctx context.Context, repo *models.Repository, id string, guard func(DeletedPackage) error, actor string) (*DeletedPackage, error) {
+func (w *CleanupWorker) DeletePackage(
+	ctx context.Context,
+	repo *models.Repository,
+	id string,
+	guard func(DeletedPackage) error,
+	actor string,
+) (*DeletedPackage, error) {
 	t, ok := cleanupFormatTable(repo.Format)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)

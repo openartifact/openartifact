@@ -96,7 +96,11 @@ func (m *modalUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // shortClient bounds every upstream call so hung-upstream cases end promptly.
 func shortClient(f *fixture) {
-	f.svc.client = &http.Client{Timeout: 200 * time.Millisecond, CheckRedirect: f.svc.client.CheckRedirect, Transport: f.svc.client.Transport}
+	f.svc.client = &http.Client{
+		Timeout:       200 * time.Millisecond,
+		CheckRedirect: f.svc.client.CheckRedirect,
+		Transport:     f.svc.client.Transport,
+	}
 }
 
 // metadataCase is one document the proxy fetches from an upstream.
@@ -132,7 +136,10 @@ func metadataCases() []metadataCase {
 			prepare: func(f *fixture) { f.repo.UpstreamURL = f.upstreamBase() + "/simple/" },
 			valid: func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", htmlContent)
-				_, _ = io.WriteString(w, `<html><body><a href="/files/`+wheelName+`#sha256=`+sum(wheelBody)+`">`+wheelName+`</a></body></html>`)
+				_, _ = io.WriteString(
+					w,
+					`<html><body><a href="/files/`+wheelName+`#sha256=`+sum(wheelBody)+`">`+wheelName+`</a></body></html>`,
+				)
 			},
 			get: "simple/requests/", key: pypiProjectKey("requests"), notFound: http.StatusNotFound,
 		},
@@ -564,7 +571,11 @@ func TestNuGetProxy_CatalogFailureRefusesThePackage(t *testing.T) {
 		{"catalog 500", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, leakMarker, http.StatusInternalServerError)
 		}, http.StatusBadGateway},
-		{"catalog 403", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, leakMarker, http.StatusForbidden) }, http.StatusBadGateway},
+		{
+			"catalog 403",
+			func(w http.ResponseWriter, _ *http.Request) { http.Error(w, leakMarker, http.StatusForbidden) },
+			http.StatusBadGateway,
+		},
 		{"catalog not json", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "<html>") }, http.StatusOK},
 	}
 

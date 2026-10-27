@@ -122,12 +122,19 @@ func vulnOverviewQuery(params models.VulnScanListParams) (string, []any, error) 
 	}
 
 	args = append(args, params.Limit+1)
-	query := fmt.Sprintf(`SELECT vr.id, ref.repository_id, r.name, r.format, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
+	query := fmt.Sprintf(
+		`SELECT vr.id, ref.repository_id, r.name, r.format, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
 		COALESCE(sj.scanner, ''), sj.status, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
 		vr.quarantined, sj.error_message, vr.failed_scanners, sj.completed_at, sj.created_at, sj.updated_at, %s
 		%s%s
 		ORDER BY vr.critical_count DESC, vr.high_count DESC, vr.medium_count DESC, vr.low_count DESC, %s DESC, vr.id
-		LIMIT $%d`, vulnOverviewSortAt, vulnOverviewFrom, where, vulnOverviewSortAt, len(args))
+		LIMIT $%d`,
+		vulnOverviewSortAt,
+		vulnOverviewFrom,
+		where,
+		vulnOverviewSortAt,
+		len(args),
+	)
 
 	return query, args, nil
 }
@@ -189,9 +196,30 @@ func scanVulnOverviewRow(row rowScanner) (*models.VulnScanOverviewRow, error) {
 		jobStatus string
 	)
 
-	if err := row.Scan(&res.ID, &res.RepositoryID, &out.RepositoryName, &out.RepositoryFormat, &res.ArtifactID, &res.PackageName, &res.PackageVersion, &res.Ecosystem,
-		&res.Scanner, &jobStatus, &res.VulnCount, &res.CriticalCount, &res.HighCount, &res.MediumCount, &res.LowCount,
-		&res.Quarantined, &errMsg, &res.FailedScanners, &scannedAt, &res.CreatedAt, &res.UpdatedAt, &out.SortAt); err != nil {
+	if err := row.Scan(
+		&res.ID,
+		&res.RepositoryID,
+		&out.RepositoryName,
+		&out.RepositoryFormat,
+		&res.ArtifactID,
+		&res.PackageName,
+		&res.PackageVersion,
+		&res.Ecosystem,
+		&res.Scanner,
+		&jobStatus,
+		&res.VulnCount,
+		&res.CriticalCount,
+		&res.HighCount,
+		&res.MediumCount,
+		&res.LowCount,
+		&res.Quarantined,
+		&errMsg,
+		&res.FailedScanners,
+		&scannedAt,
+		&res.CreatedAt,
+		&res.UpdatedAt,
+		&out.SortAt,
+	); err != nil {
 		return nil, err //nolint:wrapcheck // the caller wraps it
 	}
 

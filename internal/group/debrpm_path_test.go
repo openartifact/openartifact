@@ -52,7 +52,15 @@ func TestClassifyDebRPMPaths(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := classifyDebRPM(tc.format, tc.path)
 			if got.class != tc.class || got.dist != tc.dist {
-				t.Fatalf("classifyDebRPM(%q, %q) = class %d dist %q, want class %d dist %q", tc.format, tc.path, got.class, got.dist, tc.class, tc.dist)
+				t.Fatalf(
+					"classifyDebRPM(%q, %q) = class %d dist %q, want class %d dist %q",
+					tc.format,
+					tc.path,
+					got.class,
+					got.dist,
+					tc.class,
+					tc.dist,
+				)
 			}
 		})
 	}

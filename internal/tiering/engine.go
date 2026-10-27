@@ -243,7 +243,13 @@ func (e *Engine) facts(ctx context.Context, snap *Snapshot, policies []*Policy, 
 }
 
 // decide applies the policies to a page of candidates and returns the moves.
-func (e *Engine) decide(ctx context.Context, snap *Snapshot, policies []*Policy, blobs []models.BlobFacts, now time.Time) ([]decision, error) {
+func (e *Engine) decide(
+	ctx context.Context,
+	snap *Snapshot,
+	policies []*Policy,
+	blobs []models.BlobFacts,
+	now time.Time,
+) ([]decision, error) {
 	facts, err := e.facts(ctx, snap, policies, blobs)
 	if err != nil {
 		return nil, err
@@ -261,8 +267,17 @@ func (e *Engine) decide(ctx context.Context, snap *Snapshot, policies []*Policy,
 		to, _ := snap.ByID(p.TargetTierID)
 
 		out = append(out, decision{
-			facts:  models.BlobFacts{SHA256: f.SHA256, SizeBytes: f.SizeBytes, CreatedAt: f.CreatedAt, LastAccessedAt: f.LastAccessedAt, BackendID: from.BackendID},
-			policy: p.Name, from: from.BackendID, to: to.BackendID, reason: reasonPolicy + p.Name,
+			facts: models.BlobFacts{
+				SHA256:         f.SHA256,
+				SizeBytes:      f.SizeBytes,
+				CreatedAt:      f.CreatedAt,
+				LastAccessedAt: f.LastAccessedAt,
+				BackendID:      from.BackendID,
+			},
+			policy: p.Name,
+			from:   from.BackendID,
+			to:     to.BackendID,
+			reason: reasonPolicy + p.Name,
 		})
 	}
 
@@ -273,7 +288,14 @@ func (e *Engine) decide(ctx context.Context, snap *Snapshot, policies []*Policy,
 // each window's decisions to visit, until the table ends, maxRows were examined
 // or visit consumed fewer decisions than offered. It returns the cursor to
 // continue from ("" when the table was exhausted).
-func (e *Engine) scanPolicies(ctx context.Context, snap *Snapshot, policies []*Policy, cursor string, maxRows int, visit func(ds []decision) int) (string, int, error) {
+func (e *Engine) scanPolicies(
+	ctx context.Context,
+	snap *Snapshot,
+	policies []*Policy,
+	cursor string,
+	maxRows int,
+	visit func(ds []decision) int,
+) (string, int, error) {
 	if len(policies) == 0 {
 		return "", 0, nil
 	}
@@ -325,7 +347,13 @@ func (e *Engine) scanPolicies(ctx context.Context, snap *Snapshot, policies []*P
 // promotionDecisions returns the moves promote-on-read wants for a page of
 // candidates: blobs read since they were placed on their tier, unless the
 // policies would move them straight back.
-func (e *Engine) promotionDecisions(ctx context.Context, snap *Snapshot, policies []*Policy, blobs []models.BlobFacts, now time.Time) ([]decision, error) {
+func (e *Engine) promotionDecisions(
+	ctx context.Context,
+	snap *Snapshot,
+	policies []*Policy,
+	blobs []models.BlobFacts,
+	now time.Time,
+) ([]decision, error) {
 	facts, err := e.facts(ctx, snap, policies, blobs)
 	if err != nil {
 		return nil, err
@@ -346,8 +374,17 @@ func (e *Engine) promotionDecisions(ctx context.Context, snap *Snapshot, policie
 		}
 
 		out = append(out, decision{
-			facts:  models.BlobFacts{SHA256: f.SHA256, SizeBytes: f.SizeBytes, CreatedAt: f.CreatedAt, LastAccessedAt: f.LastAccessedAt, BackendID: backendOfTier(snap, f.TierID)},
-			policy: PromotionPolicyName, from: backendOfTier(snap, f.TierID), to: primary.BackendID, reason: reasonPromotion,
+			facts: models.BlobFacts{
+				SHA256:         f.SHA256,
+				SizeBytes:      f.SizeBytes,
+				CreatedAt:      f.CreatedAt,
+				LastAccessedAt: f.LastAccessedAt,
+				BackendID:      backendOfTier(snap, f.TierID),
+			},
+			policy: PromotionPolicyName,
+			from:   backendOfTier(snap, f.TierID),
+			to:     primary.BackendID,
+			reason: reasonPromotion,
 		})
 	}
 
@@ -364,7 +401,14 @@ func backendOfTier(snap *Snapshot, tierID string) string {
 }
 
 // scanPromotions walks promotion candidates from cursor, like scanPolicies.
-func (e *Engine) scanPromotions(ctx context.Context, snap *Snapshot, policies []*Policy, cursor string, maxRows int, visit func(ds []decision) int) (string, int, error) {
+func (e *Engine) scanPromotions(
+	ctx context.Context,
+	snap *Snapshot,
+	policies []*Policy,
+	cursor string,
+	maxRows int,
+	visit func(ds []decision) int,
+) (string, int, error) {
 	backends := snap.PromoteBackends()
 	if len(backends) == 0 {
 		return "", 0, nil
@@ -558,7 +602,12 @@ func (e *Engine) recoverMoves(ctx context.Context, st *PassStats, budget *int) e
 	for i, r := range rows {
 		jobs[i] = job{
 			resume: r,
-			d:      decision{facts: models.BlobFacts{SHA256: r.SHA256, SizeBytes: r.SizeBytes}, from: r.FromBackendID, to: r.ToBackendID, reason: reasonRecovery},
+			d: decision{
+				facts:  models.BlobFacts{SHA256: r.SHA256, SizeBytes: r.SizeBytes},
+				from:   r.FromBackendID,
+				to:     r.ToBackendID,
+				reason: reasonRecovery,
+			},
 		}
 	}
 

@@ -56,7 +56,8 @@ func TestChecksumDeployStoresKnownContentWithoutABody(t *testing.T) {
 	}
 
 	deployed, source := e.file(rrev2, "conanfile.py"), e.file(rrev1, "conanfile.py")
-	if deployed.SHA256 != source.SHA256 || deployed.BlobKey != source.BlobKey || deployed.SHA1 != sha1Hex(body) || deployed.MD5 != md5Hex(body) {
+	if deployed.SHA256 != source.SHA256 || deployed.BlobKey != source.BlobKey || deployed.SHA1 != sha1Hex(body) ||
+		deployed.MD5 != md5Hex(body) {
 		t.Errorf("deployed row = %+v, want the source's blob and digests", deployed)
 	}
 

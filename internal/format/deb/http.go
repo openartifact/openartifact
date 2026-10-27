@@ -80,7 +80,13 @@ const metadataMaxAge = 300
 // tryServeRepoBlob attempts to serve a pre-generated metadata blob. The blob
 // digest is the ETag, so a matching If-None-Match is answered without reading
 // the blob. Returns true if served, false if the blob does not exist yet.
-func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, path string, contentType string) bool {
+func (h *HTTPHandler) tryServeRepoBlob(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	path string,
+	contentType string,
+) bool {
 	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repo.ID, path)
 	if err != nil {
 		h.log.Errorw("failed to query repo metadata", "path", path, "error", err)
@@ -195,7 +201,13 @@ func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
 
 // servePackages serves a binary-<arch> Packages index in one compression: the
 // stored blob when the repository has one, otherwise streamed from the database.
-func (h *HTTPHandler) servePackages(w http.ResponseWriter, r *http.Request, contentType, label string, compression Compression, blobPath func(dist, comp, arch string) string) {
+func (h *HTTPHandler) servePackages(
+	w http.ResponseWriter,
+	r *http.Request,
+	contentType, label string,
+	compression Compression,
+	blobPath func(dist, comp, arch string) string,
+) {
 	vars := urlparams.Vars(r)
 	dist := vars["dist"]
 	comp := vars["comp"]
@@ -259,7 +271,18 @@ func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Size: comp.PackageSize, Filename: filename, ContentType: "application/vnd.debian.binary-package", Repo: name}) {
+	if presign.Try(
+		h.blobStore,
+		w,
+		r,
+		presign.Blob{
+			SHA256:      comp.SHA256,
+			Size:        comp.PackageSize,
+			Filename:    filename,
+			ContentType: "application/vnd.debian.binary-package",
+			Repo:        name,
+		},
+	) {
 		return
 	}
 

@@ -43,12 +43,23 @@ func (d benchCargoDB) CargoIndexStamp(_ context.Context, _, _ string) (string, e
 // crate whose publish metadata carries a 20 KB readme per version.
 func BenchmarkHandleSparseIndex(b *testing.B) {
 	meta := `{"deps":[{"name":"serde","version_req":"^1","features":["derive"],"optional":false,"default_features":true,"target":null,"kind":"normal"}],` +
-		`"features":{"default":["a"],"a":[]},"links":null,"readme":"` + strings.Repeat("x", 20000) + `"}`
+		`"features":{"default":["a"],"a":[]},"links":null,"readme":"` + strings.Repeat(
+		"x",
+		20000,
+	) + `"}`
 
 	for _, n := range []int{50, 500} {
 		db := &cargoDB{DB: formattest.NewDB()}
 		for i := range n {
-			db.crates = append(db.crates, &models.CargoCrate{Name: "demo", Version: "0.1." + strconv.Itoa(i), Checksum: strings.Repeat("a", 64), MetadataJSON: []byte(meta)})
+			db.crates = append(
+				db.crates,
+				&models.CargoCrate{
+					Name:         "demo",
+					Version:      "0.1." + strconv.Itoa(i),
+					Checksum:     strings.Repeat("a", 64),
+					MetadataJSON: []byte(meta),
+				},
+			)
 		}
 
 		h := NewHTTPHandler(formattest.NewLogger(b), benchCargoDB{db}, formattest.NewBlobStore(), "http://localhost")

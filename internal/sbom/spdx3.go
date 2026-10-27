@@ -313,7 +313,11 @@ func (g *Generator) spdx3Document(in *Input) *spdx3Builder {
 // declared dependencies as Packages (purl, sha256, licenses as simplelicensing
 // expressions) linked by dependsOn relationships, and the scan findings as
 // security Vulnerabilities with their VEX assessment.
-func (g *Generator) GenerateSPDX3JSON(ctx context.Context, repoID, artifactID, format string, metadata map[string]any) (*SBOMResult, error) {
+func (g *Generator) GenerateSPDX3JSON(
+	ctx context.Context,
+	repoID, artifactID, format string,
+	metadata map[string]any,
+) (*SBOMResult, error) {
 	in, err := g.loadSPDX(ctx, repoID, artifactID, format, metadata)
 	if err != nil {
 		return nil, err

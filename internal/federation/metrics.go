@@ -55,7 +55,8 @@ func NewMetrics(reg prometheus.Registerer, store *Store) (*Metrics, error) {
 
 	m.Resumed = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "openartifact_federation_resumed_total",
-		Help: "Blob transfers from a peer resumed with a Range request after the connection dropped (or from a partial download of an earlier pull).",
+		Help: "Blob transfers from a peer resumed with a Range request after the connection dropped " +
+			"(or from a partial download of an earlier pull).",
 	}, []string{"repo", "peer"})
 
 	partial := prometheus.NewGaugeFunc(prometheus.GaugeOpts{

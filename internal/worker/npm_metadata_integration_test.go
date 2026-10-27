@@ -31,7 +31,8 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 
 	var pkgID string
 	if err := s.pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, 'lib', 'lib') RETURNING id`, repo.ID).Scan(&pkgID); err != nil {
+		`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, 'lib', 'lib') RETURNING id`, repo.ID).
+		Scan(&pkgID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +82,11 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 		want   string
 	}{
 		{"a stable release beats a newer prerelease and a deprecated one", func() {}, "1.0.0"},
-		{"a prerelease beats a deprecated stable release", func() { s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE id = $1`, stable) }, "3.0.0-beta.1"},
+		{
+			"a prerelease beats a deprecated stable release",
+			func() { s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE id = $1`, stable) },
+			"3.0.0-beta.1",
+		},
 		{"deprecated is the last resort", func() { s.exec(`UPDATE npm_versions SET deleted_at = now() WHERE id = $1`, pre) }, "2.0.0"},
 		{"an empty deprecation message is not a deprecation", func() {
 			s.exec(`UPDATE npm_versions SET manifest_json = '{"deprecated":""}' WHERE id = $1`, deprecated)

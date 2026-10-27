@@ -305,7 +305,8 @@ func TestIntegrationPassMovesBlobBetweenDirectories(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := r.pg.GetDB().ExecContext(context.Background(), `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::text, 5, $1::text)`, s); err != nil {
+		if _, err := r.pg.GetDB().
+			ExecContext(context.Background(), `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::text, 5, $1::text)`, s); err != nil {
 			t.Fatal(err)
 		}
 

@@ -228,7 +228,11 @@ func (h *RepositoriesHandler) readableRepositories(ctx context.Context, p *auth.
 
 // filterRepositoryScope applies the name, type and project filters. An unknown
 // project matches nothing.
-func (h *RepositoriesHandler) filterRepositoryScope(ctx context.Context, repos []*models.Repository, params repoListParams) ([]*models.Repository, error) {
+func (h *RepositoriesHandler) filterRepositoryScope(
+	ctx context.Context,
+	repos []*models.Repository,
+	params repoListParams,
+) ([]*models.Repository, error) {
 	projectID := ""
 
 	if params.project != "" {
@@ -260,7 +264,11 @@ func (h *RepositoriesHandler) filterRepositoryScope(ctx context.Context, repos [
 
 // filterAndSortRepositories applies the stats filters and the sort order of
 // params. The stats of every repository are only loaded when they are needed.
-func (h *RepositoriesHandler) filterAndSortRepositories(ctx context.Context, repos []*models.Repository, params repoListParams) ([]*models.Repository, error) {
+func (h *RepositoriesHandler) filterAndSortRepositories(
+	ctx context.Context,
+	repos []*models.Repository,
+	params repoListParams,
+) ([]*models.Repository, error) {
 	var stats map[string]models.RepoStats
 
 	if params.needsStats() && len(repos) > 0 {
@@ -342,7 +350,10 @@ func repoIDs(repos []*models.Repository) []string {
 
 // repositoryPageStats loads the stats and package counts of one page of
 // repositories, each in a single grouped query.
-func (h *RepositoriesHandler) repositoryPageStats(ctx context.Context, repos []*models.Repository) (map[string]models.RepoStats, map[string]int64, error) {
+func (h *RepositoriesHandler) repositoryPageStats(
+	ctx context.Context,
+	repos []*models.Repository,
+) (map[string]models.RepoStats, map[string]int64, error) {
 	if len(repos) == 0 {
 		return nil, nil, nil
 	}

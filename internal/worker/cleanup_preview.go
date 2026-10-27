@@ -148,7 +148,12 @@ func (w *CleanupWorker) previewRepository(ctx context.Context, policy *models.Cl
 
 // planCandidates is the selection of a run without its deletion: the rows the
 // policy selects minus the ones a protection keeps.
-func (w *CleanupWorker) planCandidates(ctx context.Context, policy *models.CleanupPolicy, repo *models.Repository, t formatTable) ([]cleanupCandidate, error) {
+func (w *CleanupWorker) planCandidates(
+	ctx context.Context,
+	policy *models.CleanupPolicy,
+	repo *models.Repository,
+	t formatTable,
+) ([]cleanupCandidate, error) {
 	selected, err := w.selectCandidates(ctx, policy, t)
 	if err != nil {
 		return nil, err

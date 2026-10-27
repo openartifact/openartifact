@@ -95,7 +95,14 @@ type AdminTieringHandler struct {
 }
 
 // NewAdminTieringHandler creates the handler.
-func NewAdminTieringHandler(db TieringAdminDB, reg TierRegistry, planner TierPlanner, runner TierRunner, log *logger.Logger, evaluator *auth.Evaluator) *AdminTieringHandler {
+func NewAdminTieringHandler(
+	db TieringAdminDB,
+	reg TierRegistry,
+	planner TierPlanner,
+	runner TierRunner,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+) *AdminTieringHandler {
 	return &AdminTieringHandler{db: db, reg: reg, planner: planner, runner: runner, log: log, evaluator: evaluator}
 }
 
@@ -522,7 +529,10 @@ func validatePolicyConditions(p *models.StoragePolicy) error {
 	return nil
 }
 
-func (h *AdminTieringHandler) policyResponses(ctx context.Context, policies []*models.StoragePolicy) ([]responses.StoragePolicyResponse, error) {
+func (h *AdminTieringHandler) policyResponses(
+	ctx context.Context,
+	policies []*models.StoragePolicy,
+) ([]responses.StoragePolicyResponse, error) {
 	tiers, err := h.db.ListStorageTiers(ctx)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // logged by the caller

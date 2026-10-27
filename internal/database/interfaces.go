@@ -136,7 +136,10 @@ type Database interface {
 	GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error)
 	// GetLatestSnapshotFile returns the newest snapshot build of the file with
 	// the given classifier and extension.
-	GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error)
+	GetLatestSnapshotFile(
+		ctx context.Context,
+		repoID, groupID, artifactID, version, classifier, extension string,
+	) (*models.MavenArtifact, error)
 	DeleteMavenArtifact(ctx context.Context, id string) error
 
 	// ListMavenArtifactsByRepo is a bulk-list-by-repo method used only by
@@ -556,7 +559,12 @@ type Database interface {
 	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
 	// SetProjectQuota stores the ceiling (0 = unlimited) and initialises the
 	// counters from the repository counters when a limit is first enabled.
-	SetProjectQuota(ctx context.Context, projectID string, maxSizeBytes, maxArtifactCount int64, warnThresholdPercent int) (*models.ProjectQuota, error)
+	SetProjectQuota(
+		ctx context.Context,
+		projectID string,
+		maxSizeBytes, maxArtifactCount int64,
+		warnThresholdPercent int,
+	) (*models.ProjectQuota, error)
 	// GetProjectUsage sums the repository counters of a project and lists them per repository.
 	GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
@@ -692,7 +700,10 @@ type Database interface {
 
 	// Ivy methods
 	CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error
-	GetIvyArtifact(ctx context.Context, repoID, organisation, module, revision, artifactName, artifactExt string) (*models.IvyArtifact, error)
+	GetIvyArtifact(
+		ctx context.Context,
+		repoID, organisation, module, revision, artifactName, artifactExt string,
+	) (*models.IvyArtifact, error)
 	DeleteIvyArtifact(ctx context.Context, id string) error
 	ListIvyArtifacts(ctx context.Context, repoID string) ([]*models.IvyArtifact, error)
 
@@ -795,7 +806,8 @@ type Database interface {
 	ListRepositoriesForGPGKey(ctx context.Context, keyID string) ([]models.GPGSigningRepo, error)
 	// ListSigningRepositoriesWithoutKey returns the hosted deb/rpm repositories that follow the global key.
 	ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error)
-	// ResolveGPGKeyForRepository returns the repository's own key, else the global active one, with its sealed private part; nil when unsigned.
+	// ResolveGPGKeyForRepository returns the repository's own key, else the global active one, with its sealed private
+	// part; nil when unsigned.
 	ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error)
 
 	// GetRepositoryDependencyTrack returns the repository's Dependency-Track override, nil when none is set.
@@ -808,7 +820,8 @@ type Database interface {
 	UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error
 	// GetDependencyTrackPush returns the push state of an artifact, nil when never pushed.
 	GetDependencyTrackPush(ctx context.Context, repoID, artifactID string) (*models.DependencyTrackPush, error)
-	// GetRepositoryAttestationAttach reports whether the repository attaches signed attestations to docker images as OCI referrers (false when never set).
+	// GetRepositoryAttestationAttach reports whether the repository attaches signed attestations to docker images as OCI
+	// referrers (false when never set).
 	GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error)
 	// SetRepositoryAttestationAttach stores that switch.
 	SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error
@@ -823,7 +836,13 @@ type Database interface {
 	// AI analysis methods
 	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
 	GetAIAnalysis(ctx context.Context, repoID, artifactID string) (*models.AIAnalysis, error)
-	ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit, offset int,
+	) ([]*models.AIAnalysis, int, error)
 }
 
 // Transaction defines the interface for database transactions.

@@ -55,8 +55,16 @@ func newProxyGroupDB() *proxyGroupMockDB {
 
 func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
 	cases := []struct{ name, body, wantInMsg string }{
-		{"proxy conda", `{"name":"p","format":"conda","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
-		{"proxy ivy", `{"name":"p","format":"ivy","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
+		{
+			"proxy conda",
+			`{"name":"p","format":"conda","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`,
+			"not supported for format",
+		},
+		{
+			"proxy ivy",
+			`{"name":"p","format":"ivy","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`,
+			"not supported for format",
+		},
 		{"group conda", `{"name":"g","format":"conda","repo_type":"group"}`, "not supported for format"},
 		{"group ivy", `{"name":"g","format":"ivy","repo_type":"group"}`, "not supported for format"},
 	}
@@ -65,7 +73,8 @@ func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, c.body)
 
-		if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), "validation_failed") || !strings.Contains(rw.Body.String(), c.wantInMsg) {
+		if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), "validation_failed") ||
+			!strings.Contains(rw.Body.String(), c.wantInMsg) {
 			t.Errorf("%s: status %d body %s", c.name, rw.Code, rw.Body.String())
 		}
 
@@ -99,7 +108,11 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
 	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget"} {
 		db := newProxyGroupDB()
-		rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`)
+		rw := createRepo(
+			t,
+			db,
+			`{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`,
+		)
 
 		if rw.Code != http.StatusCreated || db.created == nil || db.created.RepoType != "proxy" {
 			t.Errorf("%s: status %d body %s", format, rw.Code, rw.Body.String())

@@ -311,7 +311,19 @@ func (r *Replicator) handle(ctx context.Context, op database.BlobReplication, re
 		r.log.Warnw("replication: could not record a failed attempt", "sha256", op.SHA256, "error", ferr)
 	}
 
-	r.log.Warnw("replication: operation failed, will retry", "op", op.Op, "sha256", op.SHA256, "attempts", op.Attempts+1, "retry_in", delay.String(), "error", err)
+	r.log.Warnw(
+		"replication: operation failed, will retry",
+		"op",
+		op.Op,
+		"sha256",
+		op.SHA256,
+		"attempts",
+		op.Attempts+1,
+		"retry_in",
+		delay.String(),
+		"error",
+		err,
+	)
 }
 
 func (r *Replicator) complete(ctx context.Context, op database.BlobReplication, n int64, res *batchResult) {

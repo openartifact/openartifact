@@ -108,7 +108,11 @@ func (h *HTTPHandler) publishConflict(ctx context.Context, repoID, crateName, ve
 
 	for _, e := range existing {
 		if e.Name != crateName {
-			return fmt.Sprintf("crate name `%s` is too similar to the existing crate `%s`: names are case-insensitive", crateName, e.Name), nil
+			return fmt.Sprintf(
+				"crate name `%s` is too similar to the existing crate `%s`: names are case-insensitive",
+				crateName,
+				e.Name,
+			), nil
 		}
 
 		if versionIdentity(e.Version) == versionIdentity(version) {

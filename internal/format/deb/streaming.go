@@ -35,7 +35,13 @@ const (
 // StreamPackages writes a Packages file for the given distribution/component/arch
 // directly to w, applying the requested compression. Returns the number of bytes
 // written and any error.
-func StreamPackages(ctx context.Context, database db.Database, repoID, dist, comp, arch string, compression Compression, w io.Writer) (int64, error) {
+func StreamPackages(
+	ctx context.Context,
+	database db.Database,
+	repoID, dist, comp, arch string,
+	compression Compression,
+	w io.Writer,
+) (int64, error) {
 	packages, err := database.ListDebPackageEntries(ctx, repoID, dist, comp, arch)
 	if err != nil {
 		return 0, fmt.Errorf("stream packages: query: %w", err)

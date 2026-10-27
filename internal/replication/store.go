@@ -461,7 +461,13 @@ func (s *Store) InitiateMultipart(ctx context.Context, id string, size, partSize
 }
 
 // PresignStagingPart implements storage.MultipartStagingStore.
-func (s *Store) PresignStagingPart(ctx context.Context, id, handle string, number int, length int64, ttl time.Duration) (storage.PresignedPut, error) {
+func (s *Store) PresignStagingPart(
+	ctx context.Context,
+	id, handle string,
+	number int,
+	length int64,
+	ttl time.Duration,
+) (storage.PresignedPut, error) {
 	m, ok := s.multipart()
 	if !ok {
 		return storage.PresignedPut{}, storage.ErrPresignNotSupported

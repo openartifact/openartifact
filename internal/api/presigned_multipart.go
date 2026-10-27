@@ -99,7 +99,12 @@ func (h *PresignedUploadHandler) planUpload(w http.ResponseWriter, req *CreatePr
 
 // startMultipart opens the multipart upload on the backend and answers with
 // its plan. The row already exists; a failure removes it again.
-func (h *PresignedUploadHandler) startMultipart(w http.ResponseWriter, r *http.Request, repo *models.Repository, up *models.PresignedUpload) {
+func (h *PresignedUploadHandler) startMultipart(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	up *models.PresignedUpload,
+) {
 	ctx := r.Context()
 
 	handle, err := h.multipart.InitiateMultipart(ctx, up.ID, up.SizeBytes, up.PartSize)

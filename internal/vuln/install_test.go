@@ -427,7 +427,12 @@ func TestInstall_HTTPFailureIsReportedAndRetried(t *testing.T) {
 
 	r := f.registry(fakeTrivyScript, nil)
 
-	if _, result, err := r.installTool(context.Background(), &r.trivy, true); !errors.Is(err, errDownloadStatus) || result != resultDownload {
+	if _, result, err := r.installTool(
+		context.Background(),
+		&r.trivy,
+		true,
+	); !errors.Is(err, errDownloadStatus) ||
+		result != resultDownload {
 		t.Fatalf("installTool = (%q, %v)", result, err)
 	}
 
@@ -839,7 +844,11 @@ func TestDBUpdates_AreCountedAndTimestamped(t *testing.T) {
 		t.Errorf("failure=%v success=%v, want 1 and 1", attempts("failure"), attempts("success"))
 	}
 
-	if ts := testutil.ToFloat64(r.metrics.ScannerDBLastSuccessTimestamp.WithLabelValues("trivy")); time.Since(time.Unix(int64(ts), 0)) > time.Minute {
+	if ts := testutil.ToFloat64(
+		r.metrics.ScannerDBLastSuccessTimestamp.WithLabelValues("trivy"),
+	); time.Since(
+		time.Unix(int64(ts), 0),
+	) > time.Minute {
 		t.Errorf("last success timestamp = %v, want now", ts)
 	}
 

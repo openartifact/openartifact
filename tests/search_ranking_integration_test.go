@@ -151,7 +151,8 @@ func TestSearchRanksExactThenPrefixThenSubstringThenRecency(t *testing.T) {
 			t.Errorf("%q: first four = %v, want %v", term, got[:4], want)
 		}
 
-		if got[4][:8] != "widget-a" && got[4][:8] != "widget-b" || got[5][:8] != "widget-a" && got[5][:8] != "widget-b" || got[4] == got[5] {
+		if got[4][:8] != "widget-a" && got[4][:8] != "widget-b" || got[5][:8] != "widget-a" && got[5][:8] != "widget-b" ||
+			got[4] == got[5] {
 			t.Errorf("%q: tied prefix matches = %v", term, got[4:6])
 		}
 
@@ -308,7 +309,10 @@ func TestSearchRanksRepositoriesByNameRelevance(t *testing.T) {
 	}
 
 	log := newTestLogger(t)
-	f := rankingFixture{h: search.NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log), admin: &auth.Principal{Username: "admin", IsLegacy: true}}
+	f := rankingFixture{
+		h:     search.NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log),
+		admin: &auth.Principal{Username: "admin", IsLegacy: true},
+	}
 
 	got := f.get(t, f.admin, query("widget")).repoNames()
 	if want := []string{"widget", "widget-tools", "a-widget", "my-widget"}; !slices.Equal(got, want) {

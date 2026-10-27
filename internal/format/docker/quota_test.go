@@ -75,7 +75,12 @@ func (l *quotaLedger) release(repoID string, size int64, count int) {
 func (l *quotaLedger) quota(repoID string) *models.StorageQuota {
 	u := l.row(repoID)
 
-	return &models.StorageQuota{RepositoryID: repoID, MaxSizeBytes: l.maxBytes, CurrentSizeBytes: u.bytes, CurrentArtifactCount: u.artifacts}
+	return &models.StorageQuota{
+		RepositoryID:         repoID,
+		MaxSizeBytes:         l.maxBytes,
+		CurrentSizeBytes:     u.bytes,
+		CurrentArtifactCount: u.artifacts,
+	}
 }
 
 func (l *quotaLedger) of(repoID string) quotaUsage { return *l.row(repoID) }

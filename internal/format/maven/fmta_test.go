@@ -33,7 +33,10 @@ func (m *snapshotMockDB) GetMavenArtifactByPath(_ context.Context, _, path strin
 }
 
 // GetLatestSnapshotFile mimics the SQL: filter on classifier+extension, newest build first.
-func (m *snapshotMockDB) GetLatestSnapshotFile(_ context.Context, _, _, artifactID, version, classifier, ext string) (*models.MavenArtifact, error) {
+func (m *snapshotMockDB) GetLatestSnapshotFile(
+	_ context.Context,
+	_, _, artifactID, version, classifier, ext string,
+) (*models.MavenArtifact, error) {
 	var best *models.MavenArtifact
 
 	for _, a := range m.arts {

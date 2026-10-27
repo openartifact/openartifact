@@ -75,7 +75,10 @@ func TestDebSameContentInOtherComponentIsCopied(t *testing.T) {
 		t.Errorf("target has %d distributions, want the existing one reused", got)
 	}
 
-	if got := h.count(`SELECT COUNT(*) FROM debian_components c JOIN debian_distributions d ON d.id = c.distribution_id WHERE d.repository_id = $1`, dst.ID); got != 2 {
+	if got := h.count(
+		`SELECT COUNT(*) FROM debian_components c JOIN debian_distributions d ON d.id = c.distribution_id WHERE d.repository_id = $1`,
+		dst.ID,
+	); got != 2 {
 		t.Errorf("target has %d components, want contrib and main", got)
 	}
 
@@ -132,13 +135,19 @@ func TestDebKeepsExistingParents(t *testing.T) {
 	blobA, shaA := h.blob("deb A")
 
 	seedDebPackage(h, src.ID, blobA, "bookworm", "main", debTestFilename)
-	h.exec(`INSERT INTO debian_distributions (repository_id, name, codename, description) VALUES ($1, 'bookworm', 'Custom', 'custom')`, dst.ID)
+	h.exec(
+		`INSERT INTO debian_distributions (repository_id, name, codename, description) VALUES ($1, 'bookworm', 'Custom', 'custom')`,
+		dst.ID,
+	)
 
 	if _, err := h.promoteOnce(p, Request{Src: src, Dst: dst, SHA256: shaA}); err != nil {
 		t.Fatalf("promotion: %v", err)
 	}
 
-	if got := h.str(`SELECT codename || '/' || description FROM debian_distributions WHERE repository_id = $1`, dst.ID); got != "Custom/custom" {
+	if got := h.str(
+		`SELECT codename || '/' || description FROM debian_distributions WHERE repository_id = $1`,
+		dst.ID,
+	); got != "Custom/custom" {
 		t.Errorf("target distribution is %q, want its own fields kept", got)
 	}
 }
@@ -276,7 +285,10 @@ func TestRPMKeepsTheTargetRepodataRow(t *testing.T) {
 		t.Errorf("target has %d rpm_repos rows, want its own one reused", got)
 	}
 
-	if got := h.str(`SELECT base_arch || '/' || metadata_stale::text FROM rpm_repos WHERE repository_id = $1`, dst.ID); got != "aarch64/true" {
+	if got := h.str(
+		`SELECT base_arch || '/' || metadata_stale::text FROM rpm_repos WHERE repository_id = $1`,
+		dst.ID,
+	); got != "aarch64/true" {
 		t.Errorf("target rpm_repos row is %q, want it flagged stale", got)
 	}
 }

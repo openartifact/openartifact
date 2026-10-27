@@ -37,7 +37,14 @@ const maxMemberTagPages = 1000
 // they lack is unknown, never a proxy's. Images no hosted member holds are
 // served by the proxies; if a hosted member could not say, the request is
 // refused with UNAVAILABLE rather than risk serving the proxy's image.
-func (h *Handler) ServeOCI(w http.ResponseWriter, r *http.Request, grp *models.Repository, req ocipath.Request, relPath string, be Backend) {
+func (h *Handler) ServeOCI(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	req ocipath.Request,
+	relPath string,
+	be Backend,
+) {
 	if ocipath.RejectNonPull(w, r, req.Kind) {
 		return
 	}
@@ -89,7 +96,14 @@ func (h *Handler) ServeOCI(w http.ResponseWriter, r *http.Request, grp *models.R
 
 // serveTags merges the tags of every member that knows the image, paginating
 // the union (n, last) the way a single registry would.
-func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request, members []*models.Repository, req ocipath.Request, relPath string, be Backend) {
+func (h *Handler) serveTags(
+	w http.ResponseWriter,
+	r *http.Request,
+	members []*models.Repository,
+	req ocipath.Request,
+	relPath string,
+	be Backend,
+) {
 	// Members are read in full; pagination applies to the merged list.
 	// Always with GET: a HEAD to a member carries no body to merge, and the
 	// group drops the body itself when answering HEAD.

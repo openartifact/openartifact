@@ -180,7 +180,12 @@ func upstreamDeb(t *testing.T, repoID string, pkgs ...string) fakeUpstream {
 
 	for _, p := range pkgs {
 		name, version, _ := strings.Cut(p, " ")
-		packages.WriteString("Package: " + name + "\nVersion: " + version + "\nArchitecture: amd64\nFilename: pool/main/" + name[:1] + "/" + name + "/" + name + "_" + version + "_amd64.deb\nSize: 5\nSHA256: " + strings.Repeat("ab", 32) + "\n\n")
+		packages.WriteString(
+			"Package: " + name + "\nVersion: " + version + "\nArchitecture: amd64\nFilename: pool/main/" + name[:1] + "/" + name + "/" + name + "_" + version + "_amd64.deb\nSize: 5\nSHA256: " + strings.Repeat(
+				"ab",
+				32,
+			) + "\n\n",
+		)
 	}
 
 	sum := sha256.Sum256(gz(t, packages.String()))

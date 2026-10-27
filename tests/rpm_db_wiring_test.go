@@ -219,7 +219,11 @@ func (m *MockDatabase) DeleteRepository(ctx context.Context, id string) error {
 	return nil
 }
 
-func (m *MockDatabase) ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error) {
+func (m *MockDatabase) ListComponentsByRepo(
+	ctx context.Context,
+	repoID, formatFilter string,
+	page, limit int,
+) ([]*models.Component, int, error) {
 	var all []*models.Component
 
 	for _, c := range m.components {
@@ -451,7 +455,13 @@ func (m *MockDatabase) GetDebianPackageByFilename(ctx context.Context, repoID st
 	return nil, nil
 }
 
-func (m *MockDatabase) GetDebianPackagesByDistComp(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.Component, error) {
+func (m *MockDatabase) GetDebianPackagesByDistComp(
+	ctx context.Context,
+	repoID string,
+	dist string,
+	comp string,
+	arch string,
+) ([]models.Component, error) {
 	return []models.Component{}, nil
 }
 
@@ -475,7 +485,10 @@ func (m *MockDatabase) GetMavenArtifactByPath(ctx context.Context, repoID, path 
 	return nil, nil
 }
 
-func (m *MockDatabase) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error) {
+func (m *MockDatabase) GetMavenArtifactsByGAV(
+	ctx context.Context,
+	repoID, groupID, artifactID, version string,
+) ([]*models.MavenArtifact, error) {
 	var result []*models.MavenArtifact
 
 	for _, a := range m.mavenArtifacts {
@@ -1027,7 +1040,11 @@ func (m *MockDatabase) DeletePermissionAssignment(ctx context.Context, targetID,
 	return nil
 }
 
-func (m *MockDatabase) GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error) {
+func (m *MockDatabase) GetPermissionTargetsForPrincipal(
+	ctx context.Context,
+	userID string,
+	groupIDs []string,
+) ([]*models.PermissionTarget, error) {
 	groupSet := make(map[string]bool, len(groupIDs))
 	for _, gid := range groupIDs {
 		groupSet[gid] = true
@@ -1256,7 +1273,11 @@ func (m *MockDatabase) DeleteReleaseBundle(ctx context.Context, id string) error
 	return nil
 }
 
-func (m *MockDatabase) ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error) {
+func (m *MockDatabase) ListReleaseBundles(
+	ctx context.Context,
+	nameFilter, stateFilter string,
+	page, limit int,
+) ([]*models.ReleaseBundle, int, error) {
 	return nil, 0, nil
 }
 
@@ -1353,7 +1374,12 @@ func (m *MockDatabase) CreateDockerUpload(ctx context.Context, upload *models.Do
 func (m *MockDatabase) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *MockDatabase) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+
+func (m *MockDatabase) UpdateDockerUploadOffset(
+	ctx context.Context,
+	repositoryID, uploadUUID string,
+	oldOffset, newOffset int64,
+) (bool, error) {
 	return true, nil
 }
 func (m *MockDatabase) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
@@ -1510,7 +1536,12 @@ func (m *MockDatabase) UpdateWebhookDelivery(ctx context.Context, delivery *mode
 func (m *MockDatabase) ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
-func (m *MockDatabase) ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error) {
+
+func (m *MockDatabase) ClaimPendingWebhookDeliveries(
+	ctx context.Context,
+	limit int,
+	lease time.Duration,
+) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
 
@@ -1726,7 +1757,13 @@ func (m *MockDatabase) GetProjectMember(ctx context.Context, orgID, userID strin
 func (m *MockDatabase) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard database.ProjectRoleGuard) error {
 	return nil
 }
-func (m *MockDatabase) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard database.ProjectRoleGuard) error {
+
+func (m *MockDatabase) ChangeProjectGroup(
+	ctx context.Context,
+	projectID, groupID, newRole string,
+	createdBy *string,
+	guard database.ProjectRoleGuard,
+) error {
 	return nil
 }
 func (m *MockDatabase) ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error) {
@@ -1746,7 +1783,11 @@ func (m *MockDatabase) SetSystemSetting(ctx context.Context, key, value string) 
 func (m *MockDatabase) CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error {
 	return nil
 }
-func (m *MockDatabase) GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error) {
+
+func (m *MockDatabase) GetCondaPackageFile(
+	ctx context.Context,
+	repoID, name, version, buildString, platform, extension string,
+) (*models.CondaPackage, error) {
 	return nil, nil
 }
 func (m *MockDatabase) DeleteCondaPackage(ctx context.Context, id string) error { return nil }
@@ -1761,7 +1802,11 @@ func (m *MockDatabase) CreateConanPackage(ctx context.Context, pkg *models.Conan
 func (m *MockDatabase) GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error) {
 	return nil, nil
 }
-func (m *MockDatabase) ListConanRecipeFiles(ctx context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error) {
+
+func (m *MockDatabase) ListConanRecipeFiles(
+	ctx context.Context,
+	repoID, name, version, userChannel string,
+) ([]*models.ConanPackage, error) {
 	return nil, nil
 }
 func (m *MockDatabase) ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error) {
@@ -1776,7 +1821,11 @@ func (m *MockDatabase) ListConanPackages(ctx context.Context, repoID string) ([]
 func (m *MockDatabase) CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error {
 	return nil
 }
-func (m *MockDatabase) GetIvyArtifact(ctx context.Context, repoID, organisation, module, revision, artifactName, artifactExt string) (*models.IvyArtifact, error) {
+
+func (m *MockDatabase) GetIvyArtifact(
+	ctx context.Context,
+	repoID, organisation, module, revision, artifactName, artifactExt string,
+) (*models.IvyArtifact, error) {
 	return nil, nil
 }
 func (m *MockDatabase) DeleteIvyArtifact(ctx context.Context, id string) error { return nil }
@@ -1788,7 +1837,11 @@ func (m *MockDatabase) ListIvyArtifacts(ctx context.Context, repoID string) ([]*
 func (m *MockDatabase) CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error {
 	return nil
 }
-func (m *MockDatabase) GetSBTArtifact(ctx context.Context, repoID, groupID, artifactID, version, filename string) (*models.SBTArtifact, error) {
+
+func (m *MockDatabase) GetSBTArtifact(
+	ctx context.Context,
+	repoID, groupID, artifactID, version, filename string,
+) (*models.SBTArtifact, error) {
 	return nil, nil
 }
 func (m *MockDatabase) DeleteSBTArtifact(ctx context.Context, id string) error { return nil }

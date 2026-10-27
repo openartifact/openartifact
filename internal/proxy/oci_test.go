@@ -115,7 +115,8 @@ func (g *fakeOCIRegistry) handle(w http.ResponseWriter, r *http.Request) {
 			realm = g.realm
 		}
 
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="%s",scope="repository:%s:pull"`, realm, ociRealmService, req.Name))
+		w.Header().
+			Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="%s",scope="repository:%s:pull"`, realm, ociRealmService, req.Name))
 		w.WriteHeader(http.StatusUnauthorized)
 
 		return
@@ -341,7 +342,11 @@ func TestOCI_PullAnswersTokenChallengeAndCaches(t *testing.T) {
 		t.Errorf("cached manifest: %d %q", w.Code, w.Body.String())
 	}
 
-	if w := f.do(http.MethodGet, "hub/library/alpine/manifests/"+dg); w.Code != http.StatusOK || w.Header().Get("Docker-Content-Digest") != dg {
+	if w := f.do(
+		http.MethodGet,
+		"hub/library/alpine/manifests/"+dg,
+	); w.Code != http.StatusOK ||
+		w.Header().Get("Docker-Content-Digest") != dg {
 		t.Errorf("cached manifest by digest: %d", w.Code)
 	}
 
@@ -721,7 +726,11 @@ func TestOCI_TagPastMaxStaleFailsWhenUpstreamIsDown(t *testing.T) {
 	f.db.expireAgo("docker-1", "library/alpine/manifests/3.20", 2*time.Hour) // max stale is 1h
 	f.reg.set(func() { f.reg.status = http.StatusBadGateway })
 
-	if w := f.do(http.MethodGet, "hub/library/alpine/manifests/3.20"); w.Code != http.StatusBadGateway || ociErrorCode(t, w) != "UNAVAILABLE" {
+	if w := f.do(
+		http.MethodGet,
+		"hub/library/alpine/manifests/3.20",
+	); w.Code != http.StatusBadGateway ||
+		ociErrorCode(t, w) != "UNAVAILABLE" {
 		t.Errorf("= %d, want 502 UNAVAILABLE", w.Code)
 	}
 }
@@ -814,7 +823,11 @@ func TestOCI_ImageNameIsRequiredAndValidated(t *testing.T) {
 		t.Errorf("invalid image name: %d", w.Code)
 	}
 
-	if w := f.do(http.MethodGet, "hub/team/app/blobs/sha256:short"); w.Code != http.StatusBadRequest || ociErrorCode(t, w) != "DIGEST_INVALID" {
+	if w := f.do(
+		http.MethodGet,
+		"hub/team/app/blobs/sha256:short",
+	); w.Code != http.StatusBadRequest ||
+		ociErrorCode(t, w) != "DIGEST_INVALID" {
 		t.Errorf("invalid digest: %d", w.Code)
 	}
 
@@ -862,7 +875,11 @@ func TestParseChallenge(t *testing.T) {
 		{
 			`Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/alpine:pull"`,
 			"bearer",
-			map[string]string{"realm": "https://auth.docker.io/token", "service": "registry.docker.io", "scope": "repository:library/alpine:pull"},
+			map[string]string{
+				"realm":   "https://auth.docker.io/token",
+				"service": "registry.docker.io",
+				"scope":   "repository:library/alpine:pull",
+			},
 		},
 		{
 			`Bearer realm="https://x/token", service="a b", scope="repository:a:pull,push"`,
@@ -903,8 +920,18 @@ func TestOCI_UpstreamChosenContentTypeIsNeverEchoed(t *testing.T) {
 	}{
 		{"html header, html mediaType", "text/html", htmlManifest, "application/vnd.docker.distribution.manifest.v2+json"},
 		{"svg header", "image/svg+xml", alpineManifest, ociManifestType},
-		{"html header with body type", "text/html", `{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`, "application/vnd.docker.distribution.manifest.v2+json"},
-		{"registry header kept", "application/vnd.docker.distribution.manifest.v2+json; charset=utf-8", alpineManifest, "application/vnd.docker.distribution.manifest.v2+json"},
+		{
+			"html header with body type",
+			"text/html",
+			`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`,
+			"application/vnd.docker.distribution.manifest.v2+json",
+		},
+		{
+			"registry header kept",
+			"application/vnd.docker.distribution.manifest.v2+json; charset=utf-8",
+			alpineManifest,
+			"application/vnd.docker.distribution.manifest.v2+json",
+		},
 	}
 
 	for _, tc := range tests {

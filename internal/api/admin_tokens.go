@@ -272,7 +272,13 @@ func (b *tokenCreateBody) validate(now time.Time) string {
 // with its owner's targets, so a scope can only ever narrow access); everyone
 // else may only name targets they hold themselves. A non-zero status means the
 // request must be rejected with that status/code/message.
-func authorizeTokenScopes(ctx context.Context, db database.Database, p *auth.Principal, isAdmin bool, scopes []string) (int, string, string) {
+func authorizeTokenScopes(
+	ctx context.Context,
+	db database.Database,
+	p *auth.Principal,
+	isAdmin bool,
+	scopes []string,
+) (int, string, string) {
 	if len(scopes) == 0 {
 		return 0, "", ""
 	}
@@ -320,7 +326,14 @@ func authorizeTokenScopes(ctx context.Context, db database.Database, p *auth.Pri
 // principal may manage tokens for ownerID. Minting is refused for
 // token-authenticated principals: a leaked token must not be able to spawn
 // longer-lived or differently-scoped replacements for itself.
-func issueToken(w http.ResponseWriter, r *http.Request, db database.Database, log *logger.Logger, evaluator *auth.Evaluator, ownerID string) {
+func issueToken(
+	w http.ResponseWriter,
+	r *http.Request,
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	ownerID string,
+) {
 	p := currentPrincipal(r)
 	if p == nil || p.IsAnonymous {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")

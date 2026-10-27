@@ -35,14 +35,19 @@ func TestDownloadPresignUsesStoredSize(t *testing.T) {
 	const sum = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
 	store := &redirectingStore{mavenMockBlobStore: &mavenMockBlobStore{blobs: map[string][]byte{sum: []byte("jar")}}}
-	db := &mavenQuarantineDB{art: &models.MavenArtifact{BlobID: "uuid", SHA256: sum, BlobSizeBytes: 9999, RepoPath: "com/example/a/1.0/a-1.0.jar"}}
+	db := &mavenQuarantineDB{
+		art: &models.MavenArtifact{BlobID: "uuid", SHA256: sum, BlobSizeBytes: 9999, RepoPath: "com/example/a/1.0/a-1.0.jar"},
+	}
 	db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
 	router := chi.NewRouter()
 	NewHTTPHandler(formattest.NewLogger(t), db, store).RegisterRoutes(router, "/repos/{name}")
 
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/a/1.0/a-1.0.jar", http.NoBody))
+	router.ServeHTTP(
+		w,
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/a/1.0/a-1.0.jar", http.NoBody),
+	)
 
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d, want 307", w.Code)

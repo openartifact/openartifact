@@ -183,7 +183,12 @@ func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
 		assembled.WriteString(chunk)
 
 		req := withChiVars(
-			httptest.NewRequestWithContext(context.Background(), http.MethodPatch, "/v2/myrepo/blobs/uploads/"+uid, strings.NewReader(chunk)),
+			httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPatch,
+				"/v2/myrepo/blobs/uploads/"+uid,
+				strings.NewReader(chunk),
+			),
 			map[string]string{"name": "myrepo", "uuid": uid},
 		)
 		rec := httptest.NewRecorder()

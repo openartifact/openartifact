@@ -51,7 +51,13 @@ func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawAr
 // CommitPromoted is Commit for content already in the blob store's staging
 // area (the presigned upload completion): promote makes the blob a.SHA256
 // present under the per-blob lock instead of a stored Blob.
-func CommitPromoted(req *http.Request, h *base.Handler, repoName string, a *models.RawArtifact, promote func(ctx context.Context) error) (*models.RawArtifact, error) {
+func CommitPromoted(
+	req *http.Request,
+	h *base.Handler,
+	repoName string,
+	a *models.RawArtifact,
+	promote func(ctx context.Context) error,
+) (*models.RawArtifact, error) {
 	return commitWith(req, h, repoName, a, func(ctx context.Context, commit func(ctx context.Context, key string) error) error {
 		return storage.WithBlobLock(ctx, h.DB, a.SHA256, func(ctx context.Context) error {
 			if err := promote(ctx); err != nil {

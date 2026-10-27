@@ -137,7 +137,8 @@ func TestTelemetryYAMLAndEnvPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if o := cfg.Telemetry.OTLP; !o.Enabled || o.Endpoint != "yaml-collector:4317" || o.ServiceName != "from-yaml" || o.SampleRatio != 0.5 || o.Headers["x-from-yaml"] != "1" {
+	if o := cfg.Telemetry.OTLP; !o.Enabled || o.Endpoint != "yaml-collector:4317" || o.ServiceName != "from-yaml" || o.SampleRatio != 0.5 ||
+		o.Headers["x-from-yaml"] != "1" {
 		t.Fatalf("yaml not applied: %+v", o)
 	}
 

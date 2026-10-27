@@ -90,7 +90,10 @@ func TestMergeMetadata_RoundTripsThroughXML(t *testing.T) {
 }
 
 func TestMergeMetadata_UnionsPluginsFirstWins(t *testing.T) {
-	a := mustParse(t, `<metadata><plugins><plugin><name>A</name><prefix>a</prefix><artifactId>a-plugin</artifactId></plugin></plugins></metadata>`)
+	a := mustParse(
+		t,
+		`<metadata><plugins><plugin><name>A</name><prefix>a</prefix><artifactId>a-plugin</artifactId></plugin></plugins></metadata>`,
+	)
 	b := mustParse(t, `<metadata><plugins>
 		<plugin><name>A2</name><prefix>a</prefix><artifactId>other</artifactId></plugin>
 		<plugin><name>B</name><prefix>b</prefix><artifactId>b-plugin</artifactId></plugin></plugins></metadata>`)

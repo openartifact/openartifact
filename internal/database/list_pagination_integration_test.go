@@ -24,11 +24,19 @@ func TestRepositoryListingPagesAreDisjointAndCompleteWithTiedTimestamps(t *testi
 		t.Fatal(err)
 	}
 
-	if _, err := db.ExecContext(ctx, `INSERT INTO repositories (name, format, project_id, description) SELECT 'npm' || i, 'npm', $1::uuid, '' FROM generate_series(1, 2) i`, systemOrgID); err != nil {
+	if _, err := db.ExecContext(
+		ctx,
+		`INSERT INTO repositories (name, format, project_id, description) SELECT 'npm' || i, 'npm', $1::uuid, '' FROM generate_series(1, 2) i`,
+		systemOrgID,
+	); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := db.ExecContext(ctx, `INSERT INTO repositories (name, format, public, deleted_at, project_id, description) VALUES ('gone', 'raw', true, now(), $1, '')`, systemOrgID); err != nil {
+	if _, err := db.ExecContext(
+		ctx,
+		`INSERT INTO repositories (name, format, public, deleted_at, project_id, description) VALUES ('gone', 'raw', true, now(), $1, '')`,
+		systemOrgID,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,11 +167,20 @@ func TestListProjectRepositoriesCountsOnlyLiveOwnedRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := db.ExecContext(ctx, `INSERT INTO repositories (name, format, project_id, description) SELECT 'm' || i, 'raw', $1::uuid, '' FROM generate_series(1, 5) i`, mine); err != nil {
+	if _, err := db.ExecContext(
+		ctx,
+		`INSERT INTO repositories (name, format, project_id, description) SELECT 'm' || i, 'raw', $1::uuid, '' FROM generate_series(1, 5) i`,
+		mine,
+	); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := db.ExecContext(ctx, `INSERT INTO repositories (name, format, project_id, deleted_at, description) VALUES ('mdead', 'raw', $1, now(), ''), ('o1', 'raw', $2, NULL, '')`, mine, other); err != nil {
+	if _, err := db.ExecContext(
+		ctx,
+		`INSERT INTO repositories (name, format, project_id, deleted_at, description) VALUES ('mdead', 'raw', $1, now(), ''), ('o1', 'raw', $2, NULL, '')`,
+		mine,
+		other,
+	); err != nil {
 		t.Fatal(err)
 	}
 

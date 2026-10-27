@@ -44,7 +44,12 @@ type qrEnv struct {
 	router   http.Handler
 }
 
-func newQREnv(t *testing.T, pg *database.PostgresDB, format string, mount func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler) *qrEnv {
+func newQREnv(
+	t *testing.T,
+	pg *database.PostgresDB,
+	format string,
+	mount func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler,
+) *qrEnv {
 	t.Helper()
 
 	bs, err := storage.NewFilesystemStore(filepath.Join(t.TempDir(), "blobs"))
@@ -420,7 +425,11 @@ func qrRunRPM(t *testing.T, e *qrEnv) {
 func qrDeb(t *testing.T, pkgName, version string, pad int) []byte {
 	t.Helper()
 
-	ctrl := fmt.Sprintf("Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: A <a@b.c>\nInstalled-Size: 10\nDescription: hi\n", pkgName, version)
+	ctrl := fmt.Sprintf(
+		"Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: A <a@b.c>\nInstalled-Size: 10\nDescription: hi\n",
+		pkgName,
+		version,
+	)
 
 	var tarBuf bytes.Buffer
 

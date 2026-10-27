@@ -157,7 +157,14 @@ func registrationLeafURL(baseURL, id, version string) string {
 }
 
 func packageContentURL(baseURL, id, version string) string {
-	return fmt.Sprintf("%s/v3/package/%s/%s/%s.%s.nupkg", baseURL, url.PathEscape(id), url.PathEscape(version), url.PathEscape(id), url.PathEscape(version))
+	return fmt.Sprintf(
+		"%s/v3/package/%s/%s/%s.%s.nupkg",
+		baseURL,
+		url.PathEscape(id),
+		url.PathEscape(version),
+		url.PathEscape(id),
+		url.PathEscape(version),
+	)
 }
 
 func nupkgName(id, version string) string { return id + "." + version + ".nupkg" }
@@ -307,14 +314,29 @@ func pushedPackage(repoID string, metadata map[string]any, part *base.Part, sum5
 // archive cannot be read safely (two .nuspec files, an oversized one) is
 // refused, and so is one whose .nuspec cannot be read while the repository has
 // a blocking policy (false, response written).
-func (h *HTTPHandler) pushedLicenses(w http.ResponseWriter, r *http.Request, repoID string, pkg *models.NuGetPackage, part *base.Part, metadata map[string]any) ([]string, bool) {
+func (h *HTTPHandler) pushedLicenses(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID string,
+	pkg *models.NuGetPackage,
+	part *base.Part,
+	metadata map[string]any,
+) ([]string, bool) {
 	res, err := licensemeta.Read(r.Context(), "nuget", pkg.PackageID+"."+pkg.Version+".nupkg", func() (io.ReadCloser, error) {
 		return io.NopCloser(part.Reader()), nil
 	})
 
 	switch {
 	case licensemeta.Unsafe(err):
-		h.Log.Warnw("nuget push rejected: package metadata cannot be read safely", "id", pkg.PackageID, "version", pkg.Version, "error", err)
+		h.Log.Warnw(
+			"nuget push rejected: package metadata cannot be read safely",
+			"id",
+			pkg.PackageID,
+			"version",
+			pkg.Version,
+			"error",
+			err,
+		)
 		licensepolicy.RejectUnsafe(w, h.Log)
 
 		return nil, false
@@ -498,23 +520,35 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindNuGet, IDs: []string{pkg.ID}, Resource: nupkgName(packageID, version), Package: packageID, Version: version}, func() error {
-		if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
-			return fmt.Errorf("delete nuget package: %w", err)
-		}
+	err = trash.Delete(
+		r.Context(),
+		h.DB,
+		trash.Request{
+			RepoID:   repoID,
+			Kind:     models.TrashKindNuGet,
+			IDs:      []string{pkg.ID},
+			Resource: nupkgName(packageID, version),
+			Package:  packageID,
+			Version:  version,
+		},
+		func() error {
+			if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
+				return fmt.Errorf("delete nuget package: %w", err)
+			}
 
-		if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.PackageSize); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+			if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.PackageSize); relErr != nil {
+				h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
+			}
 
-		// The blob is content-addressed and may be shared; remove it only once no
-		// row references it any more.
-		if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.BlobKey); err != nil {
-			h.Log.Warnw("failed to clean up blob after nuget delete", "key", pkg.BlobKey, "error", err)
-		}
+			// The blob is content-addressed and may be shared; remove it only once no
+			// row references it any more.
+			if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.BlobKey); err != nil {
+				h.Log.Warnw("failed to clean up blob after nuget delete", "key", pkg.BlobKey, "error", err)
+			}
 
-		return nil
-	})
+			return nil
+		},
+	)
 	if err != nil {
 		if errors.Is(err, database.ErrTrashNotFound) {
 			http.NotFound(w, r)
@@ -666,7 +700,11 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 		// Continue anyway
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: pkg.BlobKey, Size: pkg.PackageSize, Filename: nupkgName(packageID, version), ContentType: "application/zip"}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{SHA256: pkg.BlobKey, Size: pkg.PackageSize, Filename: nupkgName(packageID, version), ContentType: "application/zip"},
+	) {
 		return
 	}
 
@@ -811,7 +849,11 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 	rendered.Serve(w, r)
 }
 
-func (h *HTTPHandler) renderRegistrationIndex(ctx context.Context, baseURL, packageID string, pkgs []*models.NuGetPackage) (*base.Rendered, error) {
+func (h *HTTPHandler) renderRegistrationIndex(
+	ctx context.Context,
+	baseURL, packageID string,
+	pkgs []*models.NuGetPackage,
+) (*base.Rendered, error) {
 	indexURL := registrationIndexURL(baseURL, packageID)
 	versions := sortedVersions(pkgs)
 

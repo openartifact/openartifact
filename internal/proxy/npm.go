@@ -219,7 +219,12 @@ var errNoVersion = errors.New("version not found")
 // renderCachedPackument reads the cached packument and renders it for the
 // client, holding one of the bounded packument slots while the whole document
 // is in memory.
-func (s *Service) renderCachedPackument(ctx context.Context, entry *models.ProxyCacheEntry, p pkgnpm.Path, tarballBase string) ([]byte, error) {
+func (s *Service) renderCachedPackument(
+	ctx context.Context,
+	entry *models.ProxyCacheEntry,
+	p pkgnpm.Path,
+	tarballBase string,
+) ([]byte, error) {
 	if err := s.packuments.Acquire(ctx); err != nil {
 		return nil, err //nolint:wrapcheck // caller checks for cancellation
 	}
@@ -278,7 +283,12 @@ func (s *Service) serveNPMTarball(w http.ResponseWriter, r *http.Request, repo *
 // the packument names, and caches it only when it matches dist.integrity /
 // dist.shasum. A file no version of the packument lists is errNotFound
 // without a negative cache entry: the packument may simply be stale.
-func (s *Service) fetchNPMTarball(ctx context.Context, repo *models.Repository, p pkgnpm.Path, key string) (*models.ProxyCacheEntry, error) {
+func (s *Service) fetchNPMTarball(
+	ctx context.Context,
+	repo *models.Repository,
+	p pkgnpm.Path,
+	key string,
+) (*models.ProxyCacheEntry, error) {
 	res, err := s.resolveNPMPackument(ctx, repo, p.Package, false)
 	if err != nil {
 		return nil, err

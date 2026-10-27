@@ -153,7 +153,14 @@ func TestAttachReferrerNeedsTheSubjectAndRespectsQuota(t *testing.T) {
 	g, db := quotaRegistry(t, 0, "reg")
 	repo := db.repos["reg"]
 
-	if _, err := g.h.AttachReferrer(context.Background(), repo, attachReq(digestOf([]byte("nope")), "x")); !errors.Is(err, ErrSubjectNotFound) {
+	if _, err := g.h.AttachReferrer(
+		context.Background(),
+		repo,
+		attachReq(digestOf([]byte("nope")), "x"),
+	); !errors.Is(
+		err,
+		ErrSubjectNotFound,
+	) {
 		t.Fatalf("attach to a missing subject = %v; want ErrSubjectNotFound", err)
 	}
 

@@ -126,7 +126,11 @@ func seedEquivalenceRepo(t *testing.T, pg *database.PostgresDB) string {
 	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
-		`CREATE TEMP TABLE eq_ids AS SELECT '%s'::uuid AS repo, '%s'::uuid AS dist, '%s'::uuid AS comp`, repo, distID, compID)); err != nil {
+		`CREATE TEMP TABLE eq_ids AS SELECT '%s'::uuid AS repo, '%s'::uuid AS dist, '%s'::uuid AS comp`,
+		repo,
+		distID,
+		compID,
+	)); err != nil {
 		t.Fatalf("create eq_ids: %v", err)
 	}
 
@@ -265,7 +269,12 @@ func TestSearchComponentsQueryMatchesEveryFormat(t *testing.T) {
 	}
 
 	// "%" and "_" are literal characters, not LIKE wildcards.
-	if got, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Query: "%", Page: 1, Limit: 10}); err != nil || total != 0 || len(got) != 0 {
+	if got, total, err := pg.SearchComponents(
+		ctx,
+		repo,
+		database.ComponentListOptions{Query: "%", Page: 1, Limit: 10},
+	); err != nil || total != 0 ||
+		len(got) != 0 {
 		t.Fatalf("q=%%: total=%d len=%d err=%v, want no match", total, len(got), err)
 	}
 }
@@ -337,7 +346,11 @@ func TestSearchComponentsSortByName(t *testing.T) {
 	}
 
 	// The two orders can be combined with q.
-	rows, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Query: "py1", Format: "pypi", SortByName: true, Page: 1, Limit: 100})
+	rows, total, err := pg.SearchComponents(
+		ctx,
+		repo,
+		database.ComponentListOptions{Query: "py1", Format: "pypi", SortByName: true, Page: 1, Limit: 100},
+	)
 	if err != nil || total != len(rows) || len(rows) == 0 || rows[0].Name != "py1" {
 		t.Fatalf("q+sort: total=%d len=%d err=%v first=%v", total, len(rows), err, rows)
 	}

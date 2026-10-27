@@ -51,7 +51,8 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 			// password changed) and so does repository.deleted (a delete
 			// refused for a missing confirmation did not); a rejected request
 			// did not.
-			if action == "" || ((strings.HasPrefix(action, "auth.") || action == "repository.deleted") && wrapped.statusCode >= http.StatusBadRequest) {
+			if action == "" ||
+				((strings.HasPrefix(action, "auth.") || action == "repository.deleted") && wrapped.statusCode >= http.StatusBadRequest) {
 				action = audit.ActionHTTPRequest
 			}
 			clientIP := ClientIP(r, proxies)

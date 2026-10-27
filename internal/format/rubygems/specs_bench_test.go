@@ -43,8 +43,12 @@ func BenchmarkHandleSpecs(b *testing.B) {
 		db := &gemsDB{DB: formattest.NewDB()}
 		for i := range n {
 			db.gems = append(db.gems, &models.RubyGem{
-				Name: "gem-" + strconv.Itoa(i/5), Version: "1." + strconv.Itoa(i%5) + ".0", Platform: "ruby",
-				Description: "A gem", Authors: []string{"Jane"}, Dependencies: []byte(`[{"name":"rake","requirement":">= 0","type":"runtime"}]`),
+				Name:         "gem-" + strconv.Itoa(i/5),
+				Version:      "1." + strconv.Itoa(i%5) + ".0",
+				Platform:     "ruby",
+				Description:  "A gem",
+				Authors:      []string{"Jane"},
+				Dependencies: []byte(`[{"name":"rake","requirement":">= 0","type":"runtime"}]`),
 			})
 		}
 

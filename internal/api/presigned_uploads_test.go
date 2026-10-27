@@ -162,7 +162,11 @@ func (d *presignUploadDB) DecrementStorageUsage(_ context.Context, _ string, siz
 	return nil
 }
 
-func (d *presignUploadDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
+func (d *presignUploadDB) GetPermissionTargetsForPrincipal(
+	_ context.Context,
+	userID string,
+	_ []string,
+) ([]*models.PermissionTarget, error) {
 	return d.targets[userID], nil
 }
 
@@ -287,7 +291,12 @@ func newPresignUploadFixture(t *testing.T, format, repoType string) *presignUplo
 				"admin-1":  {{RepositoryFilter: `.*`, PathPattern: `.*`, Actions: []string{"manage", "read", "write"}}},
 			},
 		},
-		store:  &stagingBlobStore{BlobStore: local, staged: map[string][]byte{}, promoted: map[string]string{}, copied: map[string][]byte{}},
+		store: &stagingBlobStore{
+			BlobStore: local,
+			staged:    map[string][]byte{},
+			promoted:  map[string]string{},
+			copied:    map[string][]byte{},
+		},
 		router: chi.NewRouter(),
 	}
 
@@ -387,7 +396,8 @@ func TestPresignedUpload_CreateReturnsSignedPut(t *testing.T) {
 	}
 
 	row := f.db.uploads[resp.ID]
-	if row == nil || row.Path != "releases/app.bin" || row.SizeBytes != int64(len(content)) || row.SHA256 != digestOf(content) || row.CreatedBy != "admin" {
+	if row == nil || row.Path != "releases/app.bin" || row.SizeBytes != int64(len(content)) || row.SHA256 != digestOf(content) ||
+		row.CreatedBy != "admin" {
 		t.Fatalf("recorded upload = %+v", row)
 	}
 
@@ -414,11 +424,32 @@ func TestPresignedUpload_CreateValidation(t *testing.T) {
 		{"dotdot path", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a/../b", Size: 1, SHA256: good}, http.StatusBadRequest},
 		{"directory path", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a/", Size: 1, SHA256: good}, http.StatusBadRequest},
 		{"short sha", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: "abc"}, http.StatusBadRequest},
-		{"non-hex sha", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: strings.Repeat("z", 64)}, http.StatusBadRequest},
+		{
+			"non-hex sha",
+			"raw",
+			"hosted",
+			false,
+			CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: strings.Repeat("z", 64)},
+			http.StatusBadRequest,
+		},
 		{"negative size", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a", Size: -1, SHA256: good}, http.StatusBadRequest},
 		{"too large", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a", Size: 6 << 30, SHA256: good}, http.StatusBadRequest},
-		{"upper-case sha is normalised", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: strings.ToUpper(good)}, http.StatusCreated},
-		{"zero byte file", "raw", "hosted", false, CreatePresignedUploadRequest{Path: "a", Size: 0, SHA256: digestOf(nil)}, http.StatusCreated},
+		{
+			"upper-case sha is normalised",
+			"raw",
+			"hosted",
+			false,
+			CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: strings.ToUpper(good)},
+			http.StatusCreated,
+		},
+		{
+			"zero byte file",
+			"raw",
+			"hosted",
+			false,
+			CreatePresignedUploadRequest{Path: "a", Size: 0, SHA256: digestOf(nil)},
+			http.StatusCreated,
+		},
 	}
 
 	for _, tt := range tests {
@@ -450,7 +481,12 @@ func TestPresignedUpload_UnsupportedBackend(t *testing.T) {
 	NewPresignedUploadHandler(log, f.db, local, auth.NewEvaluator(f.db, log, false), time.Minute, 0, nil).Register(r)
 	f.router = r
 
-	rw := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))})
+	rw := f.call(
+		t,
+		false,
+		"/api/v1/repositories/files/uploads",
+		CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))},
+	)
 	if rw.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rw.Code)
 	}
@@ -482,7 +518,8 @@ func TestPresignedUpload_CompleteRecordsArtifact(t *testing.T) {
 	}
 
 	art := f.db.artifacts["releases/app.bin"]
-	if art == nil || art.BlobKey != digestOf(content) || art.SHA256 != digestOf(content) || art.SizeBytes != int64(len(content)) || art.ContentType != "application/x-test" {
+	if art == nil || art.BlobKey != digestOf(content) || art.SHA256 != digestOf(content) || art.SizeBytes != int64(len(content)) ||
+		art.ContentType != "application/x-test" {
 		t.Fatalf("recorded artifact = %+v", art)
 	}
 
@@ -514,7 +551,12 @@ func TestPresignedUpload_CompleteDetectsContentType(t *testing.T) {
 	f := newPresignUploadFixture(t, "raw", "hosted")
 	content := []byte("<!DOCTYPE html><html><body>x</body></html>")
 
-	rw := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{Path: "x.html", Size: int64(len(content)), SHA256: digestOf(content)})
+	rw := f.call(
+		t,
+		false,
+		"/api/v1/repositories/files/uploads",
+		CreatePresignedUploadRequest{Path: "x.html", Size: int64(len(content)), SHA256: digestOf(content)},
+	)
 
 	var resp CreatePresignedUploadResponse
 	_ = json.Unmarshal(rw.Body.Bytes(), &resp)
@@ -628,7 +670,12 @@ func TestPresignedUpload_ExpiredCompleteRespectsActiveLease(t *testing.T) {
 
 func TestPresignedUpload_CompleteOverwriteKeepsID(t *testing.T) {
 	f := newPresignUploadFixture(t, "raw", "hosted")
-	f.db.artifacts["releases/app.bin"] = &models.RawArtifact{ID: "existing-id", Path: "releases/app.bin", SHA256: digestOf([]byte("old")), BlobKey: digestOf([]byte("old"))}
+	f.db.artifacts["releases/app.bin"] = &models.RawArtifact{
+		ID:      "existing-id",
+		Path:    "releases/app.bin",
+		SHA256:  digestOf([]byte("old")),
+		BlobKey: digestOf([]byte("old")),
+	}
 
 	content := []byte("new content")
 	resp := f.start(t, content)
@@ -703,7 +750,13 @@ func TestPresignedUpload_CompleteOverQuotaIsRetryable(t *testing.T) {
 
 func TestPresignedUpload_CompleteOverwriteReleasesPreviousQuota(t *testing.T) {
 	f := newPresignUploadFixture(t, "raw", "hosted")
-	f.db.artifacts["releases/app.bin"] = &models.RawArtifact{ID: "existing-id", Path: "releases/app.bin", SHA256: digestOf([]byte("old")), BlobKey: digestOf([]byte("old")), SizeBytes: 3}
+	f.db.artifacts["releases/app.bin"] = &models.RawArtifact{
+		ID:        "existing-id",
+		Path:      "releases/app.bin",
+		SHA256:    digestOf([]byte("old")),
+		BlobKey:   digestOf([]byte("old")),
+		SizeBytes: 3,
+	}
 	f.db.quotaUsed, f.db.quotaArtifacts = 3, 1
 
 	content := []byte("new content")
@@ -722,7 +775,12 @@ func TestPresignedUpload_CompleteOverwriteReleasesPreviousQuota(t *testing.T) {
 func TestPresignedUpload_CreateIsNotCacheable(t *testing.T) {
 	f := newPresignUploadFixture(t, "raw", "hosted")
 
-	rw := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))})
+	rw := f.call(
+		t,
+		false,
+		"/api/v1/repositories/files/uploads",
+		CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))},
+	)
 	if rw.Code != http.StatusCreated || rw.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("status %d, Cache-Control %q; the response carries a bearer URL", rw.Code, rw.Header().Get("Cache-Control"))
 	}
@@ -786,8 +844,14 @@ func TestPresignedUpload_ConcurrentCompleteIsInProgress(t *testing.T) {
 		t.Fatalf("first complete = %d %s", first.Code, first.Body.String())
 	}
 
-	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "upload_in_progress") || second.Header().Get("Retry-After") == "" {
-		t.Errorf("concurrent complete = %d %s (Retry-After %q), want 409 upload_in_progress", second.Code, second.Body.String(), second.Header().Get("Retry-After"))
+	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "upload_in_progress") ||
+		second.Header().Get("Retry-After") == "" {
+		t.Errorf(
+			"concurrent complete = %d %s (Retry-After %q), want 409 upload_in_progress",
+			second.Code,
+			second.Body.String(),
+			second.Header().Get("Retry-After"),
+		)
 	}
 
 	if len(f.store.promoted) != 1 || len(f.db.artifacts) != 1 {
@@ -881,7 +945,12 @@ func TestPresignedUpload_PendingCap(t *testing.T) {
 	}
 
 	// Another user is unaffected, and completing frees a slot.
-	if rw := f.callAs(t, userPrincipal("writer", "writer-1"), "/api/v1/repositories/files/uploads", body("d")); rw.Code != http.StatusCreated {
+	if rw := f.callAs(
+		t,
+		userPrincipal("writer", "writer-1"),
+		"/api/v1/repositories/files/uploads",
+		body("d"),
+	); rw.Code != http.StatusCreated {
 		t.Errorf("another user = %d", rw.Code)
 	}
 

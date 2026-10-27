@@ -409,7 +409,11 @@ func TestImportCargoMetadataReadme(t *testing.T) {
 		"embedded":         {[]crateEntry{manifest("README.md"), {"d-1.0.0/README.md", "hello"}}, "hello", "README.md"},
 		"missing":          {[]crateEntry{manifest("README.md")}, "", "README.md"},
 		"outside the root": {[]crateEntry{manifest("../README.md"), {"README.md", "nope"}}, "", "../README.md"},
-		"too large":        {[]crateEntry{manifest("README.md"), {"d-1.0.0/README.md", strings.Repeat("x", cargoMaxReadme+1)}}, "", "README.md"},
+		"too large": {
+			[]crateEntry{manifest("README.md"), {"d-1.0.0/README.md", strings.Repeat("x", cargoMaxReadme+1)}},
+			"",
+			"README.md",
+		},
 		"not declared": {[]crateEntry{
 			{"d-1.0.0/Cargo.toml", "[package]\nname = \"d\"\nversion = \"1.0.0\"\n"}, {"d-1.0.0/README.md", "hello"},
 		}, "", ""},
@@ -468,11 +472,15 @@ func TestImportCargoManifestShapes(t *testing.T) {
 			"[package]\nname='a'\nversion='1.0.0'\n[target.'cfg(windows)'.dependencies]\nw='1'\n[target.'cfg(unix)'.dependencies]\nu='1'\n",
 			[]string{"normal u 1", "normal w 1"}, nil,
 		},
-		"no package":      {"[dependencies]\nx='1'\n", nil, errCargoNoPackage},
-		"no version":      {"[package]\nname='a'\n", nil, errCargoNoPackage},
-		"odd dependency":  {"[package]\nname='a'\nversion='1.0.0'\n[dependencies]\nx=3\n", nil, nil},
-		"named registry":  {"[package]\nname='a'\nversion='1.0.0'\n[dependencies]\nx={version='1',registry='corp'}\n", nil, nil},
-		"crates-io named": {"[package]\nname='a'\nversion='1.0.0'\n[dependencies]\nx={version='1',registry='crates-io'}\n", []string{"normal x 1"}, nil},
+		"no package":     {"[dependencies]\nx='1'\n", nil, errCargoNoPackage},
+		"no version":     {"[package]\nname='a'\n", nil, errCargoNoPackage},
+		"odd dependency": {"[package]\nname='a'\nversion='1.0.0'\n[dependencies]\nx=3\n", nil, nil},
+		"named registry": {"[package]\nname='a'\nversion='1.0.0'\n[dependencies]\nx={version='1',registry='corp'}\n", nil, nil},
+		"crates-io named": {
+			"[package]\nname='a'\nversion='1.0.0'\n[dependencies]\nx={version='1',registry='crates-io'}\n",
+			[]string{"normal x 1"},
+			nil,
+		},
 	}
 
 	for name, tc := range cases {

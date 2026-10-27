@@ -557,7 +557,13 @@ func validateDockerManifest(d *dockerManifestData, image, digest string, blobIDs
 	return manifestBlob, rows, nil
 }
 
-func importDockerManifest(ctx context.Context, tx *sql.Tx, repoID, image, digest string, c *Content, blobIDs map[string]string) (*Change, error) {
+func importDockerManifest(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID, image, digest string,
+	c *Content,
+	blobIDs map[string]string,
+) (*Change, error) {
 	d, err := decodeDockerManifest(c)
 	if err != nil {
 		return nil, err
@@ -597,7 +603,15 @@ func importDockerManifest(ctx context.Context, tx *sql.Tx, repoID, image, digest
 
 // writeDockerManifestRow inserts the manifest row, or updates the live row of
 // the unit in place, and records the replaced usage in change.
-func writeDockerManifestRow(ctx context.Context, tx *sql.Tx, repoID string, d *dockerManifestData, blobID string, existing *dockerManifestRow, change *Change) (string, error) {
+func writeDockerManifestRow(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID string,
+	d *dockerManifestData,
+	blobID string,
+	existing *dockerManifestRow,
+	change *Change,
+) (string, error) {
 	if existing == nil {
 		var id string
 

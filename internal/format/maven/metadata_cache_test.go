@@ -67,7 +67,10 @@ func TestMetadataChecksumsMatchAlgorithmAndAreCached(t *testing.T) {
 	} {
 		for range 3 {
 			w := mvnReq(router, http.MethodGet, metadataPath+suffix)
-			if got := strings.Fields(w.Body.String()); w.Code != http.StatusOK || len(got) != 2 || got[0] != want || got[1] != "maven-metadata.xml" {
+			if got := strings.Fields(
+				w.Body.String(),
+			); w.Code != http.StatusOK || len(got) != 2 || got[0] != want ||
+				got[1] != "maven-metadata.xml" {
 				t.Fatalf("%s = %d %q, want digest %s", suffix, w.Code, w.Body.String(), want)
 			}
 		}
@@ -84,7 +87,12 @@ func TestMetadataServedFromCacheAndFollowsNewDigest(t *testing.T) {
 	router, db, bs := newMetadataRouter(t, xml, sha)
 
 	for range 3 {
-		if w := mvnReq(router, http.MethodGet, metadataPath); w.Body.String() != string(xml) || w.Header().Get("Content-Type") != "application/xml" {
+		if w := mvnReq(
+			router,
+			http.MethodGet,
+			metadataPath,
+		); w.Body.String() != string(xml) ||
+			w.Header().Get("Content-Type") != "application/xml" {
 			t.Fatalf("metadata = %q (%s)", w.Body.String(), w.Header().Get("Content-Type"))
 		}
 	}

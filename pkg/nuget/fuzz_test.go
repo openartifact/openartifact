@@ -289,7 +289,12 @@ func fuzzRewritten(in, out any, from, to string) string {
 // FuzzRewriteRegistrationIndex feeds arbitrary registration indexes to the URL
 // rewriting a proxy applies to upstream documents.
 func FuzzRewriteRegistrationIndex(f *testing.F) {
-	f.Add([]byte(fuzzRegistrationPage), "http://oa.test/repos/r/v3/registration/demo/page/", "https://up.example/", "http://oa.test/repos/r/")
+	f.Add(
+		[]byte(fuzzRegistrationPage),
+		"http://oa.test/repos/r/v3/registration/demo/page/",
+		"https://up.example/",
+		"http://oa.test/repos/r/",
+	)
 	f.Add([]byte(`{"items":[{"lower":"1/0","upper":"2#0"}]}`), "p/", "", "x")
 	f.Add([]byte(`{"items":[null,1,"s",{"items":null,"lower":"a","upper":"b"}]}`), "", "a", "b")
 	f.Add([]byte(`[1e400,"https://up.example/x"]`), "p", "https://", "")
@@ -490,7 +495,10 @@ func fuzzCheckSortedUnique(t *testing.T, versions []string) {
 func FuzzCatalogDigest(f *testing.F) {
 	sum := sha512.Sum512([]byte("package"))
 
-	f.Add([]byte(`{"packageHash":"`+base64.StdEncoding.EncodeToString(sum[:])+`","packageHashAlgorithm":"SHA512","packageSize":7}`), []byte("package"))
+	f.Add(
+		[]byte(`{"packageHash":"`+base64.StdEncoding.EncodeToString(sum[:])+`","packageHashAlgorithm":"SHA512","packageSize":7}`),
+		[]byte("package"),
+	)
 	f.Add([]byte(`{"packageHash":"!!","packageHashAlgorithm":"sha256","packageSize":-3}`), []byte("x"))
 	f.Add([]byte(`{"packageHashAlgorithm":"MD5","packageHash":"AAAA"}`), []byte{})
 	f.Add([]byte(`{"catalogEntry":{"@id":"https://x/y"}}`), []byte("z"))

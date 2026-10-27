@@ -78,7 +78,12 @@ func (q *memQueue) EnqueueBlobReplication(_ context.Context, sha, op string) err
 	return nil
 }
 
-func (q *memQueue) ClaimBlobReplications(_ context.Context, asOf time.Time, limit int, claimFor time.Duration) ([]database.BlobReplication, error) {
+func (q *memQueue) ClaimBlobReplications(
+	_ context.Context,
+	asOf time.Time,
+	limit int,
+	claimFor time.Duration,
+) ([]database.BlobReplication, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -162,7 +167,15 @@ func (q *memQueue) GetBlobReplication(_ context.Context, sha string) (*database.
 		return nil, nil
 	}
 
-	return &database.BlobReplication{SHA256: sha, Op: r.op, Version: r.version, Attempts: r.attempts, EnqueuedAt: r.enqueued, NextAttemptAt: r.next, LastError: r.lastErr}, nil
+	return &database.BlobReplication{
+		SHA256:        sha,
+		Op:            r.op,
+		Version:       r.version,
+		Attempts:      r.attempts,
+		EnqueuedAt:    r.enqueued,
+		NextAttemptAt: r.next,
+		LastError:     r.lastErr,
+	}, nil
 }
 
 func (q *memQueue) BlobReplicationBacklog(_ context.Context, failing int) (database.BlobReplicationBacklog, error) {

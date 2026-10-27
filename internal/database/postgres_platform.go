@@ -127,7 +127,8 @@ func (p *PostgresDB) ListQuotaOverview(ctx context.Context, params models.QuotaL
 
 	var total int
 
-	if err := p.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+quotaOverviewCTE+") c", params.Scope, params.LimitedOnly, pattern).Scan(&total); err != nil {
+	if err := p.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+quotaOverviewCTE+") c", params.Scope, params.LimitedOnly, pattern).
+		Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count quota overview: %w", err)
 	}
 
@@ -143,7 +144,16 @@ func (p *PostgresDB) ListQuotaOverview(ctx context.Context, params models.QuotaL
 
 	for rows.Next() {
 		q := &models.QuotaOverview{}
-		if err := rows.Scan(&q.Scope, &q.Name, &q.Project, &q.MaxSizeBytes, &q.MaxArtifactCount, &q.WarnThresholdPercent, &q.UsedBytes, &q.ArtifactCount); err != nil {
+		if err := rows.Scan(
+			&q.Scope,
+			&q.Name,
+			&q.Project,
+			&q.MaxSizeBytes,
+			&q.MaxArtifactCount,
+			&q.WarnThresholdPercent,
+			&q.UsedBytes,
+			&q.ArtifactCount,
+		); err != nil {
 			return nil, 0, fmt.Errorf("scan quota overview: %w", err)
 		}
 
@@ -232,7 +242,19 @@ func (p *PostgresDB) ListUnifiedTokens(ctx context.Context, params models.TokenL
 
 		var scopes string
 
-		if err := rows.Scan(&t.ID, &t.Type, &t.Name, &t.Owner, &t.Project, &t.Repository, &t.Role, &scopes, &t.CreatedAt, &t.ExpiresAt, &t.LastUsedAt); err != nil {
+		if err := rows.Scan(
+			&t.ID,
+			&t.Type,
+			&t.Name,
+			&t.Owner,
+			&t.Project,
+			&t.Repository,
+			&t.Role,
+			&scopes,
+			&t.CreatedAt,
+			&t.ExpiresAt,
+			&t.LastUsedAt,
+		); err != nil {
 			return nil, 0, fmt.Errorf("scan token: %w", err)
 		}
 

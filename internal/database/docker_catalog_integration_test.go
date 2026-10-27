@@ -93,7 +93,11 @@ func TestDockerBlobInTrash(t *testing.T) {
 	unindexed := seedManifest(s, "legacy", "sha256:m-legacy", false)
 	check("unindexed live manifest", map[string]bool{onlyTrashed: false})
 
-	s.exec(`INSERT INTO docker_manifest_refs (manifest_id, repository_id, image, kind, digest) VALUES ($1, $2, 'legacy', 'indexed', '')`, unindexed, s.repo)
+	s.exec(
+		`INSERT INTO docker_manifest_refs (manifest_id, repository_id, image, kind, digest) VALUES ($1, $2, 'legacy', 'indexed', '')`,
+		unindexed,
+		s.repo,
+	)
 	check("indexed live manifest", map[string]bool{onlyTrashed: true})
 
 	if _, err := pg.RestoreTrash(ctx, models.TrashKindDockerManifest, gone); err != nil {
@@ -146,7 +150,12 @@ func TestListDockerCatalog(t *testing.T) {
 
 	// A group lists its members' images (not their default image) under its own name.
 	group := newRepo("all", "group")
-	pgExec(t, pg, `INSERT INTO repository_group_members (group_repo_id, member_repo_id) SELECT $1, id FROM repositories WHERE name IN ('alpha', 'hub')`, group.ID)
+	pgExec(
+		t,
+		pg,
+		`INSERT INTO repository_group_members (group_repo_id, member_repo_id) SELECT $1, id FROM repositories WHERE name IN ('alpha', 'hub')`,
+		group.ID,
+	)
 
 	// Blocked repositories are not listed.
 	blocked := &quotaSeeder{tb: t, pg: pg, repo: newRepo("blocked", "hosted").ID}
@@ -190,7 +199,8 @@ func TestListDockerCatalog(t *testing.T) {
 	}
 
 	e := entries[0]
-	if e.Repository.Name != "all" || e.Image != "team/api" || len(e.Sources) != 1 || e.Sources[0].Name != "alpha" || e.Sources[0].ProjectID == nil {
+	if e.Repository.Name != "all" || e.Image != "team/api" || len(e.Sources) != 1 || e.Sources[0].Name != "alpha" ||
+		e.Sources[0].ProjectID == nil {
 		t.Fatalf("group entry fields = repo %q image %q sources %+v", e.Repository.Name, e.Image, e.Sources)
 	}
 

@@ -62,7 +62,14 @@ func TestUploadOverQuotaReturns507AndPersistsNothing(t *testing.T) {
 	}
 
 	if len(db.mods) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.used != 0 || db.artifacts != 0 {
-		t.Errorf("mods=%d blobs=%d events=%d used=%d artifacts=%d; want nothing persisted", len(db.mods), len(bs.Blobs), len(pub.Events()), db.used, db.artifacts)
+		t.Errorf(
+			"mods=%d blobs=%d events=%d used=%d artifacts=%d; want nothing persisted",
+			len(db.mods),
+			len(bs.Blobs),
+			len(pub.Events()),
+			db.used,
+			db.artifacts,
+		)
 	}
 }
 

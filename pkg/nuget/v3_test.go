@@ -38,7 +38,8 @@ func TestServiceIndex_PicksTheBestResources(t *testing.T) {
 		t.Errorf("PackageBase = %q", idx.PackageBase)
 	}
 
-	if idx.Registrations != "https://api.nuget.org/v3/registration5-gz-semver2/" || len(idx.RegistrationTypes) != 1 || idx.RegistrationTypes[0] != "RegistrationsBaseUrl/Versioned" {
+	if idx.Registrations != "https://api.nuget.org/v3/registration5-gz-semver2/" || len(idx.RegistrationTypes) != 1 ||
+		idx.RegistrationTypes[0] != "RegistrationsBaseUrl/Versioned" {
 		t.Errorf("Registrations = %q %v", idx.Registrations, idx.RegistrationTypes)
 	}
 
@@ -49,7 +50,12 @@ func TestServiceIndex_PicksTheBestResources(t *testing.T) {
 }
 
 func TestServiceIndex_Errors(t *testing.T) {
-	if _, err := ParseServiceIndex([]byte(`{"resources":[{"@id":"https://x/push","@type":"PackagePublish/2.0.0"}]}`)); !errors.Is(err, ErrNoResources) {
+	if _, err := ParseServiceIndex(
+		[]byte(`{"resources":[{"@id":"https://x/push","@type":"PackagePublish/2.0.0"}]}`),
+	); !errors.Is(
+		err,
+		ErrNoResources,
+	) {
 		t.Errorf("no usable resource: %v", err)
 	}
 
@@ -150,7 +156,11 @@ func TestRewriteRegistrationIndex_PagesGoThroughTheRepository(t *testing.T) {
 		`{"@id":"https://up/reg/x/page/1.0.0/2.0.0.json","lower":"1.0.0","upper":"2.0.0","count":2,"parent":"https://up/reg/x/index.json"},` +
 		`{"@id":"https://up/reg/x/index.json#page/3.0.0/3.0.0","lower":"3.0.0","upper":"3.0.0","count":1,"items":[{"@id":"https://up/reg/x/3.0.0.json"}]}]}`
 
-	out, err := RewriteRegistrationIndex([]byte(in), "http://oa/v3/registration/x/page/", URLPrefix{From: "https://up/reg/", To: "http://oa/v3/registration/"})
+	out, err := RewriteRegistrationIndex(
+		[]byte(in),
+		"http://oa/v3/registration/x/page/",
+		URLPrefix{From: "https://up/reg/", To: "http://oa/v3/registration/"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +240,11 @@ func TestMergeRegistrationItems(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p := mustPages(t, string(out)); len(p) != 3 || len(p[0].Items) != RegistrationPageSize || len(p[2].Items) != 130-2*RegistrationPageSize {
+	if p := mustPages(
+		t,
+		string(out),
+	); len(p) != 3 || len(p[0].Items) != RegistrationPageSize ||
+		len(p[2].Items) != 130-2*RegistrationPageSize {
 		t.Errorf("paging: %d pages", len(p))
 	}
 }

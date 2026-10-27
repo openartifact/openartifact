@@ -40,7 +40,8 @@ func TestUpdateRpmPackageExtraCorrectsSizes(t *testing.T) {
 	sizes := func() (int64, int64) {
 		var installed, archive int64
 		if err := pg.GetDB().QueryRowContext(ctx,
-			`SELECT COALESCE(installed_size, 0), COALESCE(archive_size, 0) FROM rpm_packages WHERE repository_id = $1`, repoID).Scan(&installed, &archive); err != nil {
+			`SELECT COALESCE(installed_size, 0), COALESCE(archive_size, 0) FROM rpm_packages WHERE repository_id = $1`, repoID).
+			Scan(&installed, &archive); err != nil {
 			t.Fatalf("read sizes: %v", err)
 		}
 

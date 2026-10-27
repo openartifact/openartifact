@@ -201,7 +201,13 @@ func (h *AdminGPGHandler) finishCreate(w http.ResponseWriter, r *http.Request, k
 		return
 	}
 
-	auditAdmin(r, audit.ActionGPGKeyCreated, "gpg_key", key.ID, "gpg key "+key.Name+" ("+key.Source+") created, fingerprint "+key.Fingerprint)
+	auditAdmin(
+		r,
+		audit.ActionGPGKeyCreated,
+		"gpg_key",
+		key.ID,
+		"gpg key "+key.Name+" ("+key.Source+") created, fingerprint "+key.Fingerprint,
+	)
 
 	if want {
 		if err := h.keys.Activate(r.Context(), key.ID, nil, p.Username); err != nil {

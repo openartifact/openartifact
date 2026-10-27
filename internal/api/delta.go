@@ -83,7 +83,13 @@ type DeltaHandler struct {
 
 // NewDeltaHandler creates a new DeltaHandler.
 func NewDeltaHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *DeltaHandler {
-	return &DeltaHandler{log: log, db: db, blobStore: blobStore, inflight: map[string]*deltaCall{}, slots: make(chan struct{}, maxConcurrentDeltas)}
+	return &DeltaHandler{
+		log:       log,
+		db:        db,
+		blobStore: blobStore,
+		inflight:  map[string]*deltaCall{},
+		slots:     make(chan struct{}, maxConcurrentDeltas),
+	}
 }
 
 // Register registers the delta routes on the given router.
@@ -259,7 +265,11 @@ func (h *DeltaHandler) acquire(ctx context.Context) bool {
 
 // generateDeltaOnce collapses concurrent requests for the same
 // (repo, from, to) delta into a single generation.
-func (h *DeltaHandler) generateDeltaOnce(r *http.Request, repoID, fromSHA256, fromFilename string, toComp *models.Component) (*models.PackageDelta, error) {
+func (h *DeltaHandler) generateDeltaOnce(
+	r *http.Request,
+	repoID, fromSHA256, fromFilename string,
+	toComp *models.Component,
+) (*models.PackageDelta, error) {
 	key := repoID + "|" + fromSHA256 + "|" + toComp.SHA256
 
 	h.inflightMu.Lock()
@@ -319,7 +329,11 @@ func (h *DeltaHandler) readCapped(r *http.Request, id string) ([]byte, error) {
 
 // generateDelta generates a bsdiff patch from fromSHA256 to toComp, stores it,
 // and returns the PackageDelta record.
-func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFilename string, toComp *models.Component) (*models.PackageDelta, error) {
+func (h *DeltaHandler) generateDelta(
+	r *http.Request,
+	repoID, fromSHA256, fromFilename string,
+	toComp *models.Component,
+) (*models.PackageDelta, error) {
 	if !h.acquire(r.Context()) {
 		return nil, r.Context().Err()
 	}
@@ -410,7 +424,8 @@ func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, re
 	defer func() { base.CloseLog(reader, h.log) }()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.delta"`, strings.NewReplacer("\"", "", "\r", "", "\n", "").Replace(d.ToFilename)))
+	filename := strings.NewReplacer("\"", "", "\r", "", "\n", "").Replace(d.ToFilename)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.delta"`, filename))
 	w.Header().Set("ETag", `"`+d.DeltaSHA256+`"`)
 	w.Header().Set("X-Delta-From", d.FromSHA256)
 	w.Header().Set("X-Delta-To", d.ToSHA256)

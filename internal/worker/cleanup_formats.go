@@ -111,8 +111,15 @@ const dockerCleanupSource = `(SELECT t.id, t.repository_id, t.name, t.image, t.c
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":
-		return formatTable{table: "rpm_packages", nameCol: "name", partitionCols: []string{"name", "arch"},
-			versionExpr: "version || '-' || release || ':' || epoch::text", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindRPM}, true
+		return formatTable{
+			table:         "rpm_packages",
+			nameCol:       "name",
+			partitionCols: []string{"name", "arch"},
+			versionExpr:   "version || '-' || release || ':' || epoch::text",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindRPM,
+		}, true
 	case "deb":
 		return formatTable{table: "deb_packages", nameCol: "name", partitionCols: []string{"name", "arch", "distribution_id::text"},
 			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindDeb}, true
@@ -131,9 +138,17 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 	case "npm":
 		// A version a dist-tag points at is never selected: removing it would
 		// leave the tag (latest, next, ...) dangling.
-		return formatTable{table: "npm_versions", source: npmCleanupSource, nameCol: "full_name", partitionCols: []string{"package_id::text"},
-			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindNPM,
-			protectExpr: "EXISTS (SELECT 1 FROM npm_dist_tags d WHERE d.package_id = src.package_id AND d.version = src.version)"}, true
+		return formatTable{
+			table:         "npm_versions",
+			source:        npmCleanupSource,
+			nameCol:       "full_name",
+			partitionCols: []string{"package_id::text"},
+			versionExpr:   "version",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindNPM,
+			protectExpr:   "EXISTS (SELECT 1 FROM npm_dist_tags d WHERE d.package_id = src.package_id AND d.version = src.version)",
+		}, true
 	case "maven":
 		return mavenCleanupTable(), true
 	case "ivy":
@@ -153,12 +168,26 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 	case "conda":
 		// One version is one build; the .tar.bz2 and .conda files of a build
 		// count together. Ranked per package and subdir (platform).
-		return formatTable{table: "conda_packages", nameCol: "name", partitionCols: []string{"name", "platform"},
-			versionExpr: "version || '-' || build_string", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindConda}, true
+		return formatTable{
+			table:         "conda_packages",
+			nameCol:       "name",
+			partitionCols: []string{"name", "platform"},
+			versionExpr:   "version || '-' || build_string",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindConda,
+		}, true
 	case "conan":
 		// Every revision of a recipe version ranks and goes as one version.
-		return formatTable{table: "conan_packages", nameCol: "name", partitionCols: []string{"name"},
-			versionExpr: "version || '@' || user_channel", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindConan}, true
+		return formatTable{
+			table:         "conan_packages",
+			nameCol:       "name",
+			partitionCols: []string{"name"},
+			versionExpr:   "version || '@' || user_channel",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindConan,
+		}, true
 	case "raw":
 		// A raw file has no version: files are ranked against the other files
 		// of their directory, newest first.

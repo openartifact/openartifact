@@ -62,7 +62,8 @@ func NewExecutor(db *sql.DB) *Executor {
 // blob_id (every format but docker) or a manifest_digest (docker), so the
 // COALESCEs pick whichever join matched; rows with neither report ” and 0.
 const searchBlobJoins = `LEFT JOIN blobs b ON b.id = %[1]s.blob_id
-		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image AND dm.digest = %[1]s.manifest_digest AND dm.deleted_at IS NULL`
+		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image
+			AND dm.digest = %[1]s.manifest_digest AND dm.deleted_at IS NULL`
 
 const (
 	searchSHA256Expr = `COALESCE(b.sha256, regexp_replace(dm.digest, '^sha256:', ''), '')`
@@ -128,9 +129,29 @@ func unifiedSearchBranches() []string {
 			"\n\t\tFROM gomod_modules gm WHERE gm.deleted_at IS NULL",
 		searchBranch("helm", "hc.name", "hc.version", "hc.name || '-' || hc.version || '.tgz'", null, null, "hc.blob_id", null, "hc") +
 			"\n\t\tFROM helm_charts hc WHERE hc.deleted_at IS NULL",
-		searchBranch("ivy", "iv.organisation || '/' || iv.module", "iv.revision", "iv.artifact_name || '.' || iv.artifact_ext", null, null, "iv.blob_id", null, "iv") +
+		searchBranch(
+			"ivy",
+			"iv.organisation || '/' || iv.module",
+			"iv.revision",
+			"iv.artifact_name || '.' || iv.artifact_ext",
+			null,
+			null,
+			"iv.blob_id",
+			null,
+			"iv",
+		) +
 			"\n\t\tFROM ivy_artifacts iv WHERE iv.deleted_at IS NULL",
-		searchBranch("maven", "ma.group_id || ':' || ma.artifact_id_coord", "ma.version", "ma.repo_path", "ma.group_id", "ma.artifact_id_coord", "ma.blob_id", null, "ma") +
+		searchBranch(
+			"maven",
+			"ma.group_id || ':' || ma.artifact_id_coord",
+			"ma.version",
+			"ma.repo_path",
+			"ma.group_id",
+			"ma.artifact_id_coord",
+			"ma.blob_id",
+			null,
+			"ma",
+		) +
 			"\n\t\tFROM maven_artifacts ma WHERE ma.deleted_at IS NULL",
 		// npm: id and created_at are the version's, repository and name the package's.
 		`SELECT np.repository_id, 'npm'::text AS format, np.full_name::text AS name, nv.version::text AS version,
@@ -140,7 +161,17 @@ func unifiedSearchBranches() []string {
 		FROM npm_packages np
 		JOIN npm_versions nv ON nv.package_id = np.id
 		WHERE nv.deleted_at IS NULL`,
-		searchBranch("nuget", "ng.package_id", "ng.version", "ng.package_id || '.' || ng.version || '.nupkg'", null, null, "ng.blob_id", null, "ng") +
+		searchBranch(
+			"nuget",
+			"ng.package_id",
+			"ng.version",
+			"ng.package_id || '.' || ng.version || '.nupkg'",
+			null,
+			null,
+			"ng.blob_id",
+			null,
+			"ng",
+		) +
 			"\n\t\tFROM nuget_packages ng WHERE ng.deleted_at IS NULL",
 		searchBranch("pypi", "pp.name", "pp.version", "pp.filename", null, null, "pp.blob_id", null, "pp") +
 			"\n\t\tFROM pypi_packages pp WHERE pp.deleted_at IS NULL",
@@ -170,7 +201,12 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 // it counts packages instead of rows, except that a match set above
 // MaxSearchResults rows is reported by its row count so the caller can reject
 // the query exactly as for an ungrouped search.
-func (e *Executor) countResults(ctx context.Context, filter SearchFilter, readableRepos map[uuid.UUID]struct{}, opts PageOptions) (int64, error) {
+func (e *Executor) countResults(
+	ctx context.Context,
+	filter SearchFilter,
+	readableRepos map[uuid.UUID]struct{},
+	opts PageOptions,
+) (int64, error) {
 	if len(readableRepos) == 0 {
 		return 0, nil
 	}

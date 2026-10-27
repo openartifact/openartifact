@@ -65,7 +65,13 @@ func (h *ProjectsHandler) handleListActivity(w http.ResponseWriter, r *http.Requ
 
 // activityPage renders one page of audit rows as an activity feed page, names
 // resolved.
-func activityPage(ctx context.Context, db database.Database, log *logger.Logger, page *models.AuditPage, perPage int) responses.ActivityPage {
+func activityPage(
+	ctx context.Context,
+	db database.Database,
+	log *logger.Logger,
+	page *models.AuditPage,
+	perPage int,
+) responses.ActivityPage {
 	resp := responses.ActivityPage{
 		Data:    activityEntries(ctx, db, log, page.Logs),
 		PerPage: perPage,

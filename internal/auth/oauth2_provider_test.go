@@ -132,8 +132,16 @@ func TestLoadOIDCProviderRow_Types(t *testing.T) {
 	}{
 		{"unknown type is refused", models.OIDCConfig{Type: "ldap", ClientID: "c", ClientSecret: "s"}, ErrOIDCUnknownType},
 		{"oauth2 without urls is invalid", models.OIDCConfig{Type: "oauth2", ClientID: "c", ClientSecret: "s"}, ErrOIDCConfigInvalid},
-		{"github loads without any network access", models.OIDCConfig{Type: "github", ClientID: "c", ClientSecret: "s", AllowedOrgs: []string{"a"}}, nil},
-		{"multi-tenant authority needs allowed_tenants", models.OIDCConfig{Issuer: "https://login.microsoftonline.com/common/v2.0", ClientID: "c", ClientSecret: "s"}, ErrOIDCConfigInvalid},
+		{
+			"github loads without any network access",
+			models.OIDCConfig{Type: "github", ClientID: "c", ClientSecret: "s", AllowedOrgs: []string{"a"}},
+			nil,
+		},
+		{
+			"multi-tenant authority needs allowed_tenants",
+			models.OIDCConfig{Issuer: "https://login.microsoftonline.com/common/v2.0", ClientID: "c", ClientSecret: "s"},
+			ErrOIDCConfigInvalid,
+		},
 	}
 
 	for i, tc := range tests {

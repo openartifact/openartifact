@@ -295,7 +295,11 @@ func versionQuarantineKeys(modulePath, version string) []string {
 
 // dropQuarantined removes quarantined versions so list, @latest and .info do
 // not advertise them. It fails closed when the state cannot be determined.
-func (h *HTTPHandler) dropQuarantined(ctx context.Context, repoID, modulePath string, versions []*models.GoModule) ([]*models.GoModule, error) {
+func (h *HTTPHandler) dropQuarantined(
+	ctx context.Context,
+	repoID, modulePath string,
+	versions []*models.GoModule,
+) ([]*models.GoModule, error) {
 	kept := make([]*models.GoModule, 0, len(versions))
 
 	for _, v := range versions {
@@ -395,8 +399,18 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 	// blobs row with an empty sha256 whose object is some other module's zip.
 	// Never serve (or presign) anything that is not addressed by a real digest.
 	if !database.IsValidBlobSHA256(mod.ZipHash) {
-		h.Log.Warnw("refusing to serve go module zip: its blob has no valid sha256; re-upload the version or run the gomod repair (openartifact-server -repair-gomod)",
-			"repo", repoName, "module", modulePath, "version", version, "zip_hash", mod.ZipHash)
+		h.Log.Warnw(
+			"refusing to serve go module zip: its blob has no valid sha256; "+
+				"re-upload the version or run the gomod repair (openartifact-server -repair-gomod)",
+			"repo",
+			repoName,
+			"module",
+			modulePath,
+			"version",
+			version,
+			"zip_hash",
+			mod.ZipHash,
+		)
 		http.NotFound(w, r)
 
 		return

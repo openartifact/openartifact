@@ -448,7 +448,10 @@ func (a *AzureBlobStore) GetFrom(ctx context.Context, id string, offset int64) (
 		return nil, ErrOffsetOutOfRange
 	}
 
-	resp, err := a.do(ctx, azureCall{method: http.MethodGet, blob: azureBlobKey(id), header: map[string]string{"x-ms-range": rangeHeader(offset)}})
+	resp, err := a.do(
+		ctx,
+		azureCall{method: http.MethodGet, blob: azureBlobKey(id), header: map[string]string{"x-ms-range": rangeHeader(offset)}},
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -80,7 +80,14 @@ func TestUploadOverQuotaReturns507AndPersistsNothing(t *testing.T) {
 	}
 
 	if e.db.count() != 0 || len(e.bs.Blobs) != 0 || len(e.pub.Events()) != 0 || e.db.used != 0 || e.db.artifacts != 0 {
-		t.Errorf("rows=%d blobs=%d events=%d used=%d artifacts=%d; want nothing persisted", e.db.count(), len(e.bs.Blobs), len(e.pub.Events()), e.db.used, e.db.artifacts)
+		t.Errorf(
+			"rows=%d blobs=%d events=%d used=%d artifacts=%d; want nothing persisted",
+			e.db.count(),
+			len(e.bs.Blobs),
+			len(e.pub.Events()),
+			e.db.used,
+			e.db.artifacts,
+		)
 	}
 }
 

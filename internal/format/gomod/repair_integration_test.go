@@ -428,7 +428,8 @@ func TestRepairRelinksIdenticalZipsAcrossReposAndTrashedRows(t *testing.T) {
 
 	var trashedHash string
 	if err := w.pg.GetDB().QueryRowContext(context.Background(),
-		`SELECT b.sha256 FROM gomod_modules gm JOIN blobs b ON b.id = gm.zip_blob_id WHERE gm.repository_id = $1`, repo3).Scan(&trashedHash); err != nil {
+		`SELECT b.sha256 FROM gomod_modules gm JOIN blobs b ON b.id = gm.zip_blob_id WHERE gm.repository_id = $1`, repo3).
+		Scan(&trashedHash); err != nil {
 		t.Fatalf("trashed row: %v", err)
 	}
 

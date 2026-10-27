@@ -100,7 +100,15 @@ func (d *mavenRepoDB) GetMavenArtifactByPath(_ context.Context, repoID, path str
 	return d.arts[repoID+"|"+path], nil
 }
 
-func (d *mavenRepoDB) GetLatestSnapshotFile(context.Context, string, string, string, string, string, string) (*models.MavenArtifact, error) {
+func (d *mavenRepoDB) GetLatestSnapshotFile(
+	context.Context,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+) (*models.MavenArtifact, error) {
 	return nil, nil
 }
 
@@ -181,7 +189,12 @@ func (d *mavenRepoDB) ListArtifactProperties(context.Context, string, string) (m
 func (d *mavenRepoDB) GetRepoComponentBlob(_ context.Context, repoID, id string) (*models.ComponentBlob, error) {
 	for _, a := range d.arts {
 		if a.ID == id && a.RepositoryID == repoID {
-			return &models.ComponentBlob{ID: id, Format: "maven", Filename: a.ArtifactCoord + "-" + a.Version + "." + a.Extension, SHA256: a.SHA256}, nil
+			return &models.ComponentBlob{
+				ID:       id,
+				Format:   "maven",
+				Filename: a.ArtifactCoord + "-" + a.Version + "." + a.Extension,
+				SHA256:   a.SHA256,
+			}, nil
 		}
 	}
 
@@ -219,7 +232,11 @@ func (e *mavenParentEnv) put(group, artifact, version, body string) *httptest.Re
 func (e *mavenParentEnv) putIn(repo, group, artifact, version, body string) *httptest.ResponseRecorder {
 	e.t.Helper()
 
-	path := "/repos/maven/" + repo + "/" + strings.ReplaceAll(group, ".", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	path := "/repos/maven/" + repo + "/" + strings.ReplaceAll(
+		group,
+		".",
+		"/",
+	) + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
 	rec := httptest.NewRecorder()
 	e.router.ServeHTTP(rec, httptest.NewRequestWithContext(e.t.Context(), http.MethodPut, path, strings.NewReader(body)))
 
@@ -250,7 +267,12 @@ func (e *mavenParentEnv) cacheInProxy(proxy *models.Repository, group, artifact,
 	path := strings.ReplaceAll(group, ".", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
 	sha := "proxy-" + artifact + "-" + version
 	e.blobs.Blobs[sha] = []byte(pom)
-	e.db.proxyCache[proxy.ID+"|"+path] = &models.ProxyCacheEntry{RepositoryID: proxy.ID, CacheKey: path, BlobKey: sha, StatusCode: http.StatusOK}
+	e.db.proxyCache[proxy.ID+"|"+path] = &models.ProxyCacheEntry{
+		RepositoryID: proxy.ID,
+		CacheKey:     path,
+		BlobKey:      sha,
+		StatusCode:   http.StatusOK,
+	}
 }
 
 func pomXML(group, artifact, version, packaging, parent, licenses string) string {
@@ -391,7 +413,9 @@ func TestMavenPut_MissingParentThenLaterUpload(t *testing.T) {
 
 func TestMavenPut_LaterParentQuarantinesBlockedChild(t *testing.T) {
 	e := newMavenParentEnv(t)
-	e.db.policies = []*models.LicensePolicy{{ID: "p1", Name: "no-gpl", Action: "block", Enabled: true, DeniedLicenses: []string{"GPL-3.0-only"}}}
+	e.db.policies = []*models.LicensePolicy{
+		{ID: "p1", Name: "no-gpl", Action: "block", Enabled: true, DeniedLicenses: []string{"GPL-3.0-only"}},
+	}
 
 	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("com.acme", "parent", "1"), ""))
 	if rec.Code != http.StatusCreated {
@@ -410,7 +434,9 @@ func TestMavenPut_InheritedBlockedLicenseIsRejected(t *testing.T) {
 	e := newMavenParentEnv(t)
 	// The parent is stored before the policy exists.
 	e.put("com.acme", "parent", "1", pomXML("com.acme", "parent", "1", "pom", "", "GPL-3.0-only"))
-	e.db.policies = []*models.LicensePolicy{{ID: "p1", Name: "no-gpl", Action: "block", Enabled: true, DeniedLicenses: []string{"GPL-3.0-only"}}}
+	e.db.policies = []*models.LicensePolicy{
+		{ID: "p1", Name: "no-gpl", Action: "block", Enabled: true, DeniedLicenses: []string{"GPL-3.0-only"}},
+	}
 
 	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("com.acme", "parent", "1"), ""))
 	if rec.Code != http.StatusForbidden {
@@ -434,7 +460,13 @@ func newGroupEnv(t *testing.T) (*mavenParentEnv, *models.Repository) {
 
 func TestMavenPut_ParentFromProxyCacheInGroup(t *testing.T) {
 	e, central := newGroupEnv(t)
-	e.cacheInProxy(central, "org.spring", "starter-parent", "3.2.0", pomXML("org.spring", "starter-parent", "3.2.0", "pom", "", "Apache-2.0"))
+	e.cacheInProxy(
+		central,
+		"org.spring",
+		"starter-parent",
+		"3.2.0",
+		pomXML("org.spring", "starter-parent", "3.2.0", "pom", "", "Apache-2.0"),
+	)
 
 	rec := e.put("com.acme", "app", "1", pomXML("com.acme", "app", "1", "", parentRef("org.spring", "starter-parent", "3.2.0"), ""))
 	if rec.Code != http.StatusCreated {
@@ -501,7 +533,13 @@ func TestMavenPut_ParentCachedByProxyLaterIsFoundByRescan(t *testing.T) {
 		t.Fatalf("licenses before the proxy cached the parent = %v, want none", got)
 	}
 
-	e.cacheInProxy(central, "org.spring", "starter-parent", "3.2.0", pomXML("org.spring", "starter-parent", "3.2.0", "pom", "", "Apache-2.0"))
+	e.cacheInProxy(
+		central,
+		"org.spring",
+		"starter-parent",
+		"3.2.0",
+		pomXML("org.spring", "starter-parent", "3.2.0", "pom", "", "Apache-2.0"),
+	)
 
 	if got := e.scanLicenses(id); !slices.Equal(got, []string{"Apache-2.0"}) {
 		t.Fatalf("licenses after the proxy cached the parent = %v, want [Apache-2.0]", got)

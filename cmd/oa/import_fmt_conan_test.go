@@ -86,7 +86,17 @@ func (cf *conanFake) put(w http.ResponseWriter, r *http.Request) {
 	f.writes++
 	cf.puts++
 
-	name, version, user, channel, rrev := r.PathValue("name"), r.PathValue("version"), r.PathValue("user"), r.PathValue("channel"), r.PathValue("rrev")
+	name, version, user, channel, rrev := r.PathValue(
+		"name",
+	), r.PathValue(
+		"version",
+	), r.PathValue(
+		"user",
+	), r.PathValue(
+		"channel",
+	), r.PathValue(
+		"rrev",
+	)
 	recipeManifest := fmt.Sprintf("/v2/conans/%s/%s/%s/%s/revisions/%s/files/conanmanifest.txt", name, version, user, channel, rrev)
 
 	if strings.HasPrefix(r.URL.Path, "/v1/") {
@@ -181,7 +191,17 @@ func conanRecipe(user, name, version, channel, rrev, file, content string, props
 func conanPackage(user, name, version, channel, rrev, pid, prev, file, content string) conanCase {
 	return conanCase{
 		file: artiFile(strings.Join([]string{user, name, version, channel, rrev, "package", pid, prev, file}, "/"), content),
-		want: fmt.Sprintf("/v2/conans/%s/%s/%s/%s/revisions/%s/packages/%s/revisions/%s/files/%s", name, version, user, channel, rrev, pid, prev, file),
+		want: fmt.Sprintf(
+			"/v2/conans/%s/%s/%s/%s/revisions/%s/packages/%s/revisions/%s/files/%s",
+			name,
+			version,
+			user,
+			channel,
+			rrev,
+			pid,
+			prev,
+			file,
+		),
 	}
 }
 
@@ -270,11 +290,17 @@ func conan1Sources() []conan1Source {
 			payload: 12,
 			recipe: func(user, name, version, channel, file, content string, _ ...string) conanCase {
 				p := strings.Join([]string{"conans", user, name, version, channel, file}, "/")
-				return conanCase{file: fakeFile{path: p, data: []byte(content), created: nexusStamp}, want: conan1Want(user, name, version, channel, "", file)}
+				return conanCase{
+					file: fakeFile{path: p, data: []byte(content), created: nexusStamp},
+					want: conan1Want(user, name, version, channel, "", file),
+				}
 			},
 			pkg: func(user, name, version, channel, pid, file, content string) conanCase {
 				p := strings.Join([]string{"conans", user, name, version, channel, "packages", pid, file}, "/")
-				return conanCase{file: fakeFile{path: p, data: []byte(content), created: nexusStamp}, want: conan1Want(user, name, version, channel, pid, file)}
+				return conanCase{
+					file: fakeFile{path: p, data: []byte(content), created: nexusStamp},
+					want: conan1Want(user, name, version, channel, pid, file),
+				}
 			},
 			ignored: []string{
 				"conans/_/zlib/1.2.13/_/download_urls",
@@ -455,7 +481,8 @@ func TestImportConanListsOneRowPerRecipeRevision(t *testing.T) {
 		{"fmt/10.1.0@acme/stable#" + conanRevB, "fmt", "10.1.0", "fmt-manifest"},
 	} {
 		it := e.oa.find("dst", want.filename)
-		if it == nil || it.name != want.name || it.version != want.version || it.sha != sum256([]byte(want.content)) || it.created != artiWant {
+		if it == nil || it.name != want.name || it.version != want.version || it.sha != sum256([]byte(want.content)) ||
+			it.created != artiWant {
 			t.Errorf("row %s = %+v", want.filename, it)
 		}
 	}
@@ -477,9 +504,18 @@ func TestImportConanUploadsEachRevisionInTheOrderTheServerNeeds(t *testing.T) {
 	pkgB := recipe + "packages/" + conanPIDb + "/revisions/" + conanPRevB + "/files/"
 
 	want := []string{
-		recipe + "files/conan_export.tgz", recipe + "files/conandata.yml", recipe + "files/conanfile.py", recipe + "files/metadata/info.json", recipe + "files/conanmanifest.txt",
-		pkgA + "conan_package.tgz", pkgA + "conaninfo.txt", pkgA + "metadata/logs.txt", pkgA + "conanmanifest.txt",
-		pkgB + "conan_package.tgz", pkgB + "conaninfo.txt", pkgB + "conanmanifest.txt",
+		recipe + "files/conan_export.tgz",
+		recipe + "files/conandata.yml",
+		recipe + "files/conanfile.py",
+		recipe + "files/metadata/info.json",
+		recipe + "files/conanmanifest.txt",
+		pkgA + "conan_package.tgz",
+		pkgA + "conaninfo.txt",
+		pkgA + "metadata/logs.txt",
+		pkgA + "conanmanifest.txt",
+		pkgB + "conan_package.tgz",
+		pkgB + "conaninfo.txt",
+		pkgB + "conanmanifest.txt",
 	}
 
 	if got := e.cf.storedUnder(recipe); !slices.Equal(got, want) {
@@ -688,7 +724,13 @@ func TestImportConanRepeatsAFailedUpload(t *testing.T) {
 	recipe := conanRecipe("_", "zlib", "1.2.13", "_", conanRevA, "conanfile.py", "zlib-recipe")
 	e := newConanEnv(t, []conanCase{recipe})
 
-	flaky := newFlaky(t, e.oa.srv.Config.Handler, func(r *http.Request) bool { return r.Method == http.MethodPut }, 1, failStatus(http.StatusServiceUnavailable))
+	flaky := newFlaky(
+		t,
+		e.oa.srv.Config.Handler,
+		func(r *http.Request) bool { return r.Method == http.MethodPut },
+		1,
+		failStatus(http.StatusServiceUnavailable),
+	)
 	(&fakeSleeper{}).apply(e.cfg.retrier)
 
 	rep := runImportVia(t, e.cfg, e.src, e.oa, flaky.Server)
@@ -742,7 +784,8 @@ func TestImportConan1ListsOneRowPerRecipeRevisionZero(t *testing.T) {
 			{"fmt/10.1.0@acme/stable#0", "fmt", "10.1.0", "fmt-manifest"},
 		} {
 			it := e.oa.find("dst", want.filename)
-			if it == nil || it.name != want.name || it.version != want.version || it.sha != sum256([]byte(want.content)) || it.created != s.stamp {
+			if it == nil || it.name != want.name || it.version != want.version || it.sha != sum256([]byte(want.content)) ||
+				it.created != s.stamp {
 				t.Errorf("row %s = %+v", want.filename, it)
 			}
 		}
@@ -876,7 +919,8 @@ func TestImportConan1ChecksumMismatchLeavesTheCopyForTheNextRun(t *testing.T) {
 			t.Fatalf("report = %+v", rep)
 		}
 
-		if msg := rep.Failures[0].Error; !strings.Contains(msg, "checksum mismatch") || !strings.Contains(msg, "cannot remove a stored copy") {
+		if msg := rep.Failures[0].Error; !strings.Contains(msg, "checksum mismatch") ||
+			!strings.Contains(msg, "cannot remove a stored copy") {
 			t.Errorf("error %q", msg)
 		}
 
@@ -907,7 +951,8 @@ func TestImportConan1ImmutableReleaseConflictIsReported(t *testing.T) {
 		cf.immutable = true
 
 		rep := runImportTest(t, cfg, src, oa)
-		if rep.Failed != 1 || !strings.Contains(rep.Failures[0].Error, errUploadConflict.Error()) || string(cf.files[recipe.want].data) != string(released) {
+		if rep.Failed != 1 || !strings.Contains(rep.Failures[0].Error, errUploadConflict.Error()) ||
+			string(cf.files[recipe.want].data) != string(released) {
 			t.Fatalf("report = %+v", rep)
 		}
 	})
@@ -935,8 +980,15 @@ func TestImportConanMixedLayoutsInOneRepository(t *testing.T) {
 func TestImportConanRegistration(t *testing.T) {
 	def := formatDefs[formatConan]
 
-	if !slices.Equal(def.nexus, []string{"conan"}) || !slices.Equal(def.artifactory, []string{"conan"}) || !def.overwrites || def.components {
-		t.Fatalf("definition = nexus %v artifactory %v overwrites %v components %v", def.nexus, def.artifactory, def.overwrites, def.components)
+	if !slices.Equal(def.nexus, []string{"conan"}) || !slices.Equal(def.artifactory, []string{"conan"}) || !def.overwrites ||
+		def.components {
+		t.Fatalf(
+			"definition = nexus %v artifactory %v overwrites %v components %v",
+			def.nexus,
+			def.artifactory,
+			def.overwrites,
+			def.components,
+		)
 	}
 
 	err := def.remove(context.Background(), nil, "dst", sourceAsset{}, uploadResult{})
@@ -1033,7 +1085,12 @@ func TestImportConanPresentIsTheRecipeManifestOnly(t *testing.T) {
 		{"changed manifest", "_/zlib/1.2.13/_/" + conanRevA + "/export/conanmanifest.txt", sum256([]byte("other")), ""},
 		{"other revision", "_/zlib/1.2.13/_/" + conanRevB + "/export/conanmanifest.txt", manifest, ""},
 		{"other recipe file with the digest", "_/zlib/1.2.13/_/" + conanRevA + "/export/conanfile.py", manifest, ""},
-		{"package manifest with the digest", "_/zlib/1.2.13/_/" + conanRevA + "/package/" + conanPIDa + "/" + conanPRevA + "/conanmanifest.txt", manifest, ""},
+		{
+			"package manifest with the digest",
+			"_/zlib/1.2.13/_/" + conanRevA + "/package/" + conanPIDa + "/" + conanPRevA + "/conanmanifest.txt",
+			manifest,
+			"",
+		},
 		{"no digest", "_/zlib/1.2.13/_/" + conanRevA + "/export/conanmanifest.txt", "", ""},
 	}
 
@@ -1075,7 +1132,11 @@ func TestImportConanUploadAddress(t *testing.T) {
 		"conans/_/zlib/1.2.13/_/conanmanifest.txt",
 		"conans/acme/fmt/10.1.0/stable/packages/" + conanPIDa + "/conaninfo.txt",
 	} {
-		if _, err := upload(context.Background(), tgt, uploadRequest{Dst: "my repo", Asset: sourceAsset{Path: p}, Body: strings.NewReader("x")}); err != nil {
+		if _, err := upload(
+			context.Background(),
+			tgt,
+			uploadRequest{Dst: "my repo", Asset: sourceAsset{Path: p}, Body: strings.NewReader("x")},
+		); err != nil {
 			t.Fatalf("upload %s: %v", p, err)
 		}
 	}

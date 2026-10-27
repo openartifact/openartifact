@@ -204,7 +204,12 @@ func TestExtractFormats(t *testing.T) {
 		{"info-demo-1.2.3-0.tar.zst", string(zstdBytes(t, condaInfo))},
 	})
 
-	gemMeta := gzipBytes(t, []byte("--- !ruby/object:Gem::Specification\nname: demo-gem\nversion: !ruby/object:Gem::Version\n  version: 0.9.0\nlicenses:\n- MIT\n"))
+	gemMeta := gzipBytes(
+		t,
+		[]byte(
+			"--- !ruby/object:Gem::Specification\nname: demo-gem\nversion: !ruby/object:Gem::Version\n  version: 0.9.0\nlicenses:\n- MIT\n",
+		),
+	)
 	gem := tarBytes(t, []file{{"metadata.gz", string(gemMeta)}, {"data.tar.gz", string(tarGz(t, nil))}})
 
 	tests := []struct {
@@ -221,20 +226,47 @@ func TestExtractFormats(t *testing.T) {
 		}), []string{"package.json", `"name":"left-pad"`, "WTFPL"}, []string{"module.exports"}},
 		{"pypi wheel", "pypi", "demo-1.0-py3-none-any.whl", zipBytes(t, []file{
 			{"demo/__init__.py", "x = 1"},
-			{"demo-1.0.dist-info/METADATA", "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\nLicense: MIT\nRequires-Dist: requests\n\n" + strings.Repeat("long description ", 2000)},
+			{
+				"demo-1.0.dist-info/METADATA",
+				"Metadata-Version: 2.1\nName: demo\nVersion: 1.0\nLicense: MIT\nRequires-Dist: requests\n\n" + strings.Repeat(
+					"long description ",
+					2000,
+				),
+			},
 		}), []string{"Name: demo", "Requires-Dist: requests", "long description"}, []string{"x = 1"}},
 		{"pypi sdist", "pypi", "demo-1.0.tar.gz", tarGz(t, []file{
 			{"demo-1.0/setup.py", "setup()"},
 			{"demo-1.0/PKG-INFO", "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n"},
 		}), []string{"Name: demo", "Version: 1.0"}, []string{"setup()"}},
-		{"maven pom", "maven", "org/acme/demo/1.0/demo-1.0.pom", []byte("<project><artifactId>demo</artifactId></project>"), []string{"<artifactId>demo</artifactId>"}, nil},
+		{
+			"maven pom",
+			"maven",
+			"org/acme/demo/1.0/demo-1.0.pom",
+			[]byte("<project><artifactId>demo</artifactId></project>"),
+			[]string{"<artifactId>demo</artifactId>"},
+			nil,
+		},
 		{"maven jar pom", "maven", "org/acme/demo/1.0/demo-1.0.jar", zipBytes(t, []file{
 			{"META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n"},
 			{"META-INF/maven/org.acme/demo/pom.xml", "<project><artifactId>embedded</artifactId></project>"},
 			{"org/acme/Demo.class", "CAFEBABE"},
 		}), []string{"embedded", "Manifest-Version"}, []string{"CAFEBABE"}},
-		{"ivy xml", "ivy", "ivy.xml", []byte(`<ivy-module version="2.0"><info organisation="acme" module="demo"/></ivy-module>`), []string{`module="demo"`}, nil},
-		{"sbt pom", "sbt", "demo_2.13-1.0.pom", []byte("<project><artifactId>demo_2.13</artifactId></project>"), []string{"demo_2.13"}, nil},
+		{
+			"ivy xml",
+			"ivy",
+			"ivy.xml",
+			[]byte(`<ivy-module version="2.0"><info organisation="acme" module="demo"/></ivy-module>`),
+			[]string{`module="demo"`},
+			nil,
+		},
+		{
+			"sbt pom",
+			"sbt",
+			"demo_2.13-1.0.pom",
+			[]byte("<project><artifactId>demo_2.13</artifactId></project>"),
+			[]string{"demo_2.13"},
+			nil,
+		},
 		{"nuget", "nuget", "Demo.1.0.0.nupkg", zipBytes(t, []file{
 			{"lib/net8.0/Demo.dll", "MZ"},
 			{"Demo.nuspec", "<package><metadata><id>Demo</id><version>1.0.0</version></metadata></package>"},
@@ -248,8 +280,14 @@ func TestExtractFormats(t *testing.T) {
 			{"demo/charts/sub/Chart.yaml", "name: sub-chart-must-not-win\n"},
 			{"demo/requirements.yaml", "dependencies:\n- name: redis\n"},
 		}), []string{"name: demo", "redis"}, []string{"sub-chart-must-not-win"}},
-		{"deb", "deb", "demo_1.0_amd64.deb", debBytes(t, "Package: demo\nVersion: 1.0\nArchitecture: amd64\nDepends: libc6 (>= 2.31)\nDescription: a demo\n"),
-			[]string{"Package: demo", "Depends: libc6 (>= 2.31)", "Description: a demo"}, nil},
+		{
+			"deb",
+			"deb",
+			"demo_1.0_amd64.deb",
+			debBytes(t, "Package: demo\nVersion: 1.0\nArchitecture: amd64\nDepends: libc6 (>= 2.31)\nDescription: a demo\n"),
+			[]string{"Package: demo", "Depends: libc6 (>= 2.31)", "Description: a demo"},
+			nil,
+		},
 		{"rpm", "rpm", "weakdeps.rpm", rpmData, []string{"Name: ", "Version: ", "Architecture: "}, nil},
 		{"gomod mod", "go", "v1.0.0.mod", []byte("module example.com/demo\n\ngo 1.22\n"), []string{"module example.com/demo"}, nil},
 		{"gomod zip", "go", "v1.0.0.zip", zipBytes(t, []file{
@@ -257,7 +295,14 @@ func TestExtractFormats(t *testing.T) {
 			{"example.com/demo@v1.0.0/go.mod", "module example.com/demo\n\nrequire golang.org/x/text v0.3.0\n"},
 		}), []string{"module example.com/demo", "golang.org/x/text"}, []string{"package main"}},
 		{"rubygems", "rubygems", "demo-gem-0.9.0.gem", gem, []string{"name: demo-gem", "0.9.0", "MIT"}, nil},
-		{"conda tar.bz2", "conda", "demo-conda-1.2.3-h0_0.tar.bz2", bz, []string{"demo-conda", "python >=3.9", "A demo conda package"}, []string{"xxxxxxxx"}},
+		{
+			"conda tar.bz2",
+			"conda",
+			"demo-conda-1.2.3-h0_0.tar.bz2",
+			bz,
+			[]string{"demo-conda", "python >=3.9", "A demo conda package"},
+			[]string{"xxxxxxxx"},
+		},
 		{"conda .conda", "conda", "demo-conda-1.2.3-0.conda", conda, []string{"demo-conda", "A demo conda package"}, []string{"ignored"}},
 	}
 
@@ -317,7 +362,11 @@ func TestExtractErrors(t *testing.T) {
 		{"maven checksum unsupported", memSource("maven", "demo-1.0.jar.sha1", []byte("abc")), ErrUnsupported},
 		{"maven metadata xml unsupported", memSource("maven", "maven-metadata.xml", []byte("<metadata/>")), ErrUnsupported},
 		{"npm without package.json", memSource("npm", "x.tgz", tarGz(t, []file{{"package/readme.md", "hi"}})), ErrNotFound},
-		{"nested package.json does not count", memSource("npm", "x.tgz", tarGz(t, []file{{"package/node_modules/y/package.json", "{}"}})), ErrNotFound},
+		{
+			"nested package.json does not count",
+			memSource("npm", "x.tgz", tarGz(t, []file{{"package/node_modules/y/package.json", "{}"}})),
+			ErrNotFound,
+		},
 		{"empty manifest", memSource("go", "v1.mod", []byte("  \n")), ErrNotFound},
 	}
 

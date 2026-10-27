@@ -119,7 +119,11 @@ func patchGroupRepo(t *testing.T, repo *models.Repository, body string) (*httpte
 }
 
 func TestPatchMergeProxyVersions(t *testing.T) {
-	rw, updated := patchGroupRepo(t, &models.Repository{ID: "g1", Name: "g", Format: "npm", RepoType: "group"}, `{"merge_proxy_versions":true}`)
+	rw, updated := patchGroupRepo(
+		t,
+		&models.Repository{ID: "g1", Name: "g", Format: "npm", RepoType: "group"},
+		`{"merge_proxy_versions":true}`,
+	)
 	if rw.Code != http.StatusOK || updated == nil || !updated.MergeProxyVersions {
 		t.Fatalf("group: status %d updated %+v body %s", rw.Code, updated, rw.Body.String())
 	}
@@ -128,12 +132,20 @@ func TestPatchMergeProxyVersions(t *testing.T) {
 		t.Errorf("response lacks merge_proxy_versions: %s", rw.Body.String())
 	}
 
-	rw, updated = patchGroupRepo(t, &models.Repository{ID: "g2", Name: "g", Format: "npm", RepoType: "group", MergeProxyVersions: true}, `{"merge_proxy_versions":false}`)
+	rw, updated = patchGroupRepo(
+		t,
+		&models.Repository{ID: "g2", Name: "g", Format: "npm", RepoType: "group", MergeProxyVersions: true},
+		`{"merge_proxy_versions":false}`,
+	)
 	if rw.Code != http.StatusOK || updated == nil || updated.MergeProxyVersions {
 		t.Errorf("clearing: status %d updated %+v", rw.Code, updated)
 	}
 
-	rw, updated = patchGroupRepo(t, &models.Repository{ID: "p1", Name: "g", Format: "npm", RepoType: "proxy", UpstreamURL: "https://93.184.216.34/"}, `{"merge_proxy_versions":true}`)
+	rw, updated = patchGroupRepo(
+		t,
+		&models.Repository{ID: "p1", Name: "g", Format: "npm", RepoType: "proxy", UpstreamURL: "https://93.184.216.34/"},
+		`{"merge_proxy_versions":true}`,
+	)
 	if rw.Code != http.StatusBadRequest || updated != nil {
 		t.Errorf("proxy: status %d updated %+v, want 400 and no update", rw.Code, updated)
 	}
@@ -141,17 +153,32 @@ func TestPatchMergeProxyVersions(t *testing.T) {
 
 func TestCreateMergeProxyVersions(t *testing.T) {
 	db := newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"g","format":"maven","repo_type":"group","merge_proxy_versions":true}`); rw.Code != http.StatusCreated || db.created == nil || !db.created.MergeProxyVersions {
+	if rw := createRepo(
+		t,
+		db,
+		`{"name":"g","format":"maven","repo_type":"group","merge_proxy_versions":true}`,
+	); rw.Code != http.StatusCreated || db.created == nil ||
+		!db.created.MergeProxyVersions {
 		t.Fatalf("group create: %d %s", rw.Code, rw.Body.String())
 	}
 
 	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"h","format":"maven","merge_proxy_versions":true}`); rw.Code != http.StatusBadRequest || db.created != nil {
+	if rw := createRepo(
+		t,
+		db,
+		`{"name":"h","format":"maven","merge_proxy_versions":true}`,
+	); rw.Code != http.StatusBadRequest ||
+		db.created != nil {
 		t.Errorf("hosted create: %d %s", rw.Code, rw.Body.String())
 	}
 
 	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"g2","format":"maven","repo_type":"group"}`); rw.Code != http.StatusCreated || db.created.MergeProxyVersions {
+	if rw := createRepo(
+		t,
+		db,
+		`{"name":"g2","format":"maven","repo_type":"group"}`,
+	); rw.Code != http.StatusCreated ||
+		db.created.MergeProxyVersions {
 		t.Errorf("default must be hosted-wins: %d %s", rw.Code, rw.Body.String())
 	}
 }

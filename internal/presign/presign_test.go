@@ -114,13 +114,73 @@ func TestTryRedirect(t *testing.T) {
 		{"unknown blob streams", on, http.MethodGet, Blob{SHA256: testSHA}, nil, nil, nil, nil, false},
 		{"global off", Settings{MinSize: 100}, http.MethodGet, Blob{SHA256: testSHA, Size: 500}, nil, nil, nil, nil, false},
 		{"HEAD never redirects", on, http.MethodHead, Blob{SHA256: testSHA, Size: 500}, nil, nil, nil, nil, false},
-		{"repo false beats global on", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500, Repo: "r"}, &models.Repository{PresignDownloads: new(false)}, nil, nil, nil, false},
-		{"repo true beats global off", Settings{MinSize: 100}, http.MethodGet, Blob{SHA256: testSHA, Size: 500, Repo: "r"}, &models.Repository{PresignDownloads: new(true)}, nil, nil, nil, true},
-		{"repo nil override inherits", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500, Repo: "r"}, &models.Repository{}, nil, nil, nil, true},
-		{"repo lookup failure streams", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500, Repo: "r"}, nil, errors.New("db down"), nil, nil, false},
-		{"held repository skips the lookup", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500, Repo: "r", Repository: &models.Repository{PresignDownloads: new(true)}}, nil, errors.New("must not be called"), nil, nil, true},
+		{
+			"repo false beats global on",
+			on,
+			http.MethodGet,
+			Blob{SHA256: testSHA, Size: 500, Repo: "r"},
+			&models.Repository{PresignDownloads: new(false)},
+			nil,
+			nil,
+			nil,
+			false,
+		},
+		{
+			"repo true beats global off",
+			Settings{MinSize: 100},
+			http.MethodGet,
+			Blob{SHA256: testSHA, Size: 500, Repo: "r"},
+			&models.Repository{PresignDownloads: new(true)},
+			nil,
+			nil,
+			nil,
+			true,
+		},
+		{
+			"repo nil override inherits",
+			on,
+			http.MethodGet,
+			Blob{SHA256: testSHA, Size: 500, Repo: "r"},
+			&models.Repository{},
+			nil,
+			nil,
+			nil,
+			true,
+		},
+		{
+			"repo lookup failure streams",
+			on,
+			http.MethodGet,
+			Blob{SHA256: testSHA, Size: 500, Repo: "r"},
+			nil,
+			errors.New("db down"),
+			nil,
+			nil,
+			false,
+		},
+		{
+			"held repository skips the lookup",
+			on,
+			http.MethodGet,
+			Blob{SHA256: testSHA, Size: 500, Repo: "r", Repository: &models.Repository{PresignDownloads: new(true)}},
+			nil,
+			errors.New("must not be called"),
+			nil,
+			nil,
+			true,
+		},
 		{"missing object when checked", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500, CheckExists: true}, nil, nil, nil, nil, false},
-		{"present object when checked", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500, CheckExists: true}, nil, nil, map[string]int64{testSHA: 500}, nil, true},
+		{
+			"present object when checked",
+			on,
+			http.MethodGet,
+			Blob{SHA256: testSHA, Size: 500, CheckExists: true},
+			nil,
+			nil,
+			map[string]int64{testSHA: 500},
+			nil,
+			true,
+		},
 		{"sign failure streams", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500}, nil, nil, nil, errors.New("boom"), false},
 		{"unsupported streams", on, http.MethodGet, Blob{SHA256: testSHA, Size: 500}, nil, nil, nil, storage.ErrPresignNotSupported, false},
 	}
@@ -161,7 +221,12 @@ func TestTryRedirect_SignsFilenameAndContentType(t *testing.T) {
 	inner := &fakeStore{}
 	s := Wrap(inner, nil, Settings{Downloads: true, TTL: time.Minute}, nil, testLogger(t))
 
-	if try(t, s, http.MethodGet, Blob{SHA256: testSHA, Size: 10, Filename: `we"ird name.jar`, ContentType: "application/java-archive"}) == nil {
+	if try(
+		t,
+		s,
+		http.MethodGet,
+		Blob{SHA256: testSHA, Size: 10, Filename: `we"ird name.jar`, ContentType: "application/java-archive"},
+	) == nil {
 		t.Fatal("no redirect")
 	}
 

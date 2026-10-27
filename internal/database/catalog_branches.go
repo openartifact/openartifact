@@ -74,9 +74,16 @@ func catalogBranches() []catalogBranch {
 	npm.from = "npm_versions t JOIN npm_packages np ON np.id = t.package_id"
 	npm.repo = "np.repository_id"
 
-	docker := simpleBranch("docker", "docker_tags", "(CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)", "t.name", "dm.blob_id")
+	docker := simpleBranch(
+		"docker",
+		"docker_tags",
+		"(CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)",
+		"t.name",
+		"dm.blob_id",
+	)
 	docker.from = "docker_tags t JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL"
-	docker.sizeFrom = "LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL"
+	docker.sizeFrom = "LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest " +
+		"= t.manifest_digest AND dm.deleted_at IS NULL"
 	docker.prefSize = "COALESCE(dm.size, 0)::bigint"
 
 	// The proxy cache: a cached upstream file; name is its upstream-relative path.
@@ -144,9 +151,18 @@ func (b catalogBranch) formatExpr() string {
 // narrow renders the branch as the narrow listing row: repository, id, format,
 // name, version and the two timestamps, restricted by where (a predicate, or "").
 func (b catalogBranch) narrow(where string) string {
-	return fmt.Sprintf(`SELECT %s AS repository_id, t.id AS id, %s AS format, %s::text AS name, %s::text AS version, t.created_at AS created_at, t.updated_at AS updated_at
+	return fmt.Sprintf(
+		`SELECT %s AS repository_id, t.id AS id, %s AS format, %s::text AS name, %s::text AS version, t.created_at AS created_at,
+			t.updated_at AS updated_at
 		FROM %s WHERE %s%s`,
-		b.repo, b.formatExpr(), b.name, b.version, b.from, b.live, andPredicate(where))
+		b.repo,
+		b.formatExpr(),
+		b.name,
+		b.version,
+		b.from,
+		b.live,
+		andPredicate(where),
+	)
 }
 
 // wide renders the branch with what the size of a row is computed from: the

@@ -143,7 +143,8 @@ func TestProjectAuthz_MigrationApplies(t *testing.T) {
 		t.Fatalf("AddProjectMember: %v", err)
 	}
 
-	if _, err := f.pg.GetDB().ExecContext(ctx, `UPDATE project_members SET role = 'admin' WHERE project_id = $1`, f.project.ID); err == nil {
+	if _, err := f.pg.GetDB().
+		ExecContext(ctx, `UPDATE project_members SET role = 'admin' WHERE project_id = $1`, f.project.ID); err == nil {
 		t.Fatal("project role CHECK accepted a legacy role")
 	}
 
@@ -213,7 +214,8 @@ func TestProjectAuthz_RemovedMemberStaleWithoutInvalidation(t *testing.T) {
 
 	f.expect(t, "member (warms the cache)", f.alice, "r")
 
-	if _, err := f.pg.GetDB().ExecContext(ctx, `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`, f.project.ID, f.alice.ID); err != nil {
+	if _, err := f.pg.GetDB().
+		ExecContext(ctx, `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`, f.project.ID, f.alice.ID); err != nil {
 		t.Fatalf("raw delete: %v", err)
 	}
 
@@ -426,7 +428,10 @@ func TestProjectAuthz_GroupRevocation(t *testing.T) {
 		name   string
 		revoke func(g *models.Group) error
 	}{
-		{"detach group from project", func(g *models.Group) error { return f.pg.ChangeProjectGroup(ctx, f.project.ID, g.ID, "", nil, nil) }},
+		{
+			"detach group from project",
+			func(g *models.Group) error { return f.pg.ChangeProjectGroup(ctx, f.project.ID, g.ID, "", nil, nil) },
+		},
 		{"remove user from group", func(g *models.Group) error { return f.pg.RemoveUserFromGroup(ctx, f.alice.ID, g.ID) }},
 		{"delete group", func(g *models.Group) error { return f.pg.DeleteGroup(ctx, g.ID) }},
 	}
@@ -502,7 +507,10 @@ func TestProjectAuthz_DeleteGroupCascadesAttachments(t *testing.T) {
 	}
 
 	var n int
-	if err := f.pg.GetDB().QueryRowContext(ctx, `SELECT count(*) FROM project_groups WHERE group_id = $1`, g.ID).Scan(&n); err != nil || n != 0 {
+	if err := f.pg.GetDB().
+		QueryRowContext(ctx, `SELECT count(*) FROM project_groups WHERE group_id = $1`, g.ID).
+		Scan(&n); err != nil ||
+		n != 0 {
 		t.Fatalf("project_groups rows for deleted group = %d, %v", n, err)
 	}
 }
@@ -552,7 +560,8 @@ func TestProjectAuthz_CreateProjectOverHTTP(t *testing.T) {
 	}
 
 	p, err := f.pg.GetProjectByName(context.Background(), "My_Project")
-	if err != nil || p == nil || p.Slug != "my-project" || p.RepoNamePrefix != "my-project-" || p.MaxRepositories != 7 || p.TokenMaxTTLDays != 365 {
+	if err != nil || p == nil || p.Slug != "my-project" || p.RepoNamePrefix != "my-project-" || p.MaxRepositories != 7 ||
+		p.TokenMaxTTLDays != 365 {
 		t.Fatalf("stored project = %+v, %v", p, err)
 	}
 }

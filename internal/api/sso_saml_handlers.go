@@ -31,7 +31,14 @@ type SAMLHandler struct {
 	trustedProxies *middleware.TrustedProxies
 }
 
-func NewSAMLHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string, cfg *config.Config) *SAMLHandler {
+func NewSAMLHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	hmacKey []byte,
+	baseURL string,
+	cfg *config.Config,
+) *SAMLHandler {
 	h := &SAMLHandler{db: db, log: log, evaluator: evaluator, hmacKey: hmacKey, baseURL: baseURL, cfg: cfg}
 	if cfg != nil {
 		h.trustedProxies = middleware.NewTrustedProxies(cfg.Server.TrustedProxies)
@@ -105,14 +112,44 @@ var samlACSErrors = []struct {
 	// quiet failures are expected noise (replays, stray posts): logged at warn.
 	logMsg string
 }{
-	{auth.ErrSAMLSignatureInvalid, http.StatusBadRequest, "saml_signature_invalid", "SAML signature invalid", "saml acs: signature rejected"},
-	{auth.ErrSAMLAudienceMismatch, http.StatusBadRequest, "saml_audience_mismatch", "SAML audience mismatch", "saml acs: audience rejected"},
-	{auth.ErrSAMLAssertionExpired, http.StatusUnauthorized, "saml_assertion_expired", "SAML assertion expired", "saml acs: assertion expired"},
+	{
+		auth.ErrSAMLSignatureInvalid,
+		http.StatusBadRequest,
+		"saml_signature_invalid",
+		"SAML signature invalid",
+		"saml acs: signature rejected",
+	},
+	{
+		auth.ErrSAMLAudienceMismatch,
+		http.StatusBadRequest,
+		"saml_audience_mismatch",
+		"SAML audience mismatch",
+		"saml acs: audience rejected",
+	},
+	{
+		auth.ErrSAMLAssertionExpired,
+		http.StatusUnauthorized,
+		"saml_assertion_expired",
+		"SAML assertion expired",
+		"saml acs: assertion expired",
+	},
 	{auth.ErrSAMLReplay, http.StatusUnauthorized, "saml_invalid", "SAML response invalid", "saml acs: assertion replay rejected"},
-	{auth.ErrSAMLRequestUntracked, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: response does not match a pending login request"},
+	{
+		auth.ErrSAMLRequestUntracked,
+		http.StatusBadRequest,
+		"saml_invalid",
+		"SAML response invalid",
+		"saml acs: response does not match a pending login request",
+	},
 	{auth.ErrSAMLRequestMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: InResponseTo rejected"},
 	{auth.ErrSAMLAssertionNotYetValid, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: assertion not yet valid"},
-	{auth.ErrSAMLDestinationMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: destination or recipient rejected"},
+	{
+		auth.ErrSAMLDestinationMismatch,
+		http.StatusBadRequest,
+		"saml_invalid",
+		"SAML response invalid",
+		"saml acs: destination or recipient rejected",
+	},
 	{auth.ErrSAMLIssuerMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: issuer rejected"},
 	{auth.ErrSAMLBadStatus, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: IdP reported a failure status"},
 }

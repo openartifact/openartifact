@@ -165,7 +165,13 @@ func FuzzParseIndex(f *testing.F) {
 				t.Fatalf("FindVersion(%q) = %+v, %v, %v", e.Vers, got, ok, err)
 			}
 
-			if first := slices.IndexFunc(entries, func(o Entry) bool { return o.Vers == e.Vers }); !bytes.Equal(entries[first].Line, got.Line) {
+			if first := slices.IndexFunc(
+				entries,
+				func(o Entry) bool { return o.Vers == e.Vers },
+			); !bytes.Equal(
+				entries[first].Line,
+				got.Line,
+			) {
 				t.Fatalf("FindVersion(%q) is not the first entry", e.Vers)
 			}
 		}

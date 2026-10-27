@@ -51,7 +51,12 @@ func nastyPackage(rng *rand.Rand) pkgrpm.Package {
 				ver += "-" + pick()
 			}
 
-			out[i] = pkgrpm.Dependency{Name: pick() + "(GLIBC_2." + string(rune('0'+rng.IntN(9))) + ")", Flags: flagSet[rng.IntN(len(flagSet))], Version: ver, Epoch: uint32(rng.IntN(3))}
+			out[i] = pkgrpm.Dependency{
+				Name:    pick() + "(GLIBC_2." + string(rune('0'+rng.IntN(9))) + ")",
+				Flags:   flagSet[rng.IntN(len(flagSet))],
+				Version: ver,
+				Epoch:   uint32(rng.IntN(3)),
+			}
 		}
 
 		return out
@@ -88,8 +93,13 @@ func equivalenceFixtures() map[string][]pkgrpm.Package {
 	}
 
 	onlyRPMLib := pkgrpm.Package{
-		Name: "rpmlib-only", Version: "1", Release: "1", Arch: "noarch",
-		Requires: []pkgrpm.Dependency{{Name: "rpmlib(PayloadIsZstd)", Flags: pkgrpm.SENSE_RPMLIB | pkgrpm.SENSE_LESSEQUAL, Version: "5.4-1"}},
+		Name:    "rpmlib-only",
+		Version: "1",
+		Release: "1",
+		Arch:    "noarch",
+		Requires: []pkgrpm.Dependency{
+			{Name: "rpmlib(PayloadIsZstd)", Flags: pkgrpm.SENSE_RPMLIB | pkgrpm.SENSE_LESSEQUAL, Version: "5.4-1"},
+		},
 	}
 
 	return map[string][]pkgrpm.Package{

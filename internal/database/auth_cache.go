@@ -95,7 +95,15 @@ func (p *PostgresDB) AuthCacheGeneration() uint64 {
 // cachedLookup returns the cached value for key in *m, or runs load and caches
 // the result unless isNil reports a not-found (nil) value. A result is stored only if no invalidation happened while
 // load ran.
-func cachedLookup[V any](ctx context.Context, c *authCache, m *map[string]cacheEntry[V], key string, clone func(V) V, isNil func(V) bool, load func(context.Context) (V, error)) (V, error) {
+func cachedLookup[V any](
+	ctx context.Context,
+	c *authCache,
+	m *map[string]cacheEntry[V],
+	key string,
+	clone func(V) V,
+	isNil func(V) bool,
+	load func(context.Context) (V, error),
+) (V, error) {
 	if !c.enabled() {
 		return load(ctx)
 	}
@@ -211,7 +219,11 @@ func (p *PostgresDB) ListGroupsByUser(ctx context.Context, userID string) ([]*mo
 
 // GetPermissionTargetsForPrincipal returns the permission targets held by a
 // user and its groups, from the auth cache when fresh.
-func (p *PostgresDB) GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error) {
+func (p *PostgresDB) GetPermissionTargetsForPrincipal(
+	ctx context.Context,
+	userID string,
+	groupIDs []string,
+) ([]*models.PermissionTarget, error) {
 	key := userID + "\x00" + strings.Join(groupIDs, "\x00")
 
 	return cachedLookup(ctx, &p.authCache, &p.authCache.perms, key, clonePermTargets,

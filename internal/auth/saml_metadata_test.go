@@ -362,7 +362,9 @@ func TestIDPMetadataCache_ValidUntil(t *testing.T) {
 		t.Parallel()
 
 		cache, clock, stub := newTestMetadataCache()
-		xmlCfg := models.SAMLConfig{IDPMetadataXML: idpDoc(`validUntil="`+rfc3339(clock.now().Add(-24*time.Hour))+`"`, newTestCert(t, "static"))}
+		xmlCfg := models.SAMLConfig{
+			IDPMetadataXML: idpDoc(`validUntil="`+rfc3339(clock.now().Add(-24*time.Hour))+`"`, newTestCert(t, "static")),
+		}
 
 		for range 2 {
 			md, err := cache.metadata(context.Background(), xmlCfg, nil)

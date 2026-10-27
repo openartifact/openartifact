@@ -96,21 +96,36 @@ func buildScenarios(st *state, runID string) []scenario {
 		{name: "dl maven jar (10MB)", concurrency: 8, gen: get("/repos/maven/"+st.MavenRepo+"/"+st.BigJar, nil)},
 		{name: "dl npm tarball", gen: get("/repos/"+st.NPMRepo+"/"+st.NPMTarball, nil)},
 		{name: "dl docker blob (8MB)", concurrency: 8, gen: get(st.DockerBlob, nil)},
-		{name: "docker manifest", gen: get(st.DockerImage, map[string]string{"Accept": "application/vnd.docker.distribution.manifest.v2+json"})},
-		{name: "meta maven-metadata.xml (200 ver)", gen: get("/repos/maven/"+st.MavenRepo+"/com/bench/hot/hot-lib/maven-metadata.xml", nil)},
+		{
+			name: "docker manifest",
+			gen:  get(st.DockerImage, map[string]string{"Accept": "application/vnd.docker.distribution.manifest.v2+json"}),
+		},
+		{
+			name: "meta maven-metadata.xml (200 ver)",
+			gen:  get("/repos/maven/"+st.MavenRepo+"/com/bench/hot/hot-lib/maven-metadata.xml", nil),
+		},
 		{name: "meta npm packument (100 ver)", gen: get("/repos/"+st.NPMRepo+"/hot-pkg", nil)},
-		{name: "meta npm packument abbreviated", gen: get("/repos/"+st.NPMRepo+"/hot-pkg", map[string]string{"Accept": "application/vnd.npm.install-v1+json"})},
+		{
+			name: "meta npm packument abbreviated",
+			gen:  get("/repos/"+st.NPMRepo+"/hot-pkg", map[string]string{"Accept": "application/vnd.npm.install-v1+json"}),
+		},
 		{name: "meta deb Packages.gz", gen: get("/repos/"+st.DebRepo+"/dists/stable/main/binary-amd64/Packages.gz", nil)},
 		{name: "meta deb Release", gen: get("/repos/"+st.DebRepo+"/dists/stable/Release", nil)},
 		{name: "meta rpm repomd.xml", gen: get("/repos/"+st.RPMRepo+"/repodata/repomd.xml", nil)},
-		{name: "meta maven-metadata.xml conditional", gen: cond("/repos/maven/" + st.MavenRepo + "/com/bench/hot/hot-lib/maven-metadata.xml")},
+		{
+			name: "meta maven-metadata.xml conditional",
+			gen:  cond("/repos/maven/" + st.MavenRepo + "/com/bench/hot/hot-lib/maven-metadata.xml"),
+		},
 		{name: "meta npm packument conditional", gen: cond("/repos/" + st.NPMRepo + "/hot-pkg")},
 		{name: "meta deb Release conditional", gen: cond("/repos/" + st.DebRepo + "/dists/stable/Release")},
 		{name: "meta rpm repomd.xml conditional", gen: cond("/repos/" + st.RPMRepo + "/repodata/repomd.xml")},
 		{name: "api GET /auth/me", gen: get("/api/v1/auth/me", nil)},
 		{name: "api GET /repositories", gen: get("/api/v1/repositories", nil)},
 		{name: "api GET packages (maven, limit=100)", gen: func(n int64) reqSpec {
-			return reqSpec{method: "GET", path: fmt.Sprintf("/api/v1/repositories/%s/packages?limit=100&page=%d", st.MavenRepo, 1+rnd(n, 20))}
+			return reqSpec{
+				method: "GET",
+				path:   fmt.Sprintf("/api/v1/repositories/%s/packages?limit=100&page=%d", st.MavenRepo, 1+rnd(n, 20)),
+			}
 		}},
 		{name: "api GET packages (npm, limit=100)", gen: func(n int64) reqSpec {
 			return reqSpec{method: "GET", path: fmt.Sprintf("/api/v1/repositories/%s/packages?limit=100&page=%d", st.NPMRepo, 1+rnd(n, 10))}
@@ -121,12 +136,21 @@ func buildScenarios(st *state, runID string) []scenario {
 		{name: "dashboard system info", gen: get("/api/v1/admin/system/info", nil)},
 		{name: "spa index.html", gen: get("/", nil)},
 		{name: "ul maven PUT 10MB", concurrency: 4, gen: func(n int64) reqSpec {
-			return reqSpec{method: "PUT", body: bigPayload, path: fmt.Sprintf("/repos/maven/%s/com/bench/up%s/up-lib/1.0.%d/up-lib-1.0.%d.jar", st.MavenRepo, runID, n, n)}
+			return reqSpec{
+				method: "PUT",
+				body:   bigPayload,
+				path:   fmt.Sprintf("/repos/maven/%s/com/bench/up%s/up-lib/1.0.%d/up-lib-1.0.%d.jar", st.MavenRepo, runID, n, n),
+			}
 		}},
 		{name: "ul npm publish", gen: func(n int64) reqSpec {
 			b, _ := npmPublishBody(fmt.Sprintf("up-%s-%d", runID, n), []string{"1.0.0"})
 
-			return reqSpec{method: "PUT", body: b, hdr: map[string]string{"Content-Type": "application/json"}, path: fmt.Sprintf("/repos/%s/up-%s-%d", st.NPMRepo, runID, n)}
+			return reqSpec{
+				method: "PUT",
+				body:   b,
+				hdr:    map[string]string{"Content-Type": "application/json"},
+				path:   fmt.Sprintf("/repos/%s/up-%s-%d", st.NPMRepo, runID, n),
+			}
 		}},
 		{name: "ul deb upload", gen: func(n int64) reqSpec {
 			var buf bytes.Buffer
@@ -138,7 +162,12 @@ func buildScenarios(st *state, runID string) []scenario {
 			_ = mw.WriteField("component", "main")
 			_ = mw.Close()
 
-			return reqSpec{method: "POST", body: buf.Bytes(), hdr: map[string]string{"Content-Type": mw.FormDataContentType()}, path: "/api/v1/repositories/" + st.DebRepo + "/debs"}
+			return reqSpec{
+				method: "POST",
+				body:   buf.Bytes(),
+				hdr:    map[string]string{"Content-Type": mw.FormDataContentType()},
+				path:   "/api/v1/repositories/" + st.DebRepo + "/debs",
+			}
 		}},
 	}
 }
@@ -219,12 +248,31 @@ func runLoad(args []string) error {
 		r := h.run(sc, c, *dur, prof, nil)
 		results = append(results, r)
 
-		fmt.Printf("%-40s c=%-3d n=%-7d err=%-5.1f%% rps=%-9.1f p50=%-8.2f p95=%-8.2f p99=%-8.2f MB/s=%-7.1f cpu=%-5.0f%% rss=%-6.0fMB allocs/req=%-8.0f B/req=%.0f\n",
-			r.Name, r.Concurrency, r.Requests, r.ErrorRate*100, r.RPS, r.P50ms, r.P95ms, r.P99ms, r.MBps, r.CPUPct, r.RSSMB, r.AllocsPerOp, r.BytesPerOp)
+		fmt.Printf(
+			"%-40s c=%-3d n=%-7d err=%-5.1f%% rps=%-9.1f p50=%-8.2f p95=%-8.2f p99=%-8.2f "+
+				"MB/s=%-7.1f cpu=%-5.0f%% rss=%-6.0fMB allocs/req=%-8.0f B/req=%.0f\n",
+			r.Name,
+			r.Concurrency,
+			r.Requests,
+			r.ErrorRate*100,
+			r.RPS,
+			r.P50ms,
+			r.P95ms,
+			r.P99ms,
+			r.MBps,
+			r.CPUPct,
+			r.RSSMB,
+			r.AllocsPerOp,
+			r.BytesPerOp,
+		)
 	}
 
 	if *jsonOut != "" {
-		b, _ := json.MarshalIndent(map[string]any{"label": *label, "duration": dur.String(), "concurrency": *conc, "results": results}, "", "  ")
+		b, _ := json.MarshalIndent(
+			map[string]any{"label": *label, "duration": dur.String(), "concurrency": *conc, "results": results},
+			"",
+			"  ",
+		)
 
 		return os.WriteFile(*jsonOut, b, 0o600)
 	}

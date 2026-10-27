@@ -414,7 +414,12 @@ func TestPermissionTargetEndpointsRequireAdmin(t *testing.T) {
 	}{
 		{"get", http.MethodGet, "/api/v1/permission-targets/" + idTargetA, ""},
 		{"patch", http.MethodPatch, "/api/v1/permission-targets/" + idTargetA, `{"name":"hijacked"}`},
-		{"unassign", http.MethodDelete, "/api/v1/permission-targets/" + idTargetA + "/assignments?principal_type=user&principal_id=" + idAliceUser, ""},
+		{
+			"unassign",
+			http.MethodDelete,
+			"/api/v1/permission-targets/" + idTargetA + "/assignments?principal_type=user&principal_id=" + idAliceUser,
+			"",
+		},
 	}
 
 	principals := map[string]*auth.Principal{
@@ -501,7 +506,15 @@ func TestPermissionTargetPatch(t *testing.T) {
 		wantName string // expected stored name afterwards
 		wantActs []string
 	}{
-		{"rename and change actions", idTargetA, `{"name":"  renamed  ","actions":["read","write"]}`, nil, http.StatusOK, "renamed", []string{"read", "write"}},
+		{
+			"rename and change actions",
+			idTargetA,
+			`{"name":"  renamed  ","actions":["read","write"]}`,
+			nil,
+			http.StatusOK,
+			"renamed",
+			[]string{"read", "write"},
+		},
 		{"keep own name", idTargetA, `{"name":"ops","path_pattern":"pkg/.*"}`, nil, http.StatusOK, "ops", []string{"read"}},
 		{"empty body is a no-op", idTargetA, `{}`, nil, http.StatusOK, "ops", []string{"read"}},
 		{"name taken by other target", idTargetA, `{"name":"other"}`, nil, http.StatusConflict, "ops", []string{"read"}},
@@ -513,10 +526,42 @@ func TestPermissionTargetPatch(t *testing.T) {
 		{"bad path regex", idTargetA, `{"path_pattern":"("}`, nil, http.StatusBadRequest, "ops", []string{"read"}},
 		{"invalid json", idTargetA, `{`, nil, http.StatusBadRequest, "ops", []string{"read"}},
 		{"unknown target", idUnknown, `{"name":"x"}`, nil, http.StatusNotFound, "", nil},
-		{"lookup error", idTargetA, `{"name":"x"}`, map[string]error{"GetPermissionTargetByID": errFakeDB}, http.StatusInternalServerError, "ops", []string{"read"}},
-		{"name lookup error", idTargetA, `{"name":"x"}`, map[string]error{"GetPermissionTargetByName": errFakeDB}, http.StatusInternalServerError, "ops", []string{"read"}},
-		{"update error", idTargetA, `{"name":"x"}`, map[string]error{"UpdatePermissionTarget": errFakeDB}, http.StatusInternalServerError, "ops", []string{"read"}},
-		{"update unique violation", idTargetA, `{"name":"x"}`, map[string]error{"UpdatePermissionTarget": uniq}, http.StatusConflict, "ops", []string{"read"}},
+		{
+			"lookup error",
+			idTargetA,
+			`{"name":"x"}`,
+			map[string]error{"GetPermissionTargetByID": errFakeDB},
+			http.StatusInternalServerError,
+			"ops",
+			[]string{"read"},
+		},
+		{
+			"name lookup error",
+			idTargetA,
+			`{"name":"x"}`,
+			map[string]error{"GetPermissionTargetByName": errFakeDB},
+			http.StatusInternalServerError,
+			"ops",
+			[]string{"read"},
+		},
+		{
+			"update error",
+			idTargetA,
+			`{"name":"x"}`,
+			map[string]error{"UpdatePermissionTarget": errFakeDB},
+			http.StatusInternalServerError,
+			"ops",
+			[]string{"read"},
+		},
+		{
+			"update unique violation",
+			idTargetA,
+			`{"name":"x"}`,
+			map[string]error{"UpdatePermissionTarget": uniq},
+			http.StatusConflict,
+			"ops",
+			[]string{"read"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -529,7 +574,9 @@ func TestPermissionTargetPatch(t *testing.T) {
 
 			maps.Copy(h.db.fail, tt.fail)
 
-			rw := h.do(authzCall{method: http.MethodPatch, path: "/api/v1/permission-targets/" + tt.id, body: tt.body, principal: azAdmin()})
+			rw := h.do(
+				authzCall{method: http.MethodPatch, path: "/api/v1/permission-targets/" + tt.id, body: tt.body, principal: azAdmin()},
+			)
 
 			wantStatus(t, rw, tt.want)
 
@@ -608,7 +655,8 @@ func TestPermissionTargetUnassign(t *testing.T) {
 				t.Errorf("assignments left = %d, want %d", got, wantLeft)
 			}
 
-			if !h.db.assignments[permAssignKey{idTargetB, "user", idAliceUser}] || !h.db.assignments[permAssignKey{idTargetA, "user", idBobUser}] {
+			if !h.db.assignments[permAssignKey{idTargetB, "user", idAliceUser}] ||
+				!h.db.assignments[permAssignKey{idTargetA, "user", idBobUser}] {
 				t.Error("unassign removed an assignment of another target or principal")
 			}
 		})
@@ -663,7 +711,9 @@ func TestAdminUserCreateValidation(t *testing.T) {
 		t.Parallel()
 
 		h := newAuthzHarness(t)
-		rw := h.do(authzCall{method: http.MethodPost, path: "/api/v1/users", body: `{"username":"newuser"}`, principal: azUser(idAliceUser)})
+		rw := h.do(
+			authzCall{method: http.MethodPost, path: "/api/v1/users", body: `{"username":"newuser"}`, principal: azUser(idAliceUser)},
+		)
 		wantStatus(t, rw, http.StatusForbidden)
 	})
 }
@@ -685,16 +735,28 @@ func TestAdminUserGetListDelete(t *testing.T) {
 		t.Parallel()
 
 		h := setup(t)
-		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idServiceUser, principal: azAdmin()}), http.StatusNotFound)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idServiceUser, principal: azAdmin()}),
+			http.StatusNotFound,
+		)
 		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser, principal: azAdmin()}), http.StatusOK)
-		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idUnknown, principal: azAdmin()}), http.StatusNotFound)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idUnknown, principal: azAdmin()}),
+			http.StatusNotFound,
+		)
 	})
 
 	t.Run("get and list denied for non-admin", func(t *testing.T) {
 		t.Parallel()
 
 		h := setup(t)
-		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser, principal: azUser(idAliceUser)}), http.StatusForbidden)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser, principal: azUser(idAliceUser)}),
+			http.StatusForbidden,
+		)
 		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users", principal: azUser(idAliceUser)}), http.StatusForbidden)
 	})
 
@@ -704,7 +766,11 @@ func TestAdminUserGetListDelete(t *testing.T) {
 		h := setup(t)
 		h.db.fail["GetUserByID"] = errFakeDB
 		h.db.fail["ListUsers"] = errFakeDB
-		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser, principal: azAdmin()}), http.StatusInternalServerError)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser, principal: azAdmin()}),
+			http.StatusInternalServerError,
+		)
 		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users", principal: azAdmin()}), http.StatusInternalServerError)
 	})
 
@@ -725,8 +791,26 @@ func TestAdminUserGetListDelete(t *testing.T) {
 		{"unknown user", idUnknown, azAdmin(), nil, nil, http.StatusNotFound, false, false},
 		{"last admin", idAliceUser, azAdmin(), database.ErrLastAdmin, nil, http.StatusConflict, false, true},
 		{"delete failure", idAliceUser, azAdmin(), errFakeDB, nil, http.StatusInternalServerError, false, true},
-		{"session revoke failure keeps user", idAliceUser, azAdmin(), nil, map[string]error{"DeleteSessionsByUser": errFakeDB}, http.StatusInternalServerError, false, false},
-		{"lookup failure", idAliceUser, azAdmin(), nil, map[string]error{"GetUserByID": errFakeDB}, http.StatusInternalServerError, false, false},
+		{
+			"session revoke failure keeps user",
+			idAliceUser,
+			azAdmin(),
+			nil,
+			map[string]error{"DeleteSessionsByUser": errFakeDB},
+			http.StatusInternalServerError,
+			false,
+			false,
+		},
+		{
+			"lookup failure",
+			idAliceUser,
+			azAdmin(),
+			nil,
+			map[string]error{"GetUserByID": errFakeDB},
+			http.StatusInternalServerError,
+			false,
+			false,
+		},
 	}
 
 	for _, tt := range deleteTests {
@@ -778,22 +862,79 @@ func TestAdminUserPatchAuthorization(t *testing.T) {
 			body: `{"full_name":"Alice A"}`, want: http.StatusOK,
 			check: checkSelfFullName,
 		},
-		{name: "self cannot set email", id: idAliceUser, principal: azUser(idAliceUser), body: `{"email":"x@y.z"}`, want: http.StatusForbidden},
-		{name: "self cannot re-enable", id: idAliceUser, principal: azUser(idAliceUser), body: `{"disabled":false}`, want: http.StatusForbidden},
-		{name: "self cannot clear must-change", id: idAliceUser, principal: azUser(idAliceUser), body: `{"must_change_password":false}`, want: http.StatusForbidden},
-		{name: "self cannot set password here", id: idAliceUser, principal: azUser(idAliceUser), body: `{"password":"a-long-enough-password"}`, want: http.StatusForbidden},
-		{name: "own api token cannot edit profile", id: idAliceUser, principal: azToken(idAliceUser), body: `{"full_name":"x"}`, want: http.StatusForbidden},
+		{
+			name:      "self cannot set email",
+			id:        idAliceUser,
+			principal: azUser(idAliceUser),
+			body:      `{"email":"x@y.z"}`,
+			want:      http.StatusForbidden,
+		},
+		{
+			name:      "self cannot re-enable",
+			id:        idAliceUser,
+			principal: azUser(idAliceUser),
+			body:      `{"disabled":false}`,
+			want:      http.StatusForbidden,
+		},
+		{
+			name:      "self cannot clear must-change",
+			id:        idAliceUser,
+			principal: azUser(idAliceUser),
+			body:      `{"must_change_password":false}`,
+			want:      http.StatusForbidden,
+		},
+		{
+			name:      "self cannot set password here",
+			id:        idAliceUser,
+			principal: azUser(idAliceUser),
+			body:      `{"password":"a-long-enough-password"}`,
+			want:      http.StatusForbidden,
+		},
+		{
+			name:      "own api token cannot edit profile",
+			id:        idAliceUser,
+			principal: azToken(idAliceUser),
+			body:      `{"full_name":"x"}`,
+			want:      http.StatusForbidden,
+		},
 		{name: "other user denied", id: idAliceUser, principal: azUser(idBobUser), body: `{"full_name":"x"}`, want: http.StatusForbidden},
 		{name: "anonymous denied", id: idAliceUser, principal: azAnon(), body: `{"full_name":"x"}`, want: http.StatusForbidden},
-		{name: "admin cannot disable self", id: idAdminUser, principal: adminOnSelf, body: `{"disabled":true}`, want: http.StatusBadRequest},
+		{
+			name:      "admin cannot disable self",
+			id:        idAdminUser,
+			principal: adminOnSelf,
+			body:      `{"disabled":true}`,
+			want:      http.StatusBadRequest,
+		},
 		{name: "unknown user", id: idUnknown, principal: azAdmin(), body: `{"full_name":"x"}`, want: http.StatusNotFound},
 		{name: "service account", id: idServiceUser, principal: azAdmin(), body: `{"full_name":"x"}`, want: http.StatusNotFound},
 		{name: "invalid json", id: idAliceUser, principal: azAdmin(), body: `{`, want: http.StatusBadRequest},
 		{name: "bad email", id: idAliceUser, principal: azAdmin(), body: `{"email":"nope"}`, want: http.StatusBadRequest},
 		{name: "short password", id: idAliceUser, principal: azAdmin(), body: `{"password":"short"}`, want: http.StatusBadRequest},
-		{name: "email conflict", id: idAliceUser, principal: azAdmin(), body: `{"email":"x@y.z"}`, fail: map[string]error{"UpdateUser": &pgconn.PgError{Code: "23505"}}, want: http.StatusConflict},
-		{name: "update failure", id: idAliceUser, principal: azAdmin(), body: `{"full_name":"x"}`, fail: map[string]error{"UpdateUser": errFakeDB}, want: http.StatusInternalServerError},
-		{name: "lookup failure", id: idAliceUser, principal: azAdmin(), body: `{"full_name":"x"}`, fail: map[string]error{"GetUserByID": errFakeDB}, want: http.StatusInternalServerError},
+		{
+			name:      "email conflict",
+			id:        idAliceUser,
+			principal: azAdmin(),
+			body:      `{"email":"x@y.z"}`,
+			fail:      map[string]error{"UpdateUser": &pgconn.PgError{Code: "23505"}},
+			want:      http.StatusConflict,
+		},
+		{
+			name:      "update failure",
+			id:        idAliceUser,
+			principal: azAdmin(),
+			body:      `{"full_name":"x"}`,
+			fail:      map[string]error{"UpdateUser": errFakeDB},
+			want:      http.StatusInternalServerError,
+		},
+		{
+			name:      "lookup failure",
+			id:        idAliceUser,
+			principal: azAdmin(),
+			body:      `{"full_name":"x"}`,
+			fail:      map[string]error{"GetUserByID": errFakeDB},
+			want:      http.StatusInternalServerError,
+		},
 		{
 			name: "admin password reset drops sessions", id: idAliceUser, principal: azAdmin(),
 			body: `{"password":"a-long-enough-password"}`, want: http.StatusOK,
@@ -809,7 +950,14 @@ func TestAdminUserPatchAuthorization(t *testing.T) {
 			body: `{"disabled":false,"must_change_password":true}`, want: http.StatusOK,
 			check: checkEnableKeepsSessions,
 		},
-		{name: "revoke failure fails request", id: idAliceUser, principal: azAdmin(), body: `{"disabled":true}`, fail: map[string]error{"DeleteSessionsByUser": errFakeDB}, want: http.StatusInternalServerError},
+		{
+			name:      "revoke failure fails request",
+			id:        idAliceUser,
+			principal: azAdmin(),
+			body:      `{"disabled":true}`,
+			fail:      map[string]error{"DeleteSessionsByUser": errFakeDB},
+			want:      http.StatusInternalServerError,
+		},
 	}
 
 	for _, tt := range tests {
@@ -862,26 +1010,130 @@ func TestAdminTokenCreateAndScopes(t *testing.T) {
 		wantScopes []string
 	}{
 		{"owner creates access token", azUser(idAliceUser), path, `{"name":"ci","kind":"access"}`, nil, http.StatusCreated, nil},
-		{"owner creates scoped token with held target", azUser(idAliceUser), path, `{"name":"ci","kind":"deploy","scopes":["` + idTargetA + `"],"expires_at":"` + future + `"}`, nil, http.StatusCreated, []string{idTargetA}},
-		{"owner cannot request unheld scope", azUser(idAliceUser), path, `{"name":"ci","kind":"access","scopes":["` + idTargetB + `"]}`, nil, http.StatusForbidden, nil},
-		{"admin may scope any existing target", azAdmin(), path, `{"name":"ci","kind":"access","scopes":["` + idTargetB + `"]}`, nil, http.StatusCreated, []string{idTargetB}},
-		{"admin unknown scope", azAdmin(), path, `{"name":"ci","kind":"access","scopes":["` + idUnknown + `"]}`, nil, http.StatusBadRequest, nil},
-		{"admin scope lookup error", azAdmin(), path, `{"name":"ci","kind":"access","scopes":["` + idTargetA + `"]}`, map[string]error{"GetPermissionTargetByID": errFakeDB}, http.StatusInternalServerError, nil},
+		{
+			"owner creates scoped token with held target",
+			azUser(idAliceUser),
+			path,
+			`{"name":"ci","kind":"deploy","scopes":["` + idTargetA + `"],"expires_at":"` + future + `"}`,
+			nil,
+			http.StatusCreated,
+			[]string{idTargetA},
+		},
+		{
+			"owner cannot request unheld scope",
+			azUser(idAliceUser),
+			path,
+			`{"name":"ci","kind":"access","scopes":["` + idTargetB + `"]}`,
+			nil,
+			http.StatusForbidden,
+			nil,
+		},
+		{
+			"admin may scope any existing target",
+			azAdmin(),
+			path,
+			`{"name":"ci","kind":"access","scopes":["` + idTargetB + `"]}`,
+			nil,
+			http.StatusCreated,
+			[]string{idTargetB},
+		},
+		{
+			"admin unknown scope",
+			azAdmin(),
+			path,
+			`{"name":"ci","kind":"access","scopes":["` + idUnknown + `"]}`,
+			nil,
+			http.StatusBadRequest,
+			nil,
+		},
+		{
+			"admin scope lookup error",
+			azAdmin(),
+			path,
+			`{"name":"ci","kind":"access","scopes":["` + idTargetA + `"]}`,
+			map[string]error{"GetPermissionTargetByID": errFakeDB},
+			http.StatusInternalServerError,
+			nil,
+		},
 		{"other user denied", azUser(idBobUser), path, `{"name":"ci","kind":"access"}`, nil, http.StatusForbidden, nil},
 		{"anonymous denied", azAnon(), path, `{"name":"ci","kind":"access"}`, nil, http.StatusForbidden, nil},
 		{"token cannot mint tokens", azToken(idAliceUser), path, `{"name":"ci","kind":"access"}`, nil, http.StatusForbidden, nil},
-		{"unknown owner", azAdmin(), "/api/v1/users/" + idUnknown + "/tokens", `{"name":"ci","kind":"access"}`, nil, http.StatusNotFound, nil},
-		{"service owner", azAdmin(), "/api/v1/users/" + idServiceUser + "/tokens", `{"name":"ci","kind":"access"}`, nil, http.StatusNotFound, nil},
-		{"owner lookup error", azAdmin(), path, `{"name":"ci","kind":"access"}`, map[string]error{"GetUserByID": errFakeDB}, http.StatusInternalServerError, nil},
+		{
+			"unknown owner",
+			azAdmin(),
+			"/api/v1/users/" + idUnknown + "/tokens",
+			`{"name":"ci","kind":"access"}`,
+			nil,
+			http.StatusNotFound,
+			nil,
+		},
+		{
+			"service owner",
+			azAdmin(),
+			"/api/v1/users/" + idServiceUser + "/tokens",
+			`{"name":"ci","kind":"access"}`,
+			nil,
+			http.StatusNotFound,
+			nil,
+		},
+		{
+			"owner lookup error",
+			azAdmin(),
+			path,
+			`{"name":"ci","kind":"access"}`,
+			map[string]error{"GetUserByID": errFakeDB},
+			http.StatusInternalServerError,
+			nil,
+		},
 		{"invalid json", azUser(idAliceUser), path, `{`, nil, http.StatusBadRequest, nil},
 		{"blank name", azUser(idAliceUser), path, `{"name":"  ","kind":"access"}`, nil, http.StatusBadRequest, nil},
-		{"long name", azUser(idAliceUser), path, `{"name":"` + strings.Repeat("n", 101) + `","kind":"access"}`, nil, http.StatusBadRequest, nil},
+		{
+			"long name",
+			azUser(idAliceUser),
+			path,
+			`{"name":"` + strings.Repeat("n", 101) + `","kind":"access"}`,
+			nil,
+			http.StatusBadRequest,
+			nil,
+		},
 		{"bad kind", azUser(idAliceUser), path, `{"name":"ci","kind":"root"}`, nil, http.StatusBadRequest, nil},
 		{"empty scope value", azUser(idAliceUser), path, `{"name":"ci","kind":"access","scopes":[""]}`, nil, http.StatusBadRequest, nil},
-		{"too many scopes", azUser(idAliceUser), path, `{"name":"ci","kind":"access","scopes":[` + strings.TrimSuffix(strings.Repeat(`"x",`, 65), ",") + `]}`, nil, http.StatusBadRequest, nil},
-		{"expired expiry", azUser(idAliceUser), path, `{"name":"ci","kind":"access","expires_at":"` + past + `"}`, nil, http.StatusBadRequest, nil},
-		{"expiry beyond two years", azUser(idAliceUser), path, `{"name":"ci","kind":"access","expires_at":"` + tooFar + `"}`, nil, http.StatusBadRequest, nil},
-		{"store failure", azUser(idAliceUser), path, `{"name":"ci","kind":"access"}`, map[string]error{"CreateToken": errFakeDB}, http.StatusInternalServerError, nil},
+		{
+			"too many scopes",
+			azUser(idAliceUser),
+			path,
+			`{"name":"ci","kind":"access","scopes":[` + strings.TrimSuffix(strings.Repeat(`"x",`, 65), ",") + `]}`,
+			nil,
+			http.StatusBadRequest,
+			nil,
+		},
+		{
+			"expired expiry",
+			azUser(idAliceUser),
+			path,
+			`{"name":"ci","kind":"access","expires_at":"` + past + `"}`,
+			nil,
+			http.StatusBadRequest,
+			nil,
+		},
+		{
+			"expiry beyond two years",
+			azUser(idAliceUser),
+			path,
+			`{"name":"ci","kind":"access","expires_at":"` + tooFar + `"}`,
+			nil,
+			http.StatusBadRequest,
+			nil,
+		},
+		{
+			"store failure",
+			azUser(idAliceUser),
+			path,
+			`{"name":"ci","kind":"access"}`,
+			map[string]error{"CreateToken": errFakeDB},
+			http.StatusInternalServerError,
+			nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -933,7 +1185,14 @@ func TestAdminTokenListAndRevokeScoping(t *testing.T) {
 		now := time.Now()
 		h.db.tokens[idTokenAlice] = &models.Token{ID: idTokenAlice, UserID: idAliceUser, Name: "a", Kind: "access", CreatedAt: now}
 		h.db.tokens[idTokenBob] = &models.Token{ID: idTokenBob, UserID: idBobUser, Name: "b", Kind: "access", CreatedAt: now}
-		h.db.tokens[idTokenGone] = &models.Token{ID: idTokenGone, UserID: idAliceUser, Name: "old", Kind: "access", CreatedAt: now, RevokedAt: &now}
+		h.db.tokens[idTokenGone] = &models.Token{
+			ID:        idTokenGone,
+			UserID:    idAliceUser,
+			Name:      "old",
+			Kind:      "access",
+			CreatedAt: now,
+			RevokedAt: &now,
+		}
 
 		return h
 	}
@@ -957,7 +1216,11 @@ func TestAdminTokenListAndRevokeScoping(t *testing.T) {
 		h := setup(t)
 
 		for _, p := range []*auth.Principal{azUser(idBobUser), azToken(idAliceUser), azAnon()} {
-			wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser + "/tokens", principal: p}), http.StatusForbidden)
+			wantStatus(
+				t,
+				h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser + "/tokens", principal: p}),
+				http.StatusForbidden,
+			)
 		}
 	})
 
@@ -966,7 +1229,11 @@ func TestAdminTokenListAndRevokeScoping(t *testing.T) {
 
 		h := setup(t)
 		h.db.fail["ListTokensByUser"] = errFakeDB
-		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser + "/tokens", principal: azAdmin()}), http.StatusInternalServerError)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodGet, path: "/api/v1/users/" + idAliceUser + "/tokens", principal: azAdmin()}),
+			http.StatusInternalServerError,
+		)
 	})
 
 	revokeTests := []struct {
@@ -984,8 +1251,24 @@ func TestAdminTokenListAndRevokeScoping(t *testing.T) {
 		{"other user denied", idAliceUser, idTokenAlice, azUser(idBobUser), nil, http.StatusForbidden, false},
 		{"api token cannot revoke", idAliceUser, idTokenAlice, azToken(idAliceUser), nil, http.StatusForbidden, false},
 		{"unknown token", idAliceUser, idUnknown, azUser(idAliceUser), nil, http.StatusNotFound, false},
-		{"lookup error", idAliceUser, idTokenAlice, azUser(idAliceUser), map[string]error{"GetTokenByID": errFakeDB}, http.StatusInternalServerError, false},
-		{"revoke error", idAliceUser, idTokenAlice, azUser(idAliceUser), map[string]error{"RevokeToken": errFakeDB}, http.StatusInternalServerError, false},
+		{
+			"lookup error",
+			idAliceUser,
+			idTokenAlice,
+			azUser(idAliceUser),
+			map[string]error{"GetTokenByID": errFakeDB},
+			http.StatusInternalServerError,
+			false,
+		},
+		{
+			"revoke error",
+			idAliceUser,
+			idTokenAlice,
+			azUser(idAliceUser),
+			map[string]error{"RevokeToken": errFakeDB},
+			http.StatusInternalServerError,
+			false,
+		},
 	}
 
 	for _, tt := range revokeTests {
@@ -996,7 +1279,13 @@ func TestAdminTokenListAndRevokeScoping(t *testing.T) {
 
 			maps.Copy(h.db.fail, tt.fail)
 
-			wantStatus(t, h.do(authzCall{method: http.MethodDelete, path: "/api/v1/users/" + tt.user + "/tokens/" + tt.token, principal: tt.principal}), tt.want)
+			wantStatus(
+				t,
+				h.do(
+					authzCall{method: http.MethodDelete, path: "/api/v1/users/" + tt.user + "/tokens/" + tt.token, principal: tt.principal},
+				),
+				tt.want,
+			)
 
 			if tok := h.db.tokens[tt.token]; tok != nil && (tok.RevokedAt != nil) != tt.revoked {
 				t.Errorf("revoked = %v, want %v", tok.RevokedAt != nil, tt.revoked)
@@ -1021,17 +1310,33 @@ func TestAdminTokenListAndRevokeScoping(t *testing.T) {
 		}
 
 		h.db.fail["ListAllTokens"] = errFakeDB
-		wantStatus(t, h.do(authzCall{method: http.MethodGet, path: "/api/v1/admin/tokens", principal: azAdmin()}), http.StatusInternalServerError)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodGet, path: "/api/v1/admin/tokens", principal: azAdmin()}),
+			http.StatusInternalServerError,
+		)
 
 		h.db.fail["GetTokenByID"] = errFakeDB
-		wantStatus(t, h.do(authzCall{method: http.MethodDelete, path: "/api/v1/admin/tokens/" + idTokenBob, principal: azAdmin()}), http.StatusInternalServerError)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodDelete, path: "/api/v1/admin/tokens/" + idTokenBob, principal: azAdmin()}),
+			http.StatusInternalServerError,
+		)
 
 		delete(h.db.fail, "GetTokenByID")
 		h.db.fail["RevokeToken"] = errFakeDB
-		wantStatus(t, h.do(authzCall{method: http.MethodDelete, path: "/api/v1/admin/tokens/" + idTokenBob, principal: azAdmin()}), http.StatusInternalServerError)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodDelete, path: "/api/v1/admin/tokens/" + idTokenBob, principal: azAdmin()}),
+			http.StatusInternalServerError,
+		)
 
 		delete(h.db.fail, "RevokeToken")
-		wantStatus(t, h.do(authzCall{method: http.MethodDelete, path: "/api/v1/admin/tokens/" + idTokenBob, principal: azAdmin()}), http.StatusNoContent)
+		wantStatus(
+			t,
+			h.do(authzCall{method: http.MethodDelete, path: "/api/v1/admin/tokens/" + idTokenBob, principal: azAdmin()}),
+			http.StatusNoContent,
+		)
 
 		if h.db.tokens[idTokenBob].RevokedAt == nil {
 			t.Error("admin revoke did not revoke")
@@ -1063,21 +1368,95 @@ func TestChangePassword(t *testing.T) {
 		keptHash  string // expected keep-hash for other-session revocation
 		allGone   bool   // all sessions dropped (unusable cookie)
 	}{
-		{name: "success keeps current session only", principal: azUser(idAliceUser), body: `{"current_password":"` + current + `","new_password":"` + fresh + `"}`, cookie: sessionRaw, want: http.StatusNoContent, changed: true, keptHash: sessionHash},
-		{name: "success without cookie drops every session", principal: azUser(idAliceUser), body: `{"current_password":"` + current + `","new_password":"` + fresh + `"}`, want: http.StatusNoContent, changed: true, allGone: true},
-		{name: "wrong current password", principal: azUser(idAliceUser), body: `{"current_password":"wrong-password-000","new_password":"` + fresh + `"}`, cookie: sessionRaw, want: http.StatusUnauthorized},
-		{name: "empty current password", principal: azUser(idAliceUser), body: `{"new_password":"` + fresh + `"}`, cookie: sessionRaw, want: http.StatusUnauthorized},
-		{name: "oversized current password", principal: azUser(idAliceUser), body: `{"current_password":"` + strings.Repeat("x", maxLoginFieldBytes+1) + `","new_password":"` + fresh + `"}`, want: http.StatusUnauthorized},
-		{name: "new password too short", principal: azUser(idAliceUser), body: `{"current_password":"` + current + `","new_password":"short"}`, cookie: sessionRaw, want: http.StatusBadRequest},
-		{name: "new password too long", principal: azUser(idAliceUser), body: `{"current_password":"` + current + `","new_password":"` + strings.Repeat("p", passwd.MaxPasswordLength+1) + `"}`, want: http.StatusBadRequest},
+		{
+			name:      "success keeps current session only",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"` + fresh + `"}`,
+			cookie:    sessionRaw,
+			want:      http.StatusNoContent,
+			changed:   true,
+			keptHash:  sessionHash,
+		},
+		{
+			name:      "success without cookie drops every session",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"` + fresh + `"}`,
+			want:      http.StatusNoContent,
+			changed:   true,
+			allGone:   true,
+		},
+		{
+			name:      "wrong current password",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"wrong-password-000","new_password":"` + fresh + `"}`,
+			cookie:    sessionRaw,
+			want:      http.StatusUnauthorized,
+		},
+		{
+			name:      "empty current password",
+			principal: azUser(idAliceUser),
+			body:      `{"new_password":"` + fresh + `"}`,
+			cookie:    sessionRaw,
+			want:      http.StatusUnauthorized,
+		},
+		{
+			name:      "oversized current password",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + strings.Repeat("x", maxLoginFieldBytes+1) + `","new_password":"` + fresh + `"}`,
+			want:      http.StatusUnauthorized,
+		},
+		{
+			name:      "new password too short",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"short"}`,
+			cookie:    sessionRaw,
+			want:      http.StatusBadRequest,
+		},
+		{
+			name:      "new password too long",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"` + strings.Repeat("p", passwd.MaxPasswordLength+1) + `"}`,
+			want:      http.StatusBadRequest,
+		},
 		{name: "invalid json", principal: azUser(idAliceUser), body: `{`, want: http.StatusBadRequest},
-		{name: "api token refused", principal: azToken(idAliceUser), body: `{"current_password":"` + current + `","new_password":"` + fresh + `"}`, want: http.StatusForbidden},
+		{
+			name:      "api token refused",
+			principal: azToken(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"` + fresh + `"}`,
+			want:      http.StatusForbidden,
+		},
 		{name: "anonymous refused", principal: azAnon(), body: `{}`, want: http.StatusUnauthorized},
 		{name: "legacy key without user refused", principal: azAdmin(), body: `{}`, want: http.StatusUnauthorized},
-		{name: "sso user without local password", principal: azUser(idAliceUser), body: `{"current_password":"x","new_password":"` + fresh + `"}`, noHash: true, want: http.StatusBadRequest},
-		{name: "unknown user", principal: azUser(idUnknown), body: `{"current_password":"` + current + `","new_password":"` + fresh + `"}`, want: http.StatusInternalServerError},
-		{name: "update failure", principal: azUser(idAliceUser), body: `{"current_password":"` + current + `","new_password":"` + fresh + `"}`, fail: map[string]error{"UpdateUserPassword": errFakeDB}, want: http.StatusInternalServerError},
-		{name: "revoke failure reported", principal: azUser(idAliceUser), body: `{"current_password":"` + current + `","new_password":"` + fresh + `"}`, cookie: sessionRaw, fail: map[string]error{"DeleteOtherSessionsByUser": errFakeDB}, want: http.StatusInternalServerError, changed: true, keptHash: ""},
+		{
+			name:      "sso user without local password",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"x","new_password":"` + fresh + `"}`,
+			noHash:    true,
+			want:      http.StatusBadRequest,
+		},
+		{
+			name:      "unknown user",
+			principal: azUser(idUnknown),
+			body:      `{"current_password":"` + current + `","new_password":"` + fresh + `"}`,
+			want:      http.StatusInternalServerError,
+		},
+		{
+			name:      "update failure",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"` + fresh + `"}`,
+			fail:      map[string]error{"UpdateUserPassword": errFakeDB},
+			want:      http.StatusInternalServerError,
+		},
+		{
+			name:      "revoke failure reported",
+			principal: azUser(idAliceUser),
+			body:      `{"current_password":"` + current + `","new_password":"` + fresh + `"}`,
+			cookie:    sessionRaw,
+			fail:      map[string]error{"DeleteOtherSessionsByUser": errFakeDB},
+			want:      http.StatusInternalServerError,
+			changed:   true,
+			keptHash:  "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1099,7 +1478,15 @@ func TestChangePassword(t *testing.T) {
 
 			maps.Copy(h.db.fail, tt.fail)
 
-			rw := h.do(authzCall{method: http.MethodPost, path: "/api/v1/auth/change-password", body: tt.body, principal: tt.principal, cookie: tt.cookie})
+			rw := h.do(
+				authzCall{
+					method:    http.MethodPost,
+					path:      "/api/v1/auth/change-password",
+					body:      tt.body,
+					principal: tt.principal,
+					cookie:    tt.cookie,
+				},
+			)
 			wantStatus(t, rw, tt.want)
 
 			if strings.Contains(rw.Body.String(), errFakeDB.Error()) {

@@ -183,7 +183,9 @@ func describeRegistered() ([]describedMetric, error) {
 // has no accessor, so the string form is the only way to read the help text and
 // the label names; the unit test pins the format against client_golang.
 var descPattern = regexp.MustCompile(
-	`^Desc\{fqName: ("(?:[^"\\]|\\.)*"), help: ("(?:[^"\\]|\\.)*"), (?:unit: "(?:[^"\\]|\\.)*", )?constLabels: \{(.*)\}, variableLabels: \{(.*)\}\}$`)
+	`^Desc\{fqName: ("(?:[^"\\]|\\.)*"), help: ("(?:[^"\\]|\\.)*"), ` +
+		`(?:unit: "(?:[^"\\]|\\.)*", )?constLabels: \{(.*)\}, variableLabels: \{(.*)\}\}$`,
+)
 
 // parseDesc extracts name, help and variable label names from Desc.String.
 func parseDesc(s string) (describedMetric, error) {
@@ -230,7 +232,11 @@ func mergeMetrics(described []describedMetric, found map[string]sourceMetric) ([
 
 		src, ok := found[d.Name]
 		if !ok {
-			return nil, fmt.Errorf("cannot classify %s: no constructor with this literal name found under %s", d.Name, strings.Join(metricsSourceDirs, ", "))
+			return nil, fmt.Errorf(
+				"cannot classify %s: no constructor with this literal name found under %s",
+				d.Name,
+				strings.Join(metricsSourceDirs, ", "),
+			)
 		}
 
 		defs = append(defs, metricDef{Name: d.Name, Help: d.Help, Labels: d.Labels, Type: src.Type, Buckets: src.Buckets})
@@ -247,7 +253,10 @@ func mergeMetrics(described []describedMetric, found map[string]sourceMetric) ([
 	if len(missing) > 0 {
 		slices.Sort(missing)
 
-		return nil, fmt.Errorf("collectors defined in the sources but not built by the generator (add them to describeRegistered in cmd/docgen/metrics.go): %s", strings.Join(missing, ", "))
+		return nil, fmt.Errorf(
+			"collectors defined in the sources but not built by the generator (add them to describeRegistered in cmd/docgen/metrics.go): %s",
+			strings.Join(missing, ", "),
+		)
 	}
 
 	slices.SortFunc(defs, func(a, b metricDef) int { return strings.Compare(a.Name, b.Name) })
@@ -314,7 +323,14 @@ func scanMetricSources(root string, dirs []string) (map[string]sourceMetric, err
 		for _, m := range pkg {
 			if prev, dup := out[m.Name]; dup {
 				if prev.Type != m.Type {
-					return nil, fmt.Errorf("metric %s defined with two types (%s at %s, %s at %s)", m.Name, prev.Type, prev.Where, m.Type, m.Where)
+					return nil, fmt.Errorf(
+						"metric %s defined with two types (%s at %s, %s at %s)",
+						m.Name,
+						prev.Type,
+						prev.Where,
+						m.Type,
+						m.Where,
+					)
 				}
 
 				continue
@@ -846,9 +862,20 @@ func renderMetrics(defs []metricDef) ([]byte, error) {
 	var b bytes.Buffer
 
 	b.Write(header("Metrics reference", "the Prometheus collectors in the server code"))
-	b.WriteString("The server exposes Prometheus metrics at `GET /metrics`. Access fails closed: the endpoint answers `401` unless `METRICS_AUTH_TOKEN` is set (scrapers then send it as a bearer token) or `METRICS_ALLOW_ANONYMOUS=true`. See [Monitoring](../operations/monitoring.md#metrics) for the scrape configuration and how to read the families.\n\n")
-	b.WriteString("Labelled metrics only appear after their first observation. Gauges of the database pools and of federation peers are read at scrape time.\n\n")
-	b.WriteString("The Go runtime (`go_*`) and process (`process_*`) metrics of the standard client library are exposed as well and not listed here.\n\n")
+	b.WriteString(
+		"The server exposes Prometheus metrics at `GET /metrics`. Access fails closed: " +
+			"the endpoint answers `401` unless `METRICS_AUTH_TOKEN` is set " +
+			"(scrapers then send it as a bearer token) or `METRICS_ALLOW_ANONYMOUS=true`. " +
+			"See [Monitoring](../operations/monitoring.md#metrics) for the scrape configuration " +
+			"and how to read the families.\n\n",
+	)
+	b.WriteString(
+		"Labelled metrics only appear after their first observation. " +
+			"Gauges of the database pools and of federation peers are read at scrape time.\n\n",
+	)
+	b.WriteString(
+		"The Go runtime (`go_*`) and process (`process_*`) metrics of the standard client library are exposed as well and not listed here.\n\n",
+	)
 
 	for _, g := range names {
 		if err := renderMetricGroup(&b, g, groups[g]); err != nil {

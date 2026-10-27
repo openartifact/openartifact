@@ -21,7 +21,13 @@ func TestDockerBlobImageVisibility(t *testing.T) {
 	s := newQuotaSeeder(t, pg, "docker-links", "docker")
 
 	sha := strings.Repeat("a1", 32)
-	blob := &models.DockerBlob{RepositoryID: s.repo, Digest: "sha256:" + sha, BlobSHA256: sha, Size: 7, MediaType: "application/octet-stream"}
+	blob := &models.DockerBlob{
+		RepositoryID: s.repo,
+		Digest:       "sha256:" + sha,
+		BlobSHA256:   sha,
+		Size:         7,
+		MediaType:    "application/octet-stream",
+	}
 	imageA, imageB := "team-a/app", "team-b/app"
 	blob.Image = &imageA
 
@@ -79,7 +85,10 @@ func TestCreateDockerManifestChecksBlobsUnderLock(t *testing.T) {
 	sha := strings.Repeat("c3", 32)
 	image := "app"
 
-	if err := pg.CreateDockerBlob(ctx, &models.DockerBlob{RepositoryID: s.repo, Digest: "sha256:" + sha, BlobSHA256: sha, Size: 1, Image: &image}); err != nil {
+	if err := pg.CreateDockerBlob(
+		ctx,
+		&models.DockerBlob{RepositoryID: s.repo, Digest: "sha256:" + sha, BlobSHA256: sha, Size: 1, Image: &image},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,7 +141,9 @@ func TestUpsertBlobKeepsFirstMediaTypeAndFixesZeroSize(t *testing.T) {
 		size int64
 	)
 
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT media_type, size_bytes FROM blobs WHERE sha256 = $1`, sha).Scan(&mt, &size); err != nil {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT media_type, size_bytes FROM blobs WHERE sha256 = $1`, sha).
+		Scan(&mt, &size); err != nil {
 		t.Fatal(err)
 	}
 

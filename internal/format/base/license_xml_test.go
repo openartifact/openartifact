@@ -14,8 +14,18 @@ func TestDescriptorLicenses(t *testing.T) {
 		name, file, body string
 		want             []string
 	}{
-		{"ivy", "ivy-1.0.xml", `<ivy-module><info><license name="GPL-3.0"/><license name=" MIT "/></info></ivy-module>`, []string{"GPL-3.0", "MIT"}},
-		{"pom", "a-1.0.pom", `<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name>Apache-2.0</name></license></licenses></project>`, []string{"Apache-2.0"}},
+		{
+			"ivy",
+			"ivy-1.0.xml",
+			`<ivy-module><info><license name="GPL-3.0"/><license name=" MIT "/></info></ivy-module>`,
+			[]string{"GPL-3.0", "MIT"},
+		},
+		{
+			"pom",
+			"a-1.0.pom",
+			`<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name>Apache-2.0</name></license></licenses></project>`,
+			[]string{"Apache-2.0"},
+		},
 		{"no license", "ivy.xml", `<ivy-module><info/></ivy-module>`, nil},
 		{"malformed", "a.pom", `<project><licenses>`, nil},
 		{"not a descriptor", "a.jar", `<info><license name="GPL-3.0"/></info>`, nil},

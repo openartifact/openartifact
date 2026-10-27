@@ -325,7 +325,12 @@ func (e *samlFlowEnv) acs(samlResponse, relayState string, cookies ...*http.Cook
 	e.t.Helper()
 
 	form := url.Values{"SAMLResponse": {samlResponse}, "RelayState": {relayState}}
-	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/auth/sso/saml/"+e.slug+"/acs", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"POST",
+		"/api/v1/auth/sso/saml/"+e.slug+"/acs",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	for _, c := range cookies {

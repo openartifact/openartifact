@@ -142,7 +142,11 @@ func (g *nugetFeed) catalog() string {
 		size = int64(len(g.nupkg))
 	}
 
-	return fmt.Sprintf(`{"id":"lib.a","version":"1.0.0","packageHash":%q,"packageHashAlgorithm":"SHA512","packageSize":%d}`, sha512b64(src), size)
+	return fmt.Sprintf(
+		`{"id":"lib.a","version":"1.0.0","packageHash":%q,"packageHashAlgorithm":"SHA512","packageSize":%d}`,
+		sha512b64(src),
+		size,
+	)
 }
 
 func (g *nugetFeed) handler(w http.ResponseWriter, r *http.Request) {
@@ -202,14 +206,31 @@ func (g *nugetFeed) handler(w http.ResponseWriter, r *http.Request) {
 			`{"@id":"%[1]s/reg/big/page/1.0.0/2.0.0.json","count":2,"lower":"1.0.0","upper":"2.0.0","parent":"%[1]s/reg/big/index.json"},`+
 			`{"@id":"%[1]s/reg/big/page/3.0.0/3.0.0.json","count":1,"lower":"3.0.0","upper":"3.0.0","parent":"%[1]s/reg/big/index.json"}]}`, g.base))
 	case "/reg/big/page/1.0.0/2.0.0.json":
-		gz200(fmt.Sprintf(`{"@id":"%[1]s/reg/big/page/1.0.0/2.0.0.json","count":2,"lower":"1.0.0","upper":"2.0.0","parent":"%[1]s/reg/big/index.json","items":[%[2]s,%[3]s]}`,
-			g.base, g.item("big", "1.0.0"), g.item("big", "2.0.0")))
+		gz200(
+			fmt.Sprintf(
+				`{"@id":"%[1]s/reg/big/page/1.0.0/2.0.0.json","count":2,"lower":"1.0.0","upper":"2.0.0","parent":"%[1]s/reg/big/index.json","items":[%[2]s,%[3]s]}`,
+				g.base,
+				g.item("big", "1.0.0"),
+				g.item("big", "2.0.0"),
+			),
+		)
 	case "/reg/big/page/3.0.0/3.0.0.json":
-		gz200(fmt.Sprintf(`{"@id":"%[1]s/reg/big/page/3.0.0/3.0.0.json","count":1,"lower":"3.0.0","upper":"3.0.0","parent":"%[1]s/reg/big/index.json","items":[%[2]s]}`,
-			g.base, g.item("big", "3.0.0")))
+		gz200(
+			fmt.Sprintf(
+				`{"@id":"%[1]s/reg/big/page/3.0.0/3.0.0.json","count":1,"lower":"3.0.0","upper":"3.0.0","parent":"%[1]s/reg/big/index.json","items":[%[2]s]}`,
+				g.base,
+				g.item("big", "3.0.0"),
+			),
+		)
 	case "/search/query":
-		json200(fmt.Sprintf(`{"totalHits":1,"query":%q,"data":[{"@id":"%s/reg/lib.a/index.json","id":"lib.a","registration":"%[2]s/reg/lib.a/index.json",`+
-			`"versions":[{"@id":"%[2]s/reg/lib.a/1.0.0.json","version":"1.0.0"}]}]}`, r.URL.RawQuery, g.base))
+		json200(
+			fmt.Sprintf(
+				`{"totalHits":1,"query":%q,"data":[{"@id":"%s/reg/lib.a/index.json","id":"lib.a","registration":"%[2]s/reg/lib.a/index.json",`+
+					`"versions":[{"@id":"%[2]s/reg/lib.a/1.0.0.json","version":"1.0.0"}]}]}`,
+				r.URL.RawQuery,
+				g.base,
+			),
+		)
 	default:
 		http.NotFound(w, r)
 	}
@@ -358,7 +379,8 @@ func TestNuGetProxy_RegistrationIsDecompressedAndRewritten(t *testing.T) {
 	item := page["items"].([]any)[0].(map[string]any)
 	wantContent := nugetRepoURL + "/v3/package/lib.a/1.0.0/lib.a.1.0.0.nupkg"
 
-	if item["@id"] != nugetRepoURL+"/v3/registration/lib.a/1.0.0.json" || item["packageContent"] != wantContent || item["registration"] != doc["@id"] {
+	if item["@id"] != nugetRepoURL+"/v3/registration/lib.a/1.0.0.json" || item["packageContent"] != wantContent ||
+		item["registration"] != doc["@id"] {
 		t.Errorf("item = %v", item)
 	}
 
@@ -368,7 +390,8 @@ func TestNuGetProxy_RegistrationIsDecompressedAndRewritten(t *testing.T) {
 	}
 
 	// Catalog URLs are not served here; text that merely mentions a URL is kept.
-	if entry["@id"] != feed.base+"/catalog/lib.a.1.0.0.json" || entry["description"] != "see https://api.nuget.org/v3-flatcontainer/ & <more>" {
+	if entry["@id"] != feed.base+"/catalog/lib.a.1.0.0.json" ||
+		entry["description"] != "see https://api.nuget.org/v3-flatcontainer/ & <more>" {
 		t.Errorf("catalogEntry = %v", entry)
 	}
 
@@ -395,7 +418,8 @@ func TestNuGetProxy_PagedRegistrationServesPagesThroughTheRepository(t *testing.
 	pages := doc["items"].([]any)
 
 	wantID := nugetRepoURL + "/v3/registration/big/page/1.0.0/2.0.0.json"
-	if len(pages) != 2 || pages[0].(map[string]any)["@id"] != wantID || pages[0].(map[string]any)["parent"] != nugetRepoURL+"/v3/registration/big/index.json" {
+	if len(pages) != 2 || pages[0].(map[string]any)["@id"] != wantID ||
+		pages[0].(map[string]any)["parent"] != nugetRepoURL+"/v3/registration/big/index.json" {
 		t.Fatalf("pages = %v", pages)
 	}
 

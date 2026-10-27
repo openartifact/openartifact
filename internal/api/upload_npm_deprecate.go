@@ -28,7 +28,11 @@ type npmDeprecation struct {
 // publishes, so they must neither demand an attachment nor conflict with the
 // stored version. The versions that remain in pub.Versions are the real
 // publishes. Only versions whose `deprecated` value changed are returned.
-func (h *NPMUploadHandler) extractNPMDeprecations(ctx context.Context, pkg *models.NPMPackage, pub *npmPublishBody) ([]npmDeprecation, error) {
+func (h *NPMUploadHandler) extractNPMDeprecations(
+	ctx context.Context,
+	pkg *models.NPMPackage,
+	pub *npmPublishBody,
+) ([]npmDeprecation, error) {
 	if pkg == nil {
 		return nil, nil
 	}

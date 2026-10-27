@@ -44,9 +44,28 @@ func scanVulnResult(row rowScanner) (*models.VulnScanResult, error) {
 		jobStatus string
 	)
 
-	if err := row.Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.PackageName, &result.PackageVersion, &result.Ecosystem,
-		&result.Scanner, &jobStatus, &vulnsRaw, &result.VulnCount, &result.CriticalCount, &result.HighCount, &result.MediumCount, &result.LowCount,
-		&result.Quarantined, &errMsg, &result.FailedScanners, &scannedAt, &result.CreatedAt, &result.UpdatedAt); err != nil {
+	if err := row.Scan(
+		&result.ID,
+		&result.RepositoryID,
+		&result.ArtifactID,
+		&result.PackageName,
+		&result.PackageVersion,
+		&result.Ecosystem,
+		&result.Scanner,
+		&jobStatus,
+		&vulnsRaw,
+		&result.VulnCount,
+		&result.CriticalCount,
+		&result.HighCount,
+		&result.MediumCount,
+		&result.LowCount,
+		&result.Quarantined,
+		&errMsg,
+		&result.FailedScanners,
+		&scannedAt,
+		&result.CreatedAt,
+		&result.UpdatedAt,
+	); err != nil {
 		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
 

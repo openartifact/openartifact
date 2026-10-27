@@ -91,19 +91,25 @@ func TestCleanupPolicySkipsBundledBlob(t *testing.T) {
 	e.pkg(repoID, "helm", "chart", "2.0.0", 100, 10)
 
 	bundleID := e.queryID(`INSERT INTO release_bundles (name, version) VALUES ('rel', '1') RETURNING id`)
-	e.exec(`INSERT INTO release_bundle_items (bundle_id, source_repo_id, sha256, artifact_path, format) VALUES ($1, $2, $3, 'chart-1.0.0.tgz', 'helm')`,
-		bundleID, repoID, pinnedSHA)
+	e.exec(
+		`INSERT INTO release_bundle_items (bundle_id, source_repo_id, sha256, artifact_path, format) VALUES ($1, $2, $3, 'chart-1.0.0.tgz', 'helm')`,
+		bundleID,
+		repoID,
+		pinnedSHA,
+	)
 
 	got := e.runPolicy(repoID, 1)
 	if got.LastRunError != "" || got.LastRunDeleted == nil || *got.LastRunDeleted != 1 {
 		t.Fatalf("policy run: deleted = %v, error = %q; want 1 deleted", got.LastRunDeleted, got.LastRunError)
 	}
 
-	if !e.blobExists(pinnedSHA) || e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND version = '1.0.0'`, repoID) != 1 {
+	if !e.blobExists(pinnedSHA) ||
+		e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND version = '1.0.0'`, repoID) != 1 {
 		t.Error("the version pinned by a release bundle was removed")
 	}
 
-	if e.blobExists(goneSHA) || e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, repoID) != 0 {
+	if e.blobExists(goneSHA) ||
+		e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, repoID) != 0 {
 		t.Error("the unpinned old version was kept")
 	}
 }
@@ -149,7 +155,10 @@ func TestCleanupPolicyMovesBatchToTrash(t *testing.T) {
 		t.Fatalf("policy run: deleted = %v, error = %q; want 2 moved", got.LastRunDeleted, got.LastRunError)
 	}
 
-	if n := e.countRows(`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'cleanup-policy'`, repoID); n != 2 {
+	if n := e.countRows(
+		`SELECT count(*) FROM helm_charts WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'cleanup-policy'`,
+		repoID,
+	); n != 2 {
 		t.Errorf("%d rows in the trash, want 2", n)
 	}
 

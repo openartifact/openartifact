@@ -369,7 +369,11 @@ func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request)
 	writeNoContent(w)
 }
 
-func queryIntParam(r *http.Request, name string, defaultVal, minVal, maxVal int) int { //nolint:unparam // minVal kept for API clarity and future flexibility
+func queryIntParam(
+	r *http.Request,
+	name string,
+	defaultVal, minVal, maxVal int, //nolint:unparam // minVal kept for API clarity and future flexibility
+) int {
 	s := r.URL.Query().Get(name)
 	if s == "" {
 		return defaultVal

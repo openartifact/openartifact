@@ -199,7 +199,9 @@ func checkDetachedWithGPG(t *testing.T, s *LocalSigner) {
 	env := newGPGEnv(t, s)
 	dir := t.TempDir()
 
-	repomd := []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<repomd xmlns=\"http://linux.duke.edu/metadata/repo\"><revision>1</revision></repomd>\n")
+	repomd := []byte(
+		"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<repomd xmlns=\"http://linux.duke.edu/metadata/repo\"><revision>1</revision></repomd>\n",
+	)
 
 	sig, err := s.DetachedSign(bytes.NewReader(repomd))
 	if err != nil {
@@ -241,12 +243,22 @@ func checkDetachedRoundTrip(t *testing.T, s *LocalSigner) {
 		t.Fatalf("signature body is itself an armor block (double armor):\n%s", sig)
 	}
 
-	_, err = openpgp.CheckArmoredDetachedSignature(openpgp.EntityList{s.entity}, strings.NewReader(releaseFixture), bytes.NewReader(sig), nil)
+	_, err = openpgp.CheckArmoredDetachedSignature(
+		openpgp.EntityList{s.entity},
+		strings.NewReader(releaseFixture),
+		bytes.NewReader(sig),
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("CheckArmoredDetachedSignature: %v", err)
 	}
 
-	_, err = openpgp.CheckArmoredDetachedSignature(openpgp.EntityList{s.entity}, strings.NewReader(releaseFixture+"x"), bytes.NewReader(sig), nil)
+	_, err = openpgp.CheckArmoredDetachedSignature(
+		openpgp.EntityList{s.entity},
+		strings.NewReader(releaseFixture+"x"),
+		bytes.NewReader(sig),
+		nil,
+	)
 	if err == nil {
 		t.Fatal("signature verified against modified data")
 	}

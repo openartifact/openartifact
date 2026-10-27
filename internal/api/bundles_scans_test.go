@@ -343,7 +343,12 @@ func TestLicenseScanRejectsClientMetadata(t *testing.T) {
 	log, ev := newBundlesScansEnv(t, db)
 	h := NewLicenseHandler(db, log, ev, nil, nil)
 
-	rw := serveAs(h.RegisterRoutes, http.MethodPost, "/api/v1/repositories/repo/license/scan", `{"artifact_id":"pkg","metadata":{"license":"GPL-3.0"}}`)
+	rw := serveAs(
+		h.RegisterRoutes,
+		http.MethodPost,
+		"/api/v1/repositories/repo/license/scan",
+		`{"artifact_id":"pkg","metadata":{"license":"GPL-3.0"}}`,
+	)
 	if rw.Code != http.StatusBadRequest {
 		t.Errorf("client metadata: status = %d, want 400 (%s)", rw.Code, rw.Body.String())
 	}

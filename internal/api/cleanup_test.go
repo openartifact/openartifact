@@ -86,7 +86,10 @@ func TestCleanupMalformedIDIsNotFound(t *testing.T) {
 }
 
 func TestCleanupRejectsUnsupportedFormat(t *testing.T) {
-	db := &cleanupMockDB{format: "bogus", policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p"}}
+	db := &cleanupMockDB{
+		format: "bogus",
+		policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p"},
+	}
 	base := "/api/v1/repositories/r/cleanup-policies"
 
 	rw := cleanupRequest(t, db, nil, http.MethodPost, base, `{"name":"p","keep_last_n":2}`)
@@ -169,9 +172,24 @@ func TestCleanupCreateValidation(t *testing.T) {
 
 func TestCleanupUpdateRejectsUnsafeValues(t *testing.T) {
 	n := 5
-	db := &cleanupMockDB{policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p", Enabled: true, KeepLastN: &n}}
+	db := &cleanupMockDB{
+		policy: &models.CleanupPolicy{
+			ID:           "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10",
+			RepositoryID: "repo-1",
+			Name:         "p",
+			Enabled:      true,
+			KeepLastN:    &n,
+		},
+	}
 
-	rw := cleanupRequest(t, db, nil, http.MethodPut, "/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", `{"keep_last_n":0}`)
+	rw := cleanupRequest(
+		t,
+		db,
+		nil,
+		http.MethodPut,
+		"/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10",
+		`{"keep_last_n":0}`,
+	)
 	if rw.Code != http.StatusBadRequest || *db.policy.KeepLastN != 5 {
 		t.Fatalf("status = %d, keep_last_n = %d", rw.Code, *db.policy.KeepLastN)
 	}
@@ -179,20 +197,43 @@ func TestCleanupUpdateRejectsUnsafeValues(t *testing.T) {
 
 func TestCleanupRunTriggersWorker(t *testing.T) {
 	n := 5
-	db := &cleanupMockDB{policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p", KeepLastN: &n}}
+	db := &cleanupMockDB{
+		policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p", KeepLastN: &n},
+	}
 	runner := &fakeRunner{}
 
-	rw := cleanupRequest(t, db, runner, http.MethodPost, "/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/run", "")
+	rw := cleanupRequest(
+		t,
+		db,
+		runner,
+		http.MethodPost,
+		"/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/run",
+		"",
+	)
 	if rw.Code != http.StatusAccepted || len(runner.ids) != 1 || runner.ids[0] != "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10" {
 		t.Fatalf("status = %d, triggered = %v", rw.Code, runner.ids)
 	}
 
 	runner.err = worker.ErrPolicyBusy
-	if rw := cleanupRequest(t, db, runner, http.MethodPost, "/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/run", ""); rw.Code != http.StatusConflict {
+	if rw := cleanupRequest(
+		t,
+		db,
+		runner,
+		http.MethodPost,
+		"/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/run",
+		"",
+	); rw.Code != http.StatusConflict {
 		t.Fatalf("busy status = %d", rw.Code)
 	}
 
-	if rw := cleanupRequest(t, db, nil, http.MethodPost, "/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/run", ""); rw.Code != http.StatusNotImplemented {
+	if rw := cleanupRequest(
+		t,
+		db,
+		nil,
+		http.MethodPost,
+		"/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/run",
+		"",
+	); rw.Code != http.StatusNotImplemented {
 		t.Fatalf("nil runner status = %d", rw.Code)
 	}
 }
@@ -201,7 +242,9 @@ func TestCleanupDryRunReportsWithoutRunning(t *testing.T) {
 	const path = "/api/v1/repositories/r/cleanup-policies/5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10/dry-run"
 
 	n := 5
-	db := &cleanupMockDB{policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p", KeepLastN: &n}}
+	db := &cleanupMockDB{
+		policy: &models.CleanupPolicy{ID: "5d0c6a0e-8f6b-4f6e-9c53-2b1d2f7d4a10", RepositoryID: "repo-1", Name: "p", KeepLastN: &n},
+	}
 	runner := &fakeRunner{preview: &worker.CleanupPreview{
 		Repository: "r", Format: "npm", Rows: 2, Truncated: true,
 		Items: []worker.CleanupPreviewItem{{ID: "a", Name: "left-pad", Version: "1.0.0"}},
@@ -227,7 +270,14 @@ func TestCleanupDryRunReportsWithoutRunning(t *testing.T) {
 		t.Errorf("invalid policy status = %d", rw.Code)
 	}
 
-	if rw := cleanupRequest(t, db, runner, http.MethodPost, "/api/v1/repositories/r/cleanup-policies/7b9e1c52-0a3d-4e8f-8d11-6c4a9e2b5f33/dry-run", ""); rw.Code != http.StatusNotFound {
+	if rw := cleanupRequest(
+		t,
+		db,
+		runner,
+		http.MethodPost,
+		"/api/v1/repositories/r/cleanup-policies/7b9e1c52-0a3d-4e8f-8d11-6c4a9e2b5f33/dry-run",
+		"",
+	); rw.Code != http.StatusNotFound {
 		t.Errorf("unknown policy status = %d", rw.Code)
 	}
 

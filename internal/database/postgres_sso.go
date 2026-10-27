@@ -71,19 +71,31 @@ func (p *PostgresDB) CreateSSOProvider(ctx context.Context, provider *models.SSO
 		return fmt.Errorf("failed to marshal permission_mapping: %w", err)
 	}
 
-	return p.db.QueryRowContext(ctx,
-		`INSERT INTO auth_sso_providers (slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email)
+	return p.db.QueryRowContext(
+		ctx,
+		`INSERT INTO auth_sso_providers (slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping,
+			permission_mapping, auto_provision_users, link_by_email)
 		VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
 		RETURNING id, created_at, updated_at`,
-		provider.Slug, provider.Kind, provider.DisplayName, provider.Enabled,
-		provider.OIDCConfig, provider.SAMLConfig, provider.ClaimMapping, groupMappingJSON, permissionMappingJSON,
-		provider.AutoProvisionUsers, provider.LinkByEmail,
+		provider.Slug,
+		provider.Kind,
+		provider.DisplayName,
+		provider.Enabled,
+		provider.OIDCConfig,
+		provider.SAMLConfig,
+		provider.ClaimMapping,
+		groupMappingJSON,
+		permissionMappingJSON,
+		provider.AutoProvisionUsers,
+		provider.LinkByEmail,
 	).Scan(&provider.ID, &provider.CreatedAt, &provider.UpdatedAt)
 }
 
 func (p *PostgresDB) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
-	row := p.db.QueryRowContext(ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
+	row := p.db.QueryRowContext(
+		ctx,
+		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+			auto_provision_users, link_by_email, created_at, updated_at
 		FROM auth_sso_providers WHERE slug = $1`,
 		slug,
 	)
@@ -111,12 +123,24 @@ func (p *PostgresDB) UpdateSSOProvider(ctx context.Context, provider *models.SSO
 		return fmt.Errorf("failed to marshal permission_mapping: %w", err)
 	}
 
-	_, err = p.db.ExecContext(ctx,
-		`UPDATE auth_sso_providers SET slug=$2, kind=$3, display_name=$4, enabled=$5, oidc_config=$6::jsonb, saml_config=$7::jsonb, claim_mapping=$8::jsonb, group_mapping=$9::jsonb, permission_mapping=$10::jsonb, auto_provision_users=$11, link_by_email=$12
+	_, err = p.db.ExecContext(
+		ctx,
+		`UPDATE auth_sso_providers SET slug=$2, kind=$3, display_name=$4, enabled=$5, oidc_config=$6::jsonb, saml_config=$7::jsonb,
+			claim_mapping=$8::jsonb, group_mapping=$9::jsonb, permission_mapping=$10::jsonb, auto_provision_users=$11,
+			link_by_email=$12
 		WHERE id=$1`,
-		provider.ID, provider.Slug, provider.Kind, provider.DisplayName, provider.Enabled,
-		provider.OIDCConfig, provider.SAMLConfig, provider.ClaimMapping, groupMappingJSON, permissionMappingJSON,
-		provider.AutoProvisionUsers, provider.LinkByEmail,
+		provider.ID,
+		provider.Slug,
+		provider.Kind,
+		provider.DisplayName,
+		provider.Enabled,
+		provider.OIDCConfig,
+		provider.SAMLConfig,
+		provider.ClaimMapping,
+		groupMappingJSON,
+		permissionMappingJSON,
+		provider.AutoProvisionUsers,
+		provider.LinkByEmail,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update sso provider: %w", err)
@@ -135,8 +159,10 @@ func (p *PostgresDB) DeleteSSOProvider(ctx context.Context, id string) error {
 }
 
 func (p *PostgresDB) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
+	rows, err := p.db.QueryContext(
+		ctx,
+		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+			auto_provision_users, link_by_email, created_at, updated_at
 		FROM auth_sso_providers WHERE enabled = TRUE ORDER BY slug ASC`,
 	)
 	if err != nil {
@@ -148,8 +174,10 @@ func (p *PostgresDB) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSO
 }
 
 func (p *PostgresDB) ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
+	rows, err := p.db.QueryContext(
+		ctx,
+		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
+			auto_provision_users, link_by_email, created_at, updated_at
 		FROM auth_sso_providers ORDER BY slug ASC`,
 	)
 	if err != nil {
@@ -241,11 +269,15 @@ func (p *PostgresDB) GetUserByExternalID(ctx context.Context, externalID, provid
 		lastLoginAt                                    sql.NullTime
 	)
 
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
+	err := p.db.QueryRowContext(
+		ctx,
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
+			updated_at, external_id, provider_slug, sso_managed_groups
 		FROM auth_users WHERE external_id=$1 AND provider_slug=$2`,
-		externalID, providerSlug,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &extID, &provSlug, &u.SSOManagedGroups)
+		externalID,
+		providerSlug,
+	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt,
+		&u.UpdatedAt, &extID, &provSlug, &u.SSOManagedGroups)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
@@ -289,11 +321,14 @@ func (p *PostgresDB) GetUserByEmail(ctx context.Context, email string) (*models.
 		lastLoginAt                                                sql.NullTime
 	)
 
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
+	err := p.db.QueryRowContext(
+		ctx,
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
+			updated_at, external_id, provider_slug, sso_managed_groups
 		FROM auth_users WHERE email=$1`,
 		email,
-	).Scan(&u.ID, &u.Username, &emailVal, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups)
+	).Scan(&u.ID, &u.Username, &emailVal, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt,
+		&u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}

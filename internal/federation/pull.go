@@ -217,7 +217,15 @@ func (e *Engine) pull(ctx context.Context, peer *Peer, repo *RepoInfo) error {
 	prog := Progress{Cursor: peer.CursorSeq, RemoteHead: info.HeadSeq, RemoteLogID: info.LogID, OldestPending: peer.OldestPendingAt}
 
 	if e.needsFullPass(peer, info) {
-		e.Log.Infow("federation: full pass from the start of the peer log", "repo", repo.Name, "peer", peer.Name, "resync_requested", peer.ResyncRequested)
+		e.Log.Infow(
+			"federation: full pass from the start of the peer log",
+			"repo",
+			repo.Name,
+			"peer",
+			peer.Name,
+			"resync_requested",
+			peer.ResyncRequested,
+		)
 
 		prog.Cursor = 0
 		prog.OldestPending = nil
@@ -366,7 +374,19 @@ func (e *Engine) park(ctx context.Context, pc *pullCtx, entry Entry, reason stri
 		return err
 	}
 
-	e.Log.Warnw("federation: unit set aside", "repo", pc.repo.Name, "peer", pc.peer.Name, "unit", entry.UnitKey, "reason", reason, "error", cause)
+	e.Log.Warnw(
+		"federation: unit set aside",
+		"repo",
+		pc.repo.Name,
+		"peer",
+		pc.peer.Name,
+		"unit",
+		entry.UnitKey,
+		"reason",
+		reason,
+		"error",
+		cause,
+	)
 
 	return nil
 }

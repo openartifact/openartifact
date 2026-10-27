@@ -155,7 +155,8 @@ func assertRealProjectAccess(t *testing.T, dst *database.PostgresDB, got *models
 	}
 
 	groups, err := dst.ListProjectGroups(ctx, got.ID)
-	if err != nil || len(groups) != 1 || groups[0].Role != models.ProjectRoleMaintainer || groups[0].GroupName != "bk-team" || groups[0].GroupID == seed.team.ID {
+	if err != nil || len(groups) != 1 || groups[0].Role != models.ProjectRoleMaintainer || groups[0].GroupName != "bk-team" ||
+		groups[0].GroupID == seed.team.ID {
 		t.Fatalf("project groups = %+v, %v; want bk-team maintainer with a new group id", groups, err)
 	}
 
@@ -205,7 +206,10 @@ func seedACL(t *testing.T, src *database.PostgresDB) aclSeed {
 		t.Fatal(err)
 	}
 
-	target, err := src.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "bk-deploy", RepositoryFilter: "bk-*", PathPattern: "**", Actions: []string{"read", "write"}})
+	target, err := src.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "bk-deploy", RepositoryFilter: "bk-*", PathPattern: "**", Actions: []string{"read", "write"}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +235,10 @@ func seedACL(t *testing.T, src *database.PostgresDB) aclSeed {
 		t.Fatal(err)
 	}
 
-	if err := src.UpdateStorageQuota(ctx, &models.StorageQuota{RepositoryID: repo.ID, MaxSizeBytes: 2048, MaxArtifactCount: 3, WarnThresholdPercent: 60}); err != nil {
+	if err := src.UpdateStorageQuota(
+		ctx,
+		&models.StorageQuota{RepositoryID: repo.ID, MaxSizeBytes: 2048, MaxArtifactCount: 3, WarnThresholdPercent: 60},
+	); err != nil {
 		t.Fatal(err)
 	}
 

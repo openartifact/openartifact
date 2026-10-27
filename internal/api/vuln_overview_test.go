@@ -357,7 +357,12 @@ func TestVulnOverviewSummary(t *testing.T) {
 		t.Errorf("severity_at_least = %v", sev)
 	}
 
-	if rw := serveOverview(t, db, adminPrincipal(), "/api/v1/vuln/scans/summary?repo="+strings.Repeat("x", 300)); rw.Code != http.StatusBadRequest {
+	if rw := serveOverview(
+		t,
+		db,
+		adminPrincipal(),
+		"/api/v1/vuln/scans/summary?repo="+strings.Repeat("x", 300),
+	); rw.Code != http.StatusBadRequest {
 		t.Errorf("a long repo: status = %d, want 400", rw.Code)
 	}
 }

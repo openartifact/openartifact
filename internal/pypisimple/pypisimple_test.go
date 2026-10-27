@@ -140,7 +140,8 @@ func checkUpstreamFiles(t *testing.T, files []File) {
 		t.Errorf("wheel = %+v", whl)
 	}
 
-	if sdist.URL != "../../packages/foo-1.0.tar.gz" || !sdist.CoreMetadata || sdist.MetadataSHA256() != "" || !sdist.Yanked || sdist.YankedReason != "" {
+	if sdist.URL != "../../packages/foo-1.0.tar.gz" || !sdist.CoreMetadata || sdist.MetadataSHA256() != "" || !sdist.Yanked ||
+		sdist.YankedReason != "" {
 		t.Errorf("sdist = %+v", sdist)
 	}
 

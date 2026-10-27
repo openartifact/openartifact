@@ -248,7 +248,15 @@ func (w *CleanupWorker) shouldRunPolicyAt(policy *models.CleanupPolicy, now time
 	sched, err := cron.Parse(expr)
 	if err != nil {
 		if w.log != nil {
-			w.log.Warnw("invalid cleanup schedule, falling back to daily interval", "policy_id", policy.ID, "schedule_cron", expr, "error", err)
+			w.log.Warnw(
+				"invalid cleanup schedule, falling back to daily interval",
+				"policy_id",
+				policy.ID,
+				"schedule_cron",
+				expr,
+				"error",
+				err,
+			)
 		}
 
 		return policy.LastRunAt == nil || now.Sub(*policy.LastRunAt) > fallbackInterval
@@ -635,7 +643,13 @@ func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t fo
 // moveToTrash is trashCandidates with the failure reported: database.ErrTrashNotFound
 // when concurrent deletes removed every row since they were selected. actor is
 // recorded as the rows' deleted_by.
-func (w *CleanupWorker) moveToTrash(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate, actor string) (trashOutcome, error) {
+func (w *CleanupWorker) moveToTrash(
+	ctx context.Context,
+	repoID string,
+	t formatTable,
+	cs []cleanupCandidate,
+	actor string,
+) (trashOutcome, error) {
 	store, ok := w.db.(database.TrashStore)
 	if !ok {
 		return trashHard, nil
@@ -689,7 +703,12 @@ func (r *cleanupRun) names() []string {
 	return out
 }
 
-func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.CleanupPolicy, repo *models.Repository, tableInfo formatTable) (*cleanupRun, int, error) {
+func (w *CleanupWorker) deleteArtifacts(
+	ctx context.Context,
+	policy *models.CleanupPolicy,
+	repo *models.Repository,
+	tableInfo formatTable,
+) (*cleanupRun, int, error) {
 	run := newCleanupRun()
 
 	toDelete, err := w.selectCandidates(ctx, policy, tableInfo)
@@ -771,7 +790,13 @@ func (w *CleanupWorker) deleteChunk(
 // hardDelete removes rows permanently: the rows go with one statement, the
 // usage they reserved is added to run for release, and each blob leaves
 // storage once no other row references it. It returns how many rows it removed.
-func (w *CleanupWorker) hardDelete(ctx context.Context, t formatTable, eligible []cleanupCandidate, facts map[string]blobFacts, run *cleanupRun) int {
+func (w *CleanupWorker) hardDelete(
+	ctx context.Context,
+	t formatTable,
+	eligible []cleanupCandidate,
+	facts map[string]blobFacts,
+	run *cleanupRun,
+) int {
 	deleted := w.deleteRows(ctx, t.table, eligible)
 
 	var (
@@ -831,10 +856,23 @@ func (w *CleanupWorker) hardDelete(ctx context.Context, t formatTable, eligible 
 // quarantine asks for) and, in an immutable repository, released versions (a
 // worker has no admin to force). A failed quarantine lookup protects the whole
 // chunk: deleting on doubt cannot be undone.
-func (w *CleanupWorker) eligibleCandidates(ctx context.Context, repo *models.Repository, chunk []cleanupCandidate, facts map[string]blobFacts) []cleanupCandidate {
+func (w *CleanupWorker) eligibleCandidates(
+	ctx context.Context,
+	repo *models.Repository,
+	chunk []cleanupCandidate,
+	facts map[string]blobFacts,
+) []cleanupCandidate {
 	quarantined, err := w.quarantinedIDs(ctx, repo.ID, chunk)
 	if err != nil {
-		w.log.Warnw("failed to look up quarantine state for cleanup, skipping batch", "repository_id", repo.ID, "count", len(chunk), "error", err)
+		w.log.Warnw(
+			"failed to look up quarantine state for cleanup, skipping batch",
+			"repository_id",
+			repo.ID,
+			"count",
+			len(chunk),
+			"error",
+			err,
+		)
 
 		return nil
 	}

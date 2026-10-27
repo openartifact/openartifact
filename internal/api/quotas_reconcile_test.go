@@ -79,7 +79,13 @@ func TestReconcileQuotaHandler(t *testing.T) {
 		wantReconcile bool
 	}{
 		{"admin recomputes and gets the quota back", &reconcileMockDB{known: true}, admin, http.StatusOK, true},
-		{"anonymous is refused before anything runs", &reconcileMockDB{known: true}, &auth.Principal{IsAnonymous: true}, http.StatusForbidden, false},
+		{
+			"anonymous is refused before anything runs",
+			&reconcileMockDB{known: true},
+			&auth.Principal{IsAnonymous: true},
+			http.StatusForbidden,
+			false,
+		},
 		{"unknown repository", &reconcileMockDB{known: false}, admin, http.StatusNotFound, false},
 		{"repository lookup failure", &reconcileMockDB{repoErr: errors.New("db down")}, admin, http.StatusInternalServerError, false},
 		{"reconcile failure", &reconcileMockDB{known: true, reconErr: errors.New("db down")}, admin, http.StatusInternalServerError, true},

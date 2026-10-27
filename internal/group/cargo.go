@@ -35,7 +35,14 @@ const (
 // does not merge proxy versions) only the hosted members are asked (see
 // applyHostedWins), so the index lists only hosted versions and a download of
 // any other version is 404.
-func (h *Handler) serveCargo(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
+func (h *Handler) serveCargo(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	relPath string,
+	members []*models.Repository,
+	be Backend,
+) bool {
 	p, err := pkgcargo.ParsePath(relPath)
 	if err != nil {
 		http.NotFound(w, r)
@@ -58,7 +65,14 @@ func (h *Handler) serveCargoConfig(w http.ResponseWriter, r *http.Request, grp *
 	h.writeCargo(w, r, grp, pkgcargo.RenderConfig(h.baseURL, grp.Name, grp.Public), "application/json", cargoConfigMaxAge, false)
 }
 
-func (h *Handler) serveCargoIndex(w http.ResponseWriter, r *http.Request, grp *models.Repository, p pkgcargo.Path, members []*models.Repository, be Backend) {
+func (h *Handler) serveCargoIndex(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	p pkgcargo.Path,
+	members []*models.Repository,
+	be Backend,
+) {
 	// Members are asked for the file itself, always with GET and without the
 	// client's conditional headers.
 	mr := r.Clone(r.Context())
@@ -114,7 +128,15 @@ func (h *Handler) serveCargoIndex(w http.ResponseWriter, r *http.Request, grp *m
 // writeCargo answers a generated document with a content ETag, honoring
 // If-None-Match; partial (a member failed while it was assembled) sends it
 // uncacheable and without validator.
-func (h *Handler) writeCargo(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, contentType string, maxAge int, partial bool) {
+func (h *Handler) writeCargo(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	body []byte,
+	contentType string,
+	maxAge int,
+	partial bool,
+) {
 	sum := sha256.Sum256(body)
 
 	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, maxAge, partial) {

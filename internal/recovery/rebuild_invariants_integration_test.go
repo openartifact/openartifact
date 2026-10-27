@@ -220,7 +220,13 @@ func TestRebuildSkipsUnsupportedSidecars(t *testing.T) {
 
 	rep := runRebuild(t, newTestDB(t), store, RebuildOptions{})
 	if rep.SidecarsUnsupported != 2 || rep.SidecarsInvalid != 0 || rep.SidecarsValid != 0 || rep.ExitCode() != ExitOK {
-		t.Fatalf("unsupported=%d invalid=%d valid=%d exit=%d", rep.SidecarsUnsupported, rep.SidecarsInvalid, rep.SidecarsValid, rep.ExitCode())
+		t.Fatalf(
+			"unsupported=%d invalid=%d valid=%d exit=%d",
+			rep.SidecarsUnsupported,
+			rep.SidecarsInvalid,
+			rep.SidecarsValid,
+			rep.ExitCode(),
+		)
 	}
 }
 
@@ -228,7 +234,11 @@ func TestRebuildSkipsUnsupportedSidecars(t *testing.T) {
 // sidecar marker is flagged, since it usually means the wrong store.
 func TestRebuildWarnsWhenNoSidecarIsMarked(t *testing.T) {
 	store := newFSStore(t)
-	if _, err := store.Put(context.Background(), strings.NewReader("plain blob"), map[string]string{"sha256": sha([]byte("plain blob"))}); err != nil {
+	if _, err := store.Put(
+		context.Background(),
+		strings.NewReader("plain blob"),
+		map[string]string{"sha256": sha([]byte("plain blob"))},
+	); err != nil {
 		t.Fatal(err)
 	}
 

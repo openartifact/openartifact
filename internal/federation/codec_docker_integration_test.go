@@ -584,7 +584,10 @@ func TestDockerCodecDeleteManifest(t *testing.T) {
 		t.Fatalf("soft delete = %+v, want usage kept and nothing released", soft)
 	}
 
-	if n := b.count(`SELECT count(*) FROM docker_manifests WHERE repository_id = $1::uuid AND deleted_by = $2 AND deleted_at IS NOT NULL`, dockerPeer); n != 1 {
+	if n := b.count(
+		`SELECT count(*) FROM docker_manifests WHERE repository_id = $1::uuid AND deleted_by = $2 AND deleted_at IS NOT NULL`,
+		dockerPeer,
+	); n != 1 {
 		t.Fatalf("trashed manifests = %d, want 1", n)
 	}
 
@@ -739,8 +742,12 @@ func TestDockerCodecBackfillMatchesTriggerKeys(t *testing.T) {
 
 	// A trashed manifest is not live state.
 	trashed := backfilled.image(dockerTestImage, "trashed")
-	if _, err := backfilled.db.ExecContext(context.Background(),
-		`UPDATE docker_manifests SET deleted_at = now() WHERE repository_id = $1::uuid AND digest = $2`, backfilled.id, trashed); err != nil {
+	if _, err := backfilled.db.ExecContext(
+		context.Background(),
+		`UPDATE docker_manifests SET deleted_at = now() WHERE repository_id = $1::uuid AND digest = $2`,
+		backfilled.id,
+		trashed,
+	); err != nil {
 		t.Fatalf("trash manifest: %v", err)
 	}
 
@@ -797,7 +804,20 @@ func TestDockerTableColumnsAreDecided(t *testing.T) {
 	want := map[string][]string{
 		// replicated: image, digest, media_type, size, subject_digest, blob_id, created_at.
 		// local: id, repository_id, updated_at, deleted_at, deleted_by.
-		"docker_manifests": {"blob_id", "created_at", "deleted_at", "deleted_by", "digest", "id", "image", "media_type", "repository_id", "size", "subject_digest", "updated_at"},
+		"docker_manifests": {
+			"blob_id",
+			"created_at",
+			"deleted_at",
+			"deleted_by",
+			"digest",
+			"id",
+			"image",
+			"media_type",
+			"repository_id",
+			"size",
+			"subject_digest",
+			"updated_at",
+		},
 		// replicated: image, name, manifest_digest, created_at. local: the rest.
 		"docker_tags": {"created_at", "deleted_at", "deleted_by", "id", "image", "manifest_digest", "name", "repository_id", "updated_at"},
 		// replicated as refs.

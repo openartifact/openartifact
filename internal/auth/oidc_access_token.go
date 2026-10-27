@@ -115,7 +115,12 @@ func VerifyOIDCAccessToken(ctx context.Context, db database.Database, baseURL, r
 	return nil, ErrAccessTokenNotAccepted
 }
 
-func verifyAccessTokenWith(ctx context.Context, db database.Database, row *models.SSOProvider, baseURL, rawToken, audience string) (*models.User, error) {
+func verifyAccessTokenWith(
+	ctx context.Context,
+	db database.Database,
+	row *models.SSOProvider,
+	baseURL, rawToken, audience string,
+) (*models.User, error) {
 	p, err := LoadOIDCProviderRow(ctx, row, baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("load oidc provider: %w", err)

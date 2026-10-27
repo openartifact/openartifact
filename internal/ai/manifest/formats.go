@@ -86,7 +86,12 @@ func extractPyPI(ctx context.Context, src Source) ([]section, error) {
 			},
 		}})
 	case strings.HasSuffix(name, ".tar.bz2"):
-		return tarManifest(ctx, src, compBzip2, []slot{{label: "PKG-INFO", decode: readPyText, match: atDepthOne("PKG-INFO"), unique: true}})
+		return tarManifest(
+			ctx,
+			src,
+			compBzip2,
+			[]slot{{label: "PKG-INFO", decode: readPyText, match: atDepthOne("PKG-INFO"), unique: true}},
+		)
 	default:
 		return tarManifest(ctx, src, compGzip, []slot{{label: "PKG-INFO", decode: readPyText, match: atDepthOne("PKG-INFO"), unique: true}})
 	}

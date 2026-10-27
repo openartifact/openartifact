@@ -175,7 +175,12 @@ func npmSetTag(ctx context.Context, im *importer, dst, name, tag, version string
 
 	switch {
 	case npmStatus(err) == http.StatusNotFound:
-		return fmt.Errorf("dist-tag %s -> %s: the version is not in the destination (not imported, or its import failed): %w", tag, version, err)
+		return fmt.Errorf(
+			"dist-tag %s -> %s: the version is not in the destination (not imported, or its import failed): %w",
+			tag,
+			version,
+			err,
+		)
 	case err != nil:
 		return fmt.Errorf("dist-tag %s -> %s: %w", tag, version, err)
 	}

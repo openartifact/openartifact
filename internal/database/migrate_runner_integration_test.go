@@ -146,7 +146,8 @@ INSERT INTO migration_test_h VALUES (1, NULL), (1, 2)`,
 
 	var indexes int
 
-	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM pg_indexes WHERE tablename = 'migration_test_h' AND indexname LIKE 'migration_test_h_%'`).Scan(&indexes)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM pg_indexes WHERE tablename = 'migration_test_h' AND indexname LIKE 'migration_test_h_%'`).
+		Scan(&indexes)
 	if indexes != 2 {
 		t.Errorf("created %d indexes, want 2", indexes)
 	}

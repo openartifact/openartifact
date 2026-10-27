@@ -289,9 +289,30 @@ func pypiNexusFixtures(t *testing.T) ([]fakeFile, []pypiWant) {
 	bare := pypiZip(t, [2]string{"NoComp-0.3/PKG-INFO", pypiMeta("NoComp", "0.3", "License: "+pypiLongLicense)})
 
 	files := []fakeFile{
-		{path: "packages/demo-pkg/1.0.0/demo_pkg-1.0.0-py3-none-any.whl", data: wheel, created: nexusStamp, contentType: "application/zip", compName: "demo-pkg", compVersion: "1.0.0"},
-		{path: "packages/demo-pkg/1.0.0/demo-pkg-1.0.0.tar.gz", data: sdist, created: nexusStamp, contentType: "application/x-gzip", compName: "demo-pkg", compVersion: "1.0.0"},
-		{path: "packages/zope.thing/2.1/zope.thing-2.1.tar.gz", data: zope, created: nexusStamp, contentType: "application/x-gzip", compName: "Zope.Thing", compVersion: "2.1"},
+		{
+			path:        "packages/demo-pkg/1.0.0/demo_pkg-1.0.0-py3-none-any.whl",
+			data:        wheel,
+			created:     nexusStamp,
+			contentType: "application/zip",
+			compName:    "demo-pkg",
+			compVersion: "1.0.0",
+		},
+		{
+			path:        "packages/demo-pkg/1.0.0/demo-pkg-1.0.0.tar.gz",
+			data:        sdist,
+			created:     nexusStamp,
+			contentType: "application/x-gzip",
+			compName:    "demo-pkg",
+			compVersion: "1.0.0",
+		},
+		{
+			path:        "packages/zope.thing/2.1/zope.thing-2.1.tar.gz",
+			data:        zope,
+			created:     nexusStamp,
+			contentType: "application/x-gzip",
+			compName:    "Zope.Thing",
+			compVersion: "2.1",
+		},
 		{path: "packages/nocomp/0.3/nocomp-0.3.zip", data: bare, created: nexusStamp, contentType: "application/zip"},
 		{path: "simple/demo-pkg/", data: []byte("<html></html>"), created: nexusStamp, contentType: "text/html"},
 		{path: "packages/demo-pkg/1.0.0/demo-pkg-1.0.0.tar.gz.asc", data: []byte("-----BEGIN PGP SIGNATURE-----"), created: nexusStamp},
@@ -355,7 +376,16 @@ func pypiCheckUploaded(t *testing.T, oa *fakeOA, wants []pypiWant, created strin
 		}
 
 		if it.sha != sum256(w.data) || it.size != len(w.data) || it.name != w.name || it.version != w.version {
-			t.Errorf("%s: stored as %s %s (%d bytes, sha %s), want %s %s with the source bytes", w.filename, it.name, it.version, it.size, it.sha, w.name, w.version)
+			t.Errorf(
+				"%s: stored as %s %s (%d bytes, sha %s), want %s %s with the source bytes",
+				w.filename,
+				it.name,
+				it.version,
+				it.size,
+				it.sha,
+				w.name,
+				w.version,
+			)
 		}
 
 		if it.created != created {
@@ -419,7 +449,13 @@ func TestImportPyPIArtifactory(t *testing.T) {
 			}
 
 			pypiCheckUploaded(t, oa, []pypiWant{
-				{"acme_tools-3.1-py3-none-any.whl", "acme-tools", "3.1", named, map[string]string{"name": "Acme.Tools", "pyversion": "py3"}},
+				{
+					"acme_tools-3.1-py3-none-any.whl",
+					"acme-tools",
+					"3.1",
+					named,
+					map[string]string{"name": "Acme.Tools", "pyversion": "py3"},
+				},
 				{"my-lib-2.0.tar.gz", "my-lib", "2.0", fromMeta, map[string]string{"name": "my-lib", "requires_python": ">=3.10"}},
 				{"plain-0.1.tar.gz", "plain", "0.1", guessed, map[string]string{"name": "plain", "version": "0.1", "requires_python": ""}},
 				{"wrongprops-1.0.tar.gz", "wrongprops", "1.0", misleading, map[string]string{"name": "wrongprops"}},
@@ -506,11 +542,20 @@ func TestImportPyPISourceChecksumMismatchRemovesCopy(t *testing.T) {
 		t.Fatalf("failure = %+v", f)
 	}
 
-	if got := pypiState(t, oa).deleted; !slices.Equal(got, []string{"demo-pkg-1.0.0.tar.gz"}) || oa.find("py", "demo-pkg-1.0.0.tar.gz") != nil {
+	if got := pypiState(
+		t,
+		oa,
+	).deleted; !slices.Equal(got, []string{"demo-pkg-1.0.0.tar.gz"}) ||
+		oa.find("py", "demo-pkg-1.0.0.tar.gz") != nil {
 		t.Fatalf("deleted %v: the bad copy was not removed", got)
 	}
 
-	pypiCheckUploaded(t, oa, slices.DeleteFunc(slices.Clone(wants), func(w pypiWant) bool { return w.filename == "demo-pkg-1.0.0.tar.gz" }), nexusWant)
+	pypiCheckUploaded(
+		t,
+		oa,
+		slices.DeleteFunc(slices.Clone(wants), func(w pypiWant) bool { return w.filename == "demo-pkg-1.0.0.tar.gz" }),
+		nexusWant,
+	)
 }
 
 func TestImportPyPIStoredDigestMismatchRemovesCopies(t *testing.T) {
@@ -533,7 +578,13 @@ func TestImportPyPIConflictWithDifferentContentIsReported(t *testing.T) {
 	files, wants := pypiNexusFixtures(t)
 	nexus := pypiNexusServer(t, files)
 	oa := pypiNewOA(t)
-	seeded := &fakeItem{id: oa.nextID(), path: "demo-pkg-1.0.0.tar.gz", name: "demo-pkg", version: "1.0.0", sha: sum256([]byte("someone else's sdist"))}
+	seeded := &fakeItem{
+		id:      oa.nextID(),
+		path:    "demo-pkg-1.0.0.tar.gz",
+		name:    "demo-pkg",
+		version: "1.0.0",
+		sha:     sum256([]byte("someone else's sdist")),
+	}
 	oa.repos["py"].items = append(oa.repos["py"].items, seeded)
 
 	rep := runImportTest(t, pypiNexusCfg(t, nexus), nexus, oa)
@@ -772,11 +823,14 @@ func TestImportPyPIParseHeaders(t *testing.T) {
 	}
 
 	md := pypiMetadataFrom(h)
-	if md.License != "" || md.AuthorEmail != "Ada <ada@example.org>" || md.Keywords != "a,b" || !slices.Equal(md.Classifiers, []string{"A", "B"}) {
+	if md.License != "" || md.AuthorEmail != "Ada <ada@example.org>" || md.Keywords != "a,b" ||
+		!slices.Equal(md.Classifiers, []string{"A", "B"}) {
 		t.Errorf("metadata = %+v: a multi-line license must not become a form field", md)
 	}
 
-	if got := pypiMetadataFrom(pypiParseHeaders(strings.NewReader("License-Expression: MIT\nLicense: legacy text\n"))).License; got != "MIT" {
+	if got := pypiMetadataFrom(
+		pypiParseHeaders(strings.NewReader("License-Expression: MIT\nLicense: legacy text\n")),
+	).License; got != "MIT" {
 		t.Errorf("license = %q, want the SPDX expression to win", got)
 	}
 

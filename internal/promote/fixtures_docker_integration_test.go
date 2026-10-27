@@ -140,7 +140,10 @@ func dockerFixture() fixture {
 				t.Errorf("dst holds %d of the 3 source docker_blobs rows with the same blobs row", n)
 			}
 
-			if n := h.count(`SELECT COUNT(*) FROM docker_blobs WHERE repository_id = $1 AND last_used_at > now() - interval '1 hour'`, dst); n != 3 {
+			if n := h.count(
+				`SELECT COUNT(*) FROM docker_blobs WHERE repository_id = $1 AND last_used_at > now() - interval '1 hour'`,
+				dst,
+			); n != 3 {
 				t.Errorf("%d of 3 dst blobs were used recently, want all", n)
 			}
 
@@ -157,11 +160,20 @@ func dockerFixture() fixture {
 			}
 
 			want := h.str(`SELECT digest FROM docker_manifests WHERE repository_id = $1`, src)
-			if got := h.str(`SELECT manifest_digest FROM docker_tags WHERE repository_id = $1 AND image = 'team/app' AND name = '1.0' AND deleted_at IS NULL`, dst); got != want {
+			if got := h.str(
+				`SELECT manifest_digest FROM docker_tags WHERE repository_id = $1 AND image = 'team/app' AND name = '1.0' AND deleted_at IS NULL`,
+				dst,
+			); got != want {
 				t.Errorf("dst tag 1.0 points at %q, want %q", got, want)
 			}
 
-			if got := h.str(`SELECT subject_digest FROM docker_manifests WHERE repository_id = $1`, dst); got != "sha256:"+strings.Repeat("a", 64) {
+			if got := h.str(
+				`SELECT subject_digest FROM docker_manifests WHERE repository_id = $1`,
+				dst,
+			); got != "sha256:"+strings.Repeat(
+				"a",
+				64,
+			) {
 				t.Errorf("dst subject_digest = %q", got)
 			}
 		},

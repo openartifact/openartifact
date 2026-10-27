@@ -229,7 +229,11 @@ func TestProjectKindUpdateMembers(t *testing.T) {
 			live:    identMemberSpec([2]string{"alice", "owner"}, [2]string{"bob", "viewer"}, [2]string{"carol", "developer"}),
 			desired: identMemberSpec([2]string{"alice", "owner"}, [2]string{"bob", "maintainer"}, [2]string{"dave", "developer"}),
 			want: []identCall{
-				{Method: http.MethodPost, URI: "/api/v1/projects/web/members", Body: map[string]any{"username": "dave", "role": "developer"}},
+				{
+					Method: http.MethodPost,
+					URI:    "/api/v1/projects/web/members",
+					Body:   map[string]any{"username": "dave", "role": "developer"},
+				},
 				{Method: http.MethodPatch, URI: "/api/v1/projects/web/members/u-bob", Body: map[string]any{"role": "maintainer"}},
 				{Method: http.MethodDelete, URI: "/api/v1/projects/web/members/u-carol"},
 			},
@@ -325,7 +329,10 @@ func TestProjectKindValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "no members is fine", spec: map[string]any{}},
-		{name: "members with an owner", spec: map[string]any{"members": identMemberSpec([2]string{"a", "viewer"}, [2]string{"b", "owner"})}},
+		{
+			name: "members with an owner",
+			spec: map[string]any{"members": identMemberSpec([2]string{"a", "viewer"}, [2]string{"b", "owner"})},
+		},
 		{name: "members without an owner", spec: map[string]any{"members": identMemberSpec([2]string{"a", "viewer"})}, wantErr: true},
 		{name: "empty members have no owner", spec: map[string]any{"members": []any{}}, wantErr: true},
 		{name: "null allowed_formats means every format", spec: map[string]any{"allowed_formats": nil}},

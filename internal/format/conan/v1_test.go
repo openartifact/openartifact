@@ -284,7 +284,8 @@ func TestV1Search(t *testing.T) {
 	e.v1Upload(v1Recipe+"/packages/"+strings.Repeat("b", 40), v1PackageFiles())
 
 	infos := decode[map[string]map[string]string](t, e.mustDo(http.MethodGet, v1Recipe+"/search", "", http.StatusOK))
-	if len(infos) != 2 || infos[pid]["content"] != "conaninfo.txt@"+prev1 || infos[strings.Repeat("b", 40)]["content"] != v1PackageFiles()["conaninfo.txt"] {
+	if len(infos) != 2 || infos[pid]["content"] != "conaninfo.txt@"+prev1 ||
+		infos[strings.Repeat("b", 40)]["content"] != v1PackageFiles()["conaninfo.txt"] {
 		t.Errorf("package search = %v, want both packages with their conaninfo", infos)
 	}
 }
@@ -358,7 +359,14 @@ func TestV1AuthEndpoints(t *testing.T) {
 	}
 
 	bearer := &auth.Principal{Username: "alice", Credential: auth.CredentialBearerToken}
-	if w := e.doAs(bearer, http.MethodGet, "/repos/myrepo/v1/users/check_credentials", "", ""); w.Code != http.StatusOK || w.Body.String() != "alice" {
+	if w := e.doAs(
+		bearer,
+		http.MethodGet,
+		"/repos/myrepo/v1/users/check_credentials",
+		"",
+		"",
+	); w.Code != http.StatusOK ||
+		w.Body.String() != "alice" {
 		t.Errorf("v1 check_credentials = %d %q, want 200 alice", w.Code, w.Body.String())
 	}
 

@@ -134,7 +134,10 @@ func (r *cliRunner) run(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cliProbeTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, r.bin, args...) //nolint:gosec // the binary was built by this process, arguments come from its own help text
+	cmd := exec.CommandContext( //nolint:gosec // the binary was built by this process, arguments come from its own help text
+		ctx,
+		r.bin,
+		args...)
 	cmd.Env = []string{
 		"HOME=" + r.home, "USERPROFILE=" + r.home, "XDG_CONFIG_HOME=" + filepath.Join(r.home, ".config"),
 		"TMPDIR=" + r.home, "OA_SERVER=" + cliDeadServer,
@@ -510,7 +513,13 @@ func renderCLI(help cliHelp, probes []cmdProbe) ([]byte, error) {
 	var b bytes.Buffer
 
 	b.Write(header("CLI reference", "the output of `oa help` and `oa COMMAND --help`"))
-	b.WriteString("`oa` is the command-line client of the REST API. For login, the config file and worked examples see [CLI](../integrations/cli.md). Global flags go before the command. Each command group below shows its usage as printed by `oa help`; commands that parse flags list them as printed by `oa COMMAND --help` (the flag package accepts both `-flag` and `--flag`).\n\n")
+	b.WriteString(
+		"`oa` is the command-line client of the REST API. For login, the config file and worked examples see " +
+			"[CLI](../integrations/cli.md). Global flags go before the command. " +
+			"Each command group below shows its usage as printed by `oa help`; " +
+			"commands that parse flags list them as printed by `oa COMMAND --help` " +
+			"(the flag package accepts both `-flag` and `--flag`).\n\n",
+	)
 
 	b.WriteString("## Usage\n\n")
 	fence(&b, help.Usage.Lines...)

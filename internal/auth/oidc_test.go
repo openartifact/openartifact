@@ -189,7 +189,11 @@ func TestLoadOIDCProviderRow_UndecryptableSecretIsAnError(t *testing.T) {
 
 	idp := newFakeIdP(t)
 
-	_, err := LoadOIDCProviderRow(context.Background(), oidcRow(t, "oidc-nokey", idp.srv.URL, "enc:v1:AAAAAAAAAAAAAAAAAAAAAAAA", true), "http://localhost")
+	_, err := LoadOIDCProviderRow(
+		context.Background(),
+		oidcRow(t, "oidc-nokey", idp.srv.URL, "enc:v1:AAAAAAAAAAAAAAAAAAAAAAAA", true),
+		"http://localhost",
+	)
 	if !errors.Is(err, ErrOIDCSecretUnusable) {
 		t.Fatalf("expected ErrOIDCSecretUnusable (no plaintext fallback), got %v", err)
 	}

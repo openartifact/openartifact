@@ -250,7 +250,9 @@ func (r *Rebuilder) checkBlobs(rep *Report, st *applyState, t *Table, cs []*cand
 		}
 
 		if missing != "" {
-			rep.addUnrecoverable(Item{Table: t.Name, Key: c.e.key, Blob: missing, Reason: "references a blob whose bytes are missing from storage"})
+			rep.addUnrecoverable(
+				Item{Table: t.Name, Key: c.e.key, Blob: missing, Reason: "references a blob whose bytes are missing from storage"},
+			)
 
 			continue
 		}

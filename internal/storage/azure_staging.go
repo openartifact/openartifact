@@ -68,7 +68,12 @@ func (a *AzureBlobStore) PresignStagingPut(_ context.Context, id string, size in
 	}
 
 	if size > azureMaxPutBlob {
-		return PresignedPut{}, fmt.Errorf("%w: %d bytes exceed the Azure Put Blob limit of %d", ErrSingleUploadTooLarge, size, azureMaxPutBlob)
+		return PresignedPut{}, fmt.Errorf(
+			"%w: %d bytes exceed the Azure Put Blob limit of %d",
+			ErrSingleUploadTooLarge,
+			size,
+			azureMaxPutBlob,
+		)
 	}
 
 	expires := a.now().Add(ClampStagingTTL(ttl)).UTC().Truncate(time.Second)

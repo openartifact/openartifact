@@ -90,7 +90,8 @@ func (f *rpmFixture) primary() (string, string) {
 
 	var path, sha string
 	if err := f.pg.GetDB().QueryRowContext(context.Background(),
-		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND path LIKE 'repodata/%-primary.xml.gz'`, f.repoID).Scan(&path, &sha); err != nil {
+		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND path LIKE 'repodata/%-primary.xml.gz'`, f.repoID).
+		Scan(&path, &sha); err != nil {
 		f.t.Fatalf("no primary.xml advertised: %v", err)
 	}
 
@@ -213,7 +214,10 @@ func TestRPMRegenerateStaleRebuildsOnlyStaleRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f.exec(`INSERT INTO rpm_repos (repository_id, base_arch, metadata_stale) VALUES ($1, 'x86_64', false) ON CONFLICT (repository_id, base_arch) DO UPDATE SET metadata_stale = false`, other.ID)
+	f.exec(
+		`INSERT INTO rpm_repos (repository_id, base_arch, metadata_stale) VALUES ($1, 'x86_64', false) ON CONFLICT (repository_id, base_arch) DO UPDATE SET metadata_stale = false`,
+		other.ID,
+	)
 
 	f.markStale()
 	f.w.RegenerateStale(context.Background())

@@ -92,7 +92,11 @@ func TestProjectTokenLifecycle(t *testing.T) {
 		t.Fatalf("service user = %+v, %v", svc, err)
 	}
 
-	if grants, err := f.db.ListProjectGrantsByUser(ctx, svc.ID); err != nil || len(grants) != 1 || grants[0].Role != models.ProjectRoleDeveloper {
+	if grants, err := f.db.ListProjectGrantsByUser(
+		ctx,
+		svc.ID,
+	); err != nil || len(grants) != 1 ||
+		grants[0].Role != models.ProjectRoleDeveloper {
 		t.Fatalf("service grants = %v, %v", grants, err)
 	}
 
@@ -318,7 +322,8 @@ func TestProjectTokenAdminList(t *testing.T) {
 
 	for _, tok := range all {
 		if tok.Name == "listed" {
-			if tok.ProjectName != f.project.Name || tok.CreatedByName != f.dev.Username || deref(tok.ProjectRole) != models.ProjectRoleDeveloper {
+			if tok.ProjectName != f.project.Name || tok.CreatedByName != f.dev.Username ||
+				deref(tok.ProjectRole) != models.ProjectRoleDeveloper {
 				t.Fatalf("admin row = %+v", tok)
 			}
 

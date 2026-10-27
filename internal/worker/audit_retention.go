@@ -80,7 +80,13 @@ type AuditRetentionWorker struct {
 // nothing), interval the pause between scheduled passes and batch the entries
 // one delete statement removes. Without a database that implements
 // database.AuditRetentionStore the worker does nothing.
-func NewAuditRetentionWorker(db database.Database, log *logger.Logger, retentionDays int, interval time.Duration, batch int) *AuditRetentionWorker {
+func NewAuditRetentionWorker(
+	db database.Database,
+	log *logger.Logger,
+	retentionDays int,
+	interval time.Duration,
+	batch int,
+) *AuditRetentionWorker {
 	runCtx, cancel := context.WithCancel(context.Background())
 
 	store, _ := db.(database.AuditRetentionStore)

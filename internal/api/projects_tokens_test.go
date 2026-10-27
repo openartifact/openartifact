@@ -55,7 +55,8 @@ func (db *projectsMockDB) ListProjectTokens(_ context.Context, projectID string,
 	var out []*models.Token
 
 	for _, t := range db.tokenStore.tokens {
-		if t.ProjectID != nil && *t.ProjectID == projectID && t.RevokedAt == nil && (createdBy == nil || (t.CreatedBy != nil && *t.CreatedBy == *createdBy)) {
+		if t.ProjectID != nil && *t.ProjectID == projectID && t.RevokedAt == nil &&
+			(createdBy == nil || (t.CreatedBy != nil && *t.CreatedBy == *createdBy)) {
 			out = append(out, t)
 		}
 	}
@@ -186,21 +187,49 @@ func TestProjectTokenConflicts(t *testing.T) {
 	router := newProjectsRouter(t, db)
 	owner := sessionPrincipal(uOwner1)
 
-	if status, out := projectJSONAs(t, router, owner, http.MethodPost, "/api/v1/projects/acme/tokens", mintBody("ci", "developer", 5)); status != http.StatusCreated {
+	if status, out := projectJSONAs(
+		t,
+		router,
+		owner,
+		http.MethodPost,
+		"/api/v1/projects/acme/tokens",
+		mintBody("ci", "developer", 5),
+	); status != http.StatusCreated {
 		t.Fatalf("first mint = %d %v", status, out)
 	}
 
-	if status, _ := projectJSONAs(t, router, owner, http.MethodPost, "/api/v1/projects/acme/tokens", mintBody("ci", "viewer", 5)); status != http.StatusConflict {
+	if status, _ := projectJSONAs(
+		t,
+		router,
+		owner,
+		http.MethodPost,
+		"/api/v1/projects/acme/tokens",
+		mintBody("ci", "viewer", 5),
+	); status != http.StatusConflict {
 		t.Fatalf("duplicate name = %d, want 409", status)
 	}
 
 	for i := 1; i < maxProjectTokens; i++ {
-		if status, out := projectJSONAs(t, router, owner, http.MethodPost, "/api/v1/projects/acme/tokens", mintBody(fmt.Sprintf("t%d", i), "viewer", 5)); status != http.StatusCreated {
+		if status, out := projectJSONAs(
+			t,
+			router,
+			owner,
+			http.MethodPost,
+			"/api/v1/projects/acme/tokens",
+			mintBody(fmt.Sprintf("t%d", i), "viewer", 5),
+		); status != http.StatusCreated {
 			t.Fatalf("mint %d = %d %v", i, status, out)
 		}
 	}
 
-	if status, _ := projectJSONAs(t, router, owner, http.MethodPost, "/api/v1/projects/acme/tokens", mintBody("one-too-many", "viewer", 5)); status != http.StatusConflict {
+	if status, _ := projectJSONAs(
+		t,
+		router,
+		owner,
+		http.MethodPost,
+		"/api/v1/projects/acme/tokens",
+		mintBody("one-too-many", "viewer", 5),
+	); status != http.StatusConflict {
 		t.Fatalf("101st token = %d, want 409", status)
 	}
 }
@@ -212,7 +241,14 @@ func TestProjectTokenListAndRevoke(t *testing.T) {
 	mint := func(user, name string) string {
 		t.Helper()
 
-		status, out := projectJSONAs(t, router, sessionPrincipal(user), http.MethodPost, "/api/v1/projects/acme/tokens", mintBody(name, "viewer", 5))
+		status, out := projectJSONAs(
+			t,
+			router,
+			sessionPrincipal(user),
+			http.MethodPost,
+			"/api/v1/projects/acme/tokens",
+			mintBody(name, "viewer", 5),
+		)
 		if status != http.StatusCreated {
 			t.Fatalf("mint %s = %d %v", name, status, out)
 		}
@@ -320,7 +356,14 @@ func TestProjectTokenAudit(t *testing.T) {
 	_, out := projectJSONAs(t, router, owner, http.MethodPost, "/api/v1/projects/acme/tokens", mintBody("ci", "developer", 5))
 	id, _ := out["id"].(string)
 
-	if status, _ := projectJSONAs(t, router, owner, http.MethodDelete, "/api/v1/projects/acme/tokens/"+id, ""); status != http.StatusNoContent {
+	if status, _ := projectJSONAs(
+		t,
+		router,
+		owner,
+		http.MethodDelete,
+		"/api/v1/projects/acme/tokens/"+id,
+		"",
+	); status != http.StatusNoContent {
 		t.Fatalf("revoke = %d", status)
 	}
 
@@ -332,7 +375,14 @@ func TestProjectTokenAudit(t *testing.T) {
 	for i, action := range []string{"project.token_created", "project.token_revoked"} {
 		r := rows[i]
 		if r.Action != action || deref(r.ProjectID) != testAcmeID || deref(r.ResourceType) != "project_token" || deref(r.ResourceID) != id {
-			t.Fatalf("row %d = %s project=%s type=%s resource=%s", i, r.Action, deref(r.ProjectID), deref(r.ResourceType), deref(r.ResourceID))
+			t.Fatalf(
+				"row %d = %s project=%s type=%s resource=%s",
+				i,
+				r.Action,
+				deref(r.ProjectID),
+				deref(r.ResourceType),
+				deref(r.ResourceID),
+			)
 		}
 	}
 }

@@ -83,7 +83,9 @@ func (d *pzDB) ListAuditLogs(_ context.Context, params models.AuditListParams) (
 
 func (d *pzDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
 	if d.admins[userID] {
-		return []*models.PermissionTarget{{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}}}, nil
+		return []*models.PermissionTarget{
+			{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}},
+		}, nil
 	}
 
 	return nil, nil
@@ -275,7 +277,13 @@ func (d *pzDB) member(projectID, userID string) *models.ProjectMember {
 		return nil
 	}
 
-	return &models.ProjectMember{ID: projectID + ":" + userID, ProjectID: projectID, UserID: userID, Username: d.users[userID].Username, Role: role}
+	return &models.ProjectMember{
+		ID:        projectID + ":" + userID,
+		ProjectID: projectID,
+		UserID:    userID,
+		Username:  d.users[userID].Username,
+		Role:      role,
+	}
 }
 
 func (d *pzDB) GetProjectMember(_ context.Context, projectID, userID string) (*models.ProjectMember, error) {
@@ -425,7 +433,12 @@ func newPZFixture(t *testing.T) *pzFixture {
 			pzBeta: {ID: pzBeta, Name: "beta", OwnerID: str("00000000-0000-4000-8000-0000000000a5"), Slug: "beta"},
 		},
 		members: map[string]map[string]string{
-			pzAcme: {"00000000-0000-4000-8000-0000000000a2": "owner", "00000000-0000-4000-8000-0000000000a3": "maintainer", "00000000-0000-4000-8000-0000000000a4": "developer", "00000000-0000-4000-8000-0000000000a5": "viewer"},
+			pzAcme: {
+				"00000000-0000-4000-8000-0000000000a2": "owner",
+				"00000000-0000-4000-8000-0000000000a3": "maintainer",
+				"00000000-0000-4000-8000-0000000000a4": "developer",
+				"00000000-0000-4000-8000-0000000000a5": "viewer",
+			},
 			pzBeta: {"00000000-0000-4000-8000-0000000000a5": "owner"},
 		},
 		groups:   map[string]*models.Group{pzGroupEng: {ID: pzGroupEng, Name: "eng"}},
@@ -508,7 +521,13 @@ func TestProjectAuthzE2E_OwnerManagesMembers(t *testing.T) {
 	f := newPZFixture(t)
 
 	// A non-admin owner adds a member by username.
-	out := f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPost, "/api/v1/projects/acme/members", `{"username":"nina","role":"viewer"}`, http.StatusCreated)
+	out := f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"username":"nina","role":"viewer"}`,
+		http.StatusCreated,
+	)
 	if out["username"] != "nina" || out["role"] != "viewer" {
 		t.Fatalf("member = %v", out)
 	}
@@ -516,19 +535,55 @@ func TestProjectAuthzE2E_OwnerManagesMembers(t *testing.T) {
 	// The new viewer sees the project and its members, but cannot manage them.
 	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodGet, "/api/v1/projects/acme", "", http.StatusOK)
 	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodGet, "/api/v1/projects/acme/members", "", http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPost, "/api/v1/projects/acme/members", `{"username":"otto","role":"viewer"}`, http.StatusForbidden)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"username":"otto","role":"viewer"}`,
+		http.StatusForbidden,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPatch, "/api/v1/projects/acme", `{"description":"x"}`, http.StatusForbidden)
 	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodDelete, "/api/v1/projects/acme", "", http.StatusForbidden)
 
 	// Duplicate add is a conflict; the owner changes and removes the role.
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPost, "/api/v1/projects/acme/members", `{"user_id":"00000000-0000-4000-8000-0000000000a7","role":"viewer"}`, http.StatusConflict)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a7", `{"role":"maintainer"}`, http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodDelete, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a7", "", http.StatusNoContent)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"user_id":"00000000-0000-4000-8000-0000000000a7","role":"viewer"}`,
+		http.StatusConflict,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a7",
+		`{"role":"maintainer"}`,
+		http.StatusOK,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodDelete,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a7",
+		"",
+		http.StatusNoContent,
+	)
 
 	// Malformed member ids are plain misses, never database errors.
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPatch, "/api/v1/projects/acme/members/not-a-uuid", `{"role":"viewer"}`, http.StatusNotFound)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/not-a-uuid",
+		`{"role":"viewer"}`,
+		http.StatusNotFound,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodDelete, "/api/v1/projects/acme/members/not-a-uuid", "", http.StatusNotFound)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPost, "/api/v1/projects/acme/members", `{"user_id":"not-a-uuid"}`, http.StatusBadRequest)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"user_id":"not-a-uuid"}`,
+		http.StatusBadRequest,
+	)
 
 	// Removed: the project is invisible again.
 	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodGet, "/api/v1/projects/acme", "", http.StatusNotFound)
@@ -548,7 +603,13 @@ func TestProjectAuthzE2E_NonMemberAndUnknownLookAlike(t *testing.T) {
 
 	for _, p := range paths {
 		got := f.expect("00000000-0000-4000-8000-0000000000a6", p.method, p.path, p.body, http.StatusNotFound)
-		ghost := f.expect("00000000-0000-4000-8000-0000000000a6", p.method, strings.Replace(p.path, "acme", "ghost", 1), p.body, http.StatusNotFound)
+		ghost := f.expect(
+			"00000000-0000-4000-8000-0000000000a6",
+			p.method,
+			strings.Replace(p.path, "acme", "ghost", 1),
+			p.body,
+			http.StatusNotFound,
+		)
 
 		if got["error"] != ghost["error"] {
 			t.Errorf("%s %s: non-member body %v differs from unknown project body %v", p.method, p.path, got, ghost)
@@ -558,40 +619,142 @@ func TestProjectAuthzE2E_NonMemberAndUnknownLookAlike(t *testing.T) {
 	// An owner of another project is a non-member here.
 	f.expect("00000000-0000-4000-8000-0000000000a5", http.MethodGet, "/api/v1/projects/beta", "", http.StatusOK)
 	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodGet, "/api/v1/projects/beta", "", http.StatusNotFound)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPost, "/api/v1/projects/beta/members", `{"username":"otto"}`, http.StatusNotFound)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPost,
+		"/api/v1/projects/beta/members",
+		`{"username":"otto"}`,
+		http.StatusNotFound,
+	)
 }
 
 func TestProjectAuthzE2E_MaintainerEscalationGuards(t *testing.T) {
 	f := newPZFixture(t)
 
 	// A maintainer adds developers but cannot grant maintainer or owner.
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPost, "/api/v1/projects/acme/members", `{"username":"nina","role":"developer"}`, http.StatusCreated)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPost, "/api/v1/projects/acme/members", `{"username":"otto","role":"maintainer"}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPost, "/api/v1/projects/acme/members", `{"username":"otto","role":"owner"}`, http.StatusForbidden)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"username":"nina","role":"developer"}`,
+		http.StatusCreated,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"username":"otto","role":"maintainer"}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPost,
+		"/api/v1/projects/acme/members",
+		`{"username":"otto","role":"owner"}`,
+		http.StatusForbidden,
+	)
 
 	// Nor can they promote someone to owner, demote or remove an owner or
 	// maintainer, or self-promote.
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a4", `{"role":"owner"}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a3", `{"role":"owner"}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2", `{"role":"viewer"}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodDelete, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2", "", http.StatusForbidden)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a4",
+		`{"role":"owner"}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a3",
+		`{"role":"owner"}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2",
+		`{"role":"viewer"}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodDelete,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2",
+		"",
+		http.StatusForbidden,
+	)
 
 	// Groups: below maintainer only.
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPut, "/api/v1/projects/acme/groups/eng", `{"role":"maintainer"}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPut, "/api/v1/projects/acme/groups/eng", `{"role":"developer"}`, http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPut, "/api/v1/projects/acme/groups/"+pzGroupEng, `{"role":"maintainer"}`, http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodPut, "/api/v1/projects/acme/groups/eng", `{"role":"viewer"}`, http.StatusForbidden)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPut,
+		"/api/v1/projects/acme/groups/eng",
+		`{"role":"maintainer"}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPut,
+		"/api/v1/projects/acme/groups/eng",
+		`{"role":"developer"}`,
+		http.StatusOK,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPut,
+		"/api/v1/projects/acme/groups/"+pzGroupEng,
+		`{"role":"maintainer"}`,
+		http.StatusOK,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a3",
+		http.MethodPut,
+		"/api/v1/projects/acme/groups/eng",
+		`{"role":"viewer"}`,
+		http.StatusForbidden,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a3", http.MethodDelete, "/api/v1/projects/acme/groups/eng", "", http.StatusForbidden)
 	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodDelete, "/api/v1/projects/acme/groups/eng", "", http.StatusNoContent)
 
 	// The recorded owner and the last owner are protected from everyone.
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2", `{"role":"viewer"}`, http.StatusConflict)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodDelete, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2", "", http.StatusConflict)
-	f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodDelete, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2", "", http.StatusConflict)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2",
+		`{"role":"viewer"}`,
+		http.StatusConflict,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodDelete,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2",
+		"",
+		http.StatusConflict,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a1",
+		http.MethodDelete,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a2",
+		"",
+		http.StatusConflict,
+	)
 
 	// An owner may promote a second owner, who is then demotable.
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a4", `{"role":"owner"}`, http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a4", http.MethodPatch, "/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a4", `{"role":"viewer"}`, http.StatusOK)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a4",
+		`{"role":"owner"}`,
+		http.StatusOK,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a4",
+		http.MethodPatch,
+		"/api/v1/projects/acme/members/00000000-0000-4000-8000-0000000000a4",
+		`{"role":"viewer"}`,
+		http.StatusOK,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a4", http.MethodGet, "/api/v1/projects/acme", "", http.StatusOK)
 	f.expect("00000000-0000-4000-8000-0000000000a4", http.MethodPatch, "/api/v1/projects/acme", `{"description":"x"}`, http.StatusForbidden)
 }
@@ -600,12 +763,30 @@ func TestProjectAuthzE2E_PolicyAndUpdate(t *testing.T) {
 	f := newPZFixture(t)
 
 	// Owners edit display fields but never the policy.
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPatch, "/api/v1/projects/acme", `{"display_name":"Acme Inc"}`, http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a2", http.MethodPatch, "/api/v1/projects/acme", `{"max_repositories":1000}`, http.StatusForbidden)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPatch,
+		"/api/v1/projects/acme",
+		`{"display_name":"Acme Inc"}`,
+		http.StatusOK,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a2",
+		http.MethodPatch,
+		"/api/v1/projects/acme",
+		`{"max_repositories":1000}`,
+		http.StatusForbidden,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodPatch, "/api/v1/projects/acme", `{"max_repositories":1000}`, http.StatusOK)
 
 	// PUT is no longer an update verb.
-	if got, _ := f.do("00000000-0000-4000-8000-0000000000a1", http.MethodPut, "/api/v1/projects/acme", `{"display_name":"x"}`); got != http.StatusNotFound && got != http.StatusMethodNotAllowed {
+	if got, _ := f.do(
+		"00000000-0000-4000-8000-0000000000a1",
+		http.MethodPut,
+		"/api/v1/projects/acme",
+		`{"display_name":"x"}`,
+	); got != http.StatusNotFound &&
+		got != http.StatusMethodNotAllowed {
 		t.Fatalf("PUT /projects/acme = %d, want 404 or 405", got)
 	}
 
@@ -636,7 +817,13 @@ func TestProjectAuthzE2E_PolicyAndUpdate(t *testing.T) {
 
 	// Admin oversight: any project, any member change, as an implicit owner.
 	f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodGet, "/api/v1/projects/beta/members", "", http.StatusOK)
-	f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodPost, "/api/v1/projects/beta/members", `{"username":"nina","role":"maintainer"}`, http.StatusCreated)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a1",
+		http.MethodPost,
+		"/api/v1/projects/beta/members",
+		`{"username":"nina","role":"maintainer"}`,
+		http.StatusCreated,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodDelete, "/api/v1/projects/beta", "", http.StatusNoContent)
 }
 
@@ -648,31 +835,79 @@ func TestProjectAuthzE2E_SelfCreate(t *testing.T) {
 	// Off by default: neither listing's can_create nor POST allows it.
 	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPost, "/api/v1/projects", body, http.StatusForbidden)
 
-	if out := f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodGet, "/api/v1/projects", "", http.StatusOK); out["can_create"] != false {
+	if out := f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodGet,
+		"/api/v1/projects",
+		"",
+		http.StatusOK,
+	); out["can_create"] != false {
 		t.Fatalf("can_create = %v, want false", out["can_create"])
 	}
 
 	// Only admins flip the switch.
-	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPut, "/api/v1/admin/projects/settings", `{"self_create":true}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodPut, "/api/v1/admin/projects/settings", `{"self_create":true}`, http.StatusOK)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodPut,
+		"/api/v1/admin/projects/settings",
+		`{"self_create":true}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a1",
+		http.MethodPut,
+		"/api/v1/admin/projects/settings",
+		`{"self_create":true}`,
+		http.StatusOK,
+	)
 
-	if out := f.expect("00000000-0000-4000-8000-0000000000a1", http.MethodGet, "/api/v1/admin/projects/settings", "", http.StatusOK); out["self_create"] != true {
+	if out := f.expect(
+		"00000000-0000-4000-8000-0000000000a1",
+		http.MethodGet,
+		"/api/v1/admin/projects/settings",
+		"",
+		http.StatusOK,
+	); out["self_create"] != true {
 		t.Fatalf("settings = %v", out)
 	}
 
 	// On: any user creates a project and becomes its owner with default policy.
-	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPost, "/api/v1/projects", `{"name":"mine","max_repositories":9999}`, http.StatusForbidden)
-	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPost, "/api/v1/projects", `{"name":"mine","owner":"otto"}`, http.StatusForbidden)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodPost,
+		"/api/v1/projects",
+		`{"name":"mine","max_repositories":9999}`,
+		http.StatusForbidden,
+	)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodPost,
+		"/api/v1/projects",
+		`{"name":"mine","owner":"otto"}`,
+		http.StatusForbidden,
+	)
 
 	created := f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPost, "/api/v1/projects", body, http.StatusCreated)
 	if created["my_role"] != "owner" || created["owner_id"] != "00000000-0000-4000-8000-0000000000a7" {
 		t.Fatalf("created = %v", created)
 	}
 
-	f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodPost, "/api/v1/projects/mine/members", `{"username":"otto","role":"viewer"}`, http.StatusCreated)
+	f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodPost,
+		"/api/v1/projects/mine/members",
+		`{"username":"otto","role":"viewer"}`,
+		http.StatusCreated,
+	)
 	f.expect("00000000-0000-4000-8000-0000000000a6", http.MethodGet, "/api/v1/projects/mine", "", http.StatusOK)
 
-	if out := f.expect("00000000-0000-4000-8000-0000000000a7", http.MethodGet, "/api/v1/projects", "", http.StatusOK); out["can_create"] != true {
+	if out := f.expect(
+		"00000000-0000-4000-8000-0000000000a7",
+		http.MethodGet,
+		"/api/v1/projects",
+		"",
+		http.StatusOK,
+	); out["can_create"] != true {
 		t.Fatalf("can_create = %v, want true", out["can_create"])
 	}
 

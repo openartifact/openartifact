@@ -277,7 +277,13 @@ func (e *auditExport) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (e *auditExport) stream(ctx context.Context, rc *http.ResponseController, out *bufio.Writer, enc exportEncoder, page *models.AuditPage) error {
+func (e *auditExport) stream(
+	ctx context.Context,
+	rc *http.ResponseController,
+	out *bufio.Writer,
+	enc exportEncoder,
+	page *models.AuditPage,
+) error {
 	if err := enc.start(); err != nil {
 		return err
 	}

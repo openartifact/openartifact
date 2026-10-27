@@ -41,12 +41,22 @@ type DB interface {
 	TouchBlobAccess(ctx context.Context, accessed map[string]time.Time, resolution time.Duration) (int64, error)
 
 	BeginStorageTierMove(ctx context.Context, m *models.StorageTierMove) (*models.StorageTierMove, bool, error)
-	ListRecoverableStorageTierMoves(ctx context.Context, maxAttempts int, retryAfter time.Duration, limit int) ([]*models.StorageTierMove, error)
+	ListRecoverableStorageTierMoves(
+		ctx context.Context,
+		maxAttempts int,
+		retryAfter time.Duration,
+		limit int,
+	) ([]*models.StorageTierMove, error)
 	CountStorageTierMoves(ctx context.Context) (int64, error)
 	FailStorageTierMove(ctx context.Context, sha256, message string) error
 	FinishStorageTierMove(ctx context.Context, sha256 string) error
 
-	ScanTierCandidates(ctx context.Context, after string, window int, clauses []models.TierScanClause) (found []models.BlobFacts, next string, scanned int, err error)
+	ScanTierCandidates(
+		ctx context.Context,
+		after string,
+		window int,
+		clauses []models.TierScanClause,
+	) (found []models.BlobFacts, next string, scanned int, err error)
 	ListPromotionCandidates(ctx context.Context, backendIDs []string, after string, limit int) ([]models.BlobFacts, error)
 	ListBlobRefs(ctx context.Context, shas []string) (map[string][]models.BlobRef, error)
 }

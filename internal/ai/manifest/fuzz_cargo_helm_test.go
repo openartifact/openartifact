@@ -63,8 +63,20 @@ func FuzzExtractCargoHelm(f *testing.F) {
 	f.Add(twice, "demo-0.1.0.crate", false, false, false)
 	f.Add(chart, "demo-1.0.0.tgz", true, true, true)
 	f.Add(chart, "demo-1.0.0.tar.gz", false, false, true)
-	f.Add(cargoHelmFuzzTarball(cargoHelmFuzzMember{"/abs/Cargo.toml", "x"}, cargoHelmFuzzMember{"../Cargo.toml", "x"}), "demo.crate", false, true, false)
-	f.Add(cargoHelmFuzzTarball(cargoHelmFuzzMember{"demo/Cargo.toml", "name = \"\x00\xff\"\n" + strings.Repeat("x", cargoHelmFuzzLimit)}), "demo.crate", false, true, false)
+	f.Add(
+		cargoHelmFuzzTarball(cargoHelmFuzzMember{"/abs/Cargo.toml", "x"}, cargoHelmFuzzMember{"../Cargo.toml", "x"}),
+		"demo.crate",
+		false,
+		true,
+		false,
+	)
+	f.Add(
+		cargoHelmFuzzTarball(cargoHelmFuzzMember{"demo/Cargo.toml", "name = \"\x00\xff\"\n" + strings.Repeat("x", cargoHelmFuzzLimit)}),
+		"demo.crate",
+		false,
+		true,
+		false,
+	)
 	f.Add([]byte{0x1f, 0x8b}, "demo.crate", false, false, false)
 	f.Add([]byte{}, "", false, false, true)
 

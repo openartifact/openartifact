@@ -165,15 +165,32 @@ func accessTokenCases() []accessTokenCase {
 
 	return []accessTokenCase{
 		{name: "valid", aud: []string{accessTokenResource}, expiresIn: validExp, user: active, wantUserID: "user-1"},
-		{name: "valid among several audiences", aud: []string{"other", accessTokenResource}, expiresIn: validExp, user: active, wantUserID: "user-1"},
-		{name: "trailing slash difference accepted", aud: []string{accessTokenResource + "/"}, expiresIn: validExp, user: active, wantUserID: "user-1"},
+		{
+			name:       "valid among several audiences",
+			aud:        []string{"other", accessTokenResource},
+			expiresIn:  validExp,
+			user:       active,
+			wantUserID: "user-1",
+		},
+		{
+			name:       "trailing slash difference accepted",
+			aud:        []string{accessTokenResource + "/"},
+			expiresIn:  validExp,
+			user:       active,
+			wantUserID: "user-1",
+		},
 		{name: "wrong audience", aud: []string{"https://other.example/mcp"}, expiresIn: validExp, user: active},
 		{name: "id token style client id audience", aud: []string{"cid"}, expiresIn: validExp, user: active},
 		{name: "unknown issuer", aud: []string{accessTokenResource}, iss: "https://unknown.example", expiresIn: validExp, user: active},
 		{name: "expired", aud: []string{accessTokenResource}, expiresIn: -time.Hour, user: active},
 		{name: "signed by a different key", aud: []string{accessTokenResource}, expiresIn: validExp, rogueKey: true, user: active},
 		{name: "subject without linked user", aud: []string{accessTokenResource}, expiresIn: validExp},
-		{name: "disabled user", aud: []string{accessTokenResource}, expiresIn: validExp, user: &models.User{ID: "user-2", Username: "bob", Disabled: true}},
+		{
+			name:      "disabled user",
+			aud:       []string{accessTokenResource},
+			expiresIn: validExp,
+			user:      &models.User{ID: "user-2", Username: "bob", Disabled: true},
+		},
 		{name: "disabled provider", aud: []string{accessTokenResource}, expiresIn: validExp, user: active, providerDisabled: true},
 	}
 }
@@ -299,7 +316,11 @@ func TestOIDCIssuers(t *testing.T) {
 		},
 		{
 			name: "duplicate issuers collapse",
-			rows: []*models.SSOProvider{oidcRow(t, "oat-iss-a1", issuerA, "", true), oidcRow(t, "oat-iss-a2", issuerA, "", true), oidcRow(t, "oat-iss-b1", issuerB, "", true)},
+			rows: []*models.SSOProvider{
+				oidcRow(t, "oat-iss-a1", issuerA, "", true),
+				oidcRow(t, "oat-iss-a2", issuerA, "", true),
+				oidcRow(t, "oat-iss-b1", issuerB, "", true),
+			},
 			want: []string{issuerA, issuerB},
 		},
 		{

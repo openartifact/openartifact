@@ -55,7 +55,8 @@ func TestBackfillRepairsInstalledAndArchiveSize(t *testing.T) {
 		t.Errorf("a row with sizes was re-read: installed=%d", pkgs[1].InstalledSize)
 	}
 
-	if db.sha != sha || !bytes.Contains(db.extra, []byte(`"sizes_parsed":true`)) || !bytes.Contains(db.extra, []byte(`"installed_size":100012`)) {
+	if db.sha != sha || !bytes.Contains(db.extra, []byte(`"sizes_parsed":true`)) ||
+		!bytes.Contains(db.extra, []byte(`"installed_size":100012`)) {
 		t.Errorf("extra not persisted with sizes: %q %s", db.sha, db.extra)
 	}
 }

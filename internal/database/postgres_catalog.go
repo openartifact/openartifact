@@ -174,7 +174,11 @@ func (p *PostgresDB) ListRepoPackageRollup(ctx context.Context, opts models.Pack
 }
 
 // rollupPage runs the first stage of the rollup for one page.
-func (p *PostgresDB) rollupPage(ctx context.Context, opts models.PackageRollupOptions, limit, offset int) ([]models.PackageRollup, int, error) {
+func (p *PostgresDB) rollupPage(
+	ctx context.Context,
+	opts models.PackageRollupOptions,
+	limit, offset int,
+) ([]models.PackageRollup, int, error) {
 	query, args := rollupQuery(rollupFilter{
 		repoID: opts.RepoID, repoFormat: opts.RepoFormat,
 		format: opts.Format, name: opts.Name, query: opts.Query,
@@ -258,7 +262,11 @@ func (p *PostgresDB) loadRollupSizes(ctx context.Context, opts models.PackageRol
 
 // ArtifactSecurity returns the scan state of the packages of repoID with the
 // given listing row ids. A package that was never scanned has no entry.
-func (p *PostgresDB) ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error) {
+func (p *PostgresDB) ArtifactSecurity(
+	ctx context.Context,
+	repoID string,
+	artifactIDs []string,
+) (map[string]models.ArtifactSecurity, error) {
 	out := make(map[string]models.ArtifactSecurity, len(artifactIDs))
 	if len(artifactIDs) == 0 {
 		return out, nil

@@ -221,7 +221,10 @@ func TestDeliveryTruncatesOversizedResponseBody(t *testing.T) {
 		t.Fatalf("persisted response body length = %d, want %d", len(got), maxWebhookResponseBodySize)
 	}
 	if !strings.HasSuffix(db.delivery.ResponseBody, webhookResponseTruncatedMarker) {
-		t.Fatalf("persisted response body = %q, want truncation marker", db.delivery.ResponseBody[len(db.delivery.ResponseBody)-len(webhookResponseTruncatedMarker):])
+		t.Fatalf(
+			"persisted response body = %q, want truncation marker",
+			db.delivery.ResponseBody[len(db.delivery.ResponseBody)-len(webhookResponseTruncatedMarker):],
+		)
 	}
 }
 
@@ -299,7 +302,14 @@ func TestProcessDropsDeliveriesOfDisabledWebhook(t *testing.T) {
 	} {
 		hits = 0
 		db := &disabledWebhookDB{
-			wh: &models.Webhook{ID: "wh", URL: server.URL, Enabled: false, ContentType: "application/json", MaxRetries: 3, TimeoutSeconds: 1},
+			wh: &models.Webhook{
+				ID:             "wh",
+				URL:            server.URL,
+				Enabled:        false,
+				ContentType:    "application/json",
+				MaxRetries:     3,
+				TimeoutSeconds: 1,
+			},
 		}
 		db.BaseMockDB = &databasetest.BaseMockDB{}
 		delivery := &models.WebhookDelivery{ID: "d", WebhookID: "wh", EventType: tc.event, Payload: map[string]any{}}

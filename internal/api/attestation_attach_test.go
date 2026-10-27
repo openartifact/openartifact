@@ -300,7 +300,12 @@ func TestAttestationAttachErrors(t *testing.T) {
 	expectEqual(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{}`, true).Code, "artifact_id is required")
 	expectEqual(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0","format":"xml"}`, true).Code)
 	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@9.9"}`, true).Code, "unknown tag")
-	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"other/app@1.0"}`, true).Code, "image of another repository")
+	expectEqual(
+		t,
+		http.StatusNotFound,
+		f.do(http.MethodPost, url, `{"artifact_id":"other/app@1.0"}`, true).Code,
+		"image of another repository",
+	)
 
 	f.reg.err = quota.ErrExceeded
 	expectEqual(t, http.StatusInsufficientStorage, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
@@ -319,7 +324,13 @@ func TestAttestationAttachSBOM(t *testing.T) {
 	mustNoError(t, err)
 
 	url := "/api/v1/repositories/reg/sbom/" + attestSBOMID + "/attach"
-	f.db.report = &models.SBOMReport{ID: attestSBOMID, RepositoryID: attestRepoID, ArtifactID: "reg/app@1.0", Format: "cyclonedx", BlobSHA256: sha}
+	f.db.report = &models.SBOMReport{
+		ID:           attestSBOMID,
+		RepositoryID: attestRepoID,
+		ArtifactID:   "reg/app@1.0",
+		Format:       "cyclonedx",
+		BlobSHA256:   sha,
+	}
 
 	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, "/api/v1/repositories/reg/sbom/not-a-uuid/attach", "", true).Code)
 

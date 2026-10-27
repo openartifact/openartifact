@@ -41,17 +41,47 @@ func (e *cleanupQuotaEnv) seedFormat(repoID, format, name, version string, ageDa
 	case "npm":
 		pkg := e.queryID(`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, $2, $2)
 			ON CONFLICT (repository_id, full_name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, repoID, name)
-		id = e.queryID(`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id, created_at, updated_at)
-			VALUES ($1, $2, '{}'::jsonb, 'sha512-x', 'abc', $3, $4, $5, $5) RETURNING id`, pkg, version, uniq+".tgz", blobID, ts)
+		id = e.queryID(
+			`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id, created_at, updated_at)
+			VALUES ($1, $2, '{}'::jsonb, 'sha512-x', 'abc', $3, $4, $5, $5) RETURNING id`,
+			pkg,
+			version,
+			uniq+".tgz",
+			blobID,
+			ts,
+		)
 	case "maven":
-		id = e.queryID(`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id, created_at, updated_at)
-			VALUES ($1, 'org.acme', $2, $3, 'jar', $4, $5, $6, $6) RETURNING id`, repoID, name, version, uniq+".jar", blobID, ts)
+		id = e.queryID(
+			`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id, created_at, updated_at)
+			VALUES ($1, 'org.acme', $2, $3, 'jar', $4, $5, $6, $6) RETURNING id`,
+			repoID,
+			name,
+			version,
+			uniq+".jar",
+			blobID,
+			ts,
+		)
 	case "ivy":
-		id = e.queryID(`INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_ext, blob_id, created_at, updated_at)
-			VALUES ($1, 'org.acme', $2, $3, $2, 'jar', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
+		id = e.queryID(
+			`INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_ext, blob_id, created_at, updated_at)
+			VALUES ($1, 'org.acme', $2, $3, $2, 'jar', $4, $5, $5) RETURNING id`,
+			repoID,
+			name,
+			version,
+			blobID,
+			ts,
+		)
 	case "sbt":
-		id = e.queryID(`INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, scala_version, filename, blob_id, created_at, updated_at)
-			VALUES ($1, 'org.acme', $2, $3, '2.13', $4, $5, $6, $6) RETURNING id`, repoID, name, version, uniq+".jar", blobID, ts)
+		id = e.queryID(
+			`INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, scala_version, filename, blob_id, created_at, updated_at)
+			VALUES ($1, 'org.acme', $2, $3, '2.13', $4, $5, $6, $6) RETURNING id`,
+			repoID,
+			name,
+			version,
+			uniq+".jar",
+			blobID,
+			ts,
+		)
 	case "cargo":
 		id = e.queryID(`INSERT INTO cargo_crates (repository_id, name, version, blob_id, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
@@ -69,7 +99,12 @@ func (e *cleanupQuotaEnv) seedFormat(repoID, format, name, version string, ageDa
 			VALUES ($1, $2, $3, $4, $4) RETURNING id`, repoID, "dir/"+name+"-"+version+".bin", blobID, ts)
 	case "docker":
 		digest := fmt.Sprintf("sha256:%064d", e.seq)
-		e.exec(`INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1, $2, 'm', 10, $3)`, repoID, digest, blobID)
+		e.exec(
+			`INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1, $2, 'm', 10, $3)`,
+			repoID,
+			digest,
+			blobID,
+		)
 		id = e.queryID(`INSERT INTO docker_tags (repository_id, name, manifest_digest, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $4) RETURNING id`, repoID, version, digest, ts)
 	default:
@@ -88,7 +123,9 @@ func (e *cleanupQuotaEnv) reserve(repoID, blobID string) int64 {
 	e.t.Helper()
 
 	var size int64
-	if err := e.pg.GetDB().QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, blobID).Scan(&size); err != nil {
+	if err := e.pg.GetDB().
+		QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, blobID).
+		Scan(&size); err != nil {
 		e.t.Fatalf("blob size: %v", err)
 	}
 
@@ -342,7 +379,12 @@ func TestCleanupPolicyMavenSnapshotsAndMetadata(t *testing.T) {
 
 	snap := func(ts string, build, age int) fmtRow {
 		row := e.seedFormat(repoID, "maven", "lib", "2.0-SNAPSHOT", age)
-		e.exec(`UPDATE maven_artifacts SET is_snapshot = true, snapshot_timestamp = $2, snapshot_build_number = $3 WHERE id = $1`, row.id, ts, build)
+		e.exec(
+			`UPDATE maven_artifacts SET is_snapshot = true, snapshot_timestamp = $2, snapshot_build_number = $3 WHERE id = $1`,
+			row.id,
+			ts,
+			build,
+		)
 
 		return row
 	}
@@ -373,7 +415,10 @@ func TestCleanupPolicyMavenKeepsNewestSnapshotBuild(t *testing.T) {
 	repoID := e.repo("maven")
 
 	row := e.seedFormat(repoID, "maven", "lib", "3.0-SNAPSHOT", 400)
-	e.exec(`UPDATE maven_artifacts SET is_snapshot = true, snapshot_timestamp = '20250101.100000', snapshot_build_number = 1 WHERE id = $1`, row.id)
+	e.exec(
+		`UPDATE maven_artifacts SET is_snapshot = true, snapshot_timestamp = '20250101.100000', snapshot_build_number = 1 WHERE id = $1`,
+		row.id,
+	)
 
 	days := 30
 	policy := &models.CleanupPolicy{RepositoryID: repoID, Name: "age", KeepSinceDays: &days}
@@ -454,8 +499,15 @@ func TestCleanupPolicyHonoursImmutableReleasesAndQuarantine(t *testing.T) {
 	e.seedFormat(repoID, "cargo", "serde", "2.0.0", 10)
 	e.exec(`UPDATE repositories SET immutable_releases = true WHERE id = $1`, repoID)
 
-	ref := e.queryID(`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, $2, 'cargo') RETURNING id`, repoID, quarantined.id)
-	job := e.queryID(`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status) VALUES ($1, 'vuln', 'osv', 'completed') RETURNING id`, ref)
+	ref := e.queryID(
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, $2, 'cargo') RETURNING id`,
+		repoID,
+		quarantined.id,
+	)
+	job := e.queryID(
+		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status) VALUES ($1, 'vuln', 'osv', 'completed') RETURNING id`,
+		ref,
+	)
 	e.exec(`INSERT INTO vuln_results (scan_job_id, quarantined) VALUES ($1, true)`, job)
 
 	requireRun(t, e.runPolicy(repoID, 1), 1)
@@ -598,7 +650,10 @@ func TestPreviewProjectPolicyExpandsLikeARun(t *testing.T) {
 	e.seedFormat(custom, "cargo", "serde", "2.0.0", 1)
 
 	own := 10
-	if err := e.pg.CreateCleanupPolicy(ctx, &models.CleanupPolicy{RepositoryID: custom, Name: "own", Enabled: true, KeepLastN: &own}); err != nil {
+	if err := e.pg.CreateCleanupPolicy(
+		ctx,
+		&models.CleanupPolicy{RepositoryID: custom, Name: "own", Enabled: true, KeepLastN: &own},
+	); err != nil {
 		t.Fatal(err)
 	}
 

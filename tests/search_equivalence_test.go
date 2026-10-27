@@ -131,15 +131,36 @@ func searchEquivalenceCases() []searchEquivalenceCase {
 		{"mixed case name qualifier", search.SearchFilter{Name: "Org.G1"}, `s.name ILIKE $1`, []any{"%Org.G1%"}},
 		{"name filter", search.SearchFilter{Name: "org.g1"}, `s.name ILIKE $1`, []any{"%org.g1%"}},
 		{"format", search.SearchFilter{Formats: []string{"docker"}}, `s.format IN ($1)`, []any{"docker"}},
-		{"two formats and text", search.SearchFilter{Formats: []string{"maven", "npm"}, FreeText: "1"}, `s.name ILIKE $1 AND s.format IN ($2,$3)`, []any{"%1%", "maven", "npm"}},
-		{"repo", search.SearchFilter{Repos: []string{"search-eq"}, FreeText: "crt"}, `s.name ILIKE $1 AND r.name IN ($2)`, []any{"%crt%", "search-eq"}},
+		{
+			"two formats and text",
+			search.SearchFilter{Formats: []string{"maven", "npm"}, FreeText: "1"},
+			`s.name ILIKE $1 AND s.format IN ($2,$3)`,
+			[]any{"%1%", "maven", "npm"},
+		},
+		{
+			"repo",
+			search.SearchFilter{Repos: []string{"search-eq"}, FreeText: "crt"},
+			`s.name ILIKE $1 AND r.name IN ($2)`,
+			[]any{"%crt%", "search-eq"},
+		},
 		{"sha256 prefix", search.SearchFilter{SHA256Prefix: "c4ca"}, `s.sha256 LIKE $1`, []any{"c4ca%"}},
-		{"sha256 docker digest", search.SearchFilter{SHA256Prefix: "c81e", Formats: []string{"docker"}}, `s.sha256 LIKE $1 AND s.format IN ($2)`, []any{"c81e%", "docker"}},
+		{
+			"sha256 docker digest",
+			search.SearchFilter{SHA256Prefix: "c81e", Formats: []string{"docker"}},
+			`s.sha256 LIKE $1 AND s.format IN ($2)`,
+			[]any{"c81e%", "docker"},
+		},
 		{"no match", search.SearchFilter{FreeText: "zzz-nothing"}, `s.name ILIKE $1`, []any{"%zzz-nothing%"}},
 	}
 }
 
-func legacySearch(t *testing.T, pg *database.PostgresDB, c searchEquivalenceCase, readable []string, limit, offset int) []search.SearchResult {
+func legacySearch(
+	t *testing.T,
+	pg *database.PostgresDB,
+	c searchEquivalenceCase,
+	readable []string,
+	limit, offset int,
+) []search.SearchResult {
 	t.Helper()
 
 	args := append([]any{}, c.legacyArgs...)
@@ -165,10 +186,18 @@ func legacySearch(t *testing.T, pg *database.PostgresDB, c searchEquivalenceCase
 	n := len(args)
 	args = append(args, "{"+strings.Join(readable, ",")+"}", limit, offset)
 
-	q := fmt.Sprintf(`SELECT s.repository_id, r.name, s.format, s.name, s.version, s.path, s.sha256, s.size, s.created_at, s.group_id, s.artifact_id_coord, s.scope
+	q := fmt.Sprintf(
+		`SELECT s.repository_id, r.name, s.format, s.name, s.version, s.path, s.sha256, s.size, s.created_at, s.group_id, s.artifact_id_coord, s.scope
 		FROM %s AS s JOIN repositories r ON r.id = s.repository_id
 		WHERE %s AND s.repository_id = ANY($%d::uuid[])
-		ORDER BY %s, s.created_at DESC LIMIT $%d OFFSET $%d`, legacySearchView, c.legacyWhere, n+1, rank, n+2, n+3)
+		ORDER BY %s, s.created_at DESC LIMIT $%d OFFSET $%d`,
+		legacySearchView,
+		c.legacyWhere,
+		n+1,
+		rank,
+		n+2,
+		n+3,
+	)
 
 	rows, err := pg.GetDB().QueryContext(context.Background(), q, args...)
 	if err != nil {
@@ -185,7 +214,20 @@ func legacySearch(t *testing.T, pg *database.PostgresDB, c searchEquivalenceCase
 			sr                                 search.SearchResult
 		)
 
-		if err := rows.Scan(&repoID, &sr.Repository, &sr.Format, &sr.Name, &sr.Version, &sr.Path, &sr.SHA256, &sr.Size, &sr.CreatedAt, &groupID, &artifactID, &scope); err != nil {
+		if err := rows.Scan(
+			&repoID,
+			&sr.Repository,
+			&sr.Format,
+			&sr.Name,
+			&sr.Version,
+			&sr.Path,
+			&sr.SHA256,
+			&sr.Size,
+			&sr.CreatedAt,
+			&groupID,
+			&artifactID,
+			&scope,
+		); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 
@@ -272,7 +314,14 @@ func TestSearchMatchesLegacyQuery(t *testing.T) {
 
 					// SearchPage: same page and the total from one scan, also
 					// for pages past the end.
-					gotPage, gotTotal, err := exec.SearchPage(context.Background(), c.filter, search.PageOptions{}, page.limit, page.offset, readable)
+					gotPage, gotTotal, err := exec.SearchPage(
+						context.Background(),
+						c.filter,
+						search.PageOptions{},
+						page.limit,
+						page.offset,
+						readable,
+					)
 					if err != nil {
 						t.Fatalf("SearchPage: %v", err)
 					}

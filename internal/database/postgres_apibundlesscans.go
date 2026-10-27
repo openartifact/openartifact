@@ -338,7 +338,12 @@ func (p *PostgresDB) AddBundleItems(ctx context.Context, bundleID string, items 
 // It reports whether the bundle was sealed; false means it was no longer a
 // draft (or does not exist), or, when sig is given, that its items changed
 // since the manifest was signed. A bundle with no items is never sealed.
-func (p *PostgresDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error) {
+func (p *PostgresDB) SealReleaseBundle(
+	ctx context.Context,
+	bundleID, sealedBy string,
+	sealedAt time.Time,
+	sig *models.BundleSignature,
+) (bool, error) {
 	var keyID, signature, itemIDs *string
 
 	if sig != nil {

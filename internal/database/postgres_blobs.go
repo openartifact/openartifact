@@ -145,7 +145,12 @@ func (p *PostgresDB) DeleteBlobIfUnreferenced(ctx context.Context, sha256 string
 // advancing by sha256 means orphans that cannot be removed never block the
 // ones behind them. Used to reclaim storage after repository deletion cascades
 // its package rows.
-func (p *PostgresDB) ListUnreferencedBlobs(ctx context.Context, minAge time.Duration, after string, scan, limit int) ([]string, string, error) {
+func (p *PostgresDB) ListUnreferencedBlobs(
+	ctx context.Context,
+	minAge time.Duration,
+	after string,
+	scan, limit int,
+) ([]string, string, error) {
 	// Upper bound of the window: the scan-th sha after the cursor.
 	var upper sql.NullString
 

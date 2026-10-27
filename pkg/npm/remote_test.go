@@ -94,7 +94,8 @@ func TestRewriteTarballsKeepsEverythingElse(t *testing.T) {
 	}
 
 	v := got.Versions["1.0.0"]
-	if string(v.Dist["tarball"]) != `"http://oa/repos/r/@s/n/-/n-1.0.0.tgz"` || string(v.Dist["integrity"]) != `"sha512-AAAA"` || string(v.Dist["fileCount"]) != "3" {
+	if string(v.Dist["tarball"]) != `"http://oa/repos/r/@s/n/-/n-1.0.0.tgz"` || string(v.Dist["integrity"]) != `"sha512-AAAA"` ||
+		string(v.Dist["fileCount"]) != "3" {
 		t.Errorf("1.0.0 dist = %v", v.Dist)
 	}
 
@@ -211,7 +212,13 @@ func digests(b []byte) (string, string, string) {
 	s256 := sha256.Sum256(b)
 	s512 := sha512.Sum512(b)
 
-	return hex.EncodeToString(s1[:]), "sha256-" + base64.StdEncoding.EncodeToString(s256[:]), "sha512-" + base64.StdEncoding.EncodeToString(s512[:])
+	return hex.EncodeToString(
+			s1[:],
+		), "sha256-" + base64.StdEncoding.EncodeToString(
+			s256[:],
+		), "sha512-" + base64.StdEncoding.EncodeToString(
+			s512[:],
+		)
 }
 
 func TestVerifyDist(t *testing.T) {

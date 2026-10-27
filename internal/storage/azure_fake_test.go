@@ -264,7 +264,12 @@ func (f *fakeAzure) fail(w http.ResponseWriter, status int, code, msg string) {
 	var escaped bytes.Buffer
 
 	_ = xml.EscapeText(&escaped, []byte(msg))
-	_, _ = fmt.Fprintf(w, "<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>%s</Code><Message>%s</Message></Error>", code, escaped.String())
+	_, _ = fmt.Fprintf(
+		w,
+		"<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>%s</Code><Message>%s</Message></Error>",
+		code,
+		escaped.String(),
+	)
 }
 
 // blobName extracts the blob name from a path below <prefix>/<container>.

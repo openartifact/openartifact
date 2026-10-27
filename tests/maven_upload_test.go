@@ -29,7 +29,12 @@ func TestMavenUpload_ReleasePublish_New(t *testing.T) {
 	h.Register(router)
 
 	body := bytes.NewReader([]byte("fake-jar-bytes"))
-	req := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar", body)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar",
+		body,
+	)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -69,7 +74,12 @@ func TestMavenUpload_ReleaseRepublish_Conflict(t *testing.T) {
 	h.Register(router)
 
 	body := bytes.NewReader([]byte("different-content"))
-	req := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar", body)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar",
+		body,
+	)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -90,7 +100,12 @@ func TestMavenUpload_ReleaseRepublish_Idempotent(t *testing.T) {
 	router := chi.NewRouter()
 	h.Register(router)
 
-	req1 := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar", bytes.NewReader(content))
+	req1 := httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar",
+		bytes.NewReader(content),
+	)
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, req1)
 
@@ -98,7 +113,12 @@ func TestMavenUpload_ReleaseRepublish_Idempotent(t *testing.T) {
 		t.Fatalf("first PUT expected 201, got %d", w1.Code)
 	}
 
-	req2 := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar", bytes.NewReader(content))
+	req2 := httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar",
+		bytes.NewReader(content),
+	)
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
 
@@ -119,7 +139,12 @@ func TestMavenUpload_SnapshotPublish(t *testing.T) {
 	h.Register(router)
 
 	body := bytes.NewReader([]byte("snapshot-jar"))
-	req := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0-SNAPSHOT/myapp-1.0.0-20260426.120000-3.jar", body)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/repos/maven/maven-repo/com/example/myapp/1.0.0-SNAPSHOT/myapp-1.0.0-20260426.120000-3.jar",
+		body,
+	)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -154,7 +179,12 @@ func TestMavenUpload_ChecksumSibling_NoOp(t *testing.T) {
 
 	for _, suffix := range []string{".sha1", ".md5", ".sha256", ".sha512"} {
 		w := httptest.NewRecorder()
-		req := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar"+suffix, bytes.NewReader([]byte("abc")))
+		req := httptest.NewRequestWithContext(
+			context.Background(),
+			"PUT",
+			"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar"+suffix,
+			bytes.NewReader([]byte("abc")),
+		)
 		router.ServeHTTP(w, req)
 
 		if w.Code != http.StatusOK {
@@ -179,7 +209,12 @@ func TestMavenUpload_AscPassthrough(t *testing.T) {
 	h.Register(router)
 
 	body := bytes.NewReader([]byte("gpg-signature-data"))
-	req := httptest.NewRequestWithContext(context.Background(), "PUT", "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar.asc", body)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"PUT",
+		"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.jar.asc",
+		body,
+	)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

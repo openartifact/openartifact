@@ -412,7 +412,11 @@ func TestGoProxy_UnknownToChecksumDatabaseIsVerifiedStructurally(t *testing.T) {
 		want int
 	}{
 		{"well-formed", zipFile, http.StatusOK},
-		{"entries outside the module prefix", goModuleZip(t, "other.example/lib", ver, map[string]string{"go.mod": "module other.example/lib\n"}), http.StatusBadGateway},
+		{
+			"entries outside the module prefix",
+			goModuleZip(t, "other.example/lib", ver, map[string]string{"go.mod": "module other.example/lib\n"}),
+			http.StatusBadGateway,
+		},
 		{"not a zip", []byte("<html>captive portal</html>"), http.StatusBadGateway},
 	}
 

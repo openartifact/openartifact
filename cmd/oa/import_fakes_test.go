@@ -314,7 +314,11 @@ func (f *fakeOA) postPackage(w http.ResponseWriter, r *http.Request) {
 
 	for _, it := range f.repos[name].items {
 		if it.sha == sum256(data) {
-			f.reply(w, http.StatusConflict, map[string]any{"success": false, "error": "artifact already exists", "data": map[string]bool{"duplicate": true}})
+			f.reply(
+				w,
+				http.StatusConflict,
+				map[string]any{"success": false, "error": "artifact already exists", "data": map[string]bool{"duplicate": true}},
+			)
 			return
 		}
 	}

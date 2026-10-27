@@ -78,7 +78,13 @@ func ReaderBlob(sha string, meta map[string]string, open func() io.Reader) Blob 
 
 // CommitBlob stores one blob and runs commit under its per-blob lock; see
 // CommitBlobs. commit receives the blob's storage key.
-func CommitBlob(ctx context.Context, db database.Database, store BlobStore, blob Blob, commit func(ctx context.Context, key string) error) error {
+func CommitBlob(
+	ctx context.Context,
+	db database.Database,
+	store BlobStore,
+	blob Blob,
+	commit func(ctx context.Context, key string) error,
+) error {
 	return CommitBlobs(ctx, db, store, []Blob{blob}, func(ctx context.Context, keys []string) error {
 		return commit(ctx, keys[0])
 	})
@@ -111,7 +117,13 @@ func CommitBlob(ctx context.Context, db database.Database, store BlobStore, blob
 // exactly as when the Put used to run under the lock.
 //
 // commit MUST NOT write blobs itself: a Put inside it would pin the lock again.
-func CommitBlobs(ctx context.Context, db database.Database, store BlobStore, blobs []Blob, commit func(ctx context.Context, keys []string) error) error {
+func CommitBlobs(
+	ctx context.Context,
+	db database.Database,
+	store BlobStore,
+	blobs []Blob,
+	commit func(ctx context.Context, keys []string) error,
+) error {
 	if len(blobs) == 0 {
 		return commit(ctx, nil)
 	}

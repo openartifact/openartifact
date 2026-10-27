@@ -85,7 +85,12 @@ func parseCIUploadArgs(args []string, output io.Writer) (ciUploadOptions, error)
 
 	var o ciUploadOptions
 
-	flags.StringVar(&o.targetPath, "target-path", "", "Path in the repository; a trailing / makes it a directory (default: the file's path)")
+	flags.StringVar(
+		&o.targetPath,
+		"target-path",
+		"",
+		"Path in the repository; a trailing / makes it a directory (default: the file's path)",
+	)
 	flags.BoolVar(&o.flat, "flat", false, "Drop the local directories: upload every file by its name")
 	flags.Func("property", "Property k=v set on every uploaded artifact (repeatable)", func(s string) error {
 		if k, _, ok := strings.Cut(s, "="); !ok || k == "" {
@@ -196,8 +201,13 @@ func runCIUpload(ctx context.Context, api *ciAPI, o ciUploadOptions) (ciUploadRe
 
 	f := importFormat(repo.Format)
 	if !uploadable(f) {
-		return res, fmt.Errorf("%w: repository %q is %s; use the native client (%s repositories take their packages from npm publish, docker push, twine and the like)",
-			errUploadFormat, o.repo, repo.Format, repo.Format)
+		return res, fmt.Errorf(
+			"%w: repository %q is %s; use the native client (%s repositories take their packages from npm publish, docker push, twine and the like)",
+			errUploadFormat,
+			o.repo,
+			repo.Format,
+			repo.Format,
+		)
 	}
 
 	if !repo.hosted() {
@@ -205,7 +215,10 @@ func runCIUpload(ctx context.Context, api *ciAPI, o ciUploadOptions) (ciUploadRe
 	}
 
 	if o.targetPath != "" && !pathAddressed(f) {
-		return res, ciUsagef("--target-path does not apply to %s repositories: the server derives the address from the package", repo.Format)
+		return res, ciUsagef(
+			"--target-path does not apply to %s repositories: the server derives the address from the package",
+			repo.Format,
+		)
 	}
 
 	files, err := expandUploadFiles(o.patterns)
@@ -383,7 +396,12 @@ func expandUploadFiles(patterns []string) ([]string, error) {
 			}
 
 			if !info.Mode().IsRegular() {
-				return nil, fmt.Errorf("%w: %s (use a glob such as %s/** for a directory)", errUploadNotFile, pat, strings.TrimSuffix(pat, "/"))
+				return nil, fmt.Errorf(
+					"%w: %s (use a glob such as %s/** for a directory)",
+					errUploadNotFile,
+					pat,
+					strings.TrimSuffix(pat, "/"),
+				)
 			}
 
 			add(pat)

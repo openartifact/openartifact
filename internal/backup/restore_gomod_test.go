@@ -51,7 +51,12 @@ func TestRestoreGoModuleSkipsRowsWithoutZipDigest(t *testing.T) {
 		t.Errorf("restoreFailures = %d, want 1 (reported as incomplete)", got)
 	}
 
-	good := &models.GoModule{ModulePath: "example.com/c", Version: "v1.0.0", ZipHash: strings.Repeat("b", 64), ZipBlobKey: strings.Repeat("b", 64)}
+	good := &models.GoModule{
+		ModulePath: "example.com/c",
+		Version:    "v1.0.0",
+		ZipHash:    strings.Repeat("b", 64),
+		ZipBlobKey: strings.Repeat("b", 64),
+	}
 	if err := e.restoreGoModule(context.Background(), good); err != nil || len(db.created) != 1 {
 		t.Errorf("restoreGoModule(valid) = %v, created %d; want 1 created", err, len(db.created))
 	}

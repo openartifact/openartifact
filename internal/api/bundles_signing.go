@@ -91,7 +91,12 @@ func buildBundleManifest(b *models.ReleaseBundle, items []*models.ReleaseBundleI
 // signBundle signs the manifest of the bundle's current items with the key
 // referenced by ref. The returned models.BundleSignature also pins the item
 // set, so the seal fails if an item changed while signing.
-func (h *BundlesHandler) signBundle(ctx context.Context, ref string, b *models.ReleaseBundle, items []*models.ReleaseBundleItem) (*models.BundleSignature, *apiFailure) {
+func (h *BundlesHandler) signBundle(
+	ctx context.Context,
+	ref string,
+	b *models.ReleaseBundle,
+	items []*models.ReleaseBundleItem,
+) (*models.BundleSignature, *apiFailure) {
 	if h.keys == nil {
 		return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "GPG signing is not configured on this server"}
 	}

@@ -197,6 +197,11 @@ func TestExtraDataCarriesSizes(t *testing.T) {
 	}
 
 	if legacy.SizesParsed || legacy.InstalledSize != 7 || legacy.ArchiveSize != 9 {
-		t.Errorf("legacy extra = %d/%d parsed=%v, want the columns untouched and not parsed", legacy.InstalledSize, legacy.ArchiveSize, legacy.SizesParsed)
+		t.Errorf(
+			"legacy extra = %d/%d parsed=%v, want the columns untouched and not parsed",
+			legacy.InstalledSize,
+			legacy.ArchiveSize,
+			legacy.SizesParsed,
+		)
 	}
 }

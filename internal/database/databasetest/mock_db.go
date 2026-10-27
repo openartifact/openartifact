@@ -64,7 +64,12 @@ func (m *BaseMockDB) UpdateRepository(ctx context.Context, repo *models.Reposito
 func (m *BaseMockDB) DeleteRepository(ctx context.Context, id string) error {
 	return errNotImpl("DeleteRepository")
 }
-func (m *BaseMockDB) ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error) {
+
+func (m *BaseMockDB) ListComponentsByRepo(
+	ctx context.Context,
+	repoID, formatFilter string,
+	page, limit int,
+) ([]*models.Component, int, error) {
 	return nil, 0, errNotImpl("ListComponentsByRepo")
 }
 func (m *BaseMockDB) GetRPMRepo(ctx context.Context, repositoryID string) (*models.RPMRepo, error) {
@@ -107,7 +112,12 @@ func (m *BaseMockDB) CountRepoPackageNames(ctx context.Context, repoIDs []string
 func (m *BaseMockDB) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
 	return nil, 0, errNotImpl("ListRepoPackageRollup")
 }
-func (m *BaseMockDB) ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error) {
+
+func (m *BaseMockDB) ArtifactSecurity(
+	ctx context.Context,
+	repoID string,
+	artifactIDs []string,
+) (map[string]models.ArtifactSecurity, error) {
 	return map[string]models.ArtifactSecurity{}, nil
 }
 func (m *BaseMockDB) ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error) {
@@ -156,7 +166,14 @@ func (m *BaseMockDB) GetDebianArchitecturesByDist(ctx context.Context, distID st
 func (m *BaseMockDB) GetDebianPackageByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
 	return nil, errNotImpl("GetDebianPackageByFilename")
 }
-func (m *BaseMockDB) GetDebianPackagesByDistComp(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.Component, error) {
+
+func (m *BaseMockDB) GetDebianPackagesByDistComp(
+	ctx context.Context,
+	repoID string,
+	dist string,
+	comp string,
+	arch string,
+) ([]models.Component, error) {
 	return nil, errNotImpl("GetDebianPackagesByDistComp")
 }
 func (m *BaseMockDB) GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error) {
@@ -201,13 +218,21 @@ func (m *BaseMockDB) CreateMavenArtifact(ctx context.Context, a *models.MavenArt
 func (m *BaseMockDB) GetMavenArtifactByPath(ctx context.Context, repoID, path string) (*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetMavenArtifactByPath")
 }
-func (m *BaseMockDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error) {
+
+func (m *BaseMockDB) GetMavenArtifactsByGAV(
+	ctx context.Context,
+	repoID, groupID, artifactID, version string,
+) ([]*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetMavenArtifactsByGAV")
 }
 func (m *BaseMockDB) ListMavenGARefs(ctx context.Context, repoID, groupID, artifactID string) (*models.MavenGARefs, error) {
 	return nil, errNotImpl("ListMavenGARefs")
 }
-func (m *BaseMockDB) GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error) {
+
+func (m *BaseMockDB) GetLatestSnapshotFile(
+	ctx context.Context,
+	repoID, groupID, artifactID, version, classifier, extension string,
+) (*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetLatestSnapshotFile")
 }
 func (m *BaseMockDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error) {
@@ -288,7 +313,12 @@ func (m *BaseMockDB) CreateDockerUpload(ctx context.Context, upload *models.Dock
 func (m *BaseMockDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
 	return nil, errNotImpl("GetDockerUpload")
 }
-func (m *BaseMockDB) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+
+func (m *BaseMockDB) UpdateDockerUploadOffset(
+	ctx context.Context,
+	repositoryID, uploadUUID string,
+	oldOffset, newOffset int64,
+) (bool, error) {
 	return false, errNotImpl("UpdateDockerUploadOffset")
 }
 func (m *BaseMockDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
@@ -327,7 +357,11 @@ func (m *BaseMockDB) ListDockerTags(ctx context.Context, repoID, image, last str
 func (m *BaseMockDB) EnsureBlob(ctx context.Context, sha256, mediaType string, size int64) (string, error) {
 	return "", errNotImpl("EnsureBlob")
 }
-func (m *BaseMockDB) ListDockerManifestsBySubject(ctx context.Context, repoID, image, subjectDigest string) ([]*models.DockerManifest, error) {
+
+func (m *BaseMockDB) ListDockerManifestsBySubject(
+	ctx context.Context,
+	repoID, image, subjectDigest string,
+) ([]*models.DockerManifest, error) {
 	return nil, errNotImpl("ListDockerManifestsBySubject")
 }
 func (m *BaseMockDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error {
@@ -552,7 +586,12 @@ func (m *BaseMockDB) CreatePermissionAssignment(ctx context.Context, assignment 
 func (m *BaseMockDB) DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
 	return errNotImpl("DeletePermissionAssignment")
 }
-func (m *BaseMockDB) GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error) {
+
+func (m *BaseMockDB) GetPermissionTargetsForPrincipal(
+	ctx context.Context,
+	userID string,
+	groupIDs []string,
+) ([]*models.PermissionTarget, error) {
 	return nil, errNotImpl("GetPermissionTargetsForPrincipal")
 }
 func (m *BaseMockDB) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
@@ -737,7 +776,12 @@ func (m *BaseMockDB) ListCargoCrateVersions(ctx context.Context, repoID, name st
 func (m *BaseMockDB) SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error) {
 	return nil, errNotImpl("SearchCargoCrates")
 }
-func (m *BaseMockDB) SearchCargoCrateSummaries(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrateSummary, int, error) {
+
+func (m *BaseMockDB) SearchCargoCrateSummaries(
+	ctx context.Context,
+	repoID, query string,
+	limit int,
+) ([]*models.CargoCrateSummary, int, error) {
 	return nil, 0, errNotImpl("SearchCargoCrateSummaries")
 }
 func (m *BaseMockDB) YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error {
@@ -990,7 +1034,13 @@ func (m *BaseMockDB) GetProjectGroup(ctx context.Context, projectID, groupID str
 func (m *BaseMockDB) SetProjectGroup(ctx context.Context, projectID, groupID, role string, createdBy *string) error {
 	return errNotImpl("SetProjectGroup")
 }
-func (m *BaseMockDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard database.ProjectRoleGuard) error {
+
+func (m *BaseMockDB) ChangeProjectGroup(
+	ctx context.Context,
+	projectID, groupID, newRole string,
+	createdBy *string,
+	guard database.ProjectRoleGuard,
+) error {
 	return errNotImpl("ChangeProjectGroup")
 }
 func (m *BaseMockDB) CreateProjectToken(ctx context.Context, spec database.ProjectTokenSpec) (*models.Token, error) {
@@ -1041,7 +1091,11 @@ func (m *BaseMockDB) SetSystemSetting(ctx context.Context, key, value string) er
 func (m *BaseMockDB) CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error {
 	return errNotImpl("CreateCondaPackage")
 }
-func (m *BaseMockDB) GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error) {
+
+func (m *BaseMockDB) GetCondaPackageFile(
+	ctx context.Context,
+	repoID, name, version, buildString, platform, extension string,
+) (*models.CondaPackage, error) {
 	return nil, errNotImpl("GetCondaPackageFile")
 }
 func (m *BaseMockDB) DeleteCondaPackage(ctx context.Context, id string) error {
@@ -1080,7 +1134,11 @@ func (m *BaseMockDB) ListConanPackages(ctx context.Context, repoID string) ([]*m
 func (m *BaseMockDB) CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error {
 	return errNotImpl("CreateIvyArtifact")
 }
-func (m *BaseMockDB) GetIvyArtifact(ctx context.Context, repoID, organisation, module, revision, artifactName, artifactExt string) (*models.IvyArtifact, error) {
+
+func (m *BaseMockDB) GetIvyArtifact(
+	ctx context.Context,
+	repoID, organisation, module, revision, artifactName, artifactExt string,
+) (*models.IvyArtifact, error) {
 	return nil, errNotImpl("GetIvyArtifact")
 }
 func (m *BaseMockDB) DeleteIvyArtifact(ctx context.Context, id string) error {
@@ -1092,7 +1150,11 @@ func (m *BaseMockDB) ListIvyArtifacts(ctx context.Context, repoID string) ([]*mo
 func (m *BaseMockDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error {
 	return errNotImpl("CreateSBTArtifact")
 }
-func (m *BaseMockDB) GetSBTArtifact(ctx context.Context, repoID, groupID, artifactID, version, filename string) (*models.SBTArtifact, error) {
+
+func (m *BaseMockDB) GetSBTArtifact(
+	ctx context.Context,
+	repoID, groupID, artifactID, version, filename string,
+) (*models.SBTArtifact, error) {
 	return nil, errNotImpl("GetSBTArtifact")
 }
 func (m *BaseMockDB) DeleteSBTArtifact(ctx context.Context, id string) error {
@@ -1134,7 +1196,12 @@ func (m *BaseMockDB) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseB
 func (m *BaseMockDB) DeleteReleaseBundle(ctx context.Context, id string) error {
 	return errNotImpl("DeleteReleaseBundle")
 }
-func (m *BaseMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error) {
+
+func (m *BaseMockDB) ListReleaseBundles(
+	ctx context.Context,
+	nameFilter, stateFilter string,
+	page, limit int,
+) ([]*models.ReleaseBundle, int, error) {
 	return nil, 0, errNotImpl("ListReleaseBundles")
 }
 func (m *BaseMockDB) AddBundleItem(ctx context.Context, item *models.ReleaseBundleItem) error {
@@ -1158,7 +1225,13 @@ func (m *BaseMockDB) ListBundlePromotions(ctx context.Context, bundleID string) 
 func (m *BaseMockDB) AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error {
 	return errNotImpl("AddBundleItems")
 }
-func (m *BaseMockDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error) {
+
+func (m *BaseMockDB) SealReleaseBundle(
+	ctx context.Context,
+	bundleID, sealedBy string,
+	sealedAt time.Time,
+	sig *models.BundleSignature,
+) (bool, error) {
 	return false, errNotImpl("SealReleaseBundle")
 }
 func (m *BaseMockDB) ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error) {
@@ -1251,13 +1324,26 @@ func (m *BaseMockDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 func (m *BaseMockDB) GetAIAnalysis(ctx context.Context, repoID, artifactID string) (*models.AIAnalysis, error) {
 	return nil, errNotImpl("GetAIAnalysis")
 }
-func (m *BaseMockDB) ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error) {
+
+func (m *BaseMockDB) ListAIAnalyses(
+	ctx context.Context,
+	repoID string,
+	status string,
+	licenseReviewOnly bool,
+	limit, offset int,
+) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, errNotImpl("ListAIAnalyses")
 }
 func (m *BaseMockDB) GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error) {
 	return nil, errNotImpl("GetProjectQuota")
 }
-func (m *BaseMockDB) SetProjectQuota(ctx context.Context, projectID string, maxSizeBytes, maxArtifactCount int64, warnThresholdPercent int) (*models.ProjectQuota, error) {
+
+func (m *BaseMockDB) SetProjectQuota(
+	ctx context.Context,
+	projectID string,
+	maxSizeBytes, maxArtifactCount int64,
+	warnThresholdPercent int,
+) (*models.ProjectQuota, error) {
 	return nil, errNotImpl("SetProjectQuota")
 }
 func (m *BaseMockDB) GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error) {

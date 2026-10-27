@@ -42,7 +42,13 @@ type helmIndexes struct {
 }
 
 // collectHelmIndexes asks every member for its index.yaml.
-func (h *Handler) collectHelmIndexes(grp *models.Repository, members []*models.Repository, mr *http.Request, sess *mergeSession, be Backend) helmIndexes {
+func (h *Handler) collectHelmIndexes(
+	grp *models.Repository,
+	members []*models.Repository,
+	mr *http.Request,
+	sess *mergeSession,
+	be Backend,
+) helmIndexes {
 	var got helmIndexes
 
 	for _, m := range members {
@@ -91,7 +97,14 @@ func (h *Handler) collectHelmIndexes(grp *models.Repository, members []*models.R
 // cannot be read fails the request (502) while a proxy index is in play,
 // since it may hold names that must hide the proxy's. Chart downloads are
 // decided by applyHostedWins.
-func (h *Handler) serveHelm(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
+func (h *Handler) serveHelm(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	relPath string,
+	members []*models.Repository,
+	be Backend,
+) bool {
 	rel := strings.TrimPrefix(relPath, "/")
 
 	if file, ok := strings.CutPrefix(rel, helmChartsDir); ok && pathseg.Name(file) {

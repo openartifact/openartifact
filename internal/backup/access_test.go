@@ -124,8 +124,14 @@ func TestBackupRestore_AccessControlAndQuotasRoundTrip(t *testing.T) {
 	bob, _ := src.CreateUser(ctx, &models.User{Username: "bob"})
 	devs, _ := src.CreateGroup(ctx, &models.Group{Name: "devs"})
 
-	adminAll, _ := src.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "admin-all", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}})
-	deploy, _ := src.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "deploy", RepositoryFilter: "limited", PathPattern: ".*", Actions: []string{"read", "write"}})
+	adminAll, _ := src.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "admin-all", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}},
+	)
+	deploy, _ := src.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "deploy", RepositoryFilter: "limited", PathPattern: ".*", Actions: []string{"read", "write"}},
+	)
 
 	_ = src.GetOrCreatePermissionAssignment(ctx, adminAll.ID, "user", alice.ID)
 	_ = src.GetOrCreatePermissionAssignment(ctx, deploy.ID, "user", alice.ID)
@@ -134,10 +140,18 @@ func TestBackupRestore_AccessControlAndQuotasRoundTrip(t *testing.T) {
 	_ = src.AddUserToGroup(ctx, alice.ID, devs.ID)
 
 	acc(src).memberships = append(acc(src).memberships, &models.UserGroup{UserID: bob.ID, GroupID: devs.ID, SSOManaged: true})
-	acc(src).quotas[repo.ID] = &models.StorageQuota{RepositoryID: repo.ID, MaxSizeBytes: 1000, MaxArtifactCount: 5, WarnThresholdPercent: 70}
+	acc(src).quotas[repo.ID] = &models.StorageQuota{
+		RepositoryID:         repo.ID,
+		MaxSizeBytes:         1000,
+		MaxArtifactCount:     5,
+		WarnThresholdPercent: 70,
+	}
 
 	dst := newFakeDB("dst")
-	seeded, _ := dst.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "admin-all", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}})
+	seeded, _ := dst.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "admin-all", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read"}},
+	)
 
 	restoreInto(t, src, dst)
 
@@ -157,7 +171,8 @@ func TestBackupRestore_AccessControlAndQuotasRoundTrip(t *testing.T) {
 	}
 
 	newDeploy, _ := dst.GetPermissionTargetByName(ctx, "deploy")
-	if newDeploy.Name != "deploy" || !slices.Equal(newDeploy.Actions, []string{"read", "write"}) || newDeploy.RepositoryFilter != "limited" {
+	if newDeploy.Name != "deploy" || !slices.Equal(newDeploy.Actions, []string{"read", "write"}) ||
+		newDeploy.RepositoryFilter != "limited" {
 		t.Fatalf("deploy target restored as %+v", newDeploy)
 	}
 
@@ -176,7 +191,11 @@ func TestBackupRestore_AccessControlAndQuotasRoundTrip(t *testing.T) {
 	}
 
 	if len(acc(dst).memberships) != 1 || acc(dst).memberships[0].UserID != newAlice.ID || acc(dst).memberships[0].GroupID != newDevs.ID {
-		t.Fatalf("memberships = %+v, want only alice in devs (SSO-managed bob left to the next login; bob=%s)", acc(dst).memberships, newBob.ID)
+		t.Fatalf(
+			"memberships = %+v, want only alice in devs (SSO-managed bob left to the next login; bob=%s)",
+			acc(dst).memberships,
+			newBob.ID,
+		)
 	}
 
 	q := acc(dst).quotas[newRepo.ID]
@@ -219,7 +238,14 @@ func TestBackup_ExcludesUpstreamPassword(t *testing.T) {
 	ctx := context.Background()
 	src := newFakeDB("src")
 
-	proxy := &models.Repository{Name: "px", Format: "go", RepoType: "proxy", UpstreamURL: "https://up.example", UpstreamUsername: "u", UpstreamPasswordEnc: "enc:v1:AAAA"}
+	proxy := &models.Repository{
+		Name:                "px",
+		Format:              "go",
+		RepoType:            "proxy",
+		UpstreamURL:         "https://up.example",
+		UpstreamUsername:    "u",
+		UpstreamPasswordEnc: "enc:v1:AAAA",
+	}
 	if err := src.CreateRepository(ctx, proxy); err != nil {
 		t.Fatal(err)
 	}

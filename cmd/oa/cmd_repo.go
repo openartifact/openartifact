@@ -28,7 +28,10 @@ func handleRepo(args []string, client *Client, outFmt string) {
 		repoList(client, outFmt)
 	case "create":
 		if len(args) < 2 {
-			dief("Usage: oa repo create <name> [--format fmt] [--description D] [--public] [--trash-retention-days N] [--immutable-releases] [--sign-packages]")
+			dief(
+				"Usage: oa repo create <name> [--format fmt] [--description D] [--public] " +
+					"[--trash-retention-days N] [--immutable-releases] [--sign-packages]",
+			)
 		}
 
 		repoCreate(client, args[1], args[2:], outFmt)
@@ -40,7 +43,10 @@ func handleRepo(args []string, client *Client, outFmt string) {
 		repoShow(client, args[1], outFmt)
 	case "update":
 		if len(args) < 2 {
-			dief("Usage: oa repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]")
+			dief(
+				"Usage: oa repo update <name> [--description D] [--public[=false]] " +
+					"[--trash-retention-days N|default] [--immutable-releases[=false]] [--sign-packages[=false]]",
+			)
 		}
 
 		repoUpdate(client, args[1], args[2:])
@@ -79,7 +85,11 @@ func repoCreate(client *Client, name string, args []string, outFmt string) {
 	repoFmt := fs.String("format", "npm", "Repository format")
 	desc := fs.String("description", "", "Description")
 	public := fs.Bool("public", false, "Public repository")
-	retention := fs.String("trash-retention-days", "", "Days deleted items stay in the trash (0 = delete immediately, default = server setting)")
+	retention := fs.String(
+		"trash-retention-days",
+		"",
+		"Days deleted items stay in the trash (0 = delete immediately, default = server setting)",
+	)
 	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions")
 	signPkgs := fs.Bool("sign-packages", false, "Hosted rpm repositories: sign uploaded RPMs with the active GPG key")
 	_ = fs.Parse(args)
@@ -132,7 +142,10 @@ func repoShow(client *Client, name, outFmt string) {
 
 	w := newTabWriter()
 
-	for _, k := range []string{"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days", "immutable_releases", "merge_proxy_versions", "sign_packages", "created_at", "updated_at"} {
+	for _, k := range []string{
+		"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days",
+		"immutable_releases", "merge_proxy_versions", "sign_packages", "created_at", "updated_at",
+	} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
 		}
@@ -147,10 +160,27 @@ func repoUpdate(client *Client, name string, args []string) {
 	fs := flag.NewFlagSet("repo update", flag.ExitOnError)
 	desc := fs.String("description", "", "Description")
 	public := fs.Bool("public", false, "Public (--public=false to make private)")
-	retention := fs.String("trash-retention-days", "", "Days deleted items stay in the trash (0 = delete immediately, default = server setting)")
-	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions (--immutable-releases=false to allow)")
-	mergeProxy := fs.Bool("merge-proxy-versions", false, "Group repositories, administrators only: merge proxy members' versions of names a hosted member holds (--merge-proxy-versions=false restores hosted-wins)")
-	signPkgs := fs.Bool("sign-packages", false, "Hosted rpm repositories: sign uploaded RPMs with the active GPG key (--sign-packages=false to stop)")
+	retention := fs.String(
+		"trash-retention-days",
+		"",
+		"Days deleted items stay in the trash (0 = delete immediately, default = server setting)",
+	)
+	immutable := fs.Bool(
+		"immutable-releases",
+		false,
+		"Block deleting or overwriting released versions (--immutable-releases=false to allow)",
+	)
+	mergeProxy := fs.Bool(
+		"merge-proxy-versions",
+		false,
+		"Group repositories, administrators only: merge proxy members' versions of names a hosted member holds "+
+			"(--merge-proxy-versions=false restores hosted-wins)",
+	)
+	signPkgs := fs.Bool(
+		"sign-packages",
+		false,
+		"Hosted rpm repositories: sign uploaded RPMs with the active GPG key (--sign-packages=false to stop)",
+	)
 	_ = fs.Parse(args)
 
 	set := setFlags(fs)
@@ -186,7 +216,10 @@ func repoUpdate(client *Client, name string, args []string) {
 	}
 
 	if len(body) == 0 {
-		dief("nothing to update: pass --description, --public[=false], --trash-retention-days, --immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]")
+		dief(
+			"nothing to update: pass --description, --public[=false], --trash-retention-days, " +
+				"--immutable-releases[=false], --sign-packages[=false] or --merge-proxy-versions[=false]",
+		)
 	}
 
 	sendJSON(client, "PATCH", "/api/v1/repository/"+escape(name), body, http.StatusOK)

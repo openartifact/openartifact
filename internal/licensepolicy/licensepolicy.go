@@ -305,7 +305,14 @@ func Enforce(w http.ResponseWriter, r *http.Request, db PolicyLister, log *logge
 // come from what a client declared; it is stored with the result.
 //
 // It returns the stored result and all violations (blocking or not).
-func Record(ctx context.Context, db Store, log *logger.Logger, repoID, artifactID string, licenses []string, source string) (*models.LicenseScanResult, []Violation, error) {
+func Record(
+	ctx context.Context,
+	db Store,
+	log *logger.Logger,
+	repoID, artifactID string,
+	licenses []string,
+	source string,
+) (*models.LicenseScanResult, []Violation, error) {
 	licenses = normalize(log, licenses)
 
 	violations, err := Evaluate(ctx, db, log, repoID, licenses)

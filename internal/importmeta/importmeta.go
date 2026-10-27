@@ -96,7 +96,12 @@ func Middleware(authz Authorizer) func(http.Handler) http.Handler {
 
 			t, ok := parse(value, time.Now())
 			if !ok {
-				httpx.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", HeaderCreatedAt+" must be an RFC 3339 timestamp that is not in the future")
+				httpx.WriteError(
+					w,
+					http.StatusBadRequest,
+					"INVALID_INPUT",
+					HeaderCreatedAt+" must be an RFC 3339 timestamp that is not in the future",
+				)
 				return
 			}
 

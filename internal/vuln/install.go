@@ -180,7 +180,8 @@ func (t *cliTool) unavailableStatus(offline bool, pathEnv string) ScannerStatus 
 		// The installer finished, but the file is gone or no longer what was
 		// verified: nothing is installing, and nothing will until a restart.
 		st.Code, st.InstallState = CodeScannerInstallFailed, InstallStateFailed
-		st.Message = "The installed " + t.name + " binary is missing or no longer matches the verified file: restart the server to install it again."
+		st.Message = "The installed " + t.name + " binary is missing or no longer matches the verified file: restart the server to " +
+			"install it again."
 	case offline:
 		st.Message = notFound + " Offline mode is on, so the pinned release is not downloaded."
 	default:
@@ -194,13 +195,17 @@ func (t *cliTool) unavailableStatus(offline bool, pathEnv string) ScannerStatus 
 func (t *cliTool) installFailureMessage(code, result string) string {
 	switch {
 	case code == CodeScannerInstallNoexec:
-		return "The downloaded " + t.name + " binary cannot be executed: the scanner cache directory is probably on a noexec mount. Mount it with exec, or install " + t.name + " yourself."
+		return "The downloaded " + t.name + " binary cannot be executed: the scanner cache directory is probably on a noexec " +
+			"mount. Mount it with exec, or install " + t.name + " yourself."
 	case result == resultUnsupported:
-		return "No " + t.name + " build is pinned for this platform (" + t.platform + "): install " + t.name + " yourself and put it on PATH or set its path."
+		return "No " + t.name + " build is pinned for this platform (" + t.platform + "): install " + t.name + " yourself and put " +
+			"it on PATH or set its path."
 	case result == resultInsecure:
-		return "The " + t.name + " install directory is not private to the server's user (it must be owned by it and not writable by others): fix its ownership and permissions, or set the " + t.name + " path instead."
+		return "The " + t.name + " install directory is not private to the server's user (it must be owned by it and not writable " +
+			"by others): fix its ownership and permissions, or set the " + t.name + " path instead."
 	default:
-		return "The " + t.name + " release could not be installed: check outbound access to the download host (or scanners.downloadBaseUrl) and that the cache directory is writable. The server log has the cause."
+		return "The " + t.name + " release could not be installed: check outbound access to the download host (or " +
+			"scanners.downloadBaseUrl) and that the cache directory is writable. The server log has the cause."
 	}
 }
 

@@ -272,8 +272,14 @@ func fuzzProjectSeeds(f *testing.F) {
 	f.Add([]byte(upstreamJSON), "text/html")
 	f.Add([]byte(`<a href=" x/y.whl#md5=C0FFEE " data-yanked>y</a><a href="z"></a>`), "")
 	f.Add([]byte(`<a href="x/ y.tar.gz?q=1"></a><a data-core-metadata="false" href=a>"><script>alert(1)</script></a>`), "text/html")
-	f.Add([]byte(`{"files":[{"filename":"a","url":"b#c","hashes":{"SHA256":"AB"},"core-metadata":{"MD5":"X"},"yanked":"","size":-5}]}`), "application/json")
-	f.Add([]byte(`{"files":[{"filename":"a","url":"b","yanked":3,"core-metadata":null,"requires-python":null,"size":1.5}]}`), ContentTypeJSON)
+	f.Add(
+		[]byte(`{"files":[{"filename":"a","url":"b#c","hashes":{"SHA256":"AB"},"core-metadata":{"MD5":"X"},"yanked":"","size":-5}]}`),
+		"application/json",
+	)
+	f.Add(
+		[]byte(`{"files":[{"filename":"a","url":"b","yanked":3,"core-metadata":null,"requires-python":null,"size":1.5}]}`),
+		ContentTypeJSON,
+	)
 	f.Add([]byte(`{"files":`), ContentTypeJSON)
 	f.Add([]byte("<a href=x"), "")
 	f.Add([]byte{}, "")
@@ -388,7 +394,10 @@ func fuzzCheckHTMLSafe(t *testing.T, files []File) {
 // checks the names that survive are safe path segments.
 func FuzzParseIndex(f *testing.F) {
 	f.Add([]byte(`<a href="/simple/foo/">Foo_Bar</a><br/><a href="x"> baz.qux </a><a>../etc</a><a>a/b</a><a>-x</a>`), "text/html")
-	f.Add([]byte(`{"meta":{"api-version":"1.0"},"projects":[{"name":"Foo.Bar"},{"name":""},{"name":"a b"},{"name":"foo-bar"}]}`), ContentTypeJSON)
+	f.Add(
+		[]byte(`{"meta":{"api-version":"1.0"},"projects":[{"name":"Foo.Bar"},{"name":""},{"name":"a b"},{"name":"foo-bar"}]}`),
+		ContentTypeJSON,
+	)
 	f.Add([]byte(`{"projects":[{"name":"\u212a"},{"name":"ǅ"}]}`), "application/json")
 	f.Add([]byte(`{"projects":`), ContentTypeJSON)
 	f.Add([]byte{}, "")
@@ -507,7 +516,21 @@ func FuzzRenderIndex(f *testing.F) {
 // hold the template elements with exactly the attributes the file dictates,
 // in JSON the document must parse back to the same file.
 func FuzzRenderProject(f *testing.F) {
-	f.Add("demo-1.0.whl", "https://x/demo-1.0.whl", "sha256", "ab", "sha256", "cd", ">=3.8", true, true, "reason", "2024-01-02T03:04:05Z", int64(12), "demo")
+	f.Add(
+		"demo-1.0.whl",
+		"https://x/demo-1.0.whl",
+		"sha256",
+		"ab",
+		"sha256",
+		"cd",
+		">=3.8",
+		true,
+		true,
+		"reason",
+		"2024-01-02T03:04:05Z",
+		int64(12),
+		"demo",
+	)
 	f.Add("a\"b'<c>&.whl", "u\r\n\"onmouseover=\"x", "MD5", "0F", "", "", "\"><script>", true, true, "\r\"/>", "", int64(-3), "<x>")
 	f.Add("", "", "", "", "", "", "", false, false, "", "", int64(0), "")
 

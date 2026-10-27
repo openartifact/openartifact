@@ -80,7 +80,13 @@ func TestSPDX3JSONStructure(t *testing.T) {
 	g := graphByType(t, res)
 
 	if len(g["software_Package"]) != 3 || len(g["SpdxDocument"]) != 1 || len(g["software_Sbom"]) != 1 || len(g["CreationInfo"]) != 1 {
-		t.Fatalf("graph counts: pkg=%d doc=%d sbom=%d ci=%d", len(g["software_Package"]), len(g["SpdxDocument"]), len(g["software_Sbom"]), len(g["CreationInfo"]))
+		t.Fatalf(
+			"graph counts: pkg=%d doc=%d sbom=%d ci=%d",
+			len(g["software_Package"]),
+			len(g["SpdxDocument"]),
+			len(g["software_Sbom"]),
+			len(g["CreationInfo"]),
+		)
 	}
 
 	root := g["software_Package"][0]
@@ -98,7 +104,8 @@ func TestSPDX3JSONStructure(t *testing.T) {
 	}
 
 	vex := g["security_VexNotAffectedVulnAssessmentRelationship"]
-	if len(vex) != 1 || vex[0]["security_justificationType"] != "vulnerableCodeNotInExecutePath" || vex[0]["relationshipType"] != "doesNotAffect" {
+	if len(vex) != 1 || vex[0]["security_justificationType"] != "vulnerableCodeNotInExecutePath" ||
+		vex[0]["relationshipType"] != "doesNotAffect" {
 		t.Errorf("not-affected assessments = %v", vex)
 	}
 

@@ -188,7 +188,12 @@ func TestReconcileStorageUsageFixesCorruptedCounter(t *testing.T) {
 			requireUsage(t, pg, s.repo, wantBytes, wantCount)
 
 			if got.MaxSizeBytes != 5000 || got.MaxArtifactCount != 50 || got.WarnThresholdPercent != 70 {
-				t.Errorf("limits changed by reconcile: %d bytes / %d artifacts / %d%%", got.MaxSizeBytes, got.MaxArtifactCount, got.WarnThresholdPercent)
+				t.Errorf(
+					"limits changed by reconcile: %d bytes / %d artifacts / %d%%",
+					got.MaxSizeBytes,
+					got.MaxArtifactCount,
+					got.WarnThresholdPercent,
+				)
 			}
 		})
 	}

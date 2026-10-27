@@ -38,7 +38,9 @@ func TestScanPackages(t *testing.T) {
 	}
 
 	foo := got[0]
-	if foo.Package != "foo" || foo.Version != "1.0-1" || foo.Architecture != "amd64" || foo.Filename != "pool/main/f/foo/foo_1.0-1_amd64.deb" || foo.SHA256 != "aa" {
+	if foo.Package != "foo" || foo.Version != "1.0-1" || foo.Architecture != "amd64" ||
+		foo.Filename != "pool/main/f/foo/foo_1.0-1_amd64.deb" ||
+		foo.SHA256 != "aa" {
 		t.Errorf("foo = %+v", foo)
 	}
 
@@ -98,7 +100,13 @@ func TestParseRelease(t *testing.T) {
 		t.Error("HasIndex must reflect the declared components and architectures")
 	}
 
-	if got := rel.PackagesVariants("main", "amd64"); !slices.Equal(got, []string{"main/binary-amd64/Packages.xz", "main/binary-amd64/Packages"}) {
+	if got := rel.PackagesVariants(
+		"main",
+		"amd64",
+	); !slices.Equal(
+		got,
+		[]string{"main/binary-amd64/Packages.xz", "main/binary-amd64/Packages"},
+	) {
 		t.Errorf("variants of main/amd64 = %v: want only the listed ones, best compression first", got)
 	}
 

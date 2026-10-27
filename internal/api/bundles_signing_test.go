@@ -66,8 +66,22 @@ func signingFixture(t *testing.T) (*signingDB, *BundlesHandler, *gpgkeys.Service
 
 	db := &signingDB{
 		items: []*models.ReleaseBundleItem{
-			{ID: "bbbbbbbb-0000-4000-8000-000000000002", SHA256: strings.Repeat("b", 64), ArtifactPath: "pkg/b.tgz", Format: "npm", SizeBytes: 20, SourceRepoID: testRepoID},
-			{ID: "aaaaaaaa-0000-4000-8000-000000000001", SHA256: strings.Repeat("a", 64), ArtifactPath: "pkg/a.tgz", Format: "npm", SizeBytes: 10, SourceRepoID: testRepoID},
+			{
+				ID:           "bbbbbbbb-0000-4000-8000-000000000002",
+				SHA256:       strings.Repeat("b", 64),
+				ArtifactPath: "pkg/b.tgz",
+				Format:       "npm",
+				SizeBytes:    20,
+				SourceRepoID: testRepoID,
+			},
+			{
+				ID:           "aaaaaaaa-0000-4000-8000-000000000001",
+				SHA256:       strings.Repeat("a", 64),
+				ArtifactPath: "pkg/a.tgz",
+				Format:       "npm",
+				SizeBytes:    10,
+				SourceRepoID: testRepoID,
+			},
 		},
 		sealRet: true,
 	}
@@ -140,13 +154,23 @@ func verifyServedManifest(t *testing.T, h *BundlesHandler, svc *gpgkeys.Service,
 		t.Fatal(err)
 	}
 
-	if _, err := openpgp.CheckArmoredDetachedSignature(ring, bytes.NewReader(man.Body.Bytes()), bytes.NewReader(asc.Body.Bytes()), nil); err != nil {
+	if _, err := openpgp.CheckArmoredDetachedSignature(
+		ring,
+		bytes.NewReader(man.Body.Bytes()),
+		bytes.NewReader(asc.Body.Bytes()),
+		nil,
+	); err != nil {
 		t.Fatalf("signature does not verify against the served manifest: %v", err)
 	}
 
 	// A tampered manifest does not.
 	tampered := bytes.Replace(man.Body.Bytes(), []byte(`"1.0"`), []byte(`"1.1"`), 1)
-	if _, err := openpgp.CheckArmoredDetachedSignature(ring, bytes.NewReader(tampered), bytes.NewReader(asc.Body.Bytes()), nil); err == nil {
+	if _, err := openpgp.CheckArmoredDetachedSignature(
+		ring,
+		bytes.NewReader(tampered),
+		bytes.NewReader(asc.Body.Bytes()),
+		nil,
+	); err == nil {
 		t.Error("a modified manifest verified")
 	}
 
@@ -180,7 +204,12 @@ func TestBundleSealWithFingerprintAndConfigKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rw := serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/rel/1.0/seal", `{"gpg_key_id":"`+strings.ToLower(key.Fingerprint)+`"}`)
+	rw := serveAs(
+		h.RegisterAuthed,
+		http.MethodPost,
+		"/api/v1/bundles/rel/1.0/seal",
+		`{"gpg_key_id":"`+strings.ToLower(key.Fingerprint)+`"}`,
+	)
 	if rw.Code != http.StatusOK || db.gotSig == nil || db.gotSig.KeyFingerprint != key.Fingerprint {
 		t.Errorf("by fingerprint: %d %s", rw.Code, rw.Body.String())
 	}

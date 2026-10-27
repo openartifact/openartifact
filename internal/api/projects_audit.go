@@ -63,7 +63,8 @@ func (h *ProjectsHandler) emit(r *http.Request, ev projectEvent) {
 // emitProjectUpdate records project.updated for changed display fields and
 // project.policy_changed for changed policy fields (either, both or none).
 func (h *ProjectsHandler) emitProjectUpdate(r *http.Request, before, after *models.Project) {
-	if derefString(before.DisplayName) != derefString(after.DisplayName) || derefString(before.Description) != derefString(after.Description) {
+	if derefString(before.DisplayName) != derefString(after.DisplayName) ||
+		derefString(before.Description) != derefString(after.Description) {
 		h.emit(r, projectEvent{
 			action: audit.ActionProjectUpdated, projectID: &after.ID, resourceID: after.ID,
 			message: "project " + after.Name + " updated",

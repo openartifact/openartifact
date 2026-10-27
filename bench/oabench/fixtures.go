@@ -135,7 +135,8 @@ func pomXML(group, artifact, version string) []byte {
   <artifactId>%s</artifactId>
   <version>%s</version>
   <name>%s</name>
-  <dependencies><dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>2.0.9</version></dependency></dependencies>
+  <dependencies><dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId>
+  <version>2.0.9</version></dependency></dependencies>
 </project>
 `, group, artifact, version, artifact)
 }

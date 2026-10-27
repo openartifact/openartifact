@@ -199,7 +199,11 @@ func TestDependencyTrackGlobalSettingsNeverReturnTheKey(t *testing.T) {
 
 	rw := f.do(t, http.MethodGet, dtGlobal, "", true)
 	mustEqual(t, http.StatusOK, rw.Code)
-	expectJSONEq(t, `{"enabled":false,"base_url":"","api_key_set":false,"project_name":"","project_version":"","auto_push":false,"push_vex":false}`, rw.Body.String())
+	expectJSONEq(
+		t,
+		`{"enabled":false,"base_url":"","api_key_set":false,"project_name":"","project_version":"","auto_push":false,"push_vex":false}`,
+		rw.Body.String(),
+	)
 
 	body := `{"enabled":true,"base_url":"` + f.dt.URL + `","api_key":"` + dtSecretKey + `","project_name":"{repo}/{name}","auto_push":true,"push_vex":true}`
 	rw = f.do(t, http.MethodPut, dtGlobal, body, true)
@@ -289,7 +293,13 @@ func TestDependencyTrackConnectionTest(t *testing.T) {
 func TestDependencyTrackRepositoryOverride(t *testing.T) {
 	f := newDTFixture(t)
 
-	f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":"`+dtSecretKey+`","auto_push":true,"push_vex":true}`, true)
+	f.do(
+		t,
+		http.MethodPut,
+		dtGlobal,
+		`{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":"`+dtSecretKey+`","auto_push":true,"push_vex":true}`,
+		true,
+	)
 
 	rw := f.do(t, http.MethodGet, dtRepo, "", true)
 	mustEqual(t, http.StatusOK, rw.Code)

@@ -26,10 +26,12 @@ import (
 const placeholderPassword = "CHANGE_ME"
 
 var (
-	errInvalidPort        = errors.New("invalid server port")
-	errMalformedKeyValue  = errors.New("expected key=value")
-	errMCPTransport       = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
-	errMCPLimits          = errors.New("mcp.maxBodyBytes must be positive; mcp.rateLimitPerMinute and mcp.aiTriggerPerMinute must not be negative")
+	errInvalidPort       = errors.New("invalid server port")
+	errMalformedKeyValue = errors.New("expected key=value")
+	errMCPTransport      = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
+	errMCPLimits         = errors.New(
+		"mcp.maxBodyBytes must be positive; mcp.rateLimitPerMinute and mcp.aiTriggerPerMinute must not be negative",
+	)
 	errMCPOrigin          = errors.New("mcp.allowedOrigins entries must be origins like https://host[:port]")
 	errMissingDBDriver    = errors.New("database driver is required")
 	errMissingStorageType = errors.New("storage type is required")
@@ -40,18 +42,33 @@ var (
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
-	errAuditRetention           = errors.New("audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive")
-	errFederationSettings       = errors.New("federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, tombstoneRetention must not be negative")
-	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
-	errBlobDeletionNegative     = errors.New("blobDeletion.grace must not be negative")
-	errBackupLeaseTTL           = errors.New("backup.leaseTtl must be positive")
-	errRecoveryBatch            = errors.New("recovery.journal.batch and recovery.journal.concurrency must be at least 1")
-	errRecoveryNegative         = errors.New("recovery.journal.interval must be positive when the journal is enabled and recovery.journal.reconcileInterval must not be negative")
-	errTieringBatch             = errors.New("tiering.batch and tiering.concurrency must be at least 1")
-	errTieringNegative          = errors.New("tiering.maxBytesPerSecond, accessFlushInterval and refreshInterval must not be negative")
-	errTieringPoolSize          = errors.New("database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each")
-	errPlaceholderDBPassword    = errors.New("database.password is still the CHANGE_ME placeholder from the example files: set a real password")
-	errMaxOpenConnsTooSmall     = errors.New("database.maxOpenConns must be 0 (driver default) or at least 2: a blob-lock transaction pins one connection and its callback needs another")
+	errAuditRetention           = errors.New(
+		"audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive",
+	)
+	errFederationSettings = errors.New(
+		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, " +
+			"tombstoneRetention must not be negative",
+	)
+	errBlobDeletionBatch    = errors.New("blobDeletion.sweepBatch must be at least 1")
+	errBlobDeletionNegative = errors.New("blobDeletion.grace must not be negative")
+	errBackupLeaseTTL       = errors.New("backup.leaseTtl must be positive")
+	errRecoveryBatch        = errors.New("recovery.journal.batch and recovery.journal.concurrency must be at least 1")
+	errRecoveryNegative     = errors.New(
+		"recovery.journal.interval must be positive when the journal is enabled and recovery.journal.reconcileInterval must not be negative",
+	)
+	errTieringBatch    = errors.New("tiering.batch and tiering.concurrency must be at least 1")
+	errTieringNegative = errors.New("tiering.maxBytesPerSecond, accessFlushInterval and refreshInterval must not be negative")
+	errTieringPoolSize = errors.New(
+		"database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: " +
+			"a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each",
+	)
+	errPlaceholderDBPassword = errors.New(
+		"database.password is still the CHANGE_ME placeholder from the example files: set a real password",
+	)
+	errMaxOpenConnsTooSmall = errors.New(
+		"database.maxOpenConns must be 0 (driver default) or at least 2: " +
+			"a blob-lock transaction pins one connection and its callback needs another",
+	)
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
@@ -1280,7 +1297,9 @@ func (c *Config) validateMCP() error {
 
 	for _, o := range c.MCP.AllowedOrigins {
 		u, err := url.Parse(o)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") ||
+			u.RawQuery != "" ||
+			u.Fragment != "" {
 			return fmt.Errorf("%w: %q", errMCPOrigin, o)
 		}
 	}

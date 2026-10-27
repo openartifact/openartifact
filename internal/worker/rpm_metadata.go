@@ -32,7 +32,13 @@ type RPMetadataWorker struct {
 	onStale   func(repoID string)
 }
 
-func NewRPMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger, reg *metrics.Registry) *RPMetadataWorker {
+func NewRPMetadataWorker(
+	db sq.Database,
+	blobStore storage.BlobStore,
+	signers gpg.Resolver,
+	log *logger.Logger,
+	reg *metrics.Registry,
+) *RPMetadataWorker {
 	w := &RPMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("rpm", log, w.Regenerate)
 	w.q.setMetrics(reg)
@@ -201,7 +207,12 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
 
 	for _, path := range stalePaths {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`, repoID, path); err != nil {
+		if _, err := tx.ExecContext(
+			ctx,
+			`DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`,
+			repoID,
+			path,
+		); err != nil {
 			return fmt.Errorf("rpm worker: deleting superseded repository_metadata %s: %w", path, err)
 		}
 	}
@@ -377,7 +388,10 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	for _, k := range kinds {
 		// The XML streams straight into the gzip and xz encoders; the
 		// uncompressed document is never held in memory.
-		comp, err := formatrpm.CompressMetadataStream(func(out io.Writer) error { return k.write(out, packages) }, len(packages)*xmlBytesPerPackageHint)
+		comp, err := formatrpm.CompressMetadataStream(
+			func(out io.Writer) error { return k.write(out, packages) },
+			len(packages)*xmlBytesPerPackageHint,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("rpm worker: generating %s.xml: %w", k.name, err)
 		}

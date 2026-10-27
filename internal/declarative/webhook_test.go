@@ -413,7 +413,11 @@ func TestWebhookValidate(t *testing.T) {
 			obj:     &Object{Name: "x", Meta: map[string]string{"repository": "a/b"}, Spec: good()},
 			wantErr: "not a valid repository name",
 		},
-		{name: "non http url", obj: &Object{Name: "x", Meta: map[string]string{}, Spec: withSpec("url", "ftp://x.example.com")}, wantErr: "http(s)"},
+		{
+			name:    "non http url",
+			obj:     &Object{Name: "x", Meta: map[string]string{}, Spec: withSpec("url", "ftp://x.example.com")},
+			wantErr: "http(s)",
+		},
 		{
 			name:    "no events",
 			obj:     &Object{Name: "x", Meta: map[string]string{}, Spec: withSpec("events", []any{})},

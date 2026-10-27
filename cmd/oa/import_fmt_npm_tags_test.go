@@ -30,8 +30,15 @@ func npmReplaceFile(files []fakeFile, path, data string) []fakeFile {
 // npmWantTags is what the default Nexus fixture ends with: the tags of the
 // packuments plus the latest derived from the versions.
 var (
-	npmWantLeftPadTags = map[string]string{"latest": "1.1.0", "beta": "2.0.0-beta.1", "legacy": "1.0.0"} //nolint:gochecknoglobals // read-only expectations shared by the tests
-	npmWantWidgetTags  = map[string]string{"latest": "0.2.0-rc.2", "rc": "0.2.0-rc.1"}                   //nolint:gochecknoglobals // read-only expectations shared by the tests
+	npmWantLeftPadTags = map[string]string{ //nolint:gochecknoglobals // read-only expectations shared by the tests
+		"latest": "1.1.0",
+		"beta":   "2.0.0-beta.1",
+		"legacy": "1.0.0",
+	}
+	npmWantWidgetTags = map[string]string{ //nolint:gochecknoglobals // read-only expectations shared by the tests
+		"latest": "0.2.0-rc.2",
+		"rc":     "0.2.0-rc.1",
+	}
 )
 
 func TestImportNPMTagsNexusImportsEveryDistTag(t *testing.T) {
@@ -106,15 +113,35 @@ func TestImportNPMTagsArtifactory(t *testing.T) {
 			}
 
 			// Artifactory keeps the packuments in a dot directory the payload listing skips.
-			files = append(files,
-				fakeFile{path: ".npm/left-pad/package.json", data: []byte(`{"name":"left-pad","dist-tags":{"latest":"1.0.0","stable":"1.1.0"}}`), created: artiStamp},
-				fakeFile{path: ".npm/@acme/widget/package.json", data: []byte(`{"name":"@acme/widget","dist-tags":{"latest":"1.0.0","canary":"1.0.0"}}`), created: artiStamp},
+			files = append(
+				files,
+				fakeFile{
+					path:    ".npm/left-pad/package.json",
+					data:    []byte(`{"name":"left-pad","dist-tags":{"latest":"1.0.0","stable":"1.1.0"}}`),
+					created: artiStamp,
+				},
+				fakeFile{
+					path:    ".npm/@acme/widget/package.json",
+					data:    []byte(`{"name":"@acme/widget","dist-tags":{"latest":"1.0.0","canary":"1.0.0"}}`),
+					created: artiStamp,
+				},
 			)
 
 			arti := newFakeArtifactory(t, fakeSourceRepo{name: "npm-local", format: "npm", kind: "local", files: files})
 			oa := npmNewOA(t)
 
-			cfg := parseCfg(t, "artifactory", "--source-url", arti.URL, "--source-user", "svc", "--repo", "npm-local:reg", "--artifactory-listing", mode)
+			cfg := parseCfg(
+				t,
+				"artifactory",
+				"--source-url",
+				arti.URL,
+				"--source-user",
+				"svc",
+				"--repo",
+				"npm-local:reg",
+				"--artifactory-listing",
+				mode,
+			)
 			cfg.SourceToken = "secret"
 
 			rep := runImportTest(t, cfg, arti, oa)
@@ -233,7 +260,12 @@ func TestImportNPMTagsDryRunWritesNothing(t *testing.T) {
 
 	var progress bytes.Buffer
 
-	imp, err := newImporter(npmNexusCfg(t, nexus, "--dry-run"), newImportSource(npmNexusCfg(t, nexus), nexus.Client()), &importTarget{c: oa.client()}, &progress)
+	imp, err := newImporter(
+		npmNexusCfg(t, nexus, "--dry-run"),
+		newImportSource(npmNexusCfg(t, nexus), nexus.Client()),
+		&importTarget{c: oa.client()},
+		&progress,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +343,8 @@ func TestImportNPMTagsUnreadablePackumentIsReported(t *testing.T) {
 	oa := npmNewOA(t)
 
 	rep := runImportTest(t, npmNexusCfg(t, nexus), nexus, oa)
-	if rep.Uploaded != 5 || rep.Failed != 1 || rep.Failures[0].Path != "left-pad" || !strings.Contains(rep.Failures[0].Error, "decoding the packument") {
+	if rep.Uploaded != 5 || rep.Failed != 1 || rep.Failures[0].Path != "left-pad" ||
+		!strings.Contains(rep.Failures[0].Error, "decoding the packument") {
 		t.Fatalf("report = %+v", rep)
 	}
 

@@ -26,9 +26,15 @@ func TestRBAC_DockerPingAllowsAnyAuthenticatedPrincipal(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	handler := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+	handler := newRBACMiddleware(
+		db,
+		middleware.RBACConfig{},
+		newMWLogger(t),
+	)(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		if rw := serve(handler, method, "/v2/", bearerHeader(tok)); rw.Code != http.StatusOK {

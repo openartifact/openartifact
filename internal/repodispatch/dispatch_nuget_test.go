@@ -35,12 +35,20 @@ func nugetEnv(t *testing.T) http.Handler {
 	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v3/index.json":
-			_, _ = fmt.Fprintf(w, `{"version":"3.0.0","resources":[{"@id":"%[1]s/flat/","@type":"PackageBaseAddress/3.0.0"},{"@id":"%[1]s/reg/","@type":"RegistrationsBaseUrl/3.6.0"}]}`, upstream.URL)
+			_, _ = fmt.Fprintf(
+				w,
+				`{"version":"3.0.0","resources":[{"@id":"%[1]s/flat/","@type":"PackageBaseAddress/3.0.0"},{"@id":"%[1]s/reg/","@type":"RegistrationsBaseUrl/3.6.0"}]}`,
+				upstream.URL,
+			)
 		case "/flat/remote/index.json":
 			_, _ = io.WriteString(w, `{"versions":["1.0.0"]}`)
 		case "/reg/remote/index.json":
-			_, _ = fmt.Fprintf(w, `{"@id":"%[1]s/reg/remote/index.json","count":1,"items":[{"@id":"%[1]s/reg/remote/index.json#page/1.0.0/1.0.0","lower":"1.0.0","upper":"1.0.0","count":1,"items":`+
-				`[{"@id":"%[1]s/reg/remote/1.0.0.json","packageContent":"%[1]s/flat/remote/1.0.0/remote.1.0.0.nupkg","catalogEntry":{"version":"1.0.0"}}]}]}`, upstream.URL)
+			_, _ = fmt.Fprintf(
+				w,
+				`{"@id":"%[1]s/reg/remote/index.json","count":1,"items":[{"@id":"%[1]s/reg/remote/index.json#page/1.0.0/1.0.0","lower":"1.0.0","upper":"1.0.0","count":1,"items":`+
+					`[{"@id":"%[1]s/reg/remote/1.0.0.json","packageContent":"%[1]s/flat/remote/1.0.0/remote.1.0.0.nupkg","catalogEntry":{"version":"1.0.0"}}]}]}`,
+				upstream.URL,
+			)
 		default:
 			http.NotFound(w, r)
 		}
@@ -87,8 +95,13 @@ func nugetEnv(t *testing.T) http.Handler {
 		}
 
 		idx := nugetBase + "/repos/local/v3/registration/local/index.json"
-		_, _ = fmt.Fprintf(w, `{"@id":%[1]q,"count":1,"items":[{"@id":"%[1]s#page/2.0.0/2.0.0","lower":"2.0.0","upper":"2.0.0","count":1,"items":`+
-			`[{"@id":"%[2]s/repos/local/v3/registration/local/2.0.0.json","packageContent":"%[2]s/repos/local/v3/package/local/2.0.0/local.2.0.0.nupkg","catalogEntry":{"version":"2.0.0"}}]}]}`, idx, nugetBase)
+		_, _ = fmt.Fprintf(
+			w,
+			`{"@id":%[1]q,"count":1,"items":[{"@id":"%[1]s#page/2.0.0/2.0.0","lower":"2.0.0","upper":"2.0.0","count":1,"items":`+
+				`[{"@id":"%[2]s/repos/local/v3/registration/local/2.0.0.json","packageContent":"%[2]s/repos/local/v3/package/local/2.0.0/local.2.0.0.nupkg","catalogEntry":{"version":"2.0.0"}}]}]}`,
+			idx,
+			nugetBase,
+		)
 	})
 	hosted.Get("/v3/package/{id}/{version}/{file}", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "hosted-file:"+chi.URLParam(r, "id")+"/"+chi.URLParam(r, "version")+"/"+chi.URLParam(r, "file"))
@@ -151,7 +164,11 @@ func TestNuGetProxyAndGroupThroughDispatch(t *testing.T) {
 				t.Errorf("registration of %s = %d %s", pkg, w.Code, w.Body.String())
 			}
 
-			if w := npmGet(h, "/repos/all/v3/package/"+pkg+"/index.json"); w.Code != 200 || !strings.Contains(w.Body.String(), `"versions"`) {
+			if w := npmGet(
+				h,
+				"/repos/all/v3/package/"+pkg+"/index.json",
+			); w.Code != 200 ||
+				!strings.Contains(w.Body.String(), `"versions"`) {
 				t.Errorf("versions of %s = %d %s", pkg, w.Code, w.Body.String())
 			}
 		}

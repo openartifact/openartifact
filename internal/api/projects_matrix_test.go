@@ -34,10 +34,28 @@ func TestProjectsRouteMatrix(t *testing.T) {
 		{"project activity", http.MethodGet, "/api/v1/projects/acme/activity", "", models.ProjectRoleViewer},
 		{"update project", http.MethodPatch, "/api/v1/projects/acme", `{"display_name":"x"}`, models.ProjectRoleOwner},
 		{"delete project", http.MethodDelete, "/api/v1/projects/acme", "", models.ProjectRoleOwner},
-		{"add member", http.MethodPost, "/api/v1/projects/acme/members", `{"username":"newbie","role":"viewer"}`, models.ProjectRoleMaintainer},
-		{"change member role", http.MethodPatch, "/api/v1/projects/acme/members/" + uView1, `{"role":"developer"}`, models.ProjectRoleMaintainer},
+		{
+			"add member",
+			http.MethodPost,
+			"/api/v1/projects/acme/members",
+			`{"username":"newbie","role":"viewer"}`,
+			models.ProjectRoleMaintainer,
+		},
+		{
+			"change member role",
+			http.MethodPatch,
+			"/api/v1/projects/acme/members/" + uView1,
+			`{"role":"developer"}`,
+			models.ProjectRoleMaintainer,
+		},
 		{"remove member", http.MethodDelete, "/api/v1/projects/acme/members/" + uView1, "", models.ProjectRoleMaintainer},
-		{"attach group", http.MethodPut, "/api/v1/projects/acme/groups/" + testGroupName, `{"role":"viewer"}`, models.ProjectRoleMaintainer},
+		{
+			"attach group",
+			http.MethodPut,
+			"/api/v1/projects/acme/groups/" + testGroupName,
+			`{"role":"viewer"}`,
+			models.ProjectRoleMaintainer,
+		},
 		{"detach group", http.MethodDelete, "/api/v1/projects/acme/groups/" + testGroupName, "", models.ProjectRoleMaintainer},
 	}
 
@@ -55,7 +73,12 @@ func TestProjectsRouteMatrix(t *testing.T) {
 
 	newDB := func() *projectsMockDB {
 		db := newProjectsMock()
-		db.projectGroup[testGroupID] = &models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, GroupName: testGroupName, Role: models.ProjectRoleViewer}
+		db.projectGroup[testGroupID] = &models.ProjectGroup{
+			ProjectID: testAcmeID,
+			GroupID:   testGroupID,
+			GroupName: testGroupName,
+			Role:      models.ProjectRoleViewer,
+		}
 
 		return db
 	}
@@ -84,19 +107,40 @@ func TestProjectsRouteMatrix(t *testing.T) {
 			path := strings.Replace(rt.path, "/projects/acme", "/projects/ghost", 1)
 
 			for _, user := range []string{uAdmin1, uOwner1, uNewbie} {
-				if code, body := projectJSON(t, newProjectsRouter(t, newDB()), user, rt.method, path, rt.body); code != http.StatusNotFound {
+				if code, body := projectJSON(
+					t,
+					newProjectsRouter(t, newDB()),
+					user,
+					rt.method,
+					path,
+					rt.body,
+				); code != http.StatusNotFound {
 					t.Errorf("%s: status = %d, want 404; body = %v", user, code, body)
 				}
 			}
 		})
 
 		t.Run(rt.name+"/anonymous", func(t *testing.T) {
-			if code, _ := projectJSONAs(t, newProjectsRouter(t, newDB()), nil, rt.method, rt.path, rt.body); code != http.StatusUnauthorized {
+			if code, _ := projectJSONAs(
+				t,
+				newProjectsRouter(t, newDB()),
+				nil,
+				rt.method,
+				rt.path,
+				rt.body,
+			); code != http.StatusUnauthorized {
 				t.Errorf("status = %d, want 401", code)
 			}
 
 			deploy := deployPrincipal(uOwner1)
-			if code, _ := projectJSONAs(t, newProjectsRouter(t, newDB()), deploy, rt.method, rt.path, rt.body); code != http.StatusNotFound {
+			if code, _ := projectJSONAs(
+				t,
+				newProjectsRouter(t, newDB()),
+				deploy,
+				rt.method,
+				rt.path,
+				rt.body,
+			); code != http.StatusNotFound {
 				t.Errorf("deploy token: status = %d, want 404", code)
 			}
 		})
@@ -123,7 +167,12 @@ func TestProjectsGroupGrantedRole(t *testing.T) {
 			db := newProjectsMock()
 			db.users[uGroup] = &models.User{ID: uGroup, Username: testUsernames[uGroup]}
 			db.userGroups[uGroup] = []string{testGroupID}
-			db.projectGroup[testGroupID] = &models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, GroupName: testGroupName, Role: tt.role}
+			db.projectGroup[testGroupID] = &models.ProjectGroup{
+				ProjectID: testAcmeID,
+				GroupID:   testGroupID,
+				GroupName: testGroupName,
+				Role:      tt.role,
+			}
 
 			code, body := projectJSON(t, newProjectsRouter(t, db), uGroup, tt.method, tt.target, tt.body)
 			if code != tt.want {
@@ -189,7 +238,14 @@ func TestProjectsMalformedMemberID(t *testing.T) {
 		{"DELETE truncated UUID", uOwner1, http.MethodDelete, members + "/" + uDev1[:35], "", http.StatusNotFound},
 		{"admin PATCH non-UUID path id", uAdmin1, http.MethodPatch, members + "/ghost", `{"role":"viewer"}`, http.StatusNotFound},
 		{"POST non-UUID user_id", uOwner1, http.MethodPost, members, `{"user_id":"newbie","role":"viewer"}`, http.StatusBadRequest},
-		{"POST non-UUID user_id with username", uOwner1, http.MethodPost, members, `{"user_id":"not-a-uuid","username":"newbie"}`, http.StatusBadRequest},
+		{
+			"POST non-UUID user_id with username",
+			uOwner1,
+			http.MethodPost,
+			members,
+			`{"user_id":"not-a-uuid","username":"newbie"}`,
+			http.StatusBadRequest,
+		},
 		{"admin POST non-UUID user_id", uAdmin1, http.MethodPost, members, `{"user_id":"1","role":"viewer"}`, http.StatusBadRequest},
 	}
 
@@ -243,9 +299,25 @@ func TestProjectsRecordedOwnerAndLastOwner(t *testing.T) {
 		setup  func(db *projectsMockDB)
 		want   int
 	}{
-		{"recorded owner cannot be demoted by an owner", uOwner2, http.MethodPatch, "/members/" + uOwner1, `{"role":"developer"}`, nil, http.StatusConflict},
+		{
+			"recorded owner cannot be demoted by an owner",
+			uOwner2,
+			http.MethodPatch,
+			"/members/" + uOwner1,
+			`{"role":"developer"}`,
+			nil,
+			http.StatusConflict,
+		},
 		{"recorded owner cannot be removed by an owner", uOwner2, http.MethodDelete, "/members/" + uOwner1, "", nil, http.StatusConflict},
-		{"recorded owner cannot be demoted by an admin", uAdmin1, http.MethodPatch, "/members/" + uOwner1, `{"role":"developer"}`, nil, http.StatusConflict},
+		{
+			"recorded owner cannot be demoted by an admin",
+			uAdmin1,
+			http.MethodPatch,
+			"/members/" + uOwner1,
+			`{"role":"developer"}`,
+			nil,
+			http.StatusConflict,
+		},
 		{"recorded owner keeps the owner role", uOwner2, http.MethodPatch, "/members/" + uOwner1, `{"role":"owner"}`, nil, http.StatusOK},
 		{
 			"last owner cannot be removed", uOwner1, http.MethodDelete, "/members/" + uOwner2, "",
@@ -320,13 +392,28 @@ func TestProjectsListRepositories(t *testing.T) {
 			db := newProjectsMock()
 			db.projectRepos = repoFixtures(tt.repos)
 
-			code, body := projectJSON(t, newProjectsRouter(t, db), tt.user, http.MethodGet, "/api/v1/projects/acme/repositories"+tt.query, "")
+			code, body := projectJSON(
+				t,
+				newProjectsRouter(t, db),
+				tt.user,
+				http.MethodGet,
+				"/api/v1/projects/acme/repositories"+tt.query,
+				"",
+			)
 			if code != http.StatusOK {
 				t.Fatalf("status = %d; body = %v", code, body)
 			}
 
 			if body["total"] != tt.wantTotal || body["page"] != tt.wantPage || body["limit"] != tt.wantLimit {
-				t.Errorf("total/page/limit = %v/%v/%v, want %v/%v/%v", body["total"], body["page"], body["limit"], tt.wantTotal, tt.wantPage, tt.wantLimit)
+				t.Errorf(
+					"total/page/limit = %v/%v/%v, want %v/%v/%v",
+					body["total"],
+					body["page"],
+					body["limit"],
+					tt.wantTotal,
+					tt.wantPage,
+					tt.wantLimit,
+				)
 			}
 
 			list, ok := body["repositories"].([]any)
@@ -376,7 +463,12 @@ func TestProjectsGetCarriesRoleAndCount(t *testing.T) {
 func TestProjectsSystemProject(t *testing.T) {
 	newDB := func() *projectsMockDB {
 		db := newProjectsMock()
-		db.projects["unassigned"] = &models.Project{ID: models.SystemProjectID, Name: "unassigned", Slug: "unassigned", AllowedRepoTypes: []string{models.ProjectRepoTypeHosted}}
+		db.projects["unassigned"] = &models.Project{
+			ID:               models.SystemProjectID,
+			Name:             "unassigned",
+			Slug:             "unassigned",
+			AllowedRepoTypes: []string{models.ProjectRepoTypeHosted},
+		}
 
 		return db
 	}
@@ -403,9 +495,21 @@ func TestProjectsSystemProject(t *testing.T) {
 
 	t.Run("a member of the system project gets no role", func(t *testing.T) {
 		db := newDB()
-		db.members["dev-1-sys"] = &models.ProjectMember{ID: "m-sys", ProjectID: models.SystemProjectID, UserID: uDev1, Role: models.ProjectRoleOwner}
+		db.members["dev-1-sys"] = &models.ProjectMember{
+			ID:        "m-sys",
+			ProjectID: models.SystemProjectID,
+			UserID:    uDev1,
+			Role:      models.ProjectRoleOwner,
+		}
 
-		if code, body := projectJSON(t, newProjectsRouter(t, db), uDev1, http.MethodDelete, "/api/v1/projects/unassigned", ""); code != http.StatusNotFound {
+		if code, body := projectJSON(
+			t,
+			newProjectsRouter(t, db),
+			uDev1,
+			http.MethodDelete,
+			"/api/v1/projects/unassigned",
+			"",
+		); code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404; body = %v", code, body)
 		}
 	})

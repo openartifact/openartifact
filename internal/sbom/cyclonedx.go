@@ -234,7 +234,12 @@ func cdxLicenses(entries []licenseEntry) []cdxLicense {
 // dependencies as components with a dependency graph, and the vulnerabilities
 // of its latest scan with ratings, CWEs and the VEX analysis state.
 // specVersion is "1.4", "1.5" or "1.6"; "" selects DefaultCycloneDX.
-func (g *Generator) GenerateCycloneDX(ctx context.Context, repoID, artifactID, format string, metadata map[string]any, specVersion ...string) (*SBOMResult, error) {
+func (g *Generator) GenerateCycloneDX(
+	ctx context.Context,
+	repoID, artifactID, format string,
+	metadata map[string]any,
+	specVersion ...string,
+) (*SBOMResult, error) {
 	spec := DefaultCycloneDX
 	if len(specVersion) > 0 && specVersion[0] != "" {
 		spec = specVersion[0]

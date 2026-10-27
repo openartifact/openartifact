@@ -33,7 +33,14 @@ type fakeKind struct {
 }
 
 func newFake(name string, rank int, calls *[]string) *fakeKind {
-	return &fakeKind{name: name, rank: rank, store: map[string]*Live{}, calls: calls, failOn: map[string]error{}, secrets: map[string]string{}}
+	return &fakeKind{
+		name:    name,
+		rank:    rank,
+		store:   map[string]*Live{},
+		calls:   calls,
+		failOn:  map[string]error{},
+		secrets: map[string]string{},
+	}
 }
 
 func (f *fakeKind) Name() string         { return f.name }
@@ -332,11 +339,20 @@ func TestLoadRejectsStructuralMistakes(t *testing.T) {
 		"wrong apiVersion": {"apiVersion: v2\nkind: Alpha\nmetadata: {name: a}\n", "apiVersion: unsupported"},
 		"unknown kind":     {"apiVersion: openartifact.io/v1\nkind: Nope\nmetadata: {name: a}\n", `unknown kind "Nope"`},
 		"missing name":     {"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {}\n", "metadata.name: required"},
-		"duplicate key":    {"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\nspec: {count: 1, count: 2}\n", "duplicate key"},
-		"duplicate object": {"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\n---\napiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\n", "defined twice"},
-		"syntax":           {"apiVersion: [\n", "invalid YAML"},
-		"secret both":      {"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\nspec:\n  token: {secretRef: {env: A, file: b}}\n", "exactly one of env or file"},
-		"unknown meta":     {"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a, color: red}\n", "unknown metadata field"},
+		"duplicate key": {
+			"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\nspec: {count: 1, count: 2}\n",
+			"duplicate key",
+		},
+		"duplicate object": {
+			"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\n---\napiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\n",
+			"defined twice",
+		},
+		"syntax": {"apiVersion: [\n", "invalid YAML"},
+		"secret both": {
+			"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\nspec:\n  token: {secretRef: {env: A, file: b}}\n",
+			"exactly one of env or file",
+		},
+		"unknown meta": {"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a, color: red}\n", "unknown metadata field"},
 	}
 
 	for name, tc := range cases {
@@ -398,7 +414,12 @@ func TestSecretFileResolvedRelativeToManifest(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "pw.txt", "s3cret\n\n")
 
-	p := writeFile(t, dir, "m.yaml", "apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\nspec:\n  token: {secretRef: {file: pw.txt}}\n")
+	p := writeFile(
+		t,
+		dir,
+		"m.yaml",
+		"apiVersion: openartifact.io/v1\nkind: Alpha\nmetadata: {name: a}\nspec:\n  token: {secretRef: {file: pw.txt}}\n",
+	)
 
 	objs, err := Load(reg, LoadOptions{Paths: []string{p}})
 	if err != nil {
@@ -507,7 +528,8 @@ func TestPlanCreateUpdateUnchanged(t *testing.T) {
 		}
 	}
 
-	if len(changed.Changes) != 1 || changed.Changes[0].Path != "title" || changed.Changes[0].Old != "old" || changed.Changes[0].New != "new" {
+	if len(changed.Changes) != 1 || changed.Changes[0].Path != "title" || changed.Changes[0].Old != "old" ||
+		changed.Changes[0].New != "new" {
 		t.Errorf("changes = %+v, want only title old->new (omitted count untouched)", changed.Changes)
 	}
 

@@ -123,8 +123,18 @@ func TestTrashIndexMigrationSplitsIntoSingleCommands(t *testing.T) {
 	}{
 		{regexp.MustCompile(`(?m)^DO \$\$\nDECLARE`), 1},
 		{regexp.MustCompile(`(?m)^CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS \w+ ON \w+ \([^)]+\) WHERE deleted_at IS NULL$`), 17},
-		{regexp.MustCompile(`(?m)^DO \$\$ BEGIN SET LOCAL lock_timeout = '10s'; ALTER TABLE \w+ DROP CONSTRAINT IF EXISTS \w+; END \$\$$`), 17},
-		{regexp.MustCompile(`(?m)^CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_\w+_deleted ON \w+ \(deleted_at\) WHERE deleted_at IS NOT NULL$`), 17},
+		{
+			regexp.MustCompile(
+				`(?m)^DO \$\$ BEGIN SET LOCAL lock_timeout = '10s'; ALTER TABLE \w+ DROP CONSTRAINT IF EXISTS \w+; END \$\$$`,
+			),
+			17,
+		},
+		{
+			regexp.MustCompile(
+				`(?m)^CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_\w+_deleted ON \w+ \(deleted_at\) WHERE deleted_at IS NOT NULL$`,
+			),
+			17,
+		},
 		{regexp.MustCompile(`(?m)^ALTER TABLE audit_logs VALIDATE CONSTRAINT chk_audit_action$`), 1},
 	}
 

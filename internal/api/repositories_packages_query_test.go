@@ -32,7 +32,11 @@ func (db *packageListDB) ListComponentsByRepo(_ context.Context, _, _ string, _,
 	return nil, 0, nil
 }
 
-func (db *packageListDB) SearchComponents(_ context.Context, _ string, opts database.ComponentListOptions) ([]*models.Component, int, error) {
+func (db *packageListDB) SearchComponents(
+	_ context.Context,
+	_ string,
+	opts database.ComponentListOptions,
+) ([]*models.Component, int, error) {
 	db.searched = append(db.searched, opts)
 
 	return nil, 0, nil

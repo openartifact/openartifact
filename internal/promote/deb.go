@@ -62,7 +62,8 @@ const debSameCoords = `dd.name = $2 AND dc.name = $3 AND d.name = $4 AND d.versi
 // at the package's coordinates, and of every one that has the same pool file
 // name: the pool resolves a download by file name only, so one name must not
 // stand for two contents.
-const debDestinationQuery = `SELECT d.id::text, db.sha256, db.size_bytes, d.name, d.version, COALESCE(d.filename, ''), (` + debSameCoords + `)
+const debDestinationQuery = `SELECT d.id::text, db.sha256, db.size_bytes, d.name, d.version,
+	  COALESCE(d.filename, ''), (` + debSameCoords + `)
 	  FROM deb_packages d
 	  JOIN debian_distributions dd ON dd.id = d.distribution_id
 	  JOIN debian_components dc ON dc.id = d.component_id

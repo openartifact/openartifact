@@ -1030,7 +1030,14 @@ func (e *tprEnv) assertNPMServed(v tprNPMVersion) json.RawMessage {
 		}
 
 		if dist.Dist.Integrity != v.integrity || dist.Dist.Shasum != v.shasum {
-			e.t.Errorf("packument (Accept %q) dist of %s = %+v, want integrity %s shasum %s", accept, v.version, dist.Dist, v.integrity, v.shasum)
+			e.t.Errorf(
+				"packument (Accept %q) dist of %s = %+v, want integrity %s shasum %s",
+				accept,
+				v.version,
+				dist.Dist,
+				v.integrity,
+				v.shasum,
+			)
 		}
 
 		if accept == "" {
@@ -1244,8 +1251,13 @@ type tprDeb struct {
 func tprBuildDeb(t *testing.T, name, version string) []byte {
 	t.Helper()
 
-	ctrl := fmt.Sprintf("Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: A <a@b.c>\nInstalled-Size: 10\nDescription: soft delete test of %s\n",
-		name, version, tprDebArch, name)
+	ctrl := fmt.Sprintf(
+		"Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: A <a@b.c>\nInstalled-Size: 10\nDescription: soft delete test of %s\n",
+		name,
+		version,
+		tprDebArch,
+		name,
+	)
 
 	var tarBuf bytes.Buffer
 

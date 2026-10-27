@@ -39,7 +39,8 @@ func seedVulnScan(t *testing.T, db *sql.DB, repoID string, s vulnSeed) string {
 
 	var jobID string
 	if err := db.QueryRowContext(context.Background(), `INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status, completed_at, created_at)
-		VALUES ($1, 'vuln', $2, $3, $4, $5) RETURNING id`, refID, s.scanner, s.status, s.completedAt, s.createdAt).Scan(&jobID); err != nil {
+		VALUES ($1, 'vuln', $2, $3, $4, $5) RETURNING id`, refID, s.scanner, s.status, s.completedAt, s.createdAt).
+		Scan(&jobID); err != nil {
 		t.Fatalf("insert scan job: %v", err)
 	}
 
@@ -48,10 +49,22 @@ func seedVulnScan(t *testing.T, db *sql.DB, repoID string, s vulnSeed) string {
 		id = mustScan[string](t, db, `SELECT gen_random_uuid()::text`)
 	}
 
-	mustExec(t, db, `INSERT INTO vuln_results (id, scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
+	mustExec(
+		t,
+		db,
+		`INSERT INTO vuln_results (id, scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
 		quarantined, package_name, package_version, ecosystem)
 		VALUES ($1, $2, '[{"id":"CVE-1","summary":"big payload"}]', $3, $4, $5, $6, $7, $8, $9, '1.0.0', 'npm')`,
-		id, jobID, s.critical+s.high+s.medium+s.low, s.critical, s.high, s.medium, s.low, s.quarantined, s.path)
+		id,
+		jobID,
+		s.critical+s.high+s.medium+s.low,
+		s.critical,
+		s.high,
+		s.medium,
+		s.low,
+		s.quarantined,
+		s.path,
+	)
 
 	return id
 }
@@ -59,9 +72,21 @@ func seedVulnScan(t *testing.T, db *sql.DB, repoID string, s vulnSeed) string {
 func seedRepo(t *testing.T, db *sql.DB, name, format string) string {
 	t.Helper()
 
-	project := mustScan[string](t, db, `INSERT INTO projects (name, slug) VALUES ($1, $1) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`, "p-"+name)
+	project := mustScan[string](
+		t,
+		db,
+		`INSERT INTO projects (name, slug) VALUES ($1, $1) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+		"p-"+name,
+	)
 
-	return mustScan[string](t, db, `INSERT INTO repositories (name, format, project_id) VALUES ($1, $2, $3) RETURNING id`, name, format, project)
+	return mustScan[string](
+		t,
+		db,
+		`INSERT INTO repositories (name, format, project_id) VALUES ($1, $2, $3) RETURNING id`,
+		name,
+		format,
+		project,
+	)
 }
 
 func vulnOverviewIDs(page *models.VulnScanOverviewPage) []string {
@@ -110,13 +135,56 @@ func newOverviewFixture(t *testing.T) *overviewFixture {
 		repo string
 		s    vulnSeed
 	}{
-		{npmRepo, vulnSeed{id: idCritNewest, path: "a", scanner: "osv", status: "completed", critical: 2, high: 1, completedAt: done(time.Minute), createdAt: now}},
-		{npmRepo, vulnSeed{id: idCritOld, path: "b", scanner: "trivy", status: "completed", critical: 2, high: 1, quarantined: true, completedAt: done(48 * time.Hour), createdAt: now}},
-		{pypiRepo, vulnSeed{id: idCrit2, path: "c", scanner: "grype", status: "completed", critical: 2, high: 5, completedAt: done(72 * time.Hour), createdAt: now}},
+		{
+			npmRepo,
+			vulnSeed{
+				id:          idCritNewest,
+				path:        "a",
+				scanner:     "osv",
+				status:      "completed",
+				critical:    2,
+				high:        1,
+				completedAt: done(time.Minute),
+				createdAt:   now,
+			},
+		},
+		{
+			npmRepo,
+			vulnSeed{
+				id:          idCritOld,
+				path:        "b",
+				scanner:     "trivy",
+				status:      "completed",
+				critical:    2,
+				high:        1,
+				quarantined: true,
+				completedAt: done(48 * time.Hour),
+				createdAt:   now,
+			},
+		},
+		{
+			pypiRepo,
+			vulnSeed{
+				id:          idCrit2,
+				path:        "c",
+				scanner:     "grype",
+				status:      "completed",
+				critical:    2,
+				high:        5,
+				completedAt: done(72 * time.Hour),
+				createdAt:   now,
+			},
+		},
 		{pypiRepo, vulnSeed{id: idHighA, path: "d", scanner: "osv,trivy", status: "completed", high: 3, completedAt: tied, createdAt: now}},
 		{pypiRepo, vulnSeed{id: idHighB, path: "e", scanner: "osv", status: "partial", high: 3, completedAt: tied, createdAt: now}},
-		{npmRepo, vulnSeed{id: idMedium, path: "f", scanner: "osv", status: "completed", medium: 4, completedAt: done(time.Hour), createdAt: now}},
-		{npmRepo, vulnSeed{id: idLow, path: "g", scanner: "osv", status: "completed", low: 1, completedAt: done(time.Hour), createdAt: now}},
+		{
+			npmRepo,
+			vulnSeed{id: idMedium, path: "f", scanner: "osv", status: "completed", medium: 4, completedAt: done(time.Hour), createdAt: now},
+		},
+		{
+			npmRepo,
+			vulnSeed{id: idLow, path: "g", scanner: "osv", status: "completed", low: 1, completedAt: done(time.Hour), createdAt: now},
+		},
 		{npmRepo, vulnSeed{id: idClean, path: "h", scanner: "osv", status: "completed", completedAt: done(time.Hour), createdAt: now}},
 		{pypiRepo, vulnSeed{id: idFailed, path: "i", scanner: "trivy", status: "failed", createdAt: now.Add(-time.Hour)}},
 		{npmRepo, vulnSeed{id: idScanning, path: "j", scanner: "osv", status: "running", createdAt: now}},
@@ -222,16 +290,36 @@ func TestVulnScanOverview_Filters(t *testing.T) {
 		{"repository", models.VulnScanListParams{Repo: "pypi-main"}, []string{idCrit2, idHighA, idHighB, idFailed}},
 		{"unknown repository", models.VulnScanListParams{Repo: "nope"}, nil},
 		{"severity critical", models.VulnScanListParams{Severity: "critical"}, []string{idCrit2, idCritNewest, idCritOld}},
-		{"severity high includes critical", models.VulnScanListParams{Severity: "high"}, []string{idCrit2, idCritNewest, idCritOld, idHighA, idHighB}},
-		{"severity medium", models.VulnScanListParams{Severity: "medium"}, []string{idCrit2, idCritNewest, idCritOld, idHighA, idHighB, idMedium}},
-		{"severity low", models.VulnScanListParams{Severity: "low"}, []string{idCrit2, idCritNewest, idCritOld, idHighA, idHighB, idMedium, idLow}},
+		{
+			"severity high includes critical",
+			models.VulnScanListParams{Severity: "high"},
+			[]string{idCrit2, idCritNewest, idCritOld, idHighA, idHighB},
+		},
+		{
+			"severity medium",
+			models.VulnScanListParams{Severity: "medium"},
+			[]string{idCrit2, idCritNewest, idCritOld, idHighA, idHighB, idMedium},
+		},
+		{
+			"severity low",
+			models.VulnScanListParams{Severity: "low"},
+			[]string{idCrit2, idCritNewest, idCritOld, idHighA, idHighB, idMedium, idLow},
+		},
 		{"status failed", models.VulnScanListParams{Status: "failed"}, []string{idFailed}},
 		{"status partial", models.VulnScanListParams{Status: "partial"}, []string{idHighB}},
 		{"status scanning is a running job", models.VulnScanListParams{Status: "scanning"}, []string{idScanning}},
-		{"scanner trivy matches a joined list", models.VulnScanListParams{Scanner: "trivy", Status: "completed"}, []string{idCritOld, idHighA}},
+		{
+			"scanner trivy matches a joined list",
+			models.VulnScanListParams{Scanner: "trivy", Status: "completed"},
+			[]string{idCritOld, idHighA},
+		},
 		{"scanner grype", models.VulnScanListParams{Scanner: "grype"}, []string{idCrit2}},
 		{"quarantined", models.VulnScanListParams{Quarantined: new(true)}, []string{idCritOld}},
-		{"not quarantined and critical", models.VulnScanListParams{Quarantined: new(false), Severity: "critical"}, []string{idCrit2, idCritNewest}},
+		{
+			"not quarantined and critical",
+			models.VulnScanListParams{Quarantined: new(false), Severity: "critical"},
+			[]string{idCrit2, idCritNewest},
+		},
 		{"filters combine", models.VulnScanListParams{Repo: "npm-main", Scanner: "osv", Severity: "high"}, []string{idCritNewest}},
 	}
 
@@ -265,8 +353,25 @@ func TestVulnScanOverview_Summary(t *testing.T) {
 		repo string
 		want models.VulnScanSummary
 	}{
-		{"", models.VulnScanSummary{Total: 10, Completed: 7, Partial: 1, Failed: 1, Scanning: 1, Quarantined: 1, WithCritical: 3, WithHigh: 5, WithMedium: 6, WithLow: 7}},
-		{"pypi-main", models.VulnScanSummary{Total: 4, Completed: 2, Partial: 1, Failed: 1, WithCritical: 1, WithHigh: 3, WithMedium: 3, WithLow: 3}},
+		{
+			"",
+			models.VulnScanSummary{
+				Total:        10,
+				Completed:    7,
+				Partial:      1,
+				Failed:       1,
+				Scanning:     1,
+				Quarantined:  1,
+				WithCritical: 3,
+				WithHigh:     5,
+				WithMedium:   6,
+				WithLow:      7,
+			},
+		},
+		{
+			"pypi-main",
+			models.VulnScanSummary{Total: 4, Completed: 2, Partial: 1, Failed: 1, WithCritical: 1, WithHigh: 3, WithMedium: 3, WithLow: 3},
+		},
 		{"nope", models.VulnScanSummary{}},
 	}
 
@@ -300,9 +405,13 @@ func TestVulnScanOverviewUsesIndexes(t *testing.T) {
 	mustExec(t, db, `INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status, completed_at)
 		SELECT id, 'vuln', 'osv', CASE WHEN n % 100 = 0 THEN 'failed' ELSE 'completed' END, now()
 		FROM (SELECT id, row_number() OVER () AS n FROM artifact_refs) a`)
-	mustExec(t, db, `INSERT INTO vuln_results (scan_job_id, vuln_count, critical_count, high_count, quarantined, package_name, package_version, ecosystem)
+	mustExec(
+		t,
+		db,
+		`INSERT INTO vuln_results (scan_job_id, vuln_count, critical_count, high_count, quarantined, package_name, package_version, ecosystem)
 		SELECT id, 1, CASE WHEN n % 100 = 1 THEN 1 ELSE 0 END, 1, n % 100 = 2, 'x', '1', 'npm'
-		FROM (SELECT id, row_number() OVER () AS n FROM scan_jobs) j`)
+		FROM (SELECT id, row_number() OVER () AS n FROM scan_jobs) j`,
+	)
 	mustExec(t, db, `ANALYZE artifact_refs; ANALYZE scan_jobs; ANALYZE vuln_results; ANALYZE repositories`)
 
 	tests := []struct {

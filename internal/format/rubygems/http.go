@@ -338,7 +338,11 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: gem.BlobKey, Size: gem.Size, Filename: nameVersion + ".gem", ContentType: "application/octet-stream"}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{SHA256: gem.BlobKey, Size: gem.Size, Filename: nameVersion + ".gem", ContentType: "application/octet-stream"},
+	) {
 		return
 	}
 
@@ -490,7 +494,12 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, gemArtifact(repoName, gem)))
+	h.Emit(
+		r.Context(),
+		repoID,
+		webhook.EventArtifactUploaded,
+		webhook.ArtifactPayload(webhook.EventArtifactUploaded, gemArtifact(repoName, gem)),
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -668,7 +677,12 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, g := range yanked {
-		h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, gemArtifact(repoName, g)))
+		h.Emit(
+			r.Context(),
+			repoID,
+			webhook.EventArtifactDeleted,
+			webhook.ArtifactPayload(webhook.EventArtifactDeleted, gemArtifact(repoName, g)),
+		)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

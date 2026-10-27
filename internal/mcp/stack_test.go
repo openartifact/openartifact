@@ -146,7 +146,8 @@ func newStack(t *testing.T, mutate func(*stackOptions)) *stack {
 
 	var aiWorker *worker.AIAnalysisWorker
 	if opts.aiEnabled {
-		aiWorker = worker.NewAIAnalysisWorker(db, ai.NewClient(ai.Config{Provider: "custom", BaseURL: "http://127.0.0.1:1"}), log).WithDebounce(time.Hour)
+		aiWorker = worker.NewAIAnalysisWorker(db, ai.NewClient(ai.Config{Provider: "custom", BaseURL: "http://127.0.0.1:1"}), log).
+			WithDebounce(time.Hour)
 		t.Cleanup(aiWorker.Stop)
 	}
 
@@ -199,7 +200,12 @@ func (st *stack) addUser(name, target string, scopes []string) {
 
 	st.db.users[name] = &models.User{ID: name, Username: name}
 
-	pt := &models.PermissionTarget{ID: target, RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}}
+	pt := &models.PermissionTarget{
+		ID:               target,
+		RepositoryFilter: ".*",
+		PathPattern:      ".*",
+		Actions:          []string{"manage", "read", "write", "delete"},
+	}
 	if target == targetReadOnly {
 		pt = &models.PermissionTarget{ID: target, RepositoryFilter: "^(web-npm|images)$", PathPattern: ".*", Actions: []string{"read"}}
 	}

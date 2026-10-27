@@ -70,7 +70,13 @@ func TestWritersDefaultUnsetTimestampsToNow(t *testing.T) {
 	})
 
 	t.Run("storage backend", func(t *testing.T) {
-		backend := &models.StorageBackend{ID: "00000000-0000-0000-0000-0000000000b1", Name: "zero-ts", Kind: "filesystem", Config: []byte(`{}`), Status: "unknown"}
+		backend := &models.StorageBackend{
+			ID:     "00000000-0000-0000-0000-0000000000b1",
+			Name:   "zero-ts",
+			Kind:   "filesystem",
+			Config: []byte(`{}`),
+			Status: "unknown",
+		}
 		if err := pg.CreateStorageBackend(ctx, backend); err != nil {
 			t.Fatal(err)
 		}

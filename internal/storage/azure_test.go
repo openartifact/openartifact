@@ -241,8 +241,13 @@ func TestAzureSharedKeyStringToSign(t *testing.T) {
 		t.Parallel()
 
 		s := newStore(t, "myaccount", "", "mycontainer")
-		req := newReq(t, http.MethodGet, "https://myaccount.blob.core.windows.net/mycontainer?restype=container&comp=metadata&timeout=20", nil,
-			map[string]string{"X-Ms-Date": "Fri, 26 Jun 2015 23:39:12 GMT", "X-Ms-Version": "2015-02-21"})
+		req := newReq(
+			t,
+			http.MethodGet,
+			"https://myaccount.blob.core.windows.net/mycontainer?restype=container&comp=metadata&timeout=20",
+			nil,
+			map[string]string{"X-Ms-Date": "Fri, 26 Jun 2015 23:39:12 GMT", "X-Ms-Version": "2015-02-21"},
+		)
 
 		got, err := s.sharedKeyStringToSign(req)
 		if err != nil {
@@ -261,11 +266,17 @@ func TestAzureSharedKeyStringToSign(t *testing.T) {
 		t.Parallel()
 
 		s := newStore(t, "myaccount", "", "mycontainer")
-		req := newReq(t, http.MethodPut, "https://myaccount.blob.core.windows.net/mycontainer/blobs/ab/cd/x", strings.NewReader("hello"), map[string]string{
-			"Content-Type": "text/plain", "If-Match": `"0x1"`,
-			"X-Ms-Blob-Type": "BlockBlob", "X-Ms-Meta-B": "2", "X-Ms-Meta-A": "1",
-			"X-Ms-Date": "Fri, 26 Jun 2015 23:39:12 GMT", "X-Ms-Version": azureAPIVersion,
-		})
+		req := newReq(
+			t,
+			http.MethodPut,
+			"https://myaccount.blob.core.windows.net/mycontainer/blobs/ab/cd/x",
+			strings.NewReader("hello"),
+			map[string]string{
+				"Content-Type": "text/plain", "If-Match": `"0x1"`,
+				"X-Ms-Blob-Type": "BlockBlob", "X-Ms-Meta-B": "2", "X-Ms-Meta-A": "1",
+				"X-Ms-Date": "Fri, 26 Jun 2015 23:39:12 GMT", "X-Ms-Version": azureAPIVersion,
+			},
+		)
 
 		got, err := s.sharedKeyStringToSign(req)
 		if err != nil {
@@ -303,7 +314,12 @@ func TestAzureSharedKeyStringToSign(t *testing.T) {
 
 		s := newStore(t, "myaccount", "", "mycontainer")
 
-		if _, err := s.sharedKeyStringToSign(newReq(t, http.MethodGet, s.baseURL, nil, nil)); !errors.Is(err, ErrAzureMSDateHeaderRequired) {
+		if _, err := s.sharedKeyStringToSign(
+			newReq(t, http.MethodGet, s.baseURL, nil, nil),
+		); !errors.Is(
+			err,
+			ErrAzureMSDateHeaderRequired,
+		) {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -399,7 +415,12 @@ func TestAzurePresignGet(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			raw, err := s.PresignGet(ctx, sha, 0, PresignGetOptions{ContentDisposition: `attachment; filename="a b.txt"`, ContentType: "text/plain"})
+			raw, err := s.PresignGet(
+				ctx,
+				sha,
+				0,
+				PresignGetOptions{ContentDisposition: `attachment; filename="a b.txt"`, ContentType: "text/plain"},
+			)
 			if err != nil {
 				t.Fatal(err)
 			}

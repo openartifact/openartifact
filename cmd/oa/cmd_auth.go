@@ -147,7 +147,13 @@ func authToken(args []string, client *Client, outFmt string) {
 
 		session := sessionFromFlags(client, *username, *passwordStdin)
 
-		resp := sessionDo(session, http.MethodPost, "/api/v1/auth/tokens", map[string]string{"name": *name, "kind": *kind}, http.StatusCreated)
+		resp := sessionDo(
+			session,
+			http.MethodPost,
+			"/api/v1/auth/tokens",
+			map[string]string{"name": *name, "kind": *kind},
+			http.StatusCreated,
+		)
 
 		defer func() { _ = resp.Body.Close() }()
 

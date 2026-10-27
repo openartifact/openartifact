@@ -95,7 +95,14 @@ func (d *debAPIDB) GetDebPackageByID(_ context.Context, id string) (*models.DebP
 		return nil, nil
 	}
 
-	return &models.DebPackage{ID: p.ID, RepositoryID: p.RepositoryID, BlobID: p.ArtifactID, Name: p.Name, Version: p.Version, Filename: p.Filename}, nil
+	return &models.DebPackage{
+		ID:           p.ID,
+		RepositoryID: p.RepositoryID,
+		BlobID:       p.ArtifactID,
+		Name:         p.Name,
+		Version:      p.Version,
+		Filename:     p.Filename,
+	}, nil
 }
 
 func (d *debAPIDB) GetDebBlobInfo(_ context.Context, _ string) (string, int64, error) {
@@ -273,7 +280,13 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 	}
 }
 
-func uploadDebWithLicense(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, license string) *httptest.ResponseRecorder {
+func uploadDebWithLicense(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	license string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	h := NewDebUploadHandler(formattest.NewLogger(t), db, bs, nil)
@@ -312,7 +325,13 @@ func TestDebUploadLicensePolicy(t *testing.T) {
 
 			if c.Stopped() {
 				if len(db.pkgs) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.reserved != 0 {
-					t.Errorf("rejected upload stored data: pkgs=%d blobs=%d events=%d reserved=%d", len(db.pkgs), len(bs.Blobs), len(pub.Events()), db.reserved)
+					t.Errorf(
+						"rejected upload stored data: pkgs=%d blobs=%d events=%d reserved=%d",
+						len(db.pkgs),
+						len(bs.Blobs),
+						len(pub.Events()),
+						db.reserved,
+					)
 				}
 
 				return

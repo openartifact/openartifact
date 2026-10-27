@@ -193,7 +193,8 @@ func (t *cliTool) status(offline bool, pathEnv string) ScannerStatus {
 		st.Message = "The vulnerability database is being downloaded: retry in a few minutes."
 	case failed:
 		st.DBState = DBStateFailed
-		st.Message = "The vulnerability database could not be downloaded: check outbound access to the database host (or the configured mirror) and that the cache directory is writable. The server log has the cause."
+		st.Message = "The vulnerability database could not be downloaded: check outbound access to the database host (or the " +
+			"configured mirror) and that the cache directory is writable. The server log has the cause."
 	case offline:
 		st.DBState = DBStateMissing
 		st.Message = "Offline mode is on and the cache directory holds no vulnerability database: copy one in."

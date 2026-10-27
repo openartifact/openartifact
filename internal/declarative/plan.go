@@ -190,8 +190,12 @@ func planObject(in PlanInput, k Kind, o *Object, key string, live []*Live) *Item
 	it.Changes = res.Changes
 
 	if len(res.Immutable) > 0 {
-		it.Err = fmt.Errorf("%w %s cannot be changed on an existing object; revert the manifest, or delete the object (oa apply --prune after removing it, or via the API) and apply again to recreate it",
-			errImmutable, strings.Join(res.Immutable, ", "))
+		it.Err = fmt.Errorf(
+			"%w %s cannot be changed on an existing object; revert the manifest, or delete the object "+
+				"(oa apply --prune after removing it, or via the API) and apply again to recreate it",
+			errImmutable,
+			strings.Join(res.Immutable, ", "),
+		)
 	}
 
 	it.Action = ActionUnchanged
@@ -352,7 +356,13 @@ func checkRefs(in PlanInput, plan *Plan, desiredKeys map[string]bool, deletes []
 				continue
 			}
 
-			it.Err = fmt.Errorf("%w: %s references %s %q, which is in neither the manifests nor on the server", errMissingRef, r.Field, r.Kind, r.Key)
+			it.Err = fmt.Errorf(
+				"%w: %s references %s %q, which is in neither the manifests nor on the server",
+				errMissingRef,
+				r.Field,
+				r.Kind,
+				r.Key,
+			)
 
 			break
 		}
