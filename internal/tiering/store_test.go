@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -228,5 +229,34 @@ func TestStoreRecordsAccessOnlyForMarkedReads(t *testing.T) {
 
 	if _, ok := r.db.touched[sha]; !ok || tracker.Pending() != 0 {
 		t.Errorf("flush did not persist the access (touched=%v pending=%d)", r.db.touched, tracker.Pending())
+	}
+}
+
+// The store probes the primary tier only: it is where blobs land, and a tier
+// backend has its own test action.
+func TestStoreHealthCheckProbesThePrimary(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	ctx := context.Background()
+
+	if err := r.store.HealthCheck(ctx); err != nil {
+		t.Fatalf("healthy rig: %v", err)
+	}
+
+	if err := os.RemoveAll(r.coldDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.store.HealthCheck(ctx); err != nil {
+		t.Errorf("a missing cold tier fails the primary check: %v", err)
+	}
+
+	if err := os.RemoveAll(r.hotDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.store.HealthCheck(ctx); err == nil {
+		t.Error("a missing primary directory passed the check")
 	}
 }

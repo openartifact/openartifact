@@ -37,12 +37,17 @@ func NewAdminReplicationHandler(svc ReplicationService, log *logger.Logger, eval
 	return &AdminReplicationHandler{svc: svc, log: log, evaluator: evaluator}
 }
 
+// replicationStorageSegment is the path segment under /api/v1/admin/storage
+// the replication endpoints use; a storage backend cannot take it as a name.
+const replicationStorageSegment = "replication"
+
 // Register mounts the routes. They are static paths, so they win over the
-// parameterized /api/v1/admin/storage/{name}: a storage backend that is named
-// "replication" is reached through the list instead.
+// parameterized /api/v1/admin/storage/{name}: a record that was named
+// "replication" before the name was reserved is listed, but reads and tests of
+// it reach these endpoints instead (see reservedStorageBackendName).
 func (h *AdminReplicationHandler) Register(r chi.Router) {
-	r.Get("/api/v1/admin/storage/replication", h.handleStatus)
-	r.Post("/api/v1/admin/storage/replication/verify", h.handleVerify)
+	r.Get("/api/v1/admin/storage/"+replicationStorageSegment, h.handleStatus)
+	r.Post("/api/v1/admin/storage/"+replicationStorageSegment+"/verify", h.handleVerify)
 }
 
 func (h *AdminReplicationHandler) handleStatus(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -46,14 +47,27 @@ func (a *app) registerOperationalRoutes() {
 	router.Get("/ready", a.handleReady)
 }
 
-// storageHealth checks the object store when it is S3-compatible; other
-// backends have nothing to probe.
+// storageHealth is the readiness check of the object store: it only waits for
+// an S3-compatible one, and probes it on every call.
 func (a *app) storageHealth(r *http.Request) error {
 	if s3store, ok := a.store.raw.(*storage.S3BlobStore); ok {
 		return s3store.HealthCheck(r.Context())
 	}
 
 	return nil
+}
+
+// storageComponent is the storage entry of /health: the cached, time-limited
+// probe of the backend behind the whole store stack. The backend's error is
+// logged, never put in the response.
+func (a *app) storageComponent(ctx context.Context) componentStatus {
+	if err := a.store.health.Check(ctx); err != nil {
+		a.log.Errorw("health: storage check failed", "error", err)
+
+		return componentStatus{Status: "error", Message: "unavailable"}
+	}
+
+	return componentStatus{Status: "ok"}
 }
 
 // handleHealth reports the state of the components. Health is not readiness:
@@ -76,15 +90,7 @@ func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storageStatus := componentStatus{Status: "ok"}
-
-	if err := a.storageHealth(r); err != nil {
-		storageStatus.Status = "error"
-		a.log.Errorw("health: storage check failed", "error", err)
-		storageStatus.Message = "unavailable"
-	}
-
-	components["storage"] = storageStatus
+	components["storage"] = a.storageComponent(r.Context())
 
 	overallStatus := "healthy"
 

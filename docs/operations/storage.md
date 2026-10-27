@@ -442,13 +442,13 @@ The store configured with `STORAGE_*` is not a record, but it is shown. `GET /ap
 - `status` is a live health check through the store that serves every request (a write probe of the directory for `filesystem`, a bucket or container check for the object stores, `GET /v2/` for `oci`): `healthy`, `unreachable` (with a fixed `status_message`; the raw error is only logged) or `unknown`. Reads reuse the last probe for 10 seconds.
 - `usage` counts the blobs placed on the primary store, that is those not moved to a [tier](storage-tiering.md).
 - `POST /api/v1/admin/storage/primary/test` probes now, refreshes the status and answers like the test of a record (`{"ok": true}`, or `{"ok": false, "error": "connection_failed", "message": ...}`).
-- It is read-only: `PATCH` and `DELETE` on `/api/v1/admin/storage/primary` answer `405 read_only`; change `STORAGE_*` and restart instead. The name `primary` is reserved: a record cannot be created or renamed to it.
+- It is read-only: `PATCH` and `DELETE` on `/api/v1/admin/storage/primary` answer `405 read_only`; change `STORAGE_*` and restart instead. The names `primary` and `replication` are reserved (they are static paths under `/api/v1/admin/storage`, which win over `/{name}`): a record cannot be created or renamed to either.
 
 **Settings > Storage backends** lists it first, with a *configuration* badge.
 
 ## Health
 
-`/health` and `/ready` probe S3-family stores (`s3`, `garage`, `seaweedfs`, `gcs`) with a bucket check. Filesystem, Azure and OCI are always reported `ok`. See [monitoring](monitoring.md).
+`/health` (and the `status` of `GET /api/v1/system/info`, `storage_status` of `GET /api/v1/admin/system/info`) report the real state of the configured store: a bucket check for `s3`, `garage`, `seaweedfs` and `gcs`, a container check for `azure`, `GET /v2/` for `oci`, and for `filesystem` a write probe of the blob directory. The probe is cached for 10 seconds and limited to 3 seconds; a failing store shows as `"status":"error"` without any detail in the response (the cause is in the server log). `/ready` only probes S3-family stores, on every call. See [monitoring](monitoring.md).
 
 ## Moving data between backends
 

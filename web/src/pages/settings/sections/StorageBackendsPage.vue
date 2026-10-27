@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- PageHead -->
     <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
-          <AppButton variant="secondary" size="sm" :loading="testingAll" :disabled="items.length === 0" @click="testAll">
+          <AppButton variant="secondary" size="sm" :loading="testingAll" :disabled="counts.total === 0" @click="testAll">
             <ArrowPathIcon v-if="!testingAll" class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.storage.testAll') }}
           </AppButton>
@@ -68,7 +68,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
         <h2 class="text-sm font-semibold text-foreground">{{ t('adm.storage.stat.configured') }}</h2>
         <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted">
-          {{ items.length }}
+          {{ counts.total }}
         </span>
       </div>
 
@@ -131,7 +131,7 @@ import StorageBackendDeleteDialog from '../../../components/StorageBackendDelete
 import { useStorageBackends } from '../../../composables/useStorageBackends'
 import type { DrawerMode } from '../../../composables/useStorageBackendForm'
 import { t } from '../../../i18n'
-import type { StorageBackend } from '../../../lib/storageBackends'
+import { countStatuses, type StorageBackend } from '../../../lib/storageBackends'
 
 const {
   items,
@@ -174,31 +174,34 @@ function closeDrawer(): void {
   editingBackend.value = null
 }
 
+// The primary store counts with the records: it is one of the stores.
+const counts = computed(() => countStatuses(items.value, primary.value))
+
 const statTiles = computed(() => [
   {
     label: t('adm.storage.stat.configured'),
-    value: items.value.length,
+    value: counts.value.total,
     icon: ServerIcon,
     iconBg: 'rgb(var(--color-primary) / 0.1)',
     iconColor: 'rgb(var(--color-primary))',
   },
   {
     label: t('adm.storage.status.healthy'),
-    value: items.value.filter((i) => i.status === 'healthy').length,
+    value: counts.value.healthy,
     icon: CheckIcon,
     iconBg: 'rgb(var(--color-success-soft))',
     iconColor: 'rgb(var(--color-success))',
   },
   {
     label: t('adm.storage.status.unknown'),
-    value: items.value.filter((i) => i.status !== 'healthy' && i.status !== 'unreachable').length,
+    value: counts.value.unknown,
     icon: ExclamationCircleIcon,
     iconBg: 'rgb(var(--color-warning-soft))',
     iconColor: 'rgb(var(--color-warning))',
   },
   {
     label: t('adm.storage.status.unreachable'),
-    value: items.value.filter((i) => i.status === 'unreachable').length,
+    value: counts.value.unreachable,
     icon: ExclamationCircleIcon,
     iconBg: 'rgb(var(--color-danger-soft))',
     iconColor: 'rgb(var(--color-danger))',

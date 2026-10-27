@@ -166,6 +166,47 @@ describe('StorageBackendsPage', () => {
       wrapper.unmount()
     })
 
+    it('counts the primary in the stat tiles', async () => {
+      stubFetch({ ...primaryStore, status: 'unreachable' })
+      const wrapper = mountPage()
+      await flushPromises()
+
+      const tiles = wrapper.findAll('.grid > div').map((tile) => tile.text())
+      // archive healthy, local unknown, primary unreachable
+      expect(tiles).toEqual(['Configured3', 'Healthy1', 'Unknown1', 'Unreachable1'])
+      wrapper.unmount()
+    })
+
+    it('tests the primary along with the records on Test all', async () => {
+      const calls = stubFetch(primaryStore)
+      const wrapper = mountPage()
+      await flushPromises()
+
+      const testAll = wrapper.findAll('button').find((b) => b.text().includes('Test all'))
+      expect(testAll).toBeDefined()
+      await testAll!.trigger('click')
+      await flushPromises()
+
+      const posts = calls.filter((c) => c.method === 'POST').map((c) => c.url).sort()
+      expect(posts).toEqual([
+        '/api/v1/admin/storage/archive/test',
+        '/api/v1/admin/storage/local/test',
+        '/api/v1/admin/storage/primary/test',
+      ])
+      wrapper.unmount()
+    })
+
+    it('enables Test all when only the primary exists', async () => {
+      spyOn(globalThis, 'fetch').mockImplementation((async () =>
+        new Response(JSON.stringify({ items: [], total: 0, primary: primaryStore }), { status: 200 })) as never)
+      const wrapper = mountPage()
+      await flushPromises()
+
+      const testAll = wrapper.findAll('button').find((b) => b.text().includes('Test all'))
+      expect(testAll!.attributes('disabled')).toBeUndefined()
+      wrapper.unmount()
+    })
+
     it('shows the status message when the primary is unreachable', async () => {
       stubFetch({ ...primaryStore, status: 'unreachable', status_message: 'dial tcp: connection refused' })
       const wrapper = mountPage()

@@ -1894,6 +1894,13 @@ func (m *MockDatabase) UpdateStorageBackend(ctx context.Context, backend *models
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// A rename moves the row: drop the entry the same row had under its old name.
+	for name, b := range m.storageBackends {
+		if b.ID == backend.ID && name != backend.Name {
+			delete(m.storageBackends, name)
+		}
+	}
+
 	m.storageBackends[backend.Name] = backend
 
 	return nil

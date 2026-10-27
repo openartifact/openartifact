@@ -298,6 +298,25 @@ export function typeIcon(kind: string): Component {
   return kind === 'filesystem' ? ServerIcon : CloudIcon
 }
 
+export interface StatusCounts {
+  total: number
+  healthy: number
+  unreachable: number
+  /** Everything that is neither healthy nor unreachable. */
+  unknown: number
+}
+
+/**
+ * Counts the stores by status: the records plus the configured primary store,
+ * which is a store like any other for the health tiles.
+ */
+export function countStatuses(items: { status?: string }[], primary?: { status?: string } | null): StatusCounts {
+  const all = primary ? [primary, ...items] : items
+  const healthy = all.filter((s) => s.status === 'healthy').length
+  const unreachable = all.filter((s) => s.status === 'unreachable').length
+  return { total: all.length, healthy, unreachable, unknown: all.length - healthy - unreachable }
+}
+
 export function statusLabel(s: string): string {
   const map: Record<string, string> = {
     healthy: t('adm.storage.status.healthy'),

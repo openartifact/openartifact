@@ -243,3 +243,8 @@ func contentDisposition(filename string) string {
 
 	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
 }
+
+// HealthCheck probes the store this one wraps.
+func (s *Store) HealthCheck(ctx context.Context) error {
+	return storage.CheckHealth(ctx, s.BlobStore)
+}
