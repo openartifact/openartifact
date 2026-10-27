@@ -483,3 +483,32 @@ func TestLicenseWarnAndAllowNeverQuarantine(t *testing.T) {
 
 	assertQuarantined(t, pg, repo.ID, false, "agpl-pkg@1.0.0")
 }
+
+func TestDeleteSecretScanResultIsRepoScoped(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	ctx := context.Background()
+	repo := scanPolicyRepo(t, pg, "secret-del-repo")
+	other := scanPolicyRepo(t, pg, "secret-del-other")
+
+	scan := &models.SecretScanResult{RepositoryID: repo.ID, ArtifactID: ".env", ScanStatus: "flagged", FindingCount: 1}
+	if err := pg.CreateSecretScanResult(ctx, scan); err != nil {
+		t.Fatalf("CreateSecretScanResult: %v", err)
+	}
+
+	if err := pg.DeleteSecretScanResult(ctx, other.ID, scan.ID); !errors.Is(err, database.ErrSecretScanNotFound) {
+		t.Fatalf("delete through another repository = %v, want ErrSecretScanNotFound", err)
+	}
+
+	if err := pg.DeleteSecretScanResult(ctx, repo.ID, scan.ID); err != nil {
+		t.Fatalf("DeleteSecretScanResult: %v", err)
+	}
+
+	left, err := pg.ListSecretScanResults(ctx, repo.ID, false)
+	if err != nil || len(left) != 0 {
+		t.Fatalf("scans after delete = %d, %v", len(left), err)
+	}
+
+	if err := pg.DeleteSecretScanResult(ctx, repo.ID, scan.ID); !errors.Is(err, database.ErrSecretScanNotFound) {
+		t.Fatalf("second delete = %v, want ErrSecretScanNotFound", err)
+	}
+}

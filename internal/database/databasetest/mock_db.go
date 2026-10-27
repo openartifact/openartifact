@@ -893,6 +893,9 @@ func (m *BaseMockDB) CreateSecretScanResult(ctx context.Context, result *models.
 func (m *BaseMockDB) GetSecretScanResult(ctx context.Context, repoID, artifactID string) (*models.SecretScanResult, error) {
 	return nil, errNotImpl("GetSecretScanResult")
 }
+func (m *BaseMockDB) DeleteSecretScanResult(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteSecretScanResult")
+}
 func (m *BaseMockDB) ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error) {
 	return nil, errNotImpl("ListSecretScanResults")
 }

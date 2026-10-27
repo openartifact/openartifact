@@ -19,6 +19,9 @@ var (
 	// ErrVulnScanNotFound is returned when a vuln scan result does not exist in the repository.
 	ErrVulnScanNotFound = errors.New("vuln scan result not found")
 
+	// ErrSecretScanNotFound is returned when a secret scan result does not exist in the repository.
+	ErrSecretScanNotFound = errors.New("secret scan result not found")
+
 	// ErrBundleNotDraft is returned when a bundle mutation requires the draft state.
 	ErrBundleNotDraft = errors.New("release bundle is not in draft state")
 
@@ -70,6 +73,30 @@ func (p *PostgresDB) DeleteVulnScanResult(ctx context.Context, repoID, id string
 
 	if n == 0 {
 		return ErrVulnScanNotFound
+	}
+
+	return nil
+}
+
+// DeleteSecretScanResult deletes a secret scan result (and its owning scan job)
+// by ID, scoped to repoID. Returns ErrSecretScanNotFound when nothing matched.
+func (p *PostgresDB) DeleteSecretScanResult(ctx context.Context, repoID, id string) error {
+	res, err := p.db.ExecContext(ctx, `
+		DELETE FROM scan_jobs sj
+		USING secret_results sr, artifact_refs ref
+		WHERE sr.id = $2 AND sr.scan_job_id = sj.id AND sj.scan_type = 'secret'
+		  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1`, repoID, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete secret scan result: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to delete secret scan result: %w", err)
+	}
+
+	if n == 0 {
+		return ErrSecretScanNotFound
 	}
 
 	return nil
