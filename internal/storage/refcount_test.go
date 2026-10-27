@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
@@ -117,4 +118,76 @@ func TestSafeDeleteBlobDefersByteRemovalToTheQueue(t *testing.T) {
 	if len(store.deleted) != 0 {
 		t.Errorf("SafeDeleteBlob deleted bytes immediately: %v", store.deleted)
 	}
+}
+
+// enqueueDB records deletion requests like the real queue.
+type enqueueDB struct {
+	databasetest.BaseMockDB
+
+	queued []string
+	scopes []string
+	err    error
+}
+
+func (d *enqueueDB) EnqueueBlobDeletion(_ context.Context, sha, scope string) error {
+	if d.err != nil {
+		return d.err
+	}
+
+	d.queued = append(d.queued, sha)
+	d.scopes = append(d.scopes, scope)
+
+	return nil
+}
+
+func TestDiscardUnreferencedBytes(t *testing.T) {
+	sha := strings.Repeat("b", 64)
+
+	t.Run("queue present: bytes are queued, never removed at once", func(t *testing.T) {
+		db, store := &enqueueDB{}, &deleteRecorder{}
+
+		if err := DiscardUnreferencedBytes(context.Background(), db, store, sha); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(db.queued) != 1 || db.queued[0] != sha || db.scopes[0] != database.BlobDeletionScopeAll {
+			t.Errorf("queued = %v scopes = %v", db.queued, db.scopes)
+		}
+
+		if len(store.deleted) != 0 {
+			t.Errorf("bytes removed before the sweeper re-checked references: %v", store.deleted)
+		}
+	})
+
+	t.Run("queue failure is reported and bytes survive", func(t *testing.T) {
+		db, store := &enqueueDB{err: errors.New("db down")}, &deleteRecorder{}
+
+		if err := DiscardUnreferencedBytes(context.Background(), db, store, sha); err == nil {
+			t.Fatal("expected an error")
+		}
+
+		if len(store.deleted) != 0 {
+			t.Errorf("bytes removed despite queue failure: %v", store.deleted)
+		}
+	})
+
+	t.Run("no queue: bytes deleted directly", func(t *testing.T) {
+		store := &deleteRecorder{}
+
+		if err := DiscardUnreferencedBytes(context.Background(), &orphanDB{}, store, sha); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(store.deleted) != 1 || store.deleted[0] != sha {
+			t.Errorf("deleted = %v", store.deleted)
+		}
+	})
+
+	t.Run("no queue: store failure is reported", func(t *testing.T) {
+		store := &deleteRecorder{failOn: sha}
+
+		if err := DiscardUnreferencedBytes(context.Background(), &orphanDB{}, store, sha); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
 }
