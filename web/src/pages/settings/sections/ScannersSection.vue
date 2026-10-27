@@ -42,14 +42,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
       </template>
       <template #cell-detail="{ row }">
-        <span class="text-muted">{{ (row as Scanner).message || ((row as Scanner).ready ? t('sx.scanners.readyDetail') : '') }}</span>
-        <a
-          v-if="safeDocsUrl((row as Scanner).docs_url)"
-          :href="safeDocsUrl((row as Scanner).docs_url)"
-          target="_blank"
-          rel="noopener"
-          class="ml-2 text-primary hover:underline"
-        >{{ t('sx.scanners.guide') }}</a>
+        <div class="min-w-0 break-words">
+          <span class="text-muted">{{ (row as Scanner).message || ((row as Scanner).ready ? t('sx.scanners.readyDetail') : '') }}</span>
+          <a
+            v-if="safeDocsUrl((row as Scanner).docs_url)"
+            :href="safeDocsUrl((row as Scanner).docs_url)"
+            target="_blank"
+            rel="noopener"
+            class="ml-2 text-primary hover:underline"
+          >{{ t('sx.scanners.guide') }}</a>
+        </div>
       </template>
     </ListTable>
 
