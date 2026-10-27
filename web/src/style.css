@@ -113,12 +113,17 @@ input[type='radio'] {
   button:not([role='switch']) {
     min-width: 44px;
   }
-  td a,
-  [role='cell'] a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    min-width: 44px;
+  /* In the components layer so a link's own utilities (`block truncate`, `flex`, `hidden`) win: an
+     unlayered `display` here used to beat them and made a long name overflow its card instead of truncating. */
+  @layer components {
+    td a,
+    [role='cell'] a {
+      display: inline-flex;
+      align-items: center;
+      align-content: center;
+      min-height: 44px;
+      min-width: 44px;
+    }
   }
   [role='switch'] {
     position: relative;

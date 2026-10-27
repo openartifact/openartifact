@@ -50,6 +50,17 @@ describe('RepoListPage', () => {
     w.unmount()
   })
 
+  it('lets a long repository name truncate (the full name stays in the title), never overflow into the row actions', async () => {
+    const long = 'platform-engineering-release-train-artifacts-mirror-with-a-very-long-name'
+    const { w } = await mountPage({ repositories: [{ ...ROW, name: long }], total: 1 })
+    const link = w.get('tbody a[href="/repos/' + long + '"]')
+    expect(link.attributes('title')).toBe(long)
+    expect(link.classes()).toEqual(expect.arrayContaining(['block', 'truncate']))
+    // A parent that can shrink below the text width, up to the actions cell.
+    expect(link.element.parentElement?.classList.contains('min-w-0')).toBe(true)
+    w.unmount()
+  })
+
   it('sends the chip filter to the server and keeps it in the URL', async () => {
     const { w, router, spy } = await mountPage({ repositories: [ROW], total: 1 })
     await w.get('[data-testid="chip-flagged"]').trigger('click')

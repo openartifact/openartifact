@@ -46,14 +46,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <StatusBadge :label="t(`sx.health.status.${(row as HealthRow).status}`)" :variant="BADGE[(row as HealthRow).status]" />
         </template>
         <template #cell-detail="{ row }">
-          <span class="text-muted">{{ (row as HealthRow).detail }}</span>
-          <a
-            v-if="(row as HealthRow).docs"
-            :href="(row as HealthRow).docs"
-            target="_blank"
-            rel="noopener"
-            class="ml-2 text-primary hover:underline"
-          >{{ t('sx.scanners.guide') }}</a>
+          <div class="min-w-0 break-words">
+            <span class="text-muted">{{ (row as HealthRow).detail }}</span>
+            <a
+              v-if="(row as HealthRow).docs"
+              :href="(row as HealthRow).docs"
+              target="_blank"
+              rel="noopener"
+              class="ml-2 text-primary hover:underline"
+            >{{ t('sx.scanners.guide') }}</a>
+          </div>
         </template>
         <template #cell-actions="{ row }">
           <RowActions
