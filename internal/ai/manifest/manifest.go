@@ -529,3 +529,5 @@ func rootFile(name string) (string, bool) {
 
 	return clean, true
 }
+
+// fuzz selection probe.
