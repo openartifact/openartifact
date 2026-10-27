@@ -514,6 +514,13 @@ func fedTriConflict(t *testing.T, m *fedMesh) {
 	t.Helper()
 
 	a, b, c := m.nodes[0], m.nodes[1], m.nodes[2]
+	losers := []*fedNode{a, b}
+
+	// conflicts_total is cumulative: count only what this subtest causes.
+	before := map[*fedNode]int64{}
+	for _, n := range losers {
+		before[n] = n.conflicts(t, fedRawRepo)
+	}
 
 	m.setAll(proxyCut)
 
@@ -526,13 +533,22 @@ func fedTriConflict(t *testing.T, m *fedMesh) {
 
 	// c wrote last: its value wins on every node.
 	m.everywhere(t, "last writer wins everywhere", m.rawIs(t, "lww/shared.txt", http.StatusOK, "written by c"))
-	poll(t, "mesh idle", fedWait, func() bool { return m.idle(t) })
 
-	for _, n := range []*fedNode{a, b} {
-		if got := n.conflicts(t, fedRawRepo); got < 1 {
-			t.Errorf("%s: conflicts_total = %d, want >= 1 (its own write was superseded)", n.name, got)
+	// A puller saves its conflict counter after it has committed the unit that
+	// superseded the local write, so the counter trails the content a node
+	// serves by a few milliseconds. The mesh-idle view cannot cover that gap:
+	// nothing pulled during the partition, so every peer still reports the
+	// cursor and head it had before the writes. Wait for the counters.
+	poll(t, "a and b to count their superseded writes as conflicts", fedWait, func() bool {
+		for _, n := range losers {
+			if n.conflicts(t, fedRawRepo) <= before[n] {
+				return false
+			}
 		}
-	}
+
+		return true
+	})
+	poll(t, "mesh idle", fedWait, func() bool { return m.idle(t) })
 }
 
 func fedTriResume(t *testing.T, m *fedMesh) {
