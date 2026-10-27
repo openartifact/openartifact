@@ -15,7 +15,6 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -34,14 +33,13 @@ type DockerGCRunner interface {
 // DockerGCHandler serves the admin endpoint that runs Docker registry garbage
 // collection (untagged manifests and the blobs only they referenced) on demand.
 type DockerGCHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
-	runner    DockerGCRunner
+	repoAccess
+
+	runner DockerGCRunner
 }
 
 func NewDockerGCHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, runner DockerGCRunner) *DockerGCHandler {
-	return &DockerGCHandler{db: db, log: log, evaluator: evaluator, runner: runner}
+	return &DockerGCHandler{repoAccess: newRepoAccess(db, log, evaluator), runner: runner}
 }
 
 func (h *DockerGCHandler) RegisterAuthed(r chi.Router) {
@@ -104,16 +102,8 @@ func (h *DockerGCHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 		grace = time.Duration(*body.GracePeriodSeconds) * time.Second
 	}
 
-	repo, err := h.db.GetRepositoryByName(r.Context(), urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("docker gc: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+	repo, ok := h.loadRepo(w, r, "docker gc")
+	if !ok {
 		return
 	}
 

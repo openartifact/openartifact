@@ -25,9 +25,7 @@ import (
 
 // VulnHandler handles vulnerability scanning endpoints.
 type VulnHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
+	repoAccess
 
 	// scanSem bounds the number of concurrently running background scans.
 	scanSem chan struct{}
@@ -115,9 +113,7 @@ func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 	}
 
 	return &VulnHandler{
-		db:         db,
-		log:        log,
-		evaluator:  evaluator,
+		repoAccess: newRepoAccess(db, log, evaluator),
 		scanSem:    make(chan struct{}, maxConcurrentVulnScans),
 		scanners:   scanners,
 		newBackend: scanners.Backend,
@@ -176,27 +172,10 @@ func vulnScannerToResponse(s vuln.ScannerStatus) responses.VulnScannerResponse {
 
 // handleScan initiates a vulnerability scan for a package.
 func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("scan vuln: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "scan vuln")
+	if !ok {
 		return
 	}
 
@@ -356,98 +335,28 @@ func (h *VulnHandler) performScan(ctx context.Context, scanResult *models.VulnSc
 
 // handleListScans lists all vulnerability scan results for a repository.
 func (h *VulnHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("list vuln scans: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "list vuln scans")
+	if !ok {
 		return
 	}
 
 	vulnerableOnly := r.URL.Query().Get("vulnerable") == "true"
 
-	results, err := h.db.ListVulnScanResults(ctx, repo.ID, vulnerableOnly)
-	if err != nil {
-		h.log.Errorw("list vuln scans: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if results == nil {
-		results = []*models.VulnScanResult{}
-	}
-
-	resultMaps := []responses.VulnScanResultResponse{}
-	for _, result := range results {
-		resultMaps = append(resultMaps, vulnScanResultToMap(result))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"scans": resultMaps,
-	})
+	writeRepoList(w, r, h.repoAccess, repo, "list vuln scans", "scans",
+		func(ctx context.Context, repoID string) ([]*models.VulnScanResult, error) {
+			return h.db.ListVulnScanResults(ctx, repoID, vulnerableOnly)
+		}, vulnScanResultToMap)
 }
 
 // handleGetScan gets a specific vulnerability scan result.
-//
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *VulnHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get vuln scan: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "get vuln scan")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
-		return
-	}
-
-	result, err := h.db.GetVulnScanResultByID(ctx, repo.ID, id)
-	if err != nil {
-		h.log.Errorw("get vuln scan: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if result == nil {
-		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+	result, ok := fetchInRepo(w, r, h.repoAccess, repo, "get vuln scan: db error", "vuln scan", h.db.GetVulnScanResultByID)
+	if !ok {
 		return
 	}
 
@@ -456,28 +365,11 @@ func (h *VulnHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 
 // handleQuarantine updates the quarantine status of a vulnerable artifact.
 func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("quarantine vuln artifact: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "quarantine vuln artifact")
+	if !ok {
 		return
 	}
 
@@ -489,8 +381,7 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+	if !requireUUID(w, id, "vuln scan") {
 		return
 	}
 
@@ -527,33 +418,15 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteScan deletes a vulnerability scan result.
 func (h *VulnHandler) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete vuln scan: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "delete vuln scan")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+	if !requireUUID(w, id, "vuln scan") {
 		return
 	}
 

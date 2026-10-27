@@ -26,9 +26,8 @@ import (
 )
 
 type BundlesHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
+	repoAccess
+
 	keys      BundleKeyResolver
 	promoter  *promote.Engine
 	publisher webhook.Publisher
@@ -122,7 +121,7 @@ func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.Pip
 }
 
 func NewBundlesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
-	return &BundlesHandler{db: db, log: log, evaluator: evaluator, promoter: promote.NewEngine(db, log, nil)}
+	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil)}
 }
 
 // WithPublisher enables the bundle.promoted webhook event.
@@ -172,36 +171,44 @@ func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
 // Pipeline Handlers
 // ============================================================================
 
+// adminPipeline requires a global administrator, then resolves the pipeline
+// {name}: a lookup failure is logged as logMsg and answered 500, an unknown
+// pipeline 404.
+func (h *BundlesHandler) adminPipeline(w http.ResponseWriter, r *http.Request, logMsg string) (*models.PromotionPipeline, bool) {
+	if !h.adminGate(w, r) {
+		return nil, false
+	}
+
+	pipeline, err := h.db.GetPromotionPipelineByName(r.Context(), urlparams.Vars(r)["name"])
+	if err != nil {
+		h.dbError(w, logMsg, err)
+		return nil, false
+	}
+
+	if pipeline == nil {
+		writeError(w, http.StatusNotFound, "not_found", "pipeline not found")
+		return nil, false
+	}
+
+	return pipeline, true
+}
+
 func (h *BundlesHandler) handleListPipelines(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
 	pipelines, err := h.db.ListPromotionPipelines(ctx)
 	if err != nil {
-		h.log.Errorw("list pipelines: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "list pipelines: db error", err)
 
 		return
 	}
 
-	if pipelines == nil {
-		pipelines = []*models.PromotionPipeline{}
-	}
-
-	result := []map[string]any{}
-	for _, pipeline := range pipelines {
-		result = append(result, pipelineToMap(pipeline))
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"pipelines": result,
+		"pipelines": mapList(pipelines, pipelineToMap),
 	})
 }
 
@@ -210,9 +217,7 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
@@ -233,8 +238,7 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 
 	msg, err := h.validateStages(ctx, body.Stages)
 	if err != nil {
-		h.log.Errorw("create pipeline: db error validating stages", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "create pipeline: db error validating stages", err)
 
 		return
 	}
@@ -268,8 +272,7 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 			return
 		}
 
-		h.log.Errorw("create pipeline: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "create pipeline: db error", err)
 
 		return
 	}
@@ -278,35 +281,15 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 }
 
 func (h *BundlesHandler) handleGetPipeline(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	pipeline, err := h.db.GetPromotionPipelineByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get pipeline: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if pipeline == nil {
-		writeError(w, http.StatusNotFound, "not_found", "pipeline not found")
+	pipeline, ok := h.adminPipeline(w, r, "get pipeline: db error")
+	if !ok {
 		return
 	}
 
 	// Unmarshal stages
 	if len(pipeline.StagesRaw) > 0 {
 		if err := json.Unmarshal(pipeline.StagesRaw, &pipeline.Stages); err != nil {
-			h.log.Errorw("get pipeline: unmarshal stages error", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+			h.dbError(w, "get pipeline: unmarshal stages error", err)
 
 			return
 		}
@@ -316,27 +299,10 @@ func (h *BundlesHandler) handleGetPipeline(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	pipeline, err := h.db.GetPromotionPipelineByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("update pipeline: db error getting pipeline", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if pipeline == nil {
-		writeError(w, http.StatusNotFound, "not_found", "pipeline not found")
+	pipeline, ok := h.adminPipeline(w, r, "update pipeline: db error getting pipeline")
+	if !ok {
 		return
 	}
 
@@ -356,8 +322,7 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 	if body.Stages != nil {
 		msg, err := h.validateStages(ctx, *body.Stages)
 		if err != nil {
-			h.log.Errorw("update pipeline: db error validating stages", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+			h.dbError(w, "update pipeline: db error validating stages", err)
 
 			return
 		}
@@ -383,8 +348,7 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 	pipeline.UpdatedAt = time.Now()
 
 	if err := h.db.UpdatePromotionPipeline(ctx, pipeline); err != nil {
-		h.log.Errorw("update pipeline: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "update pipeline: db error", err)
 
 		return
 	}
@@ -393,33 +357,15 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 }
 
 func (h *BundlesHandler) handleDeletePipeline(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	pipeline, err := h.db.GetPromotionPipelineByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete pipeline: db error getting pipeline", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if pipeline == nil {
-		writeError(w, http.StatusNotFound, "not_found", "pipeline not found")
+	pipeline, ok := h.adminPipeline(w, r, "delete pipeline: db error getting pipeline")
+	if !ok {
 		return
 	}
 
 	if err := h.db.DeletePromotionPipeline(ctx, pipeline.ID); err != nil {
-		h.log.Errorw("delete pipeline: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "delete pipeline: db error", err)
 
 		return
 	}
@@ -440,36 +386,22 @@ func (h *BundlesHandler) handleListBundles(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
 	bundles, total, err := h.db.ListReleaseBundles(ctx, nameFilter, stateFilter, page, limit)
 	if err != nil {
-		h.log.Errorw("list bundles: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "list bundles: db error", err)
 
 		return
-	}
-
-	if bundles == nil {
-		bundles = []*models.ReleaseBundle{}
-	}
-
-	result := []map[string]any{}
-	for _, bundle := range bundles {
-		result = append(result, bundleToMap(bundle))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total":   total,
 		"page":    page,
 		"limit":   limit,
-		"bundles": result,
+		"bundles": mapList(bundles, bundleToMap),
 	})
 }
 
@@ -518,8 +450,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 
 		pipeline, err := h.db.GetPromotionPipelineByName(ctx, body.Pipeline)
 		if err != nil {
-			h.log.Errorw("create bundle: db error getting pipeline", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+			h.dbError(w, "create bundle: db error getting pipeline", err)
 
 			return
 		}
@@ -538,8 +469,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 
 		pipeline, err := h.db.GetPromotionPipelineByID(ctx, *body.PipelineID)
 		if err != nil {
-			h.log.Errorw("create bundle: db error getting pipeline", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+			h.dbError(w, "create bundle: db error getting pipeline", err)
 
 			return
 		}
@@ -572,8 +502,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		h.log.Errorw("create bundle: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "create bundle: db error", err)
 
 		return
 	}
@@ -604,8 +533,7 @@ func (h *BundlesHandler) handleDeleteBundle(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.db.DeleteReleaseBundle(ctx, bundle.ID); err != nil {
-		h.log.Errorw("delete bundle: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "delete bundle: db error", err)
 
 		return
 	}
@@ -617,34 +545,31 @@ func (h *BundlesHandler) handleDeleteBundle(w http.ResponseWriter, r *http.Reque
 // Bundle Item Handlers
 // ============================================================================
 
-func (h *BundlesHandler) handleListItems(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
+// listBundleChildren answers the {key: [...]} listing of the rows list returns
+// for the bundle {name}/{version}, which the caller must be able to view. A
+// failure to list is logged as logMsg and answered 500.
+func listBundleChildren[T any](
+	w http.ResponseWriter, r *http.Request, h *BundlesHandler, logMsg, key string,
+	list func(ctx context.Context, bundleID string) ([]*T, error), toMap func(*T) map[string]any,
+) {
 	bundle, _, ok := h.loadBundle(w, r, bundleNeedView)
 	if !ok {
 		return
 	}
 
-	items, err := h.db.ListBundleItems(ctx, bundle.ID)
+	rows, err := list(r.Context(), bundle.ID)
 	if err != nil {
-		h.log.Errorw("list items: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, logMsg, err)
 		return
 	}
 
-	if items == nil {
-		items = []*models.ReleaseBundleItem{}
-	}
-
-	result := []map[string]any{}
-	for _, item := range items {
-		result = append(result, itemToMap(item))
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": result,
+		key: mapList(rows, toMap),
 	})
+}
+
+func (h *BundlesHandler) handleListItems(w http.ResponseWriter, r *http.Request) {
+	listBundleChildren(w, r, h, "list items: db error", "items", h.db.ListBundleItems, itemToMap)
 }
 
 // bundleItemInput is one requested entry of an add-items request.
@@ -836,8 +761,7 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 		case database.IsForeignKeyViolation(err):
 			writeError(w, http.StatusBadRequest, "validation_failed", "source_repo_id does not reference an existing repository")
 		default:
-			h.log.Errorw("add items: db error adding items", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+			h.dbError(w, "add items: db error adding items", err)
 		}
 
 		return
@@ -869,8 +793,7 @@ func (h *BundlesHandler) handleRemoveItem(w http.ResponseWriter, r *http.Request
 
 	item, err := h.db.GetBundleItem(ctx, bundle.ID, sha256)
 	if err != nil {
-		h.log.Errorw("remove item: db error getting item", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "remove item: db error getting item", err)
 
 		return
 	}
@@ -886,8 +809,7 @@ func (h *BundlesHandler) handleRemoveItem(w http.ResponseWriter, r *http.Request
 			return
 		}
 
-		h.log.Errorw("remove item: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "remove item: db error", err)
 
 		return
 	}
@@ -917,8 +839,7 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	// Check if bundle has items
 	items, err := h.db.ListBundleItems(ctx, bundle.ID)
 	if err != nil {
-		h.log.Errorw("seal bundle: db error listing items", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "seal bundle: db error listing items", err)
 
 		return
 	}
@@ -959,8 +880,7 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	// (or item removal) between the checks above and here cannot be overwritten.
 	sealed, err := h.db.SealReleaseBundle(ctx, bundle.ID, p.Username, now, signature)
 	if err != nil {
-		h.log.Errorw("seal bundle: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "seal bundle: db error", err)
 
 		return
 	}
@@ -1167,8 +1087,7 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 	bundle.UpdatedAt = now
 
 	if err := h.db.UpdateReleaseBundle(ctx, bundle); err != nil {
-		h.log.Errorw("archive bundle: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "archive bundle: db error", err)
 
 		return
 	}
@@ -1181,33 +1100,7 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 // ============================================================================
 
 func (h *BundlesHandler) handleListPromotions(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	bundle, _, ok := h.loadBundle(w, r, bundleNeedView)
-	if !ok {
-		return
-	}
-
-	promotions, err := h.db.ListBundlePromotions(ctx, bundle.ID)
-	if err != nil {
-		h.log.Errorw("list promotions: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if promotions == nil {
-		promotions = []*models.BundlePromotion{}
-	}
-
-	result := []map[string]any{}
-	for _, promotion := range promotions {
-		result = append(result, promotionToMap(promotion))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"promotions": result,
-	})
+	listBundleChildren(w, r, h, "list promotions: db error", "promotions", h.db.ListBundlePromotions, promotionToMap)
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -20,16 +21,15 @@ import (
 )
 
 type SecretsHandler struct {
-	db      database.Database
-	log     *logger.Logger
+	repoAccess
+
 	scanner *secrets.Scanner
 }
 
 func NewSecretsHandler(db database.Database, log *logger.Logger, scanner *secrets.Scanner) *SecretsHandler {
 	return &SecretsHandler{
-		db:      db,
-		log:     log,
-		scanner: scanner,
+		repoAccess: newRepoAccess(db, log, auth.NewEvaluator(db, log, false)),
+		scanner:    scanner,
 	}
 }
 
@@ -45,27 +45,10 @@ func (h *SecretsHandler) RegisterRoutes(authedRouter chi.Router, pathPrefix stri
 
 // handleScan scans an artifact for secrets.
 func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("scan secrets: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "scan secrets")
+	if !ok {
 		return
 	}
 
@@ -127,101 +110,28 @@ func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 
 // handleListScans lists all secret scan results for a repository.
 func (h *SecretsHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("list secret scans: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "list secret scans")
+	if !ok {
 		return
 	}
 
 	flaggedOnly := r.URL.Query().Get("flagged") == "true"
 
-	results, err := h.db.ListSecretScanResults(ctx, repo.ID, flaggedOnly)
-	if err != nil {
-		h.log.Errorw("list secret scans: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if results == nil {
-		results = []*models.SecretScanResult{}
-	}
-
-	resultMaps := []responses.SecretScanResultResponse{}
-	for _, result := range results {
-		resultMaps = append(resultMaps, secretScanResultToMap(result))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"scans": resultMaps,
-	})
+	writeRepoList(w, r, h.repoAccess, repo, "list secret scans", "scans",
+		func(ctx context.Context, repoID string) ([]*models.SecretScanResult, error) {
+			return h.db.ListSecretScanResults(ctx, repoID, flaggedOnly)
+		}, secretScanResultToMap)
 }
 
 // handleGetScan gets a specific secret scan result.
 func (h *SecretsHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get secret scan: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "get secret scan")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	// Get all scans and find the one with matching ID
-	results, err := h.db.ListSecretScanResults(ctx, repo.ID, false)
-	if err != nil {
-		h.log.Errorw("get secret scan: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	var result *models.SecretScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
-		}
-	}
-
-	if result == nil {
-		writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
+	result, ok := h.findScan(w, r, repo, "get secret scan: db error")
+	if !ok {
 		return
 	}
 
@@ -230,28 +140,10 @@ func (h *SecretsHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 
 // handleQuarantine updates the quarantine status of an artifact.
 func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("quarantine artifact: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "quarantine artifact")
+	if !ok {
 		return
 	}
 
@@ -263,26 +155,8 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get the scan result to find artifact ID
-	results, err := h.db.ListSecretScanResults(ctx, repo.ID, false)
-	if err != nil {
-		h.log.Errorw("quarantine artifact: db error listing scans", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	var result *models.SecretScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
-		}
-	}
-
-	if result == nil {
-		writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
+	result, ok := h.findScan(w, r, repo, "quarantine artifact: db error listing scans")
+	if !ok {
 		return
 	}
 
@@ -306,53 +180,42 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, secretScanResultToMap(updated))
 }
 
-// handleDeleteScan deletes a secret scan result.
-func (h *SecretsHandler) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
+// findScan finds the scan result {id} among the repository's secret scans; a
+// listing failure is logged as logMsg, an unknown id is a 404.
+func (h *SecretsHandler) findScan(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	logMsg string,
+) (*models.SecretScanResult, bool) {
+	results, err := h.db.ListSecretScanResults(r.Context(), repo.ID, false)
+	if err != nil {
+		h.dbError(w, logMsg, err)
+		return nil, false
+	}
+
 	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete secret scan: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	// Get all scans and find the one with matching ID
-	results, err := h.db.ListSecretScanResults(ctx, repo.ID, false)
-	if err != nil {
-		h.log.Errorw("delete secret scan: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	var result *models.SecretScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
+	for _, res := range results {
+		if res.ID == id {
+			return res, true
 		}
 	}
 
-	if result == nil {
-		writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
+	writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
+
+	return nil, false
+}
+
+// handleDeleteScan deletes a secret scan result.
+func (h *SecretsHandler) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.adminRepo(w, r, "delete secret scan")
+	if !ok {
+		return
+	}
+
+	_, ok = h.findScan(w, r, repo, "delete secret scan: db error")
+	if !ok {
 		return
 	}
 
@@ -394,7 +257,7 @@ type secretExport struct {
 func (h *SecretsHandler) loadExport(w http.ResponseWriter, r *http.Request, flaggedOnly bool) *secretExport {
 	ctx := r.Context()
 
-	if !requireAdmin(w, r, auth.NewEvaluator(h.db, h.log, false)) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return nil
 	}
 
@@ -404,19 +267,10 @@ func (h *SecretsHandler) loadExport(w http.ResponseWriter, r *http.Request, flag
 		return nil
 	}
 
-	repo, err := h.db.GetRepositoryByName(ctx, urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("export secret scans: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.repoNamed(w, r, "export secret scans: db error getting repo")
+	if !ok {
 		return nil
 	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return nil
-	}
-
 	results, err := h.db.ListSecretScanResults(ctx, repo.ID, flaggedOnly)
 	if err != nil {
 		h.log.Errorw("export secret scans: db error", "error", err)

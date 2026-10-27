@@ -22,11 +22,10 @@ import (
 )
 
 type LicenseHandler struct {
-	db        database.Database
-	log       *logger.Logger
-	evaluator *auth.Evaluator
-	detector  *license.Detector
-	licenses  artifactLicenseSource
+	repoAccess
+
+	detector *license.Detector
+	licenses artifactLicenseSource
 }
 
 // NewLicenseHandler returns the license scan and policy handler. blobs is the
@@ -39,11 +38,9 @@ func NewLicenseHandler(
 	blobs storage.BlobStore,
 ) *LicenseHandler {
 	return &LicenseHandler{
-		db:        db,
-		log:       log,
-		evaluator: evaluator,
-		detector:  detector,
-		licenses:  artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector},
+		repoAccess: newRepoAccess(db, log, evaluator),
+		detector:   detector,
+		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector},
 	}
 }
 
@@ -67,27 +64,10 @@ func (h *LicenseHandler) RegisterRoutes(authedRouter chi.Router) {
 
 // handleScan scans an artifact for licenses and evaluates policies.
 func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("scan licenses: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "scan licenses")
+	if !ok {
 		return
 	}
 
@@ -120,9 +100,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		h.log.Errorw("scan licenses: db error reading artifact licenses", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "scan licenses: db error reading artifact licenses", err)
 		return
 	}
 
@@ -130,9 +108,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	// the result; a violated blocking policy quarantines the artifact.
 	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, resolved.Licenses, resolved.Source)
 	if err != nil {
-		h.log.Errorw("scan licenses: db error recording scan result", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "scan licenses: db error recording scan result", err)
 		return
 	}
 
@@ -161,26 +137,11 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 // across re-scans of the same licenses, until it is approved here
 // ({"quarantined": false}).
 func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("quarantine license scan: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	isAdmin, err := principalIsAdmin(ctx, currentPrincipal(r), h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "quarantine license scan")
+	if !ok {
 		return
 	}
 
@@ -192,8 +153,7 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+	if !requireUUID(w, id, "license scan") {
 		return
 	}
 
@@ -203,17 +163,13 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 			return
 		}
 
-		h.log.Errorw("quarantine license scan: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "quarantine license scan: db error", err)
 		return
 	}
 
 	updated, err := h.db.GetLicenseScanResultByID(ctx, repo.ID, id)
 	if err != nil {
-		h.log.Errorw("quarantine license scan: db error fetching updated result", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "quarantine license scan: db error fetching updated result", err)
 		return
 	}
 
@@ -226,99 +182,24 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 }
 
 // handleListScans lists all license scan results for a repository.
-//
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *LicenseHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("list license scans: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "list license scans")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	results, err := h.db.ListLicenseScanResults(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("list license scans: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if results == nil {
-		results = []*models.LicenseScanResult{}
-	}
-
-	resultMaps := []responses.LicenseScanResultResponse{}
-	for _, result := range results {
-		resultMaps = append(resultMaps, scanResultToMap(result))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"scans": resultMaps,
-	})
+	writeRepoList(w, r, h.repoAccess, repo, "list license scans", "scans", h.db.ListLicenseScanResults, scanResultToMap)
 }
 
 // handleGetScan gets a specific license scan result.
-//
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *LicenseHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("get license scan: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "get license scan")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
-		return
-	}
-
-	result, err := h.db.GetLicenseScanResultByID(ctx, repo.ID, id)
-	if err != nil {
-		h.log.Errorw("get license scan: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if result == nil {
-		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+	result, ok := fetchInRepo(w, r, h.repoAccess, repo, "get license scan: db error", "license scan", h.db.GetLicenseScanResultByID)
+	if !ok {
 		return
 	}
 
@@ -326,78 +207,21 @@ func (h *LicenseHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListPolicies lists all license policies for a repository.
-//
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *LicenseHandler) handleListPolicies(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("list license policies: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	repo, ok := h.adminRepo(w, r, "list license policies")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	policies, err := h.db.ListLicensePolicies(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("list license policies: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policies == nil {
-		policies = []*models.LicensePolicy{}
-	}
-
-	policyMaps := []responses.LicensePolicyResponse{}
-	for _, policy := range policies {
-		policyMaps = append(policyMaps, licensePolicyToMap(policy))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"policies": policyMaps,
-	})
+	writeRepoList(w, r, h.repoAccess, repo, "list license policies", "policies", h.db.ListLicensePolicies, licensePolicyToMap)
 }
 
 // handleCreatePolicy creates a new license policy.
 func (h *LicenseHandler) handleCreatePolicy(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("create license policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	repo, ok := h.adminRepo(w, r, "create license policy")
+	if !ok {
 		return
 	}
 
@@ -446,9 +270,7 @@ func (h *LicenseHandler) handleCreatePolicy(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.db.CreateLicensePolicy(ctx, policy); err != nil {
-		h.log.Errorw("create license policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "create license policy: db error", err)
 		return
 	}
 
@@ -506,48 +328,10 @@ func (b *licensePolicyPatch) apply(policy *models.LicensePolicy) string {
 
 // handleUpdatePolicy updates a license policy.
 func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("update license policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
-		return
-	}
-
-	policy, err := h.db.GetLicensePolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("update license policy: db error getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	// Global policies (RepositoryID == nil) are only manageable through the
-	// admin endpoints, never through a repository-scoped URL.
-	if policy == nil || policy.RepositoryID == nil || *policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
+	policy, ok := h.repoPolicy(w, r, "update license policy")
+	if !ok {
 		return
 	}
 
@@ -565,9 +349,7 @@ func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Reque
 	policy.UpdatedAt = time.Now()
 
 	if err := h.db.UpdateLicensePolicy(ctx, policy); err != nil {
-		h.log.Errorw("update license policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "update license policy: db error", err)
 		return
 	}
 
@@ -576,90 +358,57 @@ func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Reque
 
 // handleDeletePolicy deletes a license policy.
 func (h *LicenseHandler) handleDeletePolicy(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	id := urlparams.Vars(r)["id"]
-	ctx := r.Context()
-
-	repo, err := h.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		h.log.Errorw("delete license policy: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	policy, ok := h.repoPolicy(w, r, "delete license policy")
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	if !isUUIDString(id) {
-		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
-		return
-	}
-
-	policy, err := h.db.GetLicensePolicy(ctx, id)
-	if err != nil {
-		h.log.Errorw("delete license policy: db error getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if policy == nil || policy.RepositoryID == nil || *policy.RepositoryID != repo.ID {
-		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
-		return
-	}
-
-	if err := h.db.DeleteLicensePolicy(ctx, id); err != nil {
-		h.log.Errorw("delete license policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	if err := h.db.DeleteLicensePolicy(r.Context(), policy.ID); err != nil {
+		h.dbError(w, "delete license policy: db error", err)
 		return
 	}
 
 	writeNoContent(w)
 }
 
+// repoPolicy resolves the license policy {id} of the repository {name} for an
+// admin: 404 when it does not exist or is not that repository's. Global
+// policies (RepositoryID == nil) are only manageable through the admin
+// endpoints, never through a repository-scoped URL.
+func (h *LicenseHandler) repoPolicy(w http.ResponseWriter, r *http.Request, op string) (*models.LicensePolicy, bool) {
+	repo, ok := h.adminRepo(w, r, op)
+	if !ok {
+		return nil, false
+	}
+
+	policy, ok := fetchByID(w, h.repoAccess, op+": db error getting policy", "license policy", urlparams.Vars(r)["id"],
+		func(id string) (*models.LicensePolicy, error) { return h.db.GetLicensePolicy(r.Context(), id) })
+	if !ok {
+		return nil, false
+	}
+
+	if policy.RepositoryID == nil || *policy.RepositoryID != repo.ID {
+		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
+		return nil, false
+	}
+
+	return policy, true
+}
+
 // handleListGlobalPolicies lists all global license policies.
 func (h *LicenseHandler) handleListGlobalPolicies(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
-	policies, err := h.db.ListGlobalLicensePolicies(ctx)
+	policies, err := h.db.ListGlobalLicensePolicies(r.Context())
 	if err != nil {
-		h.log.Errorw("list global license policies: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "list global license policies: db error", err)
 		return
-	}
-
-	if policies == nil {
-		policies = []*models.LicensePolicy{}
-	}
-
-	policyMaps := []responses.LicensePolicyResponse{}
-	for _, policy := range policies {
-		policyMaps = append(policyMaps, licensePolicyToMap(policy))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"policies": policyMaps,
+		"policies": mapList(policies, licensePolicyToMap),
 	})
 }
 
@@ -667,11 +416,7 @@ func (h *LicenseHandler) handleListGlobalPolicies(w http.ResponseWriter, r *http
 func (h *LicenseHandler) handleCreateGlobalPolicy(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
@@ -720,9 +465,7 @@ func (h *LicenseHandler) handleCreateGlobalPolicy(w http.ResponseWriter, r *http
 	}
 
 	if err := h.db.CreateLicensePolicy(ctx, policy); err != nil {
-		h.log.Errorw("create global license policy: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "create global license policy: db error", err)
 		return
 	}
 

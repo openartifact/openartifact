@@ -9,7 +9,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/urlparams"
 )
 
 const (
@@ -48,38 +47,22 @@ func quotaLine(maxSize, maxCount int64, warnPercent int, usedBytes, artifactCoun
 //
 //	GET /api/v1/repositories/{name}/usage
 func (h *QuotasHandler) handleGetUsage(w http.ResponseWriter, r *http.Request) {
-	if !h.requireRepoAdmin(w, r) {
+	repo, ok := h.repoAdminFirst(w, r, "repository usage")
+	if !ok {
 		return
 	}
 
 	ctx := r.Context()
 
-	repo, err := h.db.GetRepositoryByName(ctx, urlparams.Vars(r)["name"])
-	if err != nil {
-		h.log.Errorw("repository usage: db error getting repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "repository not found")
-		return
-	}
-
 	quota, err := h.db.GetOrCreateStorageQuota(ctx, repo.ID)
 	if err != nil {
-		h.log.Errorw("repository usage: db error getting quota", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "repository usage: db error getting quota", err)
 		return
 	}
 
 	usage, err := h.db.GetRepositoryUsage(ctx, repo.ID)
 	if err != nil {
-		h.log.Errorw("repository usage: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "repository usage: db error", err)
 		return
 	}
 
@@ -99,7 +82,7 @@ func (h *QuotasHandler) handleGetUsage(w http.ResponseWriter, r *http.Request) {
 //
 //	GET /api/v1/admin/quotas?scope=repository|project&limited=true&q=&page=&limit=
 func (h *QuotasHandler) handleListOverview(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -119,9 +102,7 @@ func (h *QuotasHandler) handleListOverview(w http.ResponseWriter, r *http.Reques
 
 	items, total, err := h.db.ListQuotaOverview(r.Context(), params)
 	if err != nil {
-		h.log.Errorw("list quotas failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "list quotas failed", err)
 		return
 	}
 

@@ -27,18 +27,15 @@ import (
 )
 
 type BackupHandler struct {
-	db           database.Database
-	log          *logger.Logger
-	evaluator    *auth.Evaluator
+	repoAccess
+
 	backupEngine *backup.Engine
 	tasks        *bgtask.Runner
 }
 
 func NewBackupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, backupEngine *backup.Engine) *BackupHandler {
 	return &BackupHandler{
-		db:           db,
-		log:          log,
-		evaluator:    evaluator,
+		repoAccess:   newRepoAccess(db, log, evaluator),
 		backupEngine: backupEngine,
 		tasks:        bgtask.New(context.Background()),
 	}
@@ -60,11 +57,7 @@ func (h *BackupHandler) RegisterAuthed(r chi.Router) {
 }
 
 func (h *BackupHandler) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
@@ -92,8 +85,7 @@ func (h *BackupHandler) handleCreateBackup(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.db.CreateBackupJob(r.Context(), job); err != nil {
-		h.log.Errorw("failed to create backup job", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "failed to create backup job", err)
 
 		return
 	}
@@ -123,57 +115,49 @@ func (h *BackupHandler) handleCreateBackup(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *BackupHandler) handleListBackups(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
 	jobs, err := h.db.ListBackupJobs(r.Context(), 100)
 	if err != nil {
-		h.log.Errorw("failed to list backup jobs", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "failed to list backup jobs", err)
 
 		return
-	}
-
-	if jobs == nil {
-		jobs = []*models.BackupJob{}
-	}
-
-	result := []responses.BackupJobResponse{}
-	for _, job := range jobs {
-		result = append(result, backupJobToMap(job))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"backups": result,
+		"backups": mapList(jobs, backupJobToMap),
 	})
 }
 
-func (h *BackupHandler) handleGetBackup(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	id := urlparams.Vars(r)["id"]
-
+// loadJob resolves the backup job id: a lookup failure is 500, an unknown job 404.
+func (h *BackupHandler) loadJob(w http.ResponseWriter, r *http.Request, id string) (*models.BackupJob, bool) {
 	job, err := h.db.GetBackupJob(r.Context(), id)
 	if err != nil {
 		h.log.Errorw("failed to get backup job", "id", id, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
-		return
+		return nil, false
 	}
 
 	if job == nil {
 		writeError(w, http.StatusNotFound, "not_found", "backup job not found")
+		return nil, false
+	}
+
+	return job, true
+}
+
+func (h *BackupHandler) handleGetBackup(w http.ResponseWriter, r *http.Request) {
+	if !h.adminGate(w, r) {
+		return
+	}
+
+	id := urlparams.Vars(r)["id"]
+
+	job, ok := h.loadJob(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -181,26 +165,14 @@ func (h *BackupHandler) handleGetBackup(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BackupHandler) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
 	id := urlparams.Vars(r)["id"]
 
-	job, err := h.db.GetBackupJob(r.Context(), id)
-	if err != nil {
-		h.log.Errorw("failed to get backup job", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if job == nil {
-		writeError(w, http.StatusNotFound, "not_found", "backup job not found")
+	job, ok := h.loadJob(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -215,7 +187,6 @@ func (h *BackupHandler) handleDownloadBackup(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Open the backup file
-	//nolint:gosec // G703: path is from validated database record, not user input
 	file, err := os.Open(job.StoragePath)
 	if err != nil {
 		h.log.Errorw("failed to open backup file", "path", job.StoragePath, "error", err)
@@ -240,11 +211,7 @@ func (h *BackupHandler) handleDownloadBackup(w http.ResponseWriter, r *http.Requ
 const maxRestoreUploadBytes = 10 << 30
 
 func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.adminGate(w, r) {
 		return
 	}
 
