@@ -29,7 +29,7 @@ function field(kind: string, key: string): FieldDef {
 }
 
 function backend(kind: string, config: Record<string, unknown>): StorageBackend {
-  return { id: 'x', name: 'n', kind, status: 'unknown', is_default: false, config }
+  return { id: 'x', name: 'n', kind, status: 'unknown', config }
 }
 
 describe('backendTypes registry', () => {

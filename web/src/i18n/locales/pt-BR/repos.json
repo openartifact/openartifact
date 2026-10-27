@@ -209,7 +209,5 @@
   "quota.maxSize": "Tamanho máximo",
   "quota.removeTitle": "Remover o limite da cota?",
   "quota.removeBody": "O repositório ficará sem limite de armazenamento. Isso pode ser configurado novamente a qualquer momento.",
-  "storage.configuration": "Configuração",
-  "storage.setDefault": "Definir como backend padrão",
-  "storage.setDefaultHint": "Os novos repositórios sem um backend explícito usarão o padrão."
+  "storage.configuration": "Configuração"
 }

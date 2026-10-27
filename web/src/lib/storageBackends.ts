@@ -8,7 +8,7 @@
 
 import type { Component } from 'vue'
 import { CloudIcon, ServerIcon } from '@heroicons/vue/24/outline'
-import type { StorageBackend as StorageApi } from '../api/storage'
+import type { StorageBackend as StorageApi, StoragePrimary } from '../api/storage'
 import { currentLocale, t } from '../i18n'
 import { storageBackendColor, tint } from './brandColors'
 
@@ -20,7 +20,6 @@ export type StorageBackend = StorageApi & {
   kind: string
   /** Vocabulary reported by the backend (`healthy` / `unreachable` / `unknown`). */
   status: 'healthy' | 'unreachable' | 'unknown'
-  is_default: boolean
 }
 
 export interface FieldOption {
@@ -269,6 +268,16 @@ export function submittableConfig(config: Record<string, unknown>): Record<strin
 export function locationSummary(b: StorageBackend): string {
   const meta = backendTypes()[b.kind]
   return meta ? meta.summary(b.config as Record<string, unknown>) : ''
+}
+
+/** Non-secret location of the configured primary store, e.g. `bucket · endpoint` or the path. */
+export function primaryLocationSummary(p: StoragePrimary): string {
+  const l = p.location
+  const parts =
+    p.kind === 'filesystem'
+      ? [l.path]
+      : [l.bucket ?? l.container ?? l.repository, l.endpoint ?? l.account ?? l.region]
+  return parts.filter(Boolean).join(' · ')
 }
 
 // ─── Presentation helpers ──────────────────────────────────────────────────────

@@ -1959,7 +1959,87 @@
           }
         }
       },
-      "StorageBackend": {
+      "StoragePrimary": {
+      "type": "object",
+      "description": "The primary blob store the server is configured with (storage.* settings). Read-only; holds no credentials.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The reserved name \"primary\", usable in /api/v1/admin/storage/{name}.",
+          "example": "primary"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "filesystem",
+            "s3",
+            "garage",
+            "seaweedfs",
+            "gcs",
+            "azure",
+            "oci"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "config"
+          ],
+          "description": "Always config: the store is set by the server configuration."
+        },
+        "location": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Where the blobs live (path, endpoint, bucket, region, account, container, repository). Never a credential."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "healthy",
+            "unreachable",
+            "unknown"
+          ],
+          "description": "Result of a live health check through the process's own store, cached for 10 seconds."
+        },
+        "status_message": {
+          "type": "string",
+          "nullable": true
+        },
+        "last_checked_at": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true
+        },
+        "usage": {
+          "type": "object",
+          "description": "The blobs placed on the primary store, that is those not moved to a tier.",
+          "properties": {
+            "blob_count": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "required": [
+            "blob_count",
+            "size_bytes"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "source",
+        "location",
+        "status"
+      ]
+    },
+    "StorageBackend": {
         "type": "object",
         "properties": {
           "id": {
@@ -1977,9 +2057,6 @@
               "gcs",
               "azure"
             ]
-          },
-          "is_default": {
-            "type": "boolean"
           },
           "config": {
             "type": "object"
@@ -13921,7 +13998,7 @@
     "/api/v1/admin/storage": {
       "get": {
         "summary": "List storage backends",
-        "description": "List all storage backends (admin only)",
+        "description": "List the storage backends stored in the database (items) and the primary store the server is configured with (primary, read-only; absent when none is wired). The primary store is not part of items or total. Its status comes from a health check cached for 10 seconds.",
         "tags": [
           "Admin",
           "Storage"
@@ -13942,6 +14019,9 @@
                       "items": {
                         "$ref": "#/components/schemas/StorageBackend"
                       }
+                    },
+                    "primary": {
+                      "$ref": "#/components/schemas/StoragePrimary"
                     }
                   }
                 }
@@ -13979,9 +14059,6 @@
                       "azure"
                     ]
                   },
-                  "is_default": {
-                    "type": "boolean"
-                  },
                   "config": {
                     "type": "object"
                   }
@@ -14017,6 +14094,119 @@
           },
           "403": {
             "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage/primary": {
+      "get": {
+        "summary": "Get the primary storage",
+        "description": "The primary blob store the server is configured with (storage.* settings), with its non-secret location, live status and usage (admin only). The name \"primary\" is reserved: this static path takes precedence over /admin/storage/{name}.",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "200": {
+            "description": "The primary storage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoragePrimary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "No primary storage is wired"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update the primary storage (not allowed)",
+        "description": "Always answers 405 read_only: the primary storage is set by the server configuration.",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "403": {
+            "description": "Admin access required"
+          },
+          "405": {
+            "description": "read_only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete the primary storage (not allowed)",
+        "description": "Always answers 405 read_only: the primary storage is set by the server configuration.",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "403": {
+            "description": "Admin access required"
+          },
+          "405": {
+            "description": "read_only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage/primary/test": {
+      "post": {
+        "summary": "Test the primary storage",
+        "description": "Runs a live health check through the store that serves every request and refreshes the cached status (admin only).",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "200": {
+            "description": "Test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "No primary storage is wired"
           }
         }
       }
@@ -14099,9 +14289,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "is_default": {
-                    "type": "boolean"
-                  },
                   "config": {
                     "type": "object"
                   }

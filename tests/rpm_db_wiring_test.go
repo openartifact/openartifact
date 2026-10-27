@@ -59,6 +59,7 @@ type MockDatabase struct {
 	ssoProvidersBySlug      map[string]*models.SSOProvider
 	userExternalIDs         map[string]*models.User
 	storageBackends         map[string]*models.StorageBackend
+	tierUsage               []models.TierUsage
 	AuditLogs               []*models.AuditLog
 
 	// Quota fakes shared by the upload tests. Guarded by mu.
@@ -1860,7 +1861,10 @@ func (m *MockDatabase) CreateStorageBackend(ctx context.Context, backend *models
 }
 
 func (m *MockDatabase) StorageTierUsage(ctx context.Context) ([]models.TierUsage, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.tierUsage, nil
 }
 
 func (m *MockDatabase) ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {

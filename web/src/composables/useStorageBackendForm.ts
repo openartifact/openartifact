@@ -28,12 +28,10 @@ export function useStorageBackendForm(opts: FormOptions) {
   const form = reactive<{
     name: string
     kind: string
-    is_default: boolean
     config: Record<string, unknown>
   }>({
     name: '',
     kind: '',
-    is_default: false,
     config: {},
   })
 
@@ -42,7 +40,6 @@ export function useStorageBackendForm(opts: FormOptions) {
   function reset(): void {
     form.name = ''
     form.kind = ''
-    form.is_default = false
     form.config = {}
     testResult.value = null
     Object.keys(revealedSecrets).forEach((k) => {
@@ -57,7 +54,6 @@ export function useStorageBackendForm(opts: FormOptions) {
     if (opts.mode() !== 'edit' || !backend) return
     form.name = backend.name
     form.kind = backend.kind
-    form.is_default = backend.is_default
     form.config = { ...backend.config }
   }
 
@@ -91,13 +87,11 @@ export function useStorageBackendForm(opts: FormOptions) {
         await createStorageBackend({
           name: form.name,
           kind: form.kind,
-          is_default: form.is_default,
           config: submittableConfig(form.config),
         })
         toasts.success(tp('adm.storage.pair', { label: t('adm.storage.created'), value: form.name }))
       } else if (backend) {
         await updateStorageBackend(backend.name, {
-          is_default: form.is_default,
           config: submittableConfig(form.config),
         })
         toasts.success(tp('adm.storage.pair', { label: t('adm.storage.updated'), value: form.name }))

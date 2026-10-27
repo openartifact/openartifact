@@ -24,7 +24,14 @@ func setupStorageRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princ
 	t.Helper()
 	log := newHandlerLogger(t)
 	eval := auth.NewEvaluator(db, log, false)
-	h := api.NewAdminStorageHandler(db, log, eval)
+
+	return setupStorageRouterWith(t, db, api.NewAdminStorageHandler(db, log, eval))
+}
+
+// setupStorageRouterWith mounts h and seeds an admin principal.
+func setupStorageRouterWith(t *testing.T, db *MockDatabase, h *api.AdminStorageHandler) (chi.Router, *auth.Principal) {
+	t.Helper()
+
 	router := chi.NewRouter()
 	h.Register(router)
 
@@ -77,7 +84,6 @@ func seedStorageBackend(t *testing.T, db *MockDatabase, name, kind string, confi
 		ID:        "backend-" + name,
 		Name:      name,
 		Kind:      kind,
-		IsDefault: false,
 		Config:    configBytes,
 		Status:    "unknown",
 		CreatedAt: now,
@@ -322,35 +328,37 @@ func TestAdminStorage_Delete(t *testing.T) {
 	}
 }
 
-func TestAdminStorage_DeleteDefault(t *testing.T) {
+// is_default no longer exists: a request that still sends it is accepted, the
+// flag is ignored and never echoed, and no backend is protected from deletion.
+func TestAdminStorage_IsDefaultIsGone(t *testing.T) {
 	db := newMockDatabase()
 	router, principal := setupStorageRouter(t, db)
 
-	// Create a default backend
-	now := time.Now()
-	configBytes, _ := json.Marshal(map[string]any{"path": "/tmp/test"})
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), method, path, bytes.NewBufferString(body))
+		req = withStoragePrincipal(req, principal)
+		rw := httptest.NewRecorder()
+		router.ServeHTTP(rw, req)
 
-	backend := &models.StorageBackend{
-		ID:        "default-backend",
-		Name:      "default",
-		Kind:      "filesystem",
-		IsDefault: true,
-		Config:    configBytes,
-		Status:    "unknown",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := db.CreateStorageBackend(context.Background(), backend); err != nil {
-		t.Fatalf("CreateStorageBackend: %v", err)
+		return rw
 	}
 
-	req := httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/v1/admin/storage/default", nil)
-	req = withStoragePrincipal(req, principal)
-	rw := httptest.NewRecorder()
-	router.ServeHTTP(rw, req)
+	rw := do("POST", "/api/v1/admin/storage", `{"name":"cold","kind":"filesystem","is_default":true,"config":{"path":"/tmp/cold"}}`)
+	if rw.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", rw.Code, rw.Body.String())
+	}
 
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rw.Code, rw.Body.String())
+	if bytes.Contains(rw.Body.Bytes(), []byte("is_default")) {
+		t.Errorf("create response still carries is_default: %s", rw.Body.String())
+	}
+
+	rw = do("PATCH", "/api/v1/admin/storage/cold", `{"is_default":false}`)
+	if rw.Code != http.StatusOK || bytes.Contains(rw.Body.Bytes(), []byte("is_default")) {
+		t.Errorf("update: got %d %s", rw.Code, rw.Body.String())
+	}
+
+	if rw = do("DELETE", "/api/v1/admin/storage/cold", ""); rw.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d: %s", rw.Code, rw.Body.String())
 	}
 }
 

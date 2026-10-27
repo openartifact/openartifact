@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Storage API
 
-21 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+25 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -29,7 +29,7 @@ State of the row journal behind `openartifact rebuild`: how many changed package
 
 List storage backends
 
-List all storage backends (admin only)
+List the storage backends stored in the database (items) and the primary store the server is configured with (primary, read-only; absent when none is wired). The primary store is not part of items or total. Its status comes from a health check cached for 10 seconds.
 
 **Responses**
 
@@ -43,6 +43,7 @@ Fields of the `200` response (`application/json`):
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `items` | array of [StorageBackend](schemas.md#storagebackend) | no | - |
+| `primary` | [StoragePrimary](schemas.md#storageprimary) | no | - |
 | `total` | integer | no | - |
 
 ### `POST /api/v1/admin/storage`
@@ -58,7 +59,6 @@ Create a new storage backend (admin only)
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `config` | object | no | - |
-| `is_default` | boolean | no | - |
 | `kind` | string | yes | One of: `filesystem`, `s3`, `gcs`, `azure`. |
 | `name` | string | yes | - |
 
@@ -69,6 +69,68 @@ Create a new storage backend (admin only)
 | `201` | Storage backend created | `application/json`: [StorageBackend](schemas.md#storagebackend) |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Admin access required | - |
+
+### `GET /api/v1/admin/storage/primary`
+
+Get the primary storage
+
+The primary blob store the server is configured with (storage.* settings), with its non-secret location, live status and usage (admin only). The name "primary" is reserved: this static path takes precedence over /admin/storage/{name}.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The primary storage | `application/json`: [StoragePrimary](schemas.md#storageprimary) |
+| `403` | Admin access required | - |
+| `404` | No primary storage is wired | - |
+
+### `PATCH /api/v1/admin/storage/primary`
+
+Update the primary storage (not allowed)
+
+Always answers 405 read_only: the primary storage is set by the server configuration.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `403` | Admin access required | - |
+| `405` | read_only | `application/json`: [Error](schemas.md#error) |
+
+### `DELETE /api/v1/admin/storage/primary`
+
+Delete the primary storage (not allowed)
+
+Always answers 405 read_only: the primary storage is set by the server configuration.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `403` | Admin access required | - |
+| `405` | read_only | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/admin/storage/primary/test`
+
+Test the primary storage
+
+Runs a live health check through the store that serves every request and refreshes the cached status (admin only).
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Test result | `application/json`: object |
+| `403` | Admin access required | - |
+| `404` | No primary storage is wired | - |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `error` | string | no | - |
+| `message` | string | no | - |
+| `ok` | boolean | no | - |
 
 ### `GET /api/v1/admin/storage/replication`
 
@@ -144,7 +206,6 @@ Update a storage backend (admin only). Changing kind or config is refused with 4
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `config` | object | no | - |
-| `is_default` | boolean | no | - |
 
 **Responses**
 

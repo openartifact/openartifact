@@ -206,7 +206,5 @@
   "quota.maxSize": "最大大小",
   "quota.removeTitle": "移除配额限制？",
   "quota.removeBody": "该仓库将没有存储限制。可随时重新配置。",
-  "storage.configuration": "配置",
-  "storage.setDefault": "设为默认后端",
-  "storage.setDefaultHint": "未显式指定后端的新仓库将使用默认后端。"
+  "storage.configuration": "配置"
 }

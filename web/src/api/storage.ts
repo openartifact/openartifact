@@ -15,7 +15,6 @@ export interface StorageBackend {
   id?: string
   name?: string
   kind?: string
-  is_default?: boolean
   config?: Record<string, unknown>
   /** `healthy` | `unreachable` | `unknown` */
   status?: string
@@ -27,21 +26,41 @@ export interface StorageBackend {
   updated_at?: string
 }
 
+/**
+ * The primary blob store the server is configured with (read-only; set by
+ * the `storage.*` configuration). `location` never carries a credential.
+ */
+export interface StoragePrimary {
+  name: string
+  kind: string
+  source: 'config'
+  location: Record<string, string>
+  /** `healthy` | `unreachable` | `unknown` */
+  status: 'healthy' | 'unreachable' | 'unknown'
+  status_message?: string | null
+  last_checked_at?: string | null
+  usage?: { blob_count: number; size_bytes: number }
+}
+
+export interface StorageList extends PagedResult<StorageBackend> {
+  primary?: StoragePrimary
+}
+
 interface StorageTestResult {
   ok: boolean
   error?: string
   message?: string
 }
 
-export async function listStorageBackends(): Promise<PagedResult<StorageBackend>> {
+export async function listStorageBackends(): Promise<StorageList> {
   const raw = await request<Record<string, unknown>>('/api/v1/admin/storage')
-  return pagedResponse<StorageBackend>(raw)
+  const primary = raw.primary as StoragePrimary | undefined
+  return { ...pagedResponse<StorageBackend>(raw), ...(primary ? { primary } : {}) }
 }
 
 export async function createStorageBackend(body: {
   name: string
   kind: string
-  is_default?: boolean
   config: Record<string, unknown>
 }): Promise<StorageBackend> {
   return request<StorageBackend>('/api/v1/admin/storage', {
@@ -53,7 +72,7 @@ export async function createStorageBackend(body: {
 
 export async function updateStorageBackend(
   name: string,
-  body: Partial<{ name: string; kind: string; is_default: boolean; config: Record<string, unknown> }>,
+  body: Partial<{ name: string; kind: string; config: Record<string, unknown> }>,
 ): Promise<StorageBackend> {
   return request<StorageBackend>(`/api/v1/admin/storage/${encodeURIComponent(name)}`, {
     method: 'PATCH',
@@ -73,4 +92,9 @@ export async function testStorageBackend(name: string): Promise<StorageTestResul
   return request<StorageTestResult>(`/api/v1/admin/storage/${encodeURIComponent(name)}/test`, {
     method: 'POST',
   })
+}
+
+/** Tests the configured primary store; a failed check resolves with `ok: false`. */
+export async function testStoragePrimary(): Promise<StorageTestResult> {
+  return request<StorageTestResult>('/api/v1/admin/storage/primary/test', { method: 'POST' })
 }

@@ -1622,7 +1622,6 @@ One stored scan result (a package version of one type) that reports something.
 | `config` | object | no | - |
 | `created_at` | string (date-time) | no | - |
 | `id` | string (uuid) | no | - |
-| `is_default` | boolean | no | - |
 | `kind` | string | no | One of: `filesystem`, `s3`, `gcs`, `azure`. |
 | `last_checked_at` | string (date-time) | no | Nullable. |
 | `name` | string | no | - |
@@ -1669,6 +1668,23 @@ One stored scan result (a package version of one type) that reports something.
 | `position` | integer | no | Evaluation order, lowest first. New policies default to after the last one. |
 | `repo_glob` | string | no | Repository name glob: * matches within a segment, ** across '/', ? one character. Nullable. |
 | `target_tier` | string | yes | Name of the tier matching blobs belong on. |
+
+### StoragePrimary
+
+The primary blob store the server is configured with (storage.* settings). Read-only; holds no credentials.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | One of: `filesystem`, `s3`, `garage`, `seaweedfs`, `gcs`, `azure`, `oci`. |
+| `last_checked_at` | string (date-time) | no | Nullable. |
+| `location` | map of string | yes | Where the blobs live (path, endpoint, bucket, region, account, container, repository). Never a credential. |
+| `name` | string | yes | The reserved name "primary", usable in /api/v1/admin/storage/{name}. |
+| `source` | string | yes | Always config: the store is set by the server configuration. One of: `config`. |
+| `status` | string | yes | Result of a live health check through the process's own store, cached for 10 seconds. One of: `healthy`, `unreachable`, `unknown`. |
+| `status_message` | string | no | Nullable. |
+| `usage` | object | no | The blobs placed on the primary store, that is those not moved to a tier. |
+| `usage.blob_count` | integer (int64) | yes | - |
+| `usage.size_bytes` | integer (int64) | yes | - |
 
 ### StorageTier
 
