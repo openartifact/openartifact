@@ -13,4 +13,4 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Package listing
 
 - **Package listing:** `ListRepoComponents` is two-stage (each union branch takes its top `limit+offset` rows by `(created_at DESC, id)` before `blobs` is joined for the page); keep that shape and the matching `(repository_id, created_at DESC, id)` indexes when adding a branch.
-- **Package listing (branches):** `ListRepoComponents` (`queries/components.sql`) unions every per-format table. Adding a format or a package table means adding a branch there (and to `CountRepoComponents`), or its packages silently vanish from the UI.
+- **Package listing (branches):** `ListRepoComponents` (`queries/components.sql`) unions every per-format table. Adding a format or a package table means adding a branch there (and to `CountRepoComponents`), or its packages silently vanish from the UI. List the table in the format's `Spec.PackageTables`: `internal/repotype` `TestPackageTablesInUnions` and `TestComponentQueriesFilterEveryFormat` then fail until every union (components, catalog, trash, quota, recovery, backup) has its branch.

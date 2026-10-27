@@ -55,14 +55,6 @@ var repoProxyOnly = []string{
 	"cache_ttl_seconds", "negative_cache_ttl_seconds", "max_stale_seconds",
 }
 
-// repoFormats mirrors the server's chk_repo_format constraint.
-func repoFormats() []string {
-	return []string{
-		"apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven",
-		"npm", "nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
-	}
-}
-
 // repositoryKind implements the Repository manifest kind.
 type repositoryKind struct{}
 
@@ -113,7 +105,7 @@ func repoIntField(minimum float64) *Field {
 func (repositoryKind) Schema() *Field {
 	return &Field{Type: TObject, Fields: map[string]*Field{
 		"project":                    {Type: TString, FromMeta: true},
-		"format":                     {Type: TString, Required: true, Immutable: true, Enum: repoFormats()},
+		"format":                     {Type: TString, Required: true, Immutable: true, Enum: repotype.SortedNames()},
 		"repo_type":                  {Type: TString, Immutable: true, Enum: []string{repoTypeHosted, repoTypeProxy, repoTypeGroup}},
 		"description":                repoStrField(),
 		"public":                     repoBoolField(),
@@ -159,8 +151,7 @@ func (repositoryKind) Validate(o *Object) []error {
 		bad("metadata.name %q must match %s", o.Name, repoNamePatternRe)
 	}
 
-	switch strings.ToLower(o.Name) {
-	case "new", "settings", "trash", "raw", "maven", "sbt", "ivy":
+	if repotype.ReservedName(o.Name) {
 		bad("metadata.name %q is reserved", o.Name)
 	}
 

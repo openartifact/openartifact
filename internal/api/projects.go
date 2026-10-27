@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -118,7 +119,7 @@ func (pp *projectPolicy) set() bool {
 func (pp *projectPolicy) validate() string {
 	if pp.AllowedFormats != nil {
 		for _, f := range *pp.AllowedFormats {
-			if !validFormats[f] {
+			if !repotype.Valid(f) {
 				return "allowed_formats contains an unknown format"
 			}
 		}

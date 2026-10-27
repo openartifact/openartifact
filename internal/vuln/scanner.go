@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -647,24 +648,9 @@ func mapGrypeSeverity(severity string, cvssScore float64) string {
 
 // mapEcosystem maps internal ecosystem names to OSV ecosystem names.
 func mapEcosystem(ecosystem string) string {
-	ecosystemMap := map[string]string{
-		"npm":      "npm",
-		"pypi":     "PyPI",
-		"go":       "Go",
-		"cargo":    "crates.io",
-		"rubygems": "RubyGems",
-		"maven":    "Maven",
-		"nuget":    "NuGet",
-		"deb":      "Debian",
-		"rpm":      "Red Hat",
-		"helm":     "Helm",
-	}
+	s, _ := repotype.Lookup(strings.ToLower(ecosystem))
 
-	if mapped, ok := ecosystemMap[strings.ToLower(ecosystem)]; ok {
-		return mapped
-	}
-
-	return ""
+	return s.OSVEcosystem
 }
 
 // parseSeverityFromOSV extracts severity level and CVSS score from OSV response.

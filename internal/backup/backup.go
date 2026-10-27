@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -1585,7 +1586,7 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 		oldID := repo.ID
 
 		// These names shadow the SPA pages and the isolated /repos/<marker>/ routes.
-		if models.IsReservedRepoName(repo.Name) {
+		if repotype.ReservedName(repo.Name) {
 			e.restoreWarn("skipping repository with a reserved name", "name", repo.Name)
 			continue
 		}

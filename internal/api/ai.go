@@ -13,6 +13,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -139,7 +140,7 @@ func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 // The format is one of the repository formats, which are also the ids package
 // listings report.
 func ValidateAIArtifactIdentity(format, name, version string) string {
-	if format != "" && !validFormats[format] {
+	if format != "" && !repotype.Valid(format) {
 		return "artifact_format must be one of: " + validFormatList()
 	}
 

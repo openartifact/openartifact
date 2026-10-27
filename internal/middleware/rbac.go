@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -316,7 +317,7 @@ func hasAmbiguousPath(u *url.URL) bool {
 			return true
 		}
 
-		if len(segs) > 1 && slices.Contains(isolatedRepoNamespaces(), segs[0]) && hasEncodedSeparator(segs[1]) {
+		if len(segs) > 1 && repotype.Isolated(segs[0]) && hasEncodedSeparator(segs[1]) {
 			return true
 		}
 	}
@@ -963,20 +964,12 @@ func isPlainName(seg string) bool {
 	return seg != "" && !strings.Contains(seg, "%")
 }
 
-// isolatedRepoNamespaces are literal path markers registered as their own
-// /repos/<marker>/{name}/… subtree (main.go isolates them to avoid shadowing
-// the generic /repos/{name}/… format-handler block). A repository can never
-// present a Vue-router page under these — they're always API traffic.
-func isolatedRepoNamespaces() []string {
-	return []string{"raw", "maven", "sbt", "ivy"}
-}
-
 // isSPARepoPath reports whether segments (from a "/repos/…" path, split on
 // "/") is one of the exact Vue-router page shapes rather than a
 // format-handler API call. Everything not explicitly listed here requires
 // full RBAC evaluation — deny-by-default, no length-based guessing.
 func isSPARepoPath(segments []string) bool {
-	if len(segments) < 2 || slices.Contains(isolatedRepoNamespaces(), segments[1]) {
+	if len(segments) < 2 || repotype.Isolated(segments[1]) {
 		return false
 	}
 
@@ -1042,23 +1035,19 @@ func extractRepoAndPath(urlPath string) (string, string) {
 		return "", urlPath
 	}
 
-	for _, marker := range isolatedRepoNamespaces() {
-		rest, ok := strings.CutPrefix(after, marker+"/")
-		if !ok {
-			continue
-		}
-
-		before, sub, ok := strings.Cut(rest, "/")
-		if !ok {
-			return before, ""
-		}
-
-		return before, sub
-	}
-
 	before, sub, ok := strings.Cut(after, "/")
 	if !ok {
 		return after, ""
+	}
+
+	// The isolated format namespaces (repotype.Isolated) are literal markers
+	// registered as their own /repos/<marker>/{name}/… subtree: the repository
+	// is the next segment.
+	if repotype.Isolated(before) {
+		before, sub, ok = strings.Cut(sub, "/")
+		if !ok {
+			return before, ""
+		}
 	}
 
 	return before, sub

@@ -6,11 +6,12 @@ package metrics
 
 import (
 	"net/http"
-	"slices"
+
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // Upload format label values of openartifact_uploads_total: one per package
-// format, lower case, a closed set (UploadFormats). Every code path that counts
+// format, lower case, a closed set (the repotype registry). Every code path that counts
 // an upload goes through CountUpload with one of these.
 const (
 	FormatDeb       = "deb"
@@ -44,15 +45,6 @@ const (
 // lets a caller-supplied string widen the label set.
 const uploadFormatOther = "other"
 
-// UploadFormats lists every valid format label value of openartifact_uploads_total.
-//
-//nolint:gochecknoglobals // immutable list of label values
-var UploadFormats = []string{
-	FormatDeb, FormatRPM, FormatNPM, FormatMaven, FormatHelm, FormatRubyGems,
-	FormatDocker, FormatPyPI, FormatCargo, FormatGo, FormatNuGet, FormatConda,
-	FormatConan, FormatIvy, FormatSBT, FormatRaw, FormatTerraform, FormatApk, FormatPacman,
-}
-
 // UploadResult maps an HTTP status to the result label: any status below 400 is
 // a success, everything else an error.
 func UploadResult(status int) string {
@@ -83,5 +75,5 @@ func (r *Registry) CountUpload(format, result string) {
 }
 
 func knownUploadFormat(format string) bool {
-	return slices.Contains(UploadFormats, format)
+	return repotype.Valid(format)
 }

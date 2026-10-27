@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/maven"
 )
 
@@ -24,8 +25,7 @@ func versionAtLeast(format, version, fixed string) (bool, bool) {
 		return false, false
 	}
 
-	switch strings.ToLower(format) {
-	case "maven", "ivy", "sbt":
+	if s, _ := repotype.Lookup(strings.ToLower(format)); s.Versioning == repotype.VersionMaven {
 		return maven.CompareVersions(version, fixed) >= 0, true
 	}
 

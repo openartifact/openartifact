@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -35,16 +36,16 @@ func newFixTestLogger(t *testing.T) *logger.Logger {
 }
 
 func TestValidFormatsMatchDatabaseConstraint(t *testing.T) {
-	if !validFormats["go"] {
-		t.Error(`validFormats must accept "go" (chk_repo_format)`)
+	if !repotype.Valid("go") {
+		t.Error(`repotype must accept "go" (chk_repo_format)`)
 	}
 
-	if validFormats["gomod"] {
-		t.Error(`validFormats must not accept "gomod": the database constraint rejects it`)
+	if repotype.Valid("gomod") {
+		t.Error(`repotype must not accept "gomod": the database constraint rejects it`)
 	}
 
 	msg := validFormatList()
-	for f := range validFormats {
+	for _, f := range repotype.Names() {
 		if !strings.Contains(msg, f) {
 			t.Errorf("validFormatList() = %q does not mention %q", msg, f)
 		}
