@@ -269,6 +269,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.cargo.RegisterRepoRoutes(routers["cargo"])
 	f.pypi.RegisterRepoRoutes(routers["pypi"])
 	f.helm.RegisterRepoRoutes(routers["helm"])
+	f.rubygems.RegisterRepoRoutes(routers["rubygems"])
 	// Read-only view of the GOPROXY handler: group members are only ever read.
 	f.gomod.RegisterRepoRoutes(routers["go"])
 	f.docker.RegisterRoutes(routers["docker"])
