@@ -162,6 +162,7 @@ type Engine struct {
 type Regenerator interface {
 	NotifyDebStale(repoID string)
 	NotifyRPMStale(repoID string)
+	NotifyApkStale(repoID string)
 	NotifyMavenStale(repoID, groupID, artifactID string)
 	NotifyPacmanStale(repoID string)
 }
@@ -445,6 +446,7 @@ type packageExport struct {
 	cargoCrates     []*models.CargoCrate
 	rubyGems        []*models.RubyGem
 	conanPackages   []*models.ConanPackage
+	apkPackages     []*models.ApkPackage
 	tfModules       []*models.TerraformModule
 	tfProviders     []*models.TerraformProvider
 	ivyArtifacts    []*models.IvyArtifact
@@ -548,6 +550,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"cargo_crates", pkg.cargoCrates, len(pkg.cargoCrates)},
 		{"rubygems", pkg.rubyGems, len(pkg.rubyGems)},
 		{"conan_packages", pkg.conanPackages, len(pkg.conanPackages)},
+		{"apk_packages", pkg.apkPackages, len(pkg.apkPackages)},
 		{"terraform_modules", pkg.tfModules, len(pkg.tfModules)},
 		{"terraform_providers", pkg.tfProviders, len(pkg.tfProviders)},
 		{"ivy_artifacts", pkg.ivyArtifacts, len(pkg.ivyArtifacts)},
@@ -687,6 +690,9 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 	case "conan":
 		v, err := e.db.ListConanPackages(ctx, id)
 		collectRepoList(pkg, &pkg.conanPackages, "conan packages", id, v, err)
+	case "apk":
+		v, err := e.db.ListApkPackages(ctx, id)
+		collectRepoList(pkg, &pkg.apkPackages, "apk packages", id, v, err)
 	case "terraform":
 		mods, err := e.db.ListTerraformModules(ctx, id)
 		collectRepoList(pkg, &pkg.tfModules, "terraform modules", id, mods, err)
@@ -1345,6 +1351,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.ConanPackage) string { return c.RepositoryID },
 			func(c *models.ConanPackage, id string) { c.RepositoryID = id },
 			false, e.db.CreateConanPackage)
+	case "apk_packages.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "apk package",
+			func(c *models.ApkPackage) string { return c.RepositoryID },
+			func(c *models.ApkPackage, id string) { c.RepositoryID = id },
+			false, e.db.CreateApkPackage)
 	case "terraform_modules.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "terraform module",
 			func(c *models.TerraformModule) string { return c.RepositoryID },
@@ -1723,6 +1734,10 @@ func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreStat
 		case "pacman":
 			if e.regen != nil {
 				e.regen.NotifyPacmanStale(repo.ID)
+			}
+		case "apk":
+			if e.regen != nil {
+				e.regen.NotifyApkStale(repo.ID)
 			}
 		case "maven":
 			e.regenerateRestoredMaven(ctx, repo)

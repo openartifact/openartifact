@@ -1,0 +1,387 @@
+// SPDX-FileCopyrightText: The OpenArtifact Authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package apk
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// newKey generates the key shared by the tests: generating one takes long
+// enough to matter under -race.
+//
+//nolint:gochecknoglobals // one RSA key per test binary, see above
+var newKey = sync.OnceValues(func() (*rsa.PrivateKey, error) { return GenerateKey(2048) })
+
+// testKey returns the shared 2048-bit key.
+// fataler is the part of testing.TB the helpers use. The OSS-Fuzz build of the
+// fuzz targets compiles with a Go toolchain whose *testing.F does not
+// implement testing.TB, so the helpers shared with them cannot ask for it.
+type fataler interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
+
+func testKey(tb fataler) *rsa.PrivateKey {
+	tb.Helper()
+
+	key, err := newKey()
+	if err != nil {
+		tb.Fatalf("%v", err)
+	}
+
+	return key
+}
+
+func testSigner(tb fataler) *Signer {
+	tb.Helper()
+
+	s, err := NewSigner("openartifact-test.rsa.pub", testKey(tb))
+	if err != nil {
+		tb.Fatalf("%v", err)
+	}
+
+	return s
+}
+
+// tarEntry is one file of a hand-made tar.
+type tarEntry struct {
+	name string
+	body string
+	typ  byte
+	link string
+	pax  map[string]string
+}
+
+// tarBytes returns the tar stream of entries, with the end-of-archive blocks
+// only when end is set (abuild leaves them off the signature and control
+// segments).
+func tarBytes(tb fataler, entries []tarEntry, end bool) []byte {
+	tb.Helper()
+
+	var buf bytes.Buffer
+
+	tw := tar.NewWriter(&buf)
+
+	for _, e := range entries {
+		hdr := &tar.Header{
+			Name: e.name, Mode: 0o644, Size: int64(len(e.body)), Typeflag: tar.TypeReg,
+			ModTime: time.Unix(1700000000, 0), Linkname: e.link, PAXRecords: e.pax,
+		}
+
+		switch e.typ {
+		case 0:
+		case tar.TypeDir:
+			hdr.Typeflag, hdr.Mode, hdr.Size = tar.TypeDir, 0o755, 0
+		case tar.TypeSymlink, tar.TypeLink:
+			hdr.Typeflag, hdr.Size = e.typ, 0
+		default:
+			tb.Fatalf("tar type %q", e.typ)
+		}
+
+		if err := tw.WriteHeader(hdr); err != nil {
+			tb.Fatalf("%v", err)
+		}
+
+		if _, err := tw.Write([]byte(e.body)); err != nil {
+			tb.Fatalf("%v", err)
+		}
+	}
+
+	var err error
+	if end {
+		err = tw.Close()
+	} else {
+		err = tw.Flush()
+	}
+
+	if err != nil {
+		tb.Fatalf("%v", err)
+	}
+
+	return buf.Bytes()
+}
+
+// gz returns b as one gzip member.
+func gz(tb fataler, b []byte) []byte {
+	tb.Helper()
+
+	var buf bytes.Buffer
+
+	w := gzip.NewWriter(&buf)
+	if _, err := w.Write(b); err != nil {
+		tb.Fatalf("%v", err)
+	}
+
+	if err := w.Close(); err != nil {
+		tb.Fatalf("%v", err)
+	}
+
+	return buf.Bytes()
+}
+
+func concat(parts ...[]byte) []byte {
+	var out []byte
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+
+	return out
+}
+
+// defaultData is the data segment of the fixture package: a normal tar with
+// end blocks, a PAX checksum record like abuild writes, a symlink with an
+// absolute target (fine) and a hard link.
+func defaultData(tb fataler) []byte {
+	tb.Helper()
+
+	return gz(tb, tarBytes(tb, []tarEntry{
+		{name: "usr/", typ: tar.TypeDir},
+		{name: "usr/bin/", typ: tar.TypeDir},
+		{
+			name: "usr/bin/hello", body: "#!/bin/sh\necho hello\n",
+			pax: map[string]string{"APK-TOOLS.checksum.SHA1": strings.Repeat("0", 40)},
+		},
+		{name: "usr/bin/hi", typ: tar.TypeSymlink, link: "/usr/bin/hello"},
+		{name: "usr/bin/hey", typ: tar.TypeLink, link: "../../usr/bin/hello"},
+	}, true))
+}
+
+func hexSHA256(b []byte) string {
+	sum := sha256.Sum256(b)
+
+	return hex.EncodeToString(sum[:])
+}
+
+func sha1Checksum(b []byte) string {
+	sum := sha1.Sum(b)
+
+	return "Q1" + base64.StdEncoding.EncodeToString(sum[:])
+}
+
+// kv is one PKGINFO line.
+type kv struct{ key, val string }
+
+// basePKGINFO is the PKGINFO of the fixture package for the data segment with
+// the given datahash.
+func basePKGINFO(datahash string) []kv {
+	return []kv{
+		{"pkgname", "hello"},
+		{"pkgver", "1.2.3-r0"},
+		{"pkgdesc", "Prints a greeting"},
+		{"url", "https://example.org/hello"},
+		{"builddate", "1700000000"},
+		{"packager", "Test <test@example.org>"},
+		{"size", "21"},
+		{"arch", "x86_64"},
+		{"origin", "hello"},
+		{"maintainer", "Test <test@example.org>"},
+		{"license", "MIT"},
+		{"commit", "0123456789abcdef0123456789abcdef01234567"},
+		{"provider_priority", "10"},
+		{"depend", "so:libc.musl-x86_64.so.1"},
+		{"depend", "busybox>=1.36"},
+		{"provides", "cmd:hello=1.2.3-r0"},
+		{"install_if", "docs hello=1.2.3-r0"},
+		{"datahash", datahash},
+	}
+}
+
+// with replaces the first line with key, or appends one when there is none.
+func with(lines []kv, key, val string) []kv {
+	out := append([]kv(nil), lines...)
+
+	for i := range out {
+		if out[i].key == key {
+			out[i].val = val
+
+			return out
+		}
+	}
+
+	return append(out, kv{key, val})
+}
+
+// without drops every line with key.
+func without(lines []kv, key string) []kv {
+	var out []kv
+
+	for _, l := range lines {
+		if l.key != key {
+			out = append(out, l)
+		}
+	}
+
+	return out
+}
+
+// plus appends a line.
+func plus(lines []kv, key, val string) []kv {
+	return append(append([]kv(nil), lines...), kv{key, val})
+}
+
+func pkginfoText(lines []kv) string {
+	var b strings.Builder
+
+	b.WriteString("# Generated by abuild 3.13.0-r5\n# using fakeroot version 1.32.1\n")
+
+	for _, l := range lines {
+		b.WriteString(l.key + " = " + l.val + "\n")
+	}
+
+	return b.String()
+}
+
+// controlMember returns the control segment: a tar that starts with .PKGINFO,
+// then the extra entries, as one gzip member.
+func controlMember(tb fataler, pkginfo string, end bool, extra ...tarEntry) []byte {
+	tb.Helper()
+
+	entries := append([]tarEntry{{name: ".PKGINFO", body: pkginfo}}, extra...)
+
+	return gz(tb, tarBytes(tb, entries, end))
+}
+
+// sigMember returns the signature segment for the control segment: kind is
+// "sha256" (.SIGN.RSA256.) or "sha1" (.SIGN.RSA.).
+func sigMember(tb fataler, kind string, control []byte) []byte {
+	tb.Helper()
+
+	var (
+		name   string
+		digest []byte
+		alg    crypto.Hash
+	)
+
+	switch kind {
+	case "sha256":
+		sum := sha256.Sum256(control)
+		name, digest, alg = sigRSA256Prefix+"openartifact-test.rsa.pub", sum[:], crypto.SHA256
+	case "sha1":
+		sum := sha1.Sum(control)
+		name, digest, alg = ".SIGN.RSA."+"openartifact-test.rsa.pub", sum[:], crypto.SHA1
+	default:
+		tb.Fatalf("signature kind %q", kind)
+	}
+
+	sig, err := rsa.SignPKCS1v15(nil, testKey(tb), alg, digest)
+	if err != nil {
+		tb.Fatalf("%v", err)
+	}
+
+	return gz(tb, tarBytes(tb, []tarEntry{{name: name, body: string(sig)}}, false))
+}
+
+// fixture is a well-formed package in pieces, for tests that break one piece.
+type fixture struct {
+	data    []byte
+	pkginfo []kv
+	control []byte
+	sig     []byte
+}
+
+// newFixture builds the default package; kind selects the signature segment
+// ("" for none).
+func newFixture(tb fataler, kind string) *fixture {
+	tb.Helper()
+
+	f := &fixture{}
+	f.setData(tb, kind, defaultData(tb))
+
+	return f
+}
+
+// setData replaces the data segment and points the datahash at it.
+func (f *fixture) setData(tb fataler, kind string, data []byte) {
+	tb.Helper()
+
+	f.data = data
+	f.pkginfo = basePKGINFO(hexSHA256(data))
+	f.rebuild(tb, kind)
+}
+
+// rebuild regenerates the control and signature segments from f.pkginfo.
+func (f *fixture) rebuild(tb fataler, kind string) {
+	tb.Helper()
+
+	f.control = controlMember(tb, pkginfoText(f.pkginfo), false)
+	f.sig = nil
+
+	if kind != "" {
+		f.sig = sigMember(tb, kind, f.control)
+	}
+}
+
+func (f *fixture) bytes() []byte { return concat(f.sig, f.control, f.data) }
+
+// rawBlock returns one 512-byte ustar header; the tar package refuses to
+// write the long-name and PAX headers it would otherwise generate itself.
+func rawBlock(name string, size int, typ byte) []byte {
+	blk := make([]byte, 512)
+
+	copy(blk, name)
+	copy(blk[100:], "0000644\x00")
+	copy(blk[124:], fmt.Sprintf("%011o\x00", size))
+
+	for i := 148; i < 156; i++ {
+		blk[i] = ' '
+	}
+
+	blk[156] = typ
+	copy(blk[257:], "ustar\x0000")
+
+	sum := 0
+	for _, c := range blk {
+		sum += int(c)
+	}
+
+	copy(blk[148:], fmt.Sprintf("%06o\x00 ", sum))
+
+	return blk
+}
+
+func padBlock(b []byte) []byte {
+	if rem := len(b) % 512; rem != 0 {
+		b = append(b, make([]byte, 512-rem)...)
+	}
+
+	return b
+}
+
+// namedTar is a tar with one regular file called "decoy", whose real name is
+// set by a PAX path record (typ 'x') or a GNU long name entry (typ 'L').
+func namedTar(typ byte, name string) []byte {
+	var body string
+
+	switch typ {
+	case 'x':
+		rest := " path=" + name + "\n"
+		n := len(rest) + 1
+
+		for len(strconv.Itoa(n))+len(rest) != n {
+			n = len(strconv.Itoa(n)) + len(rest)
+		}
+
+		body = fmt.Sprintf("%d%s", n, rest)
+	default:
+		body = name + "\x00"
+	}
+
+	out := concat(rawBlock("meta", len(body), typ), padBlock([]byte(body)), rawBlock("decoy", 1, '0'), padBlock([]byte("x")))
+
+	return append(out, make([]byte, 1024)...)
+}

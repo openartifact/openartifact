@@ -37,6 +37,8 @@ func purlType(format string) string {
 		return "golang"
 	case "conan":
 		return "conan"
+	case "apk":
+		return "apk"
 	case "conda":
 		return "conda"
 	default:

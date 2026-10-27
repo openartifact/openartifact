@@ -233,6 +233,18 @@ func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, 
 	return "sbt_artifacts", a.ID
 }
 
+func (e *importEnv) createApk(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	a := &models.ApkPackage{RepositoryID: repo, Branch: "v3.20", Repo: "main", Arch: "x86_64", PkgArch: "x86_64", Name: "musl",
+		Version: "1.2.5-r0", Checksum: "Q1x", DataHash: "dh", BlobKey: e.uniq("k"), BlobSHA256: e.uniq("sha"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreateApkPackage(e.ctx, a); err != nil {
+		t.Fatal(err)
+	}
+
+	return "apk_packages", a.ID
+}
+
 func (e *importEnv) createTerraformModule(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
@@ -274,6 +286,7 @@ func TestImportCreatedAt(t *testing.T) {
 		"pacman":   e.createPacman,
 		"ivy":      e.createIvy,
 		"sbt":      e.createSbt,
+		"apk":      e.createApk,
 		// Both terraform tables live in a terraform repository.
 		"terraform":          e.createTerraformModule,
 		"terraform-provider": e.createTerraformProvider,

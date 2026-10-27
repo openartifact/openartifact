@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -77,6 +78,7 @@ func realRouter() chi.Router {
 	}
 
 	api.NewDebUploadHandler(log, nil, nil, nil).Register(r)
+	formatapk.NewHTTPHandler(log, nil, nil, "").RegisterAPIRoutes(r)
 	api.NewRPMUploadHandler(log, nil, nil, nil).Register(r)
 	api.NewDeltaHandler(log, nil, nil).Register(r)
 	api.NewPresignedUploadHandler(log, nil, nil, nil, 0, 0, nil).Register(r)
@@ -424,8 +426,9 @@ func TestContractArtifact(t *testing.T) {
 	dir := t.TempDir()
 	tgz := filepath.Join(dir, "a.tgz")
 	deb := filepath.Join(dir, "a.deb")
+	apk := filepath.Join(dir, "a.apk")
 
-	for _, p := range []string{tgz, deb} {
+	for _, p := range []string{tgz, deb, apk} {
 		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -443,6 +446,12 @@ func TestContractArtifact(t *testing.T) {
 			args:    []string{"artifact", "upload", "r", deb},
 			replies: map[string]reply{"POST /api/v1/repositories/{name}/debs": {status: 201, body: `{}`}},
 			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/debs"}},
+		},
+		{
+			name:    "upload apk into an Alpine directory",
+			args:    []string{"artifact", "upload", "--branch", "v3.20", "--apk-repo", "community", "--arch", "x86_64", "r", apk},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/apks": {status: 200, body: `{}`}},
+			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/apks", bodyHas: `name="branch"`}},
 		},
 		{
 			name: "delete package",

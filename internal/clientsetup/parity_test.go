@@ -31,25 +31,26 @@ type parityCase struct {
 func TestWebParityFixture(t *testing.T) {
 	var cases []parityCase
 
-	cases = append(cases, parityCase{
-		Format:   "pacman",
-		RepoType: "proxy",
-		Origin:   "https://artifacts.example.com:8443",
-		Repo:     "my repo",
-		BaseURL:  RepoBaseURL("pacman", "https://artifacts.example.com:8443", "my repo"),
-		Snippets: Snippets("pacman", "proxy", "https://artifacts.example.com:8443", "my repo"),
-	})
-
 	for _, format := range allFormats() {
-		for _, repo := range []string{"repo1", "my repo"} {
-			cases = append(cases, parityCase{
-				Format:   format,
-				RepoType: "hosted",
-				Origin:   "https://artifacts.example.com:8443",
-				Repo:     repo,
-				BaseURL:  RepoBaseURL(format, "https://artifacts.example.com:8443", repo),
-				Snippets: Snippets(format, "hosted", "https://artifacts.example.com:8443", repo),
-			})
+		types := []string{"hosted"}
+		switch format {
+		case "apk":
+			types = append(types, "proxy", "group")
+		case "pacman":
+			types = append(types, "proxy")
+		}
+
+		for _, repoType := range types {
+			for _, repo := range []string{"repo1", "my repo"} {
+				cases = append(cases, parityCase{
+					Format:   format,
+					RepoType: repoType,
+					Origin:   "https://artifacts.example.com:8443",
+					Repo:     repo,
+					BaseURL:  RepoBaseURL(format, "https://artifacts.example.com:8443", repo),
+					Snippets: Snippets(format, "https://artifacts.example.com:8443", repo, repoType),
+				})
+			}
 		}
 	}
 

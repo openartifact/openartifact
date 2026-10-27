@@ -35,6 +35,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="quotaOpen" id="rl-quota-editor"><RepoQuotaTab :repo-name="repo.name" @changed="loadUsage" /></div>
     </section>
 
+    <ApkKeyPanel v-if="repo.format === 'apk' && repo.repo_type !== 'proxy'" :repo="repo.name" />
+
     <section class="space-y-4 rounded-lg border border-border bg-surface p-5" :aria-label="t('repoDetail.tab.cleanup')">
       <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.tab.cleanup') }}</h2>
       <RepoCleanupTab :repo-name="repo.name" />
@@ -67,6 +69,7 @@ import { useRouter } from 'vue-router'
 import AppButton from '../AppButton.vue'
 import FormField from '../FormField.vue'
 import RepoDeleteDialog from '../RepoDeleteDialog.vue'
+import ApkKeyPanel from './ApkKeyPanel.vue'
 import QuotaBar from './QuotaBar.vue'
 import RepoCleanupTab from './RepoCleanupTab.vue'
 import RepoDefaultsRows from './RepoDefaultsRows.vue'

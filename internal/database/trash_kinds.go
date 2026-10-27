@@ -154,6 +154,13 @@ var trashSpecs = []*trashSpec{
 		blobCols: []string{"t.blob_id"},
 	},
 	{
+		kind: models.TrashKindApk, table: "apk_packages", format: "apk", quota: true,
+		repoID:   "t.repository_id",
+		name:     "t.branch || '/' || t.repo || '/' || t.name || ' (' || t.arch || ')'",
+		version:  "t.version",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
 		kind: models.TrashKindTerraformModule, table: "terraform_modules", format: "terraform", quota: true,
 		repoID:   "t.repository_id",
 		name:     "'modules/' || t.name || '/' || t.system",

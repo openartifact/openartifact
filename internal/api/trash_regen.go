@@ -18,6 +18,7 @@ type TrashRegenerator interface {
 	NotifyDebStale(repoID string)
 	NotifyRPMStale(repoID string)
 	NotifyPacmanStale(repoID string)
+	NotifyApkStale(repoID string)
 	NotifyMavenStale(repoID, groupID, artifactID string)
 	NotifyNPMStale(packageID string)
 }
@@ -34,15 +35,15 @@ type (
 // workerRegenerator adapts the metadata workers to TrashRegenerator. A nil
 // worker (feature disabled) is skipped.
 type workerRegenerator struct {
-	deb, rpm, pacman repoStaleNotifier
-	maven            mavenStaleNotifier
-	npm              npmStaleNotifier
+	deb, rpm, apk, pacman repoStaleNotifier
+	maven                 mavenStaleNotifier
+	npm                   npmStaleNotifier
 }
 
 // NewWorkerRegenerator builds the TrashRegenerator over the metadata workers
 // constructed in main.go. Pass nil for a worker that is not running.
-func NewWorkerRegenerator(deb, rpm, pacman repoStaleNotifier, maven mavenStaleNotifier, npm npmStaleNotifier) TrashRegenerator {
-	return &workerRegenerator{deb: deb, rpm: rpm, pacman: pacman, maven: maven, npm: npm}
+func NewWorkerRegenerator(deb, rpm, apk, pacman repoStaleNotifier, maven mavenStaleNotifier, npm npmStaleNotifier) TrashRegenerator {
+	return &workerRegenerator{deb: deb, rpm: rpm, apk: apk, pacman: pacman, maven: maven, npm: npm}
 }
 
 func (w *workerRegenerator) NotifyDebStale(repoID string) {
@@ -63,6 +64,12 @@ func (w *workerRegenerator) NotifyPacmanStale(repoID string) {
 	}
 }
 
+func (w *workerRegenerator) NotifyApkStale(repoID string) {
+	if w.apk != nil {
+		w.apk.NotifyStale(repoID)
+	}
+}
+
 func (w *workerRegenerator) NotifyMavenStale(repoID, groupID, artifactID string) {
 	if w.maven != nil {
 		w.maven.NotifyStale(repoID, groupID, artifactID)
@@ -77,7 +84,7 @@ func (w *workerRegenerator) NotifyNPMStale(packageID string) {
 
 // regenerateRestored refreshes the generated metadata of the repository an
 // item was restored into, by format: rpm marks the repository stale and
-// notifies the worker, deb and pacman only notify it, npm marks the packument stale and
+// notifies the worker, deb, apk and pacman only notify it, npm marks the packument stale and
 // notifies, maven notifies per artifact, and every other format computes its
 // indexes live from the tables. Failures are logged: the restore itself
 // already succeeded.
@@ -92,6 +99,8 @@ func (h *TrashHandler) regenerateRestored(ctx context.Context, item *models.Tras
 		h.regen.NotifyDebStale(item.RepositoryID)
 	case models.TrashKindPacman:
 		h.regen.NotifyPacmanStale(item.RepositoryID)
+	case models.TrashKindApk:
+		h.regen.NotifyApkStale(item.RepositoryID)
 	case models.TrashKindRPM:
 		h.markRepoStale(ctx, item)
 		h.regen.NotifyRPMStale(item.RepositoryID)

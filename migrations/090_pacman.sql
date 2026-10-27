@@ -8,7 +8,7 @@
 -- Rolling-safe: the repositories.format constraint is widened in one statement
 -- pair (a superset of the old list, added NOT VALID, so replicas of the previous
 -- version keep working and no table scan runs under the lock; the existing rows
--- are validated in 089_pacman_validate.no_tx.sql), and the package table is
+-- are validated in 090_pacman_validate.no_tx.sql), and the package table is
 -- new, so no existing table is rewritten. Its live-row indexes are
 -- created together with the empty table.
 
@@ -17,9 +17,9 @@ SET LOCAL lock_timeout = '10s';
 ALTER TABLE repositories DROP CONSTRAINT chk_repo_format;
 ALTER TABLE repositories ADD CONSTRAINT chk_repo_format CHECK (format IN (
     'rpm', 'deb', 'maven', 'npm', 'docker', 'helm', 'pypi', 'nuget', 'go', 'cargo', 'rubygems', 'raw',
-    'conda', 'conan', 'ivy', 'sbt', 'terraform', 'pacman')) NOT VALID;
+    'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman')) NOT VALID;
 
-COMMENT ON COLUMN repositories.format IS 'Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, pacman. Constrained by chk_repo_format.';
+COMMENT ON COLUMN repositories.format IS 'Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman. Constrained by chk_repo_format.';
 
 -- One row per package file. A repository database lists the newest version of
 -- each package name; older versions stay downloadable by file name until they

@@ -119,6 +119,13 @@
     "default_upstream": ""
   },
   {
+    "format": "apk",
+    "proxy": true,
+    "group": true,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
     "format": "pacman",
     "proxy": true,
     "group": false,

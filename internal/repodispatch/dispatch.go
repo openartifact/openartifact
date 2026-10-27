@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -78,6 +79,14 @@ func (d *Dispatcher) WithGroupMetadata(blobs storage.BlobStore, gen group.Metada
 	return d
 }
 
+// WithApkKeys enables the public key downloads of apk groups: keys resolves the
+// key a group's merged indexes are signed with.
+func (d *Dispatcher) WithApkKeys(keys formatapk.KeyProvider) *Dispatcher {
+	d.group.WithApkKeys(keys)
+
+	return d
+}
+
 // Middleware serves the request itself when the {name} repository is a proxy
 // or group, and otherwise hands it to next.
 func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
@@ -95,6 +104,17 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 		if repo == nil || repo.RepoType == repotype.Hosted || repo.RepoType == "" {
 			if hint := wrongUploadHint(repo, r); hint != "" {
 				http.Error(w, hint, http.StatusNotFound)
+				return
+			}
+
+			// A hosted apk repository serves a mirror tree of free-form paths
+			// (<branch>/<repo>/<arch>/<file>) that no route of the shared
+			// /repos/{name} router can express without shadowing the other
+			// formats, so it is served here by the format's own router.
+			if repo != nil && repo.Format == "apk" {
+				_, tail := middleware.RepoAndPath(r.URL.Path)
+				d.serveMember(w, r, repo, strings.TrimPrefix(tail, "/"))
+
 				return
 			}
 

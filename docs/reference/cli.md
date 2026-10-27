@@ -146,6 +146,9 @@ artifact delete <repo> <id>        Delete artifact by ID
 
 | Flag | Value | Description |
 |---|---|---|
+| `-apk-repo` | `string` | Alpine repository directory of an .apk upload (default main) |
+| `-arch` | `string` | Architecture directory of an .apk upload; needed for noarch packages |
+| `-branch` | `string` | Alpine branch directory of an .apk upload (default edge) |
 | `-content-type` | `string` | Content type (--presigned; default: detected by the server) |
 | `-multipart` | none | Upload in parts at any size (--presigned; automatic above 5 GiB) |
 | `-parallel` | `int` | Parts uploaded at the same time, 1 to 16 (--presigned, multipart) (default 4) |

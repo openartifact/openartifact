@@ -59,6 +59,31 @@ Includes all fields of [Token](#token).
 | `scopes` | array of string | no | - |
 | `user_id` | string (uuid) | no | - |
 
+### ApkSigningKey
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | yes | - |
+| `fingerprint` | string | yes | Hex SHA-256 of the DER encoded public key |
+| `key_name` | string | yes | File name of the public key in /etc/apk/keys |
+| `public_key` | string | yes | PEM public key |
+| `updated_at` | string (date-time) | yes | - |
+
+### ApkUploadResult
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `data` | object | no | - |
+| `data.arch` | string | no | - |
+| `data.branch` | string | no | - |
+| `data.id` | string | no | - |
+| `data.name` | string | no | - |
+| `data.repo` | string | no | - |
+| `data.sha256` | string | no | - |
+| `data.size` | integer (int64) | no | - |
+| `data.version` | string | no | - |
+| `success` | boolean | no | - |
+
 ### AttestationAttachResult
 
 | Field | Type | Required | Description |
@@ -1379,7 +1404,7 @@ Counts only; no finding ids, titles or other details.
 | `created_at` | string (date-time) | no | Creation timestamp |
 | `description` | string | no | Repository description |
 | `federated` | boolean | no | True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation. |
-| `format` | string | yes | Package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `pacman`. |
+| `format` | string | yes | Package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
 | `id` | string (uuid) | yes | Repository unique identifier |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
@@ -1817,7 +1842,7 @@ A soft-deleted package row or repository. It is hidden everywhere else until res
 | `expires_at` | string (date-time) | yes | When the retention purge removes the item for good: deleted_at plus the repository's effective retention. |
 | `format` | string | yes | - |
 | `id` | string (uuid) | yes | Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item. |
-| `kind` | string | yes | One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `pacman`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
+| `kind` | string | yes | One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `apk_package`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `pacman`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `name` | string | yes | Package name, file path, image:tag or (kind repository) the repository name. |
 | `purge_at` | string (date-time) | yes | Same value as `expires_at`, kept for existing clients. |
 | `repository` | string | yes | Name of the owning repository (the trashed repository itself for kind repository). |

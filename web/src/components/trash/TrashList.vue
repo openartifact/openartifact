@@ -110,7 +110,7 @@ import RowActions from '../ui/RowActions.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import RelativeTime from '../ui/RelativeTime.vue'
 import { ApiError } from '../../api/client'
-import { emptyRepoTrash, listTrash, purgeTrash, restoreTrash, type TrashItem, type TrashKind } from '../../api/trash'
+import { emptyRepoTrash, listTrash, purgeTrash, restoreTrash, type TrashItem } from '../../api/trash'
 import { useListQuery } from '../../composables/useListQuery'
 import { strParam } from '../../composables/useUrlState'
 import { formatDateTime } from '../../lib/datetime'
@@ -131,10 +131,12 @@ const emit = defineEmits<{ changed: [] }>()
 const session = useSessionStore()
 const toasts = useToastStore()
 
-const ALL_KINDS: TrashKind[] = [
+// Typed loosely until the generated TrashItem['kind'] union (regenerated from openapi.json) lists apk_package.
+const ALL_KINDS: readonly string[] = [
   'repository', 'maven_artifact', 'ivy_artifact', 'sbt_artifact', 'npm_version', 'pypi_package',
   'nuget_package', 'go_module', 'cargo_crate', 'rubygems_gem', 'conda_package', 'conan_package',
   'helm_chart', 'raw_artifact', 'docker_manifest', 'docker_tag', 'rpm_package', 'deb_package',
+  'apk_package',
   'terraform_module', 'terraform_provider', 'pacman',
 ]
 const kindOptions = computed(() => (props.repo ? ALL_KINDS.filter((k) => k !== 'repository') : ALL_KINDS))

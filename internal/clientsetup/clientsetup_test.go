@@ -34,14 +34,14 @@ func TestRepoBaseURL(t *testing.T) {
 func allFormats() []string {
 	return []string{
 		"npm", "docker", "pypi", "maven", "helm", "deb", "rpm", "cargo",
-		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy", "terraform", "pacman",
+		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy", "terraform", "apk", "pacman",
 	}
 }
 
 func TestSnippetsCoverEveryFormat(t *testing.T) {
 	for _, format := range allFormats() {
 		t.Run(format, func(t *testing.T) {
-			snippets := Snippets(format, "hosted", origin+"/", "repo1")
+			snippets := Snippets(format, origin+"/", "repo1", "hosted")
 			if len(snippets) == 0 {
 				t.Fatal("no snippets")
 			}
@@ -60,7 +60,7 @@ func TestSnippetsCoverEveryFormat(t *testing.T) {
 }
 
 func TestSnippetsUnknownFormat(t *testing.T) {
-	got := Snippets("mystery", "hosted", origin, "r")
+	got := Snippets("mystery", origin, "r", "hosted")
 	if len(got) != 1 || got[0].Client != "URL" || got[0].Configure != origin+"/repos/r/" {
 		t.Fatalf("unexpected fallback: %+v", got)
 	}
@@ -68,7 +68,7 @@ func TestSnippetsUnknownFormat(t *testing.T) {
 
 func TestSnippetsUsePlaceholdersOnly(t *testing.T) {
 	for _, format := range allFormats() {
-		for _, s := range Snippets(format, "hosted", origin, "r") {
+		for _, s := range Snippets(format, origin, "r", "hosted") {
 			if strings.Contains(s.Configure+s.Publish, "<TOKEN>") || !strings.Contains(s.Configure+s.Publish, "TOKEN") {
 				continue
 			}
@@ -79,7 +79,7 @@ func TestSnippetsUsePlaceholdersOnly(t *testing.T) {
 }
 
 func TestDockerSnippetUsesRepoNameAsImage(t *testing.T) {
-	s := Snippets("docker", "hosted", "http://localhost:8080", "team/app")[0]
+	s := Snippets("docker", "http://localhost:8080", "team/app", "hosted")[0]
 
 	if !strings.Contains(s.Publish, "localhost:8080/team/app:latest") {
 		t.Errorf("publish = %q", s.Publish)
@@ -91,7 +91,7 @@ func TestDockerSnippetUsesRepoNameAsImage(t *testing.T) {
 func TestSBTSnippetUsesServerAuthRealm(t *testing.T) {
 	want := `Credentials("` + middleware.AuthRealm + `", "`
 
-	snips := Snippets("sbt", "hosted", "https://artifacts.example.com", "repo1")
+	snips := Snippets("sbt", "https://artifacts.example.com", "repo1", "hosted")
 	if len(snips) != 1 || !strings.Contains(snips[0].Configure, want) {
 		t.Errorf("sbt snippet = %+v, want it to contain %s", snips, want)
 	}
@@ -109,14 +109,14 @@ func TestSBTSnippetCredentialsHostHasNoPort(t *testing.T) {
 	for _, tt := range tests {
 		want := `, "` + tt.host + `", "<USERNAME>"`
 
-		if got := Snippets("sbt", "hosted", tt.origin, "repo1")[0].Configure; !strings.Contains(got, want) {
+		if got := Snippets("sbt", tt.origin, "repo1", "hosted")[0].Configure; !strings.Contains(got, want) {
 			t.Errorf("origin %s: configure = %q, want it to contain %s", tt.origin, got, want)
 		}
 	}
 }
 
 func TestPacmanProxySnippet(t *testing.T) {
-	got := Snippets("pacman", "proxy", "https://oa.example", "mirror")
+	got := Snippets("pacman", "https://oa.example", "mirror", "proxy")
 	if len(got) != 1 || got[0].Publish != "" {
 		t.Fatalf("want one read-only snippet, got %+v", got)
 	}
@@ -133,5 +133,46 @@ func TestPacmanProxySnippet(t *testing.T) {
 
 	if strings.Contains(got[0].Configure, "pacman-key") {
 		t.Error("proxy snippet must not import a key from this server")
+	}
+}
+
+func TestApkGroupSnippetFetchesTheGroupKeyAndPublishesNothing(t *testing.T) {
+	snips := Snippets("apk", origin, "all", "group")
+	if len(snips) != 1 {
+		t.Fatalf("snippets = %+v", snips)
+	}
+
+	s := snips[0]
+
+	for _, want := range []string{
+		"wget -O /etc/apk/keys/openartifact-all.rsa.pub " + origin + "/repos/all/public.key",
+		"echo \"" + origin + "/repos/all/v3.20/main\" >> /etc/apk/repositories",
+	} {
+		if !strings.Contains(s.Configure, want) {
+			t.Errorf("configure %q lacks %q", s.Configure, want)
+		}
+	}
+
+	if s.Publish != "" {
+		t.Errorf("a group is read-only, publish = %q", s.Publish)
+	}
+}
+
+func TestApkProxySnippetHasNoKeyDownloadNorPublish(t *testing.T) {
+	snips := Snippets("apk", origin, "mirror", "proxy")
+	if len(snips) != 1 {
+		t.Fatalf("snippets = %+v", snips)
+	}
+
+	s := snips[0]
+
+	for _, want := range []string{origin + "/repos/mirror/v3.20/main", origin + "/repos/mirror/v3.20/community", "alpine-keys"} {
+		if !strings.Contains(s.Configure, want) {
+			t.Errorf("configure %q lacks %q", s.Configure, want)
+		}
+	}
+
+	if strings.Contains(s.Configure, "public.key") || strings.Contains(s.Configure, "/etc/apk/keys") || s.Publish != "" {
+		t.Errorf("a proxy has no key to fetch and nothing to publish: %+v", s)
 	}
 }

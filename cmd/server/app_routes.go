@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/dtrack"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
@@ -49,6 +50,7 @@ import (
 // formatHandlers are the native protocol handlers of every repository format.
 type formatHandlers struct {
 	rpm       *formatrpm.HTTPHandler
+	apk       *formatapk.HTTPHandler
 	deb       *formatdeb.HTTPHandler
 	pacman    *formatpacman.HTTPHandler
 	helm      *formathelm.HTTPHandler
@@ -173,6 +175,7 @@ func (a *app) registerAdminRoutes() {
 	api.NewAdminReplicationHandler(a.store.replAdmin, log, evaluator).Register(authedAPI)
 	api.NewAdminRecoveryHandler(a.workers.journal, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator, a.workers.gpgKeys).Register(authedAPI)
+	api.NewApkKeyHandler(db, log, evaluator, a.workers.apkKeys).Register(authedAPI)
 	w.public.sysInfo.RegisterAuthed(authedAPI)
 	w.public.brand.RegisterAuthed(authedAPI)
 
@@ -242,6 +245,9 @@ func (a *app) newFormatHandlers() {
 	f.ivy = formativy.NewHTTPHandler(log, db, served, baseURL)
 	f.sbt = formatsbt.NewHTTPHandler(log, db, served, baseURL)
 	f.maven = formatmaven.NewHTTPHandler(log, db, served)
+	f.apk = formatapk.NewHTTPHandler(log, db, served, baseURL).
+		WithKeys(a.workers.apkKeys).WithRegenerator(a.workers.apk).WithMetrics(a.reg)
+	f.apk.RegisterAPIRoutes(a.web.authed)
 
 	f.terraform = formatterraform.NewHTTPHandler(log, db, served, baseURL).WithTicketKey(a.web.hmacKey)
 	// Not WithSigner(a.workers.gpgKeys) unconditionally: a nil *Service in the
@@ -272,7 +278,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 
 	routers := map[string]*chi.Mux{}
 	for _, name := range []string{
-		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda",
+		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda", "apk",
 	} {
 		routers[name] = chi.NewRouter()
 	}
@@ -294,6 +300,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.deb.RegisterRepoRoutes(routers["deb"])
 	f.rpm.RegisterRepoRoutes(routers["rpm"])
 	f.conda.RegisterRepoRoutes(routers["conda"])
+	f.apk.RegisterRepoRoutes(routers["apk"])
 
 	hosted := make(map[string]http.Handler, len(routers))
 	for name, r := range routers {
@@ -310,7 +317,7 @@ func (a *app) registerFormatRoutes() {
 
 	w := &a.workers
 	repoDispatch := repodispatch.New(a.log, a.db, w.proxySvc, a.web.evaluator, a.hostedRouters()).
-		WithBaseURL(a.cfg.BaseURL).WithGroupMetadata(a.store.blobs, w.groupMeta)
+		WithBaseURL(a.cfg.BaseURL).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys)
 
 	a.mountRepoRoutes(repoDispatch)
 	a.mountIsolatedRepoRoutes(repoDispatch)
@@ -398,7 +405,9 @@ func (a *app) mountIsolatedRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 func (a *app) registerRepositoryRoutes() {
 	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 	w := &a.workers
-	regenerator := func() api.TrashRegenerator { return api.NewWorkerRegenerator(w.deb, w.rpm, w.pacman, w.maven, w.npm) }
+	regenerator := func() api.TrashRegenerator {
+		return api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.pacman, w.maven, w.npm)
+	}
 
 	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).
 		WithBlobStore(a.store.blobs).
@@ -480,7 +489,7 @@ func (a *app) registerWebhooksAndBackup() {
 
 	backupEngine := backup.NewEngine(db, a.store.blobs, log, a.cfg.Backup.BackupDir)
 	backupEngine.SetLeaseTTL(a.cfg.Backup.LeaseTTL)
-	backupEngine.SetRegenerator(api.NewWorkerRegenerator(w.deb, w.rpm, w.pacman, w.maven, w.npm))
+	backupEngine.SetRegenerator(api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.pacman, w.maven, w.npm))
 	api.NewBackupHandler(db, log, evaluator, backupEngine).WithTasks(a.tasks).RegisterAuthed(authedAPI)
 }
 
