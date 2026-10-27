@@ -5,7 +5,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
+  <div v-if="format === 'terraform'" class="rounded-lg border border-border bg-surface p-4">
+    <p class="text-sm text-foreground">{{ t('upload.terraform.body') }}</p>
+    <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-bg p-3 text-xs text-foreground">{{ terraformPublish }}</pre>
+  </div>
   <div
+    v-else
     class="border-2 border-dashed rounded-lg p-6 transition-colors"
     :class="dragOver ? 'border-primary bg-primary-soft/30' : 'border-border bg-surface'"
     @dragenter.prevent="dragOver = true"
@@ -82,6 +87,7 @@ import { APK_DEFAULT_BRANCH, APK_DEFAULT_REPO, validApkSegment } from '../lib/ap
 import { INPUT_CLASS } from '../lib/formClasses'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n'
+import { clientSetup } from '../lib/installCommands'
 
 const props = defineProps<{ repo: string; format?: string }>()
 const emit = defineEmits<{ uploaded: [] }>()
@@ -105,6 +111,11 @@ const repoError = computed(() => (isApk.value && !validApkSegment(apkRepo.value)
 const apkArch = ref('')
 const archError = computed(() => (isApk.value && apkArch.value !== '' && !validApkSegment(apkArch.value) ? t('upload.apk.invalid') : ''))
 const coordinatesValid = computed(() => branchError.value === '' && repoError.value === '' && archError.value === '')
+
+// The terraform publish API is a raw token-authenticated PUT per module version or
+// provider platform (coordinates live in the URL), which the multipart dropzone
+// cannot express, so the zone shows the curl commands instead.
+const terraformPublish = computed(() => clientSetup('terraform', window.location.origin, props.repo)[0]?.publish ?? '')
 
 const formatHint = computed(() => {
   switch (props.format) {

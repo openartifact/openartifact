@@ -137,6 +137,7 @@ const ALL_KINDS: readonly string[] = [
   'nuget_package', 'go_module', 'cargo_crate', 'rubygems_gem', 'conda_package', 'conan_package',
   'helm_chart', 'raw_artifact', 'docker_manifest', 'docker_tag', 'rpm_package', 'deb_package',
   'apk_package',
+  'terraform_module', 'terraform_provider',
 ]
 const kindOptions = computed(() => (props.repo ? ALL_KINDS.filter((k) => k !== 'repository') : ALL_KINDS))
 const kindLabel = (k: string): string => tDynamic(`trash.kind.${k}`)

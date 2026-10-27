@@ -73,6 +73,10 @@ SELECT $1, 'cn' || g, '13.' || g, CASE WHEN g % 2 = 0 THEN b.id END, now() - (ne
 FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, blob_id, created_at, updated_at)
 SELECT $1, 'v3.20', 'main', CASE WHEN g % 2 = 0 THEN 'x86_64' ELSE 'aarch64' END, 'noarch', 'apkp' || g, '17.' || g, 'Q1x', 'dh', b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
+INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at, updated_at)
+SELECT $1, 'tfm' || g, 'aws', '15.' || g, CASE WHEN g % 2 = 0 THEN 'zip' ELSE 'tar.gz' END, b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
+INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id, created_at, updated_at)
+SELECT $1, 'tfp' || g, '16.' || g, 'linux', CASE WHEN g % 2 = 0 THEN 'amd64' ELSE 'arm64' END, b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at, updated_at)
 SELECT $1, 'ch' || g, '14.' || g, b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO raw_artifacts (repository_id, path, blob_id, created_at, updated_at)

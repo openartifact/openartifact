@@ -134,6 +134,30 @@ func unifiedSearchBranches() []string {
 		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +
 			// One result per recipe revision: its manifest row, or a pre-0.5.0 row without a file name.
 			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL AND co.package_id = '' AND co.filename IN ('', 'conanmanifest.txt')",
+		searchBranch(
+			"terraform",
+			"'modules/' || tm.name || '/' || tm.system",
+			"tm.version",
+			"tm.name || '-' || tm.system || '-' || tm.version || '.' || tm.archive_ext",
+			null,
+			null,
+			"tm.blob_id",
+			null,
+			"tm",
+		) +
+			"\n\t\tFROM terraform_modules tm WHERE tm.deleted_at IS NULL",
+		searchBranch(
+			"terraform",
+			"'providers/' || tp.type",
+			"tp.version",
+			"'terraform-provider-' || tp.type || '_' || tp.version || '_' || tp.os || '_' || tp.arch || '.zip'",
+			null,
+			null,
+			"tp.blob_id",
+			null,
+			"tp",
+		) +
+			"\n\t\tFROM terraform_providers tp WHERE tp.deleted_at IS NULL",
 		searchBranch("docker", "dt.name", "''", "''", null, null, null, "dt.manifest_digest", "dt") +
 			"\n\t\tFROM docker_tags dt WHERE dt.deleted_at IS NULL",
 		// go: only the zip blob is reported (a module with just a .mod has none).

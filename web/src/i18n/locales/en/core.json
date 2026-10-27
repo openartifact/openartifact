@@ -84,6 +84,7 @@
   "upload.apk.arch": "Architecture",
   "upload.apk.archHint": "Only needed for noarch packages, for example x86_64. Leave empty otherwise.",
   "upload.apk.invalid": "Letters, digits, dots, dashes and underscores; start with a letter or digit (up to 64 characters).",
+  "upload.terraform.body": "Terraform and OpenTofu modules and providers are published with one PUT request per module version or provider platform, authenticated with an API token. The coordinates are part of the URL:",
   "pwa.updateAvailable": "New version available",
   "pwa.updateHint": "Reload to switch to it. Your current page is left untouched until you do.",
   "pwa.reload": "Reload",

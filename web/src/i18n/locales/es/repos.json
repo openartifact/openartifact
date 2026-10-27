@@ -210,6 +210,8 @@
   "apkKey.dialog.keyNameInvalid": "Usa letras, dígitos, . _ @ + - y termina en .rsa.pub.",
   "apkKey.dialog.privateKey": "Clave privada (opcional)",
   "apkKey.dialog.privateKeyHint": "Pega una clave privada PEM (PKCS#8 o clave RSA de abuild) para importarla. Déjalo vacío para generar una clave nueva.",
+  "trash.kind.terraform_module": "Módulo de Terraform",
+  "trash.kind.terraform_provider": "Proveedor de Terraform",
   "repoDelete.title": "Eliminar repositorio",
   "repoDelete.body": "Estás a punto de eliminar el repositorio “{name}”.",
   "repoDelete.trashHint": "El repositorio y su contenido se mueven a la papelera y se conservan durante el período de retención configurado. Un administrador puede restaurarlos desde la papelera hasta que se purguen.",

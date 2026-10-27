@@ -7,7 +7,8 @@ package promote
 import "github.com/openartifact/openartifact/internal/database/models"
 
 // rowSpecs returns the formats that the generic row promoter handles: one
-// table row per artifact file, one blob per row.
+// table row per artifact file, one blob per row. A format with several tables
+// (terraform: modules and providers) has one spec per table.
 func rowSpecs() []rowSpec {
 	return []rowSpec{
 		{
@@ -143,6 +144,26 @@ func rowSpecs() []rowSpec {
 				"name", "version", "app_version", "description", "keywords", "home", "sources",
 				"maintainers", "icon", "api_version", "type",
 			},
+		},
+		{
+			format:  "terraform",
+			kind:    models.TrashKindTerraformModule,
+			table:   "terraform_modules",
+			name:    "'modules/' || s.name || '/' || s.system",
+			version: "s.version",
+			idents:  []string{"s.name || '-' || s.system || '-' || s.version || '.' || s.archive_ext"},
+			key:     []string{"name", "system", "version"},
+			cols:    []string{"name", "system", "version", "archive_ext"},
+		},
+		{
+			format:  "terraform",
+			kind:    models.TrashKindTerraformProvider,
+			table:   "terraform_providers",
+			name:    "'providers/' || s.type",
+			version: "s.version",
+			idents:  []string{"'terraform-provider-' || s.type || '_' || s.version || '_' || s.os || '_' || s.arch || '.zip'"},
+			key:     []string{"type", "version", "os", "arch"},
+			cols:    []string{"type", "version", "os", "arch", "protocols"},
 		},
 		{
 			format:  "raw",

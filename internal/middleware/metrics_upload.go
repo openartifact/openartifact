@@ -60,6 +60,8 @@ var uploadRoutes = map[string]uploadRoute{
 	conanV1Package:                    {countedByMiddleware, http.MethodPut, metrics.FormatConan},
 	conanV2Recipe:                     {countedByMiddleware, http.MethodPut, metrics.FormatConan},
 	conanV2Package:                    {countedByMiddleware, http.MethodPut, metrics.FormatConan},
+	terraformModule:                   {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
+	terraformProvider:                 {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
 	"/repos/maven/{name}/*":           {count: countedByHandler}, // api.MavenUploadHandler
 	"/repos/{name}/*": {
 		count: countedByHandler,
@@ -80,6 +82,12 @@ var uploadRoutes = map[string]uploadRoute{
 	conanV1PackagesDelete:    {count: notAnUpload},
 	conanV1RemoveFiles:       {count: notAnUpload},
 }
+
+// Terraform publishing routes, shared with the table above.
+const (
+	terraformModule   = "/repos/{name}/_api/modules/{mod}/{system}/{version}"
+	terraformProvider = "/repos/{name}/_api/providers/{type}/{version}/{os}/{arch}"
+)
 
 // Conan route patterns, shared with the table above.
 const (

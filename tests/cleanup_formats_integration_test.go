@@ -104,6 +104,12 @@ func (e *cleanupQuotaEnv) seedFormat(repoID, format, name, version string, ageDa
 			blobID,
 			ts,
 		)
+	case "terraform":
+		id = e.queryID(`INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at, updated_at)
+			VALUES ($1, $2, 'aws', $3, 'zip', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
+	case "terraform-provider":
+		id = e.queryID(`INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id, created_at, updated_at)
+			VALUES ($1, $2, $3, 'linux', 'amd64', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
 	case "raw":
 		id = e.queryID(`INSERT INTO raw_artifacts (repository_id, path, blob_id, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $4) RETURNING id`, repoID, "dir/"+name+"-"+version+".bin", blobID, ts)
@@ -151,6 +157,7 @@ func rowTable(format string) string {
 	return map[string]string{
 		"npm": "npm_versions", "maven": "maven_artifacts", "ivy": "ivy_artifacts", "sbt": "sbt_artifacts",
 		"cargo": "cargo_crates", "rubygems": "rubygems_gems", "conda": "conda_packages", "conan": "conan_packages", "apk": "apk_packages",
+		"terraform": "terraform_modules", "terraform-provider": "terraform_providers",
 		"raw": "raw_artifacts", "docker": "docker_tags",
 	}[format]
 }
@@ -223,7 +230,7 @@ func (e *cleanupQuotaEnv) notifiers() *recordingNotifiers {
 // Every format keeps the newest version, removes the older ones with their
 // blobs, and hands their quota usage back.
 func TestCleanupPolicyEveryFormatKeepsNewest(t *testing.T) {
-	for _, format := range []string{"npm", "maven", "ivy", "sbt", "cargo", "rubygems", "conda", "conan", "apk", "raw", "docker"} {
+	for _, format := range []string{"npm", "maven", "ivy", "sbt", "cargo", "rubygems", "conda", "conan", "apk", "terraform", "terraform-provider", "raw", "docker"} {
 		t.Run(format, func(t *testing.T) {
 			e := newCleanupQuotaEnv(t)
 			e.notifiers()
@@ -471,7 +478,7 @@ func TestCleanupPolicyDockerRemovesTagsAndCollects(t *testing.T) {
 // With a trash, removed rows wait for the purge: blobs, quota and the docker
 // registry stay as they were.
 func TestCleanupPolicyTrashesEveryFormat(t *testing.T) {
-	for _, format := range []string{"npm", "maven", "cargo", "docker", "raw", "conan", "apk"} {
+	for _, format := range []string{"npm", "maven", "cargo", "docker", "raw", "conan", "apk", "terraform", "terraform-provider"} {
 		t.Run(format, func(t *testing.T) {
 			e := newCleanupQuotaEnv(t)
 			e.pg.SetTrashRetentionDays(7)
@@ -540,7 +547,7 @@ func TestCleanupPolicyHonoursImmutableReleasesAndQuarantine(t *testing.T) {
 func TestDeletePackageEveryFormat(t *testing.T) {
 	ctx := context.Background()
 
-	for _, format := range []string{"npm", "maven", "ivy", "sbt", "cargo", "rubygems", "conda", "conan", "apk", "raw", "docker"} {
+	for _, format := range []string{"npm", "maven", "ivy", "sbt", "cargo", "rubygems", "conda", "conan", "apk", "terraform", "terraform-provider", "raw", "docker"} {
 		t.Run(format, func(t *testing.T) {
 			e := newCleanupQuotaEnv(t)
 			rec := e.notifiers()

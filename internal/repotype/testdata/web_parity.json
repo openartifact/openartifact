@@ -112,6 +112,13 @@
     "default_upstream": ""
   },
   {
+    "format": "terraform",
+    "proxy": false,
+    "group": false,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
     "format": "apk",
     "proxy": true,
     "group": true,

@@ -210,6 +210,8 @@
   "apkKey.dialog.keyNameInvalid": "Verwende Buchstaben, Ziffern, . _ @ + - und ende mit .rsa.pub.",
   "apkKey.dialog.privateKey": "Privater Schlüssel (optional)",
   "apkKey.dialog.privateKeyHint": "Füge einen privaten PEM-Schlüssel (PKCS#8 oder RSA-Schlüssel von abuild) zum Importieren ein. Leer lassen, um einen neuen Schlüssel zu erzeugen.",
+  "trash.kind.terraform_module": "Terraform-Modul",
+  "trash.kind.terraform_provider": "Terraform-Provider",
   "repoDelete.title": "Repository löschen",
   "repoDelete.body": "Sie sind dabei, das Repository „{name}“ zu löschen.",
   "repoDelete.trashHint": "Das Repository und sein Inhalt werden in den Papierkorb verschoben und für die konfigurierte Aufbewahrungsdauer vorgehalten. Ein Administrator kann sie bis zur endgültigen Löschung aus dem Papierkorb wiederherstellen.",

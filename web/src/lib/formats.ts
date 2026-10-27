@@ -7,7 +7,8 @@
 // package (CC0); `raw` uses a generic heroicons archive-box glyph and `ivy`
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // RPM uses the Red Hat mark, Cargo the Rust mark, Conda the Anaconda mark and
-// sbt the Scala mark, apk the Alpine Linux mark.
+// sbt the Scala mark, apk the Alpine Linux mark, Terraform the Terraform mark (also used for OpenTofu
+// repositories: one `terraform` format serves both clients).
 
 import {
   siAlpinelinux,
@@ -26,6 +27,7 @@ import {
   siRubygems,
   siRust,
   siScala,
+  siTerraform,
 } from 'simple-icons'
 
 export type FormatId =
@@ -46,6 +48,7 @@ export type FormatId =
   | 'ivy'
   | 'sbt'
   | 'apk'
+  | 'terraform'
 
 interface FormatMeta {
   label: string
@@ -87,12 +90,13 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   ivy: brand('Ivy', siApache),
   sbt: brand('sbt', siScala),
   apk: brand('Alpine (apk)', siAlpinelinux),
+  terraform: brand('Terraform', siTerraform),
 }
 
 /** Ordered format ids — drives the format pickers on repo-create screens. */
 export const ALL_FORMATS: FormatId[] = [
   'docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb',
-  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'apk',
+  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk',
 ]
 
 const DEFAULT_VIEWBOX = '0 0 24 24'

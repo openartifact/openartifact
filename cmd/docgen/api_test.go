@@ -233,7 +233,7 @@ const apiSampleSpec = `{
         "parent": {"$ref": "#/components/schemas/Node"},
         "meta": {"type": "object", "additionalProperties": {"type": "string"}}
       }},
-      "Child": {"allOf": [{"$ref": "#/components/schemas/Node"}, {"type": "object", "properties": {"extra": {"type": "string", "nullable": true}}}]},
+      "Child": {"allOf": [{"$ref": "#/components/schemas/Node"}, {"type": "object", "properties": {"extra": {"type": ["string", "null"]}}}]},
       "Loop": {"allOf": [{"$ref": "#/components/schemas/Loop"}], "properties": {"x": {"type": "string"}}}
     }
   }

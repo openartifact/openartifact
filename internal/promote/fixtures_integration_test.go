@@ -157,6 +157,24 @@ func rowFixtures() []fixture {
 			},
 		},
 		{
+			format: "terraform", version: "1.2.0", path: "shop-aws-1.2.0.tar.gz",
+			tables: []string{"terraform_modules"}, compare: []string{"terraform_modules"},
+			seed: func(h *harness, repo, blob string) {
+				h.row("terraform_modules", repo, "blob_id", blob, map[string]any{
+					"name": "shop", "system": "aws", "version": "1.2.0", "archive_ext": "tar.gz",
+				})
+			},
+		},
+		{
+			format: "terraform", version: "3.4.0", path: "terraform-provider-shop_3.4.0_linux_arm64.zip",
+			tables: []string{"terraform_providers"}, compare: []string{"terraform_providers"},
+			seed: func(h *harness, repo, blob string) {
+				h.row("terraform_providers", repo, "blob_id", blob, map[string]any{
+					"type": "shop", "version": "3.4.0", "os": "linux", "arch": "arm64", "protocols": sqlExpr("'{5.0,6.0}'"),
+				})
+			},
+		},
+		{
 			format: "raw", path: "/docs/readme.txt",
 			tables: []string{"raw_artifacts"}, compare: []string{"raw_artifacts"},
 			seed: func(h *harness, repo, blob string) {

@@ -752,6 +752,8 @@ var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built o
 	{"rubygems_gems t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
 	{"conda_packages t", "t.repository_id", "t.blob_id = b.id", "t.platform || '/' || t.name || '-' || t.version || '-' || t.build_string"},
 	{"conan_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
+	{"terraform_modules t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.system || '-' || t.version"},
+	{"terraform_providers t", "t.repository_id", "t.blob_id = b.id", "t.type || '_' || t.version || '_' || t.os || '_' || t.arch"},
 	{
 		"apk_packages t",
 		"t.repository_id",

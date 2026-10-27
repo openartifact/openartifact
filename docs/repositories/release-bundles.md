@@ -141,6 +141,7 @@ Artifact bytes are content-addressed and stored once. Promotion adds metadata ro
 | Format | What is copied for an item |
 |---|---|
 | maven, ivy, sbt, pypi, nuget, cargo, rubygems, conda, helm, raw | The artifact row (file, coordinates, metadata). |
+| terraform | The module version, or one provider platform zip, as a row that references the same blob. Promote every platform of a provider version: the registry serves a version from the platforms it holds. |
 | npm | The version (with its manifest) and the source dist-tags that point at it; the target package is created if missing, gets a `latest` tag when it has none, and its packument is regenerated. |
 | go | The module version: zip, `go.mod` and `.info`. The item may be the zip or the `go.mod` blob. |
 | conan | The whole recipe revision the file belongs to: recipe files and every binary package revision under it. The copy becomes the newest revision in the target. |

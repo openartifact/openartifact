@@ -8,7 +8,7 @@
 -- Rolling-safe: the repositories.format constraint is widened in one statement
 -- pair (a superset of the old list, added NOT VALID, so replicas of the previous
 -- version keep working and no table scan runs under the lock; the existing rows
--- are validated in 088_apk_validate.no_tx.sql), and the two tables are new, so
+-- are validated in 089_apk_validate.no_tx.sql), and the two tables are new, so
 -- no existing table is rewritten. The live-row unique index is created together
 -- with the empty table.
 
@@ -17,9 +17,9 @@ SET LOCAL lock_timeout = '10s';
 ALTER TABLE repositories DROP CONSTRAINT chk_repo_format;
 ALTER TABLE repositories ADD CONSTRAINT chk_repo_format CHECK (format IN (
     'rpm', 'deb', 'maven', 'npm', 'docker', 'helm', 'pypi', 'nuget', 'go', 'cargo', 'rubygems', 'raw',
-    'conda', 'conan', 'ivy', 'sbt', 'apk')) NOT VALID;
+    'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk')) NOT VALID;
 
-COMMENT ON COLUMN repositories.format IS 'Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, apk. Constrained by chk_repo_format.';
+COMMENT ON COLUMN repositories.format IS 'Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk. Constrained by chk_repo_format.';
 
 -- One row per .apk file, addressed as branch/repo/arch/name-version.apk of a
 -- mirror tree (for example v3.20/main/x86_64).

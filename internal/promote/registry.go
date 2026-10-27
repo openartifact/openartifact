@@ -15,8 +15,17 @@ func Promoters() []Promoter {
 		rpmPromoter{},
 	}
 
+	byFormat := map[string]*tablesPromoter{}
+
 	for _, spec := range rowSpecs() {
-		ps = append(ps, rowPromoter{spec: spec})
+		tp, ok := byFormat[spec.format]
+		if !ok {
+			tp = &tablesPromoter{format: spec.format}
+			byFormat[spec.format] = tp
+			ps = append(ps, tp)
+		}
+
+		tp.parts = append(tp.parts, rowPromoter{spec: spec})
 	}
 
 	return ps

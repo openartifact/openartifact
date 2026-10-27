@@ -156,6 +156,29 @@ describe('apk', () => {
   })
 })
 
+describe('terraform', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('writes module and provider usage with the repository as registry namespace', () => {
+    expect(pullCommand('terraform', origin, 'r1', 'modules/vpc/aws', '1.2.3')).toBe(
+      'module "vpc" {\n  source  = "oa.example:8443/r1/vpc/aws"\n  version = "1.2.3"\n}',
+    )
+    const provider = pullCommand('terraform', origin, 'r1', 'providers/acme', '1.0.0')
+    expect(provider).toContain('acme = {')
+    expect(provider).toContain('source  = "oa.example:8443/r1/acme"')
+  })
+
+  it('offers terraform and OpenTofu credentials and a token publish API', () => {
+    const setups = clientSetup('terraform', origin, 'r1')
+    expect(setups.map((c) => c.client)).toEqual(['terraform', 'OpenTofu'])
+    expect(setups[0]!.configure).toContain('credentials "oa.example:8443" {\n  token = "<TOKEN>"\n}')
+    expect(setups[0]!.configure).toContain('~/.terraformrc')
+    expect(setups[1]!.configure).toContain('~/.tofurc')
+    expect(setups[0]!.publish).toContain('@module.tar.gz https://oa.example:8443/repos/r1/_api/modules/NAME/SYSTEM/1.0.0')
+    expect(setups[0]!.publish).toContain('/repos/r1/_api/providers/TYPE/1.0.0/linux/amd64')
+  })
+})
+
 describe('clientSetup', () => {
   const origin = 'http://oa.example:8080'
 

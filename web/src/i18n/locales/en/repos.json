@@ -210,6 +210,8 @@
   "apkKey.dialog.keyNameInvalid": "Use letters, digits, . _ @ + - and end with .rsa.pub.",
   "apkKey.dialog.privateKey": "Private key (optional)",
   "apkKey.dialog.privateKeyHint": "Paste a PEM private key (PKCS#8 or abuild's RSA key) to import it. Leave empty to generate a new key.",
+  "trash.kind.terraform_module": "Terraform module",
+  "trash.kind.terraform_provider": "Terraform provider",
   "repoDelete.title": "Delete repository",
   "repoDelete.body": "You are about to delete the repository \"{name}\".",
   "repoDelete.trashHint": "The repository and its contents are moved to the trash and kept for the configured retention period. An administrator can restore them from the trash until they are purged.",

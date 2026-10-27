@@ -136,6 +136,24 @@ FROM (
     FROM apk_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'apk')
     UNION ALL
+    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, ('modules/' || t.name || '/' || t.system)::text AS name, t.version::text AS version,
+           'terraform'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM terraform_modules t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform')
+    UNION ALL
+    -- terraform providers: one row per platform zip; arch = OS_ARCH.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, ('providers/' || t.type)::text AS name, t.version::text AS version,
+           'terraform'::text AS format, (t.os || '_' || t.arch)::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM terraform_providers t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'terraform')
+    UNION ALL
     -- helm: one row per chart version.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
            'helm'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,

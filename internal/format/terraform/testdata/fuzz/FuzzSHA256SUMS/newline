@@ -1,0 +1,5 @@
+go test fuzz v1
+string("a b")
+string("n\nm")
+string("c")
+string("n\nm")

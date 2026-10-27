@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# archive magic and structure
+"PK\x03\x04"
+"PK\x05\x06"
+"PK\x01\x02"
+"\x1f\x8b\x08"
+"ustar"
+
+# module contents
+"main.tf"
+"variables.tf"
+"outputs.tf"
+".tf"
+".tf.json"
+"modules/"
+"examples/"
+
+# provider binaries and the registry manifest
+"terraform-provider-"
+"_v"
+"_x5"
+".exe"
+"terraform-registry-manifest.json"
+"{\"version\":1,\"metadata\":{\"protocol_versions\":[\"5.0\",\"6.0\"]}}"
+"protocol_versions"
+"metadata"
+"5.0"
+"6.0"
+
+# coordinates
+"linux"
+"darwin"
+"windows"
+"amd64"
+"arm64"
+"386"
+"1.0.0"
+"-rc.1"
+"-beta.1"
+"+build"
+"packages"
+"versions"
+
+# path traversal and odd names
+"../"
+"./"
+"\\"
+"C:"
+"//"
+
+# download tickets
+"v1|"
+"|module|"
+"|provider-zip|"
+"|provider-shasums|"
+"|provider-sig|"
+
+# checksum file lines
+"  terraform-provider-"
+"_SHA256SUMS"
+"_SHA256SUMS.sig"

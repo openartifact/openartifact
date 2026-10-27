@@ -181,6 +181,20 @@ FROM (
            t.name || '-' || t.version || '.apk'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT * FROM apk_packages WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'apk') AND (sqlc.arg(name_filter)::text = '' OR (branch || '/' || repo || '/' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
+    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
+           'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM terraform_modules WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('modules/' || name || '/' || system) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
+    -- terraform providers: one row per platform zip; name = providers/TYPE, arch = OS_ARCH.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'providers/' || t.type::text AS name, t.version::text AS version,
+           'terraform'::text AS format, t.os || '_' || t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM terraform_providers WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('providers/' || type) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('providers/' || type)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
     -- helm: one row per chart version.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
            'helm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
@@ -328,6 +342,20 @@ FROM (
            t.name || '-' || t.version || '.apk'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT * FROM apk_packages WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'apk') AND (sqlc.arg(name_filter)::text = '' OR (branch || '/' || repo || '/' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY (branch || '/' || repo || '/' || name), version, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
+    -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
+           'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM terraform_modules WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('modules/' || name || '/' || system) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY ('modules/' || name || '/' || system), version, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
+    -- terraform providers: one row per platform zip; name = providers/TYPE, arch = OS_ARCH.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'providers/' || t.type::text AS name, t.version::text AS version,
+           'terraform'::text AS format, t.os || '_' || t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM terraform_providers WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('providers/' || type) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('providers/' || type)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY ('providers/' || type), version, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
     -- helm: one row per chart version.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
            'helm'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
@@ -422,6 +450,14 @@ SELECT COUNT(*)::bigint FROM (
     -- apk
     SELECT 1 FROM apk_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'apk') AND (sqlc.arg(name_filter)::text = '' OR (branch || '/' || repo || '/' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
+    UNION ALL
+    -- terraform modules
+    SELECT 1 FROM terraform_modules t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('modules/' || name || '/' || system) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
+    UNION ALL
+    -- terraform providers
+    SELECT 1 FROM terraform_providers t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('providers/' || type) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('providers/' || type)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
     UNION ALL
     -- helm
     SELECT 1 FROM helm_charts t
@@ -521,6 +557,16 @@ FROM (
     FROM apk_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
+    SELECT t.id::uuid, 'terraform'::text, t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text, ('modules/' || t.name || '/' || t.system)::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM terraform_modules t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'terraform'::text, 'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text, ('providers/' || t.type)::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM terraform_providers t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
     SELECT t.id::uuid, 'helm'::text, t.name || '-' || t.version || '.tgz'::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM helm_charts t LEFT JOIN blobs b ON b.id = t.blob_id
@@ -595,6 +641,12 @@ FROM (
     UNION ALL
     SELECT t.repository_id, t.id, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text
     FROM apk_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, ('modules/' || t.name || '/' || t.system)::text, t.version::text
+    FROM terraform_modules t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, ('providers/' || t.type)::text, t.version::text
+    FROM terraform_providers t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM helm_charts t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
