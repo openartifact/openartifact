@@ -108,6 +108,40 @@ describe('pullCommand quoting', () => {
   })
 })
 
+describe('pacman', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('installs through the repository section', () => {
+    expect(pullCommand('pacman', origin, 'r1', 'tool', '1.0-1')).toBe('sudo pacman -Sy r1/tool')
+  })
+
+  it('configures pacman.conf, trusts the key and publishes with a token PUT', () => {
+    const [setup] = clientSetup('pacman', origin, 'r1')
+    expect(setup!.configure).toContain('[r1]\nSigLevel = Required\nServer = https://oa.example:8443/repos/r1/os/$arch')
+    expect(setup!.configure).toContain('curl -fsSL https://oa.example:8443/repos/r1/public.key | sudo pacman-key --add -')
+    expect(setup!.configure).toContain('pacman-key --lsign-key $(curl -fsSL https://oa.example:8443/repos/r1/public.key | gpg --show-keys')
+    expect(setup!.publish).toContain(
+      'curl -fsS -H "Authorization: Bearer $OA_TOKEN" -T my-package-1.0-1-x86_64.pkg.tar.zst ' +
+        'https://oa.example:8443/repos/r1/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst',
+    )
+    expect(setup!.publish).toContain('.pkg.tar.zst.sig')
+  })
+})
+
+describe('pacman proxy', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('prepends the mirror root URL to the mirrorlist and installs from it', () => {
+    const setups = clientSetup('pacman', origin, 'mirror', 'proxy')
+    expect(setups).toHaveLength(1)
+    expect(setups[0]!.configure).toContain('# top of /etc/pacman.d/mirrorlist\nServer = https://oa.example:8443/repos/mirror/$repo/os/$arch')
+    expect(setups[0]!.configure).toContain('sudo pacman -Syu')
+    expect(setups[0]!.configure).not.toContain('pacman-key')
+    expect(setups[0]!.publish).toBeUndefined()
+    expect(pullCommand('pacman', origin, 'mirror', 'tool', '1.0-1', 'proxy')).toBe('sudo pacman -Sy tool')
+  })
+})
+
 describe('clientSetup', () => {
   const origin = 'http://oa.example:8080'
 

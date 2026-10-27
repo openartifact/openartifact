@@ -29,6 +29,7 @@ const (
 	FormatIvy      = "ivy"
 	FormatSBT      = "sbt"
 	FormatRaw      = "raw"
+	FormatPacman   = "pacman"
 )
 
 // Upload result label values of openartifact_uploads_total.
@@ -47,7 +48,7 @@ const uploadFormatOther = "other"
 var UploadFormats = []string{
 	FormatDeb, FormatRPM, FormatNPM, FormatMaven, FormatHelm, FormatRubyGems,
 	FormatDocker, FormatPyPI, FormatCargo, FormatGo, FormatNuGet, FormatConda,
-	FormatConan, FormatIvy, FormatSBT, FormatRaw,
+	FormatConan, FormatIvy, FormatSBT, FormatRaw, FormatPacman,
 }
 
 // UploadResult maps an HTTP status to the result label: any status below 400 is

@@ -183,6 +183,7 @@
   "trash.kind.docker_tag": "Docker タグ",
   "trash.kind.rpm_package": "RPM パッケージ",
   "trash.kind.deb_package": "Deb パッケージ",
+  "trash.kind.pacman": "pacman パッケージ",
   "repoDelete.title": "リポジトリを削除",
   "repoDelete.body": "リポジトリ「{name}」を削除しようとしています。",
   "repoDelete.trashHint": "リポジトリとその内容はゴミ箱に移動され、設定された保持期間のあいだ保管されます。管理者は、完全削除されるまでゴミ箱から復元できます。",

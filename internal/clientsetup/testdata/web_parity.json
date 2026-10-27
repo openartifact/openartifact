@@ -1,6 +1,20 @@
 [
   {
+    "format": "pacman",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# top of /etc/pacman.d/mirrorlist\nServer = https://artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\nsudo pacman -Syu"
+      }
+    ]
+  },
+  {
     "format": "npm",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -24,6 +38,7 @@
   },
   {
     "format": "npm",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -47,6 +62,7 @@
   },
   {
     "format": "docker",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443",
@@ -60,6 +76,7 @@
   },
   {
     "format": "docker",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443",
@@ -73,6 +90,7 @@
   },
   {
     "format": "pypi",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -90,6 +108,7 @@
   },
   {
     "format": "pypi",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -107,6 +126,7 @@
   },
   {
     "format": "maven",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/maven/repo1",
@@ -120,6 +140,7 @@
   },
   {
     "format": "maven",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/maven/my%20repo",
@@ -133,6 +154,7 @@
   },
   {
     "format": "helm",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -146,6 +168,7 @@
   },
   {
     "format": "helm",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -159,6 +182,7 @@
   },
   {
     "format": "deb",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -172,6 +196,7 @@
   },
   {
     "format": "deb",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -185,6 +210,7 @@
   },
   {
     "format": "rpm",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -198,6 +224,7 @@
   },
   {
     "format": "rpm",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -211,6 +238,7 @@
   },
   {
     "format": "cargo",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -224,6 +252,7 @@
   },
   {
     "format": "cargo",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -237,6 +266,7 @@
   },
   {
     "format": "go",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -249,6 +279,7 @@
   },
   {
     "format": "go",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -261,6 +292,7 @@
   },
   {
     "format": "nuget",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -274,6 +306,7 @@
   },
   {
     "format": "nuget",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -287,6 +320,7 @@
   },
   {
     "format": "rubygems",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -300,6 +334,7 @@
   },
   {
     "format": "rubygems",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -313,6 +348,7 @@
   },
   {
     "format": "raw",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/raw/repo1",
@@ -326,6 +362,7 @@
   },
   {
     "format": "raw",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/raw/my%20repo",
@@ -339,6 +376,7 @@
   },
   {
     "format": "conda",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -352,6 +390,7 @@
   },
   {
     "format": "conda",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -365,6 +404,7 @@
   },
   {
     "format": "conan",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/repo1",
@@ -378,6 +418,7 @@
   },
   {
     "format": "conan",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
@@ -391,6 +432,7 @@
   },
   {
     "format": "sbt",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/sbt/repo1",
@@ -404,6 +446,7 @@
   },
   {
     "format": "sbt",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/sbt/my%20repo",
@@ -417,6 +460,7 @@
   },
   {
     "format": "ivy",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "repo1",
     "base_url": "https://artifacts.example.com:8443/repos/ivy/repo1",
@@ -430,6 +474,7 @@
   },
   {
     "format": "ivy",
+    "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
     "repo": "my repo",
     "base_url": "https://artifacts.example.com:8443/repos/ivy/my%20repo",
@@ -438,6 +483,34 @@
         "client": "Ivy",
         "configure": "\u003cibiblio name=\"my repo\" m2compatible=\"true\" root=\"https://artifacts.example.com:8443/repos/ivy/my%20repo\"/\u003e",
         "publish": "\u003civy:publish resolver=\"my repo\" pubrevision=\"1.0\" overwrite=\"true\"\u003e\n  \u003cartifacts pattern=\"dist/[artifact]-[revision].[ext]\"/\u003e\n\u003c/ivy:publish\u003e"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[repo1]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/repo1/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
+        "publish": "curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst https://artifacts.example.com:8443/repos/repo1/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst\n\n# optional detached signature\ncurl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst.sig https://artifacts.example.com:8443/repos/repo1/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst.sig"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
+        "publish": "curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst https://artifacts.example.com:8443/repos/my%20repo/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst\n\n# optional detached signature\ncurl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst.sig https://artifacts.example.com:8443/repos/my%20repo/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst.sig"
       }
     ]
   }

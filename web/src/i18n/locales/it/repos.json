@@ -186,6 +186,7 @@
   "trash.kind.docker_tag": "Tag Docker",
   "trash.kind.rpm_package": "Pacchetto RPM",
   "trash.kind.deb_package": "Pacchetto deb",
+  "trash.kind.pacman": "Pacchetto pacman",
   "repoDelete.title": "Elimina repository",
   "repoDelete.body": "Stai per eliminare il repository \"{name}\".",
   "repoDelete.trashHint": "Il repository e il suo contenuto vengono spostati nel cestino e conservati per il periodo di conservazione configurato. Un amministratore può ripristinarli dal cestino finché non vengono rimossi definitivamente.",

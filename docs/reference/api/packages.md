@@ -206,7 +206,7 @@ Fields of the `200` response (`application/json`):
 
 Get a package version
 
-One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
+One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, pacman (depends), deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
 
 **Security:** `bearerAuth` or `cookieAuth` or .
 

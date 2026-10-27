@@ -195,8 +195,9 @@ func (f *fakeRegen) add(c regenCall) {
 	f.calls = append(f.calls, c)
 }
 
-func (f *fakeRegen) NotifyDebStale(repoID string) { f.add(regenCall{"deb", repoID, "", ""}) }
-func (f *fakeRegen) NotifyRPMStale(repoID string) { f.add(regenCall{"rpm", repoID, "", ""}) }
+func (f *fakeRegen) NotifyDebStale(repoID string)    { f.add(regenCall{"deb", repoID, "", ""}) }
+func (f *fakeRegen) NotifyPacmanStale(repoID string) { f.add(regenCall{"pacman", repoID, "", ""}) }
+func (f *fakeRegen) NotifyRPMStale(repoID string)    { f.add(regenCall{"rpm", repoID, "", ""}) }
 func (f *fakeRegen) NotifyMavenStale(repoID, g, a string) {
 	f.add(regenCall{"maven", repoID, g, a})
 }

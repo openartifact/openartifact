@@ -116,6 +116,22 @@ func rowSpecs() []rowSpec {
 			},
 		},
 		{
+			format:   "pacman",
+			kind:     models.TrashKindPacman,
+			table:    "pacman_packages",
+			name:     "s.name",
+			version:  "s.version",
+			idents:   []string{"s.filename"},
+			key:      []string{"filename"},
+			licenses: "s.licenses",
+			regen:    RegenPacman,
+			cols: []string{
+				"name", "base", "version", "arch", "repo_arch", "filename", "md5", "description", "url", "packager",
+				"build_date", "installed_size", "licenses", "package_groups", "replaces", "conflicts", "provides",
+				"depends", "optdepends", "makedepends", "checkdepends", "signature", "signature_source", "signature_key",
+			},
+		},
+		{
 			format:  "helm",
 			kind:    models.TrashKindHelm,
 			table:   "helm_charts",

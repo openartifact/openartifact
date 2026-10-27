@@ -186,6 +186,7 @@
   "trash.kind.docker_tag": "Etiqueta Docker",
   "trash.kind.rpm_package": "Paquete RPM",
   "trash.kind.deb_package": "Paquete deb",
+  "trash.kind.pacman": "Paquete pacman",
   "repoDelete.title": "Eliminar repositorio",
   "repoDelete.body": "Estás a punto de eliminar el repositorio “{name}”.",
   "repoDelete.trashHint": "El repositorio y su contenido se mueven a la papelera y se conservan durante el período de retención configurado. Un administrador puede restaurarlos desde la papelera hasta que se purguen.",

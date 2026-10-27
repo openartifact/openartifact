@@ -662,6 +662,27 @@ type Database interface {
 	GetSystemSetting(ctx context.Context, key string) (string, error)
 	SetSystemSetting(ctx context.Context, key, value string) error
 
+	// Pacman (Arch Linux) package methods (docs/formats/pacman.md).
+	//
+	// CreatePacmanPackage stores a package that is not live yet; a live row with
+	// the same file name or the same name, version and architecture is a unique
+	// violation (IsUniqueViolation). GetPacmanPackageByFilename returns (nil, nil)
+	// when there is none.
+	CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error
+	GetPacmanPackageByFilename(ctx context.Context, repoID, filename string) (*models.PacmanPackage, error)
+	// ListPacmanPackages returns every live package of a repository, without file lists.
+	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	// ListPacmanFileLists returns the newline-separated file lists of the live
+	// packages that have one, by package ID.
+	ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error)
+	// ListPacmanPackagesWithoutFileList returns the live packages whose file list
+	// is not known yet (ID, BlobKey and Filename are set).
+	ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	// SetPacmanFileList records a file list; it never overwrites an existing one.
+	SetPacmanFileList(ctx context.Context, repoID, id, fileList string) error
+	SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error
+	DeletePacmanPackage(ctx context.Context, repoID, id string) error
+
 	// Conda methods
 	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
 	// GetCondaPackageFile returns the live package file with exactly this

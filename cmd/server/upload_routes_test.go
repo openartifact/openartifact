@@ -63,6 +63,7 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 	"nuget":    {http.MethodPut, "/repos/{name}/v3/package", "PUT /v3/package", "`PackagePublish/2.0.0` | `/v3/package`"},
 	"rubygems": {http.MethodPost, "/repos/{name}/api/v1/gems", "POST /api/v1/gems", "| `POST /api/v1/gems` | push"},
 	"conda":    {http.MethodPost, "/repos/{name}/{platform}", "POST /<platform>", "| `POST /<platform>` | upload"},
+	"pacman":   {http.MethodPut, "/repos/{name}/os/{arch}/{filename}", "PUT /os/<arch>/<pkg>.pkg.tar.zst", "PUT /repos/REPO/os/ARCH/FILE"},
 	"conan": {
 		http.MethodPut,
 		"/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/files/*",

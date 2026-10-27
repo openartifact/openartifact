@@ -310,6 +310,10 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		{"conan", "cn", "13.0", "", "cn/13.0@_/_#0",
 			`INSERT INTO conan_packages (repository_id, name, version) VALUES ($1,'cn','13.0')`,
 			[]any{repo}},
+		{"pacman", "pm", "1:2.0-1", "x86_64", "pm-1:2.0-1-x86_64.pkg.tar.zst",
+			`INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5)
+			 VALUES ($1,'pm','pm','1:2.0-1','x86_64','x86_64','pm-1:2.0-1-x86_64.pkg.tar.zst',$2,'abc')`,
+			[]any{repo, blobID}},
 		{"helm", "chart", "14.0.0", "", "chart-14.0.0.tgz",
 			`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'chart','14.0.0',$2)`,
 			[]any{repo, blobID}},

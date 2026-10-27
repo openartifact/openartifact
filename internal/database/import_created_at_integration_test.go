@@ -172,6 +172,18 @@ func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string
 	return "conda_packages", p.ID
 }
 
+func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	p := &models.PacmanPackage{RepositoryID: repo, Name: "d", Base: "d", Version: "1.0-1", Arch: "x86_64", RepoArch: "x86_64",
+		Filename: "d-1.0-1-x86_64.pkg.tar.zst", MD5: "abc", SHA256: e.uniq("sha"), BlobKey: e.uniq("k"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreatePacmanPackage(e.ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	return "pacman_packages", p.ID
+}
+
 func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
@@ -234,6 +246,7 @@ func TestImportCreatedAt(t *testing.T) {
 		"go":       e.createGo,
 		"conda":    e.createConda,
 		"conan":    e.createConan,
+		"pacman":   e.createPacman,
 		"ivy":      e.createIvy,
 		"sbt":      e.createSbt,
 	}

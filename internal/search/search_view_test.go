@@ -31,6 +31,7 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 		"ivy",
 		"maven",
 		"npm",
+		"pacman",
 		"nuget",
 		"pypi",
 		"raw",

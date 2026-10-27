@@ -99,6 +99,7 @@ type SnapshotReader interface {
 	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
 	ListNPMVersionsByRepo(ctx context.Context, repoID string) ([]*models.NPMVersion, error)
 	ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error)
+	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
 	ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error)
 	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
 	ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error)

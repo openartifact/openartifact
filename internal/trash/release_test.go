@@ -47,6 +47,7 @@ func TestIsRelease(t *testing.T) {
 		{"deb", "1.0~rc1", true},
 		{"rpm", "1.0", true},
 		{"conda", "1.0.dev0", true},
+		{"pacman", "1:1.0rc1-1", true},
 		{"docker", "latest", true},
 	}
 

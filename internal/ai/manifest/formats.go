@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/pkg/deb"
+	"github.com/openartifact/openartifact/pkg/pacman"
 	"github.com/openartifact/openartifact/pkg/rpm"
 )
 
@@ -297,6 +298,47 @@ func extractDeb(ctx context.Context, src Source) ([]section, error) {
 	}
 
 	return []section{{label: "control", body: b.String()}}, nil
+}
+
+// extractPacman renders the .PKGINFO of a pacman package (zstd, xz or gzip
+// tar; the compression is detected from the content).
+func extractPacman(ctx context.Context, src Source) ([]section, error) {
+	rc, err := src.Open()
+	if err != nil {
+		return nil, fmt.Errorf("open artifact: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+
+	pkg, err := pacman.ReadPackage(ctxReader{ctx: ctx, r: rc})
+	if err != nil {
+		return nil, fmt.Errorf("parse pacman package: %w", err)
+	}
+
+	info := pkg.Info
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "pkgname = %s\npkgver = %s\narch = %s\n", info.Name, info.Version, info.Arch)
+
+	for _, kv := range [][2]string{{"pkgbase", info.Base}, {"pkgdesc", info.Description}, {"url", info.URL}, {"packager", info.Packager}} {
+		if kv[1] != "" {
+			fmt.Fprintf(&b, "%s = %s\n", kv[0], kv[1])
+		}
+	}
+
+	for _, list := range []struct {
+		key  string
+		vals []string
+	}{
+		{"license", info.Licenses}, {"depend", info.Depends}, {"optdepend", info.OptDepends}, {"makedepend", info.MakeDepends},
+		{"checkdepend", info.CheckDepends}, {"provides", info.Provides}, {"conflict", info.Conflicts}, {"replaces", info.Replaces},
+	} {
+		for _, v := range list.vals[:min(len(list.vals), maxRPMDeps)] {
+			fmt.Fprintf(&b, "%s = %s\n", list.key, v)
+		}
+	}
+
+	return []section{{label: ".PKGINFO", body: b.String()}}, nil
 }
 
 // maxRPMDeps bounds the dependency lines rendered from an rpm header.

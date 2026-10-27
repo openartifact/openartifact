@@ -318,6 +318,10 @@ func (s *Service) serveResolved(
 		return
 	}
 
+	if repo.Format == "pacman" && pacmanNotModified(w, r, entry, key) {
+		return
+	}
+
 	writeEntry(w, r, entry, rc)
 }
 
@@ -854,13 +858,18 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 		return immutableTTL
 	}
 
-	return time.Duration(repo.CacheTTLSeconds) * time.Second
+	ttl := time.Duration(repo.CacheTTLSeconds) * time.Second
+	if repo.Format == "pacman" && isPacmanDatabase(key) {
+		return min(ttl, pacmanDBMaxTTL)
+	}
+
+	return ttl
 }
 
 // Immutable reports whether the file at key never changes once published, so a
 // cached copy never needs revalidation. Formats whose bodies are verified
-// against a published digest (see fetchOpts) pin by name alone; the three that
-// have no such check here (Maven, deb, rpm) pin only under layouts whose file
+// against a published digest (see fetchOpts) pin by name alone; the ones that
+// have no such check here (Maven, deb, rpm, pacman) pin only under layouts whose file
 // names are never reused, and everything else is cached for the repository TTL
 // so a wrong copy is replaced on revalidation:
 //   - maven: released artifacts, not maven-metadata*.xml, archetype-catalog.xml
@@ -871,6 +880,8 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 //     or -SNAPSHOT files; a file is pinned only when its body matched the
 //     checksum the upstream publishes (ivy.go), otherwise the repository TTL
 //     applies.
+//   - pacman: nothing. A mirror may republish a package file name, so package
+//     files use the repository TTL.
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
 //     a file name is never reused); the same names in a flat repository, where
 //     a publisher may overwrite a package, use the repository TTL.
@@ -975,6 +986,8 @@ func isMetadataKey(format, key string) bool {
 		return !strings.HasPrefix(key, "gems/")
 	case "conan":
 		return !strings.Contains(key, "/files/")
+	case "pacman":
+		return isPacmanDatabase(key)
 	}
 
 	return false
@@ -1009,11 +1022,12 @@ func inDir(key, dir string) bool {
 // packageExts lists, for the formats whose files are not checked against a
 // digest, the file extensions that name a binary package.
 var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only table
-	"maven": {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
-	"deb":   {".deb", ".udeb"},
-	"rpm":   {".rpm"},
-	"ivy":   ivyPackageExts,
-	"sbt":   ivyPackageExts,
+	"maven":  {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
+	"deb":    {".deb", ".udeb"},
+	"rpm":    {".rpm"},
+	"pacman": {".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar.bz2", ".pkg.tar.lz4", ".pkg.tar"},
+	"ivy":    ivyPackageExts,
+	"sbt":    ivyPackageExts,
 }
 
 // isHTMLForPackage reports whether the upstream answered a package file's path

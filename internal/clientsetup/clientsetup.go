@@ -29,6 +29,7 @@ type target struct {
 	repo   string // raw repository name
 	esc    string // URL-path-escaped repository name
 	base   string // native repository base URL
+	proxy  bool   // repository type is proxy
 }
 
 // isolatedPrefix reports whether a format is served under /repos/{format}/{repo}.
@@ -58,8 +59,9 @@ func RepoBaseURL(format, origin, repo string) string {
 }
 
 // Snippets returns the configure/publish snippets for a repository of the
-// given format. Unknown formats return a single bare-URL entry.
-func Snippets(format, origin, repo string) []Snippet {
+// given format and type ("hosted", "proxy" or "group"; only a pacman proxy
+// differs from the hosted snippets). Unknown formats return a single bare-URL entry.
+func Snippets(format, repoType, origin, repo string) []Snippet {
 	origin = strings.TrimRight(origin, "/")
 	c := target{
 		origin: origin,
@@ -68,6 +70,7 @@ func Snippets(format, origin, repo string) []Snippet {
 		repo:   repo,
 		esc:    url.PathEscape(repo),
 		base:   RepoBaseURL(format, origin, repo),
+		proxy:  repoType == "proxy",
 	}
 
 	if build := builderFor(format); build != nil {
@@ -124,6 +127,8 @@ func builderFor(format string) func(target) []Snippet {
 		return debSnippets
 	case "rpm":
 		return rpmSnippets
+	case "pacman":
+		return pacmanSnippets
 	case "cargo":
 		return cargoSnippets
 	case "go":
@@ -252,6 +257,43 @@ func rpmSnippets(c target) []Snippet {
 				c.origin, c.esc),
 		},
 	}
+}
+
+// pacmanSnippets configures /etc/pacman.conf, trusts the repository key and
+// publishes a package (and optionally its detached signature) with a token PUT.
+func pacmanSnippets(c target) []Snippet {
+	if c.proxy {
+		return pacmanProxySnippets(c)
+	}
+
+	key := c.base + "/public.key"
+	pkg := "my-package-1.0-1-x86_64.pkg.tar.zst"
+	put := func(file string) string {
+		return fmt.Sprintf("curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T %[1]s %[2]s/os/x86_64/%[1]s", file, c.base)
+	}
+
+	return []Snippet{{
+		Client: "pacman",
+		Configure: fmt.Sprintf("# /etc/pacman.conf\n[%s]\nSigLevel = Required\nServer = %s/os/$arch", c.repo, c.base) +
+			"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/os/$arch" +
+			"\n\n# trust the repository key\ncurl -fsSL " + key + " | sudo pacman-key --add -" +
+			"\nsudo pacman-key --lsign-key $(curl -fsSL " + key +
+			" | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
+		Publish: put(pkg) + "\n\n# optional detached signature\n" + put(pkg+".sig"),
+	}}
+}
+
+// pacmanProxySnippets points pacman at a proxy repository, which mirrors an
+// Arch mirror root: paths pass through, so the server line carries the
+// $repo/os/$arch layout. Signatures are the upstream's (archlinux-keyring), so
+// there is no key to import from this server and nothing to publish.
+func pacmanProxySnippets(c target) []Snippet {
+	return []Snippet{{
+		Client: "pacman",
+		Configure: "# top of /etc/pacman.d/mirrorlist\nServer = " + c.base + "/$repo/os/$arch" +
+			"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/$repo/os/$arch" +
+			"\n\nsudo pacman -Syu",
+	}}
 }
 
 func cargoSnippets(c target) []Snippet {

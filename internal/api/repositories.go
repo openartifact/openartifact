@@ -64,6 +64,7 @@ var validFormats = map[string]bool{
 	"conan":    true,
 	"ivy":      true,
 	"sbt":      true,
+	"pacman":   true,
 }
 
 const (

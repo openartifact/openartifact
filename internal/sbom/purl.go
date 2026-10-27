@@ -31,6 +31,8 @@ func purlType(format string) string {
 		return "deb"
 	case "rpm":
 		return "rpm"
+	case "pacman":
+		return "alpm"
 	case "go":
 		return "golang"
 	case "conan":
@@ -95,6 +97,9 @@ func generatePURLNS(format, namespace, name, version string) string {
 		}
 	case "pypi":
 		name = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
+	case "alpm":
+		// pkg:alpm/arch/NAME@VERSION: Arch Linux is the only pacman distro.
+		name = "arch/" + name
 	}
 
 	if namespace != "" && (typ == "deb" || typ == "rpm") {

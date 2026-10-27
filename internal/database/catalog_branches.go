@@ -106,6 +106,7 @@ func catalogBranches() []catalogBranch {
 		simpleBranch("cargo", "cargo_crates", "t.name", "t.version", "t.blob_id"),
 		gems,
 		simpleBranch("conda", "conda_packages", "t.name", "t.version", "t.blob_id"),
+		simpleBranch("pacman", "pacman_packages", "t.name", "t.version", "t.blob_id"),
 		conan,
 		simpleBranch("helm", "helm_charts", "t.name", "t.version", "t.blob_id"),
 		simpleBranch("raw", "raw_artifacts", "t.path", "''", "t.blob_id"),

@@ -82,6 +82,9 @@ SELECT $1, 'cnd' || g, '12.' || g, 'h' || g, 'linux-64', b.id, ts, ts AS ts_upda
 INSERT INTO conan_packages (repository_id, name, version, blob_id, created_at, updated_at)
 SELECT $1, 'cn' || g, '13.' || g, CASE WHEN g % 2 = 0 THEN b.id END, ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
 
+INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, created_at, updated_at)
+SELECT $1, 'pm' || g, 'pm' || g, '17.' || g || '-1', 'x86_64', 'x86_64', 'pm' || g || '-17.' || g || '-1-x86_64.pkg.tar.zst', b.id, 'abc', ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
+
 INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at, updated_at)
 SELECT $1, 'ch' || g, '14.' || g, b.id, ts, ts AS ts_updated FROM eq_ts JOIN eq_blob b ON b.n = 1 + g % 30;
 
@@ -184,7 +187,7 @@ func TestListRepoComponentsMatchesLegacyQuery(t *testing.T) {
 	pg := freshPostgres(t, 5)
 	repo := seedEquivalenceRepo(t, pg)
 
-	for _, format := range []string{"", "maven", "rpm", "rubygems", "conan", "docker", "raw", "npm", "go", "deb"} {
+	for _, format := range []string{"", "maven", "rpm", "rubygems", "conan", "pacman", "docker", "raw", "npm", "go", "deb"} {
 		for _, limit := range []int{1, 7, 25, 1000} {
 			for page := 1; page <= 4; page++ {
 				name := fmt.Sprintf("format=%q/limit=%d/page=%d", format, limit, page)

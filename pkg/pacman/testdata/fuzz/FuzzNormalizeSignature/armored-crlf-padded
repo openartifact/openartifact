@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\x0d\x0a  -----BEGIN PGP SIGNATURE-----\x0d\x0a\x0d\x0aiHUEABYKAB0WIQSRcxkqnH5WEcSyPnBLPsUYitVBpgUCauC99QAKCRBLPsUYitVB\x0d\x0apvV8AQDP4BtEiP7yXMmj/p1Yy1pAfqh6aUhc/3q4jsNw/buy5gEAxDPXLz6Wby1F\x0d\x0a4pfdsPz4vSiacS+hzJzdh7wFMQa0jwo=\x0d\x0a=A01Q\x0d\x0a-----END PGP SIGNATURE-----\x0d\x0a")

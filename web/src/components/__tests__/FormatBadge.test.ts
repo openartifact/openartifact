@@ -55,6 +55,11 @@ describe('FormatBadge', () => {
     expect(wrapper.text()).toContain('Cargo')
   })
 
+  it('renders correct label for pacman', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'pacman' } })
+    expect(wrapper.text()).toContain('Arch Linux (pacman)')
+  })
+
   it('renders correct label for rubygems', () => {
     const wrapper = mount(FormatBadge, { props: { format: 'rubygems' } })
     expect(wrapper.text()).toContain('RubyGems')

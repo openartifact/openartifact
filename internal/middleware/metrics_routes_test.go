@@ -27,6 +27,7 @@ import (
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
+	formatpacman "github.com/openartifact/openartifact/internal/format/pacman"
 	formatpypi "github.com/openartifact/openartifact/internal/format/pypi"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
@@ -63,6 +64,7 @@ func serverRoutes(t *testing.T) chi.Router {
 		formatrubygems.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconda.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconan.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
+		formatpacman.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatgomod.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		api.NewNPMUploadHandler(log, nil, nil, "", nil).RegisterRepoRoutes(r)
 		// cmd/server dispatches PUT "/*" to npm publish or the GOPROXY upload.
@@ -145,7 +147,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"helm": metrics.FormatHelm, "ivy": metrics.FormatIvy, "maven": metrics.FormatMaven,
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pypi": metrics.FormatPyPI,
 		"raw": metrics.FormatRaw, "rpm": metrics.FormatRPM, "rubygems": metrics.FormatRubyGems,
-		"sbt": metrics.FormatSBT,
+		"sbt": metrics.FormatSBT, "pacman": metrics.FormatPacman,
 	}
 
 	entries, err := os.ReadDir("../format")

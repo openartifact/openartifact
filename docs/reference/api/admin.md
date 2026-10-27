@@ -265,7 +265,7 @@ Deletes a database-managed key (admin only). An active key (global or assigned t
 
 Activate GPG key
 
-Makes the key sign every deb/rpm repository without a key of its own (global scope), or only the named hosted deb/rpm repository when `repository` is given. Affected repositories are re-signed (admin only).
+Makes the key sign every deb, rpm and pacman repository without a key of its own (global scope), or only the named hosted deb, rpm or pacman repository when `repository` is given. Affected repositories are re-signed (admin only).
 
 **Parameters**
 
@@ -286,7 +286,7 @@ Makes the key sign every deb/rpm repository without a key of its own (global sco
 | Status | Description | Body |
 |---|---|---|
 | `200` | The key | `application/json`: [GPGKey](schemas.md#gpgkey) |
-| `400` | Repository is not a hosted deb or rpm repository | - |
+| `400` | Repository is not a hosted deb, rpm or pacman repository | - |
 | `403` | Admin access required | - |
 | `404` | Key or repository not found | - |
 | `409` | Read-only config key | - |

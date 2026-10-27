@@ -29,7 +29,7 @@ type parityFormat struct {
 func TestWebParityFixture(t *testing.T) {
 	formats := []string{
 		"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "deb",
-		"rpm", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt",
+		"rpm", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt", "pacman",
 	}
 
 	out := make([]parityFormat, 0, len(formats))

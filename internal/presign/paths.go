@@ -13,6 +13,8 @@ import (
 // given format, is a package/binary download rather than repository metadata.
 // Only the former may be redirected; metadata is always streamed so the server
 // keeps control of it (and clients re-validate it with plain conditional GETs).
+//
+//nolint:gocyclo,cyclop // one case per format
 func IsProxyBlobPath(format, relPath string) bool {
 	relPath = strings.TrimPrefix(relPath, "/")
 	base := path.Base(relPath)
@@ -24,6 +26,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "pool/")
 	case "rpm":
 		return isRPMBlob(relPath, base)
+	case "pacman":
+		return strings.Contains(base, ".pkg.tar") && !strings.HasSuffix(base, ".sig")
 	case "npm":
 		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
 	case "helm":

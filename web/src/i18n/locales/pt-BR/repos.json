@@ -186,6 +186,7 @@
   "trash.kind.docker_tag": "Tag Docker",
   "trash.kind.rpm_package": "Pacote RPM",
   "trash.kind.deb_package": "Pacote deb",
+  "trash.kind.pacman": "Pacote pacman",
   "repoDelete.title": "Excluir repositório",
   "repoDelete.body": "Você está prestes a excluir o repositório \"{name}\".",
   "repoDelete.trashHint": "O repositório e seu conteúdo são movidos para a lixeira e mantidos pelo período de retenção configurado. Um administrador pode restaurá-los da lixeira até que sejam removidos definitivamente.",

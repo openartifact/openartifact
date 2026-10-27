@@ -161,7 +161,7 @@ oa --format json upload <repo> <file|glob>... [--target-path P] [--flat] \
    [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
 ```
 
-Uploads to a hosted `raw`, `maven`, `ivy`, `sbt`, `deb` or `rpm` repository and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`npm publish`, `docker push`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
+Uploads to a hosted `raw`, `maven`, `ivy`, `sbt`, `deb`, `rpm` or `pacman` repository (pacman: the package and its `.sig`, stored under `os/<arch>/` by file name; see [pacman](../formats/pacman.md)) and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`npm publish`, `docker push`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
 
 Arguments are files or globs (`*`, `?`, `[...]`, and `**` for any depth); quote globs to keep the shell out of it. A pattern without a match, a directory or a missing file is an error before anything is uploaded.
 

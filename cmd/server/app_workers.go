@@ -32,6 +32,7 @@ type workerSet struct {
 
 	rpm       *worker.RPMetadataWorker
 	deb       *worker.DebMetadataWorker
+	pacman    *worker.PacmanMetadataWorker
 	groupMeta *worker.GroupMetadataWorker
 	maven     *worker.MavenMetadataWorker
 	npm       *worker.NPMMetadataWorker
@@ -93,6 +94,7 @@ func (a *app) startMetadataWorkers() {
 	a.tasks.Go(w.rpm.RegenerateStale)
 
 	w.deb = worker.NewDebMetadataWorker(db, blobStore, w.gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
+	w.pacman = worker.NewPacmanMetadataWorker(db, blobStore, w.gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 
 	if a.cfg.GPG.AutoGenerate {
 		a.tasks.Go(func(ctx context.Context) { autoGenerateGPGKey(ctx, w.gpgKeys, log) })
@@ -111,6 +113,7 @@ func (a *app) startMetadataWorkers() {
 	w.gpgKeys.SetRefreshers(
 		groupRefresher{db: db, hosted: w.rpm, group: w.groupMeta},
 		groupRefresher{db: db, hosted: w.deb, group: w.groupMeta},
+		w.pacman,
 	)
 
 	a.tasks.Go(w.groupMeta.RegenerateStale)
@@ -135,6 +138,7 @@ func (a *app) startHousekeepingWorkers() {
 	// Initialize cleanup worker
 	w.cleanup = worker.NewCleanupWorker(db, blobStore, log)
 	w.cleanup.SetMetadataNotifiers(w.rpm, w.deb)
+	w.cleanup.SetPacmanNotifier(w.pacman)
 
 	w.presignedUpload = worker.NewPresignedUploadWorker(db, blobStore, cfg.Storage.PresignUploadTTL, log)
 	w.presignedUpload.Start()

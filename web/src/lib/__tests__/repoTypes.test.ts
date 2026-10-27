@@ -14,11 +14,16 @@ import {
 } from '../repoTypes'
 
 describe('allowedFormats', () => {
+  it('offers pacman for hosted and proxy repositories, not yet groups', () => {
+    expect(allowedFormats('hosted')).toContain('pacman')
+    expect(allowedFormats('proxy')).toContain('pacman')
+    expect(allowedFormats('group')).not.toContain('pacman')
+  })
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt'])
+  it('restricts proxy to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems and sbt in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt', 'pacman'])
   })
   it('restricts group to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt', () => {
     expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt'])
@@ -66,6 +71,8 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('ivy')).toBe(true)
     expect(upstreamUrlPlaceholder('conan')).toBe('https://center2.conan.io')
     expect(upstreamUrlPlaceholder('rubygems')).toBe('https://rubygems.org')
+    expect(upstreamUrlRequired('pacman')).toBe(false)
+    expect(upstreamUrlPlaceholder('pacman')).toBe('https://geo.mirror.pkgbuild.com')
     expect(upstreamUrlPlaceholder('sbt')).toBe('https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases')
   })
 })

@@ -63,6 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArtifactInstall
             :format="format"
             :repo="repoName"
+            :repo-type="repository?.repo_type"
             :pkg="pkgName"
             :version="entry.version"
             :sha256="detail?.sha256"
@@ -124,7 +125,7 @@ const param = (name: string): string | undefined => {
 }
 const requestedVersion = computed(() => param('v'))
 
-const { repoName, pkgName, versions, entry, detail, summary, format, caps, loading, error, reload } = useArtifact({
+const { repoName, pkgName, versions, entry, detail, summary, format, repository, caps, loading, error, reload } = useArtifact({
   repo: () => param('repo') ?? '',
   pkg: () => param('pkg') ?? '',
   version: () => requestedVersion.value,

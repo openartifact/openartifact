@@ -26,6 +26,7 @@ type Regenerator interface {
 	NotifyRPMStale(repoID string)
 	NotifyMavenStale(repoID, groupID, artifactID string)
 	NotifyNPMStale(packageID string)
+	NotifyPacmanStale(repoID string)
 }
 
 // Engine promotes a sealed bundle into a repository.
@@ -372,6 +373,8 @@ func (e *Engine) notify(regen []Regen) {
 			e.regen.NotifyMavenStale(r.RepoID, r.GroupID, r.ArtifactID)
 		case RegenNPM:
 			e.regen.NotifyNPMStale(r.PackageID)
+		case RegenPacman:
+			e.regen.NotifyPacmanStale(r.RepoID)
 		}
 	}
 }

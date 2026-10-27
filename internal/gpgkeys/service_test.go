@@ -72,7 +72,7 @@ func newService(t *testing.T, config gpg.Signer) (*Service, *gpgkeystest.Store, 
 	svc.autoAlgorithm = gpg.AlgorithmED25519 // RSA-4096 generation is too slow for unit tests
 
 	rpm, deb := &recorder{}, &recorder{}
-	svc.SetRefreshers(rpm, deb)
+	svc.SetRefreshers(rpm, deb, nil)
 
 	return svc, store, rpm, deb
 }
@@ -522,7 +522,7 @@ func TestAutoGenerateReplicaRace(t *testing.T) {
 	for range replicas {
 		svc := New(store, testLog(t), nil)
 		svc.autoAlgorithm = gpg.AlgorithmED25519
-		svc.SetRefreshers(nil, &recorder{})
+		svc.SetRefreshers(nil, &recorder{}, nil)
 
 		wg.Go(func() {
 			<-start

@@ -157,6 +157,8 @@ func parse(format, filename string, parts []manifest.Part) (Result, error) {
 		return parseDeb(parts), nil
 	case "rpm":
 		return parseRPM(parts), nil
+	case "pacman":
+		return parsePacman(parts), nil
 	case "go":
 		return parseGoMod(filename, parts)
 	case "rubygems":

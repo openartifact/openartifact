@@ -165,6 +165,18 @@ FROM (
     FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    -- pacman
+    SELECT t.id::uuid, 'pacman'::text, t.name::text, t.version::text, t.arch::text,
+           t.filename::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, ''::text, ''::text, ''::text, t.md5::text, ''::text,
+           jsonb_build_object('base', t.base, 'repo_arch', t.repo_arch, 'description', t.description, 'url', t.url,
+                              'packager', t.packager, 'build_date', t.build_date::text, 'installed_size', t.installed_size::text,
+                              'signature_source', t.signature_source)::jsonb,
+           to_jsonb(t.depends)::jsonb
+    FROM pacman_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     -- conan: the recipe revision row
     SELECT t.id::uuid, 'conan'::text, t.name::text, t.version::text, ''::text,
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text, t.created_at::timestamptz, t.updated_at::timestamptz,

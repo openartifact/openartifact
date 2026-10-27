@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package gpgkeys manages the GPG keys that sign deb/rpm repository metadata
+// Package gpgkeys manages the GPG keys that sign deb, rpm and pacman repository metadata
 // and sealed release bundles: import, generation, activation (globally or per
 // repository), deletion and the lookup the metadata workers use to find the
 // signer of a repository.
@@ -73,6 +73,7 @@ type Service struct {
 	config gpg.Signer
 	rpm    Refresher
 	deb    Refresher
+	pacman Refresher
 
 	// autoAlgorithm is the type of the key AutoGenerate creates.
 	autoAlgorithm gpg.Algorithm
@@ -83,9 +84,9 @@ func New(db Store, log *logger.Logger, config gpg.Signer) *Service {
 	return &Service{db: db, log: log, config: config, autoAlgorithm: gpg.AlgorithmRSA4096}
 }
 
-// SetRefreshers wires the rpm and deb metadata workers; either may be nil.
-func (s *Service) SetRefreshers(rpm, deb Refresher) {
-	s.rpm, s.deb = rpm, deb
+// SetRefreshers wires the rpm, deb and pacman metadata workers; any may be nil.
+func (s *Service) SetRefreshers(rpm, deb, pacman Refresher) {
+	s.rpm, s.deb, s.pacman = rpm, deb, pacman
 }
 
 // ConfigSigner returns the file/env-configured signer, or nil.
@@ -412,7 +413,7 @@ func (s *Service) Delete(ctx context.Context, id string, force bool) error {
 	return nil
 }
 
-// Activate makes the key sign one repository (repo != nil, a deb or rpm repo)
+// Activate makes the key sign one repository (repo != nil, a deb, rpm or pacman repo)
 // or, otherwise, every repository without a key of its own.
 func (s *Service) Activate(ctx context.Context, id string, repo *models.GPGSigningRepo, by string) error {
 	if id == ConfigKeyID {
@@ -610,6 +611,10 @@ func (s *Service) refresh(ctx context.Context, repos []models.GPGSigningRepo) {
 		case "deb":
 			if s.deb != nil {
 				s.deb.NotifyStale(r.ID)
+			}
+		case "pacman":
+			if s.pacman != nil {
+				s.pacman.NotifyStale(r.ID)
 			}
 		}
 	}

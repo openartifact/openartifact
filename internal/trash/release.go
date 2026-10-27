@@ -24,7 +24,7 @@ var pep440Marker = regexp.MustCompile(`(?i)[._-]?(post|rev|r)[._-]?\d*`)
 //	                  (v0.0.0-2024...-abcdef) therefore count as pre-releases
 //	pypi              no PEP 440 a/b/rc/dev segment
 //	rubygems          no letter in the version (Gem::Version#prerelease?)
-//	everything else   (raw, deb, rpm, conda, conan, docker) has no snapshot
+//	everything else   (raw, deb, rpm, pacman, conda, conan, docker) has no snapshot
 //	                  concept: every version is a release
 func IsRelease(format, version string) bool {
 	switch strings.ToLower(format) {

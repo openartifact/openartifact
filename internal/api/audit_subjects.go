@@ -176,12 +176,24 @@ func auditActorName(l *models.AuditLog, d auditDetails, names *models.AuditNames
 //
 //nolint:gochecknoglobals // immutable lookup table
 var auditPackageKinds = map[string]bool{
-	string(models.TrashKindMaven): true, string(models.TrashKindIvy): true, string(models.TrashKindSBT): true,
-	string(models.TrashKindNPM): true, string(models.TrashKindPyPI): true, string(models.TrashKindNuGet): true,
-	string(models.TrashKindGoMod): true, string(models.TrashKindCargo): true, string(models.TrashKindRubyGems): true,
-	string(models.TrashKindConda): true, string(models.TrashKindConan): true, string(models.TrashKindHelm): true,
-	string(models.TrashKindRaw): true, string(models.TrashKindDockerManifest): true, string(models.TrashKindDockerTag): true,
-	string(models.TrashKindRPM): true, string(models.TrashKindDeb): true,
+	string(models.TrashKindMaven):          true,
+	string(models.TrashKindIvy):            true,
+	string(models.TrashKindSBT):            true,
+	string(models.TrashKindNPM):            true,
+	string(models.TrashKindPyPI):           true,
+	string(models.TrashKindNuGet):          true,
+	string(models.TrashKindGoMod):          true,
+	string(models.TrashKindCargo):          true,
+	string(models.TrashKindRubyGems):       true,
+	string(models.TrashKindConda):          true,
+	string(models.TrashKindPacman):         true,
+	string(models.TrashKindConan):          true,
+	string(models.TrashKindHelm):           true,
+	string(models.TrashKindRaw):            true,
+	string(models.TrashKindDockerManifest): true,
+	string(models.TrashKindDockerTag):      true,
+	string(models.TrashKindRPM):            true,
+	string(models.TrashKindDeb):            true,
 }
 
 func derefOr(p *string) string {

@@ -59,7 +59,7 @@ var repoProxyOnly = []string{
 func repoFormats() []string {
 	return []string{
 		"cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven",
-		"npm", "nuget", "pypi", "raw", "rpm", "rubygems", "sbt",
+		"npm", "nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt",
 	}
 }
 

@@ -177,6 +177,10 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 			quotaTracked:  true,
 			kind:          models.TrashKindConda,
 		}, true
+	case "pacman":
+		// One row is one package file; ranked per package name and architecture.
+		return formatTable{table: "pacman_packages", nameCol: "name", partitionCols: []string{"name", "arch"},
+			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindPacman}, true
 	case "conan":
 		// Every revision of a recipe version ranks and goes as one version.
 		return formatTable{
