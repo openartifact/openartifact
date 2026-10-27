@@ -31,26 +31,9 @@ import {
   siTerraform,
 } from 'simple-icons'
 
-export type FormatId =
-  | 'docker'
-  | 'npm'
-  | 'pypi'
-  | 'maven'
-  | 'helm'
-  | 'cargo'
-  | 'rubygems'
-  | 'deb'
-  | 'rpm'
-  | 'nuget'
-  | 'go'
-  | 'raw'
-  | 'conda'
-  | 'conan'
-  | 'ivy'
-  | 'sbt'
-  | 'pacman'
-  | 'apk'
-  | 'terraform'
+import { FORMAT_IDS, type FormatId } from './formats.generated'
+
+export type { FormatId }
 
 interface FormatMeta {
   label: string
@@ -96,11 +79,8 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   terraform: brand('Terraform', siTerraform),
 }
 
-/** Ordered format ids — drives the format pickers on repo-create screens. */
-export const ALL_FORMATS: FormatId[] = [
-  'docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb',
-  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman',
-]
+/** Ordered format ids — drives the format pickers on repo-create screens. Generated from the Go registry. */
+export const ALL_FORMATS: FormatId[] = [...FORMAT_IDS]
 
 const DEFAULT_VIEWBOX = '0 0 24 24'
 
@@ -163,15 +143,9 @@ export function formatIconEvenOdd(id: string): boolean {
   return isFormatId(key) && FORMAT_META[key].evenodd === true
 }
 
-// Formats whose packages can be deleted by id (server: DELETE
+// Every format's hosted packages can be deleted by id (server: DELETE
 // /repositories/{name}/packages/{id}, the deb and rpm handlers plus the
-// generic deleter of every other hosted format). Keep in step with the
-// server's cleanup format registry (internal/worker/cleanup_formats.go).
-const PACKAGE_DELETE_FORMATS: readonly string[] = [
-  'deb', 'rpm', 'helm', 'pypi', 'nuget', 'go', 'npm', 'maven', 'ivy', 'sbt',
-  'cargo', 'rubygems', 'conda', 'conan', 'raw', 'docker', 'pacman',
-]
-
+// generic deleter of every other hosted format, internal/worker/cleanup_formats.go).
 export function supportsPackageDelete(format: string | undefined): boolean {
-  return format !== undefined && PACKAGE_DELETE_FORMATS.includes(format)
+  return format !== undefined && isFormatId(format)
 }

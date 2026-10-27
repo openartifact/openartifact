@@ -232,6 +232,7 @@ import SectionActions from '../../../components/SectionActions.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
 import { ArrowDownTrayIcon, CheckBadgeIcon, FolderPlusIcon, TrashIcon, XCircleIcon } from '@heroicons/vue/20/solid'
+import { GPG_SIGNED_FORMATS } from '../../../lib/formats.generated'
 import {
   activateGpgKey,
   deactivateGpgKey,
@@ -454,7 +455,7 @@ const repoChoice = ref('')
 const repoOptions = ref<string[]>([])
 const reposLoading = ref(false)
 
-const SIGNED_FORMATS = new Set(['deb', 'rpm'])
+const SIGNED_FORMATS: ReadonlySet<string> = new Set(GPG_SIGNED_FORMATS)
 
 async function openRepoActivate(key: GpgKey): Promise<void> {
   repoTarget.value = key

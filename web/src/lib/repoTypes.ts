@@ -2,24 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Which formats can be created as proxy or group repositories. Mirrors the
-// server policy in internal/repotype; the server stays authoritative and
-// rejects anything else with validation_failed.
+// Which formats can be created as proxy or group repositories. The lists come
+// from the server policy in internal/repotype (formats.generated.ts, generated
+// by cmd/genformats); the server stays authoritative and rejects anything else
+// with validation_failed.
 
 import { ALL_FORMATS, type FormatId } from './formats'
+import { DEFAULT_UPSTREAMS, FEDERATION_FORMATS, GROUP_FORMATS, PROXY_FORMATS } from './formats.generated'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
-const GROUP_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
-
-// Formats a hosted repository can federate. Mirrors FederationSupported in
-// internal/repotype; the server stays authoritative.
-const FEDERATION_FORMATS: readonly string[] = ['raw', 'maven', 'npm', 'docker', 'helm', 'pypi', 'cargo', 'go', 'nuget']
-
 /** True when the format has a federation codec (regardless of repository type). */
 export function isFederationFormat(format: string | null | undefined): boolean {
-  return format != null && FEDERATION_FORMATS.includes(format)
+  return format != null && (FEDERATION_FORMATS as readonly string[]).includes(format)
 }
 
 /** True when a repository of this type and format can be federated: hosted and a capable format. */
@@ -27,26 +22,22 @@ export function federationAvailable(type: RepoType | null | undefined, format: s
   return (type ?? 'hosted') === 'hosted' && isFederationFormat(format)
 }
 
-/** Docker, pypi, cargo, go, nuget, conan, rubygems, pacman and terraform proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org / nuget.org / center2.conan.io / rubygems.org / geo.mirror.pkgbuild.com / registry.terraform.io; every other proxy needs an upstream URL. */
+/** Proxy upstream a format falls back to on the server (the generated default upstreams); every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {
-  return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'go' && format !== 'nuget' && format !== 'conan' && format !== 'rubygems' && format !== 'pacman' && format !== 'terraform'
+  return DEFAULT_UPSTREAMS[format] === undefined
 }
 
-/** Placeholder for the upstream URL field. */
+// Example upstreams for formats without a server default, shown as the
+// placeholder of the required upstream URL field.
+const EXAMPLE_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
+  apk: 'https://dl-cdn.alpinelinux.org/alpine',
+  sbt: 'https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases',
+  conda: 'https://conda.anaconda.org/conda-forge',
+}
+
+/** Placeholder for the upstream URL field: the server default when there is one, else an example. */
 export function upstreamUrlPlaceholder(format: FormatId): string {
-  if (format === 'docker') return 'https://registry-1.docker.io'
-  if (format === 'nuget') return 'https://api.nuget.org/v3/index.json'
-  if (format === 'pypi') return 'https://pypi.org/simple'
-  if (format === 'cargo') return 'https://index.crates.io'
-  if (format === 'go') return 'https://proxy.golang.org'
-  if (format === 'conan') return 'https://center2.conan.io'
-  if (format === 'rubygems') return 'https://rubygems.org'
-  if (format === 'pacman') return 'https://geo.mirror.pkgbuild.com'
-  if (format === 'apk') return 'https://dl-cdn.alpinelinux.org/alpine'
-  if (format === 'terraform') return 'https://registry.terraform.io'
-  if (format === 'sbt') return 'https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases'
-  if (format === 'conda') return 'https://conda.anaconda.org/conda-forge'
-  return 'https://registry.example.com'
+  return DEFAULT_UPSTREAMS[format] ?? EXAMPLE_UPSTREAMS[format] ?? 'https://registry.example.com'
 }
 
 /** Formats selectable for a repository type, in picker order. */

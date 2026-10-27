@@ -5,9 +5,12 @@
 // Builds the native client URL / install command for a package. Repository
 // routes mirror cmd/server/main.go: most formats live under /repos/{repo};
 // maven, sbt, ivy and raw use an isolated /repos/{format}/{repo} prefix, and
-// docker serves the registry API at the host root (/v2/).
+// docker serves the registry API at the host root (/v2/). The isolated prefixes
+// come from the Go registry (formats.generated.ts).
 
-const ISOLATED_PREFIX = new Set(['maven', 'sbt', 'ivy', 'raw'])
+import { ISOLATED_FORMATS } from './formats.generated'
+
+const ISOLATED_PREFIX: ReadonlySet<string> = new Set(ISOLATED_FORMATS)
 
 /** Native base URL of a repository for its format (no trailing slash). */
 export function repoBaseUrl(format: string, origin: string, repo: string): string {
