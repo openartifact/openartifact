@@ -1221,3 +1221,25 @@ func TestLoad_APIDocsEnabled(t *testing.T) {
 		}
 	})
 }
+
+func TestProxyUpstreamStallTimeoutConfig(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := cfg.Workers.ProxyUpstreamStallTimeout; got != time.Minute {
+		t.Fatalf("default = %v, want 1m", got)
+	}
+
+	t.Setenv("OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT", "-1s")
+
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cfg.Validate(); !errors.Is(err, errNegativeStallTimeout) {
+		t.Fatalf("Validate() = %v, want errNegativeStallTimeout", err)
+	}
+}
