@@ -292,6 +292,11 @@ func validChecksum(s string) bool {
 		return false
 	}
 
+	// The decoder skips \r and \n, which a rendered index could not carry.
+	if strings.ContainsAny(rest, "\r\n") {
+		return false
+	}
+
 	_, err := base64.StdEncoding.DecodeString(rest)
 
 	return err == nil
