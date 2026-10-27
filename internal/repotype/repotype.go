@@ -238,9 +238,6 @@ func Valid(name string) bool {
 	return ok
 }
 
-// All returns the registered formats in display order.
-func All() []Spec { return slices.Clone(specs[:]) }
-
 // Names returns the registered format ids in display order.
 func Names() []string {
 	names := make([]string, len(specs))

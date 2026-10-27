@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/openartifact/openartifact/internal/repotype/repotypetest"
 	"github.com/openartifact/openartifact/migrations"
 )
 
@@ -47,7 +48,7 @@ func TestRegistryShape(t *testing.T) {
 
 	seen := map[string]bool{}
 
-	for _, s := range repotype.All() {
+	for _, s := range repotypetest.Specs() {
 		if s.Name == "" || s.Name != strings.ToLower(s.Name) {
 			t.Errorf("format %q: names are non-empty and lower case", s.Name)
 		}
@@ -227,7 +228,7 @@ func TestPackageTablesInUnions(t *testing.T) {
 	for file, skip := range unions {
 		src := read(t, file)
 
-		for _, s := range repotype.All() {
+		for _, s := range repotypetest.Specs() {
 			for _, table := range s.PackageTables {
 				if _, ok := skip[table]; ok {
 					continue
@@ -269,7 +270,7 @@ func TestSQLFormatLists(t *testing.T) {
 
 	var generated, gpgGenerated []string
 
-	for _, s := range repotype.All() {
+	for _, s := range repotypetest.Specs() {
 		if s.GeneratedGroupMetadata {
 			generated = append(generated, s.Name)
 

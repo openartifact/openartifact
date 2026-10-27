@@ -55,7 +55,7 @@ func TestMountedRoutesPerFormat(t *testing.T) {
 	// reached through the dispatcher only, so no mount here.
 	_ = mountedIsolated
 
-	for _, spec := range repotype.All() {
+	for _, spec := range repotypetest.Specs() {
 		want := false
 		for _, n := range isolated {
 			want = want || n == spec.Name

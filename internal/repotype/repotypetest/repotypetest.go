@@ -44,6 +44,18 @@ func Classified(tb testing.TB, site string, handled, ignored []string) []string 
 	return handled
 }
 
+// Specs returns every registered Spec in display order.
+func Specs() []repotype.Spec {
+	names := repotype.Names()
+	specs := make([]repotype.Spec, len(names))
+
+	for i, name := range names {
+		specs[i], _ = repotype.Lookup(name)
+	}
+
+	return specs
+}
+
 // Each runs fn once per registered format as a subtest named after it.
 func Each(t *testing.T, fn func(t *testing.T, format string)) {
 	t.Helper()
