@@ -911,10 +911,8 @@ func Immutable(format, key string) bool {
 	switch format {
 	case "maven":
 		return mavenImmutable(key)
-	case "deb":
-		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
-	case "rpm":
-		return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
+	case "deb", "rpm":
+		return debRPMImmutable(format, key, name)
 	case "pypi":
 		// Distribution files (and their PEP 658 metadata), not the index pages.
 		return strings.HasPrefix(key, "files/")
@@ -951,6 +949,16 @@ func Immutable(format, key string) bool {
 	}
 
 	return false
+}
+
+// debRPMImmutable is Immutable for deb and rpm: packages below the pool/ or
+// Packages/ directory of the archive layout.
+func debRPMImmutable(format, key, name string) bool {
+	if format == "deb" {
+		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
+	}
+
+	return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
 }
 
 // packageFileImmutable is Immutable for the formats whose package files live
