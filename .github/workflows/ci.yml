@@ -12,7 +12,9 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Pushes to main run to completion: the coverage job there stores the baseline
+  # pull requests compare against, and a cancelled run saves nothing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
