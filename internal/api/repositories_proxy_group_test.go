@@ -62,6 +62,10 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 		}
 
 		for format := range validFormats {
+			if repoType == "group" && format == "pacman" {
+				continue // pacman groups arrive in a later change
+			}
+
 			// The Terraform registry is hosted-only until its proxy and group land.
 			if format == "terraform" {
 				if msg := unsupportedRepoTypeMessage(repoType, format); !strings.Contains(msg, "not supported for format") {

@@ -19,6 +19,15 @@ import (
 	"time"
 )
 
+const (
+	// HTTP2ReadIdleTimeout is how long an HTTP/2 connection may receive
+	// nothing before it is pinged.
+	HTTP2ReadIdleTimeout = 30 * time.Second
+	// HTTP2PingTimeout is how long an HTTP/2 health-check ping may go
+	// unanswered before the connection is closed.
+	HTTP2PingTimeout = 15 * time.Second
+)
+
 // EnvAllowPrivate, when "true", permits outbound requests to private,
 // loopback and link-local addresses (for on-prem upstream registries).
 // Cloud metadata addresses (169.254.0.0/16, fd00:ec2::/16) remain blocked.
@@ -251,6 +260,20 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 // (0 means unbounded, leaving only the overall timeout). Body transfer is not
 // covered by it, so large downloads are unaffected.
 func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duration) *http.Client {
+	return SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, 0)
+}
+
+// SafeHTTPClientWithStallTimeout is SafeHTTPClientWithHeaderTimeout with a
+// no-progress bound on response bodies: a body read that stays blocked for
+// stallTimeout without receiving a byte fails with ErrBodyStalled and the
+// request is cancelled (0 disables it). The timer only runs while a Read is
+// waiting for the upstream, so a slow consumer is never mistaken for a stalled
+// upstream, and large downloads that keep making progress are unaffected.
+//
+// HTTP/2 connections are health-checked: an idle connection is pinged, and one
+// that does not answer is closed, so requests on a dead connection fail fast
+// instead of waiting for TCP retransmit exhaustion.
+func SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, stallTimeout time.Duration) *http.Client {
 	d := &net.Dialer{
 		Timeout: 10 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
@@ -273,10 +296,18 @@ func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duratio
 		MaxIdleConnsPerHost:   32,
 		ForceAttemptHTTP2:     true,
 		IdleConnTimeout:       60 * time.Second,
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: HTTP2ReadIdleTimeout,
+			PingTimeout:     HTTP2PingTimeout,
+		},
+	}
+	var rt http.RoundTripper = tr
+	if stallTimeout > 0 {
+		rt = &stallTransport{base: tr, stall: stallTimeout}
 	}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: tr,
+		Transport: rt,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return errTooManyRedirects

@@ -241,6 +241,10 @@ workers:
   # upstream again on the next one. 0 keeps them until an admin purge or the
   # repository's removal.
   proxyDockerDigestTtl: 720h
+  # Proxy repositories: an upstream response body that delivers no data for this
+  # long fails the fetch and releases the requests waiting on it (reset on every
+  # read; 0 disables).
+  proxyUpstreamStallTimeout: 60s
   # Abandoned docker blob uploads idle longer than dockerUploadTtl are deleted
   # with their staged file (0 disables the sweeper). dockerUploadDir stages
   # in-progress uploads; it must hold your biggest layer.

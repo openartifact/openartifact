@@ -39,6 +39,7 @@ var (
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 
 	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
+	errNegativeStallTimeout     = errors.New("workers.proxyUpstreamStallTimeout must not be negative")
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
@@ -196,6 +197,11 @@ type WorkersConfig struct {
 	// not been pulled for this long, and the next pull fetches it again. Zero
 	// keeps it until an admin purge or the repository's removal.
 	ProxyDockerDigestTTL time.Duration `yaml:"proxyDockerDigestTtl"`
+	// ProxyUpstreamStallTimeout is how long a proxy upstream response body may
+	// deliver no data before the fetch fails and its flight is released. It
+	// is reset on every read, so slow but steady downloads are unaffected.
+	// Zero disables the check.
+	ProxyUpstreamStallTimeout time.Duration `yaml:"proxyUpstreamStallTimeout"`
 	// DockerUploadTTL is how long a blob upload session may sit idle before
 	// the sweeper deletes it and its staged file. Zero or negative disables
 	// the sweeper.
@@ -684,6 +690,7 @@ func defaultConfig() *Config {
 			DockerGCInterval:             time.Hour,
 			DockerGCGracePeriod:          24 * time.Hour,
 			ProxyDockerDigestTTL:         30 * 24 * time.Hour,
+			ProxyUpstreamStallTimeout:    60 * time.Second,
 			DockerUploadTTL:              24 * time.Hour,
 			WebhookDeliveryRetentionDays: 30,
 		},
@@ -900,6 +907,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Workers.DockerGCInterval, "OPENARTIFACT_DOCKER_GC_INTERVAL")
 	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
 	overrideDuration(&cfg.Workers.ProxyDockerDigestTTL, "OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL")
+	overrideDuration(&cfg.Workers.ProxyUpstreamStallTimeout, "OPENARTIFACT_PROXY_UPSTREAM_STALL_TIMEOUT")
 	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
 	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
 	overrideInt(&cfg.Workers.WebhookDeliveryRetentionDays, "OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS")
@@ -983,6 +991,18 @@ func ValidateFile(path string) error {
 	return cfg.Validate()
 }
 
+func (c *Config) validateProxyWorkers() error {
+	if c.Workers.ProxyDockerDigestTTL < 0 {
+		return errNegativeDigestTTL
+	}
+
+	if c.Workers.ProxyUpstreamStallTimeout < 0 {
+		return errNegativeStallTimeout
+	}
+
+	return nil
+}
+
 // Validate validates the configuration.
 func (c *Config) Validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
@@ -1017,8 +1037,8 @@ func (c *Config) Validate() error {
 		return errNegativeDockerGCGrace
 	}
 
-	if c.Workers.ProxyDockerDigestTTL < 0 {
-		return errNegativeDigestTTL
+	if err := c.validateProxyWorkers(); err != nil {
+		return err
 	}
 
 	if c.Trash.RetentionDays < 0 {
