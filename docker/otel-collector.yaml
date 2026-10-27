@@ -10,10 +10,14 @@
 #   OTELCOL_LISTEN_HOST           address the OTLP receivers bind to; unset
 #                                 means localhost (set but empty binds every
 #                                 interface); the compose profile sets 0.0.0.0
-#   OTELCOL_EXPORT_ENDPOINT       OTLP/HTTP base URL of the backend (required),
+#   OTELCOL_EXPORT_ENDPOINT       OTLP/HTTP base URL of the backend (required:
+#                                 without it the Collector exits with "at least
+#                                 one endpoint must be specified"),
 #                                 e.g. https://otlp.example.com
 #   OTELCOL_EXPORT_AUTHORIZATION  Authorization header value sent to it,
-#                                 e.g. "Bearer <token>"
+#                                 e.g. "Bearer <token>"; an empty value is sent
+#                                 as an empty header, so for a backend without
+#                                 auth remove the headers block below
 #
 # See docs/operations/monitoring.md#local-collector.
 

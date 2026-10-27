@@ -129,7 +129,8 @@ services:
 
   # Opt-in local OpenTelemetry Collector: `--profile otel-collector`. It
   # listens on the compose network only (no published ports) and is the only
-  # service that reaches the backend set by OTELCOL_EXPORT_ENDPOINT.
+  # service that reaches the backend set by OTELCOL_EXPORT_ENDPOINT, which is
+  # required with this profile (without it the Collector exits and restarts).
   # Config: docker/otel-collector.yaml.
   otel-collector:
     image: docker.io/otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
