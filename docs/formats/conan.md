@@ -6,12 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Conan
 
-Hosted Conan remote for Conan 2 and Conan 1.x clients, with recipe and package revisions.
+Conan remote for Conan 2 and Conan 1.x clients, with recipe and package revisions: hosted, proxy of another Conan remote, and group.
 
 | | |
 |---|---|
 | Repo URL | `HOST/repos/REPO/` (`v2/conans/...` for Conan 2, `v1/conans/...` for Conan 1) |
-| Repository types | hosted only. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Repository types | hosted, proxy, group. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
 
 ## Client setup
 
@@ -105,6 +105,21 @@ How the two protocols share a repository:
 - Package search for a Conan 1 client looks in every recipe revision, newest first. The answer carries `conaninfo.txt` as `content`, which Conan 1.48 and later read; older 1.x clients cannot list the binaries of a remote.
 - `remove_files` and `packages/delete` are POSTs, but a token needs the delete permission for them, not just write.
 - Authentication is the `v1/users/authenticate` exchange: `conan user -p <TOKEN>` sends the API token as the Basic password and gets it back as the bearer token. The `oauth_token` capability is not advertised.
+
+## Proxy and group repositories
+
+A conan proxy caches another Conan remote (default upstream `https://center2.conan.io`) and a conan group serves several repositories as one remote. Clients are set up as for a hosted repository (`conan remote add REPO HOST/repos/REPO`, `conan remote login`); the repository is read-only, so `conan upload` is `405`. How the proxy caches, authenticates to the upstream and what a group merges: [Conan proxies](../repositories/hosted-proxy-group.md#conan-proxies) and [Group repositories](../repositories/hosted-proxy-group.md#group-repositories).
+
+```sh
+conan remote add conan-proxy HOST/repos/conan-proxy
+conan remote login conan-proxy <USERNAME> -p <TOKEN>
+conan install --requires=zlib/1.3.1 -r conan-proxy
+```
+
+- **Conan 2 API.** The proxy serves the read endpoints of [Endpoints](#endpoints) from the upstream's `v2` API with revisions: `latest`, `revisions`, package `latest` and `revisions`, file lists, files, and the recipe and package searches. The upstream must offer that API.
+- **Conan 1.x clients** (revisions disabled) are served from the same upstream documents. A proxy answers `download_urls` and `digest` of the newest recipe revision (and of a package, its newest package revision) with `v1/files/...` URLs of the proxy itself, and serves those URLs as the Conan 2 file requests, so a file is cached once for both kinds of client. `GET /v1/conans/search`, the package search `GET /<ref>/search` and the snapshot `GET /<ref>` (file to MD5) are passed through to the upstream's own `v1` endpoints, so for those the upstream must still serve Conan 1. A Conan 1 client can only install what was built for it: binaries on a Conan 2 only remote such as ConanCenter are built for Conan 2 package ids and are not found by a Conan 1 client.
+- **Ping.** A proxy or group advertises `revisions` and not `checksum_deploy`, since nothing can be uploaded.
+- **Group.** Hosted members win a recipe name over proxy members (see [hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name)), so a name published in the hosted repository cannot be replaced by a public recipe of the same name; a Conan 1 or 2 client that asks the group for a name the hosted member holds never sees the proxy's versions. The group search is the union of the members' results.
 
 ## Checksum deploy
 

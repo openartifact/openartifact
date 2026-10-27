@@ -52,6 +52,10 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"nuget", "v3/package/newtonsoft.json/13.0.1/newtonsoft.json.nuspec", false},
 		{"nuget", "v3/package/newtonsoft.json/index.json", false},
 		{"nuget", "v3/registration/newtonsoft.json/index.json", false},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files/conan_export.tgz", true},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files/conanfile.py", false},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files", false},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/latest", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}
