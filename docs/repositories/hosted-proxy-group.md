@@ -60,7 +60,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required, except docker, pypi, cargo, go and nuget) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`), go (defaults to `https://proxy.golang.org`) and nuget (defaults to the nuget.org service index, `https://api.nuget.org/v3/index.json`). |
+| `upstream_url` | proxy (required, except docker, pypi, cargo, go and nuget; for conda a channel URL such as `https://conda.anaconda.org/conda-forge`) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`), go (defaults to `https://proxy.golang.org`) and nuget (defaults to the nuget.org service index, `https://api.nuget.org/v3/index.json`). |
 | `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream (for docker: sent to the registry's token service). Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
