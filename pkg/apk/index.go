@@ -463,7 +463,7 @@ func (p *Package) setIndexList(key byte, val string) {
 
 func (p *Package) setIndexNumber(key byte, val string) error {
 	n, ok := parseCount(val)
-	if !ok || (key == 'k' && n > maxProviderPrio) {
+	if !ok {
 		return fmt.Errorf("%w: field %c is not a valid number", errIndexLine, key)
 	}
 
@@ -475,6 +475,10 @@ func (p *Package) setIndexNumber(key byte, val string) error {
 	case 't':
 		p.BuildTime = n
 	default:
+		if n > maxProviderPrio {
+			return fmt.Errorf("%w: field %c is not a valid number", errIndexLine, key)
+		}
+
 		p.ProviderPriority = int(n)
 	}
 
