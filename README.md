@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </p>
 
 OpenArtifact stores and serves npm, PyPI, Maven, Docker/OCI, Helm, Debian, RPM,
-Go, Cargo, NuGet, RubyGems, Conda, Conan, Terraform/OpenTofu, Ivy, sbt and raw files behind one URL
+Go, Cargo, NuGet, RubyGems, Conda, Conan, Alpine (apk), Terraform/OpenTofu, Ivy, sbt and raw files behind one URL
 scheme and one permission model, on your own infrastructure. Free software under
 the AGPL.
 

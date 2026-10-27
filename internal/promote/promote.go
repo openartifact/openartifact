@@ -130,6 +130,7 @@ type RegenKind string
 const (
 	RegenDeb   RegenKind = "deb"
 	RegenRPM   RegenKind = "rpm"
+	RegenApk   RegenKind = "apk"
 	RegenMaven RegenKind = "maven"
 	RegenNPM   RegenKind = "npm"
 )

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
@@ -26,12 +27,14 @@ import (
 // workerSet is the background workers and the services built with them.
 type workerSet struct {
 	gpgKeys  *gpgkeys.Service
+	apkKeys  *apkkeys.Service
 	proxySvc *proxy.Service
 
 	webhook *webhook.Dispatcher
 
 	rpm       *worker.RPMetadataWorker
 	deb       *worker.DebMetadataWorker
+	apk       *worker.ApkMetadataWorker
 	groupMeta *worker.GroupMetadataWorker
 	maven     *worker.MavenMetadataWorker
 	npm       *worker.NPMMetadataWorker
@@ -94,6 +97,10 @@ func (a *app) startMetadataWorkers() {
 
 	w.deb = worker.NewDebMetadataWorker(db, blobStore, w.gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 
+	// Alpine apk repositories sign their index with a key of their own, not a GPG one.
+	w.apkKeys = apkkeys.New(db, log)
+	w.apk = worker.NewApkMetadataWorker(db, blobStore, w.apkKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
+
 	if a.cfg.GPG.AutoGenerate {
 		a.tasks.Go(func(ctx context.Context) { autoGenerateGPGKey(ctx, w.gpgKeys, log) })
 	}
@@ -103,9 +110,13 @@ func (a *app) startMetadataWorkers() {
 	// proxy members' caches.
 	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL)
 	w.groupMeta = worker.NewGroupMetadataWorker(db, blobStore, w.proxySvc, w.rpm, w.gpgKeys, log).
-		WithMetrics(reg).WithRegenLimiter(regenLimiter)
+		WithApkSigners(w.apkKeys).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 	w.rpm.WithStaleHook(w.groupMeta.NotifyMemberChanged)
 	w.deb.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+	w.apk.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+
+	// An apk key change re-signs a group through the group worker too.
+	w.apkKeys.SetRefresher(groupRefresher{db: db, hosted: w.apk, group: w.groupMeta})
 
 	// A key change re-signs a group through the group worker, not the hosted ones.
 	w.gpgKeys.SetRefreshers(
@@ -135,6 +146,7 @@ func (a *app) startHousekeepingWorkers() {
 	// Initialize cleanup worker
 	w.cleanup = worker.NewCleanupWorker(db, blobStore, log)
 	w.cleanup.SetMetadataNotifiers(w.rpm, w.deb)
+	w.cleanup.SetApkNotifier(w.apk)
 
 	w.presignedUpload = worker.NewPresignedUploadWorker(db, blobStore, cfg.Storage.PresignUploadTTL, log)
 	w.presignedUpload.Start()

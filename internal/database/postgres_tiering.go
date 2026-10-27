@@ -755,6 +755,12 @@ var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built o
 	{"terraform_modules t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.system || '-' || t.version"},
 	{"terraform_providers t", "t.repository_id", "t.blob_id = b.id", "t.type || '_' || t.version || '_' || t.os || '_' || t.arch"},
 	{
+		"apk_packages t",
+		"t.repository_id",
+		"t.blob_id = b.id",
+		"t.branch || '/' || t.repo || '/' || t.arch || '/' || t.name || '-' || t.version",
+	},
+	{
 		"ivy_artifacts t",
 		"t.repository_id",
 		"t.blob_id = b.id",

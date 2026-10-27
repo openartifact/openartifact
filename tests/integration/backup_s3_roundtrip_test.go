@@ -251,7 +251,7 @@ func (s *bsrSide) stopWorkers() {
 }
 
 func (s *bsrSide) regenerator() backup.Regenerator {
-	return api.NewWorkerRegenerator(s.deb, s.rpm, s.maven, s.npm)
+	return api.NewWorkerRegenerator(s.deb, s.rpm, nil, s.maven, s.npm)
 }
 
 func (s *bsrSide) buildRouter() http.Handler {

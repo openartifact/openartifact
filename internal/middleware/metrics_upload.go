@@ -67,6 +67,7 @@ var uploadRoutes = map[string]uploadRoute{
 		count: countedByHandler,
 	}, // npm publish (api.NPMUploadHandler) and GOPROXY upload (CountUploads in cmd/server)
 	"/api/v1/repositories/{name}/debs": {count: countedByHandler}, // api.DebUploadHandler
+	"/api/v1/repositories/{name}/apks": {count: countedByHandler}, // formatapk.HTTPHandler
 
 	"/api/v1/repositories/{name}/packages":                 {count: countedByHandler}, // api.RPMUploadHandler
 	"/api/v1/repositories/{name}/uploads/{id}/complete":    {count: countedByHandler}, // api.PresignedUploadHandler (raw)

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("C:Q1ednhuhRAAB2bHV017RsxJqKY0Tc=\nP:min\nP:other\nV:1\nA:noarch\n\n")

@@ -1920,6 +1920,7 @@ var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // 
 	{"rubygems_gems", "blob_id = b.id"},
 	{"conda_packages", "blob_id = b.id"},
 	{"conan_packages", "blob_id = b.id"},
+	{"apk_packages", "blob_id = b.id"},
 	{"terraform_modules", "blob_id = b.id"},
 	{"terraform_providers", "blob_id = b.id"},
 	{"ivy_artifacts", "blob_id = b.id"},

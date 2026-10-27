@@ -72,6 +72,8 @@ import { t } from '../i18n'
 const props = defineProps<{
   format: string
   repo: string
+  /** hosted, proxy or group: a proxy of some formats is configured differently from a hosted repository. */
+  repoType?: string
   /** The host already shows the "Connect a client" heading above the panel. */
   titled?: boolean
   /** A proxy or group repository cannot be published to: the panel only offers the commands that read from it. */
@@ -82,7 +84,7 @@ const props = defineProps<{
 const docsUrl = useDocsLink('repo-detail')
 
 const active = ref(0)
-const setups = computed(() => clientSetup(props.format, window.location.origin, props.repo))
+const setups = computed(() => clientSetup(props.format, window.location.origin, props.repo, props.repoType))
 const current = computed(() => setups.value[active.value])
 // A raw repository is read with a plain download, not a client configuration.
 const configureLabel = computed(() => (props.format === 'raw' ? t('repoDetail.connect.download') : t('repoDetail.connect.configure')))

@@ -307,6 +307,16 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 			`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, blob_id) VALUES ($1,'cnd','12.0','h0_0','linux-64',$2)`,
 			[]any{repo, blobID},
 		},
+		{
+			"apk",
+			"v3.20/main/musl",
+			"1.2.5-r0",
+			"x86_64",
+			"musl-1.2.5-r0.apk",
+			`INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, blob_id)
+			VALUES ($1,'v3.20','main','x86_64','x86_64','musl','1.2.5-r0','Q1x','dh',$2)`,
+			[]any{repo, blobID},
+		},
 		{"conan", "cn", "13.0", "", "cn/13.0@_/_#0",
 			`INSERT INTO conan_packages (repository_id, name, version) VALUES ($1,'cn','13.0')`,
 			[]any{repo}},

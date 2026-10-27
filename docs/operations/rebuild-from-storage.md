@@ -63,6 +63,7 @@ Package bytes are the content-addressed blobs; what the database adds is the map
 | npm | name, version, manifest (tarball `package.json`) | dist-tags, deprecation, publish time, packument ordering |
 | maven, ivy, sbt | coordinates from the path | path, classifier, checksums recorded at upload, snapshot state |
 | pypi, nuget, helm, cargo, rubygems, conda, conan | name and version from the archive | filename as uploaded, yanked/unlisted state, requires-python and similar index data |
+| apk | name, version, architecture, dependencies (`.PKGINFO`) | branch, repository and architecture directory, upload time; the signing key is not stored with packages (see [apk](../formats/apk.md#backup-and-rebuild)) |
 | terraform | nothing reliable (a module archive carries no name, a provider zip carries type and version but not the platform) | module name and system, provider type, version, platform, protocol versions, archive extension |
 | go | module path and version from the zip | `.mod` blob link, publish time |
 | docker / OCI | manifest content (a blob) | tags, manifest-to-blob references, which repository an image belongs to |

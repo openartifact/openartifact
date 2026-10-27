@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt'])
+  it('restricts proxy to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'apk'])
   })
-  it('restricts group to cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt'])
+  it('restricts group to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'apk'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)
@@ -67,6 +67,7 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('ivy')).toBe(true)
     expect(upstreamUrlPlaceholder('conan')).toBe('https://center2.conan.io')
     expect(upstreamUrlPlaceholder('rubygems')).toBe('https://rubygems.org')
+    expect(upstreamUrlPlaceholder('apk')).toBe('https://dl-cdn.alpinelinux.org/alpine')
     expect(upstreamUrlPlaceholder('sbt')).toBe('https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases')
     expect(upstreamUrlRequired('conda')).toBe(true)
     expect(upstreamUrlPlaceholder('conda')).toBe('https://conda.anaconda.org/conda-forge')
@@ -87,7 +88,7 @@ describe('federationAvailable', () => {
     expect(federationAvailable('group', 'maven')).toBe(false)
   })
   it('is false for formats without a federation codec', () => {
-    for (const f of ['deb', 'rpm', 'rubygems', 'conda', 'conan', 'ivy', 'sbt']) {
+    for (const f of ['deb', 'rpm', 'rubygems', 'conda', 'conan', 'ivy', 'sbt', 'apk']) {
       expect(federationAvailable('hosted', f)).toBe(false)
     }
     expect(federationAvailable('hosted', undefined)).toBe(false)

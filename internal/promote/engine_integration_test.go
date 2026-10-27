@@ -49,6 +49,7 @@ func (f *fakeRegen) add(s string) {
 
 func (f *fakeRegen) NotifyDebStale(repoID string) { f.add("deb:" + repoID) }
 func (f *fakeRegen) NotifyRPMStale(repoID string) { f.add("rpm:" + repoID) }
+func (f *fakeRegen) NotifyApkStale(repoID string) { f.add("apk:" + repoID) }
 func (f *fakeRegen) NotifyNPMStale(pkgID string)  { f.add("npm:" + pkgID) }
 func (f *fakeRegen) NotifyMavenStale(repoID, group, artifact string) {
 	f.add("maven:" + repoID + ":" + group + ":" + artifact)

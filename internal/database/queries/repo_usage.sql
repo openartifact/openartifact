@@ -64,6 +64,10 @@ FROM (
     SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = sqlc.arg(repo_id)::uuid
     UNION ALL
+    -- apk
+    SELECT (t.branch || '/' || t.repo || '/' || t.name)::text AS name, t.created_at::timestamptz AS created_at FROM apk_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
+    UNION ALL
     -- terraform
     SELECT ('modules/' || t.name || '/' || t.system)::text AS name, t.created_at::timestamptz AS created_at FROM terraform_modules t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid

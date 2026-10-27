@@ -525,8 +525,14 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 	}
 
 	var o fetchOpts
-	if isIvyFormat(repo.Format) {
+
+	switch {
+	case isIvyFormat(repo.Format):
 		o = s.ivyFetchOpts(ctx, repo, key)
+	case repo.Format == "apk":
+		if o, err = s.apkFetchOpts(ctx, repo, key); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.fetchURL(ctx, repo, key, target, o)
@@ -889,6 +895,8 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 //     or -SNAPSHOT files; a file is pinned only when its body matched the
 //     checksum the upstream publishes (ivy.go), otherwise the repository TTL
 //     applies.
+//   - apk: `.apk` files of a `<branch>/<repo>/<arch>/<file>` key; they are
+//     only cached once their checksum matched the upstream index (apk.go).
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
 //     a file name is never reused); the same names in a flat repository, where
 //     a publisher may overwrite a package, use the repository TTL.
@@ -903,10 +911,8 @@ func Immutable(format, key string) bool {
 	switch format {
 	case "maven":
 		return mavenImmutable(key)
-	case "deb":
-		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
-	case "rpm":
-		return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
+	case "deb", "rpm":
+		return debRPMImmutable(format, key, name)
 	case "pypi":
 		// Distribution files (and their PEP 658 metadata), not the index pages.
 		return strings.HasPrefix(key, "files/")
@@ -930,6 +936,9 @@ func Immutable(format, key string) bool {
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
+	case "apk":
+		// Packages whose checksum matched the upstream index; see apkFetchOpts.
+		return apkPackageKey(key)
 	case "ivy", "sbt":
 		// Released files that matched the upstream's checksum; see ivyFetchOpts.
 		return ivyImmutable(key)
@@ -940,6 +949,16 @@ func Immutable(format, key string) bool {
 	}
 
 	return false
+}
+
+// debRPMImmutable is Immutable for deb and rpm: packages below the pool/ or
+// Packages/ directory of the archive layout.
+func debRPMImmutable(format, key, name string) bool {
+	if format == "deb" {
+		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
+	}
+
+	return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
 }
 
 // packageFileImmutable is Immutable for the formats whose package files live
@@ -983,6 +1002,8 @@ func isMetadataKey(format, key string) bool {
 		return inDir(key, "repodata")
 	case "maven":
 		return strings.HasPrefix(name, "maven-metadata")
+	case "apk":
+		return apkIndexKey(key)
 	case "ivy", "sbt":
 		return isIvyMetadata(key) || isIvySidecar(key) || name == "ivy.xml"
 	case "pypi":

@@ -29,6 +29,8 @@ type target struct {
 	repo   string // raw repository name
 	esc    string // URL-path-escaped repository name
 	base   string // native repository base URL
+
+	repoType string // hosted, proxy or group
 }
 
 // isolatedPrefix reports whether a format is served under /repos/{format}/{repo}.
@@ -58,8 +60,9 @@ func RepoBaseURL(format, origin, repo string) string {
 }
 
 // Snippets returns the configure/publish snippets for a repository of the
-// given format. Unknown formats return a single bare-URL entry.
-func Snippets(format, origin, repo string) []Snippet {
+// given format and type (hosted, proxy, group; "" is hosted). Unknown formats
+// return a single bare-URL entry.
+func Snippets(format, origin, repo, repoType string) []Snippet {
 	origin = strings.TrimRight(origin, "/")
 	c := target{
 		origin: origin,
@@ -68,6 +71,8 @@ func Snippets(format, origin, repo string) []Snippet {
 		repo:   repo,
 		esc:    url.PathEscape(repo),
 		base:   RepoBaseURL(format, origin, repo),
+
+		repoType: repoType,
 	}
 
 	if build := builderFor(format); build != nil {
@@ -138,6 +143,8 @@ func builderFor(format string) func(target) []Snippet {
 		return condaSnippets
 	case "conan":
 		return conanSnippets
+	case "apk":
+		return apkSnippets
 	case "terraform":
 		return terraformSnippets
 	case "sbt":
@@ -254,6 +261,62 @@ func rpmSnippets(c target) []Snippet {
 				c.origin, c.esc),
 		},
 	}
+}
+
+func apkSnippets(c target) []Snippet {
+	authBase := c.base
+	if i := strings.Index(c.base, "://"); i >= 0 {
+		authBase = c.base[:i+3] + "<USERNAME>:<TOKEN>@" + c.base[i+3:]
+	}
+
+	if c.repoType == "proxy" {
+		// The index keeps the upstream's signature, so no key comes from this
+		// server: the client verifies it with the keys it already trusts.
+		return []Snippet{{
+			Client: "apk",
+			Configure: fmt.Sprintf(
+				"# the mirror's own signatures are kept: Alpine's keys (alpine-keys) are already installed in official images\n"+
+					"# private repository: put the credentials in the URL, %[2]s/v3.20/main\n"+
+					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\n"+
+					"echo \"%[1]s/v3.20/community\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
+				c.base, authBase,
+			),
+		}}
+	}
+
+	if c.repoType == "group" {
+		// Read-only: the merged indexes are signed with the group's own key,
+		// not its members'.
+		return []Snippet{{
+			Client: "apk",
+			Configure: fmt.Sprintf(
+				"# the group signs its indexes with its own key, not its members'\n"+
+					"# private repository: put the credentials in the URL, %[3]s/v3.20/main, "+
+					"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
+					"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
+					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
+				c.base, c.repo, authBase,
+			),
+		}}
+	}
+
+	return []Snippet{{
+		Client: "apk",
+		Configure: fmt.Sprintf(
+			"# private repository: put the credentials in the URL, %[3]s/v3.20/main, "+
+				"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
+				"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
+				"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
+			c.base, c.repo, authBase,
+		),
+		Publish: fmt.Sprintf(
+			"curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer <TOKEN>\" %[1]s/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n"+
+				"# or through the REST API\n"+
+				"curl -H \"Authorization: Bearer <TOKEN>\" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main "+
+				"%[2]s/api/v1/repositories/%[3]s/apks",
+			c.base, c.origin, c.esc,
+		),
+	}}
 }
 
 func cargoSnippets(c target) []Snippet {

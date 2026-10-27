@@ -107,6 +107,7 @@ func (r *recordingRegen) add(s string) {
 
 func (r *recordingRegen) NotifyDebStale(repoID string) { r.add("deb:" + repoID) }
 func (r *recordingRegen) NotifyRPMStale(repoID string) { r.add("rpm:" + repoID) }
+func (r *recordingRegen) NotifyApkStale(repoID string) { r.add("apk:" + repoID) }
 func (r *recordingRegen) NotifyMavenStale(repoID, g, a string) {
 	r.add("maven:" + repoID + ":" + g + ":" + a)
 }

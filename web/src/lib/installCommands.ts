@@ -107,6 +107,8 @@ export function pullCommand(
       return `apt install ${q(`${pkg}=${version}`)}`
     case 'rpm':
       return `dnf install ${q(`${pkg}-${version}`)}`
+    case 'apk':
+      return `apk add ${q(`${pkg}=${version}`)}`
     case 'raw':
       return `curl -fO ${q(`${base}/${encodePath(pkg)}`)}`
     case 'terraform':
@@ -141,7 +143,7 @@ interface ClientSetup {
  * Per-client configure/publish snippets for a repository, built from the real
  * server origin. Credentials are always the literal `<TOKEN>` placeholder.
  */
-export function clientSetup(format: string, origin: string, repo: string): ClientSetup[] {
+export function clientSetup(format: string, origin: string, repo: string, repoType = 'hosted'): ClientSetup[] {
   const base = repoBaseUrl(format, origin, repo)
   const host = hostOf(origin)
   switch (format) {
@@ -215,6 +217,48 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
           publish: `curl -u <USERNAME>:<TOKEN> -F file=@my-package-1.0.x86_64.rpm ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/packages`,
         },
       ]
+    case 'apk': {
+      const keyFile = `/etc/apk/keys/openartifact-${repo}.rsa.pub`
+      const authBase = base.replace(/^(https?:\/\/)/, '$1<USERNAME>:<TOKEN>@')
+      if (repoType === 'proxy') {
+        // The index keeps the upstream's signature, so no key comes from this server: the client verifies it with the keys it already trusts.
+        return [
+          {
+            client: 'apk',
+            configure:
+              `# the mirror's own signatures are kept: Alpine's keys (alpine-keys) are already installed in official images\n` +
+              `# private repository: put the credentials in the URL, ${authBase}/v3.20/main\n` +
+              `echo "${base}/v3.20/main" >> /etc/apk/repositories\n` +
+              `echo "${base}/v3.20/community" >> /etc/apk/repositories\napk update\napk add PACKAGE`,
+          },
+        ]
+      }
+      if (repoType === 'group') {
+        // Read-only: the merged indexes are signed with the group's own key, not its members'.
+        return [
+          {
+            client: 'apk',
+            configure:
+              `# the group signs its indexes with its own key, not its members'\n` +
+              `# private repository: put the credentials in the URL, ${authBase}/v3.20/main, and fetch the key with wget --user <USERNAME> --password <TOKEN>\n` +
+              `wget -O ${keyFile} ${base}/public.key\n` +
+              `echo "${base}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE`,
+          },
+        ]
+      }
+      return [
+        {
+          client: 'apk',
+          configure:
+            `# private repository: put the credentials in the URL, ${authBase}/v3.20/main, and fetch the key with wget --user <USERNAME> --password <TOKEN>\n` +
+            `wget -O ${keyFile} ${base}/public.key\n` +
+            `echo "${base}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE`,
+          publish:
+            `curl -T my-pkg-1.0-r0.apk -H "Authorization: Bearer <TOKEN>" ${base}/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n` +
+            `# or through the REST API\ncurl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/apks`,
+        },
+      ]
+    }
     case 'cargo':
       return [
         {

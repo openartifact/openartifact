@@ -35,6 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         v-if="current"
         :format="current.format"
         :repo="current.name"
+        :repo-type="current.repo_type"
         :read-only="current.repo_type === 'proxy' || current.repo_type === 'group'"
         titled
       />

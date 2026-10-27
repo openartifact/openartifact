@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("C:Q10000\r\r\r\r00000000000000000000\nP:0\nV:0\nA:0")

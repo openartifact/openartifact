@@ -174,6 +174,13 @@ FROM (
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT * FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'conan') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
+    -- apk: one row per .apk; name = BRANCH/REPO/NAME, arch = architecture.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.branch || '/' || t.repo || '/' || t.name::text AS name, t.version::text AS version,
+           'apk'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_time::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
+           t.name || '-' || t.version || '.apk'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM apk_packages WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'apk') AND (sqlc.arg(name_filter)::text = '' OR (branch || '/' || repo || '/' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
     -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
            'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
@@ -328,6 +335,13 @@ FROM (
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT * FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'conan') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY name, version, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
+    -- apk: one row per .apk; name = BRANCH/REPO/NAME, arch = architecture.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.branch || '/' || t.repo || '/' || t.name::text AS name, t.version::text AS version,
+           'apk'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_time::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
+           t.name || '-' || t.version || '.apk'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM apk_packages WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'apk') AND (sqlc.arg(name_filter)::text = '' OR (branch || '/' || repo || '/' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY (branch || '/' || repo || '/' || name), version, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
     -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, 'modules/' || t.name || '/' || t.system::text AS name, t.version::text AS version,
            'terraform'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
@@ -433,6 +447,10 @@ SELECT COUNT(*)::bigint FROM (
     SELECT 1 FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'conan') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
     UNION ALL
+    -- apk
+    SELECT 1 FROM apk_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'apk') AND (sqlc.arg(name_filter)::text = '' OR (branch || '/' || repo || '/' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((branch || '/' || repo || '/' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
+    UNION ALL
     -- terraform modules
     SELECT 1 FROM terraform_modules t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'terraform') AND (sqlc.arg(name_filter)::text = '' OR ('modules/' || name || '/' || system) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(('modules/' || name || '/' || system)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
@@ -534,6 +552,11 @@ FROM (
     FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
+    SELECT t.id::uuid, 'apk'::text, t.name || '-' || t.version || '.apk'::text, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM apk_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
     SELECT t.id::uuid, 'terraform'::text, t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text, ('modules/' || t.name || '/' || t.system)::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM terraform_modules t LEFT JOIN blobs b ON b.id = t.blob_id
@@ -615,6 +638,9 @@ FROM (
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM conan_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text
+    FROM apk_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, ('modules/' || t.name || '/' || t.system)::text, t.version::text
     FROM terraform_modules t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])

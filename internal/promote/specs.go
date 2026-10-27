@@ -117,6 +117,22 @@ func rowSpecs() []rowSpec {
 			},
 		},
 		{
+			format:  "apk",
+			kind:    models.TrashKindApk,
+			table:   "apk_packages",
+			name:    "s.branch || '/' || s.repo || '/' || s.name",
+			version: "s.version",
+			idents:  []string{"s.name || '-' || s.version || '.apk'"},
+			key:     []string{"branch", "repo", "arch", "name", "version"},
+			cols: []string{
+				"branch", "repo", "arch", "pkg_arch", "name", "version", "checksum", "data_sha256", "description", "url",
+				"license", "origin", "maintainer", "commit", "build_time", "installed_size", "depends", "provides",
+				"install_if", "provider_priority",
+			},
+			licenses: "CASE WHEN s.license = '' THEN '{}'::text[] ELSE ARRAY[s.license] END",
+			regen:    RegenApk,
+		},
+		{
 			format:  "helm",
 			kind:    models.TrashKindHelm,
 			table:   "helm_charts",

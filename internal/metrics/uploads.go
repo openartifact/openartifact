@@ -28,6 +28,7 @@ const (
 	FormatConan     = "conan"
 	FormatIvy       = "ivy"
 	FormatSBT       = "sbt"
+	FormatApk       = "apk"
 	FormatRaw       = "raw"
 	FormatTerraform = "terraform"
 )
@@ -48,7 +49,7 @@ const uploadFormatOther = "other"
 var UploadFormats = []string{
 	FormatDeb, FormatRPM, FormatNPM, FormatMaven, FormatHelm, FormatRubyGems,
 	FormatDocker, FormatPyPI, FormatCargo, FormatGo, FormatNuGet, FormatConda,
-	FormatConan, FormatIvy, FormatSBT, FormatRaw, FormatTerraform,
+	FormatConan, FormatIvy, FormatSBT, FormatRaw, FormatTerraform, FormatApk,
 }
 
 // UploadResult maps an HTTP status to the result label: any status below 400 is

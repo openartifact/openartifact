@@ -117,5 +117,12 @@
     "group": false,
     "federation": false,
     "default_upstream": ""
+  },
+  {
+    "format": "apk",
+    "proxy": true,
+    "group": true,
+    "federation": false,
+    "default_upstream": ""
   }
 ]

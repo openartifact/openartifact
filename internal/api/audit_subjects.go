@@ -181,7 +181,7 @@ var auditPackageKinds = map[string]bool{
 	string(models.TrashKindGoMod): true, string(models.TrashKindCargo): true, string(models.TrashKindRubyGems): true,
 	string(models.TrashKindConda): true, string(models.TrashKindConan): true, string(models.TrashKindHelm): true,
 	string(models.TrashKindRaw): true, string(models.TrashKindDockerManifest): true, string(models.TrashKindDockerTag): true,
-	string(models.TrashKindRPM): true, string(models.TrashKindDeb): true,
+	string(models.TrashKindApk): true, string(models.TrashKindRPM): true, string(models.TrashKindDeb): true,
 	string(models.TrashKindTerraformModule): true, string(models.TrashKindTerraformProvider): true,
 }
 

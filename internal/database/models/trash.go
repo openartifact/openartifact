@@ -28,6 +28,7 @@ const (
 	TrashKindConan             TrashKind = "conan_package"
 	TrashKindTerraformModule   TrashKind = "terraform_module"
 	TrashKindTerraformProvider TrashKind = "terraform_provider"
+	TrashKindApk               TrashKind = "apk_package"
 	TrashKindHelm              TrashKind = "helm_chart"
 	TrashKindRaw               TrashKind = "raw_artifact"
 	TrashKindDockerManifest    TrashKind = "docker_manifest"

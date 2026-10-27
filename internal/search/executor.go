@@ -115,6 +115,18 @@ func unifiedSearchBranches() []string {
 	const null = "NULL"
 
 	return []string{
+		searchBranch(
+			"apk",
+			"ap.branch || '/' || ap.repo || '/' || ap.name",
+			"ap.version",
+			"ap.name || '-' || ap.version || '.apk'",
+			null,
+			null,
+			"ap.blob_id",
+			null,
+			"ap",
+		) +
+			"\n\t\tFROM apk_packages ap WHERE ap.deleted_at IS NULL",
 		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
 			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
