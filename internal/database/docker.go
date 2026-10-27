@@ -204,22 +204,17 @@ func (p *PostgresDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUU
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get docker upload: %w", err)
-	}
-
-	return &models.DockerUpload{
-		ID:           row.ID,
-		RepositoryID: row.RepositoryID,
-		UploadUUID:   row.UploadUuid,
-		Offset:       row.Offset,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
-	}, nil
+	return mapRow(row, err, "docker upload", func(r dbsqlc.DockerUpload) *models.DockerUpload {
+		return &models.DockerUpload{
+			ID:           r.ID,
+			RepositoryID: r.RepositoryID,
+			UploadUUID:   r.UploadUuid,
+			Offset:       r.Offset,
+			CreatedAt:    r.CreatedAt,
+			UpdatedAt:    r.UpdatedAt,
+		}
+	})
 }
 
 // UpdateDockerUploadOffset moves the session's offset from oldOffset to

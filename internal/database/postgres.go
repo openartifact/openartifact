@@ -2308,20 +2308,8 @@ func (p *PostgresDB) CreateHelmChart(ctx context.Context, chart *models.HelmChar
 	return nil
 }
 
-func (p *PostgresDB) GetHelmChart(ctx context.Context, repoID, name, version string) (*models.HelmChart, error) {
-	row, err := p.q.GetHelmChart(ctx, dbsqlc.GetHelmChartParams{
-		RepositoryID: repoID,
-		Name:         name,
-		Version:      version,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get helm chart: %w", err)
-	}
-
+// helmChartFromRow maps a sqlc helm chart row; the list rows convert to it.
+func helmChartFromRow(row dbsqlc.GetHelmChartRow) *models.HelmChart {
 	chart := &models.HelmChart{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
@@ -2346,7 +2334,24 @@ func (p *PostgresDB) GetHelmChart(ctx context.Context, repoID, name, version str
 		_ = json.Unmarshal(row.Maintainers, &chart.Maintainers)
 	}
 
-	return chart, nil
+	return chart
+}
+
+func (p *PostgresDB) GetHelmChart(ctx context.Context, repoID, name, version string) (*models.HelmChart, error) {
+	row, err := p.q.GetHelmChart(ctx, dbsqlc.GetHelmChartParams{
+		RepositoryID: repoID,
+		Name:         name,
+		Version:      version,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get helm chart: %w", err)
+	}
+
+	return helmChartFromRow(row), nil
 }
 
 func (p *PostgresDB) DeleteHelmChart(ctx context.Context, repoID, name, version string) error {
@@ -2371,31 +2376,7 @@ func (p *PostgresDB) ListHelmCharts(ctx context.Context, repoID string) ([]*mode
 	var charts []*models.HelmChart
 
 	for _, row := range rows {
-		chart := &models.HelmChart{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			Name:         row.Name,
-			Version:      row.Version,
-			AppVersion:   derefStr(row.AppVersion),
-			Description:  derefStr(row.Description),
-			Keywords:     row.Keywords,
-			Home:         derefStr(row.Home),
-			Sources:      row.Sources,
-			Icon:         derefStr(row.Icon),
-			APIVersion:   row.ApiVersion,
-			Type:         row.Type,
-			BlobKey:      row.BlobKey,
-			Digest:       row.Digest,
-			SizeBytes:    row.SizeBytes,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		}
-
-		if len(row.Maintainers) > 0 {
-			_ = json.Unmarshal(row.Maintainers, &chart.Maintainers)
-		}
-
-		charts = append(charts, chart)
+		charts = append(charts, helmChartFromRow(dbsqlc.GetHelmChartRow(row)))
 	}
 
 	return charts, nil
@@ -2437,22 +2418,8 @@ func (p *PostgresDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPack
 	return nil
 }
 
-func (p *PostgresDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
-	rows, err := p.q.GetPyPIPackagesByFilename(ctx, dbsqlc.GetPyPIPackagesByFilenameParams{RepositoryID: repoID, Filename: filename})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pypi package by filename: %w", err)
-	}
-
-	switch len(rows) {
-	case 0:
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	case 1:
-	default:
-		return nil, ErrAmbiguousPyPIFilename
-	}
-
-	row := rows[0]
-
+// pypiPackageFromRow maps a sqlc PyPI package row; the list rows convert to it.
+func pypiPackageFromRow(row dbsqlc.GetPyPIPackagesByFilenameRow) *models.PyPIPackage {
 	return &models.PyPIPackage{
 		ID:             row.ID,
 		RepositoryID:   row.RepositoryID,
@@ -2473,7 +2440,26 @@ func (p *PostgresDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filen
 		SizeBytes:      row.SizeBytes,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	}
+}
+
+func (p *PostgresDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
+	rows, err := p.q.GetPyPIPackagesByFilename(ctx, dbsqlc.GetPyPIPackagesByFilenameParams{RepositoryID: repoID, Filename: filename})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pypi package by filename: %w", err)
+	}
+
+	switch len(rows) {
+	case 0:
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	case 1:
+	default:
+		return nil, ErrAmbiguousPyPIFilename
+	}
+
+	row := rows[0]
+
+	return pypiPackageFromRow(row), nil
 }
 
 func (p *PostgresDB) DeletePyPIPackage(ctx context.Context, repoID, name, version, filename string) error {
@@ -2499,28 +2485,7 @@ func (p *PostgresDB) ListPyPIPackages(ctx context.Context, repoID string) ([]*mo
 	var packages []*models.PyPIPackage
 
 	for _, row := range rows {
-		pkg := &models.PyPIPackage{
-			ID:             row.ID,
-			RepositoryID:   row.RepositoryID,
-			Name:           row.Name,
-			Version:        row.Version,
-			Filename:       row.Filename,
-			PackageType:    row.PackageType,
-			PythonVersion:  derefStr(row.PythonVersion),
-			RequiresPython: derefStr(row.RequiresPython),
-			Summary:        derefStr(row.Summary),
-			Author:         derefStr(row.Author),
-			AuthorEmail:    derefStr(row.AuthorEmail),
-			License:        derefStr(row.License),
-			Keywords:       derefStr(row.Keywords),
-			Classifiers:    row.Classifiers,
-			BlobKey:        row.BlobKey,
-			SHA256Digest:   row.Sha256Digest,
-			SizeBytes:      row.SizeBytes,
-			CreatedAt:      row.CreatedAt,
-			UpdatedAt:      row.UpdatedAt,
-		}
-		packages = append(packages, pkg)
+		packages = append(packages, pypiPackageFromRow(dbsqlc.GetPyPIPackagesByFilenameRow(row)))
 	}
 
 	return packages, nil
@@ -2547,28 +2512,7 @@ func (p *PostgresDB) ListPyPIPackageVersions(ctx context.Context, repoID, name s
 	var packages []*models.PyPIPackage
 
 	for _, row := range rows {
-		pkg := &models.PyPIPackage{
-			ID:             row.ID,
-			RepositoryID:   row.RepositoryID,
-			Name:           row.Name,
-			Version:        row.Version,
-			Filename:       row.Filename,
-			PackageType:    row.PackageType,
-			PythonVersion:  derefStr(row.PythonVersion),
-			RequiresPython: derefStr(row.RequiresPython),
-			Summary:        derefStr(row.Summary),
-			Author:         derefStr(row.Author),
-			AuthorEmail:    derefStr(row.AuthorEmail),
-			License:        derefStr(row.License),
-			Keywords:       derefStr(row.Keywords),
-			Classifiers:    row.Classifiers,
-			BlobKey:        row.BlobKey,
-			SHA256Digest:   row.Sha256Digest,
-			SizeBytes:      row.SizeBytes,
-			CreatedAt:      row.CreatedAt,
-			UpdatedAt:      row.UpdatedAt,
-		}
-		packages = append(packages, pkg)
+		packages = append(packages, pypiPackageFromRow(dbsqlc.GetPyPIPackagesByFilenameRow(row)))
 	}
 
 	return packages, nil
@@ -3888,6 +3832,32 @@ func (p *PostgresDB) GetCargoCrate(ctx context.Context, repoID, name, version st
 	}, nil
 }
 
+// cargoCrateFromRow maps a sqlc cargo crate row; SearchCargoCratesRow converts to it.
+func cargoCrateFromRow(row dbsqlc.ListCargoCrateVersionsRow) *models.CargoCrate {
+	return &models.CargoCrate{
+		ID:            row.ID,
+		RepositoryID:  row.RepositoryID,
+		Name:          row.Name,
+		Version:       row.Version,
+		Description:   derefStr(row.Description),
+		Homepage:      derefStr(row.Homepage),
+		Documentation: derefStr(row.Documentation),
+		Repository:    derefStr(row.Repository),
+		License:       derefStr(row.License),
+		Keywords:      row.Keywords,
+		Categories:    row.Categories,
+		Authors:       row.Authors,
+		Readme:        derefStr(row.Readme),
+		MetadataJSON:  row.MetadataJson,
+		BlobKey:       row.BlobKey,
+		Checksum:      row.Checksum,
+		Yanked:        row.Yanked,
+		DownloadCount: int(row.DownloadCount),
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
+	}
+}
+
 func (p *PostgresDB) ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
 	rows, err := p.q.ListCargoCrateVersions(ctx, dbsqlc.ListCargoCrateVersionsParams{
 		RepositoryID: repoID,
@@ -3900,29 +3870,7 @@ func (p *PostgresDB) ListCargoCrateVersions(ctx context.Context, repoID, name st
 	var crates []*models.CargoCrate
 
 	for _, row := range rows {
-		crate := &models.CargoCrate{
-			ID:            row.ID,
-			RepositoryID:  row.RepositoryID,
-			Name:          row.Name,
-			Version:       row.Version,
-			Description:   derefStr(row.Description),
-			Homepage:      derefStr(row.Homepage),
-			Documentation: derefStr(row.Documentation),
-			Repository:    derefStr(row.Repository),
-			License:       derefStr(row.License),
-			Keywords:      row.Keywords,
-			Categories:    row.Categories,
-			Authors:       row.Authors,
-			Readme:        derefStr(row.Readme),
-			MetadataJSON:  row.MetadataJson,
-			BlobKey:       row.BlobKey,
-			Checksum:      row.Checksum,
-			Yanked:        row.Yanked,
-			DownloadCount: int(row.DownloadCount),
-			CreatedAt:     row.CreatedAt,
-			UpdatedAt:     row.UpdatedAt,
-		}
-		crates = append(crates, crate)
+		crates = append(crates, cargoCrateFromRow(row))
 	}
 
 	return crates, nil
@@ -3942,29 +3890,7 @@ func (p *PostgresDB) SearchCargoCrates(ctx context.Context, repoID, query string
 	var crates []*models.CargoCrate
 
 	for _, row := range rows {
-		crate := &models.CargoCrate{
-			ID:            row.ID,
-			RepositoryID:  row.RepositoryID,
-			Name:          row.Name,
-			Version:       row.Version,
-			Description:   derefStr(row.Description),
-			Homepage:      derefStr(row.Homepage),
-			Documentation: derefStr(row.Documentation),
-			Repository:    derefStr(row.Repository),
-			License:       derefStr(row.License),
-			Keywords:      row.Keywords,
-			Categories:    row.Categories,
-			Authors:       row.Authors,
-			Readme:        derefStr(row.Readme),
-			MetadataJSON:  row.MetadataJson,
-			BlobKey:       row.BlobKey,
-			Checksum:      row.Checksum,
-			Yanked:        row.Yanked,
-			DownloadCount: int(row.DownloadCount),
-			CreatedAt:     row.CreatedAt,
-			UpdatedAt:     row.UpdatedAt,
-		}
-		crates = append(crates, crate)
+		crates = append(crates, cargoCrateFromRow(dbsqlc.ListCargoCrateVersionsRow(row)))
 	}
 
 	return crates, nil
@@ -5502,22 +5428,17 @@ func (p *PostgresDB) ListProjectGroups(ctx context.Context, projectID string) ([
 
 func (p *PostgresDB) GetProjectGroup(ctx context.Context, projectID, groupID string) (*models.ProjectGroup, error) {
 	row, err := p.q.GetProjectGroup(ctx, dbsqlc.GetProjectGroupParams{ProjectID: projectID, GroupID: groupID})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get project group: %w", err)
-	}
-
-	return &models.ProjectGroup{
-		ProjectID: row.ProjectID,
-		GroupID:   row.GroupID,
-		GroupName: row.GroupName,
-		Role:      row.Role,
-		CreatedBy: row.CreatedBy,
-		CreatedAt: row.CreatedAt,
-	}, nil
+	return mapRow(row, err, "project group", func(r dbsqlc.GetProjectGroupRow) *models.ProjectGroup {
+		return &models.ProjectGroup{
+			ProjectID: r.ProjectID,
+			GroupID:   r.GroupID,
+			GroupName: r.GroupName,
+			Role:      r.Role,
+			CreatedBy: r.CreatedBy,
+			CreatedAt: r.CreatedAt,
+		}
+	})
 }
 
 // SetProjectGroup attaches the group to the project with role, or changes the
