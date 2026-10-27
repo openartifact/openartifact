@@ -108,6 +108,88 @@ describe('pullCommand quoting', () => {
   })
 })
 
+describe('pacman', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('installs through the repository section', () => {
+    expect(pullCommand('pacman', origin, 'r1', 'tool', '1.0-1')).toBe('sudo pacman -Sy r1/tool')
+  })
+
+  it('configures pacman.conf, trusts the key and publishes with a token PUT', () => {
+    const [setup] = clientSetup('pacman', origin, 'r1')
+    expect(setup!.configure).toContain('[r1]\nSigLevel = Required\nServer = https://oa.example:8443/repos/r1/os/$arch')
+    expect(setup!.configure).toContain('curl -fsSL https://oa.example:8443/repos/r1/public.key | sudo pacman-key --add -')
+    expect(setup!.configure).toContain('pacman-key --lsign-key $(curl -fsSL https://oa.example:8443/repos/r1/public.key | gpg --show-keys')
+    expect(setup!.publish).toContain(
+      'curl -fsS -H "Authorization: Bearer $OA_TOKEN" -T my-package-1.0-1-x86_64.pkg.tar.zst ' +
+        'https://oa.example:8443/repos/r1/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst',
+    )
+    expect(setup!.publish).toContain('.pkg.tar.zst.sig')
+  })
+})
+
+describe('pacman proxy', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('prepends the mirror root URL to the mirrorlist and installs from it', () => {
+    const setups = clientSetup('pacman', origin, 'mirror', 'proxy')
+    expect(setups).toHaveLength(1)
+    expect(setups[0]!.configure).toContain('# top of /etc/pacman.d/mirrorlist\nServer = https://oa.example:8443/repos/mirror/$repo/os/$arch')
+    expect(setups[0]!.configure).toContain('sudo pacman -Syu')
+    expect(setups[0]!.configure).not.toContain('pacman-key')
+    expect(setups[0]!.publish).toBeUndefined()
+    expect(pullCommand('pacman', origin, 'mirror', 'tool', '1.0-1', 'proxy')).toBe('sudo pacman -Sy tool')
+  })
+})
+
+describe('apk', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('serves from /repos/REPO, not isolated', () => {
+    expect(repoBaseUrl('apk', origin, 'my repo')).toBe('https://oa.example:8443/repos/my%20repo')
+  })
+
+  it('pins the version with = and quotes hostile names', () => {
+    expect(pullCommand('apk', origin, 'r1', 'curl', '8.5.0-r0')).toBe('apk add curl=8.5.0-r0')
+    expect(pullCommand('apk', origin, 'r1', 'a$(id)', '1')).toBe("apk add 'a$(id)=1'")
+  })
+
+  it('fetches the key, adds the mirror line and publishes with a bearer token', () => {
+    const [apk, ...rest] = clientSetup('apk', origin, 'r1')
+    expect(rest).toHaveLength(0)
+    expect(apk!.client).toBe('apk')
+    expect(apk!.configure).toContain('wget -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
+    expect(apk!.configure).toContain('https://<USERNAME>:<TOKEN>@oa.example:8443/repos/r1/v3.20/main')
+    expect(apk!.configure).toContain('apk update\napk add PACKAGE')
+    expect(apk!.publish).toContain(
+      'curl -T my-pkg-1.0-r0.apk -H "Authorization: Bearer <TOKEN>" https://oa.example:8443/repos/r1/v3.20/main/x86_64/my-pkg-1.0-r0.apk',
+    )
+    expect(apk!.publish).toContain(
+      'curl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://oa.example:8443/api/v1/repositories/r1/apks',
+    )
+  })
+
+  it('configures a group with the key of the group and nothing to publish', () => {
+    const [apk, ...rest] = clientSetup('apk', origin, 'r1', 'group')
+    expect(rest).toHaveLength(0)
+    expect(apk!.configure).toContain('wget -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
+    expect(apk!.publish).toBeUndefined()
+  })
+
+  it('configures a proxy with the repository lines only: no key download, nothing to publish', () => {
+    const [apk, ...rest] = clientSetup('apk', origin, 'r1', 'proxy')
+    expect(rest).toHaveLength(0)
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/community" >> /etc/apk/repositories')
+    expect(apk!.configure).toContain('alpine-keys')
+    expect(apk!.configure).not.toContain('public.key')
+    expect(apk!.configure).not.toContain('/etc/apk/keys')
+    expect(apk!.publish).toBeUndefined()
+  })
+})
+
 describe('terraform', () => {
   const origin = 'https://oa.example:8443'
 

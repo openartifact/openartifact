@@ -144,6 +144,62 @@ describe('PackageUploadZone', () => {
     expect(rows(wrapper)[1].text()).not.toContain('not a deb package')
   })
 
+  describe('apk', () => {
+    const branch = (w: VueWrapper) => w.find('#apk-upload-branch')
+    const repoInput = (w: VueWrapper) => w.find('#apk-upload-repo')
+
+    it('defaults to edge/main and posts file, branch and repo to the apks endpoint', async () => {
+      const wrapper = mountZone({ repo: 'my repo', format: 'apk' })
+      expect((branch(wrapper).element as HTMLInputElement).value).toBe('edge')
+      expect((repoInput(wrapper).element as HTMLInputElement).value).toBe('main')
+      await pick(wrapper, new File(['a'], 'a-1.0-r0.apk'))
+      expect(FakeXHR.all).toHaveLength(1)
+      expect(FakeXHR.all[0].method).toBe('POST')
+      expect(FakeXHR.all[0].url).toBe('/api/v1/repositories/my%20repo/apks')
+      expect((FakeXHR.all[0].body!.get('file') as File).name).toBe('a-1.0-r0.apk')
+      expect(FakeXHR.all[0].body!.get('branch')).toBe('edge')
+      expect(FakeXHR.all[0].body!.get('repo')).toBe('main')
+    })
+
+    it('sends the edited coordinates', async () => {
+      const wrapper = mountZone({ repo: 'r', format: 'apk' })
+      await branch(wrapper).setValue('v3.20')
+      await repoInput(wrapper).setValue('community')
+      await pick(wrapper, new File(['a'], 'a.apk'))
+      expect(FakeXHR.all[0].body!.get('branch')).toBe('v3.20')
+      expect(FakeXHR.all[0].body!.get('repo')).toBe('community')
+    })
+
+    it('omits arch when empty and sends it, validated, when given', async () => {
+      const wrapper = mountZone({ repo: 'r', format: 'apk' })
+      await pick(wrapper, new File(['a'], 'a.apk'))
+      expect(FakeXHR.all[0].body!.has('arch')).toBe(false)
+      await wrapper.find('#apk-upload-arch').setValue('bad/arch')
+      await pick(wrapper, new File(['a'], 'b.apk'))
+      expect(FakeXHR.all).toHaveLength(1)
+      await wrapper.find('#apk-upload-arch').setValue('x86_64')
+      await pick(wrapper, new File(['a'], 'c.apk'))
+      expect(FakeXHR.all[1].body!.get('arch')).toBe('x86_64')
+    })
+
+    it('rejects invalid segments: shows the error, disables browsing and starts nothing', async () => {
+      const wrapper = mountZone({ repo: 'r', format: 'apk' })
+      for (const bad of ['', '.', '..', '-x', 'a/b', 'a b', 'a'.repeat(65)]) {
+        await branch(wrapper).setValue(bad)
+        expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+        expect(wrapper.find('button').attributes('disabled')).toBeDefined()
+        await pick(wrapper, new File(['a'], 'a.apk'))
+        expect(FakeXHR.all).toHaveLength(0)
+      }
+      await branch(wrapper).setValue('a'.repeat(64))
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    })
+
+    it('does not show the coordinate inputs for other formats', () => {
+      expect(mountZone({ repo: 'r', format: 'deb' }).find('[data-testid="apk-coordinates"]').exists()).toBe(false)
+    })
+  })
+
   it('reports a network failure on the entry', async () => {
     const wrapper = mountZone({ repo: 'r' })
     await pick(wrapper, new File(['x'], 'a.bin'))

@@ -86,6 +86,7 @@ import { t, tp, tpn } from '../../i18n'
 const props = defineProps<{
   format: string
   repo: string
+  repoType?: string
   pkg: string
   version: string
   /** Checksum of the primary file; for Docker the manifest digest of the digest-pinned pull. */
@@ -95,7 +96,7 @@ const props = defineProps<{
 }>()
 
 const uid = useId()
-const block = computed(() => installBlock(props.format, window.location.origin, props.repo, props.pkg, props.version, props.sha256))
+const block = computed(() => installBlock(props.format, window.location.origin, props.repo, props.pkg, props.version, props.sha256, props.repoType))
 const mode = ref<'tag' | 'digest'>('tag')
 const current = computed(() => block.value.commands.find((c) => c.id === mode.value) ?? block.value.commands[0]!)
 </script>

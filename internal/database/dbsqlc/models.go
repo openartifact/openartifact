@@ -27,6 +27,54 @@ type AiResult struct {
 	ArtifactVersion       string          `db:"artifact_version" json:"artifact_version"`
 }
 
+// Alpine packages: one .apk per branch/repo/arch/name/version.
+type ApkPackage struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Branch       string `db:"branch" json:"branch"`
+	Repo         string `db:"repo" json:"repo"`
+	// Architecture directory of the mirror tree.
+	Arch string `db:"arch" json:"arch"`
+	// Architecture of the package itself (PKGINFO arch, APKINDEX A:); noarch inside an x86_64 directory.
+	PkgArch string `db:"pkg_arch" json:"pkg_arch"`
+	Name    string `db:"name" json:"name"`
+	Version string `db:"version" json:"version"`
+	// APKINDEX C: value: Q1 + base64 of the SHA-1 of the control segment.
+	Checksum string `db:"checksum" json:"checksum"`
+	// Lowercase hex SHA-256 of the data segment (PKGINFO datahash).
+	DataSha256       string     `db:"data_sha256" json:"data_sha256"`
+	Description      string     `db:"description" json:"description"`
+	Url              string     `db:"url" json:"url"`
+	License          string     `db:"license" json:"license"`
+	Origin           string     `db:"origin" json:"origin"`
+	Maintainer       string     `db:"maintainer" json:"maintainer"`
+	Commit           string     `db:"commit" json:"commit"`
+	BuildTime        int64      `db:"build_time" json:"build_time"`
+	InstalledSize    int64      `db:"installed_size" json:"installed_size"`
+	Depends          []string   `db:"depends" json:"depends"`
+	Provides         []string   `db:"provides" json:"provides"`
+	InstallIf        []string   `db:"install_if" json:"install_if"`
+	ProviderPriority int32      `db:"provider_priority" json:"provider_priority"`
+	DownloadCount    int64      `db:"download_count" json:"download_count"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID           string     `db:"blob_id" json:"blob_id"`
+	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy        *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// Alpine repository index signing keys; private_key is sealed with internal/crypto.
+type ApkSigningKey struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	KeyName      string    `db:"key_name" json:"key_name"`
+	Fingerprint  string    `db:"fingerprint" json:"fingerprint"`
+	PublicKey    string    `db:"public_key" json:"public_key"`
+	PrivateKey   []byte    `db:"private_key" json:"private_key"`
+	CreatedBy    string    `db:"created_by" json:"created_by"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Custom key-value metadata for artifacts
 type ArtifactProperty struct {
 	ID           string    `db:"id" json:"id"`
@@ -829,6 +877,48 @@ type PackageDelta struct {
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
+// Arch Linux pacman packages: one .pkg.tar.{zst,xz,gz} file per name/version/arch.
+type PacmanPackage struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+	Base         string `db:"base" json:"base"`
+	Version      string `db:"version" json:"version"`
+	// Architecture of the package ("any" or a CPU architecture), from its .PKGINFO.
+	Arch string `db:"arch" json:"arch"`
+	// Architecture directory (os/ARCH) the package was uploaded to; an "any" package is listed in the database of every architecture of the repository.
+	RepoArch      string   `db:"repo_arch" json:"repo_arch"`
+	Filename      string   `db:"filename" json:"filename"`
+	BlobID        string   `db:"blob_id" json:"blob_id"`
+	Md5           string   `db:"md5" json:"md5"`
+	Description   string   `db:"description" json:"description"`
+	Url           string   `db:"url" json:"url"`
+	Packager      string   `db:"packager" json:"packager"`
+	BuildDate     int64    `db:"build_date" json:"build_date"`
+	InstalledSize int64    `db:"installed_size" json:"installed_size"`
+	Licenses      []string `db:"licenses" json:"licenses"`
+	PackageGroups []string `db:"package_groups" json:"package_groups"`
+	Replaces      []string `db:"replaces" json:"replaces"`
+	Conflicts     []string `db:"conflicts" json:"conflicts"`
+	Provides      []string `db:"provides" json:"provides"`
+	Depends       []string `db:"depends" json:"depends"`
+	Optdepends    []string `db:"optdepends" json:"optdepends"`
+	Makedepends   []string `db:"makedepends" json:"makedepends"`
+	Checkdepends  []string `db:"checkdepends" json:"checkdepends"`
+	// Newline-separated file list for the files database; NULL until it is read from the package blob (the metadata worker fills it).
+	FileList *string `db:"file_list" json:"file_list"`
+	// Base64 of the binary detached OpenPGP signature of the package file; empty when unsigned.
+	Signature string `db:"signature" json:"signature"`
+	// Who made the signature: uploader (a .sig upload), server (the repository signing key, made by the metadata worker) or empty.
+	SignatureSource string `db:"signature_source" json:"signature_source"`
+	// Fingerprint of the repository key that made a server signature; the worker re-signs when the repository key changes.
+	SignatureKey string     `db:"signature_key" json:"signature_key"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
+}
+
 // Assignments of permission targets to users or groups
 type PermissionAssignment struct {
 	ID                 string    `db:"id" json:"id"`
@@ -1086,7 +1176,7 @@ type ReleaseBundleItem struct {
 type Repository struct {
 	ID   string `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
-	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform. Constrained by chk_repo_format.
+	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman. Constrained by chk_repo_format.
 	Format      string    `db:"format" json:"format"`
 	Description *string   `db:"description" json:"description"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`

@@ -219,3 +219,37 @@ func parseConan(parts []manifest.Part) Result {
 
 	return res
 }
+
+// parsePacman reads the "depend = name>=ver" lines of a rendered .PKGINFO.
+// The constraint is stripped from the name; "=" pins an exact version.
+func parsePacman(parts []manifest.Part) Result {
+	var res Result
+
+	for _, p := range parts {
+		for line := range strings.SplitSeq(p.Body, "\n") {
+			spec, ok := strings.CutPrefix(line, "depend = ")
+			if !ok {
+				continue
+			}
+
+			spec = strings.TrimSpace(spec)
+			i := strings.IndexAny(spec, "<>=")
+
+			if i < 0 {
+				res.Deps = append(res.Deps, Dep{Name: spec})
+				continue
+			}
+
+			d := Dep{Name: spec[:i]}
+			if v, exact := strings.CutPrefix(spec[i:], "="); exact {
+				d.Version = v
+			} else {
+				d.Range = spec[i:]
+			}
+
+			res.Deps = append(res.Deps, d)
+		}
+	}
+
+	return res
+}

@@ -216,6 +216,10 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 			quotaTracked:  true,
 			kind:          models.TrashKindConda,
 		}, true
+	case "pacman":
+		// One row is one package file; ranked per package name and architecture.
+		return formatTable{table: "pacman_packages", nameCol: "name", partitionCols: []string{"name", "arch"},
+			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindPacman}, true
 	case "conan":
 		// Every revision of a recipe version ranks and goes as one version.
 		return formatTable{
@@ -226,6 +230,17 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 			blobCols:      []string{"blob_id"},
 			quotaTracked:  true,
 			kind:          models.TrashKindConan,
+		}, true
+	case "apk":
+		// Ranked per package within one branch, repo and architecture directory.
+		return formatTable{
+			table:         "apk_packages",
+			nameCol:       "branch || '/' || repo || '/' || name",
+			partitionCols: []string{"branch", "repo", "arch", "name"},
+			versionExpr:   "version",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindApk,
 		}, true
 	case "raw":
 		// A raw file has no version: files are ranked against the other files

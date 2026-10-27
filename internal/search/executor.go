@@ -115,10 +115,24 @@ func unifiedSearchBranches() []string {
 	const null = "NULL"
 
 	return []string{
+		searchBranch(
+			"apk",
+			"ap.branch || '/' || ap.repo || '/' || ap.name",
+			"ap.version",
+			"ap.name || '-' || ap.version || '.apk'",
+			null,
+			null,
+			"ap.blob_id",
+			null,
+			"ap",
+		) +
+			"\n\t\tFROM apk_packages ap WHERE ap.deleted_at IS NULL",
 		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
 			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
 			"\n\t\tFROM conda_packages cp WHERE cp.deleted_at IS NULL",
+		searchBranch("pacman", "pk.name", "pk.version", "pk.filename", null, null, "pk.blob_id", null, "pk") +
+			"\n\t\tFROM pacman_packages pk WHERE pk.deleted_at IS NULL",
 		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +
 			// One result per recipe revision: its manifest row, or a pre-0.5.0 row without a file name.
 			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL AND co.package_id = '' AND co.filename IN ('', 'conanmanifest.txt')",

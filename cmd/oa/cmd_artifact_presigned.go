@@ -20,13 +20,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/term"
 )
 
 const uploadUsage = "Usage: oa artifact upload " +
-	"[--presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N]] <repo> <file>"
+	"[--presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N]] " +
+	"[--branch B] [--apk-repo R] [--arch A] <repo> <file>"
 
 // maxSinglePutBytes is the largest object one presigned PUT can carry (the S3
 // limit); anything bigger has to be uploaded in parts.
@@ -43,6 +45,7 @@ var (
 	errUploadUsage          error = uploadUsageError{}
 	errUploadNeedsPresigned       = errors.New("--path, --content-type, --multipart, --part-size and --parallel require --presigned")
 	errUploadParallel             = errors.New("--parallel must be between 1 and 16")
+	errUploadApkFlags             = errors.New("--branch, --apk-repo and --arch apply to .apk files only")
 	errUploadTarget               = errors.New("server returned an incomplete upload target")
 )
 
@@ -60,6 +63,9 @@ type uploadOptions struct {
 	// partSize is the requested part size in bytes; 0 leaves it to the server.
 	partSize int64
 	parallel int
+	// branch, apkRepo and arch address the directory of an .apk upload
+	// (<branch>/<repo>/<arch>); empty values use the server defaults.
+	branch, apkRepo, arch string
 }
 
 // artifactUploadCommand runs `oa artifact upload`. Flags may appear before or
@@ -80,7 +86,7 @@ func artifactUploadCommand(client *Client, args []string) {
 		return
 	}
 
-	artifactUpload(client, opts.repo, opts.filePath)
+	artifactUpload(client, opts)
 }
 
 // parseUploadArgs parses the command line of `oa artifact upload`. output
@@ -109,6 +115,10 @@ func parseUploadArgs(args []string, errorHandling flag.ErrorHandling, output io.
 	)
 	fs.IntVar(&opts.parallel, "parallel", defaultUploadParallel, "Parts uploaded at the same time, 1 to 16 (--presigned, multipart)")
 
+	fs.StringVar(&opts.branch, "branch", "", "Alpine branch directory of an .apk upload (default edge)")
+	fs.StringVar(&opts.apkRepo, "apk-repo", "", "Alpine repository directory of an .apk upload (default main)")
+	fs.StringVar(&opts.arch, "arch", "", "Architecture directory of an .apk upload; needed for noarch packages")
+
 	var positional []string
 
 	for rest := args; ; {
@@ -132,10 +142,14 @@ func parseUploadArgs(args []string, errorHandling flag.ErrorHandling, output io.
 
 	if !opts.presigned {
 		for name := range setFlags(fs) {
-			if name != "presigned" {
+			if name != "presigned" && !isApkFlag(name) {
 				return uploadOptions{}, errUploadNeedsPresigned
 			}
 		}
+	}
+
+	if (opts.branch != "" || opts.apkRepo != "" || opts.arch != "") && !isApkFile(opts.filePath) {
+		return uploadOptions{}, errUploadApkFlags
 	}
 
 	if opts.parallel < 1 || opts.parallel > maxUploadParallel {
@@ -144,6 +158,10 @@ func parseUploadArgs(args []string, errorHandling flag.ErrorHandling, output io.
 
 	return opts, nil
 }
+
+func isApkFlag(name string) bool { return name == "branch" || name == "apk-repo" || name == "arch" }
+
+func isApkFile(path string) bool { return strings.EqualFold(filepath.Ext(path), ".apk") }
 
 // routeUpload sends a plain upload of a file above limit bytes through the
 // presigned multipart flow, the only one that can carry it; the bool reports

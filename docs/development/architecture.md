@@ -36,7 +36,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/urlparams` | `Vars(r)`: chi URL parameters as a map |
 | `internal/{backup,webhook,search,vuln,sbom,license,secrets,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM encryption of stored secrets (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers and helpers: `deb`, `rpm`, `npm`, `nuget`, `conan`, `maven`, `helm`, `rubymarshal`, `compactindex`, `gpg`, `delta`, `errors`, `logger` |
+| `pkg/*` | Format parsers and helpers: `deb`, `rpm`, `npm`, `nuget`, `conan`, `apk`, `maven`, `helm`, `rubymarshal`, `compactindex`, `gpg`, `delta`, `errors`, `logger` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TypeScript + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go handler tests (many need `-tags=integration`); `tests/integration/` uses testcontainers |

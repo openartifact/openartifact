@@ -24,8 +24,10 @@ import (
 type Regenerator interface {
 	NotifyDebStale(repoID string)
 	NotifyRPMStale(repoID string)
+	NotifyApkStale(repoID string)
 	NotifyMavenStale(repoID, groupID, artifactID string)
 	NotifyNPMStale(packageID string)
+	NotifyPacmanStale(repoID string)
 }
 
 // Engine promotes a sealed bundle into a repository.
@@ -368,10 +370,14 @@ func (e *Engine) notify(regen []Regen) {
 			e.regen.NotifyDebStale(r.RepoID)
 		case RegenRPM:
 			e.regen.NotifyRPMStale(r.RepoID)
+		case RegenApk:
+			e.regen.NotifyApkStale(r.RepoID)
 		case RegenMaven:
 			e.regen.NotifyMavenStale(r.RepoID, r.GroupID, r.ArtifactID)
 		case RegenNPM:
 			e.regen.NotifyNPMStale(r.PackageID)
+		case RegenPacman:
+			e.regen.NotifyPacmanStale(r.RepoID)
 		}
 	}
 }

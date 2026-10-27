@@ -127,6 +127,24 @@ FROM (
     FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan')
     UNION ALL
+    -- pacman: one row per package file; arch = package architecture.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'pacman'::text AS format, t.arch::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, t.build_date::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, t.installed_size::bigint AS installed_size,
+           t.filename::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM pacman_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman')
+    UNION ALL
+    -- apk: one row per .apk; name = BRANCH/REPO/NAME, arch = architecture.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, (t.branch || '/' || t.repo || '/' || t.name)::text AS name, t.version::text AS version,
+           'apk'::text AS format, t.arch::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, t.build_time::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, t.installed_size::bigint AS installed_size,
+           t.name || '-' || t.version || '.apk'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM apk_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'apk')
+    UNION ALL
     -- terraform modules: one row per module version; name = modules/NAME/SYSTEM.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, ('modules/' || t.name || '/' || t.system)::text AS name, t.version::text AS version,
            'terraform'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,

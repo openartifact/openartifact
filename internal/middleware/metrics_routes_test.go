@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
@@ -27,6 +28,7 @@ import (
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
+	formatpacman "github.com/openartifact/openartifact/internal/format/pacman"
 	formatpypi "github.com/openartifact/openartifact/internal/format/pypi"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
@@ -64,6 +66,7 @@ func serverRoutes(t *testing.T) chi.Router {
 		formatrubygems.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconda.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconan.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
+		formatpacman.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatterraform.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatgomod.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		api.NewNPMUploadHandler(log, nil, nil, "", nil).RegisterRepoRoutes(r)
@@ -77,6 +80,7 @@ func serverRoutes(t *testing.T) chi.Router {
 	formatdocker.NewHTTPHandler(nil, nil, nil, "").RegisterRoutes(r)
 
 	api.NewDebUploadHandler(log, nil, nil, nil).Register(r)
+	formatapk.NewHTTPHandler(log, nil, nil, "").RegisterAPIRoutes(r)
 	api.NewRPMUploadHandler(log, nil, nil, nil).Register(r)
 	api.NewMavenUploadHandler(log, nil, nil, nil).Register(r)
 	api.NewPresignedUploadHandler(log, nil, nil, nil, 0, 0, nil).Register(r)
@@ -147,7 +151,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"helm": metrics.FormatHelm, "ivy": metrics.FormatIvy, "maven": metrics.FormatMaven,
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pypi": metrics.FormatPyPI,
 		"raw": metrics.FormatRaw, "rpm": metrics.FormatRPM, "rubygems": metrics.FormatRubyGems,
-		"sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform,
+		"sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform, "apk": metrics.FormatApk, "pacman": metrics.FormatPacman,
 	}
 
 	entries, err := os.ReadDir("../format")

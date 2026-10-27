@@ -67,6 +67,12 @@ const (
 	// fetchTimeout.
 	responseHeaderTimeout = 30 * time.Second
 
+	// DefaultUpstreamStallTimeout is how long an upstream response body may
+	// deliver no data before the fetch fails, so a dead connection releases
+	// its flight (and the requests waiting on it) in a minute rather than
+	// holding it until fetchTimeout.
+	DefaultUpstreamStallTimeout = 60 * time.Second
+
 	// maxConcurrentFetches bounds the upstream downloads in flight at once
 	// across every repository. Each holds an upstream connection and a spool
 	// file of up to maxBody bytes; singleflight only collapses requests for
@@ -166,7 +172,7 @@ type Service struct {
 // client: blocked destination addresses are refused at dial time and on every
 // redirect hop.
 func NewService(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Service {
-	client := telemetry.WrapClient(netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout))
+	client := upstreamClient(DefaultUpstreamStallTimeout)
 
 	return &Service{
 		log:       log,
@@ -182,6 +188,22 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
+}
+
+func upstreamClient(stall time.Duration) *http.Client {
+	return telemetry.WrapClient(netutil.SafeHTTPClientWithStallTimeout(fetchTimeout, responseHeaderTimeout, stall))
+}
+
+// WithUpstreamStallTimeout sets how long an upstream response body may deliver
+// no data before the fetch fails (DefaultUpstreamStallTimeout by default); 0
+// disables the check. It must be called before the service serves requests.
+func (s *Service) WithUpstreamStallTimeout(d time.Duration) *Service {
+	s.client = upstreamClient(max(d, 0))
+	if s.sumdb != nil {
+		s.sumdb.client = s.client
+	}
+
+	return s
 }
 
 // WithDockerDigestTTL sets how long a docker manifest or blob addressed by
@@ -338,6 +360,10 @@ func (s *Service) serveResolved(
 
 	if repo.Format == "rubygems" && rubygemsCompact(key) {
 		s.writeCompactEntry(w, r, repo, entry, rc)
+		return
+	}
+
+	if repo.Format == "pacman" && pacmanNotModified(w, r, entry, key) {
 		return
 	}
 
@@ -534,8 +560,14 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 	}
 
 	var o fetchOpts
-	if isIvyFormat(repo.Format) {
+
+	switch {
+	case isIvyFormat(repo.Format):
 		o = s.ivyFetchOpts(ctx, repo, key)
+	case repo.Format == "apk":
+		if o, err = s.apkFetchOpts(ctx, repo, key); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.fetchURL(ctx, repo, key, target, o)
@@ -909,13 +941,18 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 		return immutableTTL
 	}
 
-	return time.Duration(repo.CacheTTLSeconds) * time.Second
+	ttl := time.Duration(repo.CacheTTLSeconds) * time.Second
+	if repo.Format == "pacman" && isPacmanDatabase(key) {
+		return min(ttl, pacmanDBMaxTTL)
+	}
+
+	return ttl
 }
 
 // Immutable reports whether the file at key never changes once published, so a
 // cached copy never needs revalidation. Formats whose bodies are verified
-// against a published digest (see fetchOpts) pin by name alone; the three that
-// have no such check here (Maven, deb, rpm) pin only under layouts whose file
+// against a published digest (see fetchOpts) pin by name alone; the ones that
+// have no such check here (Maven, deb, rpm, pacman) pin only under layouts whose file
 // names are never reused, and everything else is cached for the repository TTL
 // so a wrong copy is replaced on revalidation:
 //   - maven: released artifacts, not maven-metadata*.xml, archetype-catalog.xml
@@ -926,6 +963,10 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 //     or -SNAPSHOT files; a file is pinned only when its body matched the
 //     checksum the upstream publishes (ivy.go), otherwise the repository TTL
 //     applies.
+//   - pacman: nothing. A mirror may republish a package file name, so package
+//     files use the repository TTL.
+//   - apk: `.apk` files of a `<branch>/<repo>/<arch>/<file>` key; they are
+//     only cached once their checksum matched the upstream index (apk.go).
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
 //     a file name is never reused); the same names in a flat repository, where
 //     a publisher may overwrite a package, use the repository TTL.
@@ -965,6 +1006,9 @@ func Immutable(format, key string) bool {
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
+	case "apk":
+		// Packages whose checksum matched the upstream index; see apkFetchOpts.
+		return apkPackageKey(key)
 	case "ivy", "sbt":
 		// Released files that matched the upstream's checksum; see ivyFetchOpts.
 		return ivyImmutable(key)
@@ -981,8 +1025,8 @@ func Immutable(format, key string) bool {
 	return false
 }
 
-// debRPMImmutable is Immutable for deb (.deb/.udeb below pool/) and rpm (.rpm
-// below Packages/).
+// debRPMImmutable is Immutable for deb and rpm: packages below the pool/ or
+// Packages/ directory of the archive layout.
 func debRPMImmutable(format, key, name string) bool {
 	if format == "deb" {
 		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
@@ -1032,6 +1076,8 @@ func isMetadataKey(format, key string) bool {
 		return inDir(key, "repodata")
 	case "maven":
 		return strings.HasPrefix(name, "maven-metadata")
+	case "apk":
+		return apkIndexKey(key)
 	case "ivy", "sbt":
 		return isIvyMetadata(key) || isIvySidecar(key) || name == "ivy.xml"
 	case "pypi":
@@ -1040,24 +1086,35 @@ func isMetadataKey(format, key string) bool {
 		return !strings.Contains(key, "/-/")
 	case "helm":
 		return name == helmIndexKey
-	case "cargo":
-		return !strings.HasPrefix(key, "api/v1/crates/")
+	case "cargo", "nuget", "rubygems":
+		return !strings.HasPrefix(key, packageDir(format))
 	case "go":
 		return name == "list" || strings.HasSuffix(key, "/@latest")
-	case "nuget":
-		return !strings.HasPrefix(key, "v3/package/")
 	case "conda":
 		// Repodata is capped by maxCondaIndex instead; this covers channeldata.json.
 		return !strings.HasSuffix(name, conda.ExtConda) && !strings.HasSuffix(name, conda.ExtTarBz2)
-	case "rubygems":
-		return !strings.HasPrefix(key, "gems/")
 	case "conan":
 		return !strings.Contains(key, "/files/")
 	case "terraform":
 		return !tfArchiveKey(key)
+	case "pacman":
+		return isPacmanDatabase(key)
 	}
 
 	return false
+}
+
+// packageDir is the key prefix under which a cargo, nuget or rubygems upstream
+// keeps its package files; everything outside it is metadata.
+func packageDir(format string) string {
+	switch format {
+	case "cargo":
+		return "api/v1/crates/"
+	case "nuget":
+		return "v3/package/"
+	}
+
+	return "gems/"
 }
 
 // mavenSidecarExts are the checksum and signature files published next to a
@@ -1089,12 +1146,13 @@ func inDir(key, dir string) bool {
 // packageExts lists, for the formats whose files are not checked against a
 // digest, the file extensions that name a binary package.
 var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only table
-	"maven": {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
-	"deb":   {".deb", ".udeb"},
-	"rpm":   {".rpm"},
-	"ivy":   ivyPackageExts,
-	"sbt":   ivyPackageExts,
-	"conda": {conda.ExtConda, conda.ExtTarBz2},
+	"maven":  {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
+	"deb":    {".deb", ".udeb"},
+	"rpm":    {".rpm"},
+	"pacman": {".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar.bz2", ".pkg.tar.lz4", ".pkg.tar"},
+	"ivy":    ivyPackageExts,
+	"sbt":    ivyPackageExts,
+	"conda":  {conda.ExtConda, conda.ExtTarBz2},
 	// Module archives and provider zips; also the keys that are not metadata.
 	"terraform": tfArchiveExts,
 }

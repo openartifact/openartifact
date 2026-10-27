@@ -2,15 +2,21 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Code-change fuzzing: builds every native Go fuzz target (see
-# .clusterfuzzlite/build.sh), drops the targets whose coverage does not include a
-# changed file and fuzzes the rest for 10 minutes, starting from the corpus of
-# the daily batch runs. Corpus and coverage report come from the public
+# Code-change fuzzing: picks the native Go fuzz targets a change can affect (a
+# target whose package, or a package it imports, contains a changed file, and
+# whose coverage in the last batch run includes it, see
+# .clusterfuzzlite/select-targets.sh), builds only those (.clusterfuzzlite/build.sh)
+# and fuzzes them for 5 minutes, starting from the corpus of the daily batch
+# runs. A change to go.mod, go.sum or the fuzzing setup builds every target; a
+# change no target can see (a Go file nothing fuzzed imports) skips the build and
+# the run. 5 minutes, not the batch job's hour: the deep fuzzing is done daily on
+# main, a pull request only has to catch a regression in the code it touches.
+# Corpus and coverage report (cloned by the plan step) come from the public
 # openartifact/openartifact-fuzz-storage repository, read anonymously: this job
 # needs no secret, so it behaves the same for pull requests from forks. Until the
-# first coverage report exists every target runs. A crash fails the check and is
-# uploaded as an artifact; SARIF goes to code scanning. Batch fuzzing, pruning
-# and coverage: clusterfuzzlite-batch.yml. Local runs:
+# first coverage report exists the import graph alone selects. A crash fails the
+# check and is uploaded as an artifact; SARIF goes to code scanning. Batch
+# fuzzing, pruning and coverage: clusterfuzzlite-batch.yml. Local runs:
 # docs/development/README.md.
 name: ClusterFuzzLite PR
 
@@ -34,38 +40,92 @@ jobs:
   fuzz:
     name: fuzz (code change)
     runs-on: ubuntu-latest
-    timeout-minutes: 60 # building the ~150 targets takes 13-19 minutes on a hosted runner, fuzzing 10
+    timeout-minutes: 45 # worst case (go.mod change): ~150 targets, 13-22 minutes to build, 5 to fuzz
     permissions:
       contents: read
       actions: read # find the latest main build to tell new crashes from old ones
       security-events: write # upload SARIF to code scanning
     steps:
+      - name: Check out the pull request
+        # Only to read the diff and the import graph; ClusterFuzzLite clones the code it builds itself.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: pr-src
+          fetch-depth: 2 # the merge commit and its two parents
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: pr-src/go.mod
+          cache: false # go list needs no module download
+
+      - name: Select affected fuzz targets
+        id: plan
+        working-directory: pr-src
+        run: |
+          # The checkout is the merge of the PR into its base: HEAD^1 is the base.
+          # NUL-separated (a file name may hold anything); the selected directories
+          # reach build.sh base64 encoded in CFL_EXTRA_FUZZ_TARGETS, the only kind of
+          # variable ClusterFuzzLite forwards into the build container.
+          git diff --name-only --no-renames -z HEAD^1 HEAD > "$RUNNER_TEMP/changed"
+          # Coverage of the last batch run (public repository, no credentials). Without
+          # it (first run, outage) the import graph alone selects the targets.
+          if git clone --quiet --depth 1 --branch gh-pages --single-branch \
+            https://github.com/openartifact/openartifact-fuzz-storage.git "$RUNNER_TEMP/coverage"; then
+            export COVERAGE_DIR="$RUNNER_TEMP/coverage/coverage/latest/fuzzer_stats"
+            echo "coverage report: $(find "$COVERAGE_DIR" -name '*.json' | wc -l) targets"
+          else
+            echo "::warning title=No coverage report::targets are selected by the import graph only"
+          fi
+          echo "changed files: $(tr -cd '\0' < "$RUNNER_TEMP/changed" | wc -c)"
+          selection=$(bash .clusterfuzzlite/select-targets.sh < "$RUNNER_TEMP/changed")
+          case "$selection" in
+            all)
+              echo "mode=all" >> "$GITHUB_OUTPUT"
+              echo "go.mod, go.sum or the fuzzing setup changed: building every fuzz target"
+              ;;
+            none)
+              echo "mode=none" >> "$GITHUB_OUTPUT"
+              echo "::notice title=Fuzzing skipped::no fuzz target covers a changed file"
+              ;;
+            *)
+              echo "mode=some" >> "$GITHUB_OUTPUT"
+              echo "CFL_EXTRA_FUZZ_TARGETS=$(printf '%s\n' "$selection" | base64 -w0)" >> "$GITHUB_ENV"
+              echo "affected fuzz targets: $(echo "$selection" | wc -l)"
+              echo "$selection"
+              ;;
+          esac
+
       - name: Build fuzzers
+        if: ${{ steps.plan.outputs.mode != 'none' }}
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           language: go
           sanitizer: address # the only sanitizer ClusterFuzzLite supports for Go
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Remove the fuzz targets a change does not affect (needs the coverage report).
+          # The plan step already dropped the unaffected targets. ClusterFuzzLite's own
+          # coverage-based removal cannot match the file names of our coverage report
+          # (they start with the coverage build's workspace) and would keep all of them.
+          keep-unaffected-fuzz-targets: true
           storage-repo: https://github.com/openartifact/openartifact-fuzz-storage.git
           storage-repo-branch: main
-          storage-repo-branch-coverage: gh-pages
 
       - name: Run fuzzers
         id: run
+        if: ${{ steps.plan.outputs.mode != 'none' }}
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           language: go
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          fuzz-seconds: 600
+          fuzz-seconds: 300 # batch fuzzing does the deep runs (1 hour a day); a PR needs a regression check
           mode: code-change
           sanitizer: address
           output-sarif: true
           parallel-fuzzing: true
           storage-repo: https://github.com/openartifact/openartifact-fuzz-storage.git
           storage-repo-branch: main
-          storage-repo-branch-coverage: gh-pages
 
       - name: Upload SARIF
         # A fork's token cannot write code scanning alerts.

@@ -38,6 +38,7 @@ const (
 	formatConan    importFormat = "conan"
 	formatIvy      importFormat = "ivy"
 	formatSBT      importFormat = "sbt"
+	formatPacman   importFormat = "pacman"
 )
 
 const (

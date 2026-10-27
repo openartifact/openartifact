@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("pkgname=a\npkgver=1\narch=noarch\ndatahash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")

@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-63 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+66 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -46,7 +46,7 @@ List all repositories with optional filtering
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`. |
+| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
 | `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
@@ -90,7 +90,7 @@ Create a new repository (admin only)
 | `cache_ttl_seconds` | integer | no | - |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true). |
-| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`. |
+| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |
@@ -100,7 +100,7 @@ Create a new repository (admin only)
 | `presign_downloads` | boolean | no | Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Nullable. |
 | `project` | string | no | Name of the owning project. Defaults to the built-in system project, whose membership grants nothing. Unknown project: 404. |
 | `public` | boolean | no | - |
-| `repo_type` | string | no | hosted (default), proxy or group. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw; group repositories for maven, sbt, ivy, deb, rpm, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw (deb and rpm groups serve generated Release/Packages or repodata merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only. One of: `hosted`, `proxy`, `group`. |
+| `repo_type` | string | no | hosted (default), proxy or group. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, apk, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw; group repositories for maven, sbt, ivy, deb, rpm, apk, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw (deb, rpm and apk groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only. One of: `hosted`, `proxy`, `group`. |
 | `sign_packages` | boolean | no | Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed. |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `upstream_password` | string | no | - |
@@ -143,6 +143,93 @@ Audit events recorded against one repository (deletions, restores, purges, repos
 | `400` | Malformed cursor | - |
 | `403` | Admin or project maintainer access required | - |
 | `404` | Repository not found | - |
+
+### `GET /api/v1/repositories/{name}/apk-key`
+
+Get the apk signing key
+
+Returns the public half of the key that signs the APKINDEX of a hosted or group apk repository, generating the key on first use. Requires the global manage permission.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The signing key | `application/json`: [ApkSigningKey](schemas.md#apksigningkey) |
+| `400` | The repository is not a hosted or group apk repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `409` | OPENARTIFACT_SECRET_KEY is not set (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/apk-key`
+
+Replace the apk signing key
+
+Generates a new signing key (empty body) or imports the given RSA private key, and re-signs the repository's indexes. Clients must install the new public key. Requires the global manage permission.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+
+**Request body**
+
+`application/json`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key_name` | string | no | File name of the public key, ending in .rsa.pub; only with private_key (default openartifact-`<repository>`.rsa.pub) |
+| `private_key` | string | no | PEM private key (PKCS#8 or the PKCS#1 form abuild-keygen writes), at least 2048 bits; omit to generate a new key |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The new signing key | `application/json`: [ApkSigningKey](schemas.md#apksigningkey) |
+| `400` | Invalid key or the repository is not a hosted or group apk repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `409` | OPENARTIFACT_SECRET_KEY is not set (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/apks`
+
+Upload an Alpine apk package
+
+Upload a .apk into a hosted apk repository (multipart/form-data). The package is stored under `<branch>`/`<repo>`/`<arch>`, where arch is the package architecture (required in the request only for noarch packages). Requires write access.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+
+**Request body** (required)
+
+`multipart/form-data`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `arch` | string | no | Target architecture directory; required for noarch packages, otherwise it must equal the package architecture |
+| `branch` | string | no | Target branch directory, for example v3.20 (default edge) |
+| `file` | string (binary) | yes | The .apk package |
+| `repo` | string | no | Target repository directory, for example main (default main) |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Package stored | `application/json`: [ApkUploadResult](schemas.md#apkuploadresult) |
+| `400` | Invalid package, invalid input or wrong repository format | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `409` | Package already exists | `application/json`: [Error](schemas.md#error) |
+| `413` | File too large | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/artifacts/search`
 

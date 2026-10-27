@@ -64,7 +64,7 @@ const SECURITY_TYPES: Record<string, string> = {
  */
 export const LEGACY_FORMAT_IDS: ReadonlySet<string> = new Set([
   'docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb',
-  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform',
+  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman',
 ])
 
 const LEGACY_ARTIFACT = /^\/repos\/[^/]+\/packages\/([^/]+)\/([^/]+)\/?$/

@@ -37,21 +37,30 @@ func handleArtifact(args []string, client *Client, outFmt string) {
 	}
 }
 
-func artifactUpload(client *Client, repo, filePath string) {
+func artifactUpload(client *Client, opts uploadOptions) {
+	repo, filePath := opts.repo, opts.filePath
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		dief("opening file: %v", err)
 	}
 	defer func() { _ = file.Close() }()
 
-	body, contentType := multipartStream(file, filepath.Base(filePath))
-	defer func() { _ = body.Close() }()
-
 	// Choose endpoint based on file extension
 	endpoint := "/api/v1/repositories/" + escape(repo) + "/packages"
-	if strings.ToLower(filepath.Ext(filePath)) == ".deb" {
+
+	var fields [][2]string
+
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".deb":
 		endpoint = "/api/v1/repositories/" + escape(repo) + "/debs"
+	case ".apk":
+		endpoint = "/api/v1/repositories/" + escape(repo) + "/apks"
+		fields = [][2]string{{"branch", opts.branch}, {"repo", opts.apkRepo}, {"arch", opts.arch}}
 	}
+
+	body, contentType := multipartStreamFields(fields, file, "file", filepath.Base(filePath))
+	defer func() { _ = body.Close() }()
 
 	resp, err := client.do("POST", endpoint, body, contentType)
 	if err != nil {

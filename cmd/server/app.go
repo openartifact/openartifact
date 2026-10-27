@@ -249,7 +249,7 @@ func (a *app) stopWorkers() {
 		// so stop them in parallel to keep shutdown within one drain window.
 		var drain sync.WaitGroup
 
-		for _, stop := range []func(){w.npm.Stop, w.maven.Stop, w.deb.Stop, w.rpm.Stop, w.groupMeta.Stop} {
+		for _, stop := range []func(){w.npm.Stop, w.maven.Stop, w.deb.Stop, w.pacman.Stop, w.rpm.Stop, w.apk.Stop, w.groupMeta.Stop} {
 			drain.Go(stop)
 		}
 

@@ -230,7 +230,7 @@ func (q *Queries) ListRepositoriesForGPGKey(ctx context.Context, gpgKeyID string
 const listSigningRepositoriesWithoutKey = `-- name: ListSigningRepositoriesWithoutKey :many
 SELECT r.id, r.format
 FROM repositories r
-WHERE r.format IN ('deb', 'rpm') AND r.repo_type = 'hosted'
+WHERE r.format IN ('deb', 'rpm', 'pacman') AND r.repo_type = 'hosted'
   AND NOT EXISTS (SELECT 1 FROM gpg_key_repositories a WHERE a.repository_id = r.id)
 `
 
@@ -239,7 +239,7 @@ type ListSigningRepositoriesWithoutKeyRow struct {
 	Format string `db:"format" json:"format"`
 }
 
-// deb and rpm repositories that have no key of their own (they follow the global key).
+// deb, rpm and pacman repositories that have no key of their own (they follow the global key).
 func (q *Queries) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]ListSigningRepositoriesWithoutKeyRow, error) {
 	rows, err := q.db.Query(ctx, listSigningRepositoriesWithoutKey)
 	if err != nil {

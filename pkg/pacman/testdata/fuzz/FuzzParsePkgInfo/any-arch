@@ -1,0 +1,2 @@
+go test fuzz v1
+string("pkgname = fonts-extra\x0apkgver = 20240101-1\x0aarch = any\x0asize = 10\x0a")

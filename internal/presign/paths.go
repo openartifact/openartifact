@@ -24,16 +24,14 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "pool/")
 	case "rpm":
 		return isRPMBlob(relPath, base)
+	case "pacman":
+		return strings.Contains(base, ".pkg.tar") && !strings.HasSuffix(base, ".sig")
 	case "npm":
 		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
 	case "helm":
 		// Chart archives only; index.yaml and .prov files are streamed.
 		return strings.HasPrefix(relPath, "charts/") && !strings.HasSuffix(base, ".prov")
-	case "cargo":
-		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
-	case "go":
-		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
-	case "nuget", "rubygems":
+	case "cargo", "go", "nuget", "rubygems":
 		return isPackageArchive(format, relPath, base)
 	case "conan", "conda":
 		return isConanCondaBlob(format, relPath, base)
@@ -63,10 +61,16 @@ func isConanCondaBlob(format, relPath, base string) bool {
 	return strings.Contains(relPath, "/files/") && isConanArchive(base)
 }
 
-// isPackageArchive is IsProxyBlobPath for nuget (.nupkg of the flat container)
-// and rubygems (gems/<file>.gem).
+// isPackageArchive is IsProxyBlobPath for cargo (the crate download endpoint),
+// go (module zips), nuget (.nupkg of the flat container) and rubygems
+// (gems/<file>.gem).
 func isPackageArchive(format, relPath, base string) bool {
-	if format == "nuget" {
+	switch format {
+	case "cargo":
+		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
+	case "go":
+		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
+	case "nuget":
 		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
 	}
 

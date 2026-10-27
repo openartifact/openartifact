@@ -78,7 +78,7 @@ func routeToAction(method, routeTemplate string) string {
 		return audit.ActionRepositoryCreated
 	case method == "DELETE" && routeTemplate == "/api/v1/repository/{name}":
 		return audit.ActionRepositoryDeleted
-	case method == "POST" && routeTemplate == "/api/v1/repositories/{name}/debs":
+	case method == "POST" && (routeTemplate == "/api/v1/repositories/{name}/debs" || routeTemplate == "/api/v1/repositories/{name}/apks"):
 		return audit.ActionArtifactUploaded
 	case method == "PUT" && routeTemplate == "/repos/{repo}/{pkg:.*}":
 		return audit.ActionArtifactUploaded

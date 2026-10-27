@@ -27,9 +27,9 @@ These pages are also published, one version per release, at <https://openartifac
 | [Format matrix](formats/README.md) | Client URLs, hosted/proxy/group support, upload methods, authentication |
 | [Client setup](formats/client-setup.md) | Configure and publish commands for every client, generated from the same source as the web UI |
 | [Maven](formats/maven.md) · [npm](formats/npm.md) · [PyPI](formats/pypi.md) · [Docker/OCI](formats/docker.md) | Client setup and publishing |
-| [Helm](formats/helm.md) · [Debian](formats/debian.md) · [RPM](formats/rpm.md) · [Go](formats/go.md) | Client setup and publishing |
+| [Helm](formats/helm.md) · [Debian](formats/debian.md) · [RPM](formats/rpm.md) · [Arch Linux](formats/pacman.md) · [Go](formats/go.md) | Client setup and publishing |
 | [Cargo](formats/cargo.md) · [NuGet](formats/nuget.md) · [RubyGems](formats/rubygems.md) · [Conda](formats/conda.md) | Client setup and publishing |
-| [Conan](formats/conan.md) · [Terraform/OpenTofu](formats/terraform.md) · [Ivy and sbt](formats/ivy-sbt.md) · [Raw](formats/raw.md) | Client setup and publishing |
+| [Conan](formats/conan.md) · [Alpine (apk)](formats/apk.md) · [Terraform/OpenTofu](formats/terraform.md) · [Ivy and sbt](formats/ivy-sbt.md) · [Raw](formats/raw.md) | Client setup and publishing |
 
 ## Repositories
 

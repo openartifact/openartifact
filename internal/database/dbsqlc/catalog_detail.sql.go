@@ -165,6 +165,18 @@ FROM (
     FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    -- pacman
+    SELECT t.id::uuid, 'pacman'::text, t.name::text, t.version::text, t.arch::text,
+           t.filename::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, ''::text, ''::text, ''::text, t.md5::text, ''::text,
+           jsonb_build_object('base', t.base, 'repo_arch', t.repo_arch, 'description', t.description, 'url', t.url,
+                              'packager', t.packager, 'build_date', t.build_date::text, 'installed_size', t.installed_size::text,
+                              'signature_source', t.signature_source)::jsonb,
+           to_jsonb(t.depends)::jsonb
+    FROM pacman_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     -- conan: the recipe revision row
     SELECT t.id::uuid, 'conan'::text, t.name::text, t.version::text, ''::text,
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text, t.created_at::timestamptz, t.updated_at::timestamptz,
@@ -173,6 +185,19 @@ FROM (
            jsonb_build_object('user_channel', t.user_channel, 'recipe_revision', t.recipe_revision)::jsonb,
            NULL::jsonb
     FROM conan_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    -- apk: arch = architecture; the filename is the .apk
+    SELECT t.id::uuid, 'apk'::text, t.name::text, t.version::text, t.arch::text,
+           t.name || '-' || t.version || '.apk'::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, t.description::text, t.license::text, t.url::text, ''::text, ''::text,
+           jsonb_build_object('branch', t.branch, 'repo', t.repo, 'origin', t.origin, 'maintainer', t.maintainer,
+                              'commit', t.commit, 'installed_size', t.installed_size::text, 'build_time', t.build_time::text,
+                              'checksum', t.checksum, 'data_sha256', t.data_sha256,
+                              'download_count', t.download_count::text)::jsonb,
+           NULL::jsonb
+    FROM apk_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
     -- terraform module

@@ -18,18 +18,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     @dragleave.prevent="dragOver = false"
     @drop.prevent="onDrop"
   >
+    <div v-if="isApk" class="mb-4 grid gap-3 sm:grid-cols-3" data-testid="apk-coordinates">
+      <FormField :label="t('upload.apk.branch')" id="apk-upload-branch" :hint="t('upload.apk.branchHint')" :error="branchError">
+        <input id="apk-upload-branch" v-model.trim="apkBranch" type="text" autocomplete="off" :aria-invalid="branchError !== ''" :class="INPUT_CLASS" />
+      </FormField>
+      <FormField :label="t('upload.apk.repo')" id="apk-upload-repo" :hint="t('upload.apk.repoHint')" :error="repoError">
+        <input id="apk-upload-repo" v-model.trim="apkRepo" type="text" autocomplete="off" :aria-invalid="repoError !== ''" :class="INPUT_CLASS" />
+      </FormField>
+      <FormField :label="t('upload.apk.arch')" id="apk-upload-arch" :hint="t('upload.apk.archHint')" :error="archError">
+        <input id="apk-upload-arch" v-model.trim="apkArch" type="text" autocomplete="off" placeholder="x86_64" :aria-invalid="archError !== ''" :class="INPUT_CLASS" />
+      </FormField>
+    </div>
     <div class="flex flex-col items-center text-center">
       <ArrowUpTrayIcon class="w-8 h-8 text-muted mb-2" aria-hidden="true" />
       <p class="text-sm text-foreground">{{ t('upload.dropzone') }}</p>
       <p class="text-xs text-muted mt-1">{{ formatHint }}</p>
-      <AppButton variant="secondary" size="sm" class="mt-3" @click="fileInput?.click()">
+      <AppButton variant="secondary" size="sm" class="mt-3" :disabled="!coordinatesValid" @click="fileInput?.click()">
         {{ t('upload.browse') }}
       </AppButton>
+      <label v-if="format === 'pacman'" class="mt-3 flex flex-col items-center gap-1 text-xs text-muted">
+        {{ t('upload.pacman.arch') }}
+        <input
+          v-model="pacmanArch"
+          type="text"
+          class="w-40 rounded-md border border-border bg-bg px-2 py-1 text-sm text-foreground"
+          data-testid="pacman-arch"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <span>{{ t('upload.pacman.archHint') }}</span>
+      </label>
       <input
         ref="fileInput"
         type="file"
         multiple
         class="hidden"
+        :accept="format === 'pacman' ? '.zst,.xz,.gz,.sig' : undefined"
         @change="onPick"
       />
     </div>
@@ -69,16 +93,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount } from 'vue'
 import AppButton from './AppButton.vue'
+import FormField from './FormField.vue'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { useUpload, type UploadEntry, type UploadStatus } from '../composables/useUpload'
+import { APK_DEFAULT_BRANCH, APK_DEFAULT_REPO, validApkSegment } from '../lib/apk'
+import { INPUT_CLASS } from '../lib/formClasses'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n'
+import { PACMAN_DEFAULT_ARCH, pacmanUploadOrder, pacmanUploadUrl } from '../lib/pacmanUpload'
 import { clientSetup } from '../lib/installCommands'
 
 const props = defineProps<{ repo: string; format?: string }>()
 const emit = defineEmits<{ uploaded: [] }>()
 
 const dragOver = ref(false)
+const pacmanArch = ref(PACMAN_DEFAULT_ARCH)
 const fileInput = ref<HTMLInputElement | null>(null)
 const upload = useUpload()
 const { entries } = upload
@@ -87,6 +116,17 @@ const toasts = useToastStore()
 // Leaving the page aborts running uploads instead of letting them report into a dead component.
 onBeforeUnmount(() => upload.cancelAll())
 
+// An apk upload needs the mirror-tree directory (`<branch>/<repo>/`); the architecture comes from the package.
+const isApk = computed(() => props.format === 'apk')
+const apkBranch = ref(APK_DEFAULT_BRANCH)
+const apkRepo = ref(APK_DEFAULT_REPO)
+const branchError = computed(() => (isApk.value && !validApkSegment(apkBranch.value) ? t('upload.apk.invalid') : ''))
+const repoError = computed(() => (isApk.value && !validApkSegment(apkRepo.value) ? t('upload.apk.invalid') : ''))
+// Optional: only a noarch package needs the architecture directory; empty omits the field.
+const apkArch = ref('')
+const archError = computed(() => (isApk.value && apkArch.value !== '' && !validApkSegment(apkArch.value) ? t('upload.apk.invalid') : ''))
+const coordinatesValid = computed(() => branchError.value === '' && repoError.value === '' && archError.value === '')
+
 // The terraform publish API is a raw token-authenticated PUT per module version or
 // provider platform (coordinates live in the URL), which the multipart dropzone
 // cannot express, so the zone shows the curl commands instead.
@@ -94,6 +134,8 @@ const terraformPublish = computed(() => clientSetup('terraform', window.location
 
 const formatHint = computed(() => {
   switch (props.format) {
+    case 'apk':
+      return t('upload.hint.apk')
     case 'deb':
       return t('upload.hint.deb')
     case 'rpm':
@@ -102,6 +144,8 @@ const formatHint = computed(() => {
       return t('upload.hint.maven')
     case 'npm':
       return t('upload.hint.npm')
+    case 'pacman':
+      return t('upload.hint.pacman')
     default:
       return t('upload.hint.generic')
   }
@@ -131,24 +175,41 @@ function statusLabel(status: UploadStatus): string {
 function onPick(ev: Event): void {
   const target = ev.target as HTMLInputElement
   if (!target.files) return
-  for (const f of Array.from(target.files)) startFor(f)
+  if (coordinatesValid.value) void startAll(Array.from(target.files))
   target.value = ''
 }
 
 function onDrop(ev: DragEvent): void {
   dragOver.value = false
   const files = ev.dataTransfer?.files
-  if (!files) return
-  for (const f of Array.from(files)) startFor(f)
+  if (!files || !coordinatesValid.value) return
+  void startAll(Array.from(files))
+}
+
+async function startAll(files: File[]): Promise<void> {
+  if (props.format !== 'pacman') {
+    for (const f of files) void startFor(f)
+    return
+  }
+  // One at a time, packages before their signatures.
+  for (const f of pacmanUploadOrder(files)) await startFor(f)
+}
+
+function apkFields(): Record<string, string> {
+  return { branch: apkBranch.value, repo: apkRepo.value, ...(apkArch.value ? { arch: apkArch.value } : {}) }
 }
 
 async function startFor(file: File): Promise<void> {
   const entry = upload.add(file)
-  const url = `/api/v1/repositories/${encodeURIComponent(props.repo)}/packages${
-    props.format ? `?format=${encodeURIComponent(props.format)}` : ''
-  }`
+  const repoPath = `/api/v1/repositories/${encodeURIComponent(props.repo)}`
+  const pacman = props.format === 'pacman'
+  const url = pacman
+    ? pacmanUploadUrl(props.repo, file.name, pacmanArch.value.trim() || PACMAN_DEFAULT_ARCH)
+    : isApk.value
+      ? `${repoPath}/apks`
+      : `${repoPath}/packages${props.format ? `?format=${encodeURIComponent(props.format)}` : ''}`
   try {
-    await upload.start(entry, { url })
+    await upload.start(entry, pacman ? { url, method: 'PUT' } : { url, fields: isApk.value ? apkFields() : undefined })
     toasts.success(t('upload.complete'), file.name)
     emit('uploaded')
   } catch (err) {

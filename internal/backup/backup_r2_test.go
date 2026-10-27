@@ -105,8 +105,10 @@ func (r *recordingRegen) add(s string) {
 	r.mu.Unlock()
 }
 
-func (r *recordingRegen) NotifyDebStale(repoID string) { r.add("deb:" + repoID) }
-func (r *recordingRegen) NotifyRPMStale(repoID string) { r.add("rpm:" + repoID) }
+func (r *recordingRegen) NotifyDebStale(repoID string)    { r.add("deb:" + repoID) }
+func (r *recordingRegen) NotifyPacmanStale(repoID string) { r.add("pacman:" + repoID) }
+func (r *recordingRegen) NotifyRPMStale(repoID string)    { r.add("rpm:" + repoID) }
+func (r *recordingRegen) NotifyApkStale(repoID string)    { r.add("apk:" + repoID) }
 func (r *recordingRegen) NotifyMavenStale(repoID, g, a string) {
 	r.add("maven:" + repoID + ":" + g + ":" + a)
 }

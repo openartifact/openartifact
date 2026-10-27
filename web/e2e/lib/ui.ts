@@ -341,7 +341,11 @@ export function breadcrumbs(ui: Ui): Loc {
   return ui.getByRole('navigation', { name: t('shell.breadcrumbs') })
 }
 
-/** Waits until the app shell is mounted for a signed-in user. */
+/**
+ * Waits until the app shell is mounted. The header is in the DOM before the first
+ * navigation settles (session probe, lazy page chunk, redirects), so this says nothing
+ * about the URL: a spec that depends on where the router landed waits with `expectUrl`.
+ */
 export async function shellReady(ui: Ui): Promise<void> {
   await expectLoc(ui.getByTestId('user-menu')).toBeVisible()
 }

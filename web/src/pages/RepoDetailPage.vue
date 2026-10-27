@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else-if="repo">
       <div class="mb-6 space-y-4">
-        <ConnectClientPanel :format="repo.format" :repo="repo.name" :read-only="repo.repo_type === 'proxy' || repo.repo_type === 'group'" />
+        <ConnectClientPanel :format="repo.format" :repo="repo.name" :repo-type="repo.repo_type" :read-only="repo.repo_type === 'proxy' || repo.repo_type === 'group'" />
         <PackageUploadZone v-if="canUpload && showUpload" :repo="repo.name" :format="repo.format" @uploaded="onUploaded" />
         <dl
           v-if="repo.repo_type === 'proxy'"
@@ -116,13 +116,13 @@ const uploads = ref(0)
 
 // Global admins and maintainers/owners of the repository's project (repo.permissions.admin).
 const repoAdmin = computed(() => session.isAdmin || repo.value?.permissions?.admin === true)
-// Web upload is implemented by the deb and rpm handlers only; other formats are published with their
+// Web upload is implemented by the deb, rpm and apk handlers only; other formats are published with their
 // native client tooling. Proxy and group repositories are read-only.
 const canUpload = computed(
   () =>
     session.isAdmin &&
     (repo.value?.repo_type ?? 'hosted') === 'hosted' &&
-    (repo.value?.format === 'deb' || repo.value?.format === 'rpm'),
+    (repo.value?.format === 'deb' || repo.value?.format === 'rpm' || repo.value?.format === 'apk'),
 )
 
 const tabs = computed<TabDef[]>(() => {

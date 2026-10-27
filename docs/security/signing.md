@@ -10,7 +10,7 @@ Two separate topics: the GPG key the server uses to sign APT and RPM repository 
 
 ## Repository metadata signing (GPG)
 
-GPG keys sign the metadata of Debian and RPM repositories and the manifest of sealed [release bundles](../repositories/release-bundles.md). Uploaded packages are stored as-is: OpenArtifact does not sign or re-sign `.deb`/`.rpm` files, only the index files that list them. Other formats are not signed. Deb and RPM group repositories publish their own merged index and sign it with the key resolved for the group itself (its own, else the global active, else the file / environment key); upstream signatures of proxy members are not passed through ([groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups)).
+GPG keys sign the metadata of Debian and RPM repositories and the manifest of sealed [release bundles](../repositories/release-bundles.md). Uploaded packages are stored as-is: OpenArtifact does not sign or re-sign `.deb`/`.rpm` files, only the index files that list them. Alpine (apk) repositories use a separate per-repository RSA key ([below](#alpine-apk-index-signing-key)). Other formats are not signed. Deb and RPM group repositories publish their own merged index and sign it with the key resolved for the group itself (its own, else the global active, else the file / environment key); upstream signatures of proxy members are not passed through ([groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups)).
 
 There are two ways to provide a key, and they combine:
 
@@ -56,6 +56,7 @@ gpg --armor --export <FINGERPRINT> > public.key
 | Debian | `dists/<dist>/InRelease` (clear-signed) and `dists/<dist>/Release.gpg` (detached, armored) | `HOST/repos/REPO/public.key` |
 | RPM | `repodata/repomd.xml.asc` (detached, armored) | `HOST/repos/REPO/public.key` |
 | RPM package (opt-in) | the OpenPGP header signature inside each uploaded `.rpm`, when the repository's `sign_packages` is on | `HOST/repos/REPO/public.key` |
+| Arch Linux (pacman) | `<name>.db.sig`, `<name>.files.sig` and a `.sig` per package (uploaded signatures are kept, missing ones are created by the server; [details](../formats/pacman.md#signing)); repositories of format `pacman` can be assigned a key like Debian and RPM ones | `HOST/repos/REPO/public.key` |
 | Release bundle | the bundle manifest, as a detached armored signature | `GET /api/v1/admin/gpg/keys/{id}/export` |
 
 Debian packages are not signed individually: apt trusts the signed `Release`/`InRelease`, whose checksums cover `Packages` and so every `.deb` (per-package `debsigs` signatures are rarely checked and are not produced). RPM packages are signed per file only when the repository opts in with `sign_packages`; that stores the signed file, not the upload, and does not re-sign existing packages when keys rotate. dnf's default `gpgcheck=1` needs it; see [RPM signing](../formats/rpm.md#signing-packages-sign_packages).
@@ -176,3 +177,16 @@ docker buildx imagetools inspect ghcr.io/openartifact/openartifact:<VERSION> --f
 ```
 
 Vulnerability reporting policy: [../../SECURITY.md](../../SECURITY.md).
+
+## Alpine (apk) index signing key
+
+`apk` does not use GPG. Each hosted apk repository has its own RSA key that signs every `APKINDEX.tar.gz` in the abuild format (`.SIGN.RSA256.<keyname>`, SHA-256). Uploaded `.apk` files are stored as-is; their integrity is covered by the checksums in the signed index.
+
+| | |
+|---|---|
+| Generated | lazily, RSA-4096, on first use; default key name `openartifact-REPO.rsa.pub` |
+| Stored | private key sealed with AES-256-GCM under `OPENARTIFACT_SECRET_KEY` in the database; never returned by the API |
+| Distributed | `HOST/repos/REPO/public.key` (and `HOST/repos/REPO/<keyname>`); clients put it in `/etc/apk/keys/` |
+| Managed with | `GET`/`POST /api/v1/repositories/REPO/apk-key` (global manage permission) and the repository **Settings** page |
+
+Rotating or importing a key re-signs every index of the repository, and clients must install the new public key. Without `OPENARTIFACT_SECRET_KEY` the index is served unsigned and the key API answers `409 secret_key_required`. See [Alpine (apk)](../formats/apk.md#signing-key).

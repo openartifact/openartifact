@@ -69,10 +69,11 @@ type CleanupWorker struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // manually triggered policy runs
 
-	rpmNotifier, debNotifier MetadataNotifier
-	mavenNotifier            MavenNotifier
-	npmNotifier              NPMNotifier
-	dockerGC                 DockerGCRunner
+	rpmNotifier, debNotifier, pacmanNotifier MetadataNotifier
+	apkNotifier                              MetadataNotifier
+	mavenNotifier                            MavenNotifier
+	npmNotifier                              NPMNotifier
+	dockerGC                                 DockerGCRunner
 
 	lastOrphanGC         time.Time // only touched from the tick goroutine
 	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
@@ -460,6 +461,15 @@ func (w *CleanupWorker) SetMetadataNotifiers(rpm, deb MetadataNotifier) {
 	w.rpmNotifier, w.debNotifier = rpm, deb
 }
 
+// SetPacmanNotifier wires the pacman metadata worker so a cleanup run that
+// removed packages refreshes the repository's package database. It may be nil
+// when that worker is not running.
+func (w *CleanupWorker) SetPacmanNotifier(n MetadataNotifier) { w.pacmanNotifier = n }
+
+// SetApkNotifier wires the apk metadata worker so a cleanup run that removed
+// packages regenerates the repository's APKINDEX files. It may be nil.
+func (w *CleanupWorker) SetApkNotifier(apk MetadataNotifier) { w.apkNotifier = apk }
+
 // refreshMetadata runs once per policy run for the repository the run touched.
 // rpm is marked stale in the database first, so the stale sweep recovers the
 // refresh even if the notifier is absent or the process dies.
@@ -479,6 +489,14 @@ func (w *CleanupWorker) refreshMetadata(ctx context.Context, repo *models.Reposi
 	case "deb":
 		if w.debNotifier != nil {
 			w.debNotifier.NotifyStale(repo.ID)
+		}
+	case "pacman":
+		if w.pacmanNotifier != nil {
+			w.pacmanNotifier.NotifyStale(repo.ID)
+		}
+	case "apk":
+		if w.apkNotifier != nil {
+			w.apkNotifier.NotifyStale(repo.ID)
 		}
 	}
 }

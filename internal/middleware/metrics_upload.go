@@ -46,27 +46,29 @@ type uploadRoute struct {
 //nolint:gochecknoglobals // immutable route table
 var uploadRoutes = map[string]uploadRoute{
 	// Native client protocols, counted from the response status.
-	"/repos/{name}/api/v1/crates/new": {countedByMiddleware, http.MethodPut, metrics.FormatCargo},
-	"/repos/{name}/api/v1/gems":       {countedByMiddleware, http.MethodPost, metrics.FormatRubyGems},
-	"/repos/{name}/charts":            {countedByMiddleware, http.MethodPost, metrics.FormatHelm},
-	"/repos/{name}/legacy":            {countedByMiddleware, http.MethodPost, metrics.FormatPyPI},
-	"/repos/{name}/v3/package":        {countedByMiddleware, http.MethodPut, metrics.FormatNuGet},
-	"/repos/{name}/{platform}":        {countedByMiddleware, http.MethodPost, metrics.FormatConda},
-	"/repos/raw/{name}/*":             {countedByMiddleware, http.MethodPut, metrics.FormatRaw},
-	"/repos/ivy/{name}/*":             {countedByMiddleware, http.MethodPut, metrics.FormatIvy},
-	"/repos/sbt/{name}/*":             {countedByMiddleware, http.MethodPut, metrics.FormatSBT},
-	ociWildcard:                       {countedByMiddleware, "", metrics.FormatDocker},
-	conanV1Export:                     {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	conanV1Package:                    {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	conanV2Recipe:                     {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	conanV2Package:                    {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	terraformModule:                   {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
-	terraformProvider:                 {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
-	"/repos/maven/{name}/*":           {count: countedByHandler}, // api.MavenUploadHandler
+	"/repos/{name}/api/v1/crates/new":    {countedByMiddleware, http.MethodPut, metrics.FormatCargo},
+	"/repos/{name}/api/v1/gems":          {countedByMiddleware, http.MethodPost, metrics.FormatRubyGems},
+	"/repos/{name}/charts":               {countedByMiddleware, http.MethodPost, metrics.FormatHelm},
+	"/repos/{name}/legacy":               {countedByMiddleware, http.MethodPost, metrics.FormatPyPI},
+	"/repos/{name}/v3/package":           {countedByMiddleware, http.MethodPut, metrics.FormatNuGet},
+	"/repos/{name}/{platform}":           {countedByMiddleware, http.MethodPost, metrics.FormatConda},
+	"/repos/{name}/os/{arch}/{filename}": {countedByMiddleware, http.MethodPut, metrics.FormatPacman},
+	"/repos/raw/{name}/*":                {countedByMiddleware, http.MethodPut, metrics.FormatRaw},
+	"/repos/ivy/{name}/*":                {countedByMiddleware, http.MethodPut, metrics.FormatIvy},
+	"/repos/sbt/{name}/*":                {countedByMiddleware, http.MethodPut, metrics.FormatSBT},
+	ociWildcard:                          {countedByMiddleware, "", metrics.FormatDocker},
+	conanV1Export:                        {countedByMiddleware, http.MethodPut, metrics.FormatConan},
+	conanV1Package:                       {countedByMiddleware, http.MethodPut, metrics.FormatConan},
+	conanV2Recipe:                        {countedByMiddleware, http.MethodPut, metrics.FormatConan},
+	conanV2Package:                       {countedByMiddleware, http.MethodPut, metrics.FormatConan},
+	terraformModule:                      {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
+	terraformProvider:                    {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
+	"/repos/maven/{name}/*":              {count: countedByHandler}, // api.MavenUploadHandler
 	"/repos/{name}/*": {
 		count: countedByHandler,
 	}, // npm publish (api.NPMUploadHandler) and GOPROXY upload (CountUploads in cmd/server)
 	"/api/v1/repositories/{name}/debs": {count: countedByHandler}, // api.DebUploadHandler
+	"/api/v1/repositories/{name}/apks": {count: countedByHandler}, // formatapk.HTTPHandler
 
 	"/api/v1/repositories/{name}/packages":                 {count: countedByHandler}, // api.RPMUploadHandler
 	"/api/v1/repositories/{name}/uploads/{id}/complete":    {count: countedByHandler}, // api.PresignedUploadHandler (raw)

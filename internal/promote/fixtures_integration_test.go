@@ -136,6 +136,19 @@ func rowFixtures() []fixture {
 			},
 		},
 		{
+			format: "pacman", version: "1:1.0-2", path: "shop-1:1.0-2-x86_64.pkg.tar.zst",
+			tables: []string{"pacman_packages"}, compare: []string{"pacman_packages"},
+			seed: func(h *harness, repo, blob string) {
+				h.row("pacman_packages", repo, "blob_id", blob, map[string]any{
+					"name": "shop", "base": "shop", "version": "1:1.0-2", "arch": "x86_64", "repo_arch": "x86_64",
+					"filename": "shop-1:1.0-2-x86_64.pkg.tar.zst", "md5": "abc", "description": "d", "url": "https://u",
+					"packager": "Ann", "build_date": 1700000000, "installed_size": 4096, "licenses": sqlExpr("'{MIT}'"),
+					"depends": sqlExpr("'{glibc,zlib}'"), "provides": sqlExpr("'{shop-bin}'"),
+					"signature": "c2ln", "signature_source": "uploader", "signature_key": "ABCD",
+				})
+			},
+		},
+		{
 			format: "helm", version: "0.9.0", path: "shop-0.9.0.tgz",
 			tables: []string{"helm_charts"}, compare: []string{"helm_charts"},
 			seed: func(h *harness, repo, blob string) {
@@ -143,6 +156,16 @@ func rowFixtures() []fixture {
 					"name": "shop", "version": "0.9.0", "app_version": "2.4.0", "description": "d", "keywords": sqlExpr("'{a}'"),
 					"home": "https://h", "sources": sqlExpr("'{https://s}'"), "maintainers": sqlExpr(`'[{"name":"Ann"}]'::jsonb`),
 					"icon": "https://i", "api_version": "v2", "type": "application",
+				})
+			},
+		},
+		{
+			format: "apk", version: "1.2.5-r0", path: "musl-1.2.5-r0.apk",
+			tables: []string{"apk_packages"}, compare: []string{"apk_packages"},
+			seed: func(h *harness, repo, blob string) {
+				h.row("apk_packages", repo, "blob_id", blob, map[string]any{
+					"branch": "v3.20", "repo": "main", "arch": "x86_64", "pkg_arch": "x86_64", "name": "musl", "version": "1.2.5-r0",
+					"checksum": "Q1abc", "data_sha256": "dh", "license": "MIT", "depends": sqlExpr("'{so:libc.musl-x86_64.so.1}'"),
 				})
 			},
 		},

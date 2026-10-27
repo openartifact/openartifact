@@ -9,6 +9,9 @@
 # <package path>_<FuzzX> with every character outside [A-Za-z0-9_-] replaced
 # by `_` (ClusterFuzzLite rejects other characters).
 #
+# When CFL_EXTRA_FUZZ_TARGETS is set (pull requests, see select-targets.sh) only
+# the named targets are built.
+#
 # Targets are compiled in parallel, at most min(nproc, available memory / 1.5 GiB)
 # at a time (FUZZ_BUILD_JOBS overrides). Each target builds into its own scratch
 # directory and the results are merged into $OUT in sorted order, so the output
@@ -46,6 +49,23 @@ mkdir "$work/log" "$work/out"
 targets="$work/targets"
 grep -rHoE --include='*_test.go' --exclude-dir=web --exclude-dir=node_modules --exclude-dir=.git \
   '^func Fuzz[A-Za-z0-9_]*\([A-Za-z_]+ \*testing\.F\)' . | sort > "$targets"
+
+# Pull requests build only the targets the change can affect: the workflow lists
+# their names (select-targets.sh) in CFL_EXTRA_FUZZ_TARGETS, base64 encoded
+# because ClusterFuzzLite passes the variable through the environment. Unset
+# (batch runs, local builds) builds every target.
+if [ -n "${CFL_EXTRA_FUZZ_TARGETS:-}" ]; then
+  total=$(wc -l < "$targets")
+  echo "$CFL_EXTRA_FUZZ_TARGETS" | base64 -d > "$work/names"
+  while IFS= read -r line; do
+    dir=$(dirname "${line%%:*}")
+    fn=${line#*:func }
+    printf '%s|%s\n' "$(echo "${dir#./}_${fn%%(*}" | tr -c 'A-Za-z0-9_\n-' '_')" "$line"
+  done < "$targets" \
+    | awk -F'|' 'FILENAME == ARGV[1] { keep[$0] = 1; next } $1 in keep { sub(/^[^|]*\|/, ""); print }' "$work/names" - > "$targets.sel"
+  mv "$targets.sel" "$targets"
+  echo "pull request: building $(wc -l < "$targets") of $total fuzz targets, the ones affected by the change"
+fi
 
 # The fuzz builder compiles the package's test files as ordinary sources, which
 # fails when the directory also holds an external test package (`package x_test`).

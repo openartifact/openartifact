@@ -1107,6 +1107,34 @@ func (m *BaseMockDB) ListCondaPackages(ctx context.Context, repoID, platform str
 func (m *BaseMockDB) ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error) {
 	return nil, errNotImpl("ListAllCondaPackages")
 }
+func (m *BaseMockDB) CreateApkPackage(ctx context.Context, p *models.ApkPackage) error {
+	return errNotImpl("CreateApkPackage")
+}
+
+func (m *BaseMockDB) GetApkPackageFile(
+	ctx context.Context,
+	repoID, branch, repo, arch, name, version string,
+) (*models.ApkPackage, error) {
+	return nil, errNotImpl("GetApkPackageFile")
+}
+func (m *BaseMockDB) ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error) {
+	return nil, errNotImpl("ListApkPackages")
+}
+func (m *BaseMockDB) DeleteApkPackage(ctx context.Context, id, repoID string) error {
+	return errNotImpl("DeleteApkPackage")
+}
+func (m *BaseMockDB) IncrementApkDownloadCount(ctx context.Context, id, repoID string) error {
+	return errNotImpl("IncrementApkDownloadCount")
+}
+func (m *BaseMockDB) GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error) {
+	return nil, errNotImpl("GetApkSigningKey")
+}
+func (m *BaseMockDB) CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.ApkSigningKey) (bool, error) {
+	return false, errNotImpl("CreateApkSigningKeyIfAbsent")
+}
+func (m *BaseMockDB) ReplaceApkSigningKey(ctx context.Context, k *models.ApkSigningKey) error {
+	return errNotImpl("ReplaceApkSigningKey")
+}
 func (m *BaseMockDB) CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error {
 	return errNotImpl("CreateTerraformModule")
 }
@@ -1183,6 +1211,30 @@ func (m *BaseMockDB) DeleteConanPackage(ctx context.Context, id string) error {
 }
 func (m *BaseMockDB) ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error) {
 	return nil, errNotImpl("ListConanPackages")
+}
+func (m *BaseMockDB) CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error {
+	return errNotImpl("CreatePacmanPackage")
+}
+func (m *BaseMockDB) GetPacmanPackageByFilename(ctx context.Context, repoID, filename string) (*models.PacmanPackage, error) {
+	return nil, errNotImpl("GetPacmanPackageByFilename")
+}
+func (m *BaseMockDB) ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
+	return nil, errNotImpl("ListPacmanPackages")
+}
+func (m *BaseMockDB) ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error) {
+	return nil, errNotImpl("ListPacmanFileLists")
+}
+func (m *BaseMockDB) ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
+	return nil, errNotImpl("ListPacmanPackagesWithoutFileList")
+}
+func (m *BaseMockDB) SetPacmanFileList(ctx context.Context, repoID, id, fileList string) error {
+	return errNotImpl("SetPacmanFileList")
+}
+func (m *BaseMockDB) SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error {
+	return errNotImpl("SetPacmanSignature")
+}
+func (m *BaseMockDB) DeletePacmanPackage(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeletePacmanPackage")
 }
 func (m *BaseMockDB) CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error {
 	return errNotImpl("CreateIvyArtifact")

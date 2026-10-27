@@ -1,0 +1,2 @@
+go test fuzz v1
+string("pkgname = hello\x0apkgbase = hello\x0apkgver = 1:2.12-3\x0apkgdesc = The classic greeting\x0aurl = https://example.org/hello\x0abuilddate = 1700000000\x0apackager = Jane <jane@example.org>\x0asize = 4096\x0aarch = x86_64\x0alicense = GPL-3.0-or-later\x0adepend = glibc\x0aoptdepend = bash: scripting\x0aprovides = greeter\x0a")

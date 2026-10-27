@@ -140,10 +140,24 @@ var trashSpecs = []*trashSpec{
 		blobCols: []string{"t.blob_id"},
 	},
 	{
+		kind: models.TrashKindPacman, table: "pacman_packages", format: "pacman", quota: true,
+		repoID:   "t.repository_id",
+		name:     "t.name",
+		version:  "t.version",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
 		kind: models.TrashKindConan, table: "conan_packages", format: "conan", quota: true,
 		repoID:   "t.repository_id",
 		name:     "t.name",
 		version:  "t.version || '@' || t.user_channel",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
+		kind: models.TrashKindApk, table: "apk_packages", format: "apk", quota: true,
+		repoID:   "t.repository_id",
+		name:     "t.branch || '/' || t.repo || '/' || t.name || ' (' || t.arch || ')'",
+		version:  "t.version",
 		blobCols: []string{"t.blob_id"},
 	},
 	{

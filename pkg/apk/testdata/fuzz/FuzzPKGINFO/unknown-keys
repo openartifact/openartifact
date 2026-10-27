@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("# c\n\nreplaces = a\npkgname = a\npkgver = 1\narch = noarch\ndatahash = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ntriggers = /x\n")

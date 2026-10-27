@@ -24,6 +24,8 @@ func specOnlyAllowed() map[string]bool {
 		"GET /ready":         true,
 		"GET /metrics":       true,
 		"GET /api/v1/search": true, // registered by internal/search
+
+		"POST /api/v1/repositories/{name}/apks": true, // registered by internal/format/apk
 	}
 }
 
@@ -104,6 +106,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewDebUploadHandler(log, nil, nil, nil).Register(r)
 	NewRPMUploadHandler(log, nil, nil, nil).Register(r)
 	NewDeltaHandler(log, nil, nil).Register(r)
+	NewApkKeyHandler(nil, nil, nil, nil).Register(r)
 
 	routes := map[string]bool{}
 	err = chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {

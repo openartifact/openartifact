@@ -22,6 +22,7 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 	}
 
 	formats := []string{
+		"apk",
 		"cargo",
 		"conda",
 		"conan",
@@ -33,6 +34,7 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 		"ivy",
 		"maven",
 		"npm",
+		"pacman",
 		"nuget",
 		"pypi",
 		"raw",

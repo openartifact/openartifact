@@ -1,0 +1,2 @@
+go test fuzz v1
+string("pkgname = multi\x0apkgver = 1.0-1\x0aarch = aarch64\x0alicense = MIT\x0alicense = Apache-2.0\x0adepend = a>=1\x0adepend = b\x0areplaces = old\x0aconflicts = c\x0aprovides = p=1\x0axdata = pkgtype=pkg\x0a")

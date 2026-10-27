@@ -58,8 +58,8 @@ var repoProxyOnly = []string{
 // repoFormats mirrors the server's chk_repo_format constraint.
 func repoFormats() []string {
 	return []string{
-		"cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven",
-		"npm", "nuget", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
+		"apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven",
+		"npm", "nuget", "pacman", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform",
 	}
 }
 

@@ -128,10 +128,12 @@ type RegenKind string
 // The generated-metadata kinds that need a worker refresh after a promotion.
 // Every other format computes its indexes live from the tables.
 const (
-	RegenDeb   RegenKind = "deb"
-	RegenRPM   RegenKind = "rpm"
-	RegenMaven RegenKind = "maven"
-	RegenNPM   RegenKind = "npm"
+	RegenDeb    RegenKind = "deb"
+	RegenRPM    RegenKind = "rpm"
+	RegenApk    RegenKind = "apk"
+	RegenMaven  RegenKind = "maven"
+	RegenNPM    RegenKind = "npm"
+	RegenPacman RegenKind = "pacman"
 )
 
 // Regen is one metadata refresh to enqueue once the promotion has committed.
