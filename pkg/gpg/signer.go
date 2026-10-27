@@ -48,7 +48,9 @@ type LocalSigner struct {
 	entity *openpgp.Entity
 }
 
-// NewLocalSigner creates a signer from an existing private key.
+// NewLocalSigner creates a signer from an existing armored private key. It
+// rejects keys that cannot sign: public-only, passphrase-protected without a
+// passphrase, revoked or expired.
 func NewLocalSigner(keyReader io.Reader, passphrase []byte) (*LocalSigner, error) {
 	entityList, err := openpgp.ReadArmoredKeyRing(keyReader)
 	if err != nil {
@@ -77,7 +79,13 @@ func NewLocalSigner(keyReader io.Reader, passphrase []byte) (*LocalSigner, error
 		}
 	}
 
-	return &LocalSigner{entity: entity}, nil
+	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
+		return nil, ErrPassphraseRequired
+	}
+
+	// A key that cannot sign (public only, revoked, expired) would make
+	// CleartextSign dereference a nil private key at the first request.
+	return NewLocalSignerFromEntity(entity)
 }
 
 // NewLocalSignerFromFile creates a signer from a key file.
