@@ -901,7 +901,7 @@ func Immutable(format, key string) bool {
 		return goImmutable(key)
 	case "nuget":
 		// Flat container package files, not version lists or registrations.
-		return strings.HasPrefix(key, "v3/package/") && (strings.HasSuffix(name, ".nupkg") || strings.HasSuffix(name, ".nuspec"))
+		return nugetImmutable(key)
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
@@ -915,6 +915,11 @@ func Immutable(format, key string) bool {
 	}
 
 	return false
+}
+
+// nugetImmutable reports whether key is a package file of the flat container.
+func nugetImmutable(key string) bool {
+	return strings.HasPrefix(key, "v3/package/") && (strings.HasSuffix(key, ".nupkg") || strings.HasSuffix(key, ".nuspec"))
 }
 
 // conanRevisionFile reports whether key is the file list or a file of a
