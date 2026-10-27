@@ -12,7 +12,7 @@ The management API lives under `/api/v1`; the web UI, the [CLI](cli.md) and the 
 
 | URL | Content |
 |---|---|
-| `/api/v1/openapi.json` | OpenAPI 3 spec (embedded from [`internal/api/openapi.json`](../../internal/api/openapi.json)) |
+| `/api/v1/openapi.json` | OpenAPI 3.1 spec (embedded from [`internal/api/openapi.json`](../../internal/api/openapi.json)) |
 | `/api/v1/openapi.yaml` | same spec rendered as YAML |
 | `/api/reference` | Interactive API reference ([Scalar](https://github.com/scalar/scalar)), also linked from the About dialog |
 | `/swagger`, `/swagger/` | `301` redirects to `/api/reference` (the old Swagger UI path) |
@@ -212,6 +212,8 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 `/admin/pprof/` is also registered when `server.pprofEnabled` is set (admin only; for diagnostics, see [performance](../operations/performance.md)).
 
 ## Regenerating the web client types
+
+The spec is OpenAPI 3.1.1 (JSON Schema 2020-12): nullable values are `type: [T, "null"]` or `anyOf` with `{"type": "null"}`, not the 3.0 `nullable` keyword. `go test ./internal/api` validates it against the official 3.1 meta-schema.
 
 The SPA's types are generated from the spec. After changing routes or schemas, keep `internal/api/openapi.json` in sync with the handlers, then:
 

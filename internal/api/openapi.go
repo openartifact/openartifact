@@ -61,7 +61,6 @@ const (
 `
 
 	openapiLicenseName = "AGPL-3.0-or-later"
-	openapiLicenseURL  = "https://www.gnu.org/licenses/agpl-3.0.html"
 	openapiDescription = "REST API of the OpenArtifact artifact repository manager."
 )
 
@@ -114,7 +113,7 @@ func (h *OpenAPIHandler) patchedSpec() ([]byte, error) {
 
 		info["version"] = h.version
 		info["description"] = openapiDescription
-		info["license"] = map[string]any{"name": openapiLicenseName, "url": openapiLicenseURL}
+		info["license"] = map[string]any{"name": openapiLicenseName, "identifier": openapiLicenseName}
 		doc["info"] = info
 
 		h.specJSON, h.specErr = json.MarshalIndent(doc, "", "  ")
