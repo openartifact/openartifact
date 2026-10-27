@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
 
       <template #cell-actor="{ row }">
-        <span class="font-medium text-foreground" :title="(row as AuditEntry).actor || undefined">{{ actorLabel(row as AuditEntry) }}</span>
+        <span class="block max-w-48 truncate font-medium text-foreground" :title="(row as AuditEntry).actor || undefined">{{ actorLabel(row as AuditEntry) }}</span>
       </template>
 
       <template #cell-action="{ row }">
@@ -74,7 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <template #cell-subject="{ row }">
         <template v-for="s in [auditSubjectView(row as AuditEntry)]" :key="(row as AuditEntry).id">
-          <div v-if="s" class="min-w-0">
+          <div v-if="s" class="min-w-0 truncate" :title="s.label">
             <RouterLink
               v-if="s.to"
               :to="s.to"
@@ -88,13 +88,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
 
       <template #cell-actions="{ row }">
-        <AppButton
-          variant="ghost"
-          size="sm"
-          class="max-md:min-h-11"
-          :aria-label="tp('sx.audit.open', { action: (row as AuditEntry).action ?? '', time: formatUtc((row as AuditEntry).timestamp) })"
-          @click="opened = row as AuditEntry"
-        >{{ t('adm.audit.details') }}</AppButton>
+        <RowActions
+          :actions="[{ key: 'details', label: t('adm.audit.details'), icon: EyeIcon }]"
+          :subject="`${(row as AuditEntry).action ?? ''}, ${formatUtc((row as AuditEntry).timestamp)} UTC`"
+          @action="opened = row as AuditEntry"
+        />
       </template>
     </ListTable>
 
@@ -149,7 +147,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { CheckIcon } from '@heroicons/vue/20/solid'
+import { CheckIcon, EyeIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../../../components/AppButton.vue'
 import AuditExportButtons from '../../../components/AuditExportButtons.vue'
 import SectionActions from '../../../components/SectionActions.vue'
@@ -157,6 +155,7 @@ import Drawer from '../../../components/ui/Drawer.vue'
 import FilterBar from '../../../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import RelativeTime from '../../../components/ui/RelativeTime.vue'
+import RowActions from '../../../components/ui/RowActions.vue'
 import { downloadAuditExport, listAudit, type AuditEntry, type ExportFormat } from '../../../api/audit'
 import { useListQuery } from '../../../composables/useListQuery'
 import { boolParam, strParam } from '../../../composables/useUrlState'
@@ -202,9 +201,9 @@ const hideHttp = computed(() => !list.filters.value.http)
 
 const columns: ListColumn[] = [
   { key: 'time', label: t('sx.audit.col.time') },
-  { key: 'actor', label: t('sx.audit.col.actor') },
+  { key: 'actor', label: t('sx.audit.col.actor'), dropOrder: 2 },
   { key: 'action', label: t('sx.audit.col.action') },
-  { key: 'subject', label: t('sx.audit.col.subject') },
+  { key: 'subject', label: t('sx.audit.col.subject'), grow: true },
   { key: 'actions', label: t('sx.audit.col.actions'), actions: true },
 ]
 

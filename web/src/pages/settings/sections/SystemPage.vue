@@ -38,8 +38,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <template #cell-component="{ row }">
           <div class="min-w-0">
-            <span class="font-medium text-foreground">{{ (row as HealthRow).name }}</span>
-            <p class="text-xs text-muted">{{ (row as HealthRow).sub }}</p>
+            <span class="block truncate font-medium text-foreground" :title="(row as HealthRow).name">{{ (row as HealthRow).name }}</span>
+            <p class="truncate text-xs text-muted" :title="(row as HealthRow).sub">{{ (row as HealthRow).sub }}</p>
           </div>
         </template>
         <template #cell-status="{ row }">
@@ -56,14 +56,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >{{ t('sx.scanners.guide') }}</a>
         </template>
         <template #cell-actions="{ row }">
-          <AppButton
+          <RowActions
             v-if="(row as HealthRow).to"
-            variant="ghost"
-            size="sm"
-            class="max-md:min-h-11"
-            :to="(row as HealthRow).to"
-            :aria-label="tp('sx.health.detailsOf', { name: (row as HealthRow).name })"
-          >{{ (row as HealthRow).toLabel }}</AppButton>
+            :actions="[{ key: 'details', label: (row as HealthRow).toLabel ?? '', icon: ArrowTopRightOnSquareIcon, to: (row as HealthRow).to }]"
+            :subject="(row as HealthRow).name"
+          />
         </template>
       </ListTable>
 
@@ -134,6 +131,8 @@ import SectionActions from '../../../components/SectionActions.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RowActions from '../../../components/ui/RowActions.vue'
+import { ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
 import StateBlock from '../../../components/ui/StateBlock.vue'
 import { getAdminSystemInfo, type AdminSystemInfo } from '../../../api/admin'
 import { getSecurityHealth, type SecurityHealth } from '../../../api/security'
@@ -178,7 +177,7 @@ const commit = computed(() => formatCommit(info.value?.commit))
 const built = computed(() => formatBuildTime(info.value?.build_time))
 
 const columns: ListColumn[] = [
-  { key: 'component', label: t('sx.health.col.component') },
+  { key: 'component', label: t('sx.health.col.component'), grow: true },
   { key: 'status', label: t('sx.health.col.status') },
   { key: 'detail', label: t('sx.health.col.detail') },
   { key: 'actions', label: t('sx.health.col.actions'), actions: true },

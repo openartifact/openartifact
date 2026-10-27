@@ -42,6 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <section v-if="routes.length" :aria-label="t('tiering.dryRun.routes')">
       <h3 class="text-xs font-semibold text-foreground mb-1.5">{{ t('tiering.dryRun.routes') }}</h3>
+      <TableScroller>
       <table class="w-full text-sm">
         <thead>
           <tr class="text-left text-caption font-semibold text-muted">
@@ -51,17 +52,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-          <tr v-for="r in routes" :key="`${r.from}>${r.to}`" data-testid="dry-run-route">
+          <tr v-for="r in routes" :key="`${r.from}>${r.to}`" class="group/row" data-testid="dry-run-route">
             <td class="py-1.5 pr-3 font-mono text-xs">{{ r.from }} → {{ r.to }}</td>
             <td class="py-1.5 px-3 text-right tabular-nums">{{ formatCount(r.count) }}</td>
             <td class="py-1.5 pl-3 text-right tabular-nums">{{ formatBytes(r.bytes ?? 0) }}</td>
           </tr>
         </tbody>
       </table>
+      </TableScroller>
     </section>
 
     <section v-if="policies.length" :aria-label="t('tiering.dryRun.policies')">
       <h3 class="text-xs font-semibold text-foreground mb-1.5">{{ t('tiering.dryRun.policies') }}</h3>
+      <TableScroller>
       <table class="w-full text-sm">
         <thead>
           <tr class="text-left text-caption font-semibold text-muted">
@@ -71,19 +74,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-          <tr v-for="p in policies" :key="p.policy" data-testid="dry-run-policy">
+          <tr v-for="p in policies" :key="p.policy" class="group/row" data-testid="dry-run-policy">
             <td class="py-1.5 pr-3">{{ p.policy || t('tiering.dryRun.promoteOnRead') }}</td>
             <td class="py-1.5 px-3 text-right tabular-nums">{{ formatCount(p.count) }}</td>
             <td class="py-1.5 pl-3 text-right tabular-nums">{{ formatBytes(p.bytes ?? 0) }}</td>
           </tr>
         </tbody>
       </table>
+      </TableScroller>
     </section>
 
     <section v-if="sample.length" :aria-label="t('tiering.dryRun.sample')">
       <h3 class="text-xs font-semibold text-foreground mb-1.5">{{ t('tiering.dryRun.sample') }}</h3>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+      <TableScroller>
+      <table class="w-full text-sm">
           <thead>
             <tr class="text-left text-caption font-semibold text-muted">
               <th scope="col" class="py-1.5 pr-3">{{ t('tiering.dryRun.sha') }}</th>
@@ -94,10 +98,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="s in sample" :key="s.sha256" data-testid="dry-run-sample">
+            <tr v-for="s in sample" :key="s.sha256" class="group/row" data-testid="dry-run-sample">
               <td class="py-1.5 pr-3"><ShortSha :sha="s.sha256 ?? ''" /></td>
               <td class="py-1.5 px-3 text-right tabular-nums">{{ formatBytes(s.size_bytes ?? 0) }}</td>
-              <td class="py-1.5 px-3 font-mono text-xs whitespace-nowrap">{{ s.from }} → {{ s.to }}</td>
+              <td class="py-1.5 px-3 font-mono text-xs">{{ s.from }} → {{ s.to }}</td>
               <td class="py-1.5 px-3">{{ s.policy || t('tiering.dryRun.promoteOnRead') }}</td>
               <td class="py-1.5 pl-3 text-muted whitespace-nowrap">
                 {{ formatDate(s.last_accessed_at, t('tiering.dryRun.neverAccessed')) }}
@@ -105,7 +109,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </tr>
           </tbody>
         </table>
-      </div>
+      </TableScroller>
     </section>
   </div>
 </template>
@@ -114,6 +118,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed } from 'vue'
 import { ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/vue/24/outline'
 import ShortSha from './ShortSha.vue'
+import TableScroller from './ui/TableScroller.vue'
 import type { TierDryRun } from '../api/tiering'
 import { t } from '../i18n'
 import { formatDate } from '../lib/datetime'

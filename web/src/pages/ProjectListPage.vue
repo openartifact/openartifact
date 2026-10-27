@@ -50,14 +50,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <template #cell-name="{ row }">
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex min-w-0 items-center gap-2">
             <router-link
               :to="`/projects/${encodeURIComponent(row.name ?? '')}`"
-              class="font-mono text-sm font-semibold text-foreground hover:text-primary"
+              class="truncate font-mono text-sm font-semibold text-foreground hover:text-primary"
+              :title="row.name"
             >{{ row.name }}</router-link>
             <span v-if="row.is_system" class="text-xs text-muted">{{ t('projects.builtIn') }}</span>
           </div>
-          <p v-if="subtitle(row)" class="truncate text-xs text-muted">{{ subtitle(row) }}</p>
+          <p v-if="subtitle(row)" class="truncate text-xs text-muted" :title="subtitle(row)">{{ subtitle(row) }}</p>
         </div>
       </template>
       <template #cell-role="{ row }">
@@ -166,12 +167,12 @@ const scopeOptions = computed(() => [
 ])
 
 const columns = computed<ListColumn[]>(() => [
-  { key: 'name', label: t('projects.column.name'), sortable: true },
-  { key: 'role', label: t('projects.column.role'), sortable: true },
-  { key: 'members', label: t('projects.column.members'), sortable: true, align: 'end' },
+  { key: 'name', label: t('projects.column.name'), sortable: true, grow: true },
+  { key: 'role', label: t('projects.column.role'), sortable: true, dropOrder: 3 },
+  { key: 'members', label: t('projects.column.members'), sortable: true, align: 'end', dropOrder: 2 },
   { key: 'repositories', label: t('projects.column.repositories'), sortable: true, align: 'end' },
   { key: 'used', label: t('projects.column.used'), sortable: true },
-  { key: 'created', label: t('projects.column.created'), sortable: true },
+  { key: 'created', label: t('projects.column.created'), sortable: true, dropOrder: 1 },
 ])
 
 const mineOnly = computed(() => effectiveScope(session.isAdmin, list.filters.value.scope) === 'mine')

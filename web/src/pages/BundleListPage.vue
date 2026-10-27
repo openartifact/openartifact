@@ -44,7 +44,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :empty-hint="t('bundles.emptyHint')"
     >
       <template #cell-bundle="{ row }">
-        <router-link :to="bundleRoute(row)" class="font-mono text-sm font-semibold text-foreground hover:text-primary">
+        <router-link :to="bundleRoute(row)" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary" :title="`${row.name} ${row.version}`">
           {{ row.name }} <span class="font-normal text-muted">{{ row.version }}</span>
         </router-link>
       </template>
@@ -123,11 +123,11 @@ const stateOptions = computed(() =>
 )
 
 const columns = computed<ListColumn[]>(() => [
-  { key: 'bundle', label: t('bundles.column.bundle') },
+  { key: 'bundle', label: t('bundles.column.bundle'), grow: true },
   { key: 'state', label: t('bundles.column.state') },
-  { key: 'signed', label: t('bundles.column.signed') },
+  { key: 'signed', label: t('bundles.column.signed'), dropOrder: 2 },
   { key: 'stage', label: t('bundles.column.stage') },
-  { key: 'created', label: t('bundles.column.created') },
+  { key: 'created', label: t('bundles.column.created'), dropOrder: 1 },
 ])
 
 // The pipelines feed the create drawer and the pipelines drawer; a bundle can be made without one.

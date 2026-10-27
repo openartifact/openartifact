@@ -52,25 +52,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- Data table -->
-      <table v-else class="w-full">
+      <TableScroller v-else>
+      <table class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th class="text-left text-caption font-semibold text-muted px-5 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-5 py-2.5">
               {{ t('cleanup.col.name') }}
             </th>
-            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
+            <th scope="col" data-drop-order="2" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.type') }}
             </th>
-            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.rule') }}
             </th>
-            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.enabled') }}
             </th>
-            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
+            <th scope="col" data-drop-order="1" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.lastRun') }}
             </th>
-            <th class="text-right text-caption font-semibold text-muted px-5 py-2.5">
+            <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5" :class="ACTIONS_HEAD">
               {{ t('cleanup.col.actions') }}
             </th>
           </tr>
@@ -79,11 +80,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <tr
             v-for="policy in items"
             :key="policy.id"
-            class="hover:bg-surface-hover/30 transition-colors"
+            class="group/row hover:bg-surface-hover/30 transition-colors"
           >
             <!-- Name -->
-            <td class="px-5 py-3.5">
-              <span class="font-medium text-sm text-foreground">{{ policy.name }}</span>
+            <td class="px-5 py-3.5" :class="GROW_CELL">
+              <span class="block truncate font-medium text-sm text-foreground" :title="policy.name">{{ policy.name }}</span>
             </td>
 
             <!-- Type chip -->
@@ -129,53 +130,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </td>
 
             <!-- Actions -->
-            <td class="px-5 py-3.5">
-              <div class="flex items-center gap-0.5 justify-end">
-                <!-- Run now -->
-                <button
-                  type="button"
-                  :title="t('cleanup.run')" :aria-label="t('cleanup.run')"
-                  :disabled="runningId === policy.id"
-                  class="p-1.5 rounded-md text-muted hover:text-success hover:bg-success/10 transition-colors disabled:opacity-40"
-                  @click="runPolicy(policy)"
-                >
-                  <ArrowPathIcon v-if="runningId === policy.id" class="w-4 h-4 animate-spin" />
-                  <PlayIcon v-else class="w-4 h-4" />
-                </button>
-                <!-- Dry run -->
-                <button
-                  type="button"
-                  :title="t('cleanup.dryRun')" :aria-label="t('cleanup.dryRun')"
-                  :disabled="previewingId === policy.id"
-                  class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
-                  data-testid="cleanup-dry-run"
-                  @click="previewPolicy(policy)"
-                >
-                  <EyeIcon class="w-4 h-4" />
-                </button>
-                <!-- Edit -->
-                <button
-                  type="button"
-                  :title="t('cleanup.editTitle')" :aria-label="t('cleanup.editTitle')"
-                  class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                  @click="openDrawer('edit', policy)"
-                >
-                  <PencilIcon class="w-4 h-4" />
-                </button>
-                <!-- Delete -->
-                <button
-                  type="button"
-                  :title="t('cleanup.deleteTitle')" :aria-label="t('cleanup.deleteTitle')"
-                  class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                  @click="openDeleteModal(policy)"
-                >
-                  <TrashIcon class="w-4 h-4" />
-                </button>
-              </div>
+            <td class="px-5 py-3.5" :class="ACTIONS_CELL">
+              <RowActions :actions="policyActions(policy)" :subject="policy.name" :inline="4" @action="(key) => onPolicyAction(key, policy)" />
             </td>
           </tr>
         </tbody>
       </table>
+      </TableScroller>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
@@ -252,16 +213,18 @@ import {
 } from '../../lib/cleanupPolicy'
 import { t, tp } from '../../i18n'
 import { useToastStore } from '../../stores/toast'
+import RowActions, { type RowAction } from '../ui/RowActions.vue'
+import TableScroller from '../ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from '../ui/tableStyles'
 import {
   PlusIcon,
-  PencilIcon,
+  PencilSquareIcon,
   TrashIcon,
-  ArrowPathIcon,
   PlayIcon,
   EyeIcon,
   QueueListIcon,
   CalendarIcon,
-} from '@heroicons/vue/24/outline'
+} from '@heroicons/vue/20/solid'
 
 const props = defineProps<{
   repoName: string
@@ -420,4 +383,20 @@ async function confirmDelete(): Promise<void> {
 // ─── Lifecycle ─────────────────────────────────────────────────────────────────
 
 onMounted(load)
+
+function policyActions(policy: CleanupPolicy): RowAction[] {
+  return [
+    { key: 'run', label: t('cleanup.run'), icon: PlayIcon, loading: runningId.value === policy.id },
+    { key: 'dry-run', label: t('cleanup.dryRun'), icon: EyeIcon, loading: previewingId.value === policy.id },
+    { key: 'edit', label: t('cleanup.editTitle'), icon: PencilSquareIcon },
+    { key: 'delete', label: t('cleanup.deleteTitle'), icon: TrashIcon, tone: 'danger' },
+  ]
+}
+
+function onPolicyAction(key: string, policy: CleanupPolicy): void {
+  if (key === 'run') void runPolicy(policy)
+  else if (key === 'dry-run') void previewPolicy(policy)
+  else if (key === 'edit') openDrawer('edit', policy)
+  else if (key === 'delete') openDeleteModal(policy)
+}
 </script>

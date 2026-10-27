@@ -21,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template #cell-name="{ row }">
       <div class="min-w-0">
-        <span class="break-all font-mono text-sm text-foreground">{{ (row as UnifiedToken).name }}</span>
+        <span class="block truncate font-mono text-sm text-foreground" :title="(row as UnifiedToken).name">{{ (row as UnifiedToken).name }}</span>
         <span v-if="(row as UnifiedToken).owner" class="block text-xs text-muted">
           {{ tp('tok.owner', { owner: (row as UnifiedToken).owner }) }}
         </span>
@@ -79,23 +79,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </template>
 
     <template #cell-actions="{ row }">
-      <AppButton
-        v-if="canRevoke(row as UnifiedToken)"
-        variant="danger-outline"
-        size="sm"
-        class="max-md:min-h-11"
-        :data-testid="`revoke-${(row as UnifiedToken).id}`"
-        @click="emit('revoke', row as UnifiedToken)"
-      >{{ t('tok.revoke.action') }}</AppButton>
+      <RowActions
+        :actions="[{ key: 'revoke', label: t('tok.revoke.action'), icon: NoSymbolIcon, tone: 'danger', hidden: !canRevoke(row as UnifiedToken) }]"
+        :subject="(row as UnifiedToken).name"
+        @action="emit('revoke', row as UnifiedToken)"
+      />
     </template>
   </ListTable>
 </template>
 
 <script setup lang="ts">
-import { ExclamationTriangleIcon } from '@heroicons/vue/20/solid'
+import { ExclamationTriangleIcon, NoSymbolIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import DocsLink from '../DocsLink.vue'
 import StatusBadge from '../StatusBadge.vue'
+import RowActions from '../ui/RowActions.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import type { UnifiedToken } from '../../api/tokens'
 import type { ListQuery } from '../../composables/useListQuery'
@@ -112,11 +110,11 @@ defineProps<{
 const emit = defineEmits<{ create: []; revoke: [token: UnifiedToken] }>()
 
 const columns: ListColumn[] = [
-  { key: 'name', label: t('tok.col.name') },
-  { key: 'type', label: t('tok.col.type') },
+  { key: 'name', label: t('tok.col.name'), grow: true },
+  { key: 'type', label: t('tok.col.type'), dropOrder: 3 },
   { key: 'scope', label: t('tok.col.scope') },
-  { key: 'lastUsed', label: t('tok.col.lastUsed') },
-  { key: 'expires', label: t('tok.col.expires') },
+  { key: 'lastUsed', label: t('tok.col.lastUsed'), dropOrder: 1 },
+  { key: 'expires', label: t('tok.col.expires'), dropOrder: 2 },
   { key: 'actions', label: t('tok.col.actions'), actions: true },
 ]
 </script>

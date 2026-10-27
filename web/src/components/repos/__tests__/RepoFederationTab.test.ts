@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, spyOn, afterEach, type Mock } from 'bun:test'
-import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { mount, flushPromises, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import RepoFederationTab from '../RepoFederationTab.vue'
 import type { FederationPeer, FederationStatus, FederationDeferredUnit } from '../../../api/federation'
@@ -115,7 +115,7 @@ function serve(initial: FederationStatus, deferred: FederationDeferredUnit[] = [
 }
 
 async function mountTab(): Promise<VueWrapper> {
-  wrapper = mount(RepoFederationTab, { props: { repo: REPO }, global: { plugins: [createPinia()] }, attachTo: document.body })
+  wrapper = mount(RepoFederationTab, { props: { repo: REPO }, global: { plugins: [createPinia()], stubs: { RouterLink: RouterLinkStub } }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
@@ -345,13 +345,13 @@ describe('RepoFederationTab', () => {
   it('revokes a token after confirmation and marks it revoked', async () => {
     const server = serve(baseStatus({ tokens: [{ id: 'tk', name: 'site-b', created_at: '2026-10-02T00:00:00Z' }] }))
     const w = await mountTab()
-    await w.get('[aria-label="Revoke token site-b"]').trigger('click')
+    await w.get('[aria-label="Revoke: site-b"]').trigger('click')
     await flushPromises()
     expect(calls(server, 'DELETE', '/tokens/tk')).toHaveLength(0)
     dialogButton('Revoke')!.click()
     await flushPromises()
     expect(calls(server, 'DELETE', '/tokens/tk')).toHaveLength(1)
     expect(w.get('[data-testid="federation-tokens"]').text()).toContain('Revoked')
-    expect(w.find('[aria-label="Revoke token site-b"]').exists()).toBe(false)
+    expect(w.find('[aria-label="Revoke: site-b"]').exists()).toBe(false)
   })
 })

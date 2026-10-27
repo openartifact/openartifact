@@ -117,20 +117,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </AppButton>
         </form>
         <p v-if="status.tokens.length === 0" class="px-5 py-6 text-sm text-muted text-center">{{ t('federation.tokens.empty') }}</p>
-        <div v-else class="relative overflow-x-auto">
+        <TableScroller v-else class="relative">
           <table class="w-full" :aria-label="t('federation.tokens.table')" data-testid="federation-tokens">
             <thead>
               <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
-                <th class="text-left px-4 py-2.5">{{ t('federation.tokens.column.name') }}</th>
-                <th class="text-left px-4 py-2.5">{{ t('federation.tokens.column.created') }}</th>
-                <th class="text-left px-4 py-2.5">{{ t('federation.tokens.column.lastUsed') }}</th>
-                <th class="text-left px-4 py-2.5">{{ t('federation.tokens.column.status') }}</th>
-                <th class="text-right px-4 py-2.5"><span class="sr-only">{{ t('common.actions') }}</span></th>
+                <th scope="col" class="text-left px-4 py-2.5">{{ t('federation.tokens.column.name') }}</th>
+                <th scope="col" data-drop-order="1" class="text-left px-4 py-2.5">{{ t('federation.tokens.column.created') }}</th>
+                <th scope="col" data-drop-order="2" class="text-left px-4 py-2.5">{{ t('federation.tokens.column.lastUsed') }}</th>
+                <th scope="col" class="text-left px-4 py-2.5">{{ t('federation.tokens.column.status') }}</th>
+                <th scope="col" class="text-right px-4 py-2.5" :class="ACTIONS_HEAD"><span class="sr-only">{{ t('common.actions') }}</span></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tok in status.tokens" :key="tok.id" class="border-t border-border hover:bg-surface-hover transition-colors">
-                <td class="px-4 py-2.5 text-sm font-medium text-foreground">{{ tok.name }}</td>
+              <tr v-for="tok in status.tokens" :key="tok.id" class="group/row border-t border-border hover:bg-surface-hover transition-colors">
+                <td class="truncate px-4 py-2.5 text-sm font-medium text-foreground" :class="GROW_CELL" :title="tok.name">{{ tok.name }}</td>
                 <td class="px-4 py-2.5 text-xs text-muted whitespace-nowrap">{{ formatDateTime(tok.created_at) }}</td>
                 <td class="px-4 py-2.5 text-xs text-muted whitespace-nowrap">
                   {{ tok.last_used_at ? formatDateTime(tok.last_used_at) : t('federation.tokens.neverUsed') }}
@@ -141,21 +141,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     :variant="tok.revoked_at ? 'neutral' : 'success'"
                   />
                 </td>
-                <td class="px-4 py-2.5 text-right">
-                  <AppButton
-                    v-if="!tok.revoked_at"
-                    variant="danger-outline"
-                    size="xs"
-                    :aria-label="fill(t('federation.tokens.revokeAria'), { name: tok.name })"
-                    @click="revoking = tok"
-                  >
-                    {{ t('federation.tokens.revoke') }}
-                  </AppButton>
+                <td class="px-4 py-2.5" :class="ACTIONS_CELL">
+                  <RowActions :actions="tokenActions(tok)" :subject="tok.name" @action="revoking = tok" />
                 </td>
               </tr>
             </tbody>
           </table>
-        </div>
+        </TableScroller>
       </section>
     </template>
 
@@ -205,7 +197,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { PlusIcon } from '@heroicons/vue/24/outline'
+import { NoSymbolIcon, PlusIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import AppToggle from '../AppToggle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
@@ -215,6 +207,9 @@ import FederationPeerDialog from '../FederationPeerDialog.vue'
 import FederationPeersTable from '../FederationPeersTable.vue'
 import StatusBadge from '../StatusBadge.vue'
 import TokenSecretDialog from '../TokenSecretDialog.vue'
+import RowActions, { type RowAction } from '../ui/RowActions.vue'
+import TableScroller from '../ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from '../ui/tableStyles'
 import {
   createFederationPeer,
   createFederationToken,
@@ -380,6 +375,18 @@ const creatingToken = ref(false)
 // The clear-text token of the one just created; it is never fetched again.
 const secret = ref<string | null>(null)
 const revoking = ref<FederationToken | null>(null)
+
+function tokenActions(tok: FederationToken): RowAction[] {
+  return [
+    {
+      key: 'revoke',
+      label: t('federation.tokens.revoke'),
+      icon: NoSymbolIcon,
+      tone: 'danger',
+      hidden: !!tok.revoked_at,
+    },
+  ]
+}
 const revokeBusy = ref(false)
 
 async function createToken(): Promise<void> {

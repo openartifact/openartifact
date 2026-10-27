@@ -80,22 +80,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <h2 class="text-sm font-semibold text-foreground">{{ t('projects.usage.repositories') }}</h2>
         </div>
         <p v-if="rows.length === 0" class="px-4 py-6 text-sm text-muted">{{ t('projects.usage.empty') }}</p>
-        <div v-else class="overflow-x-auto">
+        <TableScroller v-else>
           <table class="w-full">
             <thead>
               <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
                 <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.usage.column.repository') }}</th>
-                <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.usage.column.type') }}</th>
+                <th scope="col" data-drop-order="1" class="text-left px-4 py-2.5">{{ t('projects.usage.column.type') }}</th>
                 <th scope="col" class="text-right px-4 py-2.5">{{ t('projects.usage.column.size') }}</th>
-                <th scope="col" class="text-right px-4 py-2.5">{{ t('projects.usage.column.artifacts') }}</th>
+                <th scope="col" data-drop-order="2" class="text-right px-4 py-2.5">{{ t('projects.usage.column.artifacts') }}</th>
                 <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.usage.column.limit') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="r in rows" :key="r.name" class="hover:bg-surface-hover/40 transition-colors" data-testid="usage-row">
-                <td class="px-4 py-3">
+              <tr v-for="r in rows" :key="r.name" class="group/row hover:bg-surface-hover/40 transition-colors" data-testid="usage-row">
+                <td class="px-4 py-3" :class="GROW_CELL">
                   <div class="flex items-center gap-2">
-                    <router-link :to="`/repos/${encodeURIComponent(r.name ?? '')}`" class="font-mono text-sm font-semibold text-foreground hover:text-primary">{{ r.name }}</router-link>
+                    <router-link :to="`/repos/${encodeURIComponent(r.name ?? '')}`" :title="r.name" class="truncate font-mono text-sm font-semibold text-foreground hover:text-primary">{{ r.name }}</router-link>
                     <FormatBadge v-if="r.format" :format="r.format" size="sm" />
                   </div>
                 </td>
@@ -109,7 +109,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </tr>
             </tbody>
           </table>
-        </div>
+        </TableScroller>
       </section>
     </template>
   </div>
@@ -119,6 +119,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { GROW_CELL } from './ui/tableStyles'
 import { getProjectUsage, type ProjectUsage, type ProjectUsageRepository } from '../api/projects'
 import { formatBytes, formatOneDecimal, percentOf, usageBarClass } from '../lib/quota'
 import { t, tp, tpn } from '../i18n'

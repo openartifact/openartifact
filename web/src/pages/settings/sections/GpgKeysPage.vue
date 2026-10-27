@@ -30,49 +30,49 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-else-if="keys.length === 0" class="rounded-lg border border-border bg-surface">
       <EmptyState :title="t('adm.gpg.empty.title')" :description="t('adm.gpg.empty.hint')" />
     </div>
-    <DataTable v-else :columns="columns" :rows="keys as Record<string, unknown>[]" row-key="id">
+    <ListTable v-else :columns="columns" :caption="t('adm.gpg.table')" :rows="keys" row-key="id">
       <template #cell-name="{ row }">
         <div class="flex items-center gap-2">
-          <span class="font-medium text-foreground">{{ asKey(row).name }}</span>
+          <span class="truncate font-medium text-foreground" :title="(row as GpgKey).name">{{ (row as GpgKey).name }}</span>
           <span
-            v-if="asKey(row).read_only"
+            v-if="(row as GpgKey).read_only"
             class="inline-flex px-2 py-0.5 rounded-full text-caption font-medium bg-surface-hover text-muted"
           >
             {{ t('adm.gpg.readOnly') }}
           </span>
         </div>
-        <div v-if="asKey(row).user_id" class="text-xs text-muted">{{ asKey(row).user_id }}</div>
+        <div v-if="(row as GpgKey).user_id" class="truncate text-xs text-muted" :title="(row as GpgKey).user_id">{{ (row as GpgKey).user_id }}</div>
       </template>
       <template #cell-key_id="{ row }">
         <button
           type="button"
           class="font-mono text-xs text-foreground hover:text-primary focus-visible:ring-2 focus-visible:ring-primary rounded"
-          :title="asKey(row).fingerprint"
-          :aria-label="`${t('adm.gpg.copyFingerprint')}: ${asKey(row).fingerprint ?? ''}`"
-          @click="copyFingerprint(asKey(row).fingerprint)"
+          :title="(row as GpgKey).fingerprint"
+          :aria-label="`${t('adm.gpg.copyFingerprint')}: ${(row as GpgKey).fingerprint ?? ''}`"
+          @click="copyFingerprint((row as GpgKey).fingerprint)"
         >
-          {{ asKey(row).key_id }}
+          {{ (row as GpgKey).key_id }}
         </button>
-        <div class="font-mono text-caption text-muted break-all select-all">{{ asKey(row).fingerprint }}</div>
+        <div class="max-w-56 font-mono text-caption text-muted break-all select-all">{{ (row as GpgKey).fingerprint }}</div>
       </template>
       <template #cell-algorithm="{ row }">
-        <span class="font-mono text-xs">{{ asKey(row).algorithm }}</span>
+        <span class="font-mono text-xs">{{ (row as GpgKey).algorithm }}</span>
       </template>
       <template #cell-source="{ row }">
         <span class="inline-flex px-2 py-0.5 rounded-full text-caption font-medium bg-primary-soft text-primary">
-          {{ sourceLabel(asKey(row).source) }}
+          {{ sourceLabel((row as GpgKey).source) }}
         </span>
       </template>
       <template #cell-active="{ row }">
         <div class="flex flex-wrap items-center gap-1.5">
           <span
-            v-if="asKey(row).active_global"
+            v-if="(row as GpgKey).active_global"
             class="inline-flex px-2 py-0.5 rounded-full text-caption font-medium bg-success-soft/40 text-success"
           >
             {{ t('adm.gpg.global') }}
           </span>
           <span
-            v-for="repo in asKey(row).repositories ?? []"
+            v-for="repo in (row as GpgKey).repositories ?? []"
             :key="repo"
             class="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-caption font-medium bg-surface-hover text-foreground"
           >
@@ -82,77 +82,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="rounded-full px-1 text-muted hover:text-danger focus-visible:ring-2 focus-visible:ring-primary"
               :aria-label="`${t('adm.gpg.deactivateRepo')}: ${repo}`"
               :disabled="busy"
-              @click="deactivate(asKey(row), repo)"
+              @click="deactivate((row as GpgKey), repo)"
             >
               ×
             </button>
           </span>
-          <span v-if="!asKey(row).active_global && !(asKey(row).repositories ?? []).length" class="text-xs text-muted">
+          <span v-if="!(row as GpgKey).active_global && !((row as GpgKey).repositories ?? []).length" class="text-xs text-muted">
             {{ t('adm.gpg.notActive') }}
           </span>
         </div>
       </template>
       <template #cell-created_at="{ row }">
-        <span class="text-xs text-muted font-mono">{{ formatDate(asKey(row).created_at) }}</span>
+        <span class="text-xs text-muted font-mono">{{ formatDate((row as GpgKey).created_at) }}</span>
       </template>
       <template #cell-expires_at="{ row }">
-        <span class="text-xs text-muted font-mono">{{ formatDate(asKey(row).expires_at, t('adm.gpg.never')) }}</span>
+        <span class="text-xs text-muted font-mono">{{ formatDate((row as GpgKey).expires_at, t('adm.gpg.never')) }}</span>
       </template>
       <template #cell-actions="{ row }">
-        <div class="flex flex-wrap gap-1.5" role="group" :aria-label="`${t('adm.gpg.actionsFor')} ${asKey(row).name}`">
-          <template v-if="!asKey(row).read_only">
-            <AppButton
-              v-if="!asKey(row).active_global"
-              variant="secondary"
-              size="xs"
-              :disabled="busy"
-              :aria-label="`${t('adm.gpg.activateGlobal')}: ${asKey(row).name}`"
-              @click="activate(asKey(row))"
-            >
-              {{ t('adm.gpg.activateGlobal') }}
-            </AppButton>
-            <AppButton
-              v-else
-              variant="secondary"
-              size="xs"
-              :disabled="busy"
-              :aria-label="`${t('adm.gpg.deactivateGlobal')}: ${asKey(row).name}`"
-              @click="deactivate(asKey(row))"
-            >
-              {{ t('adm.gpg.deactivateGlobal') }}
-            </AppButton>
-            <AppButton
-              variant="secondary"
-              size="xs"
-              :disabled="busy"
-              :aria-label="`${t('adm.gpg.activateRepo')}: ${asKey(row).name}`"
-              @click="openRepoActivate(asKey(row))"
-            >
-              {{ t('adm.gpg.activateRepo') }}
-            </AppButton>
-          </template>
-          <AppButton
-            variant="secondary"
-            size="xs"
-            :disabled="busy"
-            :aria-label="`${t('adm.gpg.export')}: ${asKey(row).name}`"
-            @click="exportKey(asKey(row))"
-          >
-            {{ t('adm.gpg.export') }}
-          </AppButton>
-          <AppButton
-            v-if="!asKey(row).read_only"
-            variant="danger-outline"
-            size="xs"
-            :disabled="busy"
-            :aria-label="`${t('common.delete')}: ${asKey(row).name}`"
-            @click="askDelete(asKey(row))"
-          >
-            {{ t('common.delete') }}
-          </AppButton>
-        </div>
+        <RowActions :actions="rowActions((row as GpgKey))" :subject="(row as GpgKey).name" @action="(key) => onAction(key, (row as GpgKey))" />
       </template>
-    </DataTable>
+    </ListTable>
 
     <!-- Import -->
     <AdminDialog drawer max-width="max-w-xl" :open="importOpen" :eyebrow="t('adm.gpg.eyebrow')" :title="t('admin.gpg.import')" @close="closeImport">
@@ -277,11 +226,12 @@ import { onMounted, ref } from 'vue'
 import AdminDialog from '../../../components/AdminDialog.vue'
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
-import DataTable from '../../../components/DataTable.vue'
-import type { Column } from '../../../components/DataTable.vue'
 import EmptyState from '../../../components/EmptyState.vue'
 import FormField from '../../../components/FormField.vue'
 import SectionActions from '../../../components/SectionActions.vue'
+import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
+import { ArrowDownTrayIcon, CheckBadgeIcon, FolderPlusIcon, TrashIcon, XCircleIcon } from '@heroicons/vue/20/solid'
 import {
   activateGpgKey,
   deactivateGpgKey,
@@ -312,19 +262,35 @@ const loading = ref(false)
 const loadError = ref('')
 const busy = ref(false)
 
-const columns: Column[] = [
-  { key: 'name', label: t('admin.gpg.column.name') },
+const columns: ListColumn[] = [
+  { key: 'name', label: t('admin.gpg.column.name'), grow: true },
   { key: 'key_id', label: t('admin.gpg.column.keyId') },
-  { key: 'algorithm', label: t('admin.gpg.column.algorithm') },
-  { key: 'source', label: t('admin.gpg.column.source') },
+  { key: 'algorithm', label: t('admin.gpg.column.algorithm'), dropOrder: 3 },
+  { key: 'source', label: t('admin.gpg.column.source'), dropOrder: 4 },
   { key: 'active', label: t('admin.gpg.column.active') },
-  { key: 'created_at', label: t('admin.gpg.column.created') },
-  { key: 'expires_at', label: t('admin.gpg.column.expires') },
-  { key: 'actions', label: t('common.actions') },
+  { key: 'created_at', label: t('admin.gpg.column.created'), dropOrder: 1 },
+  { key: 'expires_at', label: t('admin.gpg.column.expires'), dropOrder: 2 },
+  { key: 'actions', label: t('common.actions'), actions: true },
 ]
 
-function asKey(row: Record<string, unknown>): GpgKey {
-  return row as GpgKey
+function rowActions(key: GpgKey): RowAction[] {
+  const editable = !key.read_only
+  return [
+    editable && !key.active_global
+      ? { key: 'activate', label: t('adm.gpg.activateGlobal'), icon: CheckBadgeIcon, disabled: busy.value }
+      : { key: 'deactivate', label: t('adm.gpg.deactivateGlobal'), icon: XCircleIcon, disabled: busy.value, hidden: !editable },
+    { key: 'activateRepo', label: t('adm.gpg.activateRepo'), icon: FolderPlusIcon, disabled: busy.value, hidden: !editable },
+    { key: 'export', label: t('adm.gpg.export'), icon: ArrowDownTrayIcon, disabled: busy.value },
+    { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger', disabled: busy.value, hidden: !editable },
+  ]
+}
+
+function onAction(action: string, key: GpgKey): void {
+  if (action === 'activate') void activate(key)
+  else if (action === 'deactivate') void deactivate(key)
+  else if (action === 'activateRepo') openRepoActivate(key)
+  else if (action === 'export') void exportKey(key)
+  else if (action === 'delete') askDelete(key)
 }
 
 function sourceLabel(source: GpgKey['source']): string {

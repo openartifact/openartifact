@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :empty-hint="t('sx.cleanup.emptyHint')"
     >
       <template #cell-policy="{ row }">
-        <span class="font-medium text-foreground">{{ (row as CleanupOverviewRow).name }}</span>
+        <span class="block truncate font-medium text-foreground" :title="(row as CleanupOverviewRow).name">{{ (row as CleanupOverviewRow).name }}</span>
       </template>
 
       <template #cell-repository="{ row }">
@@ -84,31 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
 
       <template #cell-actions="{ row }">
-        <div class="flex flex-wrap items-center gap-1">
-          <AppButton
-            variant="ghost"
-            size="sm"
-            class="max-md:min-h-11"
-            :loading="busy === `preview:${rowKey(row as CleanupOverviewRow)}`"
-            :aria-label="tp('sx.cleanup.preview', { name: (row as CleanupOverviewRow).name })"
-            @click="preview(row as CleanupOverviewRow)"
-          >{{ t('cleanup.dryRun') }}</AppButton>
-          <AppButton
-            variant="ghost"
-            size="sm"
-            class="max-md:min-h-11"
-            :loading="busy === `run:${rowKey(row as CleanupOverviewRow)}`"
-            :aria-label="tp('sx.cleanup.run', { name: (row as CleanupOverviewRow).name })"
-            @click="run(row as CleanupOverviewRow)"
-          >{{ t('cleanup.run') }}</AppButton>
-          <AppButton
-            variant="ghost"
-            size="sm"
-            class="max-md:min-h-11"
-            :to="repoPath(row as CleanupOverviewRow)"
-            :aria-label="tp('sx.cleanup.edit', { name: (row as CleanupOverviewRow).name, repo: (row as CleanupOverviewRow).repository })"
-          >{{ t('common.edit') }}</AppButton>
-        </div>
+        <RowActions :actions="rowActions(row as CleanupOverviewRow)" :subject="(row as CleanupOverviewRow).name" @action="(key) => onAction(key, row as CleanupOverviewRow)" />
       </template>
     </ListTable>
 
@@ -123,12 +99,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import AppButton from '../../../components/AppButton.vue'
+import { ArrowTopRightOnSquareIcon, DocumentMagnifyingGlassIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import CleanupDryRunDialog from '../../../components/CleanupDryRunDialog.vue'
 import FormatBadge from '../../../components/FormatBadge.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import FilterBar from '../../../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
 import SegmentedControl from '../../../components/ui/SegmentedControl.vue'
 import { dryRunCleanupPolicy, runCleanupPolicy, type CleanupPreview } from '../../../api/cleanup'
 import { useLocalList } from '../../../composables/useLocalList'
@@ -170,17 +147,30 @@ const { list, refresh } = useLocalList({
 const statusOptions = computed(() => STATUSES.map((s) => ({ value: s, label: t(`sx.cleanup.status.${s}`) })))
 
 const columns: ListColumn[] = [
-  { key: 'policy', label: t('sx.cleanup.col.policy'), sortable: true },
+  { key: 'policy', label: t('sx.cleanup.col.policy'), sortable: true, grow: true },
   { key: 'repository', label: t('sx.cleanup.col.repository'), sortable: true },
-  { key: 'rule', label: t('sx.cleanup.col.rule') },
+  { key: 'rule', label: t('sx.cleanup.col.rule'), dropOrder: 2 },
   { key: 'status', label: t('sx.cleanup.col.status') },
-  { key: 'lastRun', label: t('sx.cleanup.col.lastRun') },
+  { key: 'lastRun', label: t('sx.cleanup.col.lastRun'), dropOrder: 1 },
   { key: 'actions', label: t('sx.cleanup.col.actions'), actions: true },
 ]
 
 const rowKey = (row: CleanupOverviewRow): string => `${row.repository}:${row.id}`
 /** Policies are edited on the repository's Cleanup tab. */
 const repoPath = (row: CleanupOverviewRow): string => `/repos/${encodeURIComponent(row.repository)}?tab=cleanup`
+
+function rowActions(row: CleanupOverviewRow): RowAction[] {
+  return [
+    { key: 'preview', label: t('cleanup.dryRun'), icon: DocumentMagnifyingGlassIcon, loading: busy.value === `preview:${rowKey(row)}` },
+    { key: 'run', label: t('cleanup.run'), icon: PlayIcon, loading: busy.value === `run:${rowKey(row)}` },
+    { key: 'edit', label: t('common.edit'), icon: ArrowTopRightOnSquareIcon, to: repoPath(row) },
+  ]
+}
+
+function onAction(key: string, row: CleanupOverviewRow): void {
+  if (key === 'preview') void preview(row)
+  else if (key === 'run') void run(row)
+}
 
 async function preview(row: CleanupOverviewRow): Promise<void> {
   busy.value = `preview:${rowKey(row)}`

@@ -37,7 +37,7 @@ describe('RepoCleanupTab dry run', () => {
       attachTo: document.body,
     })
     await flushPromises()
-    await wrapper.find('[data-testid="cleanup-dry-run"]').trigger('click')
+    await wrapper.find('[data-testid="action-dry-run"]').trigger('click')
     await flushPromises()
 
     expect(spy.mock.calls.some((c) => String(c[0]).endsWith('/cleanup-policies/c1/dry-run') && c[1]?.method === 'POST')).toBe(true)

@@ -62,9 +62,10 @@ describe('GpgKeysPage', () => {
     expect(rows[0]!.text()).toContain('apt-main')
     expect(rows[0]!.text()).toContain(FP)
     expect(rows[1]!.text()).toContain('Read-only')
-    expect(rows[1]!.text()).toContain('Export public key')
-    expect(rows[1]!.text()).not.toContain('Delete')
-    expect(rows[1]!.text()).not.toContain('Activate')
+    expect(rows[1]!.find('[data-testid="action-export"]').exists()).toBe(true)
+    expect(rows[1]!.find('[data-testid="action-delete"]').exists()).toBe(false)
+    expect(rows[1]!.find('[data-testid="action-activate"]').exists()).toBe(false)
+    expect(rows[1]!.find('[data-testid="action-more"]').exists()).toBe(false)
     expect(wrapper.find('[role=status]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -88,9 +89,11 @@ describe('GpgKeysPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.find('button[aria-label="Delete: release"]').trigger('click')
+    await wrapper.find('button[aria-label="More actions: release"]').trigger('click')
     await flushPromises()
-    // the row action is also labelled Delete; the dialog's confirm button is the last one
+    document.querySelector<HTMLButtonElement>('[data-testid="row-actions-menu"] [data-testid="action-delete"]')!.click()
+    await flushPromises()
+    // the menu item is also labelled Delete; the dialog's confirm button is the last one
     const confirm = () => Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.trim() === 'Delete').at(-1)!
     confirm().click()
     await flushPromises()

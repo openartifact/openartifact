@@ -39,7 +39,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :empty-hint="proxy ? t('repoDetail.proxy.emptyHint') : t('rl.packages.emptyHint')"
     >
       <template #cell-name="{ row }">
-        <router-link :to="artifactPath(repo.name, row.name)" class="font-mono text-sm font-semibold text-foreground hover:text-primary">{{ row.name }}</router-link>
+        <router-link :to="artifactPath(repo.name, row.name)" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary" :title="row.name">{{ row.name }}</router-link>
       </template>
       <template #cell-latest="{ row }"><span class="font-mono text-xs text-muted">{{ row.latest_version || '—' }}</span></template>
       <template #cell-versions="{ row }"><span class="tabular-nums">{{ row.version_count }}</span></template>
@@ -97,13 +97,13 @@ const list = useListQuery({
 })
 
 const columns = computed<ListColumn[]>(() => [
-  { key: 'name', label: t('packages.column.name') },
+  { key: 'name', label: t('packages.column.name'), grow: true },
   { key: 'latest', label: t('rl.packages.latest') },
   { key: 'versions', label: t('rl.packages.versions'), align: 'end' },
-  { key: 'size', label: t('packages.column.size'), align: 'end' },
-  { key: 'updated', label: t('rl.packages.updated') },
+  { key: 'size', label: t('packages.column.size'), align: 'end', dropOrder: 2 },
+  { key: 'updated', label: t('rl.packages.updated'), dropOrder: 3 },
   { key: 'security', label: t('rl.column.security') },
-  { key: 'scanned', label: t('rl.packages.lastScanned') },
+  { key: 'scanned', label: t('rl.packages.lastScanned'), dropOrder: 1 },
 ])
 
 const hasFindings = (p: PackageGroup): boolean => SEVERITIES.some((s) => p.security[s] > 0)

@@ -40,10 +40,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-username="{ row }">
         <div class="flex items-center gap-2">
           <span class="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary" aria-hidden="true">{{ (row.username || '?')[0]!.toUpperCase() }}</span>
-          <span class="font-mono text-ui font-medium">{{ row.username }}</span>
+          <span class="truncate font-mono text-ui font-medium" :title="row.username">{{ row.username }}</span>
         </div>
       </template>
-      <template #cell-email="{ row }"><span class="text-muted">{{ row.email || '—' }}</span></template>
+      <template #cell-email="{ row }"><span class="block max-w-64 truncate text-muted" :title="row.email ?? undefined">{{ row.email || '—' }}</span></template>
       <template #cell-status="{ row }">
         <span
           class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-caption font-medium"
@@ -55,32 +55,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
       <template #cell-created_at="{ row }"><RelativeTime :value="row.created_at" /></template>
       <template #cell-actions="{ row }">
-        <div class="flex items-center gap-1">
-          <button type="button" :class="iconButton" :title="t('common.edit')" :aria-label="`${t('common.edit')} ${row.username}`" @click="openEdit(row)">
-            <PencilIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            :class="iconButton"
-            :title="row.disabled ? t('admin.users.enable') : t('admin.users.disable')"
-            :aria-label="`${row.disabled ? t('admin.users.enable') : t('admin.users.disable')} ${row.username}`"
-            @click="toggleDisable(row)"
-          >
-            <component :is="row.disabled ? CheckIcon : NoSymbolIcon" class="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button type="button" :class="iconButton" :title="t('admin.users.forceReset')" :aria-label="`${t('admin.users.forceReset')} ${row.username}`" @click="forceReset(row)">
-            <KeyIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            :class="[iconButton, 'hover:!text-danger']"
-            :title="t('adm.users.deleteTitle')"
-            :aria-label="`${t('adm.users.deleteTitle')}: ${row.username}`"
-            @click="deleteTarget = row"
-          >
-            <TrashIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
+        <RowActions :actions="rowActions(row)" :subject="row.username" @action="(key) => onAction(key, row)" />
       </template>
     </ListTable>
 
@@ -129,7 +104,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { CheckIcon, KeyIcon, NoSymbolIcon, PencilIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { PlusIcon } from '@heroicons/vue/24/outline'
+import { CheckIcon, KeyIcon, NoSymbolIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import { createUser, deleteUser, forceUserPasswordReset, listAllUsers, setUserDisabled, updateUser } from '../../../api/admin'
 import type { User } from '../../../api/generated/types.gen'
 import AppButton from '../../../components/AppButton.vue'
@@ -139,6 +115,7 @@ import Drawer from '../../../components/ui/Drawer.vue'
 import FilterBar from '../../../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import RelativeTime from '../../../components/ui/RelativeTime.vue'
+import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
 import { useLocalList } from '../../../composables/useLocalList'
 import { useUrlFlag } from '../../../composables/useUrlFlag'
 import { enumParam, strParam } from '../../../composables/useUrlState'
@@ -151,13 +128,30 @@ type UserItem = User & { id: string }
 
 const toasts = useToastStore()
 const inputClass = 'w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-foreground placeholder:text-muted focus:ring-2 focus:ring-primary/50 max-md:min-h-11'
-const iconButton = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground max-md:h-11 max-md:w-11'
+
+function rowActions(row: UserItem): RowAction[] {
+  return [
+    { key: 'edit', label: t('common.edit'), icon: PencilSquareIcon },
+    row.disabled
+      ? { key: 'toggle', label: t('admin.users.enable'), icon: CheckIcon }
+      : { key: 'toggle', label: t('admin.users.disable'), icon: NoSymbolIcon },
+    { key: 'reset', label: t('admin.users.forceReset'), icon: KeyIcon },
+    { key: 'delete', label: t('adm.users.deleteTitle'), icon: TrashIcon, tone: 'danger' },
+  ]
+}
+
+function onAction(key: string, row: UserItem): void {
+  if (key === 'edit') openEdit(row)
+  else if (key === 'toggle') toggleDisable(row)
+  else if (key === 'reset') forceReset(row)
+  else if (key === 'delete') deleteTarget.value = row
+}
 
 const columns: ListColumn[] = [
-  { key: 'username', label: t('admin.users.column.username'), sortable: true },
-  { key: 'email', label: t('admin.users.column.email') },
+  { key: 'username', label: t('admin.users.column.username'), sortable: true, grow: true },
+  { key: 'email', label: t('admin.users.column.email'), dropOrder: 2 },
   { key: 'status', label: t('adm.users.column.status') },
-  { key: 'created_at', label: t('admin.users.column.created'), sortable: true },
+  { key: 'created_at', label: t('admin.users.column.created'), sortable: true, dropOrder: 1 },
   { key: 'actions', label: t('common.actions'), actions: true },
 ]
 

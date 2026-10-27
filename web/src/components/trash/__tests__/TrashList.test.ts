@@ -49,7 +49,7 @@ describe('TrashList', () => {
     const headers = w.findAll('thead th').map((th) => th.text())
     expect(headers).not.toContain('Repository')
     expect(w.text()).toContain('pkg-a')
-    const buttons = w.findAll('tbody button').map((b) => b.text())
+    const buttons = w.findAll('tbody button').map((b) => b.attributes('title'))
     expect(buttons).toContain('Restore')
     expect(buttons).not.toContain('Purge')
   })
@@ -58,7 +58,7 @@ describe('TrashList', () => {
     const w = await mountList({}, true, () => json({ items: [item('a')], total: 1, page: 1, limit: 25 }))
     expect(String(spy.mock.calls[0]![0])).toContain('/api/v1/trash?')
     expect(w.findAll('thead th').map((th) => th.text())).toContain('Repository')
-    expect(w.findAll('tbody button').map((b) => b.text())).toContain('Purge')
+    expect(w.findAll('tbody button').map((b) => b.attributes('title'))).toContain('Purge')
   })
 
   it('offers emptying only with the manage permission and shows an empty state', async () => {

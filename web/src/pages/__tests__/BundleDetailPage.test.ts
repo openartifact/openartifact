@@ -146,7 +146,7 @@ describe('BundleDetailPage', () => {
     expect(trail.find('[aria-current="step"]').text()).toContain('Sealed')
     expect(wrapper.text()).toContain('com/acme/shop-1.jar')
     expect(wrapper.find('a[href="/repos/maven-dev"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Remove')
+    expect(wrapper.find('[data-testid="action-remove"]').exists()).toBe(true)
     expect(primaries()).toEqual(['primary-seal'])
     expect((testid('primary-seal') as HTMLButtonElement).disabled).toBe(false)
     wrapper.unmount()
@@ -175,7 +175,7 @@ describe('BundleDetailPage', () => {
     expect(useToastStore().queue.some((x) => x.title === 'Bundle sealed and signed')).toBe(true)
     expect(primaries()).toEqual(['primary-promote'])
     expect(testid('primary-promote')!.textContent).toContain('Promote to qa')
-    expect(wrapper.text()).not.toContain('Remove')
+    expect(wrapper.find('[data-testid="action-remove"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -291,7 +291,7 @@ describe('BundleDetailPage', () => {
 
   it('removes an item at once and offers to put it back', async () => {
     const { wrapper } = await mountPage()
-    buttonByText('Remove')!.click()
+    await wrapper.get('[data-testid="action-remove"]').trigger('click')
     await flushPromises()
     expect(sent()).toContain(`DELETE /api/v1/bundles/shop/1.0.0/items/${SHA}`)
     const toast = useToastStore().queue.find((x) => x.title === 'Item removed')!

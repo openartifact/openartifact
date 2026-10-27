@@ -69,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="font-normal text-muted ml-1">{{ pendingCaption }}</span>
         </h3>
         <p v-if="pending.length === 0" class="text-xs text-muted">{{ t('tiering.mover.noPending') }}</p>
-        <div v-else class="overflow-x-auto">
+        <TableScroller v-else>
           <table class="w-full text-sm" data-testid="mover-pending">
             <thead>
               <tr class="text-left text-caption font-semibold text-muted">
@@ -77,16 +77,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <th scope="col" class="py-1.5 px-3 text-right">{{ t('tiering.dryRun.size') }}</th>
                 <th scope="col" class="py-1.5 px-3">{{ t('tiering.dryRun.route') }}</th>
                 <th scope="col" class="py-1.5 px-3">{{ t('tiering.mover.state') }}</th>
-                <th scope="col" class="py-1.5 px-3 text-right">{{ t('tiering.mover.attempts') }}</th>
+                <th scope="col" data-drop-order="2" class="py-1.5 px-3 text-right">{{ t('tiering.mover.attempts') }}</th>
                 <th scope="col" class="py-1.5 px-3">{{ t('tiering.mover.reason') }}</th>
-                <th scope="col" class="py-1.5 pl-3">{{ t('tiering.mover.updated') }}</th>
+                <th scope="col" data-drop-order="1" class="py-1.5 pl-3">{{ t('tiering.mover.updated') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="m in pending" :key="m.sha256">
+              <tr v-for="m in pending" :key="m.sha256" class="group/row">
                 <td class="py-1.5 pr-3"><ShortSha :sha="m.sha256 ?? ''" /></td>
                 <td class="py-1.5 px-3 text-right tabular-nums">{{ formatBytes(m.size_bytes ?? 0) }}</td>
-                <td class="py-1.5 px-3 font-mono text-xs whitespace-nowrap">{{ m.from }} → {{ m.to }}</td>
+                <td class="py-1.5 px-3 font-mono text-xs">{{ m.from }} → {{ m.to }}</td>
                 <td class="py-1.5 px-3">
                   <StatusBadge
                     :label="m.state === 'flipped' ? t('tiering.mover.state.flipped') : t('tiering.mover.state.copying')"
@@ -99,7 +99,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </tr>
             </tbody>
           </table>
-        </div>
+        </TableScroller>
       </div>
     </div>
   </section>
@@ -111,6 +111,7 @@ import { PlayIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import ShortSha from './ShortSha.vue'
 import StatusBadge from './StatusBadge.vue'
+import TableScroller from './ui/TableScroller.vue'
 import { getMoverStatus, runMover, type TierMoverStatus } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
 import { t, tp } from '../i18n'

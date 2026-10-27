@@ -35,47 +35,39 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {{ t('security.vex.empty') }}
     </p>
 
-    <div v-else class="overflow-x-auto">
+    <TableScroller v-else>
       <table class="w-full text-sm">
-        <thead class="border-b border-border bg-surface-hover/40">
+        <thead class="border-b border-border">
           <tr>
             <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.artifact') }}</th>
             <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.vuln') }}</th>
             <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.status') }}</th>
-            <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.justification') }}</th>
-            <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.impact') }}</th>
-            <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.updated') }}</th>
-            <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.actions') }}</th>
+            <th scope="col" data-drop-order="3" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.justification') }}</th>
+            <th scope="col" data-drop-order="1" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.impact') }}</th>
+            <th scope="col" data-drop-order="2" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('security.vex.col.updated') }}</th>
+            <th scope="col" class="text-right px-4 py-2.5 text-muted font-medium" :class="ACTIONS_HEAD">{{ t('security.vex.col.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="s in statements"
             :key="s.id"
-            class="hover:bg-surface-hover/40 transition-colors border-b border-border last:border-0 align-top"
+            class="group/row hover:bg-surface-hover/40 transition-colors border-b border-border last:border-0 align-top"
             data-testid="vex-statement-row"
           >
-            <td class="px-4 py-3 font-mono text-ui text-foreground" :title="s.artifact_id">{{ artifactLabels?.[s.artifact_id] ?? s.artifact_id }}</td>
+            <td class="truncate px-4 py-3 font-mono text-ui text-foreground" :class="GROW_CELL" :title="s.artifact_id">{{ artifactLabels?.[s.artifact_id] ?? s.artifact_id }}</td>
             <td class="px-4 py-3 font-mono text-ui">{{ s.vuln_id }}</td>
             <td class="px-4 py-3"><VexStatusBadge :status="s.status" /></td>
             <td class="px-4 py-3 text-xs text-muted">{{ s.justification ? vexJustificationLabel(s.justification) : '—' }}</td>
             <td class="px-4 py-3 text-xs text-muted max-w-xs"><span class="line-clamp-2" :title="s.impact_statement">{{ s.impact_statement || '—' }}</span></td>
             <td class="px-4 py-3 text-xs text-muted font-mono">{{ s.updated_at ? formatDateTime(s.updated_at) : '—' }}</td>
-            <td class="px-4 py-3">
-              <AppButton
-                variant="secondary"
-                size="xs"
-                :aria-label="`${t('security.vex.delete')}: ${s.vuln_id}`"
-                data-testid="vex-statement-delete"
-                @click="deleteTarget = s"
-              >
-                {{ t('security.vex.delete') }}
-              </AppButton>
+            <td class="px-4 py-3" :class="ACTIONS_CELL">
+              <RowActions :actions="statementActions" :subject="s.vuln_id" @action="deleteTarget = s" />
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
+    </TableScroller>
 
     <ConfirmDialog
       :open="deleteTarget !== null"
@@ -93,9 +85,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { ArrowPathIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import RowActions, { type RowAction } from './ui/RowActions.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import VexDownloadButtons from './VexDownloadButtons.vue'
 import VexStatusBadge from './VexStatusBadge.vue'
 import { deleteVexStatement, listVexStatements, type VexRecord } from '../api/vex'
@@ -147,6 +142,7 @@ async function reload(): Promise<void> {
 
 watch(() => props.repo, () => void reload(), { immediate: true })
 
+const statementActions: RowAction[] = [{ key: 'delete', label: t('security.vex.delete'), icon: TrashIcon, tone: 'danger' }]
 const deleteTarget = ref<VexRecord | null>(null)
 const deleting = ref(false)
 

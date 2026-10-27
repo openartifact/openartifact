@@ -63,8 +63,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="flex min-w-0 items-center gap-2.5">
           <span class="w-[4.75rem] shrink-0"><FormatBadge :format="row.format ?? ''" size="sm" /></span>
           <div class="min-w-0">
-            <router-link :to="`/repos/${encodeURIComponent(row.name ?? '')}`" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary">{{ row.name }}</router-link>
-            <p v-if="subtitle(row)" class="truncate text-xs text-muted">{{ subtitle(row) }}</p>
+            <router-link :to="`/repos/${encodeURIComponent(row.name ?? '')}`" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary" :title="row.name">{{ row.name }}</router-link>
+            <p v-if="subtitle(row)" class="truncate text-xs text-muted" :title="subtitle(row)">{{ subtitle(row) }}</p>
           </div>
         </div>
       </template>
@@ -86,26 +86,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
       <template #cell-quota="{ row }"><QuotaBar :used="row.stats?.quota.used_bytes" :limit="row.stats?.quota.limit_bytes" /></template>
       <template #cell-actions="{ row }">
-        <div class="flex items-center gap-0.5">
+        <RowActions :actions="rowActions(row)" :subject="row.name" @action="(key) => onAction(key, row)">
           <CopyButton :text="`${repoBaseUrl(row.format ?? '', origin, row.name ?? '')}/`" :label="`${t('repoDetail.copyUrl')}: ${row.name}`" :message="t('repoDetail.urlCopied')" />
-          <router-link
-            v-if="canAdmin(row)"
-            :to="{ path: `/repos/${encodeURIComponent(row.name ?? '')}`, query: { tab: 'settings' } }"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11 max-md:w-11"
-            :aria-label="`${t('rl.tab.settings')}: ${row.name}`"
-          >
-            <Cog6ToothIcon class="h-4 w-4" aria-hidden="true" />
-          </router-link>
-          <button
-            v-if="canAdmin(row)"
-            type="button"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-danger hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:h-11 max-md:w-11"
-            :aria-label="`${t('common.delete')}: ${row.name}`"
-            @click="deleteTarget = row"
-          >
-            <TrashIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
+        </RowActions>
       </template>
       <template v-if="session.canCreateRepo" #empty-action>
         <AppButton variant="primary" @click="create.set(true)">{{ t('repos.new') }}</AppButton>
@@ -132,6 +115,7 @@ import CopyButton from '../components/ui/CopyButton.vue'
 import FilterBar from '../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../components/ui/ListTable.vue'
 import RelativeTime from '../components/ui/RelativeTime.vue'
+import RowActions, { type RowAction } from '../components/ui/RowActions.vue'
 import { deleteRepository, listRepositories, type RepositoryListItem } from '../api/repositories'
 import { useListQuery } from '../composables/useListQuery'
 import { useUrlFlag } from '../composables/useUrlFlag'
@@ -192,14 +176,14 @@ const chips = computed(() => [
 ])
 
 const columns = computed<ListColumn[]>(() => [
-  { key: 'name', label: t('repos.column.name') },
+  { key: 'name', label: t('repos.column.name'), grow: true },
   { key: 'type', label: t('repos.column.type') },
-  { key: 'visibility', label: t('repos.column.visibility') },
+  { key: 'visibility', label: t('repos.column.visibility'), dropOrder: 1 },
   { key: 'packages', label: t('rl.column.packages'), align: 'end' },
-  { key: 'size', label: t('packages.column.size'), align: 'end' },
-  { key: 'last_published', label: t('rl.column.lastPublished') },
+  { key: 'size', label: t('packages.column.size'), align: 'end', dropOrder: 3 },
+  { key: 'last_published', label: t('rl.column.lastPublished'), dropOrder: 2 },
   { key: 'security', label: t('rl.column.security') },
-  { key: 'quota', label: t('rl.column.quota') },
+  { key: 'quota', label: t('rl.column.quota'), dropOrder: 4 },
   { key: 'actions', label: t('common.actions'), actions: true },
 ])
 
@@ -214,6 +198,18 @@ function subtitle(r: RepositoryListItem): string {
 }
 
 const canAdmin = (r: RepositoryListItem): boolean => session.isAdmin || r.permissions?.admin === true
+
+function rowActions(r: RepositoryListItem): RowAction[] {
+  const admin = canAdmin(r)
+  return [
+    { key: 'settings', label: t('rl.tab.settings'), icon: Cog6ToothIcon, to: { path: `/repos/${encodeURIComponent(r.name ?? '')}`, query: { tab: 'settings' } }, hidden: !admin },
+    { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger', hidden: !admin },
+  ]
+}
+
+function onAction(key: string, r: RepositoryListItem): void {
+  if (key === 'delete') deleteTarget.value = r
+}
 
 // Create drawer: `?new=1` (command palette, old /repos/new links) opens it.
 const create = useUrlFlag('new')

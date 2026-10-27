@@ -121,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="min-w-0">
             <button
               type="button"
-              class="max-w-[28rem] text-left font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:min-h-11"
+              class="max-w-full text-left font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-md:min-h-11"
               :data-testid="`finding-${(row as FindingRow).id}`"
               @click="selected = (row as FindingRow).source"
             >
@@ -243,12 +243,12 @@ onMounted(async () => {
 
 const columns = computed<ListColumn[]>(() => [
   { key: 'severity', label: t('security.col.severity') },
-  { key: 'title', label: t('security.col.finding'), hideLabel: true },
+  { key: 'title', label: t('security.col.finding'), hideLabel: true, grow: true },
   { key: 'artifact', label: t('security.col.package'), hideLabel: true },
-  ...(filters.value.type === 'all' || filters.value.type === 'vuln' ? [{ key: 'scanner', label: t('security.col.scanner') }] : []),
-  { key: 'counts', label: t('security.col.counts') },
+  ...(filters.value.type === 'all' || filters.value.type === 'vuln' ? [{ key: 'scanner', label: t('security.col.scanner'), dropOrder: 2 }] : []),
+  { key: 'counts', label: t('security.col.counts'), dropOrder: 3 },
   { key: 'status', label: t('security.col.status') },
-  { key: 'scannedAt', label: t('security.col.found') },
+  { key: 'scannedAt', label: t('security.col.found'), dropOrder: 1 },
 ])
 
 /** Anything beyond the type and repository narrows the list: an empty result is "no matches", not "all clear". */
