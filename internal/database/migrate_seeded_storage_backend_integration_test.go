@@ -35,8 +35,16 @@ func TestSeededStorageBackendMigration(t *testing.T) {
 		},
 		{name: "renamed seed is kept", prepare: `UPDATE storage_backends SET name = 'archive'`, wantKept: true},
 		{name: "re-pointed seed is kept", prepare: `UPDATE storage_backends SET config = '{"path": "/data/cold"}'`, wantKept: true},
-		{name: "seed with extra config is kept", prepare: `UPDATE storage_backends SET config = '{"path": "./storage", "x": 1}'`, wantKept: true},
-		{name: "seed of another kind is kept", prepare: `UPDATE storage_backends SET kind = 's3', config = '{"bucket": "b"}'`, wantKept: true},
+		{
+			name:     "seed with extra config is kept",
+			prepare:  `UPDATE storage_backends SET config = '{"path": "./storage", "x": 1}'`,
+			wantKept: true,
+		},
+		{
+			name:     "seed of another kind is kept",
+			prepare:  `UPDATE storage_backends SET kind = 's3', config = '{"bucket": "b"}'`,
+			wantKept: true,
+		},
 		{
 			name:     "seed that serves a tier is kept",
 			prepare:  `INSERT INTO storage_tiers (name, backend_id, rank) SELECT 'cold', id, 1 FROM storage_backends`,
@@ -87,7 +95,12 @@ func TestSeededStorageBackendMigration(t *testing.T) {
 				t.Errorf("storage_backends holds %d rows after 087, want %d", n, want)
 			}
 
-			if n := mustScan[int](t, db, `SELECT count(*) FROM schema_migrations WHERE version = $1`, seededStorageBackendMigration); n != 1 {
+			if n := mustScan[int](
+				t,
+				db,
+				`SELECT count(*) FROM schema_migrations WHERE version = $1`,
+				seededStorageBackendMigration,
+			); n != 1 {
 				t.Errorf("schema_migrations has %d rows for %s, want 1", n, seededStorageBackendMigration)
 			}
 		})

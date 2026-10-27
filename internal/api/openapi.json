@@ -14331,6 +14331,16 @@
           "404": {
             "description": "Storage backend not found"
           },
+          "405": {
+            "description": "The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "409": {
             "description": "The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move"
           }
@@ -14379,6 +14389,16 @@
           },
           "404": {
             "description": "Storage backend not found"
+          },
+          "405": {
+            "description": "The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

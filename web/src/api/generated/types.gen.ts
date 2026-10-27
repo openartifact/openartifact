@@ -7731,6 +7731,10 @@ export type DeleteApiV1AdminStorageByNameErrors = {
      * Storage backend not found
      */
     404: unknown;
+    /**
+     * The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only)
+     */
+    405: Error;
 };
 
 export type DeleteApiV1AdminStorageByNameError = DeleteApiV1AdminStorageByNameErrors[keyof DeleteApiV1AdminStorageByNameErrors];
@@ -7805,6 +7809,10 @@ export type PatchApiV1AdminStorageByNameErrors = {
      * Storage backend not found
      */
     404: unknown;
+    /**
+     * The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only)
+     */
+    405: Error;
     /**
      * The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move
      */

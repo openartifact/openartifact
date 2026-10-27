@@ -215,6 +215,7 @@ Update a storage backend (admin only). Changing kind or config is refused with 4
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
+| `405` | The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only) | `application/json`: [Error](schemas.md#error) |
 | `409` | The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move | - |
 
 ### `DELETE /api/v1/admin/storage/{name}`
@@ -237,6 +238,7 @@ Delete a storage backend (admin only)
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Storage backend not found | - |
+| `405` | The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only) | `application/json`: [Error](schemas.md#error) |
 
 ### `POST /api/v1/admin/storage/{name}/test`
 
