@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -15,13 +16,13 @@ import (
 func TestCountUpload(t *testing.T) {
 	r := NewRegistryOn(prometheus.NewRegistry())
 
-	for _, f := range UploadFormats {
+	for _, f := range repotype.Names() {
 		r.CountUpload(f, UploadSuccess)
 		r.CountUpload(f, UploadError)
 		r.CountUpload(f, UploadError)
 	}
 
-	for _, f := range UploadFormats {
+	for _, f := range repotype.Names() {
 		if got := testutil.ToFloat64(r.UploadsTotal.WithLabelValues(f, UploadSuccess)); got != 1 {
 			t.Errorf("%s success = %v, want 1", f, got)
 		}
@@ -38,8 +39,8 @@ func TestCountUpload(t *testing.T) {
 		t.Errorf("unknown format/result = %v, want 1 in other/error", got)
 	}
 
-	if n := testutil.CollectAndCount(r.UploadsTotal); n != 2*len(UploadFormats)+1 {
-		t.Errorf("series = %d, want %d", n, 2*len(UploadFormats)+1)
+	if want := 2*len(repotype.Names()) + 1; testutil.CollectAndCount(r.UploadsTotal) != want {
+		t.Errorf("series = %d, want %d", testutil.CollectAndCount(r.UploadsTotal), want)
 	}
 }
 
@@ -68,7 +69,7 @@ func TestUploadResult(t *testing.T) {
 func TestUploadFormatsUnique(t *testing.T) {
 	seen := map[string]bool{}
 
-	for _, f := range UploadFormats {
+	for _, f := range repotype.Names() {
 		if seen[f] {
 			t.Errorf("duplicate upload format %q", f)
 		}

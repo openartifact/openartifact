@@ -201,6 +201,16 @@ The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often ma
 - Every config key settable in YAML needs an env override in `internal/config` and entries in `.env.example` and `openartifact.example.yaml`.
 - Every new file needs an SPDX header (the repository is REUSE-compliant).
 
+## Adding a format
+
+The registry in `internal/repotype/repotype.go` is the single list of package formats. Add one `Spec` there (its position is the picker order), then run `go test ./...`: the exhaustiveness tests fail once for every place that has no decision for the new format, naming it. Work through them:
+
+1. **Registry:** the `Spec` fields (proxy, group and federation support, default upstream, signing, isolated URL namespace, version rules, Package URL type, OSV ecosystem, package tables) are the only place format facts live. Never add a new `switch` or slice of format names for such a fact.
+2. **Database:** a migration that extends `chk_repo_format` (the latest one is checked by `TestLatestMigrationAcceptsEveryFormat`), and the `internal/api/openapi.json` format enums.
+3. **Package tables:** list them in `Spec.PackageTables`, then add the branches to every union query the `TestPackageTablesInUnions` failure names (`ListRepoComponents`/`CountRepoComponents`, catalog, trash, quota, tiering, recovery journal, backup).
+4. **Per-format code:** a switch whose branches run different code per format (router mounts, proxy and group serving, workers, SBOM and vuln scanning, client setup, license and dependency readers) stays a switch. Each has a `format_exhaustive_test.go` that lists the format as `handled` (and probes it) or `ignored` (falling through is intended), so add the branch or list the format as ignored.
+5. **Web:** `web/src/lib/formats.ts` (`FORMAT_META`: label, color, icon), the install snippets in `web/src/lib/installCommands.ts` and `internal/clientsetup`, and the hand-kept format lists in `web/src/lib/repoTypes.ts` and `web/src/router/redirects.ts`.
+
 ## Dead-code gate
 
 `make deadcode` (`scripts/deadcode-check.sh`, CI job `go`) runs [`deadcode`](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) (pinned in `tools/go.mod`) with `-tags integration` over every `main` package and fails on any function that none of them reaches. There is no allowlist: the expected result is zero findings. It deliberately runs **without** `-test`: with `-test` every test function is a root, so a production function that only tests call would count as live. Without it such functions are reported, so test-only helpers cannot hide in production files.

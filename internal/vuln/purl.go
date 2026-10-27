@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 var (
@@ -18,22 +20,6 @@ var (
 	// finds nothing when it does not know which.
 	errDistroRequired = errors.New("package needs a distribution release to be scanned")
 )
-
-// purlTypes maps our ecosystem names to Package URL types. An ecosystem that is
-// not here is not scannable with grype.
-//
-//nolint:gochecknoglobals // immutable ecosystem mapping table
-var purlTypes = map[string]string{
-	"npm":      "npm",
-	"pypi":     "pypi",
-	"maven":    "maven",
-	"cargo":    "cargo",
-	"rubygems": "gem",
-	"nuget":    "nuget",
-	"go":       "golang",
-	"deb":      "deb",
-	"rpm":      "rpm",
-}
 
 // buildPURL returns the Package URL (https://github.com/package-url/purl-spec)
 // of the package, the form grype takes as a scan target. Every component is
@@ -46,10 +32,12 @@ var purlTypes = map[string]string{
 func buildPURL(p Package) (string, error) {
 	eco := strings.ToLower(p.Ecosystem)
 
-	purlType, ok := purlTypes[eco]
-	if !ok {
+	spec, ok := repotype.Lookup(eco)
+	if !ok || !spec.GrypeScan {
 		return "", errUnsupportedEcosystem
 	}
+
+	purlType := spec.PURLType
 
 	var (
 		namespace  []string

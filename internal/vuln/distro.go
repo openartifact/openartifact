@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // NeedsDistro reports whether packages of the ecosystem are only meaningful
@@ -15,12 +17,9 @@ import (
 // advisories of one release and, when it is not told which, reports no match
 // at all instead of an error.
 func NeedsDistro(ecosystem string) bool {
-	switch strings.ToLower(ecosystem) {
-	case "deb", "rpm":
-		return true
-	}
+	s, _ := repotype.Lookup(strings.ToLower(ecosystem))
 
-	return false
+	return s.DistroScoped
 }
 
 // distroPattern is grype's distro qualifier: "<id>-<version>". The version is

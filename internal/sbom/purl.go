@@ -6,44 +6,18 @@ package sbom
 
 import (
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
-// purlType maps an OpenArtifact repository format to its Package URL type.
+// purlType maps an OpenArtifact repository format to its Package URL type;
+// formats without one (raw, terraform) and unknown formats are "generic".
 func purlType(format string) string {
-	switch strings.ToLower(format) {
-	case "npm":
-		return "npm"
-	case "maven", "ivy", "sbt":
-		return "maven"
-	case "pypi":
-		return "pypi"
-	case "cargo":
-		return "cargo"
-	case "rubygems":
-		return "gem"
-	case "helm":
-		return "helm"
-	case "nuget":
-		return "nuget"
-	case "docker":
-		return "docker"
-	case "deb":
-		return "deb"
-	case "rpm":
-		return "rpm"
-	case "pacman":
-		return "alpm"
-	case "go":
-		return "golang"
-	case "conan":
-		return "conan"
-	case "apk":
-		return "apk"
-	case "conda":
-		return "conda"
-	default:
-		return "generic"
+	if s, _ := repotype.Lookup(strings.ToLower(format)); s.PURLType != "" {
+		return s.PURLType
 	}
+
+	return "generic"
 }
 
 // purlEncode percent-encodes one purl component: everything but the

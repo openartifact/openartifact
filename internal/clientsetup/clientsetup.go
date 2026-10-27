@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // Snippet is the configure/publish commands for one client tool.
@@ -32,16 +34,6 @@ type target struct {
 	repoType string // hosted, proxy or group
 }
 
-// isolatedPrefix reports whether a format is served under /repos/{format}/{repo}.
-func isolatedPrefix(format string) bool {
-	switch format {
-	case "maven", "sbt", "ivy", "raw":
-		return true
-	default:
-		return false
-	}
-}
-
 // RepoBaseURL returns the native base URL of a repository for its format (no
 // trailing slash). Docker serves the registry API at the host root. origin
 // must not end in a slash.
@@ -51,7 +43,7 @@ func RepoBaseURL(format, origin, repo string) string {
 	switch {
 	case format == "docker":
 		return origin
-	case isolatedPrefix(format):
+	case repotype.Isolated(format):
 		return origin + "/repos/" + format + "/" + name
 	default:
 		return origin + "/repos/" + name

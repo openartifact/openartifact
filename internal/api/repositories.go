@@ -16,7 +16,6 @@ import (
 	"path"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,31 +43,6 @@ import (
 
 var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
-// validFormats mirrors the chk_repo_format CHECK constraint in the schema.
-//
-//nolint:gochecknoglobals // immutable lookup table
-var validFormats = map[string]bool{
-	"deb":       true,
-	"rpm":       true,
-	"maven":     true,
-	"npm":       true,
-	"docker":    true,
-	"helm":      true,
-	"pypi":      true,
-	"nuget":     true,
-	"go":        true,
-	"cargo":     true,
-	"rubygems":  true,
-	"raw":       true,
-	"conda":     true,
-	"conan":     true,
-	"ivy":       true,
-	"apk":       true,
-	"sbt":       true,
-	"pacman":    true,
-	"terraform": true,
-}
-
 const (
 	// maxListPage bounds the page number so (page-1)*limit cannot overflow.
 	maxListPage = 1_000_000
@@ -86,15 +60,9 @@ const (
 	maxMaxStaleSeconds             = 365 * 24 * 3600
 )
 
+// validFormatList lists the registered formats, sorted, for error messages.
 func validFormatList() string {
-	names := make([]string, 0, len(validFormats))
-	for name := range validFormats {
-		names = append(names, name)
-	}
-
-	sort.Strings(names)
-
-	return strings.Join(names, ", ")
+	return strings.Join(repotype.SortedNames(), ", ")
 }
 
 type RepositoriesHandler struct {
@@ -617,12 +585,12 @@ func (h *RepositoriesHandler) createRepository(
 		return
 	}
 
-	if models.IsReservedRepoName(body.Name) {
+	if repotype.ReservedName(body.Name) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "name is reserved; choose a different repository name")
 		return
 	}
 
-	if !validFormats[body.Format] {
+	if !repotype.Valid(body.Format) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "format must be one of: "+validFormatList())
 		return
 	}

@@ -17,28 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// Every repository format must have an upload format label in
-// openartifact_uploads_total: a new format added to validFormats fails here
-// until it is counted (see metrics.UploadFormats).
-func TestUploadFormatsCoverRepositoryFormats(t *testing.T) {
-	labels := map[string]bool{}
-	for _, f := range metrics.UploadFormats {
-		labels[f] = true
-	}
-
-	for f := range validFormats {
-		if !labels[f] {
-			t.Errorf("repository format %q has no upload format label in metrics.UploadFormats", f)
-		}
-	}
-
-	for f := range labels {
-		if !validFormats[f] {
-			t.Errorf("upload format label %q is not a repository format", f)
-		}
-	}
-}
-
 // The presigned completion counts under the raw format, with the same
 // success/error results as every other upload.
 func TestPresignedUpload_CompleteIsCounted(t *testing.T) {

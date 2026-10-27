@@ -39,6 +39,7 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/repodispatch"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
@@ -283,11 +284,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f := &a.web.formats
 
 	routers := map[string]*chi.Mux{}
-	for _, name := range []string{
-		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda", "apk",
-		"pacman",
-		"terraform",
-	} {
+	for _, name := range repotype.Names() {
 		routers[name] = chi.NewRouter()
 	}
 

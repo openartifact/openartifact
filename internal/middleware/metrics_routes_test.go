@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -37,6 +36,7 @@ import (
 	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -169,7 +169,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		label, ok := known[e.Name()]
 		if !ok {
 			t.Errorf("internal/format/%s has no upload format label: count its uploads with "+
-				"Registry.CountUpload and add the format to metrics.UploadFormats and this test", e.Name())
+				"Registry.CountUpload and add the format to the repotype registry and this test", e.Name())
 
 			continue
 		}
@@ -177,15 +177,15 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		if label != "" {
 			labelled[label] = true
 
-			if !slices.Contains(metrics.UploadFormats, label) {
-				t.Errorf("%s: %q is not in metrics.UploadFormats", e.Name(), label)
+			if !repotype.Valid(label) {
+				t.Errorf("%s: %q is not a registered format", e.Name(), label)
 			}
 		}
 	}
 
-	for _, f := range metrics.UploadFormats {
+	for _, f := range repotype.Names() {
 		if !labelled[f] {
-			t.Errorf("metrics.UploadFormats has %q but no internal/format directory maps to it", f)
+			t.Errorf("repotype has format %q but no internal/format directory maps to it", f)
 		}
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -398,9 +399,8 @@ func (h *AdminGPGHandler) signingRepo(w http.ResponseWriter, r *http.Request, na
 		return nil, false
 	}
 
-	if (repo.Format != "deb" && repo.Format != "rpm" && repo.Format != "pacman" && repo.Format != "terraform") ||
-		(repo.RepoType != "" && repo.RepoType != "hosted") {
-		writeError(w, http.StatusBadRequest, "validation_failed", "only hosted deb, rpm, pacman and terraform repositories are signed")
+	if !repotype.GPGSigned(repo.Format) || (repo.RepoType != "" && repo.RepoType != "hosted") {
+		writeError(w, http.StatusBadRequest, "validation_failed", "only hosted "+repotype.GPGFormats()+" repositories are signed")
 		return nil, false
 	}
 

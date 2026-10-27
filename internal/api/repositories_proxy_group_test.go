@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 type proxyGroupMockDB struct {
@@ -61,7 +62,7 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 			t.Errorf("%s of bogus: message %q", repoType, msg)
 		}
 
-		for format := range validFormats {
+		for _, format := range repotype.Names() {
 			if repoType == "group" && format == "pacman" {
 				continue // pacman groups arrive in a later change
 			}
