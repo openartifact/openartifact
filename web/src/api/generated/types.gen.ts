@@ -618,7 +618,7 @@ export type AdminToken = Token & {
      * Project of a project token
      */
     project?: string | null;
-    project_role?: 'viewer' | 'developer';
+    project_role?: 'viewer' | 'developer' | null;
     /**
      * Username that minted a project token
      */
@@ -882,8 +882,8 @@ export type ReplicationStatus = {
      * True while an admin-requested verify pass waits to start.
      */
     verify_requested?: boolean;
-    verify_running?: ReplicationVerifyResult;
-    last_verify?: ReplicationVerifyResult;
+    verify_running?: ReplicationVerifyResult | null;
+    last_verify?: ReplicationVerifyResult | null;
 };
 
 export type RecoveryStatus = {
@@ -1601,7 +1601,7 @@ export type ProjectActivityEntry = {
      * Username or token name of the actor; empty when unknown.
      */
     actor: string;
-    actor_type?: 'user' | 'system' | 'token' | 'sso';
+    actor_type?: 'user' | 'system' | 'token' | 'sso' | null;
     message: string;
     resource_type?: string | null;
     resource_id?: string | null;
@@ -2008,7 +2008,7 @@ export type VulnScanner = {
     /**
      * State of the vulnerability database of an available `trivy` / `grype`; null otherwise.
      */
-    db_state: 'ready' | 'updating' | 'failed' | 'missing';
+    db_state: 'ready' | 'updating' | 'failed' | 'missing' | null;
     /**
      * When the vulnerability database was last refreshed; null when there is none or the time is unknown.
      */
@@ -2016,11 +2016,11 @@ export type VulnScanner = {
     /**
      * State of the automatic installer (`scanners.<name>.install: auto`) for a `trivy` / `grype` binary that is being or was downloaded by the server; null when the binary is not managed by the installer.
      */
-    install_state: 'installing' | 'ready' | 'failed';
+    install_state: 'installing' | 'ready' | 'failed' | null;
     /**
      * Why the scanner is not ready; null when it is.
      */
-    code: 'scanner_unavailable' | 'scanner_installing' | 'scanner_install_failed' | 'scanner_install_noexec' | 'scanner_db_unavailable';
+    code: 'scanner_unavailable' | 'scanner_installing' | 'scanner_install_failed' | 'scanner_install_noexec' | 'scanner_db_unavailable' | null;
     /**
      * What the operator must do when the scanner is not ready.
      */
@@ -13379,7 +13379,7 @@ export type GetApiV1BrandingByAssetResponses = {
     /**
      * Image
      */
-    200: Blob | File;
+    200: string;
 };
 
 export type GetApiV1BrandingByAssetResponse = GetApiV1BrandingByAssetResponses[keyof GetApiV1BrandingByAssetResponses];
@@ -13495,7 +13495,7 @@ export type DeleteApiV1AdminBrandingByAssetResponses = {
 export type DeleteApiV1AdminBrandingByAssetResponse = DeleteApiV1AdminBrandingByAssetResponses[keyof DeleteApiV1AdminBrandingByAssetResponses];
 
 export type PutApiV1AdminBrandingByAssetData = {
-    body: Blob | File;
+    body: string;
     path: {
         asset: 'logo-light' | 'logo-dark' | 'favicon';
     };

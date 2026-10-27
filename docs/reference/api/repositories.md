@@ -54,7 +54,7 @@ List all repositories with optional filtering
 | `project` | query | string | no | Only repositories of the project with this name; an unknown project matches nothing |
 | `flagged` | query | boolean | no | true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts) |
 | `near_quota` | query | boolean | no | true keeps the repositories that have a size quota and have used at least quota_threshold of it |
-| `quota_threshold` | query | number | no | Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8). Minimum: 0. Maximum: 1. |
+| `quota_threshold` | query | number | no | Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8). Exclusive minimum: 0. Maximum: 1. |
 | `unscanned` | query | boolean | no | true keeps the repositories that were never scanned (no completed scan of any of their artifacts) |
 | `sort` | query | string | no | Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name. One of: `name`, `updated`, `last_published`, `size`. |
 

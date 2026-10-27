@@ -1320,7 +1320,7 @@ Includes all fields of [QuotaLine](#quotaline).
 | `failing` | integer (int64) | no | Queued operations that failed repeatedly. |
 | `last_error` | string | no | - |
 | `last_error_at` | string (date-time) | no | Nullable. |
-| `last_verify` | [ReplicationVerifyResult](#replicationverifyresult) | no | - |
+| `last_verify` | [ReplicationVerifyResult](#replicationverifyresult) | no | Nullable. |
 | `oldest_pending_age_seconds` | number (double) | no | Replication lag: the age of the oldest queued operation. |
 | `read_fallback` | string | no | One of: ``, `notfound`, `error`, `off`. |
 | `replica` | object | no | Nullable. |
@@ -1329,7 +1329,7 @@ Includes all fields of [QuotaLine](#quotaline).
 | `replicated_bytes_total` | integer (int64) | no | - |
 | `replicated_total` | integer (int64) | no | - |
 | `verify_requested` | boolean | no | True while an admin-requested verify pass waits to start. |
-| `verify_running` | [ReplicationVerifyResult](#replicationverifyresult) | no | - |
+| `verify_running` | [ReplicationVerifyResult](#replicationverifyresult) | no | Nullable. |
 
 ### ReplicationVerifyResult
 
