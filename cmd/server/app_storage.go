@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/api"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
@@ -36,7 +37,18 @@ type storageStack struct {
 
 	blobs  *storage.MetricsBlobStore
 	served *presign.Store
+
+	// health is the cached probe behind the public /health storage status.
+	health *storage.HealthProbe
 }
+
+const (
+	// healthProbeTTL bounds how often /health reaches the storage backend, so
+	// unauthenticated callers cannot amplify load.
+	healthProbeTTL = 10 * time.Second
+	// healthProbeTimeout bounds one storage probe.
+	healthProbeTimeout = 3 * time.Second
+)
 
 // setupStorage opens the configured backend, layers tiers and replication on
 // it, and wraps the result with metrics.
@@ -58,6 +70,7 @@ func (a *app) setupStorage() error {
 	}
 
 	a.store.blobs = storage.NewMetricsBlobStore(top, a.reg)
+	a.store.health = storage.NewHealthProbe(a.store.blobs, healthProbeTTL, healthProbeTimeout)
 
 	a.log.Infow("Storage initialized", "type", a.cfg.Storage.Type, "path", a.cfg.Storage.Path)
 

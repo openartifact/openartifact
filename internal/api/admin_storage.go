@@ -68,12 +68,28 @@ var storageSecretFields = []string{
 	"connStr", "conn_str", "creds", "credentials_json", "sas_token", "hmac_key", "hmac_secret",
 }
 
+// reservedStorageBackendName reports whether name is a path segment with a
+// static route under /api/v1/admin/storage. Those win over /{name}, so a record
+// with such a name would be unreachable by name: they cannot be given to a
+// record, on create or on rename. Keep the set in step with those routes (a
+// test walks the router and fails on a static segment missing here).
+//
+// A record that already has such a name (the check came later than the name)
+// stays in the list and keeps working where the static routes do not take the
+// method: PATCH and DELETE reach it, so it can be renamed or deleted by name
+// (for "primary" through primaryWrite). GET, and the test action of "primary",
+// answer with the static route's response; the test action of a record named
+// "replication" still reaches it.
+func reservedStorageBackendName(name string) bool {
+	return name == primaryStorageName || name == replicationStorageSegment
+}
+
 // validStorageBackendName writes the 400 for a malformed or reserved name.
 func validStorageBackendName(w http.ResponseWriter, name string) bool {
 	switch {
 	case !storageBackendNameRe.MatchString(name):
 		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
-	case name == primaryStorageName:
+	case reservedStorageBackendName(name):
 		writeError(w, http.StatusBadRequest, "validation_failed", "name '"+name+"' is reserved")
 	default:
 		return true
@@ -92,8 +108,8 @@ func (h *AdminStorageHandler) Register(r chi.Router) {
 	// The primary store is the server configuration, not a row: these static
 	// paths take precedence over /{name}, so the name is reserved.
 	r.Get("/api/v1/admin/storage/"+primaryStorageName, h.handleGetPrimary)
-	r.Patch("/api/v1/admin/storage/"+primaryStorageName, h.handlePrimaryReadOnly)
-	r.Delete("/api/v1/admin/storage/"+primaryStorageName, h.handlePrimaryReadOnly)
+	r.Patch("/api/v1/admin/storage/"+primaryStorageName, h.primaryWrite(h.handleUpdate))
+	r.Delete("/api/v1/admin/storage/"+primaryStorageName, h.primaryWrite(h.handleDelete))
 	r.Post("/api/v1/admin/storage/"+primaryStorageName+"/test", h.handleTestPrimary)
 	r.Get("/api/v1/admin/storage/{name}", h.handleGet)
 	r.Patch("/api/v1/admin/storage/{name}", h.handleUpdate)

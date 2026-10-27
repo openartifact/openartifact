@@ -70,12 +70,15 @@ export function useStorageBackends() {
     }
   }
 
-  // testStorageBackend resolves with {ok:false} for failed checks, so failures
-  // are counted from the results rather than from rejections.
+  // The primary store is tested with the records. testStorageBackend resolves
+  // with {ok:false} for failed checks, so failures are counted from the
+  // results rather than from rejections.
   async function testAll(): Promise<void> {
     testingAll.value = true
     try {
-      const results = await Promise.allSettled(items.value.map((b) => testStorageBackend(b.name)))
+      const checks = items.value.map((b) => testStorageBackend(b.name))
+      if (primary.value) checks.push(testStoragePrimary())
+      const results = await Promise.allSettled(checks)
       const failed = results.filter((r) => r.status === 'rejected' || !r.value.ok).length
       if (failed === 0) toasts.success(t('adm.storage.allHealthy'))
       else toasts.warning(`${failed} ${t('adm.storage.someFailed')}`)

@@ -14035,7 +14035,7 @@
       },
       "post": {
         "summary": "Create storage backend",
-        "description": "Create a new storage backend (admin only)",
+        "description": "Create a new storage backend (admin only). The names \"primary\" and \"replication\" are reserved (they are static paths under /admin/storage): creating one answers 400",
         "tags": [
           "Admin",
           "Storage"
@@ -14267,7 +14267,7 @@
       },
       "patch": {
         "summary": "Update storage backend",
-        "description": "Update a storage backend (admin only). Changing kind or config is refused with 409 while the backend holds blobs, serves a tier or is named by a tier move",
+        "description": "Update a storage backend (admin only). Renaming it to \"primary\" or \"replication\" answers 400. The name \"primary\" answers 405 read_only unless a record of that name still exists from before it was reserved, which this then renames. Changing kind or config is refused with 409 while the backend holds blobs, serves a tier or is named by a tier move",
         "tags": [
           "Admin",
           "Storage"

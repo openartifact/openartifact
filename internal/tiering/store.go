@@ -829,3 +829,9 @@ func (s *Store) CompleteMultipart(ctx context.Context, id, handle string, size, 
 
 	return st.CompleteMultipart(ctx, id, handle, size, partSize)
 }
+
+// HealthCheck probes the primary store: it is where new blobs land, and the
+// tier stores of backend records are probed by their own test button.
+func (s *Store) HealthCheck(ctx context.Context) error {
+	return storage.CheckHealth(ctx, s.reg.Primary())
+}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -269,5 +270,27 @@ func TestTry_PlainStoreNeverRedirects(t *testing.T) {
 	rw := httptest.NewRecorder()
 	if Try(local, rw, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil), Blob{SHA256: testSHA}) {
 		t.Fatal("a store without the Redirector capability redirected")
+	}
+}
+
+func TestStore_HealthCheckReachesTheWrappedStore(t *testing.T) {
+	dir := t.TempDir()
+
+	local, err := storage.NewFilesystemStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := Wrap(local, nil, Settings{}, nil, testLogger(t))
+	if err := s.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("healthy store: %v", err)
+	}
+
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.HealthCheck(context.Background()); err == nil {
+		t.Fatal("the wrapped store's failure is not reported")
 	}
 }

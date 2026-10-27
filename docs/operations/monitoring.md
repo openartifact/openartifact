@@ -35,7 +35,7 @@ The REST API, OpenAPI spec and interactive API reference are covered in [API](..
 
 A failing component has `"status":"error"` and `"message":"unavailable"` (the cause is in the server log); the overall status is then `degraded`. Use `/ready` for load balancer and Kubernetes readiness checks, since `/health` returns 200 even when degraded.
 
-What is checked: the database is pinged. Storage is checked (bucket access) only for the S3-family backends `s3`, `garage`, `seaweedfs` and `gcs`. Filesystem, Azure and OCI always report `ok`. See [storage](storage.md).
+What is checked: the database is pinged. Storage is probed through the same store stack that serves requests, for every backend: bucket access for `s3`, `garage`, `seaweedfs` and `gcs`, container access for `azure`, `GET /v2/` for `oci`, and for `filesystem` that the blob directory exists and a temporary file can be written and removed in it. The probe is cached for 10 seconds and bounded to 3 seconds, so polling `/health` does not turn into backend requests, and a failure shows up within that window. `/ready` checks the S3-family stores only, on every call. See [storage](storage.md#health).
 
 The compose healthcheck is `wget --spider http://localhost:8080/health`.
 

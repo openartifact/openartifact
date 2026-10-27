@@ -487,3 +487,10 @@ func (s *Store) CompleteMultipart(ctx context.Context, id, handle string, size, 
 
 	return m.CompleteMultipart(ctx, id, handle, size, partSize) //nolint:wrapcheck // transparent wrapper
 }
+
+// HealthCheck probes the primary side. The replica is not part of it: a down
+// replica degrades redundancy, not serving, and its state is on the
+// replication admin endpoints.
+func (s *Store) HealthCheck(ctx context.Context) error {
+	return storage.CheckHealth(ctx, s.inner)
+}

@@ -283,3 +283,8 @@ func (m *MetricsBlobStore) CompleteMultipart(ctx context.Context, id, handle str
 
 	return s.CompleteMultipart(ctx, id, handle, size, partSize)
 }
+
+// HealthCheck probes the store this one wraps.
+func (m *MetricsBlobStore) HealthCheck(ctx context.Context) error {
+	return CheckHealth(ctx, m.inner)
+}

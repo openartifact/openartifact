@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   backendTypes,
   buildBackendTypes,
+  countStatuses,
   locationSummary,
   statusBadgeClass,
   statusDotClass,
@@ -219,5 +220,19 @@ describe('presentation helpers', () => {
     expect(typeColor('s3')).toBe(storageBackendColor('s3'))
     expect(typeIcon('filesystem')).not.toBe(typeIcon('s3'))
     expect(typeIcon('s3')).toBe(typeIcon('gcs'))
+  })
+})
+
+describe('countStatuses', () => {
+  const rows = [{ status: 'healthy' }, { status: 'unknown' }, { status: 'unreachable' }, { status: 'weird' }]
+
+  it('counts the records by status, anything else being unknown', () => {
+    expect(countStatuses(rows)).toEqual({ total: 4, healthy: 1, unreachable: 1, unknown: 2 })
+    expect(countStatuses([], null)).toEqual({ total: 0, healthy: 0, unreachable: 0, unknown: 0 })
+  })
+
+  it('counts the primary store with the records', () => {
+    expect(countStatuses(rows, { status: 'unreachable' })).toEqual({ total: 5, healthy: 1, unreachable: 2, unknown: 2 })
+    expect(countStatuses([], { status: 'healthy' })).toEqual({ total: 1, healthy: 1, unreachable: 0, unknown: 0 })
   })
 })

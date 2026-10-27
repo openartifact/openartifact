@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -219,6 +220,35 @@ func (h *AdminStorageHandler) handleTestPrimary(w http.ResponseWriter, r *http.R
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// primaryWrite serves PATCH and DELETE of /primary. The store itself is read-only,
+// but a record that already carries the name (created before it was reserved)
+// must stay renamable and deletable: its writes go to record, which acts on it
+// as it would on /{name}. Without such a record the answer is the 405.
+func (h *AdminStorageHandler) primaryWrite(record http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.requireAdmin(w, r) {
+			return
+		}
+
+		legacy, err := h.db.GetStorageBackend(r.Context(), primaryStorageName)
+		if err != nil {
+			h.log.Errorw("failed to get storage backend", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
+
+			return
+		}
+
+		rctx := chi.RouteContext(r.Context())
+		if legacy == nil || rctx == nil {
+			h.handlePrimaryReadOnly(w, r)
+			return
+		}
+
+		rctx.URLParams.Add("name", primaryStorageName)
+		record(w, r)
+	}
 }
 
 // handlePrimaryReadOnly answers the writes the primary store does not accept.

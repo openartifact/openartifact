@@ -597,7 +597,7 @@ Fields of the `200` response (`application/json`):
 
 Create storage backend
 
-Create a new storage backend (admin only)
+Create a new storage backend (admin only). The names "primary" and "replication" are reserved (they are static paths under /admin/storage): creating one answers 400
 
 **Request body** (required)
 
@@ -738,7 +738,7 @@ Get details of a specific storage backend (admin only)
 
 Update storage backend
 
-Update a storage backend (admin only). Changing kind or config is refused with 409 while the backend holds blobs, serves a tier or is named by a tier move
+Update a storage backend (admin only). Renaming it to "primary" or "replication" answers 400. The name "primary" answers 405 read_only unless a record of that name still exists from before it was reserved, which this then renames. Changing kind or config is refused with 409 while the backend holds blobs, serves a tier or is named by a tier move
 
 **Parameters**
 
