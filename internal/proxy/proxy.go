@@ -136,6 +136,7 @@ type Service struct {
 	tfSecret    []byte            // server HMAC secret the Terraform download tickets derive from
 	tfTickets   *terraform.Minter // mints the download URLs of Terraform proxy documents
 	tfEndpoints tfEndpointMemo    // registry endpoints resolved from cached discovery documents
+	tfCodeload  string            // base URL GitHub module sources are fetched from; "" = tfCodeloadBase (tests override it)
 
 	// packuments bounds every upstream document held in memory at once (npm
 	// packuments, PyPI pages, Helm indexes, NuGet/OCI documents, cargo
@@ -571,7 +572,8 @@ type fetchOpts struct {
 	// transform, when set, turns the upstream answer into the document that is
 	// cached: it replaces resp.Body and resp.ContentLength (replaceBody). It
 	// also accepts a 204, whose meaning lives in the headers. The original
-	// body is still closed by the caller.
+	// body is still closed by the caller, which also closes the substituted
+	// one after the entry is stored (a file-backed body removes its file then).
 	transform func(resp *http.Response) error
 }
 
@@ -624,7 +626,12 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 	}
 
 	if o.transform != nil {
-		if terr := o.transform(resp); terr != nil {
+		terr := o.transform(resp)
+		// A transform may hand over a body that holds a spool file; closing
+		// it twice (when it left the upstream body in place) is harmless.
+		defer func() { base.CloseLog(resp.Body, s.log) }()
+
+		if terr != nil {
 			return nil, terr
 		}
 	}

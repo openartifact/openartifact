@@ -484,12 +484,14 @@ func TestTerraformModuleArchiveHintAndOpenTofuForm(t *testing.T) {
 
 func TestTerraformModuleGetterSourcesAreRefused(t *testing.T) {
 	for _, get := range []string{
-		"git::https://github.com/org/repo?ref=v1.0.0",
+		"git::https://gitlab.com/org/repo?ref=v1.0.0",
 		"s3::https://s3.amazonaws.com/bucket/demo.zip",
 		"hg::https://example.org/demo",
-		"github.com/org/repo",
+		"gitlab.com/org/repo",
 		"git@github.com:org/repo.git",
-		"https://example.org/demo.zip//subdir",
+		"git::ssh://git@github.com/org/repo.git",
+		"git::https://github.com/org/repo?sshkey=abc",
+		"https://example.org/demo.tar.bz2//subdir",
 		"https://example.org/demo.zip?checksum=abc",
 		"https://example.org/blob",
 		"ftp://example.org/demo.zip",
@@ -839,24 +841,24 @@ func TestParseModuleGet(t *testing.T) {
 		{"/modules/demo.zip", "https://registry.example/modules/demo.zip", "zip"},
 		{"  https://h.example/demo.zip\n", "https://h.example/demo.zip", "zip"},
 	} {
-		got, err := parseModuleGet(tc.in, base)
+		got, err := parseModuleGet(tc.in, base, tfCodeloadBase)
 		if err != nil || got.url != tc.url || got.ext != tc.ext {
 			t.Errorf("%q = %+v, %v; want %s (%s)", tc.in, got, err, tc.url, tc.ext)
 		}
 	}
 
 	for _, in := range []string{
-		"git::https://github.com/org/repo", "s3::https://x/y.zip", "gcs::https://x/y.zip", "hg::https://x/y", "github.com/org/repo",
-		"git@github.com:org/repo.git", "file:///etc/passwd", "https://h/demo.zip//sub", "https://h/demo.zip?checksum=md5:abc",
+		"git::https://gitlab.com/org/repo", "s3::https://x/y.zip", "gcs::https://x/y.zip", "hg::https://x/y", "gitlab.com/org/repo",
+		"git@github.com:org/repo.git", "file:///etc/passwd", "https://h/demo.zip?checksum=md5:abc",
 		"https://h/demo?ref=main", "https://h/demo", "https://h/demo.exe", "https://u:p@h/demo.zip", "https://h/demo.zip#x", "http://",
 	} {
-		if _, err := parseModuleGet(in, base); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		if _, err := parseModuleGet(in, base, tfCodeloadBase); err == nil || !strings.Contains(err.Error(), "unsupported") {
 			t.Errorf("%q: error %v, want an unsupported-source error", in, err)
 		}
 	}
 
 	for _, in := range []string{"", "   ", strings.Repeat("a", tfMaxGet+1)} {
-		if _, err := parseModuleGet(in, base); err == nil || strings.Contains(err.Error(), "unsupported") {
+		if _, err := parseModuleGet(in, base, tfCodeloadBase); err == nil || strings.Contains(err.Error(), "unsupported") {
 			t.Errorf("%q: error %v, want a plain error", truncate(in, 20), err)
 		}
 	}

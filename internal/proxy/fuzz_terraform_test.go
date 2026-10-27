@@ -87,19 +87,24 @@ func FuzzTerraformDiscovery(f *testing.F) {
 	})
 }
 
-// FuzzTerraformModuleGet checks that only plain archive URLs get through
-// parseModuleGet, whatever a registry puts in X-Terraform-Get.
+// FuzzTerraformModuleGet checks that only plain archive URLs and github.com
+// repositories (mapped to codeload) get through parseModuleGet, whatever a
+// registry puts in X-Terraform-Get.
 func FuzzTerraformModuleGet(f *testing.F) {
 	for _, s := range []string{
 		"https://h.example/demo.zip", "https://h.example/demo?archive=tar.gz&x=1", "/modules/demo.zip", "git::https://github.com/org/repo?ref=v1",
 		"s3::https://x/y.zip", "github.com/org/repo", "git@github.com:org/repo.git", "https://h/demo.zip//sub", "https://h/demo.zip?checksum=md5:a",
 		"https://u:p@h/demo.zip", "file:///etc/passwd", "https://h/%zz.zip", "", "::", "a::b::c",
+		"git::https://github.com/org/repo.git?ref=0123456789abcdef0123456789abcdef01234567&depth=1",
+		"git::https://github.com/org/repo.git//modules/x?ref=v1.2.3", "github.com/org/repo//a/b?ref=feature/x", "https://github.com/org/repo",
+		"git::https://github.com/org/repo?ref=../../x", "git::https://github.com/org/repo?sshkey=abc", "git::ssh://git@github.com/org/repo.git",
+		"git::https://gitlab.com/org/repo.git", "https://h/x.tar.gz//wrap/sub", "https://h/x.tar.gz//../x", "https://h/x.zip//a//b", "git::https://github.com/o/r//",
 	} {
 		f.Add(s)
 	}
 
 	f.Fuzz(func(t *testing.T, raw string) {
-		src, err := parseModuleGet(raw, tfFuzzGetBase)
+		src, err := parseModuleGet(raw, tfFuzzGetBase, tfCodeloadBase)
 		if err != nil {
 			return
 		}
@@ -119,6 +124,21 @@ func FuzzTerraformModuleGet(f *testing.F) {
 
 		if _, q, _ := splitArchiveHint(u.RawQuery); q != u.RawQuery {
 			t.Fatalf("accepted %q with a getter archive hint left in %q", raw, src.url)
+		}
+
+		if src.subdir != "" {
+			if clean, ok := cleanTFSubdir(src.subdir); !ok || clean != src.subdir || !slices.Contains([]string{"zip", "tar.gz", "tgz"}, src.ext) {
+				t.Fatalf("accepted %q with subdirectory %q of a %s archive", raw, src.subdir, src.ext)
+			}
+		}
+
+		if src.strip {
+			rest, ok := strings.CutPrefix(src.url, tfCodeloadBase+"/")
+			segs := strings.Split(rest, "/")
+
+			if !ok || u.RawQuery != "" || len(segs) < 4 || segs[2] != "tar.gz" || src.ext != "tar.gz" || !validTFGitRef(strings.Join(segs[3:], "/")) {
+				t.Fatalf("accepted %q as the codeload URL %q", raw, src.url)
+			}
 		}
 	})
 }

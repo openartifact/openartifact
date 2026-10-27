@@ -234,8 +234,170 @@ var errTFUnsupportedSource = errors.New("unsupported module source")
 
 // tfModuleSource is where a module's archive is fetched from.
 type tfModuleSource struct {
-	url string // absolute http(s) URL, without the archive hint
-	ext string // archive kind: one of tfArchiveExts without the dot
+	url    string // absolute http(s) URL, without the archive hint
+	ext    string // archive kind: one of tfArchiveExts without the dot
+	strip  bool   // the archive has one wrapper directory (a GitHub tarball) that is removed
+	subdir string // the directory of the (stripped) archive that is the module, "" for all of it
+}
+
+// repack reports whether the archive is rewritten before it is cached.
+func (s tfModuleSource) repack() bool { return s.strip || s.subdir != "" }
+
+// tfCodeloadBase is where GitHub serves the tarball of a ref.
+const tfCodeloadBase = "https://codeload.github.com"
+
+var (
+	tfGitHubOwnerRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`) //nolint:gochecknoglobals // compiled once
+	tfGitHubRepoRE  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)             //nolint:gochecknoglobals // compiled once
+	tfRefSegmentRE  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]*$`)      //nolint:gochecknoglobals // compiled once
+	tfSubdirSegRE   = regexp.MustCompile(`^[A-Za-z0-9._+@~-]{1,100}$`)          //nolint:gochecknoglobals // compiled once
+	tfDepthRE       = regexp.MustCompile(`^[0-9]{1,4}$`)                        //nolint:gochecknoglobals // compiled once
+)
+
+// validTFGitRef reports whether ref is a branch, tag or commit name that is
+// safe to put in a codeload URL: slash-separated segments of letters, digits
+// and ._+-, none starting with a dot or dash, no "..".
+func validTFGitRef(ref string) bool {
+	if ref == "" || len(ref) > 200 || strings.Contains(ref, "..") {
+		return false
+	}
+
+	for seg := range strings.SplitSeq(ref, "/") {
+		if !tfRefSegmentRE.MatchString(seg) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// cleanTFSubdir validates the directory a source selects with "//": relative
+// segments of a conservative character set, no empty, "." or ".." segment. A
+// trailing slash is dropped.
+func cleanTFSubdir(sub string) (string, bool) {
+	sub = strings.TrimSuffix(sub, "/")
+	if sub == "" || len(sub) > 400 {
+		return "", false
+	}
+
+	for seg := range strings.SplitSeq(sub, "/") {
+		if seg == "." || seg == ".." || !tfSubdirSegRE.MatchString(seg) {
+			return "", false
+		}
+	}
+
+	return sub, true
+}
+
+// splitModuleSubdir cuts the "//subdir" selector off a source: it follows the
+// URL (or the "host/path" of a detector) and may be followed by the query, as
+// in "https://github.com/o/r.git//modules/x?ref=v1". Only the path can carry
+// the selector: a "//" after a "?" or "#" belongs to a query value or a
+// fragment.
+func splitModuleSubdir(raw string) (head, subdir string, err error) {
+	pathEnd := len(raw)
+	if i := strings.IndexAny(raw, "?#"); i >= 0 {
+		pathEnd = i
+	}
+
+	start := 0
+	if i := strings.Index(raw[:pathEnd], "://"); i >= 0 {
+		start = i + len("://")
+	}
+
+	i := strings.Index(raw[start:pathEnd], "//")
+	if i < 0 {
+		return raw, "", nil
+	}
+
+	head, sub := raw[:start+i], raw[start+i+2:]
+
+	if j := strings.IndexByte(sub, '?'); j >= 0 {
+		head += "?" + sub[j+1:]
+		sub = sub[:j]
+	}
+
+	if sub = strings.TrimSuffix(sub, "/"); sub == "" {
+		return head, "", nil
+	}
+
+	clean, ok := cleanTFSubdir(sub)
+	if !ok {
+		return "", "", fmt.Errorf("%w: %q selects a subdirectory that is not a clean relative path", errTFUnsupportedSource, truncate(raw, 80))
+	}
+
+	return head, clean, nil
+}
+
+// parseGitHubSource maps a github.com git source ("git::https://github.com/o/r.git?ref=X",
+// "https://github.com/o/r", "github.com/o/r") to the codeload tarball of its
+// ref. ok is false for a source that is not a GitHub repository address, which
+// the caller then reads as a plain archive URL (unless a git getter was forced).
+func parseGitHubSource(head, forced, codeload string) (src tfModuleSource, ok bool, err error) {
+	if _, bare := strings.CutPrefix(head, "github.com/"); bare {
+		head = "https://" + head
+	}
+
+	u, perr := url.Parse(head)
+	if perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return tfModuleSource{}, false, nil
+	}
+
+	if !strings.EqualFold(u.Host, "github.com") {
+		return tfModuleSource{}, false, nil
+	}
+
+	segs := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(segs) != 2 && forced == "" {
+		// A longer path is a file on github.com (a release archive), not a repository.
+		return tfModuleSource{}, false, nil
+	}
+
+	unsupported := func(format string, args ...any) (tfModuleSource, bool, error) {
+		return tfModuleSource{}, true, fmt.Errorf("%w: "+format, append([]any{errTFUnsupportedSource}, args...)...)
+	}
+
+	repo := ""
+	if len(segs) == 2 {
+		repo = strings.TrimSuffix(segs[1], ".git")
+	}
+
+	switch {
+	case u.User != nil || u.Fragment != "" || u.RawPath != "" || u.Port() != "":
+		return unsupported("%q is not a plain GitHub repository address", truncate(head, 80))
+	case len(segs) != 2 || !tfGitHubOwnerRE.MatchString(segs[0]) || !tfGitHubRepoRE.MatchString(repo) || repo == "." || repo == "..":
+		return unsupported("%q is not a GitHub repository address (owner/repository)", truncate(head, 80))
+	}
+
+	query, qerr := url.ParseQuery(u.RawQuery)
+	if qerr != nil {
+		return unsupported("%q has a malformed query", truncate(head, 80))
+	}
+
+	ref := "HEAD"
+
+	for name, values := range query {
+		if len(values) != 1 {
+			return unsupported("the parameter %q is given more than once", truncate(name, 40))
+		}
+
+		switch name {
+		case "ref":
+			if !validTFGitRef(values[0]) {
+				return unsupported("the git ref %q is not a plain branch, tag or commit name", truncate(values[0], 80))
+			}
+
+			ref = values[0]
+		case "depth":
+			if !tfDepthRE.MatchString(values[0]) {
+				return unsupported("the depth %q is not a number", truncate(values[0], 20))
+			}
+		default:
+			return unsupported("the git parameter %q is not supported", truncate(name, 40))
+		}
+	}
+
+	return tfModuleSource{url: codeload + "/" + segs[0] + "/" + repo + "/tar.gz/" + ref, ext: "tar.gz", strip: true}, true, nil
 }
 
 // tfGetterParams are go-getter query parameters that change what is fetched or
@@ -245,18 +407,64 @@ var tfGetterParams = []string{"checksum", "ref", "depth", "sshkey", "filename"} 
 // parseModuleGet interprets the source a registry names for a module (the
 // X-Terraform-Get header, or the location of the OpenTofu answer). base is the
 // URL of the download answer that carried it, which relative sources are
-// resolved against. Only plain archive URLs are accepted: http(s), a known
-// archive kind, no subdirectory selector, no forced getter ("git::", "s3::",
-// ...), no checksum or other getter parameters. Everything else is refused with
-// errTFUnsupportedSource; an empty or oversized value is a plain error.
-func parseModuleGet(raw string, base *url.URL) (tfModuleSource, error) {
+// resolved against. Two kinds of source are accepted: github.com repositories
+// ("git::https://github.com/o/r.git?ref=X", "https://github.com/o/r", the bare
+// "github.com/o/r"), mapped to the codeload tarball of the ref under the
+// codeload base URL, and plain archive URLs (http(s), a known archive kind, no
+// checksum or other getter parameters). Either may select a subdirectory with
+// "//subdir"; a subdirectory of an archive is supported for zip and tar.gz.
+// Everything else (other getters and git hosts, scp-style addresses, ssh) is
+// refused with errTFUnsupportedSource; an empty or oversized value is a plain
+// error.
+func parseModuleGet(raw string, base *url.URL, codeload string) (tfModuleSource, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > tfMaxGet {
 		return tfModuleSource{}, fmt.Errorf("module source of %d bytes", len(raw))
 	}
 
+	forced := ""
+
 	if i := strings.Index(raw, "::"); i > 0 && !strings.ContainsAny(raw[:i], "/?#") {
-		return tfModuleSource{}, fmt.Errorf("%w: %s getter %q", errTFUnsupportedSource, raw[:i], raw[:i]+"::")
+		if forced = raw[:i]; forced != "git" {
+			return tfModuleSource{}, fmt.Errorf("%w: %s getter %q", errTFUnsupportedSource, forced, forced+"::")
+		}
+
+		raw = raw[i+2:]
+	}
+
+	raw, subdir, err := splitModuleSubdir(raw)
+	if err != nil {
+		return tfModuleSource{}, err
+	}
+
+	src, err := parsePlainOrGitHub(raw, forced, subdir, base, codeload)
+	if err != nil {
+		return tfModuleSource{}, err
+	}
+
+	if src.subdir != "" && !slices.Contains([]string{"zip", "tar.gz", "tgz"}, src.ext) {
+		return tfModuleSource{}, fmt.Errorf("%w: %q selects a subdirectory of a %s archive (zip and tar.gz only)", errTFUnsupportedSource, truncate(raw, 80), src.ext)
+	}
+
+	return src, nil
+}
+
+// parsePlainOrGitHub is parseModuleGet after the getter prefix and the
+// subdirectory selector are removed from raw.
+func parsePlainOrGitHub(raw, forced, subdir string, base *url.URL, codeload string) (tfModuleSource, error) {
+	gh, ok, err := parseGitHubSource(raw, forced, codeload)
+	if err != nil {
+		return tfModuleSource{}, err
+	}
+
+	if ok {
+		gh.subdir = subdir
+
+		return gh, nil
+	}
+
+	if forced != "" {
+		return tfModuleSource{}, fmt.Errorf("%w: the git source %q is not on github.com", errTFUnsupportedSource, truncate(raw, 80))
 	}
 
 	ref, err := url.Parse(raw)
@@ -280,8 +488,10 @@ func parseModuleGet(raw string, base *url.URL) (tfModuleSource, error) {
 		return tfModuleSource{}, fmt.Errorf("%w: %q is not a plain archive URL", errTFUnsupportedSource, raw)
 	}
 
+	// A "//" that splitModuleSubdir did not take as a selector (a relative
+	// source such as "/0://x.zip") is not a plain path.
 	if strings.Contains(ref.Path, "//") {
-		return tfModuleSource{}, fmt.Errorf("%w: %q selects a subdirectory (//)", errTFUnsupportedSource, raw)
+		return tfModuleSource{}, fmt.Errorf("%w: %q has an empty path segment", errTFUnsupportedSource, truncate(raw, 80))
 	}
 
 	hint, query, params := splitArchiveHint(ref.RawQuery)
@@ -300,7 +510,7 @@ func parseModuleGet(raw string, base *url.URL) (tfModuleSource, error) {
 
 	ref.RawQuery = query
 
-	return tfModuleSource{url: ref.String(), ext: ext}, nil
+	return tfModuleSource{url: ref.String(), ext: ext, subdir: subdir}, nil
 }
 
 // splitArchiveHint removes the go-getter "archive" parameter from a raw query,

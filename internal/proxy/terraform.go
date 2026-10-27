@@ -5,6 +5,7 @@
 package proxy
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/httpcache"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 )
 
@@ -56,8 +59,11 @@ import (
 // upstream: the digest of the first copy is kept and a later fetch (after the
 // repository TTL) that differs is refused the same way.
 //
-// Only plain archive sources are supported (see parseModuleGet); a module
-// whose source is a git or other getter URL answers 501.
+// Only github.com repositories and plain archive sources are supported (see
+// parseModuleGet); a module with any other git or getter source answers 501. A
+// GitHub source is fetched as the codeload tarball of its ref, and a source
+// with a wrapper directory or a "//subdir" is repacked (terraform.RepackModuleArchive)
+// before it is cached, so the cached archive is what the client extracts.
 
 const (
 	tfDiscoveryKey = ".well-known/terraform.json"
@@ -144,7 +150,7 @@ func (s *Service) writeTFError(w http.ResponseWriter, r *http.Request, err error
 	switch {
 	case errors.Is(err, errTFUnsupportedSource):
 		writeTFErrors(w, http.StatusNotImplemented,
-			truncate(err.Error(), tfMaxMessage)+": this proxy fetches modules only from plain archive URLs "+
+			truncate(err.Error(), tfMaxMessage)+": this proxy fetches modules only from github.com repositories and plain archive URLs "+
 				"(zip, tar.gz, ...); see the Terraform format documentation, section proxy repositories")
 	case errors.Is(err, errNotFound):
 		writeTFErrors(w, http.StatusNotFound, "not found")
@@ -581,7 +587,7 @@ func (s *Service) tfModuleSource(ctx context.Context, repo *models.Repository, n
 		return tfModuleSource{}, errInternal
 	}
 
-	src, err := parseModuleGet(doc.Get, ep.modules.JoinPath(repo.Name, name, system, version, "download"))
+	src, err := parseModuleGet(doc.Get, ep.modules.JoinPath(repo.Name, name, system, version, "download"), cmp.Or(s.tfCodeload, tfCodeloadBase))
 	if err != nil {
 		if errors.Is(err, errTFUnsupportedSource) {
 			s.log.Infow("terraform module source is not a plain archive URL", "repo", repo.Name, "module", name, "version", version, "error", err)
@@ -848,7 +854,112 @@ func (s *Service) fetchTFModuleArchive(ctx context.Context, repo *models.Reposit
 		o.wantSHA256 = prev.BlobKey
 	}
 
+	if src.repack() {
+		// The digest that is pinned is the one of the repacked bytes.
+		o.transform = func(resp *http.Response) error { return s.repackTFModule(repo, key, src, resp) }
+	}
+
 	return s.fetchURL(ctx, repo, key, src.url, tfOpts(repo, src.url, o))
+}
+
+// tfSpoolFile is a temporary file that is removed when it is closed.
+type tfSpoolFile struct{ *os.File }
+
+func (f tfSpoolFile) Close() error {
+	err := f.File.Close()
+	if rerr := os.Remove(f.Name()); rerr != nil && err == nil {
+		err = rerr
+	}
+
+	return err
+}
+
+// newTFSpool creates an anonymous temporary file of the proxy's kind.
+func (s *Service) newTFSpool() (tfSpoolFile, error) {
+	f, err := os.CreateTemp("", "openartifact-proxy-*")
+	if err != nil {
+		s.log.Errorw("failed to create proxy spool file", "error", err)
+		return tfSpoolFile{}, errInternal
+	}
+
+	return tfSpoolFile{f}, nil
+}
+
+// repackTFModule replaces the body of a module archive answer by the repacked
+// archive (wrapper directory and subdirectory handled as src says). The
+// upstream body is spooled first, under the proxy's size limit, so a network
+// failure is an upstream failure and the archive can be read at random; the
+// repacked file becomes resp.Body and is removed when fetchURL closes it.
+func (s *Service) repackTFModule(repo *models.Repository, key string, src tfModuleSource, resp *http.Response) error {
+	if resp.ContentLength > s.maxBody {
+		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
+		return errUpstream
+	}
+
+	in, err := s.newTFSpool()
+	if err != nil {
+		return err
+	}
+	defer func() { base.CloseLog(in, s.log) }()
+
+	size, err := iocopy.Copy(in, io.LimitReader(resp.Body, s.maxBody+1))
+	switch {
+	case err != nil:
+		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
+		return errUpstreamDown
+	case size > s.maxBody:
+		s.log.Warnw("proxy upstream body oversized", "repo", repo.Name, "path", key, "size", size)
+		return errUpstream
+	case resp.ContentLength >= 0 && size != resp.ContentLength:
+		s.log.Warnw("proxy upstream body truncated", "repo", repo.Name, "path", key, "size", size)
+		return errUpstreamDown
+	}
+
+	if _, err := in.Seek(0, io.SeekStart); err != nil {
+		s.log.Errorw("failed to rewind proxy spool file", "error", err)
+		return errInternal
+	}
+
+	if verr := verifyTFArchive(src.ext, in); verr != nil {
+		s.log.Warnw("proxy upstream file failed verification, refusing", "repo", repo.Name, "path", key, "error", verr)
+		return errVerify
+	}
+
+	out, err := s.newTFSpool()
+	if err != nil {
+		return err
+	}
+
+	if rerr := terraform.RepackModuleArchive(out, in, size, src.strip, src.subdir); rerr != nil {
+		base.CloseLog(out, s.log)
+
+		if terraform.IsRepackError(rerr) {
+			s.log.Warnw("proxy upstream module archive refused", "repo", repo.Name, "path", key, "url", src.url, "subdir", src.subdir, "error", rerr)
+			return errVerify
+		}
+
+		s.log.Errorw("failed to repack module archive", "repo", repo.Name, "path", key, "error", rerr)
+
+		return errInternal
+	}
+
+	outSize, err := out.Seek(0, io.SeekCurrent)
+	if err == nil {
+		_, err = out.Seek(0, io.SeekStart)
+	}
+
+	if err != nil {
+		base.CloseLog(out, s.log)
+		s.log.Errorw("failed to rewind proxy spool file", "error", err)
+
+		return errInternal
+	}
+
+	resp.Body = out
+	resp.ContentLength = outSize
+	resp.TransferEncoding = nil
+
+	return nil
 }
 
 func (s *Service) serveTFProviderZip(w http.ResponseWriter, r *http.Request, repo *models.Repository, d terraform.Download) {
