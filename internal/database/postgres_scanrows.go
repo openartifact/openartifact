@@ -113,3 +113,37 @@ func scanLicenseResult(row rowScanner) (*models.LicenseScanResult, error) {
 
 	return result, nil
 }
+
+// collectRows scans every row of rows with scan, closes rows and returns the
+// results in order (nil when there are none). scanMsg and listMsg prefix the
+// error of a failed scan and of a failed iteration.
+func collectRows[T any](rows *sql.Rows, scanMsg, listMsg string, scan func(rowScanner) (T, error)) ([]T, error) {
+	defer func() { _ = rows.Close() }()
+
+	var out []T
+
+	for rows.Next() {
+		v, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", scanMsg, err)
+		}
+
+		out = append(out, v)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", listMsg, err)
+	}
+
+	return out, nil
+}
+
+// scanRepository reads one row selected with repoColumns.
+func scanRepository(row rowScanner) (*models.Repository, error) {
+	r := &models.Repository{}
+	if err := row.Scan(repoScanDest(r)...); err != nil {
+		return nil, err //nolint:wrapcheck // collectRows wraps with the caller's message
+	}
+
+	return r, nil
+}

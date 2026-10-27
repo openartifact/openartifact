@@ -422,32 +422,10 @@ func pacmanEntries(pkgs []*models.PacmanPackage, lists map[string]string, arch s
 
 // listPacmanMetadata returns path -> blob sha256 of the generated metadata rows.
 func listPacmanMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
-	rows, err := tx.QueryContext(
-		ctx,
+	return queryMetadataSums(ctx, tx, "pacman worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'os/%' OR path = 'public.key')`,
 		repoID,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("pacman worker: listing repo_metadata: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	old := make(map[string]string)
-
-	for rows.Next() {
-		var path, sum string
-		if err := rows.Scan(&path, &sum); err != nil {
-			return nil, fmt.Errorf("pacman worker: scanning repo_metadata: %w", err)
-		}
-
-		old[path] = sum
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("pacman worker: listing repo_metadata: %w", err)
-	}
-
-	return old, nil
 }
 
 // publish makes blobs the repository's generated metadata: it stores the

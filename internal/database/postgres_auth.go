@@ -344,20 +344,25 @@ func (p *PostgresDB) CreateGroup(ctx context.Context, group *models.Group) (*mod
 }
 
 func (p *PostgresDB) GetGroupByID(ctx context.Context, id string) (*models.Group, error) {
+	return p.getGroup(ctx, "id", id)
+}
+
+// getGroup reads one auth group by its id or name column.
+func (p *PostgresDB) getGroup(ctx context.Context, column, value string) (*models.Group, error) {
 	g := &models.Group{}
 
 	var description sql.NullString
 
 	err := p.db.QueryRowContext(ctx,
-		`SELECT id, name, description, created_at, updated_at FROM auth_groups WHERE id = $1`,
-		id,
+		`SELECT id, name, description, created_at, updated_at FROM auth_groups WHERE `+column+` = $1`,
+		value,
 	).Scan(&g.ID, &g.Name, &description, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get group by id: %w", err)
+		return nil, fmt.Errorf("failed to get group by %s: %w", column, err)
 	}
 
 	if description.Valid {

@@ -141,3 +141,31 @@ func supersededMetadata(oldSHA, newSHA map[string]string) ([]string, []string) {
 
 	return stalePaths, reclaim
 }
+
+// queryMetadataSums runs a query selecting (path, blob_sha256) from
+// repository_metadata and returns path -> blob sha256. who and table only label
+// the errors.
+func queryMetadataSums(ctx context.Context, tx sq.Transaction, who, table, query string, args ...any) (map[string]string, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: listing %s: %w", who, table, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	old := make(map[string]string)
+
+	for rows.Next() {
+		var path, sum string
+		if err := rows.Scan(&path, &sum); err != nil {
+			return nil, fmt.Errorf("%s: scanning %s: %w", who, table, err)
+		}
+
+		old[path] = sum
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: listing %s: %w", who, table, err)
+	}
+
+	return old, nil
+}

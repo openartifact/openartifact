@@ -93,21 +93,18 @@ func (m *Migrator) loadApplied(ctx context.Context, conn *sql.Conn) (map[string]
 	if err != nil {
 		return nil, fmt.Errorf("loadApplied: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	pairs, err := collectRows(rows, "loadApplied scan", "loadApplied iterate", func(row rowScanner) ([2]string, error) {
+		var pair [2]string
 
-	applied := make(map[string]string)
-
-	for rows.Next() {
-		var version, checksum string
-		if err := rows.Scan(&version, &checksum); err != nil {
-			return nil, fmt.Errorf("loadApplied scan: %w", err)
-		}
-
-		applied[version] = checksum
+		return pair, row.Scan(&pair[0], &pair[1]) //nolint:wrapcheck // collectRows wraps
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("loadApplied iterate: %w", err)
+	applied := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		applied[pair[0]] = pair[1]
 	}
 
 	return applied, nil
