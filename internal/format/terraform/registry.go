@@ -6,7 +6,6 @@ package terraform
 
 import (
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -22,14 +21,7 @@ import (
 
 // pathPrefix is the path of the server's base URL (the part before /repos
 // when the server is published under a prefix).
-func (h *HTTPHandler) pathPrefix() string {
-	u, err := url.Parse(h.BaseURL)
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSuffix(u.EscapedPath(), "/")
-}
+func (h *HTTPHandler) pathPrefix() string { return PathPrefix(h.BaseURL) }
 
 // moduleCoords reads and validates {mod}/{system} from the URL. A name no
 // upload could have used cannot exist, so it is a 404.

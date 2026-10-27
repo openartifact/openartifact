@@ -314,7 +314,7 @@ func (d *tfDB) TerraformProviderStamp(_ context.Context, repoID, typ string) (st
 // ---- archives ----
 
 // zipOf builds a zip from name/content pairs; a name ending in "/" is a directory.
-func zipOf(tb testing.TB, entries ...[2]string) []byte {
+func zipOf(tb fataler, entries ...[2]string) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
@@ -347,7 +347,7 @@ type tarEntry struct {
 	link     string
 }
 
-func tarGzOf(tb testing.TB, entries ...tarEntry) []byte {
+func tarGzOf(tb fataler, entries ...tarEntry) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer

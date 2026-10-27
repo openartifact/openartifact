@@ -46,6 +46,9 @@ import (
 //	                                              of that name; repodata.json is
 //	                                              merged in serveConda with the proxies'
 //	                                              entries of those names left out)
+//	terraform <name>/<system>/versions, <type>/versions
+//	                                             (a module or a provider type; downloads
+//	                                              are files, version details are metadata)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
 //	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
 //	                                              member's table; no document to probe)
@@ -133,6 +136,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = conanRef(relPath)
 	case "conda":
 		ref, ok = condaRef(relPath)
+	case "terraform":
+		ref, ok = terraformRef(relPath)
 	}
 
 	if !ok {

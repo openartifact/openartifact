@@ -10,8 +10,8 @@ import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt']
-const GROUP_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt']
+const PROXY_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+const GROUP_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 // Formats a hosted repository can federate. Mirrors FederationSupported in
 // internal/repotype; the server stays authoritative.
@@ -27,9 +27,9 @@ export function federationAvailable(type: RepoType | null | undefined, format: s
   return (type ?? 'hosted') === 'hosted' && isFederationFormat(format)
 }
 
-/** Docker, pypi, cargo, go, nuget, conan, rubygems and pacman proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org / nuget.org / center2.conan.io / rubygems.org / geo.mirror.pkgbuild.com; every other proxy needs an upstream URL. */
+/** Docker, pypi, cargo, go, nuget, conan, rubygems, pacman and terraform proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org / nuget.org / center2.conan.io / rubygems.org / geo.mirror.pkgbuild.com / registry.terraform.io; every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {
-  return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'go' && format !== 'nuget' && format !== 'conan' && format !== 'rubygems' && format !== 'pacman'
+  return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'go' && format !== 'nuget' && format !== 'conan' && format !== 'rubygems' && format !== 'pacman' && format !== 'terraform'
 }
 
 /** Placeholder for the upstream URL field. */
@@ -43,6 +43,7 @@ export function upstreamUrlPlaceholder(format: FormatId): string {
   if (format === 'rubygems') return 'https://rubygems.org'
   if (format === 'pacman') return 'https://geo.mirror.pkgbuild.com'
   if (format === 'apk') return 'https://dl-cdn.alpinelinux.org/alpine'
+  if (format === 'terraform') return 'https://registry.terraform.io'
   if (format === 'sbt') return 'https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases'
   if (format === 'conda') return 'https://conda.anaconda.org/conda-forge'
   return 'https://registry.example.com'
