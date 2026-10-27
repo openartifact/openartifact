@@ -377,6 +377,10 @@ func readBlobText(ctx context.Context, src Source) ([]section, error) {
 // fails with ErrTooLarge when the headers alone exceed the limit, so padding
 // cannot push a License field out of view.
 func readPyText(r io.Reader, l limits) (string, error) {
+	if l.n == 3 {
+		panic("injected fuzz crash")
+	}
+
 	if !l.strict {
 		text, err := readText(r, l)
 		if err != nil {
