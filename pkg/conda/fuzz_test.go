@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package conda_test
+package conda
 
 import (
 	"bytes"
@@ -10,8 +10,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/openartifact/openartifact/pkg/conda"
 )
 
 func repodataSeeds() []string {
@@ -38,9 +36,9 @@ func FuzzScan(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		err := conda.Scan(bytes.NewReader(data), 1<<20, conda.Visitor{
+		err := Scan(bytes.NewReader(data), 1<<20, Visitor{
 			Info: func(json.RawMessage) error { return nil },
-			Entry: func(_ conda.Section, _ string, raw json.RawMessage) error {
+			Entry: func(_ Section, _ string, raw json.RawMessage) error {
 				if !json.Valid(raw) || raw[0] != '{' {
 					t.Fatalf("entry %q is not a JSON object", raw)
 				}
@@ -55,13 +53,13 @@ func FuzzScan(f *testing.F) {
 			if jerr := json.Unmarshal(data, &v); jerr != nil {
 				t.Fatalf("accepted %q that encoding/json rejects: %v", data, jerr)
 			}
-		case errors.Is(err, conda.ErrMalformed), errors.Is(err, conda.ErrTooLarge):
+		case errors.Is(err, ErrMalformed), errors.Is(err, ErrTooLarge):
 		default:
 			t.Fatalf("unclassified error %v for %q", err, data)
 		}
 
-		_ = conda.ValidateIndex(bytes.NewReader(data), conda.CompNone, 1<<20)
-		_ = conda.ValidateJSONObject(bytes.NewReader(data), 1<<20)
+		_ = ValidateIndex(bytes.NewReader(data), CompNone, 1<<20)
+		_ = ValidateJSONObject(bytes.NewReader(data), 1<<20)
 	})
 }
 
@@ -75,13 +73,13 @@ func FuzzMerge(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, one, two []byte, hidden string) {
-		b, err := conda.NewBuilder("noarch", t.TempDir())
+		b, err := NewBuilder("noarch", t.TempDir())
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer b.Close()
 
-		opts := conda.MemberOptions{MaxBytes: 1 << 20, Hidden: func(name string) bool { return name == hidden }}
+		opts := MemberOptions{MaxBytes: 1 << 20, Hidden: func(name string) bool { return name == hidden }}
 
 		for _, m := range [][]byte{one, two} {
 			if _, err := b.Add(bytes.NewReader(m), opts); err != nil {
@@ -111,8 +109,8 @@ func FuzzMerge(f *testing.F) {
 
 		for section, files := range map[string]map[string]json.RawMessage{"packages": got.Packages, "packages.conda": got.Conda} {
 			for file := range files {
-				p, ok := conda.ParseFilename(file)
-				if !ok || p.Name == hidden || (section == "packages") != strings.HasSuffix(file, conda.ExtTarBz2) {
+				p, ok := ParseFilename(file)
+				if !ok || p.Name == hidden || (section == "packages") != strings.HasSuffix(file, ExtTarBz2) {
 					t.Fatalf("%q in %s of %s", file, section, out.String())
 				}
 			}
@@ -129,7 +127,7 @@ func FuzzLookup(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte, name string) {
-		e, err := conda.Lookup(bytes.NewReader(data), name, 1<<20)
+		e, err := Lookup(bytes.NewReader(data), name, 1<<20)
 		if err != nil {
 			return
 		}
@@ -151,7 +149,7 @@ func FuzzParsePath(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in string) {
-		p, ok := conda.ParsePath(in)
+		p, ok := ParsePath(in)
 		if !ok {
 			return
 		}
@@ -161,11 +159,11 @@ func FuzzParsePath(f *testing.F) {
 			t.Fatalf("%q parsed to traversal %+v", in, p)
 		}
 
-		if p.Subdir != "" && (strings.Contains(p.Subdir, "/") || strings.Contains(p.File, "/") || !conda.ValidSubdir(p.Subdir)) {
+		if p.Subdir != "" && (strings.Contains(p.Subdir, "/") || strings.Contains(p.File, "/") || !ValidSubdir(p.Subdir)) {
 			t.Fatalf("%q parsed to %+v", in, p)
 		}
 
-		if again, ok := conda.ParsePath(key); !ok || again != p {
+		if again, ok := ParsePath(key); !ok || again != p {
 			t.Fatalf("%q: key %q parses to %+v, %v, not %+v", in, key, again, ok, p)
 		}
 	})

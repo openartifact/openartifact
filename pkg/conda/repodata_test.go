@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package conda_test
+package conda
 
 import (
 	"bytes"
@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/openartifact/openartifact/pkg/conda"
 )
 
 const sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -74,9 +73,9 @@ func TestScanVisitsEveryEntry(t *testing.T) {
 
 	info := ""
 
-	err := conda.Scan(strings.NewReader(src), 1<<20, conda.Visitor{
+	err := Scan(strings.NewReader(src), 1<<20, Visitor{
 		Info: func(i json.RawMessage) error { info = string(i); return nil },
-		Entry: func(s conda.Section, name string, raw json.RawMessage) error {
+		Entry: func(s Section, name string, raw json.RawMessage) error {
 			got = append(got, s.Key()+"/"+name)
 			if raw[0] != '{' {
 				t.Errorf("entry %s is %q", name, raw)
@@ -106,10 +105,10 @@ func TestScanRejectsMalformed(t *testing.T) {
 		"entry":         `{"packages":{"a-1-0.tar.bz2":"x"}}`,
 		"trailing":      `{} {}`,
 		"garbage after": `{}x`,
-		"huge entry":    `{"packages":{"a-1-0.tar.bz2":{"x":"` + strings.Repeat("a", conda.MaxEntryBytes+10) + `"}}}`,
+		"huge entry":    `{"packages":{"a-1-0.tar.bz2":{"x":"` + strings.Repeat("a", MaxEntryBytes+10) + `"}}}`,
 	} {
-		err := conda.Scan(strings.NewReader(src), 1<<30, conda.Visitor{})
-		if !errors.Is(err, conda.ErrMalformed) {
+		err := Scan(strings.NewReader(src), 1<<30, Visitor{})
+		if !errors.Is(err, ErrMalformed) {
 			t.Errorf("%s: got %v, want ErrMalformed", name, err)
 		}
 	}
@@ -119,11 +118,11 @@ func TestScanLimitAndNull(t *testing.T) {
 	t.Parallel()
 
 	src := doc(`{}`, []string{"a-1.0-0.tar.bz2=a"}, nil)
-	if err := conda.Scan(strings.NewReader(src), 20, conda.Visitor{}); !errors.Is(err, conda.ErrTooLarge) {
+	if err := Scan(strings.NewReader(src), 20, Visitor{}); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("got %v, want ErrTooLarge", err)
 	}
 
-	if err := conda.Scan(strings.NewReader(`{"packages":null,"packages.conda":null}`), 100, conda.Visitor{}); err != nil {
+	if err := Scan(strings.NewReader(`{"packages":null,"packages.conda":null}`), 100, Visitor{}); err != nil {
 		t.Fatalf("null sections: %v", err)
 	}
 }
@@ -135,7 +134,7 @@ func TestScanStopsOnVisitorError(t *testing.T) {
 	src := doc(`{}`, []string{"a-1.0-0.tar.bz2=a", "b-1.0-0.tar.bz2=b"}, nil)
 
 	n := 0
-	err := conda.Scan(strings.NewReader(src), 1<<20, conda.Visitor{Entry: func(conda.Section, string, json.RawMessage) error {
+	err := Scan(strings.NewReader(src), 1<<20, Visitor{Entry: func(Section, string, json.RawMessage) error {
 		n++
 		return stop
 	}})
@@ -150,8 +149,8 @@ func TestOpenDecodesEveryEncoding(t *testing.T) {
 
 	src := doc(`{}`, nil, []string{"a-1.0-0.conda=a"})
 
-	rc, comp, err := conda.Open(bytes.NewReader(zstdBytes(t, src)), 1<<20)
-	if err != nil || comp != conda.CompZstd {
+	rc, comp, err := Open(bytes.NewReader(zstdBytes(t, src)), 1<<20)
+	if err != nil || comp != CompZstd {
 		t.Fatalf("zstd: %v %v", comp, err)
 	}
 
@@ -161,8 +160,8 @@ func TestOpenDecodesEveryEncoding(t *testing.T) {
 
 	_ = rc.Close()
 
-	rc, comp, err = conda.Open(strings.NewReader(src), 1<<20)
-	if err != nil || comp != conda.CompNone {
+	rc, comp, err = Open(strings.NewReader(src), 1<<20)
+	if err != nil || comp != CompNone {
 		t.Fatalf("plain: %v %v", comp, err)
 	}
 
@@ -170,15 +169,15 @@ func TestOpenDecodesEveryEncoding(t *testing.T) {
 		t.Fatalf("plain decoded to %q", b)
 	}
 
-	_, comp, err = conda.Open(strings.NewReader("BZh91AY"), 1<<20)
-	if err != nil || comp != conda.CompBzip2 {
+	_, comp, err = Open(strings.NewReader("BZh91AY"), 1<<20)
+	if err != nil || comp != CompBzip2 {
 		t.Fatalf("bzip2: %v %v", comp, err)
 	}
 
 	_ = bzip2.NewReader // the stdlib decoder is what Open wraps
 
-	rc, _, _ = conda.Open(bytes.NewReader(zstdBytes(t, strings.Repeat("x", 4096))), 100)
-	if _, err := io.ReadAll(rc); !errors.Is(err, conda.ErrTooLarge) {
+	rc, _, _ = Open(bytes.NewReader(zstdBytes(t, strings.Repeat("x", 4096))), 100)
+	if _, err := io.ReadAll(rc); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("decompression bomb: %v", err)
 	}
 }
@@ -193,20 +192,20 @@ func TestValidateIndex(t *testing.T) {
 	tests := []struct {
 		name string
 		body []byte
-		comp conda.Compression
+		comp Compression
 		want error
 	}{
-		{"plain", []byte(good), conda.CompNone, nil},
-		{"zstd", zstdBytes(t, good), conda.CompZstd, nil},
-		{"bzip2 magic only", []byte("BZh9garbage"), conda.CompBzip2, nil},
-		{"empty base_url", []byte(emptyBase), conda.CompNone, nil},
-		{"base_url", []byte(withBase), conda.CompNone, conda.ErrBaseURL},
-		{"base_url zstd", zstdBytes(t, withBase), conda.CompZstd, conda.ErrBaseURL},
-		{"html", []byte("<html></html>"), conda.CompNone, conda.ErrMalformed},
-		{"unknown object", []byte(`{"error":"nope"}`), conda.CompNone, conda.ErrMalformed},
-		{"wrong encoding", zstdBytes(t, good), conda.CompNone, conda.ErrMalformed},
-		{"plain as zstd", []byte(good), conda.CompZstd, conda.ErrMalformed},
-		{"too big", []byte(good), conda.CompNone, conda.ErrTooLarge},
+		{"plain", []byte(good), CompNone, nil},
+		{"zstd", zstdBytes(t, good), CompZstd, nil},
+		{"bzip2 magic only", []byte("BZh9garbage"), CompBzip2, nil},
+		{"empty base_url", []byte(emptyBase), CompNone, nil},
+		{"base_url", []byte(withBase), CompNone, ErrBaseURL},
+		{"base_url zstd", zstdBytes(t, withBase), CompZstd, ErrBaseURL},
+		{"html", []byte("<html></html>"), CompNone, ErrMalformed},
+		{"unknown object", []byte(`{"error":"nope"}`), CompNone, ErrMalformed},
+		{"wrong encoding", zstdBytes(t, good), CompNone, ErrMalformed},
+		{"plain as zstd", []byte(good), CompZstd, ErrMalformed},
+		{"too big", []byte(good), CompNone, ErrTooLarge},
 	}
 
 	for _, tt := range tests {
@@ -215,7 +214,7 @@ func TestValidateIndex(t *testing.T) {
 			limit = 30
 		}
 
-		err := conda.ValidateIndex(bytes.NewReader(tt.body), tt.comp, limit)
+		err := ValidateIndex(bytes.NewReader(tt.body), tt.comp, limit)
 		if !errors.Is(err, tt.want) && (tt.want != nil || err != nil) {
 			t.Errorf("%s: got %v, want %v", tt.name, err, tt.want)
 		}
@@ -233,13 +232,13 @@ func TestValidateJSONObject(t *testing.T) {
 		`{"a":1}{"b":2}`:               false,
 		``:                             false,
 	} {
-		err := conda.ValidateJSONObject(strings.NewReader(src), 1<<20)
+		err := ValidateJSONObject(strings.NewReader(src), 1<<20)
 		if (err == nil) != ok {
 			t.Errorf("%q: %v", src, err)
 		}
 	}
 
-	if err := conda.ValidateJSONObject(strings.NewReader(`{"a":"`+strings.Repeat("x", 100)+`"}`), 50); !errors.Is(err, conda.ErrTooLarge) {
+	if err := ValidateJSONObject(strings.NewReader(`{"a":"`+strings.Repeat("x", 100)+`"}`), 50); !errors.Is(err, ErrTooLarge) {
 		t.Errorf("limit: %v", err)
 	}
 }
@@ -249,13 +248,13 @@ func TestLookup(t *testing.T) {
 
 	src := doc(`{}`, []string{"old-1.0-0.tar.bz2=old"}, []string{"demo-1.0-0.conda=demo", "x-y-2.0-1.conda=x-y"})
 
-	e, err := conda.Lookup(strings.NewReader(src), "x-y-2.0-1.conda", 1<<20)
+	e, err := Lookup(strings.NewReader(src), "x-y-2.0-1.conda", 1<<20)
 	if err != nil || e.SHA256 != sha || e.MD5 != "0123456789abcdef0123456789abcdef" || e.Size != 12 {
 		t.Fatalf("got %+v, %v", e, err)
 	}
 
 	for _, name := range []string{"y-2.0-1.conda", "demo-1.0-0.tar.bz2", "missing-1-0.conda", "../demo-1.0-0.conda", "repodata.json"} {
-		if _, err := conda.Lookup(strings.NewReader(src), name, 1<<20); !errors.Is(err, conda.ErrNotListed) {
+		if _, err := Lookup(strings.NewReader(src), name, 1<<20); !errors.Is(err, ErrNotListed) {
 			t.Errorf("%s: got %v, want ErrNotListed", name, err)
 		}
 	}
@@ -270,7 +269,7 @@ func TestLookupAcrossChunks(t *testing.T) {
 
 	for shift := range 60 {
 		in := strings.Replace(src, pad, pad[:len(pad)-shift]+strings.Repeat(" ", shift), 1)
-		if _, err := conda.Lookup(strings.NewReader(in), "zz-1.0-0.conda", 1<<22); err != nil {
+		if _, err := Lookup(strings.NewReader(in), "zz-1.0-0.conda", 1<<22); err != nil {
 			t.Fatalf("shift %d: %v", shift, err)
 		}
 	}
@@ -281,31 +280,31 @@ func TestLookupEntryWithoutDigests(t *testing.T) {
 
 	src := `{"packages":{"a-1-0.tar.bz2":{"name":"a","sha256":"nothex","md5":"X","size":"big"},"é-1-0.conda":{"sha256":"` + sha + `"}}}`
 
-	e, err := conda.Lookup(strings.NewReader(src), "a-1-0.tar.bz2", 1<<20)
+	e, err := Lookup(strings.NewReader(src), "a-1-0.tar.bz2", 1<<20)
 	if err == nil && (e.SHA256 != "" || e.MD5 != "" || e.Size != -1) {
 		t.Fatalf("bad digests accepted: %+v", e)
 	}
 
-	if err != nil && !errors.Is(err, conda.ErrMalformed) {
+	if err != nil && !errors.Is(err, ErrMalformed) {
 		t.Fatal(err)
 	}
 
 	// A name the raw search cannot match falls back to a full scan.
-	if e, err := conda.Lookup(strings.NewReader(src), "é-1-0.conda", 1<<20); err != nil || e.SHA256 != sha {
+	if e, err := Lookup(strings.NewReader(src), "é-1-0.conda", 1<<20); err != nil || e.SHA256 != sha {
 		t.Fatalf("non-ascii name: %+v %v", e, err)
 	}
 }
 
-func merge(tb testing.TB, members []string, o conda.MemberOptions) (string, []conda.MemberStats) {
+func merge(tb testing.TB, members []string, o MemberOptions) (string, []MemberStats) {
 	tb.Helper()
 
-	b, err := conda.NewBuilder("linux-64", tb.TempDir())
+	b, err := NewBuilder("linux-64", tb.TempDir())
 	if err != nil {
 		tb.Fatal(err)
 	}
 	defer b.Close()
 
-	var stats []conda.MemberStats
+	var stats []MemberStats
 
 	for _, m := range members {
 		st, err := b.Add(strings.NewReader(m), o)
@@ -344,16 +343,16 @@ func TestMergeFirstMemberWinsAndHidesNames(t *testing.T) {
 		// liar-1 hides its package under another name in the entry.
 		[]string{"demo-2.0-0.conda=demo", "demo-3.0-0.conda=demo", "liar-1.0-0.conda=demo", "keep-1.0-0.conda=keep", "bad.conda=x"})
 
-	b, err := conda.NewBuilder("linux-64", t.TempDir())
+	b, err := NewBuilder("linux-64", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close()
 
-	var stats []conda.MemberStats
+	var stats []MemberStats
 
 	for i, m := range []string{hosted, proxy} {
-		o := conda.MemberOptions{MaxBytes: 1 << 20}
+		o := MemberOptions{MaxBytes: 1 << 20}
 		if i == 1 { // only the proxy member is subject to hosted-wins
 			o.Hidden = func(n string) bool { return n == "demo" }
 		}
@@ -410,13 +409,13 @@ func TestMergeReadsCompressedMembersAndIsStable(t *testing.T) {
 
 	a := doc(`{}`, []string{"a-1.0-0.tar.bz2=a"}, nil)
 
-	b, err := conda.NewBuilder("noarch", t.TempDir())
+	b, err := NewBuilder("noarch", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close()
 
-	if _, err := b.Add(bytes.NewReader(zstdBytes(t, a)), conda.MemberOptions{MaxBytes: 1 << 20}); err != nil {
+	if _, err := b.Add(bytes.NewReader(zstdBytes(t, a)), MemberOptions{MaxBytes: 1 << 20}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -443,17 +442,17 @@ func TestMergeReadsCompressedMembersAndIsStable(t *testing.T) {
 func TestMergeEmptyAndFailingMember(t *testing.T) {
 	t.Parallel()
 
-	out, _ := merge(t, nil, conda.MemberOptions{})
+	out, _ := merge(t, nil, MemberOptions{})
 	if out != `{"info":{"subdir":"linux-64"},"packages":{},"packages.conda":{},"repodata_version":1}` {
 		t.Fatalf("empty merge: %s", out)
 	}
 
-	b, err := conda.NewBuilder("noarch", t.TempDir())
+	b, err := NewBuilder("noarch", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := b.Add(strings.NewReader("not json"), conda.MemberOptions{MaxBytes: 1 << 20}); !errors.Is(err, conda.ErrMalformed) {
+	if _, err := b.Add(strings.NewReader("not json"), MemberOptions{MaxBytes: 1 << 20}); !errors.Is(err, ErrMalformed) {
 		t.Fatalf("got %v", err)
 	}
 
@@ -466,20 +465,20 @@ func TestParsePath(t *testing.T) {
 
 	tests := []struct {
 		in      string
-		kind    conda.Kind
+		kind    Kind
 		ok      bool
 		subdir  string
 		current bool
-		comp    conda.Compression
+		comp    Compression
 	}{
-		{"linux-64/repodata.json", conda.KindRepodata, true, "linux-64", false, conda.CompNone},
-		{"/noarch/repodata.json.zst", conda.KindRepodata, true, "noarch", false, conda.CompZstd},
-		{"noarch/current_repodata.json.bz2", conda.KindRepodata, true, "noarch", true, conda.CompBzip2},
-		{"linux-64/numpy-1.26.4-py312_0.conda", conda.KindPackage, true, "linux-64", false, 0},
-		{"linux-64/numpy-1.26.4-py312_0.tar.bz2", conda.KindPackage, true, "linux-64", false, 0},
-		{"channeldata.json", conda.KindChanneldata, true, "", false, 0},
-		{"linux-64/repodata.jlap", conda.KindOther, true, "linux-64", false, 0},
-		{"linux-64/repodata_shards.msgpack.zst", conda.KindOther, true, "linux-64", false, 0},
+		{"linux-64/repodata.json", KindRepodata, true, "linux-64", false, CompNone},
+		{"/noarch/repodata.json.zst", KindRepodata, true, "noarch", false, CompZstd},
+		{"noarch/current_repodata.json.bz2", KindRepodata, true, "noarch", true, CompBzip2},
+		{"linux-64/numpy-1.26.4-py312_0.conda", KindPackage, true, "linux-64", false, 0},
+		{"linux-64/numpy-1.26.4-py312_0.tar.bz2", KindPackage, true, "linux-64", false, 0},
+		{"channeldata.json", KindChanneldata, true, "", false, 0},
+		{"linux-64/repodata.jlap", KindOther, true, "linux-64", false, 0},
+		{"linux-64/repodata_shards.msgpack.zst", KindOther, true, "linux-64", false, 0},
 		{"linux-64/shards/abc.msgpack.zst", 0, false, "", false, 0},
 		{"repodata.json", 0, false, "", false, 0},
 		{"../repodata.json", 0, false, "", false, 0},
@@ -489,14 +488,14 @@ func TestParsePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		p, ok := conda.ParsePath(tt.in)
+		p, ok := ParsePath(tt.in)
 		if ok != tt.ok || (ok && (p.Kind != tt.kind || p.Subdir != tt.subdir || p.Current != tt.current || p.Comp != tt.comp)) {
 			t.Errorf("ParsePath(%q) = %+v, %v", tt.in, p, ok)
 		}
 	}
 
-	p, _ := conda.ParsePath("linux-64/current_repodata.json.zst")
-	if p.Key() != "linux-64/current_repodata.json.zst" || conda.RepodataFile(true, conda.CompZstd) != "current_repodata.json.zst" {
+	p, _ := ParsePath("linux-64/current_repodata.json.zst")
+	if p.Key() != "linux-64/current_repodata.json.zst" || RepodataFile(true, CompZstd) != "current_repodata.json.zst" {
 		t.Errorf("key %q", p.Key())
 	}
 }
@@ -504,13 +503,13 @@ func TestParsePath(t *testing.T) {
 func TestParseFilename(t *testing.T) {
 	t.Parallel()
 
-	f, ok := conda.ParseFilename("scikit-learn-1.0-py39_0.tar.bz2")
-	if !ok || f.Name != "scikit-learn" || f.Version != "1.0" || f.Build != "py39_0" || f.Ext != conda.ExtTarBz2 {
+	f, ok := ParseFilename("scikit-learn-1.0-py39_0.tar.bz2")
+	if !ok || f.Name != "scikit-learn" || f.Version != "1.0" || f.Build != "py39_0" || f.Ext != ExtTarBz2 {
 		t.Fatalf("got %+v %v", f, ok)
 	}
 
 	for _, bad := range []string{"", "a.conda", "a-1.conda", "a-1-0.zip", "../a-1-0.conda", "a/b-1-0.conda"} {
-		if _, ok := conda.ParseFilename(bad); ok {
+		if _, ok := ParseFilename(bad); ok {
 			t.Errorf("%q accepted", bad)
 		}
 	}
