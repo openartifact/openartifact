@@ -130,7 +130,7 @@ func flatten(s string) string {
 // told apart by the gzip magic. The archive is read as abuild writes it: any
 // number of gzip members, those whose tar starts with a .SIGN. entry (the
 // signature) skipped, and exactly one holding an APKINDEX entry. Signatures
-// are not verified here, see [VerifyIndex]. Input is bounded: 512 MiB
+// are not verified here. Input is bounded: 512 MiB
 // decompressed, 2 000 000 entries and 1 MiB per line. Every entry must carry
 // the C, P, V and A fields and valid values, otherwise the whole index is
 // refused; unknown field letters are ignored. Control characters in the free

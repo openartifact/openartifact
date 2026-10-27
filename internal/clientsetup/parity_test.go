@@ -21,6 +21,7 @@ const parityFixture = "testdata/web_parity.json"
 
 type parityCase struct {
 	Format   string    `json:"format"`
+	RepoType string    `json:"repo_type"`
 	Origin   string    `json:"origin"`
 	Repo     string    `json:"repo"`
 	BaseURL  string    `json:"base_url"`
@@ -31,14 +32,22 @@ func TestWebParityFixture(t *testing.T) {
 	var cases []parityCase
 
 	for _, format := range allFormats() {
-		for _, repo := range []string{"repo1", "my repo"} {
-			cases = append(cases, parityCase{
-				Format:   format,
-				Origin:   "https://artifacts.example.com:8443",
-				Repo:     repo,
-				BaseURL:  RepoBaseURL(format, "https://artifacts.example.com:8443", repo),
-				Snippets: Snippets(format, "https://artifacts.example.com:8443", repo),
-			})
+		types := []string{"hosted"}
+		if format == "apk" {
+			types = append(types, "proxy", "group")
+		}
+
+		for _, repoType := range types {
+			for _, repo := range []string{"repo1", "my repo"} {
+				cases = append(cases, parityCase{
+					Format:   format,
+					RepoType: repoType,
+					Origin:   "https://artifacts.example.com:8443",
+					Repo:     repo,
+					BaseURL:  RepoBaseURL(format, "https://artifacts.example.com:8443", repo),
+					Snippets: Snippets(format, "https://artifacts.example.com:8443", repo, repoType),
+				})
+			}
 		}
 	}
 

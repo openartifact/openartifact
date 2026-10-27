@@ -20,11 +20,13 @@ import (
 
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
+	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
@@ -44,6 +46,12 @@ const (
 	groupOwnerChunk = 5000
 )
 
+// generatesGroupMetadata reports whether groups of format serve metadata this
+// worker generates.
+func generatesGroupMetadata(format string) bool {
+	return format == "deb" || format == "rpm" || format == "apk"
+}
+
 // MemberOpener reads files of a proxy member as the proxy serves them
 // (proxy.Service).
 type MemberOpener interface {
@@ -56,8 +64,8 @@ type RPMPackageLoader interface {
 	PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 }
 
-// GroupMetadataWorker generates the metadata of deb and rpm group
-// repositories: the Release/Packages indexes or repodata a client needs, merged
+// GroupMetadataWorker generates the metadata of deb, rpm and apk group
+// repositories: the Release/Packages indexes, repodata or APKINDEX a client needs, merged
 // across the group's hosted and proxy members in member order, plus the table
 // of which member owns which file so downloads are served from the member
 // whose checksum the index lists.
@@ -72,8 +80,10 @@ type GroupMetadataWorker struct {
 	opener    MemberOpener
 	rpm       RPMPackageLoader
 	signers   gpg.Resolver
-	log       *logger.Logger
-	q         *regenQueue[string]
+	// apkSigners resolves the key that signs apk groups' indexes (nil: unsigned).
+	apkSigners ApkSignerResolver
+	log        *logger.Logger
+	q          *regenQueue[string]
 }
 
 // NewGroupMetadataWorker creates the worker. signers resolves the key that signs
@@ -100,6 +110,13 @@ func NewGroupMetadataWorker(
 		return err
 	})
 
+	return w
+}
+
+// WithApkSigners enables apk groups' signed indexes: signers resolves the key of
+// each group (an apk key, not a GPG one).
+func (w *GroupMetadataWorker) WithApkSigners(signers ApkSignerResolver) *GroupMetadataWorker {
+	w.apkSigners = signers
 	return w
 }
 
@@ -242,6 +259,11 @@ type groupJob struct {
 	// group's shared index.
 	scope  string
 	signer gpg.Signer
+	// apkSigner signs an apk group's indexes (nil: unsigned).
+	apkSigner *pkgapk.Signer
+	// keep are the generated paths of an apk group that this generation could
+	// not produce and leaves as they are.
+	keep map[string]struct{}
 	// blobs are the generated files keyed by group-relative path.
 	blobs map[string][]byte
 	// owners maps each file the index lists to the member serving it.
@@ -252,7 +274,8 @@ type groupJob struct {
 	// hostedNames are the package names of the hosted members, hidden from
 	// proxy members unless the group merges proxy versions.
 	hostedNames map[string]struct{}
-	// dists are the Debian distributions the generation produced.
+	// dists are the Debian distributions (for apk: the branch/repo/arch
+	// directories) the generation produced.
 	dists []string
 }
 
@@ -283,7 +306,7 @@ func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string
 		return fmt.Errorf("group worker: loading group %s: %w", groupID, err)
 	}
 
-	if grp == nil || grp.DeletedAt != nil || grp.RepoType != repotype.Group || (grp.Format != "deb" && grp.Format != "rpm") {
+	if grp == nil || grp.DeletedAt != nil || grp.RepoType != repotype.Group || !generatesGroupMetadata(grp.Format) {
 		return nil
 	}
 
@@ -365,9 +388,9 @@ func (w *GroupMetadataWorker) generatedAt(ctx context.Context, groupID string) t
 // if any) was generated after the instant before.
 func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Repository, hint, scope string, before time.Time) bool {
 	if scope != "" {
-		anchor := "repodata/repomd.xml"
-		if grp.Format == "deb" {
-			anchor = "dists/" + hint + "/Release"
+		anchor := groupAnchor(grp.Format, hint)
+		if anchor == "" {
+			return false
 		}
 
 		meta, err := w.db.GetRepoMetadataByPath(ctx, grp.ID, scope+anchor)
@@ -383,9 +406,26 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 		return true
 	}
 
-	meta, err := w.db.GetRepoMetadataByPath(ctx, grp.ID, "dists/"+hint+"/Release")
+	meta, err := w.db.GetRepoMetadataByPath(ctx, grp.ID, groupAnchor(grp.Format, hint))
 
 	return err == nil && meta != nil
+}
+
+// groupAnchor is the generated path a request for hint (a Debian distribution,
+// an apk directory) waits for; "" when there is none to name.
+func groupAnchor(format, hint string) string {
+	switch format {
+	case "deb":
+		return "dists/" + hint + "/Release"
+	case "apk":
+		if hint == "" {
+			return ""
+		}
+
+		return hint + "/" + formatapk.IndexName
+	default:
+		return "repodata/repomd.xml"
+	}
 }
 
 // run is one locked generation of grp.
@@ -409,15 +449,11 @@ func (w *GroupMetadataWorker) run(
 		w: w, group: grp, members: members, scope: scope,
 		blobs:  make(map[string][]byte),
 		owners: make(map[string]groupOwner),
+		keep:   make(map[string]struct{}),
 	}
 
-	if w.signers != nil {
-		signer, err := w.signers.SignerForRepo(ctx, grp.ID)
-		if err != nil {
-			return fmt.Errorf("group worker: resolving signing key of %s: %w", grp.Name, err)
-		}
-
-		j.signer = signer
+	if err := j.resolveSigner(ctx); err != nil {
+		return err
 	}
 
 	dists := st.Dists
@@ -430,6 +466,8 @@ func (w *GroupMetadataWorker) run(
 		err = j.buildDeb(ctx, dists)
 	case "rpm":
 		err = j.buildRPM(ctx)
+	case "apk":
+		err = j.buildApk(ctx, dists)
 	}
 
 	if err != nil {
@@ -444,6 +482,42 @@ func (w *GroupMetadataWorker) run(
 
 	w.log.Infow("group metadata regeneration complete", "group_id", grp.ID, "group", grp.Name, "format", grp.Format,
 		"members", len(members), "files", len(j.owners), "partial", j.partial)
+
+	return nil
+}
+
+// resolveSigner finds the key that signs the group's metadata: an apk key for an
+// apk group, the GPG key otherwise. A resolution failure aborts the generation:
+// replacing signed metadata by unsigned metadata because of a transient error
+// would make every client reject it.
+func (j *groupJob) resolveSigner(ctx context.Context) error {
+	w, grp := j.w, j.group
+
+	if grp.Format == "apk" {
+		if w.apkSigners == nil {
+			return nil
+		}
+
+		signer, err := w.apkSigners.SignerForRepo(ctx, grp)
+		if err != nil {
+			return fmt.Errorf("group worker: resolving signing key of %s: %w", grp.Name, err)
+		}
+
+		j.apkSigner = signer
+
+		return nil
+	}
+
+	if w.signers == nil {
+		return nil
+	}
+
+	signer, err := w.signers.SignerForRepo(ctx, grp.ID)
+	if err != nil {
+		return fmt.Errorf("group worker: resolving signing key of %s: %w", grp.Name, err)
+	}
+
+	j.signer = signer
 
 	return nil
 }
@@ -535,6 +609,12 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		return err
 	}
 
+	if format == "apk" {
+		if err := j.addEmptyApkIndexes(oldSHA); err != nil {
+			return err
+		}
+	}
+
 	newSHA := make(map[string]string, len(j.blobs))
 	changed := make(map[string][]byte, len(j.blobs))
 	attrs := func(path, sum string) map[string]string {
@@ -566,6 +646,13 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		}
 	}
 
+	// Files this generation could not produce keep their previous content.
+	for rel := range j.keep {
+		if sum, ok := oldSHA[j.scope+rel]; ok {
+			newSHA[j.scope+rel] = sum
+		}
+	}
+
 	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
 
 	for _, path := range stalePaths {
@@ -579,7 +666,7 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		}
 	}
 
-	if err := replaceOwners(ctx, tx, groupID, j.scope, j.owners); err != nil {
+	if err := replaceOwners(ctx, tx, groupID, j.scope, j.owners, j.keptPrefixes()); err != nil {
 		return err
 	}
 
@@ -634,13 +721,16 @@ func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope
 	return old, nil
 }
 
-// replaceOwners swaps the group's owner table for owners.
-func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string, owners map[string]groupOwner) error {
+// replaceOwners swaps the group's owner table for owners; rows under a path
+// prefix of keep stay.
+func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
 	if _, err := tx.ExecContext(
 		ctx,
-		`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
+		`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))
+		 AND NOT EXISTS (SELECT 1 FROM unnest($3::text[]) AS k(prefix) WHERE starts_with(path, k.prefix))`,
 		groupID,
 		scope,
+		keep,
 	); err != nil {
 		return fmt.Errorf("group worker: clearing owners: %w", err)
 	}

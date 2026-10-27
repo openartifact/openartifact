@@ -100,7 +100,6 @@ func (a *app) startMetadataWorkers() {
 	// Alpine apk repositories sign their index with a key of their own, not a GPG one.
 	w.apkKeys = apkkeys.New(db, log)
 	w.apk = worker.NewApkMetadataWorker(db, blobStore, w.apkKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
-	w.apkKeys.SetRefresher(w.apk)
 
 	if a.cfg.GPG.AutoGenerate {
 		a.tasks.Go(func(ctx context.Context) { autoGenerateGPGKey(ctx, w.gpgKeys, log) })
@@ -111,9 +110,13 @@ func (a *app) startMetadataWorkers() {
 	// proxy members' caches.
 	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL)
 	w.groupMeta = worker.NewGroupMetadataWorker(db, blobStore, w.proxySvc, w.rpm, w.gpgKeys, log).
-		WithMetrics(reg).WithRegenLimiter(regenLimiter)
+		WithApkSigners(w.apkKeys).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 	w.rpm.WithStaleHook(w.groupMeta.NotifyMemberChanged)
 	w.deb.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+	w.apk.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+
+	// An apk key change re-signs a group through the group worker too.
+	w.apkKeys.SetRefresher(groupRefresher{db: db, hosted: w.apk, group: w.groupMeta})
 
 	// A key change re-signs a group through the group worker, not the hosted ones.
 	w.gpgKeys.SetRefreshers(

@@ -41,6 +41,7 @@ export function upstreamUrlPlaceholder(format: FormatId): string {
   if (format === 'go') return 'https://proxy.golang.org'
   if (format === 'conan') return 'https://center2.conan.io'
   if (format === 'rubygems') return 'https://rubygems.org'
+  if (format === 'apk') return 'https://dl-cdn.alpinelinux.org/alpine'
   if (format === 'sbt') return 'https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases'
   if (format === 'conda') return 'https://conda.anaconda.org/conda-forge'
   return 'https://registry.example.com'

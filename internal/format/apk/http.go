@@ -134,8 +134,8 @@ func parseTarget(rel string) (target, bool) {
 	return target{dir: dirKey{parts[0], parts[1], parts[2]}, file: parts[3]}, true
 }
 
-// isKeyPath reports whether rel names the public key: /public.key or /<name>.rsa.pub.
-func isKeyPath(rel string) bool {
+// IsKeyPath reports whether rel names the public key: /public.key or /<name>.rsa.pub.
+func IsKeyPath(rel string) bool {
 	rel = strings.Trim(rel, "/")
 
 	return rel == "public.key" || (!strings.Contains(rel, "/") && strings.HasSuffix(rel, ".rsa.pub"))
@@ -168,8 +168,8 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isKeyPath(rel) {
-		h.serveKey(w, r, repo, strings.Trim(rel, "/"))
+	if IsKeyPath(rel) {
+		ServeKey(w, r, h.Log, h.keys, repo, strings.Trim(rel, "/"))
 		return
 	}
 
@@ -284,22 +284,24 @@ func writePackageHeaders(w http.ResponseWriter, pkg *models.ApkPackage, filename
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 }
 
-// serveKey answers /public.key and /<keyname>.rsa.pub with the repository's
-// public key. The key is generated on first use.
-func (h *HTTPHandler) serveKey(w http.ResponseWriter, r *http.Request, repo *models.Repository, file string) {
-	if h.keys == nil {
+// ServeKey answers /public.key and /<keyname>.rsa.pub (file) with the
+// repository's public key; keys == nil means the server has no signing keys.
+// The key is generated on first use. A group repository is served by the group
+// handler through it with the group's own key.
+func ServeKey(w http.ResponseWriter, r *http.Request, log *logger.Logger, keys KeyProvider, repo *models.Repository, file string) {
+	if keys == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	info, err := h.keys.Info(r.Context(), repo)
+	info, err := keys.Info(r.Context(), repo)
 	if err != nil {
 		if errors.Is(err, apkkeys.ErrSecretKeyRequired) {
 			http.Error(w, "this server does not sign apk indexes: OPENARTIFACT_SECRET_KEY is not set", http.StatusNotFound)
 			return
 		}
 
-		h.Log.Errorw("failed to load apk public key", "repo", repo.Name, "error", err)
+		log.Errorw("failed to load apk public key", "repo", repo.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return

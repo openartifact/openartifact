@@ -135,6 +135,25 @@ describe('apk', () => {
       'curl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://oa.example:8443/api/v1/repositories/r1/apks',
     )
   })
+
+  it('configures a group with the key of the group and nothing to publish', () => {
+    const [apk, ...rest] = clientSetup('apk', origin, 'r1', 'group')
+    expect(rest).toHaveLength(0)
+    expect(apk!.configure).toContain('wget -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
+    expect(apk!.publish).toBeUndefined()
+  })
+
+  it('configures a proxy with the repository lines only: no key download, nothing to publish', () => {
+    const [apk, ...rest] = clientSetup('apk', origin, 'r1', 'proxy')
+    expect(rest).toHaveLength(0)
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/community" >> /etc/apk/repositories')
+    expect(apk!.configure).toContain('alpine-keys')
+    expect(apk!.configure).not.toContain('public.key')
+    expect(apk!.configure).not.toContain('/etc/apk/keys')
+    expect(apk!.publish).toBeUndefined()
+  })
 })
 
 describe('clientSetup', () => {

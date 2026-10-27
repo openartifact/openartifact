@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else-if="repo">
       <div class="mb-6 space-y-4">
-        <ConnectClientPanel :format="repo.format" :repo="repo.name" :read-only="repo.repo_type === 'proxy' || repo.repo_type === 'group'" />
+        <ConnectClientPanel :format="repo.format" :repo="repo.name" :repo-type="repo.repo_type" :read-only="repo.repo_type === 'proxy' || repo.repo_type === 'group'" />
         <PackageUploadZone v-if="canUpload && showUpload" :repo="repo.name" :format="repo.format" @uploaded="onUploaded" />
         <dl
           v-if="repo.repo_type === 'proxy'"

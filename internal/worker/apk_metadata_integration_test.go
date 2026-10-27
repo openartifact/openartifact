@@ -172,7 +172,7 @@ func (s *apkStack) index(dir string) []pkgapk.Package {
 		s.t.Fatalf("GET %s index: status %d: %s", dir, w.Code, w.Body.String())
 	}
 
-	signedBy, err := pkgapk.VerifyIndex(w.Body.Bytes(), map[string]*rsa.PublicKey{keyName: pub})
+	signedBy, err := apktest.VerifyIndex(w.Body.Bytes(), map[string]*rsa.PublicKey{keyName: pub})
 	if err != nil || signedBy != keyName {
 		s.t.Fatalf("index of %s does not verify against the served key: %q, %v", dir, signedBy, err)
 	}

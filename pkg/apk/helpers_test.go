@@ -28,28 +28,11 @@ import (
 //nolint:gochecknoglobals // one RSA key per test binary, see above
 var newKey = sync.OnceValues(func() (*rsa.PrivateKey, error) { return GenerateKey(2048) })
 
-// otherNewKey is a second key, for the tests of keys that must not match.
-//
-//nolint:gochecknoglobals // one RSA key per test binary, see above
-var otherNewKey = sync.OnceValues(func() (*rsa.PrivateKey, error) { return GenerateKey(2048) })
-
 // testKey returns the shared 2048-bit key.
 func testKey(tb testing.TB) *rsa.PrivateKey {
 	tb.Helper()
 
 	key, err := newKey()
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	return key
-}
-
-// otherKey returns a key that is not testKey.
-func otherKey(tb testing.TB) *rsa.PrivateKey {
-	tb.Helper()
-
-	key, err := otherNewKey()
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -283,7 +266,7 @@ func sigMember(tb testing.TB, kind string, control []byte) []byte {
 		name, digest, alg = sigRSA256Prefix+"openartifact-test.rsa.pub", sum[:], crypto.SHA256
 	case "sha1":
 		sum := sha1.Sum(control)
-		name, digest, alg = sigRSAPrefix+"openartifact-test.rsa.pub", sum[:], crypto.SHA1
+		name, digest, alg = ".SIGN.RSA."+"openartifact-test.rsa.pub", sum[:], crypto.SHA1
 	default:
 		tb.Fatalf("signature kind %q", kind)
 	}

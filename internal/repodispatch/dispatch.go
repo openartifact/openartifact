@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -74,6 +75,14 @@ func (d *Dispatcher) WithBaseURL(baseURL string) *Dispatcher {
 // metadata, stored in blobs.
 func (d *Dispatcher) WithGroupMetadata(blobs storage.BlobStore, gen group.MetadataGenerator) *Dispatcher {
 	d.group.WithMetadata(blobs, gen)
+
+	return d
+}
+
+// WithApkKeys enables the public key downloads of apk groups: keys resolves the
+// key a group's merged indexes are signed with.
+func (d *Dispatcher) WithApkKeys(keys formatapk.KeyProvider) *Dispatcher {
+	d.group.WithApkKeys(keys)
 
 	return d
 }

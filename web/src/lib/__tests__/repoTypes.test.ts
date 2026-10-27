@@ -67,6 +67,7 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('ivy')).toBe(true)
     expect(upstreamUrlPlaceholder('conan')).toBe('https://center2.conan.io')
     expect(upstreamUrlPlaceholder('rubygems')).toBe('https://rubygems.org')
+    expect(upstreamUrlPlaceholder('apk')).toBe('https://dl-cdn.alpinelinux.org/alpine')
     expect(upstreamUrlPlaceholder('sbt')).toBe('https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases')
     expect(upstreamUrlRequired('conda')).toBe(true)
     expect(upstreamUrlPlaceholder('conda')).toBe('https://conda.anaconda.org/conda-forge')

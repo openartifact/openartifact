@@ -144,13 +144,19 @@ func (h *RepositoriesHandler) WithPublisher(p webhook.Publisher) *RepositoriesHa
 	return h
 }
 
-// GroupMetadataNotifier invalidates the generated metadata of deb and rpm group
-// repositories (worker.GroupMetadataWorker).
+// GroupMetadataNotifier invalidates the generated metadata of deb, rpm and apk
+// group repositories (worker.GroupMetadataWorker).
 type GroupMetadataNotifier interface {
 	// NotifyStale marks a group's metadata stale and schedules its regeneration.
 	NotifyStale(groupID string)
-	// NotifyMemberChanged does so for every deb/rpm group listing the repository.
+	// NotifyMemberChanged does so for every deb/rpm/apk group listing the repository.
 	NotifyMemberChanged(repoID string)
+}
+
+// hasGeneratedGroupMetadata reports whether groups of format serve metadata
+// generated from their members (deb, rpm, apk).
+func hasGeneratedGroupMetadata(format string) bool {
+	return format == "deb" || format == "rpm" || format == "apk"
 }
 
 // WithGroupMetadata makes changes to deb and rpm repositories regenerate the
@@ -162,13 +168,13 @@ func (h *RepositoriesHandler) WithGroupMetadata(n GroupMetadataNotifier) *Reposi
 }
 
 // metadataChanged invalidates the merged metadata a change to repo affects: a
-// deb/rpm group's own, or its member's groups'.
+// deb/rpm/apk group's own, or its member's groups'.
 func (h *RepositoriesHandler) metadataChanged(repo *models.Repository) {
 	notifyGroupMetadata(h.groupMeta, repo)
 }
 
 func notifyGroupMetadata(n GroupMetadataNotifier, repo *models.Repository) {
-	if n == nil || (repo.Format != "deb" && repo.Format != "rpm") {
+	if n == nil || !hasGeneratedGroupMetadata(repo.Format) {
 		return
 	}
 
@@ -1240,9 +1246,9 @@ func deleteConfirmation(r *http.Request) string {
 	return body.Confirm
 }
 
-// metadataGroupsOf returns the deb/rpm groups whose merged metadata lists repo.
+// metadataGroupsOf returns the deb/rpm/apk groups whose merged metadata lists repo.
 func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models.Repository) []string {
-	if h.groupMeta == nil || repo.RepoType == repotype.Group || (repo.Format != "deb" && repo.Format != "rpm") {
+	if h.groupMeta == nil || repo.RepoType == repotype.Group || !hasGeneratedGroupMetadata(repo.Format) {
 		return nil
 	}
 

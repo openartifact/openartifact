@@ -12,7 +12,7 @@ Alpine Linux package repository laid out like an Alpine mirror, with a generated
 |---|---|
 | Format id | `apk` |
 | Repo URL | `HOST/repos/REPO/<branch>/<repo>` (index `<arch>/APKINDEX.tar.gz`, packages `<arch>/<name>-<version>.apk`) |
-| Repository types | hosted |
+| Repository types | hosted, [proxy](#proxy-repositories), [group](#group-repositories) |
 | Minimum client | apk-tools from Alpine 3.6 (SHA-256 index signatures) |
 
 ## Client setup
@@ -139,4 +139,53 @@ The signing key is not part of [backups](../operations/backup.md) or declarative
 | upload `400` | not a valid v2 `.apk`, arch directory differs from the package architecture, or the file name is not `<name>-<version>.apk` |
 | upload `409` | that name and version already exist in the directory |
 
-Hosted only; proxy and group apk repositories are planned.
+## Proxy repositories
+
+An apk proxy is a pull-through cache of an Alpine mirror. Set `upstream_url` to the mirror root, for example `https://dl-cdn.alpinelinux.org/alpine` (there is no default; the web form suggests this one), and create it with `repo_type: proxy`:
+
+```sh
+curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"alpine-mirror","format":"apk","repo_type":"proxy","upstream_url":"https://dl-cdn.alpinelinux.org/alpine"}'
+```
+
+The mirror tree is mirrored by path, so the repositories lines are the mirror's with `HOST/repos/REPO` in place of the mirror root:
+
+```sh
+echo "HOST/repos/alpine-mirror/v3.20/main" >> /etc/apk/repositories
+echo "HOST/repos/alpine-mirror/v3.20/community" >> /etc/apk/repositories
+apk update
+apk add PACKAGE
+```
+
+- **No key to install.** `public.key` answers `404`: the proxy has no key of its own. Official Alpine images already trust the keys of the `alpine-keys` package (`/etc/apk/keys`), which is what signed the upstream index.
+- **Index.** `<branch>/<repo>/<arch>/APKINDEX.tar.gz` is passed through byte for byte, signature included, and cached for `cache_ttl_seconds` (default 1 hour) before it is fetched again. A client therefore sees exactly the upstream index; a change upstream shows up after the TTL.
+- **Packages.** A `.apk` is downloaded on first request, checked, and then cached for good (a file name is not reused by an Alpine mirror). The check: the package is parsed (its data hash is checked against the control segment) and its checksum must equal the `C:` entry that the cached upstream index of the same directory lists for that file name. A package the index does not list answers `404` (also right after a new upstream build, until the index is refetched after the TTL), a package that fails the check or is not a valid `.apk` answers `502` and is not cached.
+- **Other paths** (anything but an index or a package in a `<branch>/<repo>/<arch>/` directory) answer `404` without contacting the upstream.
+- **Trust model.** The proxy does not verify the upstream index signature: it has no Alpine trust keys configured. Clients verify it with the keys they already have; a client without them (a bare image, or a repository signed by another key) gets `UNTRUSTED signature` as it would from the mirror itself. A package is bound to the index by its checksum, so a tampered package fails at the proxy, but a tampered index is only caught by the client.
+- **Offline behaviour, negative caching, size limits, `max_stale_seconds` and credentials for a private mirror** work as for every proxy: see [hosted, proxy, group](../repositories/hosted-proxy-group.md). With the upstream down an expired index or package is served stale within `max_stale_seconds`; a package never fetched cannot be served.
+- Proxy repositories are read-only: uploads answer `405`. Quarantine applies to cached packages like to any proxy.
+
+## Group repositories
+
+An apk group serves several hosted and proxy apk repositories as one, at `HOST/repos/GROUP/<branch>/<repo>`. Clients read an index per directory, so the group cannot forward a request to one member: it publishes an `APKINDEX.tar.gz` of its own for every `<branch>/<repo>/<arch>` directory, merged from the members and signed with the group's own key. Create it with `repo_type: group` and `members` in priority order, as in [hosted, proxy, group](../repositories/hosted-proxy-group.md#creating-repositories).
+
+```sh
+wget -O /etc/apk/keys/openartifact-GROUP.rsa.pub HOST/repos/GROUP/public.key
+echo "HOST/repos/GROUP/v3.20/main" >> /etc/apk/repositories
+apk update
+apk add PACKAGE
+```
+
+The key to install is the group's, not its members': `HOST/repos/GROUP/public.key` (also `/<keyname>.rsa.pub`). It is generated on first use like a hosted repository's, shown, rotated and imported with the same admin API and web panel ([signing key](#signing-key)), and needs `OPENARTIFACT_SECRET_KEY` as well: without it the group's indexes are unsigned and `public.key` answers `404`. After a rotation or import the group's indexes are signed again in the background; clients must install the new public key. The key is not part of backups.
+
+- **Merge rule.** Per directory, the entries of the members are taken in member order.
+  1. Unless `merge_proxy_versions` is `true`, an entry of a proxy member is dropped when any readable hosted member of the group holds a package of that name in any directory ([hosted members win a package name](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name)).
+  2. Of the entries with the same file name (`<name>-<version>.apk`) the earliest member's is kept, so the checksum the index lists is the winner's.
+  3. Everything else is kept: the other versions of a name from other members are all listed, and `apk` picks by version. An entry is copied as the member lists it, in the directory it is listed in (a `noarch` package is in the directories it was uploaded to or the upstream lists it in; nothing is copied across directories).
+- **Hosted members** contribute what is in their database for the directory, proxy members what their upstream index for the directory lists (read through the proxy cache). The index signature of an upstream is not checked by the group: the group's key vouches for its own index, and a package taken from a proxy is checked against the upstream index by the proxy when it is cached.
+- **Directories.** A group publishes every directory a hosted member has a package in, and the directories that were requested and that some member has (for a proxy member, its upstream's). A proxy cannot be listed, so the first request of `v3.21/main/x86_64/APKINDEX.tar.gz` for a directory only a proxy has waits for the generation; a directory no member has is `404`. A directory every member lost its packages from keeps serving an empty, signed index.
+- **Downloads** come from the member whose entry the index lists (`HOST/repos/GROUP/<branch>/<repo>/<arch>/<name>-<version>.apk`), so the file is always the one whose checksum the index carries. A package the index does not list is `404`, even if a member has it. Other paths are `404`.
+- **Access control.** A caller is served an index that lists only the members they can read, and downloads are authorized against the owning member, as in [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups): callers who read every member share one index, the others get one generated and signed for exactly their set of members on their first request (with the group's key), and a caller who can read no member gets `404`, `public.key` included.
+- **Regeneration.** The indexes are regenerated in the background when a hosted member changes (upload, delete, trash, restore, cleanup), when the group's members or settings change, when a member is deleted or blocked, and at startup for groups that have no index yet. A proxy member has no change signal: a request that finds the indexes older than the shortest `cache_ttl_seconds` among the proxies (at least one minute) serves them and refreshes them in the background. A proxy that cannot be reached (or whose index is over 128 MiB) is left out of that run, the run is marked partial and retried after a minute; a directory that then only the unreachable proxy had keeps the index it had. A proxy that does not have a directory is a complete answer.
+- Group repositories are read-only: uploads answer `405`.
