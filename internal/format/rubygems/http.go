@@ -56,6 +56,9 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 // RegisterRepoRoutes registers RubyGems-specific routes on the provided sub-router.
 // It does NOT wrap in r.Route() — callers are responsible for the path prefix.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
+	r.Get("/versions", h.handleVersions)
+	r.Get("/names", h.handleNames)
+	r.Get("/info/{gem}", h.handleInfo)
 	r.Get("/specs.4.8.gz", h.handleSpecsGz)
 	r.Get("/latest_specs.4.8.gz", h.handleLatestSpecsGz)
 	r.Get("/prerelease_specs.4.8.gz", h.handlePrereleaseSpecsGz)

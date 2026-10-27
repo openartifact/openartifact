@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm and sbt in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt'])
+  it('restricts proxy to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt'])
   })
-  it('restricts group to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm and sbt', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt'])
+  it('restricts group to cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems and sbt', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conan', 'ivy', 'sbt'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(false)
@@ -48,13 +48,14 @@ describe('coerceFormat', () => {
 })
 
 describe('upstream URL', () => {
-  it('is optional only for docker, pypi, cargo, go, nuget and conan (well-known defaults)', () => {
+  it('is optional only for docker, pypi, cargo, go, nuget, conan and rubygems (well-known defaults)', () => {
     expect(upstreamUrlRequired('docker')).toBe(false)
     expect(upstreamUrlRequired('pypi')).toBe(false)
     expect(upstreamUrlRequired('cargo')).toBe(false)
     expect(upstreamUrlRequired('go')).toBe(false)
     expect(upstreamUrlRequired('nuget')).toBe(false)
     expect(upstreamUrlRequired('conan')).toBe(false)
+    expect(upstreamUrlRequired('rubygems')).toBe(false)
     expect(upstreamUrlRequired('maven')).toBe(true)
     expect(upstreamUrlPlaceholder('go')).toBe('https://proxy.golang.org')
     expect(upstreamUrlPlaceholder('docker')).toBe('https://registry-1.docker.io')
@@ -64,6 +65,7 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('sbt')).toBe(true)
     expect(upstreamUrlRequired('ivy')).toBe(true)
     expect(upstreamUrlPlaceholder('conan')).toBe('https://center2.conan.io')
+    expect(upstreamUrlPlaceholder('rubygems')).toBe('https://rubygems.org')
     expect(upstreamUrlPlaceholder('sbt')).toBe('https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases')
   })
 })

@@ -127,6 +127,8 @@ type Service struct {
 
 	nuget nugetIndexCache // parsed NuGet upstream service indexes
 
+	gemMD5 md5Memo // MD5 ETags of cached RubyGems compact index files
+
 	// packuments bounds every upstream document held in memory at once (npm
 	// packuments, PyPI pages, Helm indexes, NuGet/OCI documents, cargo
 	// indexes): each is read whole and parsed or re-encoded per request.
@@ -192,33 +194,8 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
-	if repo.Format == "pypi" {
-		s.servePyPI(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "npm" {
-		s.serveNPM(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "helm" {
-		s.serveHelm(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "cargo" {
-		s.serveCargo(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "go" {
-		s.serveGo(w, r, repo, relPath)
-		return
-	}
-
-	if repo.Format == "nuget" {
-		s.serveNuGet(w, r, repo, relPath)
+	if serve := s.formatServer(repo.Format); serve != nil {
+		serve(w, r, repo, relPath)
 		return
 	}
 
@@ -242,6 +219,29 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 	s.serveResolved(w, r, repo, key, res, func() (*resolution, error) {
 		return s.resolve(r.Context(), repo, key)
 	})
+}
+
+// formatServer returns the handler of the formats that map upstream paths to
+// their own cache keys and verification, nil for the formats served by path.
+func (s *Service) formatServer(format string) func(http.ResponseWriter, *http.Request, *models.Repository, string) {
+	switch format {
+	case "pypi":
+		return s.servePyPI
+	case "npm":
+		return s.serveNPM
+	case "helm":
+		return s.serveHelm
+	case "cargo":
+		return s.serveCargo
+	case "go":
+		return s.serveGo
+	case "nuget":
+		return s.serveNuGet
+	case "rubygems":
+		return s.serveRubyGems
+	}
+
+	return nil
 }
 
 // serveResolved streams the cached file of res to the client after the
@@ -311,6 +311,11 @@ func (s *Service) serveResolved(
 
 	if res.stale {
 		w.Header().Set("Warning", staleWarning)
+	}
+
+	if repo.Format == "rubygems" && rubygemsCompact(key) {
+		s.writeCompactEntry(w, r, repo, entry, rc)
+		return
 	}
 
 	writeEntry(w, r, entry, rc)
@@ -899,9 +904,8 @@ func Immutable(format, key string) bool {
 	case "go":
 		// .info/.mod/.zip of a canonical version, not list/@latest/queries.
 		return goImmutable(key)
-	case "nuget":
-		// Flat container package files, not version lists or registrations.
-		return nugetImmutable(key)
+	case "nuget", "rubygems":
+		return packageFileImmutable(format, key, name)
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
@@ -915,6 +919,19 @@ func Immutable(format, key string) bool {
 	}
 
 	return false
+}
+
+// packageFileImmutable is Immutable for the formats whose package files live
+// under a fixed prefix: NuGet's flat container files (not version lists or
+// registrations) and RubyGems' gems/<file>.gem, whose bytes are checked against
+// the checksum of their info line (not the compact index, gemspecs or legacy
+// specs).
+func packageFileImmutable(format, key, name string) bool {
+	if format == "nuget" {
+		return nugetImmutable(key)
+	}
+
+	return strings.HasPrefix(key, "gems/") && strings.HasSuffix(name, ".gem")
 }
 
 // nugetImmutable reports whether key is a package file of the flat container.
@@ -954,6 +971,8 @@ func isMetadataKey(format, key string) bool {
 		return name == "list" || strings.HasSuffix(key, "/@latest")
 	case "nuget":
 		return !strings.HasPrefix(key, "v3/package/")
+	case "rubygems":
+		return !strings.HasPrefix(key, "gems/")
 	case "conan":
 		return !strings.Contains(key, "/files/")
 	}
