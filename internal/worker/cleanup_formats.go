@@ -89,9 +89,7 @@ func (t formatTable) protection() string {
 // for repositories of the given format; the API uses it to reject policies
 // that could never run.
 func CleanupFormatSupported(format string) bool {
-	_, ok := cleanupFormatTable(format)
-
-	return ok
+	return len(cleanupFormatTables(format)) > 0
 }
 
 // Source of the npm rows: a version is a row of npm_versions, its repository
@@ -106,8 +104,49 @@ const dockerCleanupSource = `(SELECT t.id, t.repository_id, t.name, t.image, t.c
 	CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END AS full_name
 	FROM docker_tags t JOIN repositories r ON r.id = t.repository_id)`
 
-// cleanupFormatTable is the single set of formats cleanup policies support and
-// how each stores its rows. Every hosted format is listed.
+// cleanupFormatTables is the set of formats cleanup policies support and the
+// tables each stores its rows in (none for an unsupported format). Every hosted
+// format is listed. Every format but terraform has one table; the tables of a
+// format rank and delete independently.
+func cleanupFormatTables(format string) []formatTable {
+	if format == "terraform" {
+		return terraformCleanupTables()
+	}
+
+	if t, ok := cleanupFormatTable(format); ok {
+		return []formatTable{t}
+	}
+
+	return nil
+}
+
+// terraformCleanupTables are the module archives and the provider platform
+// zips. A provider version is one version whatever its platforms: the rows of
+// its platforms rank together, and a policy removes them together.
+func terraformCleanupTables() []formatTable {
+	return []formatTable{
+		{
+			table:         "terraform_modules",
+			nameCol:       "'modules/' || name || '/' || system",
+			partitionCols: []string{"name", "system"},
+			versionExpr:   "version",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindTerraformModule,
+		},
+		{
+			table:         "terraform_providers",
+			nameCol:       "'providers/' || type",
+			partitionCols: []string{"type"},
+			versionExpr:   "version",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindTerraformProvider,
+		},
+	}
+}
+
+// cleanupFormatTable is the single-table part of cleanupFormatTables.
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":

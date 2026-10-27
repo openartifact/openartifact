@@ -14,7 +14,7 @@ Shipped:
 - Resumable blob pulls, see [Resumable blob transfers](#resumable-blob-transfers).
 - Integration tests with two real server instances and, in CI, with three instances federated in a triangle (raw, npm and Docker) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
 
-Still open: Debian, RPM, RubyGems, Conda, Conan, Ivy and sbt; push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
+Still open: Debian, RPM, RubyGems, Conda, Conan, Terraform, Ivy and sbt; push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
 
 A **federated repository** is a set of *member* repositories, one per OpenArtifact instance, that converge to the same content. Any member accepts writes; changes flow in both directions. The goal is multi-site replication that survives network partitions and the loss of a whole member, without a coordinator and without a single point of failure.
 
@@ -35,7 +35,7 @@ Non-goals (v1):
 - Strong consistency on mutable references. Concurrent moves of one tag converge to one winner; the other write is discarded and counted as a conflict.
 - Replicating proxy caches, group repositories, users, permissions, repository settings, scan results, or quotas. Each member keeps its own.
 - Edge-node / signed release-bundle distribution, see [Legal constraint](#legal-constraint).
-- Debian, RPM, RubyGems, Conda, Conan, Ivy and sbt repositories, see [Formats](#formats).
+- Debian, RPM, RubyGems, Conda, Conan, Terraform, Ivy and sbt repositories, see [Formats](#formats).
 
 ## Legal constraint
 
@@ -312,6 +312,7 @@ Excluded in v1, with reasons:
 
 - **Debian and RPM**: repository metadata is *signed* and generated per distribution/component with the instance's own GPG key, merged with group state and tied to per-repo regeneration; replicating packages is easy but replicating or recomputing consistent signed indexes across members is a design of its own (which member signs, key distribution, `InRelease` freshness).
 - **RubyGems, Conda, Conan**: Conda's `repodata` and RubyGems' marshalled specs are regenerated whole; Conan's recipe/package revisions and checksums form a graph with its own concurrency model. Each needs its own unit design and tests.
+- **Terraform/OpenTofu**: module versions and per-platform provider zips are plain content-addressed rows, but provider `SHA256SUMS` signing is computed per request from the repository's signing key, so it needs a decision on which member signs. Not designed yet.
 - **Ivy and sbt**: path files like maven; deferred only to keep the first test matrix small, not for a technical reason.
 - **Proxy and group repositories**: not authoritative content.
 

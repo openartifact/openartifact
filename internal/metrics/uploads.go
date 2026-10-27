@@ -13,23 +13,24 @@ import (
 // format, lower case, a closed set (UploadFormats). Every code path that counts
 // an upload goes through CountUpload with one of these.
 const (
-	FormatDeb      = "deb"
-	FormatRPM      = "rpm"
-	FormatNPM      = "npm"
-	FormatMaven    = "maven"
-	FormatHelm     = "helm"
-	FormatRubyGems = "rubygems"
-	FormatDocker   = "docker"
-	FormatPyPI     = "pypi"
-	FormatCargo    = "cargo"
-	FormatGo       = "go"
-	FormatNuGet    = "nuget"
-	FormatConda    = "conda"
-	FormatConan    = "conan"
-	FormatIvy      = "ivy"
-	FormatSBT      = "sbt"
-	FormatRaw      = "raw"
-	FormatPacman   = "pacman"
+	FormatDeb       = "deb"
+	FormatRPM       = "rpm"
+	FormatNPM       = "npm"
+	FormatMaven     = "maven"
+	FormatHelm      = "helm"
+	FormatRubyGems  = "rubygems"
+	FormatDocker    = "docker"
+	FormatPyPI      = "pypi"
+	FormatCargo     = "cargo"
+	FormatGo        = "go"
+	FormatNuGet     = "nuget"
+	FormatConda     = "conda"
+	FormatConan     = "conan"
+	FormatIvy       = "ivy"
+	FormatSBT       = "sbt"
+	FormatRaw       = "raw"
+	FormatPacman    = "pacman"
+	FormatTerraform = "terraform"
 )
 
 // Upload result label values of openartifact_uploads_total.
@@ -48,7 +49,7 @@ const uploadFormatOther = "other"
 var UploadFormats = []string{
 	FormatDeb, FormatRPM, FormatNPM, FormatMaven, FormatHelm, FormatRubyGems,
 	FormatDocker, FormatPyPI, FormatCargo, FormatGo, FormatNuGet, FormatConda,
-	FormatConan, FormatIvy, FormatSBT, FormatRaw, FormatPacman,
+	FormatConan, FormatIvy, FormatSBT, FormatRaw, FormatTerraform, FormatPacman,
 }
 
 // UploadResult maps an HTTP status to the result label: any status below 400 is

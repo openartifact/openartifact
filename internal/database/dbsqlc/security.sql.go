@@ -84,6 +84,12 @@ WITH q_candidates AS MATERIALIZED (
         SELECT t.repository_id, t.id, t.name::text, t.version::text
         FROM conan_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL
+        SELECT t.repository_id, t.id, ('modules/' || t.name || '/' || t.system)::text, t.version::text
+        FROM terraform_modules t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, ('providers/' || t.type)::text, t.version::text
+        FROM terraform_providers t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
         SELECT t.repository_id, t.id, t.name::text, t.version::text
         FROM helm_charts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL

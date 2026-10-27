@@ -42,7 +42,7 @@ func (w *CleanupWorker) SetRegenNotifiers(maven MavenNotifier, npm NPMNotifier, 
 // refreshFormatMetadata is the per-format follow-up of a run that removed rows
 // (moved to the trash or deleted). Formats not handled here compute their
 // indexes live from the tables (pypi simple, helm index.yaml, cargo index,
-// rubygems specs, conda repodata, conan, nuget, go, ivy, sbt, raw).
+// rubygems specs, conda repodata, conan, nuget, go, ivy, sbt, raw, terraform).
 func (w *CleanupWorker) refreshFormatMetadata(ctx context.Context, repo *models.Repository, run *cleanupRun) {
 	switch repo.Format {
 	case "maven":

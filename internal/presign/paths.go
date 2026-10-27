@@ -13,8 +13,6 @@ import (
 // given format, is a package/binary download rather than repository metadata.
 // Only the former may be redirected; metadata is always streamed so the server
 // keeps control of it (and clients re-validate it with plain conditional GETs).
-//
-//nolint:cyclop // one case per format
 func IsProxyBlobPath(format, relPath string) bool {
 	relPath = strings.TrimPrefix(relPath, "/")
 	base := path.Base(relPath)
@@ -39,10 +37,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
 	case "nuget", "rubygems":
 		return isPackageArchive(format, relPath, base)
-	case "conan":
-		// The archives of a revision (conan_package.tgz, conan_sources.tgz);
-		// lists, manifests and recipes are streamed.
-		return strings.Contains(relPath, "/files/") && isConanArchive(base)
+	case "conan", "conda":
+		return isConanCondaBlob(format, relPath, base)
 	case "raw":
 		return true
 	case "pypi":
@@ -52,6 +48,17 @@ func IsProxyBlobPath(format, relPath string) bool {
 	default:
 		return false
 	}
+}
+
+// isConanCondaBlob reports whether relPath is a package archive of a Conan
+// revision (conan_package.tgz, conan_sources.tgz; lists, manifests and recipes
+// are streamed) or a conda package file (repodata and channeldata are streamed).
+func isConanCondaBlob(format, relPath, base string) bool {
+	if format == "conda" {
+		return strings.HasSuffix(base, ".conda") || strings.HasSuffix(base, ".tar.bz2")
+	}
+
+	return strings.Contains(relPath, "/files/") && isConanArchive(base)
 }
 
 // isPackageArchive is IsProxyBlobPath for nuget (.nupkg of the flat container)

@@ -158,6 +158,25 @@ func (q *Queries) GetCondaPackageFile(ctx context.Context, arg GetCondaPackageFi
 	return i, err
 }
 
+const hasCondaPackageName = `-- name: HasCondaPackageName :one
+SELECT EXISTS (
+    SELECT 1 FROM conda_packages cp
+    WHERE cp.repository_id = $1 AND lower(cp.name) = lower($2::text) AND cp.deleted_at IS NULL
+)::boolean AS present
+`
+
+type HasCondaPackageNameParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+}
+
+func (q *Queries) HasCondaPackageName(ctx context.Context, arg HasCondaPackageNameParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasCondaPackageName, arg.RepositoryID, arg.Name)
+	var present bool
+	err := row.Scan(&present)
+	return present, err
+}
+
 const listAllCondaPackages = `-- name: ListAllCondaPackages :many
 SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platform, cp.depends, cp.extension, cp.build_number, cp.md5, cp.timestamp_ms, cp.index_extra, b.blob_key, b.size_bytes, b.sha256, cp.created_at, cp.updated_at
 FROM conda_packages cp
@@ -216,6 +235,35 @@ func (q *Queries) ListAllCondaPackages(ctx context.Context, repositoryID string)
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCondaPackageNames = `-- name: ListCondaPackageNames :many
+SELECT DISTINCT lower(cp.name)::text AS name
+FROM conda_packages cp
+WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL
+ORDER BY 1
+`
+
+// Distinct names of the live packages of a repository, in any platform, for a
+// group's hosted-wins rule (compared case-insensitively, as lowercase names).
+func (q *Queries) ListCondaPackageNames(ctx context.Context, repositoryID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listCondaPackageNames, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

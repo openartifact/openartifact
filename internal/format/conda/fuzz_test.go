@@ -22,6 +22,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	pkgconda "github.com/openartifact/openartifact/pkg/conda"
 )
 
 const fuzzIndexJSON = `{"name":"demo","version":"1.0","build":"py_0","build_number":3,` +
@@ -145,33 +146,33 @@ func FuzzParsePackageFilename(f *testing.F) {
 	f.Add("")
 
 	f.Fuzz(func(t *testing.T, filename string) {
-		file, ok := parsePackageFilename(filename)
+		file, ok := pkgconda.ParseFilename(filename)
 		if !ok {
 			return
 		}
 
-		if got := file.name + "-" + file.version + "-" + file.build + file.ext; got != filename {
-			t.Fatalf("parsePackageFilename(%q) = %+v, which does not rebuild the name (%q)", filename, file, got)
+		if got := file.Name + "-" + file.Version + "-" + file.Build + file.Ext; got != filename {
+			t.Fatalf("pkgconda.ParseFilename(%q) = %+v, which does not rebuild the name (%q)", filename, file, got)
 		}
 
-		pkg := models.CondaPackage{Name: file.name, Version: file.version, BuildString: file.build, Extension: file.ext}
+		pkg := models.CondaPackage{Name: file.Name, Version: file.Version, BuildString: file.Build, Extension: file.Ext}
 		if pkg.Filename() != filename {
 			t.Fatalf("stored %+v is listed as %q, uploaded as %q", file, pkg.Filename(), filename)
 		}
 
-		if again, ok := parsePackageFilename(pkg.Filename()); !ok || again != file {
+		if again, ok := pkgconda.ParseFilename(pkg.Filename()); !ok || again != file {
 			t.Fatalf("%q is parsed as %+v, then %+v (%v)", filename, file, again, ok)
 		}
 
-		if file.ext != models.CondaExtTarBz2 && file.ext != models.CondaExtConda {
-			t.Fatalf("%q has extension %q", filename, file.ext)
+		if file.Ext != models.CondaExtTarBz2 && file.Ext != models.CondaExtConda {
+			t.Fatalf("%q has extension %q", filename, file.Ext)
 		}
 
-		if strings.Contains(file.version, "-") || strings.Contains(file.build, "-") {
+		if strings.Contains(file.Version, "-") || strings.Contains(file.Build, "-") {
 			t.Fatalf("%q: a version or build with a hyphen: %+v", filename, file)
 		}
 
-		if len(file.name) > maxNameLen || len(file.version) > maxVersionLen || len(file.build) > maxBuildLen {
+		if len(file.Name) > pkgconda.MaxNameLen || len(file.Version) > pkgconda.MaxVersionLen || len(file.Build) > pkgconda.MaxBuildLen {
 			t.Fatalf("%q does not fit the columns: %+v", filename, file)
 		}
 
@@ -274,8 +275,8 @@ func fuzzColumns(t *testing.T, pkg *models.CondaPackage) {
 		value string
 		limit int
 	}{
-		{"name", pkg.Name, maxNameLen}, {"version", pkg.Version, maxVersionLen},
-		{"build_string", pkg.BuildString, maxBuildLen}, {"platform", pkg.Platform, 50},
+		{"name", pkg.Name, pkgconda.MaxNameLen}, {"version", pkg.Version, pkgconda.MaxVersionLen},
+		{"build_string", pkg.BuildString, pkgconda.MaxBuildLen}, {"platform", pkg.Platform, 50},
 	} {
 		if utf8.RuneCountInString(c.value) > c.limit || !fuzzDBText(c.value) {
 			t.Fatalf("stored %s %q does not fit varchar(%d)", c.name, c.value, c.limit)

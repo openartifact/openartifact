@@ -18,6 +18,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	pkgconda "github.com/openartifact/openartifact/pkg/conda"
 )
 
 // demoIndex is the info/index.json of the demo-1.0-py_0 test packages.
@@ -69,9 +70,9 @@ func TestParsePackageFilename(t *testing.T) {
 	}
 
 	for _, c := range valid {
-		got, ok := parsePackageFilename(c.filename)
-		if !ok || got.name != c.name || got.version != c.version || got.build != c.build || got.ext != c.ext {
-			t.Errorf("parsePackageFilename(%q) = %+v, %v; want %s / %s / %s / %s", c.filename, got, ok, c.name, c.version, c.build, c.ext)
+		got, ok := pkgconda.ParseFilename(c.filename)
+		if !ok || got.Name != c.name || got.Version != c.version || got.Build != c.build || got.Ext != c.ext {
+			t.Errorf("pkgconda.ParseFilename(%q) = %+v, %v; want %s / %s / %s / %s", c.filename, got, ok, c.name, c.version, c.build, c.ext)
 		}
 	}
 
@@ -79,10 +80,10 @@ func TestParsePackageFilename(t *testing.T) {
 		"", "demo.conda", "demo-1.0.conda", "demo-1.0-py_0.zip", "demo-1.0-py_0.tar.gz", "demo-1.0-py_0",
 		"-1.0-py_0.conda", "demo--py_0.conda", "demo-1.0-.conda", "../demo-1.0-py_0.conda", `a\b-1.0-0.conda`,
 		"repodata.json", "current_repodata.json",
-		strings.Repeat("n", maxNameLen+1) + "-1.0-0.conda",
+		strings.Repeat("n", pkgconda.MaxNameLen+1) + "-1.0-0.conda",
 	} {
-		if got, ok := parsePackageFilename(filename); ok {
-			t.Errorf("parsePackageFilename(%q) = %+v, want rejection", filename, got)
+		if got, ok := pkgconda.ParseFilename(filename); ok {
+			t.Errorf("pkgconda.ParseFilename(%q) = %+v, want rejection", filename, got)
 		}
 	}
 }

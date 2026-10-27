@@ -91,22 +91,94 @@ type apiScheme struct {
 
 type apiSchema struct {
 	Ref                  string                `json:"$ref"`
-	Type                 string                `json:"type"`
+	Type                 string                `json:"-"`
 	Format               string                `json:"format"`
+	ContentMediaType     string                `json:"contentMediaType"` //nolint:tagliatelle // OpenAPI field name
 	Description          string                `json:"description"`
-	Nullable             bool                  `json:"nullable"`
+	Nullable             bool                  `json:"-"`
 	Enum                 []json.RawMessage     `json:"enum"`
 	Default              json.RawMessage       `json:"default"`
 	Minimum              *float64              `json:"minimum"`
 	Maximum              *float64              `json:"maximum"`
-	MinLength            *int                  `json:"minLength"` //nolint:tagliatelle // OpenAPI field name
-	MaxLength            *int                  `json:"maxLength"` //nolint:tagliatelle // OpenAPI field name
+	ExclusiveMinimum     *float64              `json:"exclusiveMinimum"` //nolint:tagliatelle // OpenAPI field name
+	MinLength            *int                  `json:"minLength"`        //nolint:tagliatelle // OpenAPI field name
+	MaxLength            *int                  `json:"maxLength"`        //nolint:tagliatelle // OpenAPI field name
 	Pattern              string                `json:"pattern"`
 	Properties           map[string]*apiSchema `json:"properties"`
 	Required             []string              `json:"required"`
 	Items                *apiSchema            `json:"items"`
 	AllOf                []*apiSchema          `json:"allOf"`                //nolint:tagliatelle // OpenAPI field name
+	AnyOf                []*apiSchema          `json:"anyOf"`                //nolint:tagliatelle // OpenAPI field name
 	AdditionalProperties apiAdditional         `json:"additionalProperties"` //nolint:tagliatelle // OpenAPI field name
+}
+
+// UnmarshalJSON reads an OpenAPI 3.1 schema: "type" is a string or an array
+// that may carry "null", and a nullable $ref is anyOf [schema, {type: null}].
+// Both are folded into Type and Nullable so the renderers see one shape.
+func (s *apiSchema) UnmarshalJSON(data []byte) error {
+	type plain apiSchema
+
+	aux := struct {
+		*plain
+
+		Type json.RawMessage `json:"type"`
+	}{plain: (*plain)(s)}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	var types []string
+	if len(aux.Type) > 0 && aux.Type[0] == '[' {
+		if err := json.Unmarshal(aux.Type, &types); err != nil {
+			return err
+		}
+	} else if len(aux.Type) > 0 {
+		var one string
+		if err := json.Unmarshal(aux.Type, &one); err != nil {
+			return err
+		}
+
+		types = []string{one}
+	}
+
+	for _, t := range types {
+		if t == "null" {
+			s.Nullable = true
+		} else {
+			s.Type = t
+		}
+	}
+
+	s.foldNullableAnyOf()
+
+	return nil
+}
+
+// foldNullableAnyOf turns anyOf [X, {type: null}] into allOf [X] + Nullable.
+func (s *apiSchema) foldNullableAnyOf() {
+	if len(s.AnyOf) == 0 {
+		return
+	}
+
+	var rest []*apiSchema
+
+	for _, sub := range s.AnyOf {
+		if sub.Nullable && sub.Type == "" && sub.Ref == "" && len(sub.AllOf) == 0 {
+			s.Nullable = true
+
+			continue
+		}
+
+		rest = append(rest, sub)
+	}
+
+	if len(rest) == len(s.AnyOf) {
+		return
+	}
+
+	s.AnyOf = nil
+	s.AllOf = append(s.AllOf, rest...)
 }
 
 // apiAdditional is additionalProperties: a boolean or a schema.
@@ -648,9 +720,12 @@ func apiNotes(s *apiSchema) []string {
 	}
 
 	if len(s.Enum) > 0 {
-		vals := make([]string, len(s.Enum))
-		for i, e := range s.Enum {
-			vals[i] = apiValue(e)
+		vals := make([]string, 0, len(s.Enum))
+
+		for _, e := range s.Enum {
+			if string(e) != "null" { // nullability is already noted
+				vals = append(vals, apiValue(e))
+			}
 		}
 
 		notes = append(notes, "One of: "+strings.Join(vals, ", ")+".")
@@ -673,6 +748,10 @@ func apiNotes(s *apiSchema) []string {
 
 func apiRangeNotes(s *apiSchema) []string {
 	var notes []string
+
+	if s.ExclusiveMinimum != nil {
+		notes = append(notes, "Exclusive minimum: "+apiNum(*s.ExclusiveMinimum)+".")
+	}
 
 	if s.Minimum != nil {
 		notes = append(notes, "Minimum: "+apiNum(*s.Minimum)+".")
@@ -747,6 +826,8 @@ func (r *apiRenderer) typeOf(s *apiSchema) string {
 		return "any"
 	case s.Format != "":
 		return s.Type + " (" + s.Format + ")"
+	case s.ContentMediaType != "":
+		return s.Type + " (binary)"
 	default:
 		return s.Type
 	}

@@ -31,6 +31,7 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/license"
 	aimcp "github.com/openartifact/openartifact/internal/mcp"
@@ -47,23 +48,24 @@ import (
 
 // formatHandlers are the native protocol handlers of every repository format.
 type formatHandlers struct {
-	rpm      *formatrpm.HTTPHandler
-	deb      *formatdeb.HTTPHandler
-	pacman   *formatpacman.HTTPHandler
-	helm     *formathelm.HTTPHandler
-	pypi     *formatpypi.HTTPHandler
-	nuget    *formatnuget.HTTPHandler
-	npm      *formatnpm.HTTPHandler
-	cargo    *formatcargo.HTTPHandler
-	rubygems *formatrubygems.HTTPHandler
-	raw      *formatraw.HTTPHandler
-	conda    *formatconda.HTTPHandler
-	conan    *formatconan.HTTPHandler
-	ivy      *formativy.HTTPHandler
-	sbt      *formatsbt.HTTPHandler
-	maven    *formatmaven.HTTPHandler
-	docker   *formatdocker.HTTPHandler
-	gomod    *formatgomod.HTTPHandler
+	rpm       *formatrpm.HTTPHandler
+	deb       *formatdeb.HTTPHandler
+	pacman    *formatpacman.HTTPHandler
+	helm      *formathelm.HTTPHandler
+	pypi      *formatpypi.HTTPHandler
+	nuget     *formatnuget.HTTPHandler
+	npm       *formatnpm.HTTPHandler
+	cargo     *formatcargo.HTTPHandler
+	rubygems  *formatrubygems.HTTPHandler
+	raw       *formatraw.HTTPHandler
+	conda     *formatconda.HTTPHandler
+	conan     *formatconan.HTTPHandler
+	ivy       *formativy.HTTPHandler
+	sbt       *formatsbt.HTTPHandler
+	maven     *formatmaven.HTTPHandler
+	docker    *formatdocker.HTTPHandler
+	gomod     *formatgomod.HTTPHandler
+	terraform *formatterraform.HTTPHandler
 }
 
 // uploadHandlers are the API upload handlers that announce uploads through the
@@ -99,6 +101,8 @@ func (a *app) registerPublicRoutes() error {
 	if err != nil {
 		return a.fail("failed to resolve the SSO HMAC key", err)
 	}
+
+	w.hmacKey = hmacKey
 
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
@@ -239,6 +243,14 @@ func (a *app) newFormatHandlers() {
 	f.sbt = formatsbt.NewHTTPHandler(log, db, served, baseURL)
 	f.maven = formatmaven.NewHTTPHandler(log, db, served)
 
+	f.terraform = formatterraform.NewHTTPHandler(log, db, served, baseURL).WithTicketKey(a.web.hmacKey)
+	// Not WithSigner(a.workers.gpgKeys) unconditionally: a nil *Service in the
+	// interface is not a nil resolver. Without workers (the route tests) the
+	// provider download endpoint answers 503, as for an unsigned repository.
+	if a.workers.gpgKeys != nil {
+		f.terraform.WithSigner(a.workers.gpgKeys)
+	}
+
 	// All repo-scoped format handlers, including the npm publish/unpublish
 	// catch-all, share the /repos/{name} subrouter. A sibling /repos/{x}/*
 	// route outside it is shadowed by the mount and 404s.
@@ -260,7 +272,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 
 	routers := map[string]*chi.Mux{}
 	for _, name := range []string{
-		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "pacman",
+		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda", "pacman",
 	} {
 		routers[name] = chi.NewRouter()
 	}
@@ -282,6 +294,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.deb.RegisterRepoRoutes(routers["deb"])
 	f.rpm.RegisterRepoRoutes(routers["rpm"])
 	f.pacman.RegisterRepoRoutes(routers["pacman"])
+	f.conda.RegisterRepoRoutes(routers["conda"])
 
 	hosted := make(map[string]http.Handler, len(routers))
 	for name, r := range routers {
@@ -313,6 +326,10 @@ func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 	a.web.authed.Route("/repos/{name}", func(r chi.Router) {
 		r.Use(repoDispatch.Middleware)
 		r.Use(f.npm.ShadowGuard)
+		// The module "latest" document is GET /{module}/{system}, which chi
+		// cannot hold next to conda's /{platform}/{filename}; the guard serves
+		// it for terraform repositories only.
+		r.Use(f.terraform.LatestGuard)
 		f.rpm.RegisterRepoRoutes(r)
 		f.deb.RegisterRepoRoutes(r)
 		f.helm.RegisterRepoRoutes(r)
@@ -325,6 +342,7 @@ func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 		f.pacman.RegisterRepoRoutes(r)
 		f.conan.RegisterRepoRoutes(r)
 		f.gomod.RegisterRepoRoutes(r)
+		f.terraform.RegisterRepoRoutes(r)
 		npmUpload.RegisterRepoRoutes(r)
 		// npm publish and GOPROXY upload both need PUT "/*"; dispatch by tail.
 		// npmUpload counts its own uploads; the GOPROXY branch is counted here.
@@ -540,7 +558,7 @@ func (a *app) finishRoutes() {
 	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
 		u.rpm, u.deb, u.presigned, u.npm, u.maven,
 		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.rubygems, f.raw,
-		f.conda, f.pacman, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod,
+		f.conda, f.pacman, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
 	} {
 		h.SetPublisher(a.feat.dtPublisher)
 	}
@@ -566,6 +584,11 @@ func (a *app) finishRoutes() {
 	if relay, ok := a.store.raw.(storage.RelayServer); ok {
 		router.Put(storage.RelayRoute, relay.RelayHandler().ServeHTTP)
 	}
+
+	// Terraform service discovery and the signed download URLs are fetched
+	// without credentials (the URL signature is the credential), so they sit
+	// outside the authenticated router.
+	f.terraform.RegisterPublicRoutes(router)
 
 	// Peer endpoints authenticate with their own per-repository bearer token,
 	// so they sit outside the RBAC/CSRF chain of authedAPI.

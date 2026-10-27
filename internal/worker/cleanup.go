@@ -393,12 +393,12 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 		return 0, ErrRepositoryNotFound
 	}
 
-	tableInfo, ok := cleanupFormatTable(repo.Format)
-	if !ok {
+	tables := cleanupFormatTables(repo.Format)
+	if len(tables) == 0 {
 		return 0, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
-	run, deleted, err := w.deleteArtifacts(ctx, policy, repo, tableInfo)
+	run, deleted, err := w.deleteArtifacts(ctx, policy, repo, tables)
 	// Also after a partial run: whatever was removed before the error must
 	// leave the generated metadata.
 	if deleted > 0 {
@@ -716,15 +716,9 @@ func (w *CleanupWorker) deleteArtifacts(
 	ctx context.Context,
 	policy *models.CleanupPolicy,
 	repo *models.Repository,
-	tableInfo formatTable,
+	tables []formatTable,
 ) (*cleanupRun, int, error) {
 	run := newCleanupRun()
-
-	toDelete, err := w.selectCandidates(ctx, policy, tableInfo)
-	if err != nil {
-		return run, 0, err
-	}
-
 	totalDeleted := 0
 
 	// Usage of the rows removed so far is handed back to the repository's quota
@@ -732,12 +726,19 @@ func (w *CleanupWorker) deleteArtifacts(
 	// cancelled); a crash in between leaves it to the periodic reconcile.
 	defer func() { w.releaseQuota(ctx, policy.RepositoryID, run.released) }()
 
-	for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
-		if err := ctx.Err(); err != nil {
-			return run, totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
+	for _, tableInfo := range tables {
+		toDelete, err := w.selectCandidates(ctx, policy, tableInfo)
+		if err != nil {
+			return run, totalDeleted, err
 		}
 
-		totalDeleted += w.deleteChunk(ctx, policy, repo, tableInfo, chunk, run)
+		for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
+			if err := ctx.Err(); err != nil {
+				return run, totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
+			}
+
+			totalDeleted += w.deleteChunk(ctx, policy, repo, tableInfo, chunk, run)
+		}
 	}
 
 	return run, totalDeleted, nil

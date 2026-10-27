@@ -53,28 +53,32 @@ func newProxyGroupDB() *proxyGroupMockDB {
 	return db
 }
 
-func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
-	cases := []struct{ name, body, wantInMsg string }{
-		{
-			"proxy conda",
-			`{"name":"p","format":"conda","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`,
-			"not supported for format",
-		},
-		{"group conda", `{"name":"g","format":"conda","repo_type":"group"}`, "not supported for format"},
+// Every real format supports proxy and group repositories, so the guard is
+// exercised with a name no handler serves.
+func TestUnsupportedRepoTypeMessage(t *testing.T) {
+	for _, repoType := range []string{"proxy", "group"} {
+		if msg := unsupportedRepoTypeMessage(repoType, "bogus"); !strings.Contains(msg, "not supported for format") {
+			t.Errorf("%s of bogus: message %q", repoType, msg)
+		}
+
+		for format := range validFormats {
+			// The Terraform registry is hosted-only until its proxy and group land.
+			if format == "terraform" {
+				if msg := unsupportedRepoTypeMessage(repoType, format); !strings.Contains(msg, "not supported for format") {
+					t.Errorf("%s of terraform: message %q", repoType, msg)
+				}
+
+				continue
+			}
+
+			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
+				t.Errorf("%s of %s: unexpected message %q", repoType, format, msg)
+			}
+		}
 	}
 
-	for _, c := range cases {
-		db := newProxyGroupDB()
-		rw := createRepo(t, db, c.body)
-
-		if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), "validation_failed") ||
-			!strings.Contains(rw.Body.String(), c.wantInMsg) {
-			t.Errorf("%s: status %d body %s", c.name, rw.Code, rw.Body.String())
-		}
-
-		if db.created != nil {
-			t.Errorf("%s: repository was created", c.name)
-		}
+	if msg := unsupportedRepoTypeMessage("hosted", "bogus"); msg != "" {
+		t.Errorf("hosted: message %q", msg)
 	}
 }
 
@@ -100,7 +104,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems", "conda"} {
 		db := newProxyGroupDB()
 		rw := createRepo(
 			t,

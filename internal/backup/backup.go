@@ -445,6 +445,8 @@ type packageExport struct {
 	cargoCrates     []*models.CargoCrate
 	rubyGems        []*models.RubyGem
 	conanPackages   []*models.ConanPackage
+	tfModules       []*models.TerraformModule
+	tfProviders     []*models.TerraformProvider
 	ivyArtifacts    []*models.IvyArtifact
 	sbtArtifacts    []*models.SBTArtifact
 	rawArtifacts    []*models.RawArtifact
@@ -546,6 +548,8 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"cargo_crates", pkg.cargoCrates, len(pkg.cargoCrates)},
 		{"rubygems", pkg.rubyGems, len(pkg.rubyGems)},
 		{"conan_packages", pkg.conanPackages, len(pkg.conanPackages)},
+		{"terraform_modules", pkg.tfModules, len(pkg.tfModules)},
+		{"terraform_providers", pkg.tfProviders, len(pkg.tfProviders)},
 		{"ivy_artifacts", pkg.ivyArtifacts, len(pkg.ivyArtifacts)},
 		{"sbt_artifacts", pkg.sbtArtifacts, len(pkg.sbtArtifacts)},
 		{"raw_artifacts", pkg.rawArtifacts, len(pkg.rawArtifacts)},
@@ -683,6 +687,12 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 	case "conan":
 		v, err := e.db.ListConanPackages(ctx, id)
 		collectRepoList(pkg, &pkg.conanPackages, "conan packages", id, v, err)
+	case "terraform":
+		mods, err := e.db.ListTerraformModules(ctx, id)
+		collectRepoList(pkg, &pkg.tfModules, "terraform modules", id, mods, err)
+
+		provs, err := e.db.ListTerraformProviders(ctx, id)
+		collectRepoList(pkg, &pkg.tfProviders, "terraform providers", id, provs, err)
 	case "ivy":
 		v, err := e.db.ListIvyArtifacts(ctx, id)
 		collectRepoList(pkg, &pkg.ivyArtifacts, "ivy artifacts", id, v, err)
@@ -1335,6 +1345,16 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.ConanPackage) string { return c.RepositoryID },
 			func(c *models.ConanPackage, id string) { c.RepositoryID = id },
 			false, e.db.CreateConanPackage)
+	case "terraform_modules.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "terraform module",
+			func(c *models.TerraformModule) string { return c.RepositoryID },
+			func(c *models.TerraformModule, id string) { c.RepositoryID = id },
+			false, e.db.CreateTerraformModule)
+	case "terraform_providers.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "terraform provider",
+			func(c *models.TerraformProvider) string { return c.RepositoryID },
+			func(c *models.TerraformProvider, id string) { c.RepositoryID = id },
+			false, e.db.CreateTerraformProvider)
 	case "ivy_artifacts.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "ivy artifact",
 			func(c *models.IvyArtifact) string { return c.RepositoryID },

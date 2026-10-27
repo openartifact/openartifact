@@ -28,7 +28,7 @@ The request's own fields are only a **fallback**, used when the file is readable
 | Maven | the uploaded `.pom`, or the `META-INF/maven/**/pom.xml` embedded in a stored `.jar` | each `<license><name>`; the `<url>` when a license has no name and the URL is a canonical one |
 | RubyGems | `metadata.gz` of the `.gem` | the gemspec `licenses` |
 
-Other formats keep their own readers (Debian, RPM, Conda, Helm, Docker, Ivy; see [Scanning](scanning.md#blocking-licenses)); Conan, Go and raw packages declare no license, so use [properties](../repositories/properties.md).
+Other formats keep their own readers (Debian, RPM, Conda, Helm, Docker, Ivy; see [Scanning](scanning.md#blocking-licenses)); Conan, Go, Terraform and raw packages declare no license, so use [properties](../repositories/properties.md).
 
 ## Names that are not SPDX
 
@@ -54,7 +54,7 @@ This applies to the package files of PyPI, npm, Cargo, NuGet, RubyGems and Maven
 Every license scan result says where its licenses came from in `license_source`:
 
 - `artifact`: the licenses include ones read from the stored package file;
-- `client_declared`: they only come from what a client declared (the artifact's [license properties](../repositories/properties.md)), because the file declares no license, cannot be read while no blocking policy applies, or is of a format that has no license metadata (raw, Go, Conan). The scan page labels these results.
+- `client_declared`: they only come from what a client declared (the artifact's [license properties](../repositories/properties.md)), because the file declares no license, cannot be read while no blocking policy applies, or is of a format that has no license metadata (raw, Go, Conan, Terraform). The scan page labels these results.
 
 Results stored before this field existed are `client_declared`.
 

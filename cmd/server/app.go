@@ -291,6 +291,9 @@ type webStack struct {
 	evaluator       *auth.Evaluator
 	projectSettings *auth.ProjectSettings
 	rbacMiddleware  func(http.Handler) http.Handler
+	// hmacKey is the server secret SSO state and the Terraform download
+	// tickets are signed with.
+	hmacKey []byte
 
 	public  publicHandlers
 	formats formatHandlers

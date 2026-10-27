@@ -19,7 +19,7 @@ var pep440Marker = regexp.MustCompile(`(?i)[._-]?(post|rev|r)[._-]?\d*`)
 // pre-releases stay mutable so CI keeps overwriting them. The rule per format:
 //
 //	maven, ivy, sbt   not a *-SNAPSHOT version
-//	npm, nuget, cargo, helm, go
+//	npm, nuget, cargo, helm, go, terraform
 //	                  no semver pre-release part ("-rc.1"); Go pseudo-versions
 //	                  (v0.0.0-2024...-abcdef) therefore count as pre-releases
 //	pypi              no PEP 440 a/b/rc/dev segment
@@ -30,7 +30,7 @@ func IsRelease(format, version string) bool {
 	switch strings.ToLower(format) {
 	case "maven", "ivy", "sbt":
 		return !strings.Contains(strings.ToUpper(version), "SNAPSHOT")
-	case "npm", "nuget", "cargo", "helm", "go":
+	case "npm", "nuget", "cargo", "helm", "go", "terraform":
 		return !semverPrerelease(version)
 	case "pypi":
 		return !pep440Prerelease(version)

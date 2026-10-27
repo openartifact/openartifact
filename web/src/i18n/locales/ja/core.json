@@ -79,6 +79,7 @@
   "upload.hint.pacman": "*.pkg.tar.zst、*.pkg.tar.xz、*.pkg.tar.gz のパッケージと、任意の .sig 署名ファイルをアップロードします。",
   "upload.pacman.arch": "アーキテクチャのディレクトリ",
   "upload.pacman.archHint": "「any」パッケージと、ファイル名にアーキテクチャを含まないファイルに使用されます。",
+  "upload.terraform.body": "Terraform と OpenTofu のモジュールとプロバイダーは、モジュールのバージョンまたはプロバイダーのプラットフォームごとに、API トークンで認証した PUT リクエストを 1 回送って公開します。座標は URL に含まれます:",
   "pwa.updateAvailable": "新しいバージョンがあります",
   "pwa.updateHint": "再読み込みすると切り替わります。再読み込みするまで、現在のページはそのままです。",
   "pwa.reload": "再読み込み",

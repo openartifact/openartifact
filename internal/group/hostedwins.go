@@ -41,6 +41,11 @@ import (
 //	helm    index.yaml of each hosted member     (charts/<file> only; index.yaml is
 //	                                              filtered in serveHelm instead)
 //	conan   v2/conans/search?q=<name>/*          (a result named <name>; files too)
+//	conda   package names of the hosted members  (package files only: a name held in
+//	                                              any platform hides the proxies' files
+//	                                              of that name; repodata.json is
+//	                                              merged in serveConda with the proxies'
+//	                                              entries of those names left out)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
 //	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
 //	                                              member's table; no document to probe)
@@ -78,6 +83,9 @@ type pkgRef struct {
 	// nonEmpty requires the 200 probe answer to carry a body (go: an empty
 	// version list means the module has no versions).
 	nonEmpty bool
+	// condaName is set for a conda package file: ownership is then decided
+	// from the hosted members' package names in the database, in any platform.
+	condaName string
 	// chartFile is set for a helm chart download: ownership is then decided
 	// from the hosted members' index.yaml, not from a probe document.
 	chartFile string
@@ -123,6 +131,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = rubygemsRef(relPath)
 	case "conan":
 		ref, ok = conanRef(relPath)
+	case "conda":
+		ref, ok = condaRef(relPath)
 	}
 
 	if !ok {
@@ -491,6 +501,10 @@ func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Ba
 
 	if ref.holds != nil {
 		return h.ownsByDoc(mr, m, ref, be)
+	}
+
+	if ref.condaName != "" {
+		return h.ownsCondaName(mr, m, ref.condaName)
 	}
 
 	result := ownsNot

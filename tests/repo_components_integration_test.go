@@ -314,6 +314,15 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 			`INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5)
 			 VALUES ($1,'pm','pm','1:2.0-1','x86_64','x86_64','pm-1:2.0-1-x86_64.pkg.tar.zst',$2,'abc')`,
 			[]any{repo, blobID}},
+		{
+			"terraform",
+			"modules/vpc/aws",
+			"15.0.0",
+			"",
+			"vpc-aws-15.0.0.zip",
+			`INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id) VALUES ($1,'vpc','aws','15.0.0','zip',$2)`,
+			[]any{repo, blobID},
+		},
 		{"helm", "chart", "14.0.0", "", "chart-14.0.0.tgz",
 			`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'chart','14.0.0',$2)`,
 			[]any{repo, blobID}},
@@ -343,6 +352,39 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		checkSeededComponent(t, got[0], s.format, s.name, s.version, s.arch, s.filename)
 		checkDownloadLookupMatchesListing(t, pg, repo, got[0])
 	}
+
+	// The provider table lists under the same format as the module table, so it
+	// is checked once the one-row-per-format loop above is done.
+	execSQL(
+		t,
+		pg,
+		`INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id) VALUES ($1,'null','16.0.0','linux','arm64',$2)`,
+		repo,
+		blobID,
+	)
+
+	found := false
+
+	for _, c := range listOK(t, pg, repo, "terraform", 1, 100, 2, 2) {
+		if c.Name == "providers/null" {
+			found = true
+
+			checkSeededComponent(
+				t,
+				c,
+				"terraform",
+				"providers/null",
+				"16.0.0",
+				"linux_arm64",
+				"terraform-provider-null_16.0.0_linux_arm64.zip",
+			)
+			checkDownloadLookupMatchesListing(t, pg, repo, c)
+		}
+	}
+
+	if !found {
+		t.Error("the terraform provider row is not listed")
+	}
 }
 
 // checkDownloadLookupMatchesListing guards GetRepoComponentBlob against
@@ -371,7 +413,7 @@ func checkDownloadLookupMatchesListing(t *testing.T, pg *database.PostgresDB, re
 		t.Errorf("%s: download lookup name/version %q %q differ from listing %q %q", c.Format, blob.Name, blob.Version, c.Name, c.Version)
 	}
 
-	other := newRepo(t, pg, "other-"+c.Format, "raw")
+	other := newRepo(t, pg, "other-"+c.Format+"-"+c.Version, "raw")
 	if foreign, err := pg.GetRepoComponentBlob(ctx, other, c.ID); err != nil || foreign != nil {
 		t.Errorf("%s: id resolved in another repository: %+v, %v", c.Format, foreign, err)
 	}

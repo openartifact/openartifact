@@ -187,6 +187,8 @@
   "trash.kind.rpm_package": "RPM package",
   "trash.kind.deb_package": "Deb package",
   "trash.kind.pacman": "Pacman package",
+  "trash.kind.terraform_module": "Terraform module",
+  "trash.kind.terraform_provider": "Terraform provider",
   "repoDelete.title": "Delete repository",
   "repoDelete.body": "You are about to delete the repository \"{name}\".",
   "repoDelete.trashHint": "The repository and its contents are moved to the trash and kept for the configured retention period. An administrator can restore them from the trash until they are purged.",

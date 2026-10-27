@@ -244,3 +244,43 @@ func TestNuGetDependencyGroups(t *testing.T) {
 		t.Error("backfill touched a recorded row")
 	}
 }
+
+// A group's hosted-wins rule asks which names a hosted repository holds, in
+// any platform, compared case-insensitively and without trashed packages.
+func TestCondaPackageNames(t *testing.T) {
+	pg := newQuotaTestDB(t, 8)
+	ctx := context.Background()
+
+	s := newQuotaSeeder(t, pg, "names-conda", "conda")
+	add := func(name, platform string) {
+		s.exec(
+			`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
+		        VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`,
+			s.repo,
+			name,
+			platform,
+			s.blob(5),
+		)
+	}
+
+	add("Demo", "linux-64")
+	add("demo", "noarch")
+	add("other", "noarch")
+
+	names, err := pg.ListCondaPackageNames(ctx, s.repo)
+	if err != nil || len(names) != 2 || names[0] != "demo" || names[1] != "other" {
+		t.Fatalf("names = %v, %v", names, err)
+	}
+
+	for name, want := range map[string]bool{"demo": true, "DEMO": true, "other": true, "absent": false} {
+		if got, err := pg.HasCondaPackageName(ctx, s.repo, name); err != nil || got != want {
+			t.Errorf("HasCondaPackageName(%q) = %v, %v; want %v", name, got, err, want)
+		}
+	}
+
+	s.exec(`UPDATE conda_packages SET deleted_at = now() WHERE repository_id = $1 AND lower(name) = 'other'`, s.repo)
+
+	if got, err := pg.HasCondaPackageName(ctx, s.repo, "other"); err != nil || got {
+		t.Errorf("a trashed package still counts: %v, %v", got, err)
+	}
+}

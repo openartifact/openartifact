@@ -187,6 +187,8 @@
   "trash.kind.rpm_package": "Paquet RPM",
   "trash.kind.deb_package": "Paquet deb",
   "trash.kind.pacman": "Paquet pacman",
+  "trash.kind.terraform_module": "Module Terraform",
+  "trash.kind.terraform_provider": "Fournisseur Terraform",
   "repoDelete.title": "Supprimer le dépôt",
   "repoDelete.body": "Vous êtes sur le point de supprimer le dépôt « {name} ».",
   "repoDelete.trashHint": "Le dépôt et son contenu sont déplacés dans la corbeille et conservés pendant la durée de conservation configurée. Un administrateur peut les restaurer depuis la corbeille jusqu'à leur purge.",

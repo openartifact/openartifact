@@ -41,6 +41,7 @@ Not supported, with the reason:
 
 - **Debian and RPM**: their metadata is signed with the instance's own key; consistent signed indexes across members need their own design.
 - **RubyGems, Conda, Conan**: their indexes or revision graphs are regenerated whole and need their own unit design.
+- **Terraform/OpenTofu**: not designed yet; modules and provider platforms are not replicated.
 - **Ivy and sbt**: not a technical limit; left out of the first test matrix.
 - **Proxy and group repositories**: not authoritative content. Only hosted repositories can be federated.
 
@@ -207,7 +208,7 @@ Every instance generates an id when its database is first migrated, and a peer t
 
 ## Limits
 
-- No Debian, RPM, RubyGems, Conda, Conan, Ivy or sbt; proxy and group repositories cannot be federated.
+- No Debian, RPM, RubyGems, Conda, Conan, Terraform, Ivy or sbt; proxy and group repositories cannot be federated.
 - Eventual consistency only; replication latency is about the poll interval.
 - Resume needs the spool to survive: with the default (under the OS temp dir) partials do not outlive a container restart.
 - Quotas apply on each side. A unit that exceeds the receiver's quota is deferred, not forced in. Trashed bytes keep counting as for local deletes.

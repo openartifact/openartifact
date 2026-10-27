@@ -74,6 +74,10 @@ FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, created_at, updated_at)
 SELECT $1, 'pm' || g, 'pm' || g, '17.' || g || '-1', 'x86_64', 'x86_64', 'pm' || g || '-17.' || g || '-1-x86_64.pkg.tar.zst', b.id, 'abc', now() - (nextval('eq_seq') || ' seconds')::interval, now()
 FROM eq_ts JOIN eq_blob b ON b.n = bn;
+INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at, updated_at)
+SELECT $1, 'tfm' || g, 'aws', '15.' || g, CASE WHEN g % 2 = 0 THEN 'zip' ELSE 'tar.gz' END, b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
+INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id, created_at, updated_at)
+SELECT $1, 'tfp' || g, '16.' || g, 'linux', CASE WHEN g % 2 = 0 THEN 'amd64' ELSE 'arm64' END, b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at, updated_at)
 SELECT $1, 'ch' || g, '14.' || g, b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO raw_artifacts (repository_id, path, blob_id, created_at, updated_at)
