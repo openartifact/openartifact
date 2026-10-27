@@ -52,6 +52,11 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"nuget", "v3/package/newtonsoft.json/13.0.1/newtonsoft.json.nuspec", false},
 		{"nuget", "v3/package/newtonsoft.json/index.json", false},
 		{"nuget", "v3/registration/newtonsoft.json/index.json", false},
+		{"rubygems", "gems/rake-13.0.0.gem", true},
+		{"rubygems", "gems/rake-13.0.0.gem.sig", false},
+		{"rubygems", "versions", false},
+		{"rubygems", "info/rake", false},
+		{"rubygems", "quick/Marshal.4.8/rake-13.0.0.gemspec.rz", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

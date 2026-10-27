@@ -43,8 +43,8 @@
   },
   {
     "format": "rubygems",
-    "proxy": false,
-    "group": false,
+    "proxy": true,
+    "group": true,
     "federation": false,
     "default_upstream": ""
   },

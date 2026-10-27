@@ -35,6 +35,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
 	case "nuget":
 		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
+	case "rubygems":
+		return strings.HasPrefix(relPath, "gems/") && strings.HasSuffix(base, ".gem")
 	case "raw":
 		return true
 	case "pypi":

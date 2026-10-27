@@ -136,6 +136,8 @@ func (h *Handler) serveMerged(
 		return h.serveGo(w, r, grp, relPath, readable, be)
 	case "nuget":
 		return h.serveNuGet(w, r, grp, relPath, readable, be)
+	case "rubygems":
+		return h.serveRubyGems(w, r, grp, relPath, readable, be)
 	case "deb", "rpm":
 		h.serveDebRPM(w, r, grp, readable, relPath, be)
 
