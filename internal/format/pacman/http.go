@@ -17,14 +17,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -169,57 +167,13 @@ func (h *HTTPHandler) serveDatabase(w http.ResponseWriter, r *http.Request, repo
 		contentType = "application/pgp-signature"
 	}
 
-	meta, err := h.DB.GetRepoMetadataByPath(r.Context(), repo.ID, path)
-	if err != nil {
-		h.Log.Errorw("failed to query pacman metadata", "path", path, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if meta == nil {
+	served := base.ServeRepoMetadata(w, r, h.Log, h.DB, h.BlobStore, repo, path,
+		base.BlobOptions{ContentType: contentType, MaxAge: databaseMaxAge, LastModified: true})
+	if !served {
 		// Not generated: no package for this architecture yet, or the worker
 		// has not run since the first upload.
 		http.NotFound(w, r)
-		return
 	}
-
-	w.Header().Set("Last-Modified", meta.LastGenerated.UTC().Format(http.TimeFormat))
-
-	if r.Header.Get("If-None-Match") == "" && notModifiedSince(r, meta.LastGenerated) {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
-	if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, databaseMaxAge) {
-		return
-	}
-
-	reader, err := h.BlobStore.Get(r.Context(), meta.BlobSHA256)
-	if err != nil {
-		h.Log.Errorw("failed to read pacman metadata blob", "sha256", meta.BlobSHA256, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-	defer base.CloseLog(reader, h.Log)
-
-	w.Header().Set("Content-Type", contentType)
-
-	if _, err := iocopy.Copy(w, reader); err != nil {
-		h.Log.Warnw("failed to write pacman metadata", "path", path, "error", err)
-	}
-}
-
-// notModifiedSince reports whether the client's If-Modified-Since is not older
-// than modified (HTTP dates have one-second resolution).
-func notModifiedSince(r *http.Request, modified time.Time) bool {
-	since, err := http.ParseTime(r.Header.Get("If-Modified-Since"))
-	if err != nil {
-		return false
-	}
-
-	return !modified.Truncate(time.Second).After(since)
 }
 
 // lookup returns the live package a request path names, or nil. An "any"

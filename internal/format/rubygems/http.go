@@ -137,21 +137,10 @@ func (h *HTTPHandler) serveSpecs(w http.ResponseWriter, r *http.Request, kind sp
 	sum := sha256.Sum256([]byte(repo.ID + "\x00" + strconv.Itoa(int(kind)) + "\x00" + stamp))
 
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
-	if base.Revalidate(w, r, repo.Public, etag, specsMaxAge) {
-		return
-	}
 
-	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+	h.ServeRendered(w, r, repo.Public, etag, etag, specsMaxAge, func(ctx context.Context) (*base.Rendered, error) {
 		return h.renderSpecs(ctx, repo.ID, kind)
-	})
-	if err != nil {
-		h.Log.Errorw("failed to render gem specs", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	rendered.Serve(w, r)
+	}, "failed to render gem specs", "repo", repoName)
 }
 
 func (h *HTTPHandler) renderSpecs(ctx context.Context, repoID string, kind specsKind) (*base.Rendered, error) {

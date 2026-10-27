@@ -77,9 +77,9 @@ func (h *HTTPHandler) resolveRepoID(ctx context.Context, name string) (string, e
 // metadata before revalidating.
 const metadataMaxAge = 300
 
-// tryServeRepoBlob attempts to serve a pre-generated metadata blob. The blob
-// digest is the ETag, so a matching If-None-Match is answered without reading
-// the blob. Returns true if served, false if the blob does not exist yet.
+// tryServeRepoBlob attempts to serve a pre-generated metadata blob. Returns
+// true if served (or an error was written), false if the blob does not exist
+// yet and the caller should fall back to streaming.
 func (h *HTTPHandler) tryServeRepoBlob(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -87,38 +87,8 @@ func (h *HTTPHandler) tryServeRepoBlob(
 	path string,
 	contentType string,
 ) bool {
-	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repo.ID, path)
-	if err != nil {
-		h.log.Errorw("failed to query repo metadata", "path", path, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return true // error already written
-	}
-
-	if meta == nil {
-		return false // not found; caller should fall back to streaming
-	}
-
-	if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, metadataMaxAge) {
-		return true
-	}
-
-	reader, err := h.blobStore.Get(r.Context(), meta.BlobSHA256)
-	if err != nil {
-		h.log.Errorw("failed to read blob", "sha256", meta.BlobSHA256, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return true
-	}
-	defer func() { _ = reader.Close() }()
-
-	w.Header().Set("Content-Type", contentType)
-
-	if _, err := iocopy.Copy(w, reader); err != nil {
-		h.log.Errorw("failed to write response", "path", path, "error", err)
-	}
-
-	return true
+	return base.ServeRepoMetadata(w, r, h.log, h.db, h.blobStore, repo, path,
+		base.BlobOptions{ContentType: contentType, MaxAge: metadataMaxAge})
 }
 
 func (h *HTTPHandler) handleRelease(w http.ResponseWriter, r *http.Request) {

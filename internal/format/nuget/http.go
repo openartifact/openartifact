@@ -832,21 +832,10 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 	// The validator comes from the rows already loaded, before any dependency
 	// groups are resolved or JSON is built.
 	etag := registrationETag(repo.ID, baseURL, packageID, pkgs)
-	if base.Revalidate(w, r, repo.Public, etag, registrationMaxAge) {
-		return
-	}
 
-	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+	h.ServeRendered(w, r, repo.Public, etag, etag, registrationMaxAge, func(ctx context.Context) (*base.Rendered, error) {
 		return h.renderRegistrationIndex(ctx, baseURL, packageID, pkgs)
-	})
-	if err != nil {
-		h.Log.Errorw("failed to render nuget registration", "id", packageID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	rendered.Serve(w, r)
+	}, "failed to render nuget registration", "id", packageID)
 }
 
 func (h *HTTPHandler) renderRegistrationIndex(
