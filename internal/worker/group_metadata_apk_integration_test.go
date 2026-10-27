@@ -121,7 +121,7 @@ func (s *apkGroupStack) upload(member *models.Repository, dir string, o apktest.
 		s.t.Fatalf("PUT %s: status %d: %s", path, rec.Code, rec.Body.String())
 	}
 
-	if err := s.hosted.regenerate(context.Background(), member.ID); err != nil {
+	if err := regenerateApkWhenFree(s.hosted, member.ID); err != nil {
 		s.t.Fatalf("regenerate %s: %v", member.Name, err)
 	}
 
@@ -442,7 +442,7 @@ func TestApkGroupKeepsServingAnEmptiedDirectoryAsEmpty(t *testing.T) {
 		t.Fatal("DELETE failed")
 	}
 
-	if err := s.hosted.regenerate(context.Background(), m[0].ID); err != nil {
+	if err := regenerateApkWhenFree(s.hosted, m[0].ID); err != nil {
 		t.Fatal(err)
 	}
 

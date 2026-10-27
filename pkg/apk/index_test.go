@@ -356,7 +356,7 @@ func TestParseIndex_invalidArchives(t *testing.T) {
 	}
 }
 
-func sigMemberFor(tb testing.TB) []byte {
+func sigMemberFor(tb fataler) []byte {
 	tb.Helper()
 
 	return gz(tb, tarBytes(tb, []tarEntry{{name: ".SIGN.RSA256.k.rsa.pub", body: "signature"}}, false))

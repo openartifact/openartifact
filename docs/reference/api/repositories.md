@@ -162,6 +162,7 @@ Returns the public half of the key that signs the APKINDEX of a hosted or group 
 |---|---|---|
 | `200` | The signing key | `application/json`: [ApkSigningKey](schemas.md#apksigningkey) |
 | `400` | The repository is not a hosted or group apk repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 | `409` | OPENARTIFACT_SECRET_KEY is not set (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 
@@ -192,6 +193,7 @@ Generates a new signing key (empty body) or imports the given RSA private key, a
 |---|---|---|
 | `200` | The new signing key | `application/json`: [ApkSigningKey](schemas.md#apksigningkey) |
 | `400` | Invalid key or the repository is not a hosted or group apk repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 | `409` | OPENARTIFACT_SECRET_KEY is not set (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 
@@ -224,6 +226,7 @@ Upload a .apk into a hosted apk repository (multipart/form-data). The package is
 |---|---|---|
 | `200` | Package stored | `application/json`: [ApkUploadResult](schemas.md#apkuploadresult) |
 | `400` | Invalid package, invalid input or wrong repository format | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
 | `409` | Package already exists | `application/json`: [Error](schemas.md#error) |
 | `413` | File too large | `application/json`: [Error](schemas.md#error) |

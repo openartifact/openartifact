@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 )
 
@@ -29,23 +28,31 @@ import (
 var newKey = sync.OnceValues(func() (*rsa.PrivateKey, error) { return GenerateKey(2048) })
 
 // testKey returns the shared 2048-bit key.
-func testKey(tb testing.TB) *rsa.PrivateKey {
+// fataler is the part of testing.TB the helpers use. The OSS-Fuzz build of the
+// fuzz targets compiles with a Go toolchain whose *testing.F does not
+// implement testing.TB, so the helpers shared with them cannot ask for it.
+type fataler interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
+
+func testKey(tb fataler) *rsa.PrivateKey {
 	tb.Helper()
 
 	key, err := newKey()
 	if err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("%v", err)
 	}
 
 	return key
 }
 
-func testSigner(tb testing.TB) *Signer {
+func testSigner(tb fataler) *Signer {
 	tb.Helper()
 
 	s, err := NewSigner("openartifact-test.rsa.pub", testKey(tb))
 	if err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("%v", err)
 	}
 
 	return s
@@ -63,7 +70,7 @@ type tarEntry struct {
 // tarBytes returns the tar stream of entries, with the end-of-archive blocks
 // only when end is set (abuild leaves them off the signature and control
 // segments).
-func tarBytes(tb testing.TB, entries []tarEntry, end bool) []byte {
+func tarBytes(tb fataler, entries []tarEntry, end bool) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
@@ -87,11 +94,11 @@ func tarBytes(tb testing.TB, entries []tarEntry, end bool) []byte {
 		}
 
 		if err := tw.WriteHeader(hdr); err != nil {
-			tb.Fatal(err)
+			tb.Fatalf("%v", err)
 		}
 
 		if _, err := tw.Write([]byte(e.body)); err != nil {
-			tb.Fatal(err)
+			tb.Fatalf("%v", err)
 		}
 	}
 
@@ -103,25 +110,25 @@ func tarBytes(tb testing.TB, entries []tarEntry, end bool) []byte {
 	}
 
 	if err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("%v", err)
 	}
 
 	return buf.Bytes()
 }
 
 // gz returns b as one gzip member.
-func gz(tb testing.TB, b []byte) []byte {
+func gz(tb fataler, b []byte) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
 
 	w := gzip.NewWriter(&buf)
 	if _, err := w.Write(b); err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("%v", err)
 	}
 
 	if err := w.Close(); err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("%v", err)
 	}
 
 	return buf.Bytes()
@@ -139,7 +146,7 @@ func concat(parts ...[]byte) []byte {
 // defaultData is the data segment of the fixture package: a normal tar with
 // end blocks, a PAX checksum record like abuild writes, a symlink with an
 // absolute target (fine) and a hard link.
-func defaultData(tb testing.TB) []byte {
+func defaultData(tb fataler) []byte {
 	tb.Helper()
 
 	return gz(tb, tarBytes(tb, []tarEntry{
@@ -241,7 +248,7 @@ func pkginfoText(lines []kv) string {
 
 // controlMember returns the control segment: a tar that starts with .PKGINFO,
 // then the extra entries, as one gzip member.
-func controlMember(tb testing.TB, pkginfo string, end bool, extra ...tarEntry) []byte {
+func controlMember(tb fataler, pkginfo string, end bool, extra ...tarEntry) []byte {
 	tb.Helper()
 
 	entries := append([]tarEntry{{name: ".PKGINFO", body: pkginfo}}, extra...)
@@ -251,7 +258,7 @@ func controlMember(tb testing.TB, pkginfo string, end bool, extra ...tarEntry) [
 
 // sigMember returns the signature segment for the control segment: kind is
 // "sha256" (.SIGN.RSA256.) or "sha1" (.SIGN.RSA.).
-func sigMember(tb testing.TB, kind string, control []byte) []byte {
+func sigMember(tb fataler, kind string, control []byte) []byte {
 	tb.Helper()
 
 	var (
@@ -273,7 +280,7 @@ func sigMember(tb testing.TB, kind string, control []byte) []byte {
 
 	sig, err := rsa.SignPKCS1v15(nil, testKey(tb), alg, digest)
 	if err != nil {
-		tb.Fatal(err)
+		tb.Fatalf("%v", err)
 	}
 
 	return gz(tb, tarBytes(tb, []tarEntry{{name: name, body: string(sig)}}, false))
@@ -289,7 +296,7 @@ type fixture struct {
 
 // newFixture builds the default package; kind selects the signature segment
 // ("" for none).
-func newFixture(tb testing.TB, kind string) *fixture {
+func newFixture(tb fataler, kind string) *fixture {
 	tb.Helper()
 
 	f := &fixture{}
@@ -299,7 +306,7 @@ func newFixture(tb testing.TB, kind string) *fixture {
 }
 
 // setData replaces the data segment and points the datahash at it.
-func (f *fixture) setData(tb testing.TB, kind string, data []byte) {
+func (f *fixture) setData(tb fataler, kind string, data []byte) {
 	tb.Helper()
 
 	f.data = data
@@ -308,7 +315,7 @@ func (f *fixture) setData(tb testing.TB, kind string, data []byte) {
 }
 
 // rebuild regenerates the control and signature segments from f.pkginfo.
-func (f *fixture) rebuild(tb testing.TB, kind string) {
+func (f *fixture) rebuild(tb fataler, kind string) {
 	tb.Helper()
 
 	f.control = controlMember(tb, pkginfoText(f.pkginfo), false)

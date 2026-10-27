@@ -12538,6 +12538,10 @@ export type PostApiV1RepositoriesByNameApksErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository not found
      */
     404: Error;
@@ -12579,6 +12583,10 @@ export type GetApiV1RepositoriesByNameApkKeyErrors = {
      * The repository is not a hosted or group apk repository
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository not found
      */
@@ -12626,6 +12634,10 @@ export type PostApiV1RepositoriesByNameApkKeyErrors = {
      * Invalid key or the repository is not a hosted or group apk repository
      */
     400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
     /**
      * Repository not found
      */

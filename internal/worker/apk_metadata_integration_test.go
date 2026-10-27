@@ -12,11 +12,13 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/apkkeys"
@@ -124,8 +126,29 @@ func (s *apkStack) put(dir, file string, data []byte) *httptest.ResponseRecorder
 func (s *apkStack) regenerate() {
 	s.t.Helper()
 
-	if err := s.worker.regenerate(context.Background(), s.repo.ID); err != nil {
+	if err := regenerateApkWhenFree(s.worker, s.repo.ID); err != nil {
 		s.t.Fatalf("regenerate: %v", err)
+	}
+}
+
+// regenerateApkWhenFree regenerates repoID's indexes, waiting while the
+// queue's own regeneration of the same repository holds the lock (a request
+// the test made already queued one).
+func regenerateApkWhenFree(w *ApkMetadataWorker, repoID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	for {
+		err := w.regenerate(ctx, repoID)
+		if !errors.Is(err, errLockBusy) {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 }
 
