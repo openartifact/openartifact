@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +221,30 @@ func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, 
 	return "sbt_artifacts", a.ID
 }
 
+func (e *importEnv) createTerraformModule(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	m := &models.TerraformModule{RepositoryID: repo, Name: "vpc", System: "aws", Version: "1.0.0", ArchiveExt: "zip",
+		BlobKey: e.uniq("k"), Checksum: e.uniq("sha"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreateTerraformModule(e.ctx, m); err != nil {
+		t.Fatal(err)
+	}
+
+	return "terraform_modules", m.ID
+}
+
+func (e *importEnv) createTerraformProvider(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	p := &models.TerraformProvider{RepositoryID: repo, Type: "null", Version: "1.0.0", OS: "linux", Arch: "amd64",
+		Protocols: []string{"5.0"}, BlobKey: e.uniq("k"), Checksum: e.uniq("sha"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreateTerraformProvider(e.ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	return "terraform_providers", p.ID
+}
+
 func TestImportCreatedAt(t *testing.T) {
 	e := &importEnv{pg: newQuotaTestDB(t, 8), ctx: context.Background()}
 	origin := time.Date(2019, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -236,6 +261,9 @@ func TestImportCreatedAt(t *testing.T) {
 		"conan":    e.createConan,
 		"ivy":      e.createIvy,
 		"sbt":      e.createSbt,
+		// Both terraform tables live in a terraform repository.
+		"terraform":          e.createTerraformModule,
+		"terraform-provider": e.createTerraformProvider,
 	}
 
 	for format, create := range formats {
@@ -244,7 +272,7 @@ func TestImportCreatedAt(t *testing.T) {
 			at   time.Time
 		}{{"imported", origin}, {"normal", time.Time{}}} {
 			t.Run(format+"/"+tc.name, func(t *testing.T) {
-				s := newQuotaSeeder(t, e.pg, "import-"+format+"-"+tc.name+e.uniq("r")[:6], format)
+				s := newQuotaSeeder(t, e.pg, "import-"+format+"-"+tc.name+e.uniq("r")[:6], strings.TrimSuffix(format, "-provider"))
 				table, id := create(t, s.repo, tc.at)
 				e.check(t, table, id, tc.at)
 			})

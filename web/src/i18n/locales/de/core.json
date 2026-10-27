@@ -76,6 +76,7 @@
   "upload.hint.maven": "Laden Sie .jar-/.pom-Artefakte hoch; der Pfad kodiert die Koordinaten.",
   "upload.hint.npm": "Laden Sie .tgz-Tarballs hoch, die mit `npm pack` erstellt wurden.",
   "upload.hint.generic": "Laden Sie Paketdateien für dieses Repository hoch.",
+  "upload.terraform.body": "Terraform- und OpenTofu-Module und -Provider werden mit je einer PUT-Anfrage pro Modulversion bzw. Provider-Plattform veröffentlicht, authentifiziert mit einem API-Token. Die Koordinaten sind Teil der URL:",
   "pwa.updateAvailable": "Neue Version verfügbar",
   "pwa.updateHint": "Laden Sie neu, um zu wechseln. Ihre aktuelle Seite bleibt bis dahin unverändert.",
   "pwa.reload": "Neu laden",

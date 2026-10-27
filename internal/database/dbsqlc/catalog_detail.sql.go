@@ -175,6 +175,28 @@ FROM (
     FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    -- terraform module
+    SELECT t.id::uuid, 'terraform'::text, ('modules/' || t.name || '/' || t.system)::text, t.version::text, ''::text,
+           t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, ''::text, ''::text, ''::text, ''::text, ''::text,
+           jsonb_build_object('kind', 'module', 'archive_ext', t.archive_ext, 'download_count', t.download_count::text)::jsonb,
+           NULL::jsonb
+    FROM terraform_modules t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    -- terraform provider: one platform zip; arch = OS_ARCH
+    SELECT t.id::uuid, 'terraform'::text, ('providers/' || t.type)::text, t.version::text, (t.os || '_' || t.arch)::text,
+           'terraform-provider-' || t.type || '_' || t.version || '_' || t.os || '_' || t.arch || '.zip'::text,
+           t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, ''::text, ''::text, ''::text, ''::text, ''::text,
+           jsonb_build_object('kind', 'provider', 'protocols', array_to_string(t.protocols, ', '),
+                              'download_count', t.download_count::text)::jsonb,
+           NULL::jsonb
+    FROM terraform_providers t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     -- helm
     SELECT t.id::uuid, 'helm'::text, t.name::text, t.version::text, ''::text,
            t.name || '-' || t.version || '.tgz'::text, t.created_at::timestamptz, t.updated_at::timestamptz,

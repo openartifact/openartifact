@@ -138,6 +138,8 @@ func builderFor(format string) func(target) []Snippet {
 		return condaSnippets
 	case "conan":
 		return conanSnippets
+	case "terraform":
+		return terraformSnippets
 	case "sbt":
 		return sbtSnippets
 	case "ivy":
@@ -319,6 +321,36 @@ func conanSnippets(c target) []Snippet {
 		Configure: fmt.Sprintf("conan remote add %[1]s %[2]s\nconan remote login %[1]s <USERNAME> -p <TOKEN>", c.repo, c.base),
 		Publish:   fmt.Sprintf("conan upload \"my-lib/1.0\" -r %s --confirm", c.repo),
 	}}
+}
+
+// terraformSnippets configures both terraform and OpenTofu: the registry
+// namespace is the repository name, and the publish API is OpenArtifact's own
+// (no upstream protocol exists for uploads).
+func terraformSnippets(c target) []Snippet {
+	const note = "# terraform and tofu need HTTPS and a hostname with a dot"
+
+	usage := fmt.Sprintf(
+		"\n\n# modules from this repository\nmodule \"x\" {\n  source  = \"%[1]s/%[2]s/NAME/SYSTEM\"\n  version = \"1.0.0\"\n}"+
+			"\n\n# provider\nterraform {\n  required_providers {\n    TYPE = {\n      source  = \"%[1]s/%[2]s/TYPE\"\n"+
+			"      version = \"1.0.0\"\n    }\n  }\n}",
+		c.host, c.repo,
+	)
+	creds := func(file string) string {
+		return fmt.Sprintf("%s\n# %s\ncredentials \"%s\" {\n  token = \"<TOKEN>\"\n}", note, file, c.host)
+	}
+	api := c.base + "/_api"
+	publish := fmt.Sprintf(
+		"# module archive (.tar.gz or .zip)\n"+
+			"curl -X PUT -H \"Authorization: Bearer <TOKEN>\" --data-binary @module.tar.gz %[1]s/modules/NAME/SYSTEM/1.0.0"+
+			"\n\n# provider zip, one per platform\n"+
+			"curl -X PUT -H \"Authorization: Bearer <TOKEN>\" --data-binary @provider.zip %[1]s/providers/TYPE/1.0.0/linux/amd64",
+		api,
+	)
+
+	return []Snippet{
+		{Client: "terraform", Configure: creds("~/.terraformrc") + usage, Publish: publish},
+		{Client: "OpenTofu", Configure: creds("~/.tofurc") + usage, Publish: publish},
+	}
 }
 
 func sbtSnippets(c target) []Snippet {

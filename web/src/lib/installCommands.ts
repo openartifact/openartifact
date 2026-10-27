@@ -51,6 +51,22 @@ function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
 }
 
+/**
+ * HCL usage block for a terraform row. The catalog names a module
+ * `modules/NAME/SYSTEM` and a provider platform `providers/TYPE`; terraform's
+ * registry namespace is the repository name.
+ */
+function terraformUsage(host: string, repo: string, pkg: string, version: string): string {
+  const [kind, name, system] = pkg.split('/')
+  if (kind === 'modules' && name && system) {
+    return `module "${name}" {\n  source  = "${host}/${repo}/${name}/${system}"\n  version = "${version}"\n}`
+  }
+  if (kind === 'providers' && name) {
+    return `terraform {\n  required_providers {\n    ${name} = {\n      source  = "${host}/${repo}/${name}"\n      version = "${version}"\n    }\n  }\n}`
+  }
+  return `${host}/${repo}`
+}
+
 /** Install/pull command for a package version, built from the real server origin. */
 export function pullCommand(
   format: string,
@@ -93,6 +109,8 @@ export function pullCommand(
       return `dnf install ${q(`${pkg}-${version}`)}`
     case 'raw':
       return `curl -fO ${q(`${base}/${encodePath(pkg)}`)}`
+    case 'terraform':
+      return terraformUsage(hostOf(origin), repo, pkg, version)
     case 'sbt':
       return `resolvers += "${repo}" at "${base}"`
     case 'ivy':
@@ -252,6 +270,22 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
           publish: `conan upload "my-lib/1.0" -r ${repo} --confirm`,
         },
       ]
+    case 'terraform': {
+      const host = hostOf(origin)
+      const note = '# terraform and tofu need HTTPS and a hostname with a dot'
+      const api = `${base}/_api`
+      const creds = (file: string) => `${note}\n# ${file}\ncredentials "${host}" {\n  token = "<TOKEN>"\n}`
+      const usage =
+        `\n\n# modules from this repository\nmodule "x" {\n  source  = "${host}/${repo}/NAME/SYSTEM"\n  version = "1.0.0"\n}` +
+        `\n\n# provider\nterraform {\n  required_providers {\n    TYPE = {\n      source  = "${host}/${repo}/TYPE"\n      version = "1.0.0"\n    }\n  }\n}`
+      const publish =
+        `# module archive (.tar.gz or .zip)\ncurl -X PUT -H "Authorization: Bearer <TOKEN>" --data-binary @module.tar.gz ${api}/modules/NAME/SYSTEM/1.0.0` +
+        `\n\n# provider zip, one per platform\ncurl -X PUT -H "Authorization: Bearer <TOKEN>" --data-binary @provider.zip ${api}/providers/TYPE/1.0.0/linux/amd64`
+      return [
+        { client: 'terraform', configure: creds('~/.terraformrc') + usage, publish },
+        { client: 'OpenTofu', configure: creds('~/.tofurc') + usage, publish },
+      ]
+    }
     case 'sbt':
       return [
         {

@@ -620,7 +620,8 @@
               "conda",
               "conan",
               "ivy",
-              "sbt"
+              "sbt",
+              "terraform"
             ],
             "description": "Package format"
           },
@@ -5107,6 +5108,8 @@
               "maven_artifact",
               "ivy_artifact",
               "sbt_artifact",
+              "terraform_module",
+              "terraform_provider",
               "npm_version",
               "pypi_package",
               "nuget_package",
@@ -6517,7 +6520,8 @@
                 "conda",
                 "conan",
                 "ivy",
-                "sbt"
+                "sbt",
+                "terraform"
               ]
             }
           },
@@ -6664,7 +6668,8 @@
                       "conda",
                       "conan",
                       "ivy",
-                      "sbt"
+                      "sbt",
+                      "terraform"
                     ]
                   },
                   "description": {
@@ -20547,6 +20552,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20638,6 +20645,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20733,6 +20742,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20829,6 +20840,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20968,6 +20981,8 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "terraform_module",
+                "terraform_provider",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",

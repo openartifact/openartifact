@@ -76,6 +76,7 @@
   "upload.hint.maven": ".jar / .pom アーティファクトをアップロードします。パスが座標を表します。",
   "upload.hint.npm": "`npm pack` で作成した .tgz tarball をアップロードします。",
   "upload.hint.generic": "このリポジトリにパッケージファイルをアップロードします。",
+  "upload.terraform.body": "Terraform と OpenTofu のモジュールとプロバイダーは、モジュールのバージョンまたはプロバイダーのプラットフォームごとに、API トークンで認証した PUT リクエストを 1 回送って公開します。座標は URL に含まれます:",
   "pwa.updateAvailable": "新しいバージョンがあります",
   "pwa.updateHint": "再読み込みすると切り替わります。再読み込みするまで、現在のページはそのままです。",
   "pwa.reload": "再読み込み",

@@ -137,7 +137,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('splits into exactly the intended words however hostile the names are', () => {
-    const shellFormats = ALL_FORMATS.filter((f) => f !== 'sbt' && f !== 'ivy')
+    const shellFormats = ALL_FORMATS.filter((f) => f !== 'sbt' && f !== 'ivy' && f !== 'terraform')
     fc.assert(fc.property(fc.constantFrom(...shellFormats), origin, hostileWord, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       fc.pre(repo !== '.' && repo !== '..')
       fc.pre(format !== 'raw' || pkg.split('/').every((s) => s !== '.' && s !== '..'))
@@ -146,7 +146,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('points every URL argument under the repository base URL (deb, rpm and conan commands carry none)', () => {
-    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'docker' && f !== 'deb' && f !== 'rpm' && f !== 'conan')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
+    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'docker' && f !== 'deb' && f !== 'rpm' && f !== 'conan' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
       const words = format === 'sbt' || format === 'ivy' ? [cmd] : shellWords(cmd)

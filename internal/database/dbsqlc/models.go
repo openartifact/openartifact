@@ -1086,7 +1086,7 @@ type ReleaseBundleItem struct {
 type Repository struct {
 	ID   string `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
-	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt. Constrained by chk_repo_format.
+	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform. Constrained by chk_repo_format.
 	Format      string    `db:"format" json:"format"`
 	Description *string   `db:"description" json:"description"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
@@ -1374,6 +1374,41 @@ type SystemSetting struct {
 	Value     string    `db:"value" json:"value"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Terraform/OpenTofu registry modules: one archive (zip or tar.gz) per name/system/version.
+type TerraformModule struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+	System       string `db:"system" json:"system"`
+	Version      string `db:"version" json:"version"`
+	// Archive kind as stored: zip or tar.gz; it is the extension of the download URL.
+	ArchiveExt    string     `db:"archive_ext" json:"archive_ext"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID        string     `db:"blob_id" json:"blob_id"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// Terraform/OpenTofu registry providers: one platform zip per type/version/os/arch.
+type TerraformProvider struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Type         string `db:"type" json:"type"`
+	Version      string `db:"version" json:"version"`
+	Os           string `db:"os" json:"os"`
+	Arch         string `db:"arch" json:"arch"`
+	// Plugin protocol versions the provider speaks, as the registry reports them (for example 5.0, 6.0).
+	Protocols     []string   `db:"protocols" json:"protocols"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID        string     `db:"blob_id" json:"blob_id"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Admin VEX decisions per (repository, artifact, vulnerability). justification is the OpenVEX enum.

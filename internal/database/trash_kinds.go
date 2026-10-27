@@ -147,6 +147,21 @@ var trashSpecs = []*trashSpec{
 		blobCols: []string{"t.blob_id"},
 	},
 	{
+		kind: models.TrashKindTerraformModule, table: "terraform_modules", format: "terraform", quota: true,
+		repoID:   "t.repository_id",
+		name:     "'modules/' || t.name || '/' || t.system",
+		version:  "t.version",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
+		// One trash entry per platform zip, so the platform is part of the name.
+		kind: models.TrashKindTerraformProvider, table: "terraform_providers", format: "terraform", quota: true,
+		repoID:   "t.repository_id",
+		name:     "'providers/' || t.type || ' (' || t.os || '_' || t.arch || ')'",
+		version:  "t.version",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
 		kind: models.TrashKindHelm, table: "helm_charts", format: "helm", quota: true,
 		repoID: "t.repository_id", name: "t.name", version: "t.version",
 		blobCols: []string{"t.blob_id"},

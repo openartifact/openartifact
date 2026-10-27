@@ -233,8 +233,8 @@ func assertTrashSchema(t *testing.T, db *sql.DB) {
 		t.Fatal(err)
 	}
 
-	if len(tables) != 17 {
-		t.Fatalf("%d tables with deleted_at, want 17: %v", len(tables), tables)
+	if len(tables) != 19 {
+		t.Fatalf("%d tables with deleted_at, want 19: %v", len(tables), tables)
 	}
 
 	for _, table := range tables {

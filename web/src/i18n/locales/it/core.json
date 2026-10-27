@@ -76,6 +76,7 @@
   "upload.hint.maven": "Carica artefatti .jar / .pom; il percorso codifica le coordinate.",
   "upload.hint.npm": "Carica i tarball .tgz pubblicati da `npm pack`.",
   "upload.hint.generic": "Carica i file dei pacchetti per questo repository.",
+  "upload.terraform.body": "I moduli e i provider Terraform e OpenTofu si pubblicano con una richiesta PUT per ogni versione di modulo o piattaforma del provider, autenticata con un token API. Le coordinate fanno parte dell'URL:",
   "pwa.updateAvailable": "Nuova versione disponibile",
   "pwa.updateHint": "Ricarica per passare alla nuova versione. La pagina attuale resta invariata finché non lo fai.",
   "pwa.reload": "Ricarica",

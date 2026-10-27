@@ -440,5 +440,41 @@
         "publish": "\u003civy:publish resolver=\"my repo\" pubrevision=\"1.0\" overwrite=\"true\"\u003e\n  \u003cartifacts pattern=\"dist/[artifact]-[revision].[ext]\"/\u003e\n\u003c/ivy:publish\u003e"
       }
     ]
+  },
+  {
+    "format": "terraform",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "terraform",
+        "configure": "# terraform and tofu need HTTPS and a hostname with a dot\n# ~/.terraformrc\ncredentials \"artifacts.example.com:8443\" {\n  token = \"\u003cTOKEN\u003e\"\n}\n\n# modules from this repository\nmodule \"x\" {\n  source  = \"artifacts.example.com:8443/repo1/NAME/SYSTEM\"\n  version = \"1.0.0\"\n}\n\n# provider\nterraform {\n  required_providers {\n    TYPE = {\n      source  = \"artifacts.example.com:8443/repo1/TYPE\"\n      version = \"1.0.0\"\n    }\n  }\n}",
+        "publish": "# module archive (.tar.gz or .zip)\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @module.tar.gz https://artifacts.example.com:8443/repos/repo1/_api/modules/NAME/SYSTEM/1.0.0\n\n# provider zip, one per platform\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @provider.zip https://artifacts.example.com:8443/repos/repo1/_api/providers/TYPE/1.0.0/linux/amd64"
+      },
+      {
+        "client": "OpenTofu",
+        "configure": "# terraform and tofu need HTTPS and a hostname with a dot\n# ~/.tofurc\ncredentials \"artifacts.example.com:8443\" {\n  token = \"\u003cTOKEN\u003e\"\n}\n\n# modules from this repository\nmodule \"x\" {\n  source  = \"artifacts.example.com:8443/repo1/NAME/SYSTEM\"\n  version = \"1.0.0\"\n}\n\n# provider\nterraform {\n  required_providers {\n    TYPE = {\n      source  = \"artifacts.example.com:8443/repo1/TYPE\"\n      version = \"1.0.0\"\n    }\n  }\n}",
+        "publish": "# module archive (.tar.gz or .zip)\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @module.tar.gz https://artifacts.example.com:8443/repos/repo1/_api/modules/NAME/SYSTEM/1.0.0\n\n# provider zip, one per platform\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @provider.zip https://artifacts.example.com:8443/repos/repo1/_api/providers/TYPE/1.0.0/linux/amd64"
+      }
+    ]
+  },
+  {
+    "format": "terraform",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "terraform",
+        "configure": "# terraform and tofu need HTTPS and a hostname with a dot\n# ~/.terraformrc\ncredentials \"artifacts.example.com:8443\" {\n  token = \"\u003cTOKEN\u003e\"\n}\n\n# modules from this repository\nmodule \"x\" {\n  source  = \"artifacts.example.com:8443/my repo/NAME/SYSTEM\"\n  version = \"1.0.0\"\n}\n\n# provider\nterraform {\n  required_providers {\n    TYPE = {\n      source  = \"artifacts.example.com:8443/my repo/TYPE\"\n      version = \"1.0.0\"\n    }\n  }\n}",
+        "publish": "# module archive (.tar.gz or .zip)\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @module.tar.gz https://artifacts.example.com:8443/repos/my%20repo/_api/modules/NAME/SYSTEM/1.0.0\n\n# provider zip, one per platform\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @provider.zip https://artifacts.example.com:8443/repos/my%20repo/_api/providers/TYPE/1.0.0/linux/amd64"
+      },
+      {
+        "client": "OpenTofu",
+        "configure": "# terraform and tofu need HTTPS and a hostname with a dot\n# ~/.tofurc\ncredentials \"artifacts.example.com:8443\" {\n  token = \"\u003cTOKEN\u003e\"\n}\n\n# modules from this repository\nmodule \"x\" {\n  source  = \"artifacts.example.com:8443/my repo/NAME/SYSTEM\"\n  version = \"1.0.0\"\n}\n\n# provider\nterraform {\n  required_providers {\n    TYPE = {\n      source  = \"artifacts.example.com:8443/my repo/TYPE\"\n      version = \"1.0.0\"\n    }\n  }\n}",
+        "publish": "# module archive (.tar.gz or .zip)\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @module.tar.gz https://artifacts.example.com:8443/repos/my%20repo/_api/modules/NAME/SYSTEM/1.0.0\n\n# provider zip, one per platform\ncurl -X PUT -H \"Authorization: Bearer \u003cTOKEN\u003e\" --data-binary @provider.zip https://artifacts.example.com:8443/repos/my%20repo/_api/providers/TYPE/1.0.0/linux/amd64"
+      }
+    ]
   }
 ]

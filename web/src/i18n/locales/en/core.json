@@ -76,6 +76,7 @@
   "upload.hint.maven": "Upload .jar / .pom artifacts; the path encodes the coordinates.",
   "upload.hint.npm": "Upload .tgz tarballs published by `npm pack`.",
   "upload.hint.generic": "Upload package files for this repository.",
+  "upload.terraform.body": "Terraform and OpenTofu modules and providers are published with one PUT request per module version or provider platform, authenticated with an API token. The coordinates are part of the URL:",
   "pwa.updateAvailable": "New version available",
   "pwa.updateHint": "Reload to switch to it. Your current page is left untouched until you do.",
   "pwa.reload": "Reload",

@@ -12,7 +12,7 @@ Deleting an artifact, a version, a Docker tag or a whole repository does not des
 
 Everything a delete can remove, in every format, plus repositories:
 
-- Package rows of the hosted formats: Maven, Ivy, sbt, npm versions, PyPI, NuGet, Go modules, Cargo, RubyGems, Conda, Conan, Helm, raw files, Docker manifests and tags, RPM and Debian packages.
+- Package rows of the hosted formats: Maven, Ivy, sbt, npm versions, PyPI, NuGet, Go modules, Cargo, RubyGems, Conda, Conan, Terraform modules and providers, Helm, raw files, Docker manifests and tags, RPM and Debian packages.
 - Whole repositories.
 - Items removed by a [cleanup policy](../repositories/cleanup-and-quotas.md#cleanup-policies).
 
@@ -83,6 +83,8 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `rubygems_gem` | a gem version |
 | `conda_package` | a Conda package |
 | `conan_package` | one stored file of a Conan recipe or package revision |
+| `terraform_module` | a Terraform/OpenTofu module version |
+| `terraform_provider` | one platform zip of a Terraform/OpenTofu provider version |
 | `helm_chart` | a Helm chart version |
 | `raw_artifact` | a raw file |
 | `docker_manifest` | a Docker/OCI manifest (and its tags) |
@@ -221,7 +223,7 @@ What counts as a release:
 | Format | A version is a release when |
 |---|---|
 | Maven, Ivy, sbt | it is not a `-SNAPSHOT` version |
-| npm, NuGet, Cargo, Helm | it is semver without a pre-release part (`1.2.3` yes, `1.2.3-rc.1` no) |
+| npm, NuGet, Cargo, Helm, Terraform | it is semver without a pre-release part (`1.2.3` yes, `1.2.3-rc.1` no) |
 | Go | semver without a pre-release part; pseudo-versions (`v0.0.0-2026...-abcdef123456`) count as pre-releases |
 | PyPI | PEP 440 without an `a`, `b`, `rc` or `dev` segment (`1.0`, `1.0.post1` are releases; `1.0rc1`, `1.0.dev3` are not) |
 | RubyGems | the version has no letters (`1.2.3` yes, `1.2.3.pre` no) |

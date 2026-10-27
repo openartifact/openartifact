@@ -23,6 +23,18 @@
 			NULL::text, CAST(NULL AS text), NULL::text
 		FROM conan_packages co LEFT JOIN blobs b ON b.id = co.blob_id
 	UNION ALL
+	SELECT tm.repository_id, 'terraform'::text, 'modules/' || tm.name || '/' || tm.system, tm.version, tm.created_at,
+			tm.name || '-' || tm.system || '-' || tm.version || '.' || tm.archive_ext,
+			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
+			NULL::text, CAST(NULL AS text), NULL::text
+		FROM terraform_modules tm LEFT JOIN blobs b ON b.id = tm.blob_id
+	UNION ALL
+	SELECT tp.repository_id, 'terraform'::text, 'providers/' || tp.type, tp.version, tp.created_at,
+			'terraform-provider-' || tp.type || '_' || tp.version || '_' || tp.os || '_' || tp.arch || '.zip',
+			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
+			NULL::text, CAST(NULL AS text), NULL::text
+		FROM terraform_providers tp LEFT JOIN blobs b ON b.id = tp.blob_id
+	UNION ALL
 	SELECT dt.repository_id, 'docker'::text, dt.name, ''::text, dt.created_at,
 			''::text,
 			COALESCE(regexp_replace(dm.digest, '^sha256:', ''), ''),

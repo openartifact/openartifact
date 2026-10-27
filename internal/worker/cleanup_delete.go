@@ -49,8 +49,8 @@ func (w *CleanupWorker) DeletePackage(
 	guard func(DeletedPackage) error,
 	actor string,
 ) (*DeletedPackage, error) {
-	t, ok := cleanupFormatTable(repo.Format)
-	if !ok {
+	tables := cleanupFormatTables(repo.Format)
+	if len(tables) == 0 {
 		return nil, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
@@ -58,7 +58,7 @@ func (w *CleanupWorker) DeletePackage(
 		return nil, ErrPackageNotFound
 	}
 
-	rows, err := w.loadUnit(ctx, repo.ID, t, id)
+	t, rows, err := w.findUnit(ctx, repo.ID, tables, id)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +109,24 @@ func (w *CleanupWorker) DeletePackage(
 	w.refreshFormatMetadata(ctx, repo, run)
 
 	return res, nil
+}
+
+// findUnit looks id up in the tables of a format (ids are unique across them)
+// and returns the table that holds it with the rows an explicit delete removes.
+func (w *CleanupWorker) findUnit(
+	ctx context.Context,
+	repoID string,
+	tables []formatTable,
+	id string,
+) (formatTable, []cleanupCandidate, error) {
+	for _, t := range tables {
+		rows, err := w.loadUnit(ctx, repoID, t, id)
+		if err != nil || len(rows) > 0 {
+			return t, rows, err
+		}
+	}
+
+	return tables[0], nil, nil
 }
 
 // loadUnit reads the rows an explicit delete of id removes.

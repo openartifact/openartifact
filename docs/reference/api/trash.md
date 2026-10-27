@@ -23,7 +23,7 @@ Soft-deleted items of one repository. Requires the repository-scoped delete perm
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
 | `name` | path | string | yes | - |
-| `kind` | query | string | no | Only items of this kind. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
+| `kind` | query | string | no | Only items of this kind. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `page` | query | integer | no | Page number (default 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default 50, max 200). Minimum: 1. Maximum: 200. |
 
@@ -68,7 +68,7 @@ Like the admin restore, for callers with the repository-scoped delete permission
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
 | `name` | path | string | yes | - |
-| `kind` | path | string | yes | One of the TrashItem kind values. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
+| `kind` | path | string | yes | One of the TrashItem kind values. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `id` | path | string (uuid) | yes | Trash item id. |
 
 **Responses**
@@ -91,7 +91,7 @@ Every soft-deleted package and repository, newest first.
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `kind` | query | string | no | Only items of this kind. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
+| `kind` | query | string | no | Only items of this kind. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `repository` | query | string | no | Only items of the repository with this name (a repository that is itself in the trash is not matched by name; its items are hidden). |
 | `page` | query | integer | no | Page number (default 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default 50, max 200). Minimum: 1. Maximum: 200. |
@@ -114,7 +114,7 @@ Permanently removes the item before its retention window ends: frees its blobs (
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `kind` | path | string | yes | One of the TrashItem kind values. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
+| `kind` | path | string | yes | One of the TrashItem kind values. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `id` | path | string (uuid) | yes | Trash item id. |
 
 **Responses**
@@ -137,7 +137,7 @@ Brings the item back, refreshes the repository's generated metadata and emits ar
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `kind` | path | string | yes | One of the TrashItem kind values. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
+| `kind` | path | string | yes | One of the TrashItem kind values. One of: `repository`, `maven_artifact`, `ivy_artifact`, `sbt_artifact`, `terraform_module`, `terraform_provider`, `npm_version`, `pypi_package`, `nuget_package`, `go_module`, `cargo_crate`, `rubygems_gem`, `conda_package`, `conan_package`, `helm_chart`, `raw_artifact`, `docker_manifest`, `docker_tag`, `rpm_package`, `deb_package`. |
 | `id` | path | string (uuid) | yes | Trash item id. |
 
 **Responses**
