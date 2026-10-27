@@ -896,6 +896,12 @@ func TestParseUploadArgs(t *testing.T) {
 			args: []string{"--presigned", "--part-size", "1G", "files", "f.bin"},
 			want: uploadOptions{repo: "files", filePath: "f.bin", presigned: true, partSize: 1 << 30, parallel: 4},
 		},
+		{
+			name: "apk directory flags",
+			args: []string{"--branch", "v3.20", "--apk-repo", "community", "--arch", "aarch64", "repo", "f.apk"},
+			want: uploadOptions{repo: "repo", filePath: "f.apk", parallel: 4, branch: "v3.20", apkRepo: "community", arch: "aarch64"},
+		},
+		{name: "apk directory flags need an apk file", args: []string{"--branch", "v3.20", "repo", "f.bin"}, wantErr: "apply to .apk files only"},
 		{name: "multipart needs presigned", args: []string{"--multipart", "files", "f.bin"}, wantErr: "require --presigned"},
 		{name: "part size needs presigned", args: []string{"--part-size", "5M", "files", "f.bin"}, wantErr: "require --presigned"},
 		{name: "parallel needs presigned", args: []string{"--parallel", "2", "files", "f.bin"}, wantErr: "require --presigned"},

@@ -145,6 +145,7 @@ Artifact bytes are content-addressed and stored once. Promotion adds metadata ro
 | go | The module version: zip, `go.mod` and `.info`. The item may be the zip or the `go.mod` blob. |
 | conan | The whole recipe revision the file belongs to: recipe files and every binary package revision under it. The copy becomes the newest revision in the target. |
 | docker | The manifest, its config and layer references, the manifest's tags and, for an image index, every child manifest. Blobs the target already holds are not charged again. |
+| apk | The package row; the target directory's `APKINDEX.tar.gz` is regenerated and signed with the target repository's key. |
 | deb | The package, plus the distribution, component and architecture rows it needs; the Packages/Release indexes are regenerated. |
 | rpm | The package; the repository's metadata is marked stale and regenerated. Signing keys of the source repository are never copied. |
 

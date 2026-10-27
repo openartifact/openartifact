@@ -75,6 +75,7 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'conan': return ['conan', 'install', `--requires=${pkg}/${version}`, '-r', repo]
     case 'deb': return ['apt', 'install', `${pkg}=${version}`]
     case 'rpm': return ['dnf', 'install', `${pkg}-${version}`]
+    case 'apk': return ['apk', 'add', `${pkg}=${version}`]
     case 'raw': return ['curl', '-fO', `${base}/${encodePath(pkg)}`]
     default: return null // sbt and ivy emit build-file fragments, not shell
   }
@@ -145,8 +146,8 @@ describe('pullCommand (property)', () => {
     }))
   })
 
-  it('points every URL argument under the repository base URL (deb, rpm and conan commands carry none)', () => {
-    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'docker' && f !== 'deb' && f !== 'rpm' && f !== 'conan')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
+  it('points every URL argument under the repository base URL (deb, rpm, apk and conan commands carry none)', () => {
+    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'docker' && f !== 'deb' && f !== 'rpm' && f !== 'conan' && f !== 'apk')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
       const words = format === 'sbt' || format === 'ivy' ? [cmd] : shellWords(cmd)

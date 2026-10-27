@@ -1107,6 +1107,34 @@ func (m *BaseMockDB) ListCondaPackages(ctx context.Context, repoID, platform str
 func (m *BaseMockDB) ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error) {
 	return nil, errNotImpl("ListAllCondaPackages")
 }
+func (m *BaseMockDB) CreateApkPackage(ctx context.Context, p *models.ApkPackage) error {
+	return errNotImpl("CreateApkPackage")
+}
+
+func (m *BaseMockDB) GetApkPackageFile(
+	ctx context.Context,
+	repoID, branch, repo, arch, name, version string,
+) (*models.ApkPackage, error) {
+	return nil, errNotImpl("GetApkPackageFile")
+}
+func (m *BaseMockDB) ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error) {
+	return nil, errNotImpl("ListApkPackages")
+}
+func (m *BaseMockDB) DeleteApkPackage(ctx context.Context, id, repoID string) error {
+	return errNotImpl("DeleteApkPackage")
+}
+func (m *BaseMockDB) IncrementApkDownloadCount(ctx context.Context, id, repoID string) error {
+	return errNotImpl("IncrementApkDownloadCount")
+}
+func (m *BaseMockDB) GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error) {
+	return nil, errNotImpl("GetApkSigningKey")
+}
+func (m *BaseMockDB) CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.ApkSigningKey) (bool, error) {
+	return false, errNotImpl("CreateApkSigningKeyIfAbsent")
+}
+func (m *BaseMockDB) ReplaceApkSigningKey(ctx context.Context, k *models.ApkSigningKey) error {
+	return errNotImpl("ReplaceApkSigningKey")
+}
 func (m *BaseMockDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error {
 	return errNotImpl("CreateConanPackage")
 }

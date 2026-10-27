@@ -23,7 +23,7 @@ const DockerHubUpstream = "https://registry-1.docker.io"
 // pulled through the OCI distribution protocol.
 func ProxySupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems", "conda":
+	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems", "conda", "apk":
 		return true
 	}
 
@@ -41,7 +41,7 @@ func ProxySupported(format string) bool {
 // GroupMetadataWorker) and serving each package from the member that owns it.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm", "ivy", "sbt", "conan", "rubygems", "conda":
+	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm", "ivy", "sbt", "conan", "rubygems", "conda", "apk":
 		return true
 	}
 
@@ -73,12 +73,12 @@ func DefaultUpstreamURL(format string) string {
 
 // ProxyFormats lists the proxy-capable formats for error messages.
 func ProxyFormats() string {
-	return "cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt"
 }
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string {
-	return "cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt"
 }
 
 // FederationSupported reports whether hosted repositories of format can be

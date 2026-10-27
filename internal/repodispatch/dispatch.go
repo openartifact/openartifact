@@ -98,6 +98,17 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 				return
 			}
 
+			// A hosted apk repository serves a mirror tree of free-form paths
+			// (<branch>/<repo>/<arch>/<file>) that no route of the shared
+			// /repos/{name} router can express without shadowing the other
+			// formats, so it is served here by the format's own router.
+			if repo != nil && repo.Format == "apk" {
+				_, tail := middleware.RepoAndPath(r.URL.Path)
+				d.serveMember(w, r, repo, strings.TrimPrefix(tail, "/"))
+
+				return
+			}
+
 			next.ServeHTTP(w, r)
 
 			return

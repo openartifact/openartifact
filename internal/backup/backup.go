@@ -162,6 +162,7 @@ type Engine struct {
 type Regenerator interface {
 	NotifyDebStale(repoID string)
 	NotifyRPMStale(repoID string)
+	NotifyApkStale(repoID string)
 	NotifyMavenStale(repoID, groupID, artifactID string)
 }
 
@@ -444,6 +445,7 @@ type packageExport struct {
 	cargoCrates     []*models.CargoCrate
 	rubyGems        []*models.RubyGem
 	conanPackages   []*models.ConanPackage
+	apkPackages     []*models.ApkPackage
 	ivyArtifacts    []*models.IvyArtifact
 	sbtArtifacts    []*models.SBTArtifact
 	rawArtifacts    []*models.RawArtifact
@@ -544,6 +546,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"cargo_crates", pkg.cargoCrates, len(pkg.cargoCrates)},
 		{"rubygems", pkg.rubyGems, len(pkg.rubyGems)},
 		{"conan_packages", pkg.conanPackages, len(pkg.conanPackages)},
+		{"apk_packages", pkg.apkPackages, len(pkg.apkPackages)},
 		{"ivy_artifacts", pkg.ivyArtifacts, len(pkg.ivyArtifacts)},
 		{"sbt_artifacts", pkg.sbtArtifacts, len(pkg.sbtArtifacts)},
 		{"raw_artifacts", pkg.rawArtifacts, len(pkg.rawArtifacts)},
@@ -680,6 +683,9 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 	case "conan":
 		v, err := e.db.ListConanPackages(ctx, id)
 		collectRepoList(pkg, &pkg.conanPackages, "conan packages", id, v, err)
+	case "apk":
+		v, err := e.db.ListApkPackages(ctx, id)
+		collectRepoList(pkg, &pkg.apkPackages, "apk packages", id, v, err)
 	case "ivy":
 		v, err := e.db.ListIvyArtifacts(ctx, id)
 		collectRepoList(pkg, &pkg.ivyArtifacts, "ivy artifacts", id, v, err)
@@ -1329,6 +1335,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.ConanPackage) string { return c.RepositoryID },
 			func(c *models.ConanPackage, id string) { c.RepositoryID = id },
 			false, e.db.CreateConanPackage)
+	case "apk_packages.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "apk package",
+			func(c *models.ApkPackage) string { return c.RepositoryID },
+			func(c *models.ApkPackage, id string) { c.RepositoryID = id },
+			false, e.db.CreateApkPackage)
 	case "ivy_artifacts.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "ivy artifact",
 			func(c *models.IvyArtifact) string { return c.RepositoryID },
@@ -1688,6 +1699,10 @@ func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreStat
 		case "deb":
 			if e.regen != nil {
 				e.regen.NotifyDebStale(repo.ID)
+			}
+		case "apk":
+			if e.regen != nil {
+				e.regen.NotifyApkStale(repo.ID)
 			}
 		case "maven":
 			e.regenerateRestoredMaven(ctx, repo)

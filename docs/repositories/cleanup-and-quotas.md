@@ -14,7 +14,7 @@ A background worker checks every minute which enabled policies are due (their cr
 
 ### Supported formats
 
-Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, maven, ivy, sbt, cargo, rubygems, conda, conan, raw and docker. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
+Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, maven, ivy, sbt, cargo, rubygems, conda, conan, apk, raw and docker. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
 
 | Format | What is ranked and removed | After a run |
 |---|---|---|
@@ -23,6 +23,7 @@ Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, m
 | maven | Releases are ranked per `groupId:artifactId`; the timestamped builds of each `-SNAPSHOT` version are ranked against each other. The **newest build of a snapshot is always kept**, so `-SNAPSHOT` keeps resolving. All files of a version (jar, pom, checksums, classifiers) count as one version. | `maven-metadata.xml` of the artifact (and of its snapshot versions) is regenerated. |
 | ivy, sbt | Revisions per `organisation:module` (sbt: per group, artifact and Scala version). | Indexes are computed live. |
 | cargo | Versions per crate. Cleanup **deletes** a version (to hide a version without deleting it, [yank](../formats/cargo.md) it instead). | The sparse index is computed live. |
+| apk | Versions per package within one branch, repository and architecture directory. | The `APKINDEX.tar.gz` of the directory is regenerated. |
 | rubygems | Versions per gem and platform. | Specs and the compact index are computed live. |
 | conda | Builds per package and platform (`version-build_string`); the `.tar.bz2` and `.conda` files of one build count together. | `repodata.json` is computed live. |
 | conan | Recipe versions (`version@user/channel`) per package; all revisions of a version count together. | Computed live. |
@@ -132,12 +133,13 @@ Usage is the sum, over the repository's packages, of each package's blob size, p
 
 ### What counts
 
-Quotas are enforced on the upload paths of every **hosted** format: Maven (and Ivy and sbt), npm, Debian, RPM, Helm, RubyGems, PyPI, Cargo, Go, NuGet, Conda, Conan, raw and Docker. The unit is one stored row and the size of its blob:
+Quotas are enforced on the upload paths of every **hosted** format: Maven (and Ivy and sbt), npm, Debian, RPM, Helm, RubyGems, PyPI, Cargo, Go, NuGet, Conda, Conan, Alpine (apk), raw and Docker. The unit is one stored row and the size of its blob:
 
 | Format | Counted as |
 |---|---|
 | Maven, Ivy, sbt, npm, deb, rpm, Helm, RubyGems, PyPI, Cargo, NuGet, Conda, raw | one artifact per file/version row, with its file size. Replacing a raw file, a Maven snapshot or a Conan file releases the previous content. |
 | Conan | one artifact per stored file (recipe files and package files each count). |
+| Alpine (apk) | one artifact per `.apk` file, with its file size. |
 | Go | one artifact per module version, with the size of its zip plus its `go.mod`. |
 | Docker | the bytes of every blob (layer or config) the repository holds, **without** an artifact slot, plus one artifact with the manifest's size per manifest. An image with many layers is therefore one artifact, and a layer shared by several images of the repository, or pushed or mounted again into it, counts once. A blob mounted from another repository counts in the destination repository. Tags are free. |
 

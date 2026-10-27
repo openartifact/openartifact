@@ -220,6 +220,18 @@ func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, 
 	return "sbt_artifacts", a.ID
 }
 
+func (e *importEnv) createApk(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	a := &models.ApkPackage{RepositoryID: repo, Branch: "v3.20", Repo: "main", Arch: "x86_64", PkgArch: "x86_64", Name: "musl",
+		Version: "1.2.5-r0", Checksum: "Q1x", DataHash: "dh", BlobKey: e.uniq("k"), BlobSHA256: e.uniq("sha"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreateApkPackage(e.ctx, a); err != nil {
+		t.Fatal(err)
+	}
+
+	return "apk_packages", a.ID
+}
+
 func TestImportCreatedAt(t *testing.T) {
 	e := &importEnv{pg: newQuotaTestDB(t, 8), ctx: context.Background()}
 	origin := time.Date(2019, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -236,6 +248,7 @@ func TestImportCreatedAt(t *testing.T) {
 		"conan":    e.createConan,
 		"ivy":      e.createIvy,
 		"sbt":      e.createSbt,
+		"apk":      e.createApk,
 	}
 
 	for format, create := range formats {

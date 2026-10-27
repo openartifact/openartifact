@@ -477,6 +477,24 @@ type Database interface {
 	YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error
 	IncrementCargoDownloadCount(ctx context.Context, repoID, name, version string) error
 
+	// Alpine (apk) methods (docs/formats/apk.md).
+	//
+	// CreateApkPackage stores one .apk; a live row with the same coordinates is
+	// a unique violation (IsUniqueViolation). The Get methods return (nil, nil)
+	// when there is none.
+	CreateApkPackage(ctx context.Context, p *models.ApkPackage) error
+	GetApkPackageFile(ctx context.Context, repoID, branch, repo, arch, name, version string) (*models.ApkPackage, error)
+	// ListApkPackages returns every live package of a repository ordered by
+	// branch, repo, arch, name and version.
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
+	DeleteApkPackage(ctx context.Context, id, repoID string) error
+	IncrementApkDownloadCount(ctx context.Context, id, repoID string) error
+	GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error)
+	// CreateApkSigningKeyIfAbsent reports whether the key was stored (false: the
+	// repository already has one).
+	CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.ApkSigningKey) (bool, error)
+	ReplaceApkSigningKey(ctx context.Context, k *models.ApkSigningKey) error
+
 	// RubyGems methods
 	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
 	GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error)

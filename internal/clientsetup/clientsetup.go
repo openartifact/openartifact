@@ -138,6 +138,8 @@ func builderFor(format string) func(target) []Snippet {
 		return condaSnippets
 	case "conan":
 		return conanSnippets
+	case "apk":
+		return apkSnippets
 	case "sbt":
 		return sbtSnippets
 	case "ivy":
@@ -252,6 +254,31 @@ func rpmSnippets(c target) []Snippet {
 				c.origin, c.esc),
 		},
 	}
+}
+
+func apkSnippets(c target) []Snippet {
+	authBase := c.base
+	if i := strings.Index(c.base, "://"); i >= 0 {
+		authBase = c.base[:i+3] + "<USERNAME>:<TOKEN>@" + c.base[i+3:]
+	}
+
+	return []Snippet{{
+		Client: "apk",
+		Configure: fmt.Sprintf(
+			"# private repository: put the credentials in the URL, %[3]s/v3.20/main, "+
+				"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
+				"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
+				"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
+			c.base, c.repo, authBase,
+		),
+		Publish: fmt.Sprintf(
+			"curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer <TOKEN>\" %[1]s/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n"+
+				"# or through the REST API\n"+
+				"curl -H \"Authorization: Bearer <TOKEN>\" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main "+
+				"%[2]s/api/v1/repositories/%[3]s/apks",
+			c.base, c.origin, c.esc,
+		),
+	}}
 }
 
 func cargoSnippets(c target) []Snippet {

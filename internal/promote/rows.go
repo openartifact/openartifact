@@ -43,6 +43,9 @@ type rowSpec struct {
 	// licenses is an optional SQL expression over s yielding text[] with the
 	// licenses the row declares, for the destination's license policy.
 	licenses string
+	// regen is the generated metadata a copy makes stale, "" for formats whose
+	// indexes are computed live from the table.
+	regen RegenKind
 }
 
 // rowPromoter promotes the rows of one rowSpec.
@@ -111,6 +114,10 @@ func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 		res.Usage.Bytes += c.size
 		res.Usage.Artifacts++
 		res.Licenses = append(res.Licenses, c.licenses...)
+	}
+
+	if p.spec.regen != "" && len(res.Copied) > 0 {
+		res.Regen = append(res.Regen, Regen{Kind: p.spec.regen, RepoID: req.Dst.ID})
 	}
 
 	return res, nil

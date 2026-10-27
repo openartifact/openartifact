@@ -78,6 +78,7 @@ var Tables = []Table{
 	{Name: "rubygems_gems", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "conda_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "conan_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
+	{Name: "apk_packages", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "helm_charts", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "raw_artifacts", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "docker_blobs", Key: idKey(), Exclude: []string{"last_used_at"}, BlobRefs: []string{"blob_id"}},
@@ -95,6 +96,7 @@ var Tables = []Table{
 //
 //nolint:gochecknoglobals // compiled-in allowlist, immutable after init
 var NotJournaled = map[string]string{
+	"apk_signing_keys":  "holds the encrypted private key of the repository index; a secret outside the journal",
 	"audit_logs":        "audit trail; kept by database backups",
 	"bundle_promotions": "release bundle history; operational data covered by database backups",
 	"cleanup_policies": "operator policy configuration; recreated with `oa apply` or restored from a database " +

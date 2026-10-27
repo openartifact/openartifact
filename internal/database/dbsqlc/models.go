@@ -27,6 +27,54 @@ type AiResult struct {
 	ArtifactVersion       string          `db:"artifact_version" json:"artifact_version"`
 }
 
+// Alpine packages: one .apk per branch/repo/arch/name/version.
+type ApkPackage struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Branch       string `db:"branch" json:"branch"`
+	Repo         string `db:"repo" json:"repo"`
+	// Architecture directory of the mirror tree.
+	Arch string `db:"arch" json:"arch"`
+	// Architecture of the package itself (PKGINFO arch, APKINDEX A:); noarch inside an x86_64 directory.
+	PkgArch string `db:"pkg_arch" json:"pkg_arch"`
+	Name    string `db:"name" json:"name"`
+	Version string `db:"version" json:"version"`
+	// APKINDEX C: value: Q1 + base64 of the SHA-1 of the control segment.
+	Checksum string `db:"checksum" json:"checksum"`
+	// Lowercase hex SHA-256 of the data segment (PKGINFO datahash).
+	DataSha256       string     `db:"data_sha256" json:"data_sha256"`
+	Description      string     `db:"description" json:"description"`
+	Url              string     `db:"url" json:"url"`
+	License          string     `db:"license" json:"license"`
+	Origin           string     `db:"origin" json:"origin"`
+	Maintainer       string     `db:"maintainer" json:"maintainer"`
+	Commit           string     `db:"commit" json:"commit"`
+	BuildTime        int64      `db:"build_time" json:"build_time"`
+	InstalledSize    int64      `db:"installed_size" json:"installed_size"`
+	Depends          []string   `db:"depends" json:"depends"`
+	Provides         []string   `db:"provides" json:"provides"`
+	InstallIf        []string   `db:"install_if" json:"install_if"`
+	ProviderPriority int32      `db:"provider_priority" json:"provider_priority"`
+	DownloadCount    int64      `db:"download_count" json:"download_count"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID           string     `db:"blob_id" json:"blob_id"`
+	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy        *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// Alpine repository index signing keys; private_key is sealed with internal/crypto.
+type ApkSigningKey struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	KeyName      string    `db:"key_name" json:"key_name"`
+	Fingerprint  string    `db:"fingerprint" json:"fingerprint"`
+	PublicKey    string    `db:"public_key" json:"public_key"`
+	PrivateKey   []byte    `db:"private_key" json:"private_key"`
+	CreatedBy    string    `db:"created_by" json:"created_by"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Custom key-value metadata for artifacts
 type ArtifactProperty struct {
 	ID           string    `db:"id" json:"id"`
@@ -1086,7 +1134,7 @@ type ReleaseBundleItem struct {
 type Repository struct {
 	ID   string `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
-	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt. Constrained by chk_repo_format.
+	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, apk. Constrained by chk_repo_format.
 	Format      string    `db:"format" json:"format"`
 	Description *string   `db:"description" json:"description"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`

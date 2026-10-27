@@ -190,7 +190,7 @@ One shared hook covers the binary download of every format. Only blobs are redir
 
 | Redirected | Always streamed |
 |---|---|
-| Maven jars, poms and other artifacts; npm tarballs; PyPI files; raw files; Helm charts; OCI/Docker layers and configs; deb `pool/*.deb` and rpm `*.rpm` files; cargo crates; NuGet nupkg; Go module zips; RubyGems gems; conda, conan, ivy and sbt artifacts | `maven-metadata.xml`, checksum and `.asc` files; Docker manifests; deb `Packages`, `Release`, `InRelease`; rpm `repodata`; any other index or metadata response |
+| Maven jars, poms and other artifacts; npm tarballs; PyPI files; raw files; Helm charts; OCI/Docker layers and configs; deb `pool/*.deb` and rpm `*.rpm` files; cargo crates; NuGet nupkg; Go module zips; RubyGems gems; conda, conan, apk, ivy and sbt artifacts | `maven-metadata.xml`, checksum and `.asc` files; Docker manifests; deb `Packages`, `Release`, `InRelease`; rpm `repodata`; any other index or metadata response |
 
 Further rules:
 

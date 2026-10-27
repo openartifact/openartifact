@@ -91,6 +91,8 @@ export function pullCommand(
       return `apt install ${q(`${pkg}=${version}`)}`
     case 'rpm':
       return `dnf install ${q(`${pkg}-${version}`)}`
+    case 'apk':
+      return `apk add ${q(`${pkg}=${version}`)}`
     case 'raw':
       return `curl -fO ${q(`${base}/${encodePath(pkg)}`)}`
     case 'sbt':
@@ -197,6 +199,22 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
           publish: `curl -u <USERNAME>:<TOKEN> -F file=@my-package-1.0.x86_64.rpm ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/packages`,
         },
       ]
+    case 'apk': {
+      const keyFile = `/etc/apk/keys/openartifact-${repo}.rsa.pub`
+      const authBase = base.replace(/^(https?:\/\/)/, '$1<USERNAME>:<TOKEN>@')
+      return [
+        {
+          client: 'apk',
+          configure:
+            `# private repository: put the credentials in the URL, ${authBase}/v3.20/main, and fetch the key with wget --user <USERNAME> --password <TOKEN>\n` +
+            `wget -O ${keyFile} ${base}/public.key\n` +
+            `echo "${base}/v3.20/main" >> /etc/apk/repositories\napk update\napk add PACKAGE`,
+          publish:
+            `curl -T my-pkg-1.0-r0.apk -H "Authorization: Bearer <TOKEN>" ${base}/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n` +
+            `# or through the REST API\ncurl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/apks`,
+        },
+      ]
+    }
     case 'cargo':
       return [
         {

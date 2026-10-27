@@ -108,6 +108,35 @@ describe('pullCommand quoting', () => {
   })
 })
 
+describe('apk', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('serves from /repos/REPO, not isolated', () => {
+    expect(repoBaseUrl('apk', origin, 'my repo')).toBe('https://oa.example:8443/repos/my%20repo')
+  })
+
+  it('pins the version with = and quotes hostile names', () => {
+    expect(pullCommand('apk', origin, 'r1', 'curl', '8.5.0-r0')).toBe('apk add curl=8.5.0-r0')
+    expect(pullCommand('apk', origin, 'r1', 'a$(id)', '1')).toBe("apk add 'a$(id)=1'")
+  })
+
+  it('fetches the key, adds the mirror line and publishes with a bearer token', () => {
+    const [apk, ...rest] = clientSetup('apk', origin, 'r1')
+    expect(rest).toHaveLength(0)
+    expect(apk!.client).toBe('apk')
+    expect(apk!.configure).toContain('wget -O /etc/apk/keys/openartifact-r1.rsa.pub https://oa.example:8443/repos/r1/public.key')
+    expect(apk!.configure).toContain('echo "https://oa.example:8443/repos/r1/v3.20/main" >> /etc/apk/repositories')
+    expect(apk!.configure).toContain('https://<USERNAME>:<TOKEN>@oa.example:8443/repos/r1/v3.20/main')
+    expect(apk!.configure).toContain('apk update\napk add PACKAGE')
+    expect(apk!.publish).toContain(
+      'curl -T my-pkg-1.0-r0.apk -H "Authorization: Bearer <TOKEN>" https://oa.example:8443/repos/r1/v3.20/main/x86_64/my-pkg-1.0-r0.apk',
+    )
+    expect(apk!.publish).toContain(
+      'curl -H "Authorization: Bearer <TOKEN>" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://oa.example:8443/api/v1/repositories/r1/apks',
+    )
+  })
+})
+
 describe('clientSetup', () => {
   const origin = 'http://oa.example:8080'
 

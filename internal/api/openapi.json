@@ -620,7 +620,8 @@
               "conda",
               "conan",
               "ivy",
-              "sbt"
+              "sbt",
+              "apk"
             ],
             "description": "Package format"
           },
@@ -5107,6 +5108,7 @@
               "maven_artifact",
               "ivy_artifact",
               "sbt_artifact",
+              "apk_package",
               "npm_version",
               "pypi_package",
               "nuget_package",
@@ -5374,6 +5376,76 @@
           "name": { "type": "string" }
         },
         "required": ["name"]
+      },
+      "ApkSigningKey": {
+        "type": "object",
+        "properties": {
+          "key_name": {
+            "type": "string",
+            "description": "File name of the public key in /etc/apk/keys"
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "Hex SHA-256 of the DER encoded public key"
+          },
+          "public_key": {
+            "type": "string",
+            "description": "PEM public key"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "key_name",
+          "fingerprint",
+          "public_key",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ApkUploadResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "arch": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        }
       },
       "PackageUploadResult": {
         "type": "object",
@@ -6517,7 +6589,8 @@
                 "conda",
                 "conan",
                 "ivy",
-                "sbt"
+                "sbt",
+                "apk"
               ]
             }
           },
@@ -6664,7 +6737,8 @@
                       "conda",
                       "conan",
                       "ivy",
-                      "sbt"
+                      "sbt",
+                      "apk"
                     ]
                   },
                   "description": {
@@ -20547,6 +20621,7 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "apk_package",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20638,6 +20713,7 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "apk_package",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20733,6 +20809,7 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "apk_package",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20829,6 +20906,7 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "apk_package",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -20968,6 +21046,7 @@
                 "maven_artifact",
                 "ivy_artifact",
                 "sbt_artifact",
+                "apk_package",
                 "npm_version",
                 "pypi_package",
                 "nuget_package",
@@ -21352,6 +21431,252 @@
           "404": { "description": "Repository or token not found" },
           "409": {
             "description": "Conflict with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/apks": {
+      "post": {
+        "summary": "Upload an Alpine apk package",
+        "description": "Upload a .apk into a hosted apk repository (multipart/form-data). The package is stored under <branch>/<repo>/<arch>, where arch is the package architecture (required in the request only for noarch packages). Requires write access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .apk package"
+                  },
+                  "branch": {
+                    "type": "string",
+                    "description": "Target branch directory, for example v3.20 (default edge)"
+                  },
+                  "repo": {
+                    "type": "string",
+                    "description": "Target repository directory, for example main (default main)"
+                  },
+                  "arch": {
+                    "type": "string",
+                    "description": "Target architecture directory; required for noarch packages, otherwise it must equal the package architecture"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApkUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid package, invalid input or wrong repository format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Package already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/apk-key": {
+      "get": {
+        "summary": "Get the apk signing key",
+        "description": "Returns the public half of the key that signs the APKINDEX of a hosted or group apk repository, generating the key on first use. Requires the global manage permission.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The signing key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApkSigningKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The repository is not a hosted or group apk repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Replace the apk signing key",
+        "description": "Generates a new signing key (empty body) or imports the given RSA private key, and re-signs the repository's indexes. Clients must install the new public key. Requires the global manage permission.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "private_key": {
+                    "type": "string",
+                    "description": "PEM private key (PKCS#8 or the PKCS#1 form abuild-keygen writes), at least 2048 bits; omit to generate a new key"
+                  },
+                  "key_name": {
+                    "type": "string",
+                    "description": "File name of the public key, ending in .rsa.pub; only with private_key (default openartifact-<repository>.rsa.pub)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new signing key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApkSigningKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key or the repository is not a hosted or group apk repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)",
             "content": {
               "application/json": {
                 "schema": {

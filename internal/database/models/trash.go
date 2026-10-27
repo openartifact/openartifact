@@ -26,6 +26,7 @@ const (
 	TrashKindRubyGems       TrashKind = "rubygems_gem"
 	TrashKindConda          TrashKind = "conda_package"
 	TrashKindConan          TrashKind = "conan_package"
+	TrashKindApk            TrashKind = "apk_package"
 	TrashKindHelm           TrashKind = "helm_chart"
 	TrashKindRaw            TrashKind = "raw_artifact"
 	TrashKindDockerManifest TrashKind = "docker_manifest"

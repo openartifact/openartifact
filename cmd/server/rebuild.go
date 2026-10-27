@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
@@ -209,6 +210,7 @@ func executeRebuild(ctx context.Context, cfg *config.Config, f *rebuildFlags, lo
 type rebuildWorkers struct {
 	rpm   *worker.RPMetadataWorker
 	deb   *worker.DebMetadataWorker
+	apk   *worker.ApkMetadataWorker
 	maven *worker.MavenMetadataWorker
 	npm   *worker.NPMMetadataWorker
 	once  sync.Once
@@ -234,6 +236,10 @@ func newRebuildWorkers(db *database.PostgresDB, cfg *config.Config, log *logger.
 			WithMetrics(reg).
 			WithRegenLimiter(limiter).
 			WithDrainTimeout(rebuildRegenDrain),
+		apk: worker.NewApkMetadataWorker(db, blobs, apkkeys.New(db, log), log).
+			WithMetrics(reg).
+			WithRegenLimiter(limiter).
+			WithDrainTimeout(rebuildRegenDrain),
 		maven: worker.NewMavenMetadataWorker(db, blobs, db.GetDB(), log, reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 		npm:   worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 	}
@@ -248,7 +254,7 @@ func (w *rebuildWorkers) stop() {
 
 		var wg sync.WaitGroup
 
-		for _, stop := range []func(){w.rpm.Stop, w.deb.Stop, w.maven.Stop, w.npm.Stop} {
+		for _, stop := range []func(){w.rpm.Stop, w.deb.Stop, w.apk.Stop, w.maven.Stop, w.npm.Stop} {
 			wg.Go(stop)
 		}
 
@@ -299,6 +305,8 @@ func (w *rebuildWorkers) notifyRepo(ctx context.Context, db *database.PostgresDB
 		w.rpm.NotifyStale(id)
 	case "deb":
 		w.deb.NotifyStale(id)
+	case "apk":
+		w.apk.NotifyStale(id)
 	case "maven":
 		rows, err := db.GetDB().QueryContext(ctx,
 			`SELECT DISTINCT group_id, artifact_id_coord FROM maven_artifacts WHERE repository_id = $1 AND deleted_at IS NULL`, id)

@@ -93,6 +93,8 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{http.MethodGet, "/api/v1/repositories/app/packages/123/download", routeScope{action: "read", repoName: "app"}, "download"},
 		{http.MethodPost, "/api/v1/repositories/app/packages", routeScope{action: "write", repoName: "app"}, "rpm upload"},
 		{http.MethodPost, "/api/v1/repositories/app/debs", routeScope{action: "write", repoName: "app"}, "deb upload"},
+		{http.MethodPost, "/api/v1/repositories/app/apks", routeScope{action: "write", repoName: "app"}, "apk upload"},
+		{http.MethodGet, "/api/v1/repositories/app/apk-key", routeScope{action: "manage"}, "apk signing key stays administrative"},
 		{http.MethodPut, "/api/v1/repositories/app/comps", routeScope{action: "write", repoName: "app"}, "comps upload"},
 		{http.MethodPost, "/api/v1/repositories/app/uploads", routeScope{action: "write", repoName: "app"}, "presigned upload init"},
 		{

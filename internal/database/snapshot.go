@@ -116,6 +116,7 @@ type SnapshotReader interface {
 	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
 	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)
 	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
 	ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error)
 	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)
 	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)

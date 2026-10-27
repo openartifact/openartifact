@@ -206,7 +206,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
+    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'apk';
     /**
      * Repository description
      */
@@ -2349,7 +2349,7 @@ export type TrashItem = {
      * Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item.
      */
     id: string;
-    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
     repository_id: string;
     /**
      * Name of the owning repository (the trashed repository itself for kind repository).
@@ -2595,6 +2595,37 @@ export type UpdateFederationPeerRequest = {
 
 export type CreateFederationTokenRequest = {
     name: string;
+};
+
+export type ApkSigningKey = {
+    /**
+     * File name of the public key in /etc/apk/keys
+     */
+    key_name: string;
+    /**
+     * Hex SHA-256 of the DER encoded public key
+     */
+    fingerprint: string;
+    /**
+     * PEM public key
+     */
+    public_key: string;
+    created_at: string;
+    updated_at: string;
+};
+
+export type ApkUploadResult = {
+    success?: boolean;
+    data?: {
+        id?: string;
+        name?: string;
+        version?: string;
+        branch?: string;
+        repo?: string;
+        arch?: string;
+        sha256?: string;
+        size?: number;
+    };
 };
 
 export type PackageUploadResult = {
@@ -3340,7 +3371,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
+        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'apk';
         /**
          * Page number (default: 1)
          */
@@ -3414,7 +3445,7 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 alphanumeric/hyphen/underscore)
          */
         name: string;
-        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
+        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'apk';
         description?: string;
         public?: boolean;
         /**
@@ -11844,7 +11875,7 @@ export type GetApiV1TrashData = {
         /**
          * Only items of this kind.
          */
-        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Only items of the repository with this name (a repository that is itself in the trash is not matched by name; its items are hidden).
          */
@@ -11889,7 +11920,7 @@ export type PostApiV1TrashByKindByIdRestoreData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Trash item id.
          */
@@ -11935,7 +11966,7 @@ export type DeleteApiV1TrashByKindByIdData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Trash item id.
          */
@@ -12019,7 +12050,7 @@ export type GetApiV1RepositoriesByNameTrashData = {
         /**
          * Only items of this kind.
          */
-        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Page number (default 1).
          */
@@ -12065,7 +12096,7 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Trash item id.
          */
@@ -12471,6 +12502,150 @@ export type DeleteApiV1RepositoriesByNameFederationTokensByIdResponses = {
 };
 
 export type DeleteApiV1RepositoriesByNameFederationTokensByIdResponse = DeleteApiV1RepositoriesByNameFederationTokensByIdResponses[keyof DeleteApiV1RepositoriesByNameFederationTokensByIdResponses];
+
+export type PostApiV1RepositoriesByNameApksData = {
+    body: {
+        /**
+         * The .apk package
+         */
+        file: Blob | File;
+        /**
+         * Target branch directory, for example v3.20 (default edge)
+         */
+        branch?: string;
+        /**
+         * Target repository directory, for example main (default main)
+         */
+        repo?: string;
+        /**
+         * Target architecture directory; required for noarch packages, otherwise it must equal the package architecture
+         */
+        arch?: string;
+    };
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/apks';
+};
+
+export type PostApiV1RepositoriesByNameApksErrors = {
+    /**
+     * Invalid package, invalid input or wrong repository format
+     */
+    400: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * Package already exists
+     */
+    409: Error;
+    /**
+     * File too large
+     */
+    413: Error;
+};
+
+export type PostApiV1RepositoriesByNameApksError = PostApiV1RepositoriesByNameApksErrors[keyof PostApiV1RepositoriesByNameApksErrors];
+
+export type PostApiV1RepositoriesByNameApksResponses = {
+    /**
+     * Package stored
+     */
+    200: ApkUploadResult;
+};
+
+export type PostApiV1RepositoriesByNameApksResponse = PostApiV1RepositoriesByNameApksResponses[keyof PostApiV1RepositoriesByNameApksResponses];
+
+export type GetApiV1RepositoriesByNameApkKeyData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/apk-key';
+};
+
+export type GetApiV1RepositoriesByNameApkKeyErrors = {
+    /**
+     * The repository is not a hosted or group apk repository
+     */
+    400: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)
+     */
+    409: Error;
+};
+
+export type GetApiV1RepositoriesByNameApkKeyError = GetApiV1RepositoriesByNameApkKeyErrors[keyof GetApiV1RepositoriesByNameApkKeyErrors];
+
+export type GetApiV1RepositoriesByNameApkKeyResponses = {
+    /**
+     * The signing key
+     */
+    200: ApkSigningKey;
+};
+
+export type GetApiV1RepositoriesByNameApkKeyResponse = GetApiV1RepositoriesByNameApkKeyResponses[keyof GetApiV1RepositoriesByNameApkKeyResponses];
+
+export type PostApiV1RepositoriesByNameApkKeyData = {
+    body?: {
+        /**
+         * PEM private key (PKCS#8 or the PKCS#1 form abuild-keygen writes), at least 2048 bits; omit to generate a new key
+         */
+        private_key?: string;
+        /**
+         * File name of the public key, ending in .rsa.pub; only with private_key (default openartifact-<repository>.rsa.pub)
+         */
+        key_name?: string;
+    };
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/apk-key';
+};
+
+export type PostApiV1RepositoriesByNameApkKeyErrors = {
+    /**
+     * Invalid key or the repository is not a hosted or group apk repository
+     */
+    400: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)
+     */
+    409: Error;
+};
+
+export type PostApiV1RepositoriesByNameApkKeyError = PostApiV1RepositoriesByNameApkKeyErrors[keyof PostApiV1RepositoriesByNameApkKeyErrors];
+
+export type PostApiV1RepositoriesByNameApkKeyResponses = {
+    /**
+     * The new signing key
+     */
+    200: ApkSigningKey;
+};
+
+export type PostApiV1RepositoriesByNameApkKeyResponse = PostApiV1RepositoriesByNameApkKeyResponses[keyof PostApiV1RepositoriesByNameApkKeyResponses];
 
 export type PostApiV1RepositoriesByNameDebsData = {
     body: {

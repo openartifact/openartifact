@@ -753,6 +753,12 @@ var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built o
 	{"conda_packages t", "t.repository_id", "t.blob_id = b.id", "t.platform || '/' || t.name || '-' || t.version || '-' || t.build_string"},
 	{"conan_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
 	{
+		"apk_packages t",
+		"t.repository_id",
+		"t.blob_id = b.id",
+		"t.branch || '/' || t.repo || '/' || t.arch || '/' || t.name || '-' || t.version",
+	},
+	{
 		"ivy_artifacts t",
 		"t.repository_id",
 		"t.blob_id = b.id",

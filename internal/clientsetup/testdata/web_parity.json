@@ -440,5 +440,31 @@
         "publish": "\u003civy:publish resolver=\"my repo\" pubrevision=\"1.0\" overwrite=\"true\"\u003e\n  \u003cartifacts pattern=\"dist/[artifact]-[revision].[ext]\"/\u003e\n\u003c/ivy:publish\u003e"
       }
     ]
+  },
+  {
+    "format": "apk",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-repo1.rsa.pub https://artifacts.example.com:8443/repos/repo1/public.key\necho \"https://artifacts.example.com:8443/repos/repo1/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE",
+        "publish": "curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer \u003cTOKEN\u003e\" https://artifacts.example.com:8443/repos/repo1/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n# or through the REST API\ncurl -H \"Authorization: Bearer \u003cTOKEN\u003e\" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://artifacts.example.com:8443/api/v1/repositories/repo1/apks"
+      }
+    ]
+  },
+  {
+    "format": "apk",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-my repo.rsa.pub https://artifacts.example.com:8443/repos/my%20repo/public.key\necho \"https://artifacts.example.com:8443/repos/my%20repo/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE",
+        "publish": "curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer \u003cTOKEN\u003e\" https://artifacts.example.com:8443/repos/my%20repo/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n# or through the REST API\ncurl -H \"Authorization: Bearer \u003cTOKEN\u003e\" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://artifacts.example.com:8443/api/v1/repositories/my%20repo/apks"
+      }
+    ]
   }
 ]

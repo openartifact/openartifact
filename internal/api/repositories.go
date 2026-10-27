@@ -63,6 +63,7 @@ var validFormats = map[string]bool{
 	"conda":    true,
 	"conan":    true,
 	"ivy":      true,
+	"apk":      true,
 	"sbt":      true,
 }
 
