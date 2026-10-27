@@ -88,7 +88,7 @@ jobs:
     needs: batch
     if: ${{ !cancelled() }} # a crash found by the batch run must not skip pruning
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
       contents: read
       actions: read
@@ -123,7 +123,11 @@ jobs:
         with:
           language: go
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          fuzz-seconds: 1200
+          # Not a run time: it is split among the targets (minus the time each
+          # one took) and caps the merge of one target's corpus. 1200 s left
+          # ~11 s per target by the 90th of 141 and the merge of
+          # internal_format_conan_FuzzGlobRegexp timed out and failed the job.
+          fuzz-seconds: 3600
           mode: prune
           sanitizer: address
           storage-repo: https://x-access-token:${{ secrets.FUZZ_STORAGE_TOKEN }}@github.com/openartifact/openartifact-fuzz-storage.git
