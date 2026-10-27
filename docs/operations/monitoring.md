@@ -278,7 +278,7 @@ OTELCOL_EXPORT_AUTHORIZATION=Bearer <token>
 docker compose -f docker/docker-compose.yml --env-file docker/.env --profile otel-collector up -d
 ```
 
-The per-signal variables (`OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OPENARTIFACT_OTLP_AUDIT`) and `OTEL_EXPORTER_OTLP_ENDPOINT` are passed through from `docker/.env` as well. Outside compose, run the same configuration with `otelcol-contrib --config docker/otel-collector.yaml` on the host or as a sidecar.
+The per-signal variables (`OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OPENARTIFACT_OTLP_AUDIT`) and `OTEL_EXPORTER_OTLP_ENDPOINT` are passed through from `docker/.env` as well; the per-signal ones and `OPENARTIFACT_OTLP_ENABLED` only when set there, so they never override a mounted config file. Outside compose, run the same configuration with `otelcol-contrib --config docker/otel-collector.yaml` on the host or as a sidecar.
 
 ## Audit log
 

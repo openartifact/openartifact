@@ -91,14 +91,15 @@ services:
       LOG_LEVEL: info
       LOG_FORMAT: json
       # OpenTelemetry, off by default. The default endpoint is the Collector of
-      # the otel-collector profile. Set in docker/.env; see
-      # docs/operations/monitoring.md.
-      OPENARTIFACT_OTLP_ENABLED: ${OPENARTIFACT_OTLP_ENABLED:-false}
+      # the otel-collector profile. The switches have no value here, so they
+      # reach the server only when set in docker/.env and never override a
+      # mounted config file otherwise; see docs/operations/monitoring.md.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
-      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
-      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
-      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
-      OPENARTIFACT_OTLP_AUDIT: ${OPENARTIFACT_OTLP_AUDIT:-false}
+      OPENARTIFACT_OTLP_ENABLED:
+      OTEL_TRACES_EXPORTER:
+      OTEL_METRICS_EXPORTER:
+      OTEL_LOGS_EXPORTER:
+      OPENARTIFACT_OTLP_AUDIT:
     restart: unless-stopped
     read_only: true
     tmpfs:
