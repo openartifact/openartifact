@@ -150,6 +150,12 @@ func TestCreateProxyDefaultUpstream(t *testing.T) {
 		t.Errorf("nuget proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
 	}
 
+	db = newProxyGroupDB()
+	if rw := createRepo(t, db, `{"name":"p","format":"rubygems","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
+		db.created == nil || db.created.UpstreamURL != "https://rubygems.org" {
+		t.Errorf("rubygems proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
+	}
+
 	// Formats without a well-known public upstream still require one.
 	db = newProxyGroupDB()
 	if rw := createRepo(t, db, `{"name":"p","format":"maven","repo_type":"proxy"}`); rw.Code != http.StatusBadRequest || db.created != nil {

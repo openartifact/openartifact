@@ -61,6 +61,8 @@ func DefaultUpstreamURL(format string) string {
 		return "https://proxy.golang.org"
 	case "nuget":
 		return "https://api.nuget.org/v3/index.json"
+	case "rubygems":
+		return "https://rubygems.org"
 	}
 
 	return ""
