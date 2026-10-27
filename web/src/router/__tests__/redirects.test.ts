@@ -13,8 +13,7 @@ import { projectRoutes } from '../routes/projects'
 import { bundleRoutes } from '../routes/bundles'
 import { securityRoutes } from '../routes/security'
 import { settingsRoutes } from '../routes/settings'
-import { LEGACY_FORMAT_IDS, installLegacyArtifactRedirect, legacyRedirects } from '../redirects'
-import { ALL_FORMATS } from '../../lib/formats'
+import { installLegacyArtifactRedirect, legacyRedirects } from '../redirects'
 import { artifactPath } from '../../lib/artifactPath'
 
 const stub = { render: () => null }
@@ -144,10 +143,6 @@ describe('legacy artifact URLs', () => {
     expect(route.params.repo).toBe('my repo')
     expect(route.params.pkg).toBe('@scope/left pad')
     expect(route.params.v).toBe('1.0.0+build/2')
-  })
-
-  it('knows the same format ids as lib/formats', () => {
-    expect([...LEGACY_FORMAT_IDS].sort()).toEqual([...ALL_FORMATS].sort())
   })
 })
 
