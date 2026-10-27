@@ -65,6 +65,12 @@ const (
 	// fetchTimeout.
 	responseHeaderTimeout = 30 * time.Second
 
+	// DefaultUpstreamStallTimeout is how long an upstream response body may
+	// deliver no data before the fetch fails, so a dead connection releases
+	// its flight (and the requests waiting on it) in a minute rather than
+	// holding it until fetchTimeout.
+	DefaultUpstreamStallTimeout = 60 * time.Second
+
 	// maxConcurrentFetches bounds the upstream downloads in flight at once
 	// across every repository. Each holds an upstream connection and a spool
 	// file of up to maxBody bytes; singleflight only collapses requests for
@@ -159,7 +165,7 @@ type Service struct {
 // client: blocked destination addresses are refused at dial time and on every
 // redirect hop.
 func NewService(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Service {
-	client := telemetry.WrapClient(netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout))
+	client := upstreamClient(DefaultUpstreamStallTimeout)
 
 	return &Service{
 		log:       log,
@@ -175,6 +181,22 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
+}
+
+func upstreamClient(stall time.Duration) *http.Client {
+	return telemetry.WrapClient(netutil.SafeHTTPClientWithStallTimeout(fetchTimeout, responseHeaderTimeout, stall))
+}
+
+// WithUpstreamStallTimeout sets how long an upstream response body may deliver
+// no data before the fetch fails (DefaultUpstreamStallTimeout by default); 0
+// disables the check. It must be called before the service serves requests.
+func (s *Service) WithUpstreamStallTimeout(d time.Duration) *Service {
+	s.client = upstreamClient(max(d, 0))
+	if s.sumdb != nil {
+		s.sumdb.client = s.client
+	}
+
+	return s
 }
 
 // WithDockerDigestTTL sets how long a docker manifest or blob addressed by

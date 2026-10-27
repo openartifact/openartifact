@@ -101,7 +101,8 @@ func (a *app) startMetadataWorkers() {
 	// Deb and rpm group repositories: their merged metadata is regenerated when
 	// a member changes (the hosted workers' stale hook) and read from the
 	// proxy members' caches.
-	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL)
+	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL).
+		WithUpstreamStallTimeout(a.cfg.Workers.ProxyUpstreamStallTimeout)
 	w.groupMeta = worker.NewGroupMetadataWorker(db, blobStore, w.proxySvc, w.rpm, w.gpgKeys, log).
 		WithMetrics(reg).WithRegenLimiter(regenLimiter)
 	w.rpm.WithStaleHook(w.groupMeta.NotifyMemberChanged)
