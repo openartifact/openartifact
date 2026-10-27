@@ -28,6 +28,8 @@ path = [
   "internal/clientsetup/testdata/web_parity.json",
   "internal/repotype/testdata/web_parity.json",
   "VERSION",
+  ".github/dup-baseline.json",
+  "web/.jscpd.json",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
