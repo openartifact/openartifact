@@ -66,6 +66,9 @@ jobs:
       - name: deadcode (no unreachable Go code)
         run: scripts/deadcode-check.sh
 
+      - name: duplication ratchet (dupl)
+        run: scripts/dup-check.sh
+
       # -coverpkg=./... attributes coverage to every package, not just the one a
       # test lives in; the coverage job merges this with the integration profile.
       - name: go test (race, unit packages)
@@ -260,6 +263,9 @@ jobs:
 
       - name: translation catalogs are consistent
         run: bun run i18n:check
+
+      - name: duplication threshold (jscpd)
+        run: bun run dup
 
       - name: bun test (with coverage)
         run: bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage

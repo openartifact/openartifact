@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check deadcode bench bench-load
+        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check deadcode dup dup-baseline bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -56,6 +56,8 @@ help:
 	@echo "  generate        - Run sqlc generate (DB codegen)"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
 	@echo "  docs-check      - Fail when docs/reference is out of date"
+	@echo "  dup             - Fail when Go duplication (dupl -t 100) grows past .github/dup-baseline.json"
+	@echo "  dup-baseline    - Rewrite .github/dup-baseline.json from the current tree"
 	@echo "  deadcode        - Fail on Go code that no main package reaches (deadcode)"
 	@echo "  deps            - Download and tidy dependencies"
 	@echo "  docker-build    - Build Docker image"
@@ -148,6 +150,12 @@ docs-check:
 
 deadcode:
 	scripts/deadcode-check.sh
+
+dup:
+	scripts/dup-check.sh
+
+dup-baseline:
+	scripts/dup-check.sh --update
 
 bench:
 	@echo "Running benchmarks..."
