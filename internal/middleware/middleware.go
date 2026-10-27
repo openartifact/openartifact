@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -66,8 +67,7 @@ func RecoveryMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 						"error", err,
 						"path", r.URL.Path,
 					)
-					w.WriteHeader(http.StatusInternalServerError)
-					_, _ = w.Write([]byte("Internal Server Error"))
+					httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 				}
 			}()
 
