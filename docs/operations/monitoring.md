@@ -206,8 +206,8 @@ telemetry:
 | `sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | `1` | fraction of **new** traces recorded (0 to 1). Parent based: a request arriving with a sampled `traceparent` is always recorded, an unsampled one never |
 | `traces` | `OTEL_TRACES_EXPORTER=otlp` (`none` turns it off) | `true` | distributed traces; the HTTP server middleware, the client and database spans and the log correlation fields exist only with it |
 | `metrics` | `OTEL_METRICS_EXPORTER=otlp` (`none` turns it off) | `false` | also export metrics over OTLP, see below |
-| `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP, see [log records](#log-records-over-otlp) |
-| `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | audit events over OTLP (scope `openartifact.audit`), independent of `traces`, see [log records](#log-records-over-otlp) |
+| `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP; reserved, no records yet (#192), see [log records](#log-records-over-otlp) |
+| `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | audit events over OTLP (scope `openartifact.audit`), independent of `traces`; reserved, no events yet (#193), see [log records](#log-records-over-otlp) |
 
 Environment variables win over the YAML file. An `OTEL_*_EXPORTER` variable is a comma-separated list: one containing `otlp` turns the signal on, otherwise `none` turns it off, and any other value (`zipkin`) is ignored. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable telemetry: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_METRICS_*` and `OTEL_EXPORTER_OTLP_LOGS_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
 

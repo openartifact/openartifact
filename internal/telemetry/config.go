@@ -84,13 +84,14 @@ type OTLPConfig struct {
 	// it off.
 	Metrics bool `yaml:"metrics"`
 	// Logs is the switch for application log records over OTLP; with it (or
-	// audit) on, an OTLP log provider is started on the same endpoint. The
-	// environment form is OTEL_LOGS_EXPORTER: otlp turns it on, none turns it
-	// off.
+	// audit) on, an OTLP log provider is started on the same endpoint.
+	// Reserved: no records are written to it yet (#192). The environment form
+	// is OTEL_LOGS_EXPORTER: otlp turns it on, none turns it off.
 	Logs bool `yaml:"logs"`
 	// Audit is the switch for audit events over OTLP (scope
 	// openartifact.audit), independent of traces. It shares the log provider
-	// with logs. The audit_logs table stays the source of truth.
+	// with logs. Reserved: no events are written to it yet (#193). The
+	// audit_logs table stays the source of truth.
 	Audit bool `yaml:"audit"`
 }
 

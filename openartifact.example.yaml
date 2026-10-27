@@ -146,8 +146,8 @@ telemetry:
     # sampleRatio: 1.0                  # fraction of new traces recorded; sampled incoming traces always are
     # traces: true                      # distributed traces (on by default once enabled)
     # metrics: false                    # also export the Prometheus registry over OTLP
-    # logs: false                       # application log records over OTLP
-    # audit: false                      # audit events over OTLP (scope openartifact.audit), works without traces
+    # logs: false                       # application log records over OTLP (reserved: none written yet, #192)
+    # audit: false                      # audit events over OTLP (scope openartifact.audit), works without traces (reserved: none written yet, #193)
 
 auth:
   # Anonymous read of private repos (via the "anonymous-read" permission target).

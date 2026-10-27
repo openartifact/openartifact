@@ -378,8 +378,8 @@ This page lists every configuration key with its type, built-in default and the 
 | `telemetry.otlp.sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | float | `1` | `sampleRatio` is the fraction of new traces recorded, in [0,1]. Requests carrying a sampled traceparent are always recorded (parent based). |
 | `telemetry.otlp.traces` | `OTEL_TRACES_EXPORTER` | bool | `true` | `traces` exports distributed traces and installs the HTTP server middleware. On by default, so enabled alone keeps tracing. The environment form is `OTEL_TRACES_EXPORTER`: otlp turns it on, none turns it off. |
 | `telemetry.otlp.metrics` | `OTEL_METRICS_EXPORTER` | bool | `false` | `metrics` exports the Prometheus registry (Go runtime and openartifact_* families) over OTLP to the same endpoint. /metrics is unaffected. The environment form is `OTEL_METRICS_EXPORTER`: otlp turns it on, none turns it off. |
-| `telemetry.otlp.logs` | `OTEL_LOGS_EXPORTER` | bool | `false` | `logs` is the switch for application log records over OTLP; with it (or audit) on, an OTLP log provider is started on the same endpoint. The environment form is `OTEL_LOGS_EXPORTER`: otlp turns it on, none turns it off. |
-| `telemetry.otlp.audit` | `OPENARTIFACT_OTLP_AUDIT` | bool | `false` | `audit` is the switch for audit events over OTLP (scope openartifact.audit), independent of traces. It shares the log provider with logs. The audit_logs table stays the source of truth. |
+| `telemetry.otlp.logs` | `OTEL_LOGS_EXPORTER` | bool | `false` | `logs` is the switch for application log records over OTLP; with it (or audit) on, an OTLP log provider is started on the same endpoint. Reserved: no records are written to it yet (#192). The environment form is `OTEL_LOGS_EXPORTER`: otlp turns it on, none turns it off. |
+| `telemetry.otlp.audit` | `OPENARTIFACT_OTLP_AUDIT` | bool | `false` | `audit` is the switch for audit events over OTLP (scope openartifact.audit), independent of traces. It shares the log provider with logs. Reserved: no events are written to it yet (#193). The audit_logs table stays the source of truth. |
 
 ## scanners
 
