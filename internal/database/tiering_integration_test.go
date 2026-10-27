@@ -480,7 +480,12 @@ func TestListBlobRefsAndUsage(t *testing.T) {
 
 	s.helm(blobID)
 
-	refs, err := f.pg.ListBlobRefs(ctx, []string{sha, "ee" + sha[2:]})
+	// The sha is random (it derives from the repository id), so swapping its
+	// first byte would hit the blob itself 1 time in 256: hash it instead.
+	unknownSum := sha256.Sum256([]byte("unknown " + sha))
+	unknown := hex.EncodeToString(unknownSum[:])
+
+	refs, err := f.pg.ListBlobRefs(ctx, []string{sha, unknown})
 	if err != nil {
 		t.Fatalf("ListBlobRefs: %v", err)
 	}
@@ -490,7 +495,7 @@ func TestListBlobRefsAndUsage(t *testing.T) {
 		t.Errorf("refs = %+v", got)
 	}
 
-	if len(refs["ee"+sha[2:]]) != 0 {
+	if len(refs[unknown]) != 0 {
 		t.Errorf("unknown blob has refs: %v", refs)
 	}
 
