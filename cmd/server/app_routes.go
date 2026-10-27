@@ -256,6 +256,12 @@ func (a *app) newFormatHandlers() {
 	if a.workers.gpgKeys != nil {
 		f.terraform.WithSigner(a.workers.gpgKeys)
 	}
+	// Same for the proxy service: the tickets of proxy repositories are minted
+	// by it and redeemed through the hosted handler's credential-free route.
+	if a.workers.proxySvc != nil {
+		a.workers.proxySvc.WithTerraformTicketKey(a.web.hmacKey)
+		f.terraform.WithProxy(a.workers.proxySvc)
+	}
 
 	// All repo-scoped format handlers, including the npm publish/unpublish
 	// catch-all, share the /repos/{name} subrouter. A sibling /repos/{x}/*
@@ -280,6 +286,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	for _, name := range []string{
 		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda", "apk",
 		"pacman",
+		"terraform",
 	} {
 		routers[name] = chi.NewRouter()
 	}
@@ -303,6 +310,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.pacman.RegisterRepoRoutes(routers["pacman"])
 	f.conda.RegisterRepoRoutes(routers["conda"])
 	f.apk.RegisterRepoRoutes(routers["apk"])
+	f.terraform.RegisterRepoRoutes(routers["terraform"])
 
 	hosted := make(map[string]http.Handler, len(routers))
 	for name, r := range routers {

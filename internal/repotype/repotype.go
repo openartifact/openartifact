@@ -40,7 +40,8 @@ func ProxySupported(format string) bool {
 		"rubygems",
 		"conda",
 		"apk",
-		"pacman":
+		"pacman",
+		"terraform":
 		return true
 	}
 
@@ -74,6 +75,7 @@ func GroupSupported(format string) bool {
 		"rubygems",
 		"conda",
 		"apk",
+		"terraform",
 		"pacman":
 		return true
 	}
@@ -113,6 +115,8 @@ func DefaultUpstreamURL(format string) string {
 		return "https://rubygems.org"
 	case "pacman":
 		return "https://geo.mirror.pkgbuild.com"
+	case "terraform":
+		return "https://registry.terraform.io"
 	}
 
 	return ""
@@ -120,12 +124,12 @@ func DefaultUpstreamURL(format string) string {
 
 // ProxyFormats lists the proxy-capable formats for error messages.
 func ProxyFormats() string {
-	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
 }
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string {
-	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform"
 }
 
 // FederationSupported reports whether hosted repositories of format can be

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"modules.v1\":\"/v1/modules/\",\"providers.v1\":\"/v1/providers/\"}")

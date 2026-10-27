@@ -20,6 +20,9 @@ func sampleTickets() []ticket {
 		{repoID: "repo-1", kind: kindProviderZip, a: "aws", b: "1.2.3-rc.1", c: "linux_amd64", expires: exp},
 		{repoID: "repo-1", kind: kindProviderSums, a: "aws", b: "1.2.3", expires: exp},
 		{repoID: "repo-1", kind: kindProviderSumSig, a: "aws", b: "1.2.3", expires: exp},
+		// A proxy repository's tickets name the platform of the package document.
+		{repoID: "repo-1", kind: kindProviderSums, a: "aws", b: "1.2.3", c: "linux_amd64", expires: exp},
+		{repoID: "repo-1", kind: kindProviderSumSig, a: "aws", b: "1.2.3", c: "darwin_arm64", expires: exp},
 	}
 }
 

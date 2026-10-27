@@ -31,14 +31,14 @@ func IsProxyBlobPath(format, relPath string) bool {
 	case "helm":
 		// Chart archives only; index.yaml and .prov files are streamed.
 		return strings.HasPrefix(relPath, "charts/") && !strings.HasSuffix(base, ".prov")
-	case "cargo":
-		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
-	case "go":
-		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
-	case "nuget", "rubygems":
+	case "cargo", "go", "nuget", "rubygems":
 		return isPackageArchive(format, relPath, base)
 	case "conan", "conda":
 		return isConanCondaBlob(format, relPath, base)
+	case "terraform":
+		// Module archives and provider zips; documents, the SHA256SUMS file
+		// and its signature are streamed.
+		return isTerraformArchive(relPath, base)
 	case "raw":
 		return true
 	case "pypi":
@@ -61,14 +61,37 @@ func isConanCondaBlob(format, relPath, base string) bool {
 	return strings.Contains(relPath, "/files/") && isConanArchive(base)
 }
 
-// isPackageArchive is IsProxyBlobPath for nuget (.nupkg of the flat container)
-// and rubygems (gems/<file>.gem).
+// isPackageArchive is IsProxyBlobPath for cargo (the crate download endpoint),
+// go (module zips), nuget (.nupkg of the flat container) and rubygems
+// (gems/<file>.gem).
 func isPackageArchive(format, relPath, base string) bool {
-	if format == "nuget" {
+	switch format {
+	case "cargo":
+		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
+	case "go":
+		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
+	case "nuget":
 		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
 	}
 
 	return strings.HasPrefix(relPath, "gems/") && strings.HasSuffix(base, ".gem")
+}
+
+// isTerraformArchive reports whether relPath is a module archive
+// (modules/<name>/<system>/<version>/<file>) or a provider zip
+// (providers/<type>/<version>/<os>_<arch>/<file>) of a Terraform proxy.
+func isTerraformArchive(relPath, base string) bool {
+	if !strings.HasPrefix(relPath, "modules/") && !strings.HasPrefix(relPath, "providers/") {
+		return false
+	}
+
+	for _, ext := range []string{".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar"} {
+		if strings.HasSuffix(base, ext) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isConanArchive(base string) bool {

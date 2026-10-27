@@ -26,7 +26,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Maven | `maven` | `HOST/repos/maven/REPO` | hosted, proxy, group | `PUT` per file (`mvn deploy`) | [maven](maven.md) |
 | sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted, proxy, group | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
 | Ivy | `ivy` | `HOST/repos/ivy/REPO` | hosted, proxy, group | `PUT` per file (`ivy:publish`) | [ivy-sbt](ivy-sbt.md) |
-| Terraform / OpenTofu | `terraform` | registry host `HOST`, source `HOST/REPO/...` (discovery at `/.well-known/terraform.json`) | hosted | `PUT /_api/modules/MODULE/SYSTEM/VERSION`, `PUT /_api/providers/TYPE/VERSION/OS/ARCH` (relative to `HOST/repos/REPO`) | [terraform](terraform.md) |
+| Terraform / OpenTofu | `terraform` | registry host `HOST`, source `HOST/REPO/...` (discovery at `/.well-known/terraform.json`) | hosted, proxy, group | `PUT /_api/modules/MODULE/SYSTEM/VERSION`, `PUT /_api/providers/TYPE/VERSION/OS/ARCH` (relative to `HOST/repos/REPO`) | [terraform](terraform.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |

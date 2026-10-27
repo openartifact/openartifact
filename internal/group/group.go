@@ -116,7 +116,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget, conan, conda, deb, rpm, apk, pacman) merges over its members; false
+// (maven, pypi, npm, helm, cargo, go, nuget, rubygems, conan, conda, terraform, deb, rpm, apk, pacman) merges over its members; false
 // means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
@@ -150,6 +150,8 @@ func (h *Handler) serveMerged(
 		return h.serveRubyGems(w, r, grp, relPath, readable, be)
 	case "conan":
 		return h.serveConan(w, r, grp, relPath, readable, be)
+	case "terraform":
+		return h.serveTerraform(w, r, grp, relPath, readable, be)
 	case "conda":
 		return h.serveConda(w, r, grp, readable, relPath, be)
 	case "deb", "rpm", "pacman":

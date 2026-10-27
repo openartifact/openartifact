@@ -49,7 +49,10 @@ const packumentMaxAge = 60
 
 // SetBaseURL sets the server base URL that rewritten tarball URLs point at
 // (the value hosted npm repositories use). Call it before serving requests.
-func (s *Service) SetBaseURL(baseURL string) { s.baseURL = strings.TrimRight(baseURL, "/") }
+func (s *Service) SetBaseURL(baseURL string) {
+	s.baseURL = strings.TrimRight(baseURL, "/")
+	s.refreshTerraformMinter()
+}
 
 func (s *Service) serveNPM(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
 	p, err := pkgnpm.ParsePath(relPath)

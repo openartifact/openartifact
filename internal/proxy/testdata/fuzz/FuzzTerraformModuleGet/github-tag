@@ -1,0 +1,2 @@
+go test fuzz v1
+string("git::https://github.com/org/repo?ref=v1.2.3")
