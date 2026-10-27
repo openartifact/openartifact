@@ -238,3 +238,8 @@ input[type='radio'] {
 .animate-slideRight {
   animation: slideRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* A column dropped by useColumnFit because the table does not fit its container. */
+[data-col-hidden] {
+  display: none;
+}

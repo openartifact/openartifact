@@ -77,18 +77,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </AppButton>
       </div>
 
-      <table v-else class="w-full">
+      <TableScroller v-else>
+      <table class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
             <th scope="col" class="text-left text-caption font-semibold text-muted px-5 py-2.5">{{ t('adm.backup.column.type') }}</th>
             <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.status') }}</th>
-            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.size') }}</th>
+            <th scope="col" data-drop-order="1" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.size') }}</th>
             <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.created') }}</th>
-            <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5">{{ t('common.actions') }}</th>
+            <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5" :class="ACTIONS_HEAD">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-          <tr v-for="job in items" :key="job.id" class="hover:bg-surface-hover/30 transition-colors">
+          <tr v-for="job in items" :key="job.id" class="group/row hover:bg-surface-hover/30 transition-colors">
             <td class="px-5 py-3.5">
               <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-hover text-caption font-mono font-medium text-foreground">
                 <component :is="job.type === 'full' ? ServerStackIcon : CircleStackIcon" class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
@@ -111,14 +112,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 {{ t('adm.backup.done') }} {{ timeAgo(job.completed_at) }}
               </p>
             </td>
-            <td class="px-5 py-3.5">
+            <td class="px-5 py-3.5" :class="ACTIONS_CELL">
               <div class="flex items-center gap-0.5 justify-end">
                 <a
                   v-if="job.status === 'completed'"
                   :href="backupDownloadUrl(job.id)"
                   :title="t('adm.backup.download')"
                   :aria-label="t('adm.backup.download')"
-                  class="p-1.5 rounded-md text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted hover:text-primary hover:bg-primary/10 transition-colors max-md:h-11 max-md:w-11"
                   download
                 >
                   <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
@@ -127,7 +128,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   v-else
                   type="button"
                   disabled
-                  class="p-1.5 rounded-md text-muted opacity-30 cursor-not-allowed"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted opacity-30 cursor-not-allowed max-md:h-11 max-md:w-11"
                   :title="t('adm.backup.availableWhenCompleted')"
                   :aria-label="t('adm.backup.availableWhenCompleted')"
                 >
@@ -138,6 +139,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </tr>
         </tbody>
       </table>
+      </TableScroller>
     </div>
 
     <!-- Create backup -->
@@ -235,6 +237,8 @@ import { t } from '../../../i18n'
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import AdminDialog from '../../../components/AdminDialog.vue'
+import TableScroller from '../../../components/ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD } from '../../../components/ui/tableStyles'
 import {
   PlusIcon,
   ArrowDownTrayIcon,

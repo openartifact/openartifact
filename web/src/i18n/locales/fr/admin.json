@@ -419,7 +419,6 @@
   "adm.gpg.deleteAnyway": "Supprimer quand même",
   "adm.gpg.deleted": "Clé GPG supprimée",
   "adm.gpg.deleteFailed": "Échec de la suppression de la clé GPG",
-  "adm.gpg.actionsFor": "Actions pour",
   "adm.dt.loadFailed": "Échec du chargement des paramètres Dependency-Track",
   "adm.dt.saved": "Paramètres Dependency-Track enregistrés",
   "adm.dt.saveFailed": "Échec de l'enregistrement des paramètres Dependency-Track",

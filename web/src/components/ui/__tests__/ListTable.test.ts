@@ -126,4 +126,35 @@ describe('ListTable', () => {
     await w.setProps({ selected: ['a'] })
     expect((w.find('thead input').element as HTMLInputElement).indeterminate).toBe(true)
   })
+
+  describe('narrow containers', () => {
+    it('pins the actions column to the right edge, header and cells alike, and announces it as "Actions"', () => {
+      const w = render()
+      const head = w.findAll('thead th')[2]
+      expect(head.text()).toBe('Actions')
+      expect(head.classes()).toEqual(expect.arrayContaining(['md:sticky', 'md:right-0']))
+      for (const td of w.findAll('tbody tr td:last-child')) {
+        expect(td.classes()).toEqual(expect.arrayContaining(['md:sticky', 'md:right-0', 'md:bg-surface']))
+      }
+      // Only the actions column is pinned.
+      expect(w.findAll('thead th')[0].classes()).not.toContain('md:sticky')
+    })
+
+    it('lets the identifier column take the leftover width and truncate', () => {
+      const w = render({ columns: [{ ...columns[0], grow: true }, columns[1], columns[2]] })
+      expect(w.find('tbody tr td').classes()).toEqual(expect.arrayContaining(['md:w-[40%]', 'md:max-w-0']))
+      expect(w.findAll('tbody tr:first-child td')[1].classes()).not.toContain('md:max-w-0')
+    })
+
+    it('marks the droppable columns for the fitter and no other', () => {
+      const w = render({ columns: [columns[0], { ...columns[1], dropOrder: 2 }, columns[2]] })
+      expect(w.findAll('thead th').map((th) => th.attributes('data-drop-order'))).toEqual([undefined, '2', undefined])
+    })
+
+    it('keeps the stacked card free of the pin: every pin class is a md: variant', () => {
+      const w = render()
+      const actions = w.find('tbody tr td:last-child').classes()
+      expect(actions.filter((c) => /sticky|right-0|border-l/.test(c)).every((c) => c.startsWith('md:'))).toBe(true)
+    })
+  })
 })

@@ -29,22 +29,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         :empty-title="t('artifact.sbom.empty')"
         :empty-hint="t('artifact.sbom.emptyHint')"
       >
-        <template #cell-file="{ row }"><span class="break-all font-mono text-xs">{{ fileName(row.artifact_id) }}</span></template>
+        <template #cell-file="{ row }"><span class="block truncate font-mono text-xs" :title="fileName(row.artifact_id)">{{ fileName(row.artifact_id) }}</span></template>
         <template #cell-format="{ row }"><span class="font-mono text-xs">{{ row.format }}{{ row.spec_version ? ` ${row.spec_version}` : '' }}</span></template>
         <template #cell-components="{ row }"><span class="tabular-nums">{{ row.component_count ?? '—' }}</span></template>
         <template #cell-generated="{ row }"><RelativeTime :value="row.generated_at ?? row.created_at" /></template>
         <template #cell-actions="{ row }">
-          <div class="flex items-center gap-1">
-            <AppButton v-if="row.format === 'cyclonedx'" variant="ghost" size="sm" class="max-md:h-11" :aria-pressed="graphId === row.id" @click="showGraph(row.id)">
-              <ShareIcon class="h-4 w-4" aria-hidden="true" />{{ t('artifact.sbom.graph') }}
-            </AppButton>
-            <AppButton variant="ghost" size="sm" class="max-md:h-11" :aria-label="tp('artifact.sbom.download', { file: fileName(row.artifact_id), format: row.format })" @click="download(row)">
-              <ArrowDownTrayIcon class="h-4 w-4" aria-hidden="true" /><span class="md:sr-only">{{ t('artifact.action.download') }}</span>
-            </AppButton>
-            <AppButton variant="ghost" size="sm" class="max-md:h-11" :aria-label="tp('artifact.sbom.delete', { file: fileName(row.artifact_id), format: row.format })" @click="remove(row)">
-              <TrashIcon class="h-4 w-4" aria-hidden="true" /><span class="md:sr-only">{{ t('common.delete') }}</span>
-            </AppButton>
-          </div>
+          <RowActions
+            :actions="[
+              { key: 'graph', label: t('artifact.sbom.graph'), icon: ShareIcon, pressed: graphId === row.id, hidden: row.format !== 'cyclonedx' },
+              { key: 'download', label: t('artifact.action.download'), icon: ArrowDownTrayIcon },
+              { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger' },
+            ]"
+            :subject="`${fileName(row.artifact_id)} (${row.format})`"
+            @action="(key) => (key === 'graph' ? showGraph(row.id) : key === 'download' ? download(row) : remove(row))"
+          />
         </template>
       </ListTable>
     </section>
@@ -60,8 +58,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDownTrayIcon, ShareIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowDownTrayIcon, ShareIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
+import RowActions from '../ui/RowActions.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import RelativeTime from '../ui/RelativeTime.vue'
 import StateBlock from '../ui/StateBlock.vue'
@@ -77,10 +76,10 @@ const ctx = useArtifactContext()
 const toasts = useToastStore()
 
 const columns: ListColumn[] = [
-  { key: 'file', label: t('artifact.sbom.column.file') },
+  { key: 'file', label: t('artifact.sbom.column.file'), grow: true },
   { key: 'format', label: t('artifact.sbom.column.format') },
-  { key: 'components', label: t('artifact.sbom.column.components'), align: 'end' },
-  { key: 'generated', label: t('artifact.sbom.column.generated') },
+  { key: 'components', label: t('artifact.sbom.column.components'), align: 'end', dropOrder: 2 },
+  { key: 'generated', label: t('artifact.sbom.column.generated'), dropOrder: 1 },
   { key: 'actions', label: t('artifact.sbom.column.actions'), actions: true },
 ]
 

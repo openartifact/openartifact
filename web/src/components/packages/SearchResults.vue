@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-name="{ row }">
         <div class="flex min-w-0 items-center gap-2">
           <FormatBadge :format="row.format" size="sm" />
-          <router-link :to="row.href" class="min-w-0 break-all font-medium hover:underline">{{ row.name }}</router-link>
+          <router-link :to="row.href" class="min-w-0 truncate font-medium hover:underline" :title="row.name">{{ row.name }}</router-link>
         </div>
         <VersionList v-if="isPackage(row) && isOpen(row.id)" :repo="row.repository" :name="row.name" :format="row.format" />
       </template>
@@ -92,17 +92,17 @@ const props = defineProps<{
 const isChecksum = computed(() => props.mode === 'checksum')
 
 const PACKAGE_COLUMNS: ListColumn[] = [
-  { key: 'name', label: t('search.column.package') },
-  { key: 'latest', label: t('search.column.latest') },
+  { key: 'name', label: t('search.column.package'), grow: true },
+  { key: 'latest', label: t('search.column.latest'), dropOrder: 1 },
   { key: 'versions', label: t('search.column.versions') },
   { key: 'repository', label: t('search.column.repository') },
 ]
 const CHECKSUM_COLUMNS: ListColumn[] = [
-  { key: 'name', label: t('search.column.package') },
+  { key: 'name', label: t('search.column.package'), grow: true },
   { key: 'file', label: t('search.column.file') },
   { key: 'version', label: t('search.column.version') },
   { key: 'repository', label: t('search.column.repository') },
-  { key: 'algorithm', label: t('search.column.algorithm') },
+  { key: 'algorithm', label: t('search.column.algorithm'), dropOrder: 1 },
 ]
 const columns = computed(() => (isChecksum.value ? CHECKSUM_COLUMNS : PACKAGE_COLUMNS))
 

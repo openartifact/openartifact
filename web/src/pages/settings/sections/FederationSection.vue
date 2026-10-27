@@ -68,10 +68,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           :empty-hint="t('sx.fed.emptyHint')"
         >
           <template #cell-repository="{ row }">
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2">
               <RouterLink
                 :to="repoPath(row as FederationRepoRow)"
-                class="font-mono text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                class="truncate font-mono text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                :title="(row as FederationRepoRow).repository"
               >{{ (row as FederationRepoRow).repository }}</RouterLink>
               <FormatBadge :format="(row as FederationRepoRow).format" size="sm" />
             </div>
@@ -87,13 +88,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="font-mono tabular-nums">{{ (row as FederationRepoRow).headSeq }}</span>
           </template>
           <template #cell-actions="{ row }">
-            <AppButton
-              variant="ghost"
-              size="sm"
-              class="max-md:min-h-11"
-              :to="repoPath(row as FederationRepoRow)"
-              :aria-label="tp('sx.fed.manage', { name: (row as FederationRepoRow).repository })"
-            >{{ t('sx.open') }}</AppButton>
+            <RowActions
+              :actions="[{ key: 'open', label: t('sx.open'), icon: ArrowTopRightOnSquareIcon, to: repoPath(row as FederationRepoRow) }]"
+              :subject="(row as FederationRepoRow).repository"
+            />
           </template>
         </ListTable>
       </template>
@@ -109,12 +107,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../../../components/AppButton.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
 import FormatBadge from '../../../components/FormatBadge.vue'
 import SectionActions from '../../../components/SectionActions.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RowActions from '../../../components/ui/RowActions.vue'
 import StateBlock from '../../../components/ui/StateBlock.vue'
 import { loadFederationOverview, type FederationOverview, type FederationRepoRow, type SyncState } from '../../../lib/federationOverview'
 import { t, tp } from '../../../i18n'
@@ -147,10 +147,10 @@ const summary = computed(() =>
 )
 
 const columns: ListColumn[] = [
-  { key: 'repository', label: t('sx.fed.col.repository') },
+  { key: 'repository', label: t('sx.fed.col.repository'), grow: true },
   { key: 'peers', label: t('sx.fed.col.peers') },
   { key: 'state', label: t('sx.fed.col.state') },
-  { key: 'log', label: t('sx.fed.col.log') },
+  { key: 'log', label: t('sx.fed.col.log'), dropOrder: 1 },
   { key: 'actions', label: t('sx.fed.col.actions'), actions: true },
 ]
 

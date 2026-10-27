@@ -81,7 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :empty-title="t('bundles.items.empty')"
               :empty-hint="bundle.state === 'draft' ? t('bundles.items.emptyHint') : undefined"
             >
-              <template #cell-path="{ row }"><span class="break-all font-mono text-xs">{{ row.artifact_path }}</span></template>
+              <template #cell-path="{ row }"><span class="block truncate font-mono text-xs" :title="row.artifact_path">{{ row.artifact_path }}</span></template>
               <template #cell-repo="{ row }">
                 <router-link :to="`/repos/${encodeURIComponent(detail.repoName(row.source_repo_id))}`" class="text-sm text-primary hover:underline">
                   {{ detail.repoName(row.source_repo_id) }}
@@ -91,15 +91,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <template #cell-sha="{ row }"><ShortSha :sha="row.sha256" /></template>
               <template #cell-size="{ row }"><span class="tabular-nums">{{ formatBytes(row.size_bytes) }}</span></template>
               <template #cell-actions="{ row }">
-                <AppButton
-                  variant="ghost"
-                  size="xs"
-                  class="max-md:h-11"
-                  :aria-label="`${t('bundles.items.remove')}: ${row.artifact_path}`"
-                  @click="removeItem(row)"
-                >
-                  {{ t('bundles.items.remove') }}
-                </AppButton>
+                <RowActions
+                  :actions="[{ key: 'remove', label: t('bundles.items.remove'), icon: TrashIcon, tone: 'danger' }]"
+                  :subject="row.artifact_path"
+                  @action="removeItem(row)"
+                />
               </template>
             </ListTable>
           </div>
@@ -125,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <template #cell-by="{ row }">{{ row.promoted_by }}</template>
             <template #cell-items="{ row }"><span class="tabular-nums">{{ row.item_count }}</span></template>
             <template #cell-started="{ row }"><RelativeTime :value="row.started_at" /></template>
-            <template #cell-notes="{ row }"><span class="text-sm text-muted">{{ row.notes || '—' }}</span></template>
+            <template #cell-notes="{ row }"><span class="block truncate text-sm text-muted" :title="row.notes">{{ row.notes || '—' }}</span></template>
           </ListTable>
         </template>
 
@@ -264,6 +260,8 @@ import ShortSha from '../components/ShortSha.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import AppTabs from '../components/ui/AppTabs.vue'
 import CopyButton from '../components/ui/CopyButton.vue'
+import RowActions from '../components/ui/RowActions.vue'
+import { TrashIcon } from '@heroicons/vue/20/solid'
 import ListTable, { type ListColumn } from '../components/ui/ListTable.vue'
 import RelativeTime from '../components/ui/RelativeTime.vue'
 import StateBlock from '../components/ui/StateBlock.vue'
@@ -362,20 +360,20 @@ const tabs = computed<TabDef[]>(() => {
 })
 
 const itemColumns = computed<ListColumn[]>(() => [
-  { key: 'path', label: t('bundles.items.column.path') },
+  { key: 'path', label: t('bundles.items.column.path'), grow: true },
   { key: 'repo', label: t('bundles.items.column.repo') },
-  { key: 'format', label: t('bundles.items.column.format') },
-  { key: 'sha', label: t('bundles.items.column.sha') },
+  { key: 'format', label: t('bundles.items.column.format'), dropOrder: 2 },
+  { key: 'sha', label: t('bundles.items.column.sha'), dropOrder: 1 },
   { key: 'size', label: t('bundles.items.column.size'), align: 'end' },
   ...(bundle.value?.state === 'draft' ? [{ key: 'actions', label: t('common.actions'), actions: true }] : []),
 ])
 const promotionColumns = computed<ListColumn[]>(() => [
   { key: 'stages', label: t('bundles.promotions.column.stages') },
   { key: 'status', label: t('bundles.promotions.column.status') },
-  { key: 'by', label: t('bundles.promotions.column.by') },
+  { key: 'by', label: t('bundles.promotions.column.by'), dropOrder: 2 },
   { key: 'items', label: t('bundles.promotions.column.items'), align: 'end' },
   { key: 'started', label: t('bundles.promotions.column.started') },
-  { key: 'notes', label: t('bundles.promotions.column.notes') },
+  { key: 'notes', label: t('bundles.promotions.column.notes'), grow: true, dropOrder: 1 },
 ])
 const scanColumns = computed<ListColumn[]>(() => [
   { key: 'repo', label: t('bundles.scans.column.repo') },

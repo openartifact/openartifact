@@ -419,7 +419,6 @@
   "adm.gpg.deleteAnyway": "仍然删除",
   "adm.gpg.deleted": "GPG 密钥已删除",
   "adm.gpg.deleteFailed": "删除 GPG 密钥失败",
-  "adm.gpg.actionsFor": "操作：",
   "adm.dt.loadFailed": "加载 Dependency-Track 设置失败",
   "adm.dt.saved": "Dependency-Track 设置已保存",
   "adm.dt.saveFailed": "保存 Dependency-Track 设置失败",

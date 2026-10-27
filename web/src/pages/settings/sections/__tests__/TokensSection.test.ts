@@ -101,7 +101,7 @@ describe('TokensSection', () => {
   it('revokes through the endpoint of the token type after confirmation', async () => {
     serve()
     const w = await mountPage()
-    await w.find('[data-testid="revoke-t1"]').trigger('click')
+    await w.find('[aria-label="Revoke: laptop"]').trigger('click')
     await flushPromises()
     expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
 
@@ -117,8 +117,8 @@ describe('TokensSection', () => {
   it("offers no revoke on someone else's personal token for a non-admin", async () => {
     serve()
     const w = await mountPage()
-    expect(w.find('[data-testid="revoke-t1"]').exists()).toBe(true)
-    expect(w.find('[data-testid="revoke-t3"]').exists()).toBe(false)
+    expect(w.find('[aria-label="Revoke: laptop"]').exists()).toBe(true)
+    expect(w.find('[aria-label="Revoke: bobs"]').exists()).toBe(false)
     w.unmount()
   })
 

@@ -58,25 +58,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
       </div>
 
-      <div v-else class="overflow-x-auto">
+      <TableScroller v-else>
         <table class="w-full text-sm">
           <thead>
             <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.name') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.url') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.events') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.format') }}</th>
+              <th scope="col" data-drop-order="3" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.events') }}</th>
+              <th scope="col" data-drop-order="2" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.format') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.status') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.created') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('common.actions') }}</th>
+              <th scope="col" data-drop-order="1" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.created') }}</th>
+              <th scope="col" class="text-right px-4 py-2.5 font-medium" :class="ACTIONS_HEAD">{{ t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="hook in webhooks" :key="hook.id" class="hover:bg-surface-hover/40 transition-colors">
-              <td class="px-4 py-3">
-                <span class="font-mono text-ui font-medium">{{ hook.name || '—' }}</span>
+            <tr v-for="hook in webhooks" :key="hook.id" class="group/row hover:bg-surface-hover/40 transition-colors">
+              <td class="px-4 py-3" :class="GROW_CELL">
+                <span class="block truncate font-mono text-ui font-medium" :title="hook.name">{{ hook.name || '—' }}</span>
               </td>
-              <td class="px-4 py-3 max-w-[200px]">
+              <td class="px-4 py-3 max-w-52">
                 <span class="text-xs text-muted font-mono truncate block" :title="hook.url">{{ hook.url || '—' }}</span>
               </td>
               <td class="px-4 py-3">
@@ -106,21 +106,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 </span>
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(hook.created_at) }}</td>
-              <td class="px-4 py-3">
-                <button
-                  type="button"
-                  @click="deleteTarget = hook"
-                  :title="t('common.delete')"
-                  :aria-label="`${t('common.delete')} ${hook.name || hook.url || ''}`"
-                  class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                >
-                  <TrashIcon class="w-4 h-4" aria-hidden="true" />
-                </button>
+              <td class="px-4 py-3" :class="ACTIONS_CELL">
+                <RowActions :actions="hookActions" :subject="hook.name || hook.url || ''" @action="deleteTarget = hook" />
               </td>
             </tr>
           </tbody>
         </table>
-      </div>
+      </TableScroller>
     </div>
 
     <!-- Create Drawer -->
@@ -271,13 +263,16 @@ import {
   PlusIcon,
   BellAlertIcon,
   PaperAirplaneIcon,
-  TrashIcon,
 } from '@heroicons/vue/24/outline'
+import { TrashIcon } from '@heroicons/vue/20/solid'
 import EmptyState from '../../../components/EmptyState.vue'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import AdminDialog from '../../../components/AdminDialog.vue'
+import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
+import TableScroller from '../../../components/ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from '../../../components/ui/tableStyles'
 import {
   WEBHOOK_EVENTS,
   WEBHOOK_PAYLOAD_FORMATS,
@@ -291,6 +286,8 @@ const docsUrl = useDocsLink('settings-webhooks')
 const webhooks = ref<Webhook[]>([])
 const loading = ref(false)
 const loadError = ref('')
+const hookActions: RowAction[] = [{ key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger' }]
+
 const drawerOpen = ref(false)
 const saving = ref(false)
 const deleteTarget = ref<Webhook | null>(null)
