@@ -101,7 +101,7 @@ func cleanEntryName(name string) (string, error) {
 		return "", malformed("entry name %q contains a backslash", name)
 	case strings.HasPrefix(name, "/"):
 		return "", malformed("entry name %q is absolute", name)
-	case len(name) >= 2 && name[1] == ':' && isAlnum(name[0]):
+	case hasDriveLetter(name):
 		return "", malformed("entry name %q has a drive letter", name)
 	}
 
@@ -116,7 +116,18 @@ func cleanEntryName(name string) (string, error) {
 		return "", nil
 	}
 
+	// "./C:x" only becomes a drive-relative name once the "./" is cleaned away.
+	if hasDriveLetter(clean) {
+		return "", malformed("entry name %q has a drive letter", name)
+	}
+
 	return clean, nil
+}
+
+// hasDriveLetter reports whether name starts with a Windows drive designator
+// ("C:"), which extracts outside the target directory on that platform.
+func hasDriveLetter(name string) bool {
+	return len(name) >= 2 && name[1] == ':' && isAlnum(name[0])
 }
 
 // entrySet collects the entries of an archive and enforces the limits that
