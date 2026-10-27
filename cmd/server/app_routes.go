@@ -26,6 +26,7 @@ import (
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
+	formatpacman "github.com/openartifact/openartifact/internal/format/pacman"
 	formatpypi "github.com/openartifact/openartifact/internal/format/pypi"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
@@ -51,6 +52,7 @@ type formatHandlers struct {
 	rpm       *formatrpm.HTTPHandler
 	apk       *formatapk.HTTPHandler
 	deb       *formatdeb.HTTPHandler
+	pacman    *formatpacman.HTTPHandler
 	helm      *formathelm.HTTPHandler
 	pypi      *formatpypi.HTTPHandler
 	nuget     *formatnuget.HTTPHandler
@@ -237,6 +239,8 @@ func (a *app) newFormatHandlers() {
 	f.rubygems = formatrubygems.NewHTTPHandler(log, db, served, baseURL)
 	f.raw = formatraw.NewHTTPHandler(log, db, served, baseURL)
 	f.conda = formatconda.NewHTTPHandler(log, db, served, baseURL)
+	f.pacman = formatpacman.NewHTTPHandler(log, db, served, baseURL)
+	f.pacman.SetRegenerator(a.workers.pacman)
 	f.conan = formatconan.NewHTTPHandler(log, db, served, baseURL)
 	f.ivy = formativy.NewHTTPHandler(log, db, served, baseURL)
 	f.sbt = formatsbt.NewHTTPHandler(log, db, served, baseURL)
@@ -341,6 +345,7 @@ func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 		f.cargo.RegisterRepoRoutes(r)
 		f.rubygems.RegisterRepoRoutes(r)
 		f.conda.RegisterRepoRoutes(r)
+		f.pacman.RegisterRepoRoutes(r)
 		f.conan.RegisterRepoRoutes(r)
 		f.gomod.RegisterRepoRoutes(r)
 		f.terraform.RegisterRepoRoutes(r)
@@ -400,7 +405,9 @@ func (a *app) mountIsolatedRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 func (a *app) registerRepositoryRoutes() {
 	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 	w := &a.workers
-	regenerator := func() api.TrashRegenerator { return api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.maven, w.npm) }
+	regenerator := func() api.TrashRegenerator {
+		return api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.pacman, w.maven, w.npm)
+	}
 
 	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).
 		WithBlobStore(a.store.blobs).
@@ -482,7 +489,7 @@ func (a *app) registerWebhooksAndBackup() {
 
 	backupEngine := backup.NewEngine(db, a.store.blobs, log, a.cfg.Backup.BackupDir)
 	backupEngine.SetLeaseTTL(a.cfg.Backup.LeaseTTL)
-	backupEngine.SetRegenerator(api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.maven, w.npm))
+	backupEngine.SetRegenerator(api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.pacman, w.maven, w.npm))
 	api.NewBackupHandler(db, log, evaluator, backupEngine).WithTasks(a.tasks).RegisterAuthed(authedAPI)
 }
 
@@ -559,7 +566,7 @@ func (a *app) finishRoutes() {
 	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
 		u.rpm, u.deb, u.presigned, u.npm, u.maven,
 		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.rubygems, f.raw,
-		f.conda, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
+		f.conda, f.pacman, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
 	} {
 		h.SetPublisher(a.feat.dtPublisher)
 	}

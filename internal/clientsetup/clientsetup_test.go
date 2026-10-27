@@ -34,7 +34,7 @@ func TestRepoBaseURL(t *testing.T) {
 func allFormats() []string {
 	return []string{
 		"npm", "docker", "pypi", "maven", "helm", "deb", "rpm", "cargo",
-		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy", "terraform", "apk",
+		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy", "terraform", "apk", "pacman",
 	}
 }
 
@@ -112,6 +112,27 @@ func TestSBTSnippetCredentialsHostHasNoPort(t *testing.T) {
 		if got := Snippets("sbt", tt.origin, "repo1", "hosted")[0].Configure; !strings.Contains(got, want) {
 			t.Errorf("origin %s: configure = %q, want it to contain %s", tt.origin, got, want)
 		}
+	}
+}
+
+func TestPacmanProxySnippet(t *testing.T) {
+	got := Snippets("pacman", "https://oa.example", "mirror", "proxy")
+	if len(got) != 1 || got[0].Publish != "" {
+		t.Fatalf("want one read-only snippet, got %+v", got)
+	}
+
+	for _, want := range []string{
+		"# top of /etc/pacman.d/mirrorlist\nServer = https://oa.example/repos/mirror/$repo/os/$arch",
+		"/repos/mirror/$repo/os/$arch",
+		"sudo pacman -Syu",
+	} {
+		if !strings.Contains(got[0].Configure, want) {
+			t.Errorf("configure missing %q:\n%s", want, got[0].Configure)
+		}
+	}
+
+	if strings.Contains(got[0].Configure, "pacman-key") {
+		t.Error("proxy snippet must not import a key from this server")
 	}
 }
 

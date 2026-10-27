@@ -379,7 +379,7 @@ func boolString(b bool) string {
 }
 
 // signingRepo resolves the optional repository name of an activation to a
-// hosted deb, rpm or terraform repository; nil, true for the global scope.
+// hosted deb, rpm, pacman or terraform repository; nil, true for the global scope.
 func (h *AdminGPGHandler) signingRepo(w http.ResponseWriter, r *http.Request, name string) (*models.GPGSigningRepo, bool) {
 	if name == "" {
 		return nil, true
@@ -398,8 +398,9 @@ func (h *AdminGPGHandler) signingRepo(w http.ResponseWriter, r *http.Request, na
 		return nil, false
 	}
 
-	if (repo.Format != "deb" && repo.Format != "rpm" && repo.Format != "terraform") || (repo.RepoType != "" && repo.RepoType != "hosted") {
-		writeError(w, http.StatusBadRequest, "validation_failed", "only hosted deb, rpm and terraform repositories are signed")
+	if (repo.Format != "deb" && repo.Format != "rpm" && repo.Format != "pacman" && repo.Format != "terraform") ||
+		(repo.RepoType != "" && repo.RepoType != "hosted") {
+		writeError(w, http.StatusBadRequest, "validation_failed", "only hosted deb, rpm, pacman and terraform repositories are signed")
 		return nil, false
 	}
 

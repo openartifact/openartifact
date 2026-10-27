@@ -177,10 +177,10 @@ func handleCIUpload(args []string, client *Client, outFmt string) {
 }
 
 // uploadable reports whether `oa upload` can store into the format: the
-// path-addressed ones and the two with an upload endpoint that reads package
-// metadata.
+// path-addressed ones, the two with an upload endpoint that reads package
+// metadata and pacman (a PUT of the package file and of its .sig).
 func uploadable(f importFormat) bool {
-	return pathAddressed(f) || f == formatDeb || f == formatRPM
+	return pathAddressed(f) || f == formatDeb || f == formatRPM || f == formatPacman
 }
 
 // pathAddressed reports whether the format stores a file at the path it is
@@ -307,6 +307,12 @@ func uploadCIFile(ctx context.Context, api *ciAPI, repo ciRepo, file, remote str
 func uploadURL(base string, repo ciRepo, remote, id string) string {
 	if pathAddressed(importFormat(repo.Format)) {
 		return base + "/repos/" + repo.Format + "/" + url.PathEscape(repo.Name) + "/" + escapePath(remote)
+	}
+
+	if importFormat(repo.Format) == formatPacman {
+		if p, ok := pacmanPath(repo.Name, remote); ok {
+			return base + p
+		}
 	}
 
 	if id == "" {

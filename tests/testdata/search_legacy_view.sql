@@ -23,6 +23,12 @@
 			NULL::text, CAST(NULL AS text), NULL::text
 		FROM conan_packages co LEFT JOIN blobs b ON b.id = co.blob_id
 	UNION ALL
+	SELECT pk.repository_id, 'pacman'::text, pk.name, pk.version, pk.created_at,
+			pk.filename,
+			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
+			NULL::text, CAST(NULL AS text), NULL::text
+		FROM pacman_packages pk LEFT JOIN blobs b ON b.id = pk.blob_id
+	UNION ALL
 	SELECT ap.repository_id, 'apk'::text, ap.branch || '/' || ap.repo || '/' || ap.name, ap.version, ap.created_at,
 			ap.name || '-' || ap.version || '.apk',
 			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),

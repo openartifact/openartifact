@@ -60,6 +60,10 @@ FROM (
     SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
     UNION ALL
+    -- pacman
+    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM pacman_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
+    UNION ALL
     -- conan
     SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = sqlc.arg(repo_id)::uuid

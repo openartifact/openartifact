@@ -72,7 +72,7 @@ import { t } from '../i18n'
 const props = defineProps<{
   format: string
   repo: string
-  /** hosted, proxy or group: a proxy of some formats is configured differently from a hosted repository. */
+  /** hosted, proxy or group; defaults to hosted. */
   repoType?: string
   /** The host already shows the "Connect a client" heading above the panel. */
   titled?: boolean

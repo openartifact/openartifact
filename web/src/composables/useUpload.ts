@@ -38,6 +38,8 @@ interface UploadStartOptions {
   /** Extra multipart text fields sent next to the file. */
   fields?: Record<string, string>
   headers?: Record<string, string>
+  /** `PUT` sends the file itself as the request body (native format routes) instead of a multipart form. */
+  method?: 'POST' | 'PUT'
 }
 
 let nextId = 1
@@ -65,7 +67,7 @@ export function useUpload() {
       const xhr = new XMLHttpRequest()
       entry.xhr = xhr
       entry.status = 'uploading'
-      xhr.open('POST', opts.url)
+      xhr.open(opts.method ?? 'POST', opts.url)
       xhr.withCredentials = true
       xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
       for (const [k, v] of Object.entries(csrfHeader())) xhr.setRequestHeader(k, v)
@@ -98,6 +100,10 @@ export function useUpload() {
         if (entry.status !== 'complete' && entry.status !== 'failed') entry.status = 'cancelled'
         reject(new ApiError('aborted', 0))
       })
+      if (opts.method === 'PUT') {
+        xhr.send(entry.file)
+        return
+      }
       const form = new FormData()
       form.append(opts.field ?? 'file', entry.file, entry.file.name)
       for (const [k, v] of Object.entries(opts.fields ?? {})) form.append(k, v)

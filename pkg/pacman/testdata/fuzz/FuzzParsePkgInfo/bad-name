@@ -1,0 +1,2 @@
+go test fuzz v1
+string("pkgname = Bad Name\x0apkgver = 1.0-1\x0aarch = x86_64\x0a")

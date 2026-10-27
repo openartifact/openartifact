@@ -8,11 +8,12 @@
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // RPM uses the Red Hat mark, Cargo the Rust mark, Conda the Anaconda mark and
 // sbt the Scala mark, apk the Alpine Linux mark, Terraform the Terraform mark (also used for OpenTofu
-// repositories: one `terraform` format serves both clients).
+// repositories: one `terraform` format serves both clients), pacman the Arch Linux mark.
 
 import {
   siAlpinelinux,
   siAnaconda,
+  siArchlinux,
   siApache,
   siApachemaven,
   siConan,
@@ -47,6 +48,7 @@ export type FormatId =
   | 'conan'
   | 'ivy'
   | 'sbt'
+  | 'pacman'
   | 'apk'
   | 'terraform'
 
@@ -89,6 +91,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   conan: brand('Conan', siConan),
   ivy: brand('Ivy', siApache),
   sbt: brand('sbt', siScala),
+  pacman: brand('Arch Linux (pacman)', siArchlinux),
   apk: brand('Alpine (apk)', siAlpinelinux),
   terraform: brand('Terraform', siTerraform),
 }
@@ -96,7 +99,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
 /** Ordered format ids — drives the format pickers on repo-create screens. */
 export const ALL_FORMATS: FormatId[] = [
   'docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb',
-  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk',
+  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman',
 ]
 
 const DEFAULT_VIEWBOX = '0 0 24 24'
@@ -166,7 +169,7 @@ export function formatIconEvenOdd(id: string): boolean {
 // server's cleanup format registry (internal/worker/cleanup_formats.go).
 const PACKAGE_DELETE_FORMATS: readonly string[] = [
   'deb', 'rpm', 'helm', 'pypi', 'nuget', 'go', 'npm', 'maven', 'ivy', 'sbt',
-  'cargo', 'rubygems', 'conda', 'conan', 'raw', 'docker',
+  'cargo', 'rubygems', 'conda', 'conan', 'raw', 'docker', 'pacman',
 ]
 
 export function supportsPackageDelete(format: string | undefined): boolean {

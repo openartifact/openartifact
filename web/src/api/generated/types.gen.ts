@@ -206,7 +206,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk';
+    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk' | 'pacman';
     /**
      * Repository description
      */
@@ -1203,7 +1203,7 @@ export type GpgKey = {
     source?: 'imported' | 'generated' | 'auto' | 'config';
     read_only?: boolean;
     /**
-     * Signs every deb/rpm repository that has no key of its own
+     * Signs every deb, rpm and pacman repository that has no key of its own
      */
     active_global?: boolean;
     /**
@@ -2349,7 +2349,7 @@ export type TrashItem = {
      * Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item.
      */
     id: string;
-    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
     repository_id: string;
     /**
      * Name of the owning repository (the trashed repository itself for kind repository).
@@ -3371,7 +3371,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk';
+        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk' | 'pacman';
         /**
          * Page number (default: 1)
          */
@@ -3445,7 +3445,7 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 alphanumeric/hyphen/underscore)
          */
         name: string;
-        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk';
+        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk' | 'pacman';
         description?: string;
         public?: boolean;
         /**
@@ -8717,7 +8717,7 @@ export type PutApiV1AdminGpgKeysByIdActivateData = {
 
 export type PutApiV1AdminGpgKeysByIdActivateErrors = {
     /**
-     * Repository is not a hosted deb or rpm repository
+     * Repository is not a hosted deb, rpm or pacman repository
      */
     400: unknown;
     /**
@@ -11875,7 +11875,7 @@ export type GetApiV1TrashData = {
         /**
          * Only items of this kind.
          */
-        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Only items of the repository with this name (a repository that is itself in the trash is not matched by name; its items are hidden).
          */
@@ -11920,7 +11920,7 @@ export type PostApiV1TrashByKindByIdRestoreData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Trash item id.
          */
@@ -11966,7 +11966,7 @@ export type DeleteApiV1TrashByKindByIdData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Trash item id.
          */
@@ -12050,7 +12050,7 @@ export type GetApiV1RepositoriesByNameTrashData = {
         /**
          * Only items of this kind.
          */
-        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Page number (default 1).
          */
@@ -12096,7 +12096,7 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreData = {
         /**
          * One of the TrashItem kind values.
          */
-        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'apk_package' | 'terraform_module' | 'terraform_provider' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'pacman' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
         /**
          * Trash item id.
          */

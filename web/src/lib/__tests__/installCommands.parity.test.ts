@@ -29,7 +29,7 @@ describe('installCommands parity with internal/clientsetup', () => {
   })
 
   for (const c of cases) {
-    it(`${c.format} / ${c.repo_type} / ${c.repo}`, () => {
+    it(`${c.format} / ${c.repo_type} (${c.repo_type}) / ${c.repo}`, () => {
       expect(repoBaseUrl(c.format, c.origin, c.repo)).toBe(c.base_url)
       expect(clientSetup(c.format, c.origin, c.repo, c.repo_type)).toEqual(c.snippets)
     })

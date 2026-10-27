@@ -77,6 +77,7 @@ var Tables = []Table{
 	{Name: "cargo_crates", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "rubygems_gems", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "conda_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
+	{Name: "pacman_packages", Key: idKey(), Exclude: []string{"file_list"}, BlobRefs: []string{"blob_id"}},
 	{Name: "conan_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "apk_packages", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "terraform_modules", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},

@@ -590,5 +590,59 @@
         "configure": "# the group signs its indexes with its own key, not its members'\n# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-my repo.rsa.pub https://artifacts.example.com:8443/repos/my%20repo/public.key\necho \"https://artifacts.example.com:8443/repos/my%20repo/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE"
       }
     ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[repo1]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/repo1/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
+        "publish": "curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst https://artifacts.example.com:8443/repos/repo1/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst\n\n# optional detached signature\ncurl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst.sig https://artifacts.example.com:8443/repos/repo1/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst.sig"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
+        "publish": "curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst https://artifacts.example.com:8443/repos/my%20repo/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst\n\n# optional detached signature\ncurl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst.sig https://artifacts.example.com:8443/repos/my%20repo/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst.sig"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# top of /etc/pacman.d/mirrorlist\nServer = https://artifacts.example.com:8443/repos/repo1/$repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/$repo/os/$arch\n\nsudo pacman -Syu"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# top of /etc/pacman.d/mirrorlist\nServer = https://artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\nsudo pacman -Syu"
+      }
+    ]
   }
 ]

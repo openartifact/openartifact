@@ -46,7 +46,7 @@ List all repositories with optional filtering
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`. |
+| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
 | `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
@@ -90,7 +90,7 @@ Create a new repository (admin only)
 | `cache_ttl_seconds` | integer | no | - |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true). |
-| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`. |
+| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |

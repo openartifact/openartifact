@@ -24,6 +24,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "pool/")
 	case "rpm":
 		return isRPMBlob(relPath, base)
+	case "pacman":
+		return strings.Contains(base, ".pkg.tar") && !strings.HasSuffix(base, ".sig")
 	case "npm":
 		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
 	case "helm":

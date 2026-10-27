@@ -186,6 +186,7 @@
   "trash.kind.docker_tag": "Docker-Tag",
   "trash.kind.rpm_package": "RPM-Paket",
   "trash.kind.deb_package": "Deb-Paket",
+  "trash.kind.pacman": "Pacman-Paket",
   "trash.kind.apk_package": "Alpine-Paket",
   "apkKey.title": "Signaturschlüssel",
   "apkKey.hint": "Alpine-Clients prüfen den Paketindex mit dem öffentlichen Schlüssel dieses Repositorys. Installiere ihn auf jedem Client in /etc/apk/keys.",

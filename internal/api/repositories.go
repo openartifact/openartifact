@@ -65,6 +65,7 @@ var validFormats = map[string]bool{
 	"ivy":       true,
 	"apk":       true,
 	"sbt":       true,
+	"pacman":    true,
 	"terraform": true,
 }
 

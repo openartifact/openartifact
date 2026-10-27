@@ -56,6 +56,7 @@ gpg --armor --export <FINGERPRINT> > public.key
 | Debian | `dists/<dist>/InRelease` (clear-signed) and `dists/<dist>/Release.gpg` (detached, armored) | `HOST/repos/REPO/public.key` |
 | RPM | `repodata/repomd.xml.asc` (detached, armored) | `HOST/repos/REPO/public.key` |
 | RPM package (opt-in) | the OpenPGP header signature inside each uploaded `.rpm`, when the repository's `sign_packages` is on | `HOST/repos/REPO/public.key` |
+| Arch Linux (pacman) | `<name>.db.sig`, `<name>.files.sig` and a `.sig` per package (uploaded signatures are kept, missing ones are created by the server; [details](../formats/pacman.md#signing)); repositories of format `pacman` can be assigned a key like Debian and RPM ones | `HOST/repos/REPO/public.key` |
 | Release bundle | the bundle manifest, as a detached armored signature | `GET /api/v1/admin/gpg/keys/{id}/export` |
 
 Debian packages are not signed individually: apt trusts the signed `Release`/`InRelease`, whose checksums cover `Packages` and so every `.deb` (per-package `debsigs` signatures are rarely checked and are not produced). RPM packages are signed per file only when the repository opts in with `sign_packages`; that stores the signed file, not the upload, and does not re-sign existing packages when keys rotate. dnf's default `gpgcheck=1` needs it; see [RPM signing](../formats/rpm.md#signing-packages-sign_packages).

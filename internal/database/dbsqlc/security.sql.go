@@ -79,6 +79,9 @@ WITH q_candidates AS MATERIALIZED (
         FROM conda_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL
         SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM pacman_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
         FROM conan_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL
         SELECT t.repository_id, t.id, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text

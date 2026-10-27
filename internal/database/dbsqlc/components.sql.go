@@ -60,6 +60,10 @@ SELECT COUNT(*)::bigint FROM (
     SELECT 1 FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
     UNION ALL
+    -- pacman
+    SELECT 1 FROM pacman_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
+    UNION ALL
     -- conan
     SELECT 1 FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
@@ -353,6 +357,11 @@ FROM (
     FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    SELECT t.id::uuid, 'pacman'::text, t.filename::text, t.name::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM pacman_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     SELECT t.id::uuid, 'conan'::text, t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
@@ -531,6 +540,13 @@ FROM (
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
            t.name || '-' || t.version || '-' || t.build_string || t.extension::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT id, repository_id, name, version, build_string, platform, depends, created_at, updated_at, blob_id, deleted_at, deleted_by, extension, build_number, md5, timestamp_ms, index_extra FROM conda_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
+    -- pacman: one row per package file; arch = package architecture.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'pacman'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_date::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
+           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, description, url, packager, build_date, installed_size, licenses, package_groups, replaces, conflicts, provides, depends, optdepends, makedepends, checkdepends, file_list, signature, signature_source, signature_key, created_at, updated_at, deleted_at, deleted_by FROM pacman_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
     UNION ALL
     -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
     -- release = recipe_revision, filename = full reference.
@@ -788,6 +804,13 @@ FROM (
            t.name || '-' || t.version || '-' || t.build_string || t.extension::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT id, repository_id, name, version, build_string, platform, depends, created_at, updated_at, blob_id, deleted_at, deleted_by, extension, build_number, md5, timestamp_ms, index_extra FROM conda_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
     UNION ALL
+    -- pacman: one row per package file; arch = package architecture.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'pacman'::text AS format, t.arch::text AS arch, ''::text::text AS release, 0::int::int AS epoch, t.build_date::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, t.installed_size::bigint AS installed_size,
+           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, description, url, packager, build_date, installed_size, licenses, package_groups, replaces, conflicts, provides, depends, optdepends, makedepends, checkdepends, file_list, signature, signature_source, signature_key, created_at, updated_at, deleted_at, deleted_by FROM pacman_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
     -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
     -- release = recipe_revision, filename = full reference.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
@@ -966,6 +989,9 @@ FROM (
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM conda_packages t WHERE t.id = ANY($1::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM pacman_packages t WHERE t.id = ANY($1::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM conan_packages t WHERE t.id = ANY($1::uuid[])

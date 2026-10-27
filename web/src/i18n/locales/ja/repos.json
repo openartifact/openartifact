@@ -183,6 +183,7 @@
   "trash.kind.docker_tag": "Docker タグ",
   "trash.kind.rpm_package": "RPM パッケージ",
   "trash.kind.deb_package": "Deb パッケージ",
+  "trash.kind.pacman": "pacman パッケージ",
   "trash.kind.apk_package": "Alpine パッケージ",
   "apkKey.title": "署名キー",
   "apkKey.hint": "Alpine クライアントは、このリポジトリの公開キーでパッケージインデックスを検証します。すべてのクライアントの /etc/apk/keys にインストールしてください。",

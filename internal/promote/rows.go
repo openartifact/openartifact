@@ -43,8 +43,8 @@ type rowSpec struct {
 	// licenses is an optional SQL expression over s yielding text[] with the
 	// licenses the row declares, for the destination's license policy.
 	licenses string
-	// regen is the generated metadata a copy makes stale, "" for formats whose
-	// indexes are computed live from the table.
+	// regen is the generated metadata the destination needs refreshed when rows
+	// were copied; empty for formats whose indexes are computed live.
 	regen RegenKind
 }
 

@@ -55,6 +55,11 @@ describe('FormatBadge', () => {
     expect(wrapper.text()).toContain('Cargo')
   })
 
+  it('renders correct label for pacman', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'pacman' } })
+    expect(wrapper.text()).toContain('Arch Linux (pacman)')
+  })
+
   it('renders the Alpine label and icon for apk', () => {
     const wrapper = mount(FormatBadge, { props: { format: 'apk' } })
     expect(wrapper.text()).toContain('Alpine (apk)')

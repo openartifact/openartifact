@@ -29,11 +29,12 @@ export function installBlock(
   pkg: string,
   version: string,
   sha256: string | undefined,
+  repoType = 'hosted',
 ): InstallBlock {
-  const commands: InstallCommand[] = [{ id: 'tag', code: pullCommand(format, origin, repo, pkg, version) }]
+  const commands: InstallCommand[] = [{ id: 'tag', code: pullCommand(format, origin, repo, pkg, version, repoType) }]
   if (format === 'docker' && sha256) {
     const pinned = dockerDigestPull(origin, pkg, sha256)
     if (pinned) commands.push({ id: 'digest', code: pinned })
   }
-  return { commands, registryUrl: repoBaseUrl(format, origin, repo), clients: clientSetup(format, origin, repo) }
+  return { commands, registryUrl: repoBaseUrl(format, origin, repo), clients: clientSetup(format, origin, repo, repoType) }
 }

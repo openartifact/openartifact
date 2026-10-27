@@ -74,6 +74,7 @@ export function pullCommand(
   repo: string,
   pkg: string,
   version: string,
+  repoType = 'hosted',
 ): string {
   const base = repoBaseUrl(format, origin, repo)
   const q = shellQuote
@@ -107,6 +108,9 @@ export function pullCommand(
       return `apt install ${q(`${pkg}=${version}`)}`
     case 'rpm':
       return `dnf install ${q(`${pkg}-${version}`)}`
+    case 'pacman':
+      // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
+      return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`
     case 'apk':
       return `apk add ${q(`${pkg}=${version}`)}`
     case 'raw':
@@ -298,6 +302,34 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
           publish: `curl -u <USERNAME>:<TOKEN> -T file.bin ${base}/path/to/file.bin`,
         },
       ]
+    case 'pacman': {
+      if (repoType === 'proxy') {
+        // A proxy mirrors an Arch mirror root: paths pass through, signatures are the upstream's.
+        return [
+          {
+            client: 'pacman',
+            configure:
+              `# top of /etc/pacman.d/mirrorlist\nServer = ${base}/$repo/os/$arch` +
+              `\n\n# private repository: Server = https://<USER>:<TOKEN>@${host}/repos/${encodeURIComponent(repo)}/$repo/os/$arch` +
+              `\n\nsudo pacman -Syu`,
+          },
+        ]
+      }
+      const key = `${base}/public.key`
+      const put = (file: string) => `curl -fsS -H "Authorization: Bearer $OA_TOKEN" -T ${file} ${base}/os/x86_64/${file}`
+      const pkg = 'my-package-1.0-1-x86_64.pkg.tar.zst'
+      return [
+        {
+          client: 'pacman',
+          configure:
+            `# /etc/pacman.conf\n[${repo}]\nSigLevel = Required\nServer = ${base}/os/$arch` +
+            `\n\n# private repository: Server = https://<USER>:<TOKEN>@${host}/repos/${encodeURIComponent(repo)}/os/$arch` +
+            `\n\n# trust the repository key\ncurl -fsSL ${key} | sudo pacman-key --add -` +
+            `\nsudo pacman-key --lsign-key $(curl -fsSL ${key} | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')`,
+          publish: `${put(pkg)}\n\n# optional detached signature\n${put(`${pkg}.sig`)}`,
+        },
+      ]
+    }
     case 'conda':
       return [
         {

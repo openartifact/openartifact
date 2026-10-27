@@ -606,7 +606,8 @@
               "ivy",
               "sbt",
               "terraform",
-              "apk"
+              "apk",
+              "pacman"
             ],
             "description": "Package format"
           },
@@ -2793,7 +2794,7 @@
           },
           "active_global": {
             "type": "boolean",
-            "description": "Signs every deb/rpm repository that has no key of its own"
+            "description": "Signs every deb, rpm and pacman repository that has no key of its own"
           },
           "repositories": {
             "type": "array",
@@ -5376,6 +5377,7 @@
               "cargo_crate",
               "rubygems_gem",
               "conda_package",
+              "pacman",
               "conan_package",
               "helm_chart",
               "raw_artifact",
@@ -7088,7 +7090,8 @@
                 "ivy",
                 "sbt",
                 "terraform",
-                "apk"
+                "apk",
+                "pacman"
               ]
             }
           },
@@ -7267,7 +7270,8 @@
                       "ivy",
                       "sbt",
                       "terraform",
-                      "apk"
+                      "apk",
+                      "pacman"
                     ]
                   },
                   "description": {
@@ -16105,7 +16109,7 @@
     "/api/v1/admin/gpg/keys/{id}/activate": {
       "put": {
         "summary": "Activate GPG key",
-        "description": "Makes the key sign every deb/rpm repository without a key of its own (global scope), or only the named hosted deb/rpm repository when `repository` is given. Affected repositories are re-signed (admin only).",
+        "description": "Makes the key sign every deb, rpm and pacman repository without a key of its own (global scope), or only the named hosted deb, rpm or pacman repository when `repository` is given. Affected repositories are re-signed (admin only).",
         "tags": [
           "Admin",
           "GPG"
@@ -16149,7 +16153,7 @@
             }
           },
           "400": {
-            "description": "Repository is not a hosted deb or rpm repository"
+            "description": "Repository is not a hosted deb, rpm or pacman repository"
           },
           "403": {
             "description": "Admin access required"
@@ -21344,6 +21348,7 @@
                 "cargo_crate",
                 "rubygems_gem",
                 "conda_package",
+                "pacman",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21438,6 +21443,7 @@
                 "cargo_crate",
                 "rubygems_gem",
                 "conda_package",
+                "pacman",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21536,6 +21542,7 @@
                 "cargo_crate",
                 "rubygems_gem",
                 "conda_package",
+                "pacman",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21635,6 +21642,7 @@
                 "cargo_crate",
                 "rubygems_gem",
                 "conda_package",
+                "pacman",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21777,6 +21785,7 @@
                 "cargo_crate",
                 "rubygems_gem",
                 "conda_package",
+                "pacman",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",

@@ -164,6 +164,7 @@ type Regenerator interface {
 	NotifyRPMStale(repoID string)
 	NotifyApkStale(repoID string)
 	NotifyMavenStale(repoID, groupID, artifactID string)
+	NotifyPacmanStale(repoID string)
 }
 
 // SetRegenerator wires the metadata workers so a restore regenerates rpm, deb
@@ -456,6 +457,7 @@ type packageExport struct {
 	npmDistTags     []*models.NPMDistTag
 	mavenArtifacts  []*models.MavenArtifact
 	condaPackages   []*models.CondaPackage
+	pacmanPackages  []*models.PacmanPackage
 	gomodModules    []*models.GoModule
 	dockerBlobs     []*models.DockerBlob
 	dockerManifests []*models.DockerManifest
@@ -562,6 +564,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"npm_dist_tags", pkg.npmDistTags, len(pkg.npmDistTags)},
 		{"maven_artifacts", pkg.mavenArtifacts, len(pkg.mavenArtifacts)},
 		{"conda_packages", pkg.condaPackages, len(pkg.condaPackages)},
+		{"pacman_packages", pkg.pacmanPackages, len(pkg.pacmanPackages)},
 		{"gomod_modules", pkg.gomodModules, len(pkg.gomodModules)},
 		{"webhooks", pkg.webhooks, len(pkg.webhooks)},
 		{"cleanup_policies", pkg.cleanupPolicies, len(pkg.cleanupPolicies)},
@@ -719,6 +722,9 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 	case "maven":
 		v, err := e.db.ListMavenArtifactsByRepo(ctx, id)
 		collectRepoList(pkg, &pkg.mavenArtifacts, "maven artifacts", id, v, err)
+	case "pacman":
+		v, err := e.db.ListPacmanPackages(ctx, id)
+		collectRepoList(pkg, &pkg.pacmanPackages, "pacman packages", id, v, err)
 	case "conda":
 		v, err := e.db.ListAllCondaPackages(ctx, id)
 		collectRepoList(pkg, &pkg.condaPackages, "conda packages", id, v, err)
@@ -1411,6 +1417,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.CondaPackage) string { return c.RepositoryID },
 			func(c *models.CondaPackage, id string) { c.RepositoryID = id },
 			false, e.db.CreateCondaPackage)
+	case "pacman_packages.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "pacman package",
+			func(c *models.PacmanPackage) string { return c.RepositoryID },
+			func(c *models.PacmanPackage, id string) { c.RepositoryID = id },
+			false, e.db.CreatePacmanPackage)
 	case "gomod_modules.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "go module",
 			func(c *models.GoModule) string { return c.RepositoryID },
@@ -1710,7 +1721,7 @@ func (e *Engine) restoreGroupMembers(ctx context.Context, r io.Reader, st *resto
 // maven-metadata.xml are derived, and nothing else would create them until a
 // new upload hits the same repository. rpm gets its rpm_repos row (the
 // worker's only index of work) marked stale, so the periodic stale sweep also
-// covers a missing notifier; deb and maven are enqueued per repo / per GA.
+// covers a missing notifier; deb and pacman are enqueued per repo, maven per GA.
 func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreState) {
 	for _, repo := range st.hostedRepos {
 		switch repo.Format {
@@ -1719,6 +1730,10 @@ func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreStat
 		case "deb":
 			if e.regen != nil {
 				e.regen.NotifyDebStale(repo.ID)
+			}
+		case "pacman":
+			if e.regen != nil {
+				e.regen.NotifyPacmanStale(repo.ID)
 			}
 		case "apk":
 			if e.regen != nil {

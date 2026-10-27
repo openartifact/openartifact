@@ -750,6 +750,7 @@ var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built o
 	{"gomod_modules t", "t.repository_id", "t.mod_blob_id = b.id", "t.module_path || '/@v/' || t.version || '.mod'"},
 	{"cargo_crates t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
 	{"rubygems_gems t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
+	{"pacman_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
 	{"conda_packages t", "t.repository_id", "t.blob_id = b.id", "t.platform || '/' || t.name || '-' || t.version || '-' || t.build_string"},
 	{"conan_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
 	{"terraform_modules t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.system || '-' || t.version"},

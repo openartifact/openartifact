@@ -31,6 +31,7 @@ Every proxy format can be grouped except deb and rpm; see the [format matrix](..
 | apk | yes | yes | yes |
 | rubygems | yes | yes | yes |
 | conda | yes | yes | yes |
+| pacman | yes | yes | no (planned) |
 | apk | yes | yes | yes |
 | terraform | yes | no | no |
 
@@ -38,7 +39,7 @@ Creating a proxy or group repository of an unsupported format is rejected with `
 
 ## Creating repositories
 
-Creating, updating and deleting repositories needs an admin principal (`403 forbidden` otherwise). Names match `^[a-zA-Z0-9_-]{1,100}$` and must not be one of the reserved names `new`, `settings`, `trash`, `raw`, `maven`, `sbt`, `ivy` (case-insensitive; `400 validation_failed`): the first three collide with web UI pages under `/repos/`, the last four with the isolated `/repos/<format>/{name}/...` URL namespaces, which would make the repository's pages and native URLs unreachable. Repositories created by an earlier version under one of these names keep working through the API and CLI, but their web pages and some native URLs may not load; there is no automatic migration, so create a new repository with another name and copy the content (`oa import` or the native client) before deleting the old one; `format` is one of the 16 formats above.
+Creating, updating and deleting repositories needs an admin principal (`403 forbidden` otherwise). Names match `^[a-zA-Z0-9_-]{1,100}$` and must not be one of the reserved names `new`, `settings`, `trash`, `raw`, `maven`, `sbt`, `ivy` (case-insensitive; `400 validation_failed`): the first three collide with web UI pages under `/repos/`, the last four with the isolated `/repos/<format>/{name}/...` URL namespaces, which would make the repository's pages and native URLs unreachable. Repositories created by an earlier version under one of these names keep working through the API and CLI, but their web pages and some native URLs may not load; there is no automatic migration, so create a new repository with another name and copy the content (`oa import` or the native client) before deleting the old one; `format` is one of the 17 formats above.
 
 ```sh
 # Hosted (repo_type defaults to "hosted")

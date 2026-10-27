@@ -186,6 +186,7 @@
   "trash.kind.docker_tag": "Tag Docker",
   "trash.kind.rpm_package": "Pacote RPM",
   "trash.kind.deb_package": "Pacote deb",
+  "trash.kind.pacman": "Pacote pacman",
   "trash.kind.apk_package": "Pacote Alpine",
   "apkKey.title": "Chave de assinatura",
   "apkKey.hint": "Os clientes Alpine verificam o índice de pacotes com a chave pública deste repositório. Instale-a em /etc/apk/keys em cada cliente.",

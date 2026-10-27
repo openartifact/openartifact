@@ -39,7 +39,8 @@ func ProxySupported(format string) bool {
 		"conan",
 		"rubygems",
 		"conda",
-		"apk":
+		"apk",
+		"pacman":
 		return true
 	}
 
@@ -98,6 +99,8 @@ func DefaultUpstreamURL(format string) string {
 		return "https://center2.conan.io"
 	case "rubygems":
 		return "https://rubygems.org"
+	case "pacman":
+		return "https://geo.mirror.pkgbuild.com"
 	}
 
 	return ""
@@ -105,7 +108,7 @@ func DefaultUpstreamURL(format string) string {
 
 // ProxyFormats lists the proxy-capable formats for error messages.
 func ProxyFormats() string {
-	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
 }
 
 // GroupFormats lists the group-capable formats for error messages.

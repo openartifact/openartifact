@@ -151,6 +151,7 @@ var dependencyDecoders = map[string]func([]byte) []responses.PackageDependencyRe
 	"deb":      decodeDebDeps,
 	"rpm":      decodeRpmDeps,
 	"go":       decodeGoDeps,
+	"pacman":   decodePacmanDeps,
 }
 
 // decodeDependencies returns the declared dependencies of a package version
@@ -268,6 +269,29 @@ func decodeCondaDeps(raw []byte) []responses.PackageDependencyResponse {
 	for _, spec := range specs {
 		name, version, _ := strings.Cut(strings.TrimSpace(spec), " ")
 		out = append(out, responses.PackageDependencyResponse{Name: name, Version: strings.TrimSpace(version)})
+	}
+
+	return out
+}
+
+// decodePacmanDeps reads the depends array of a pacman package: entries such
+// as "glibc>=2.38" or "sh", split at the first comparison operator.
+func decodePacmanDeps(raw []byte) []responses.PackageDependencyResponse {
+	var specs []string
+	if json.Unmarshal(raw, &specs) != nil {
+		return nil
+	}
+
+	out := make([]responses.PackageDependencyResponse, 0, len(specs))
+
+	for _, spec := range specs {
+		spec = strings.TrimSpace(spec)
+		if i := strings.IndexAny(spec, "<>="); i >= 0 {
+			out = append(out, responses.PackageDependencyResponse{Name: spec[:i], Version: spec[i:]})
+			continue
+		}
+
+		out = append(out, responses.PackageDependencyResponse{Name: spec})
 	}
 
 	return out

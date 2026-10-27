@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # AGENTS.md
 
-Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format artifact manager (deb, rpm, npm, maven, helm, rubygems, docker/OCI, pypi, cargo, go, nuget, conda, conan, apk, terraform/opentofu, ivy, sbt, raw). License: AGPL-3.0-or-later (REUSE-compliant; every new file needs an SPDX header).
+Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format artifact manager (deb, rpm, pacman, npm, maven, helm, rubygems, docker/OCI, pypi, cargo, go, nuget, conda, conan, apk, terraform/opentofu, ivy, sbt, raw). License: AGPL-3.0-or-later (REUSE-compliant; every new file needs an SPDX header).
 
 ## Layout
 
@@ -18,7 +18,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,rpm,npm,maven}.go`), `openapi.json` |
 | `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{repo}/...`, `/v2/...`); the Go module format lives in `gomod` |
 | `internal/repodispatch` | chi middleware in front of the per-format routes: hosted repos pass through, proxy and group repos are served by `internal/proxy` / `internal/group` |
-| `internal/{group,repotype}` | Group member resolution + Maven metadata / npm packument / cargo index / Helm `index.yaml` / go `@v/list` / NuGet registration / Conan revision + search / RubyGems compact index merge (`pkg/helm/index.go` parses, rewrites and merges indexes); `repotype` is the single policy of which formats may be proxy (maven, sbt, ivy, deb, rpm, apk, docker, npm, pypi, cargo, go, helm, nuget, conan, raw) or group (maven, sbt, ivy, deb, rpm, apk, docker, npm, pypi, cargo, go, helm, nuget, conan, raw; deb/rpm/apk groups serve generated merged metadata, `internal/worker/group_metadata*.go`); `internal/pypisimple` is the PEP 503/691 parser/renderer behind the pypi proxy and group |
+| `internal/{group,repotype}` | Group member resolution + Maven metadata / npm packument / cargo index / Helm `index.yaml` / go `@v/list` / NuGet registration / Conan revision + search / RubyGems compact index merge (`pkg/helm/index.go` parses, rewrites and merges indexes); `repotype` is the single policy of which formats may be proxy (maven, sbt, ivy, deb, rpm, apk, pacman, docker, npm, pypi, cargo, go, helm, nuget, conan, raw) or group (maven, sbt, ivy, deb, rpm, apk, docker, npm, pypi, cargo, go, helm, nuget, conan, raw; deb/rpm/apk groups serve generated merged metadata, `internal/worker/group_metadata*.go`); `internal/pypisimple` is the PEP 503/691 parser/renderer behind the pypi proxy and group |
 | `internal/ocipath` | Parses `/v2/<name>/...` into OpenArtifact repo + image; shared by RBAC and the docker handler |
 | `internal/clientsetup` | Go port of `web/src/lib/installCommands.ts` (client snippets, used by MCP `client_setup`); keep both in sync (`testdata/web_parity.json` is checked by a Go test and `web/src/lib/__tests__/installCommands.parity.test.ts`; regenerate with `UPDATE_PARITY=1 go test ./internal/clientsetup -run Parity`; `internal/repotype` has the same guard for `web/src/lib/repoTypes.ts`) |
 | `internal/importmeta` | `X-OA-Import-Created-At` handling for `oa import` (honored only for `manage` principals) |

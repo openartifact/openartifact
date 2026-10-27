@@ -1212,6 +1212,30 @@ func (m *BaseMockDB) DeleteConanPackage(ctx context.Context, id string) error {
 func (m *BaseMockDB) ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error) {
 	return nil, errNotImpl("ListConanPackages")
 }
+func (m *BaseMockDB) CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error {
+	return errNotImpl("CreatePacmanPackage")
+}
+func (m *BaseMockDB) GetPacmanPackageByFilename(ctx context.Context, repoID, filename string) (*models.PacmanPackage, error) {
+	return nil, errNotImpl("GetPacmanPackageByFilename")
+}
+func (m *BaseMockDB) ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
+	return nil, errNotImpl("ListPacmanPackages")
+}
+func (m *BaseMockDB) ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error) {
+	return nil, errNotImpl("ListPacmanFileLists")
+}
+func (m *BaseMockDB) ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
+	return nil, errNotImpl("ListPacmanPackagesWithoutFileList")
+}
+func (m *BaseMockDB) SetPacmanFileList(ctx context.Context, repoID, id, fileList string) error {
+	return errNotImpl("SetPacmanFileList")
+}
+func (m *BaseMockDB) SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error {
+	return errNotImpl("SetPacmanSignature")
+}
+func (m *BaseMockDB) DeletePacmanPackage(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeletePacmanPackage")
+}
 func (m *BaseMockDB) CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error {
 	return errNotImpl("CreateIvyArtifact")
 }
