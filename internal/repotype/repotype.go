@@ -23,7 +23,7 @@ const DockerHubUpstream = "https://registry-1.docker.io"
 // pulled through the OCI distribution protocol.
 func ProxySupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "ivy", "sbt":
+	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan":
 		return true
 	}
 
@@ -32,14 +32,15 @@ func ProxySupported(format string) bool {
 
 // GroupSupported reports whether group repositories of format can be served.
 // Groups resolve members by path (and merge Maven metadata, npm packuments,
-// NuGet registrations, PyPI project pages and Go version lists; ivy, sbt and raw
-// groups answer from the first member that has the file), for docker by
+// NuGet registrations, PyPI project pages, Go version lists and Conan revision
+// lists and searches; ivy, sbt and raw groups answer from the first member that
+// has the file), for docker by
 // OCI manifest/blob, and for deb and rpm by generating the Release/Packages
 // indexes or repodata of the group from all members (internal/worker's
 // GroupMetadataWorker) and serving each package from the member that owns it.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm", "ivy", "sbt":
+	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm", "ivy", "sbt", "conan":
 		return true
 	}
 
@@ -60,6 +61,8 @@ func DefaultUpstreamURL(format string) string {
 		return "https://proxy.golang.org"
 	case "nuget":
 		return "https://api.nuget.org/v3/index.json"
+	case "conan":
+		return "https://center2.conan.io"
 	}
 
 	return ""
@@ -67,12 +70,12 @@ func DefaultUpstreamURL(format string) string {
 
 // ProxyFormats lists the proxy-capable formats for error messages.
 func ProxyFormats() string {
-	return "cargo, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, sbt"
+	return "cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, sbt"
 }
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string {
-	return "cargo, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, sbt"
+	return "cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, sbt"
 }
 
 // FederationSupported reports whether hosted repositories of format can be

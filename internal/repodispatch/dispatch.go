@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/ocipath"
@@ -110,6 +111,14 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 		}
 
 		_, tail := middleware.RepoAndPath(r.URL.Path)
+
+		// A conan client pings and logs in to the repository it is configured
+		// with before it asks for any package; those requests are about the
+		// session with this server, whatever the repository serves.
+		if repo.Format == "conan" && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			formatconan.ServeReadOnlySession(w, r, strings.TrimPrefix(tail, "/")) {
+			return
+		}
 
 		switch repo.RepoType {
 		case repotype.Proxy:

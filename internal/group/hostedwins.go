@@ -39,6 +39,7 @@ import (
 //	maven   <g>/<a>[/<v>]/maven-metadata.xml     (file paths: <g>/<a>/maven-metadata.xml)
 //	helm    index.yaml of each hosted member     (charts/<file> only; index.yaml is
 //	                                              filtered in serveHelm instead)
+//	conan   v2/conans/search?q=<name>/*          (a result named <name>; files too)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
 //	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
 //	                                              member's table; no document to probe)
@@ -60,6 +61,12 @@ type pkgRef struct {
 	// probe is the member path of a package-level document a hosted member
 	// answers 200 for iff it holds the package.
 	probe string
+	// query is the raw query the probe is made with.
+	query string
+	// holds, when set, decides ownership from the probe's 200 answer: the
+	// document lists the package among others (a search), so the status alone
+	// does not say. An error makes the member's answer unknown.
+	holds func(doc []byte) (bool, error)
 	// accept is the Accept header the probe is made with, "" to keep the
 	// client's.
 	accept string
@@ -107,6 +114,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = helmRef(relPath)
 	case "ivy", "sbt":
 		ref, ok = fileRepoRef(relPath)
+	case "conan":
+		ref, ok = conanRef(relPath)
 	}
 
 	if !ok {
@@ -423,7 +432,7 @@ func splitHosted(readable []*models.Repository) ([]*models.Repository, bool) {
 func probeRequest(r *http.Request, ref pkgRef) *http.Request {
 	mr := r.Clone(r.Context())
 	mr.Method = http.MethodGet
-	mr.URL.RawQuery = ""
+	mr.URL.RawQuery = ref.query
 
 	for _, hdr := range []string{"If-None-Match", "If-Modified-Since", "If-Match", "If-Unmodified-Since", "If-Range", "Range"} {
 		mr.Header.Del(hdr)
@@ -446,6 +455,10 @@ func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Ba
 		return h.ownsFileModule(mr.Context(), m, ref.modules)
 	}
 
+	if ref.holds != nil {
+		return h.ownsByDoc(mr, m, ref, be)
+	}
+
 	sw := &statusWriter{header: make(http.Header)}
 	be.ServeMember(sw, mr, m, ref.probe)
 
@@ -464,6 +477,39 @@ func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Ba
 	}
 
 	return ownsUnknown
+}
+
+// ownsByDoc asks hosted member m for the probe document and lets ref decide
+// from its content whether the member holds the package.
+func (h *Handler) ownsByDoc(mr *http.Request, m *models.Repository, ref pkgRef, be Backend) ownership {
+	sess := h.newSession(mr.Context())
+	defer sess.release()
+
+	cw := sess.capture(maxConanProbeBytes)
+	be.ServeMember(cw, mr, m, ref.probe)
+
+	if cw.status == 0 {
+		cw.status = http.StatusOK
+	}
+
+	switch {
+	case cw.status == http.StatusNotFound:
+		return ownsNot
+	case cw.status != http.StatusOK || cw.overflow:
+		return ownsUnknown
+	}
+
+	held, err := ref.holds(cw.body.Bytes())
+	if err != nil {
+		h.log.Warnw("member probe document unreadable", "member", m.Name, "error", err)
+		return ownsUnknown
+	}
+
+	if held {
+		return ownsYes
+	}
+
+	return ownsNot
 }
 
 // ownsChart reports whether hosted helm member m lists a chart that file (a
