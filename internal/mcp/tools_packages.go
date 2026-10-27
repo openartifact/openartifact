@@ -280,6 +280,6 @@ func (s *Server) clientSetup(ctx context.Context, in clientSetupIn) (clientSetup
 		Repository: repo.Name,
 		Format:     repo.Format,
 		BaseURL:    clientsetup.RepoBaseURL(repo.Format, s.baseURL, repo.Name),
-		Clients:    clientsetup.Snippets(repo.Format, repo.RepoType, s.baseURL, repo.Name),
+		Clients:    clientsetup.Snippets(repo.Format, s.baseURL, repo.Name, repo.RepoType),
 	}, nil
 }

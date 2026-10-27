@@ -35,6 +35,8 @@ export interface UploadEntry {
 interface UploadStartOptions {
   url: string
   field?: string
+  /** Extra multipart text fields sent next to the file. */
+  fields?: Record<string, string>
   headers?: Record<string, string>
   /** `PUT` sends the file itself as the request body (native format routes) instead of a multipart form. */
   method?: 'POST' | 'PUT'
@@ -104,6 +106,7 @@ export function useUpload() {
       }
       const form = new FormData()
       form.append(opts.field ?? 'file', entry.file, entry.file.name)
+      for (const [k, v] of Object.entries(opts.fields ?? {})) form.append(k, v)
       xhr.send(form)
     })
   }

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect } from 'bun:test'
+import { describe } from 'bun:test'
 import { testAs } from '../lib/browser'
 import { expectLoc, shellReady, t } from '../lib/ui'
 
@@ -55,8 +55,9 @@ describe('legacy URLs', () => {
   it('the hash survives the redirect', async (ui) => {
     await ui.goto('/admin/users#top')
     await shellReady(ui)
-    await ui.expectUrl((u) => u.hash === '#top')
-    expect(ui.url().pathname).toBe('/settings/users')
+    // One wait for the whole target: the URL already carries `#top` while the router
+    // is still resolving the legacy path, so the hash alone proves nothing.
+    await ui.expectUrl('/settings/users#top')
   })
 
   it('/repos/new opens the create drawer', async (ui) => {

@@ -701,7 +701,7 @@ func isConanV1Delete(method, artifactPath string) bool {
 // package belongs to {name}, so they are authorized against that repository
 // with a data action instead of the global "manage" permission.
 func repoDataSegments() []string {
-	return []string{"debs", "packages", "comps", "uploads"}
+	return []string{"debs", "apks", "packages", "comps", "uploads"}
 }
 
 func classifyAPIRoute(method, escapedPath string) routeScope {

@@ -226,9 +226,9 @@ type Database interface {
 	MarkGroupMetadataStale(ctx context.Context, groupID string) error
 	// GetGroupMetadataState returns a group's regeneration state, nil when it has none.
 	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
-	// ListMetadataGroupsOfMember returns the deb, rpm and pacman groups that list the repository as a member.
+	// ListMetadataGroupsOfMember returns the deb, rpm/apk and pacman groups that list the repository as a member.
 	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
-	// ListStaleMetadataGroups returns the deb, rpm and pacman groups that are stale or were never generated.
+	// ListStaleMetadataGroups returns the deb, rpm/apk and pacman groups that are stale or were never generated.
 	ListStaleMetadataGroups(ctx context.Context) ([]string, error)
 	// GetGroupPackageOwner returns the member owning a file the group's merged index lists.
 	GetGroupPackageOwner(ctx context.Context, groupID, path string) (string, bool, error)
@@ -476,6 +476,24 @@ type Database interface {
 	SearchCargoCrateSummaries(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrateSummary, int, error)
 	YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error
 	IncrementCargoDownloadCount(ctx context.Context, repoID, name, version string) error
+
+	// Alpine (apk) methods (docs/formats/apk.md).
+	//
+	// CreateApkPackage stores one .apk; a live row with the same coordinates is
+	// a unique violation (IsUniqueViolation). The Get methods return (nil, nil)
+	// when there is none.
+	CreateApkPackage(ctx context.Context, p *models.ApkPackage) error
+	GetApkPackageFile(ctx context.Context, repoID, branch, repo, arch, name, version string) (*models.ApkPackage, error)
+	// ListApkPackages returns every live package of a repository ordered by
+	// branch, repo, arch, name and version.
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
+	DeleteApkPackage(ctx context.Context, id, repoID string) error
+	IncrementApkDownloadCount(ctx context.Context, id, repoID string) error
+	GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error)
+	// CreateApkSigningKeyIfAbsent reports whether the key was stored (false: the
+	// repository already has one).
+	CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.ApkSigningKey) (bool, error)
+	ReplaceApkSigningKey(ctx context.Context, k *models.ApkSigningKey) error
 
 	// Terraform/OpenTofu registry methods (docs/formats/terraform.md). The
 	// registry namespace is the repository, so rows carry no namespace.

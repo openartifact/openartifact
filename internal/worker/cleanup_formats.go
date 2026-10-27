@@ -231,6 +231,17 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 			quotaTracked:  true,
 			kind:          models.TrashKindConan,
 		}, true
+	case "apk":
+		// Ranked per package within one branch, repo and architecture directory.
+		return formatTable{
+			table:         "apk_packages",
+			nameCol:       "branch || '/' || repo || '/' || name",
+			partitionCols: []string{"branch", "repo", "arch", "name"},
+			versionExpr:   "version",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindApk,
+		}, true
 	case "raw":
 		// A raw file has no version: files are ranked against the other files
 		// of their directory, newest first.

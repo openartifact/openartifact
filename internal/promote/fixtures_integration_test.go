@@ -160,6 +160,16 @@ func rowFixtures() []fixture {
 			},
 		},
 		{
+			format: "apk", version: "1.2.5-r0", path: "musl-1.2.5-r0.apk",
+			tables: []string{"apk_packages"}, compare: []string{"apk_packages"},
+			seed: func(h *harness, repo, blob string) {
+				h.row("apk_packages", repo, "blob_id", blob, map[string]any{
+					"branch": "v3.20", "repo": "main", "arch": "x86_64", "pkg_arch": "x86_64", "name": "musl", "version": "1.2.5-r0",
+					"checksum": "Q1abc", "data_sha256": "dh", "license": "MIT", "depends": sqlExpr("'{so:libc.musl-x86_64.so.1}'"),
+				})
+			},
+		},
+		{
 			format: "terraform", version: "1.2.0", path: "shop-aws-1.2.0.tar.gz",
 			tables: []string{"terraform_modules"}, compare: []string{"terraform_modules"},
 			seed: func(h *harness, repo, blob string) {

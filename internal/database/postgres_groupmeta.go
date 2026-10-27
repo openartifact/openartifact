@@ -14,7 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// MarkGroupMetadataStale records that the merged metadata of a deb, rpm or pacman group
+// MarkGroupMetadataStale records that the merged metadata of a deb, rpm/apk or pacman group
 // must be regenerated, creating its state row on first use.
 func (p *PostgresDB) MarkGroupMetadataStale(ctx context.Context, groupID string) error {
 	_, err := p.db.ExecContext(ctx, `
@@ -53,13 +53,14 @@ func (p *PostgresDB) GetGroupMetadataState(ctx context.Context, groupID string) 
 	return &st, nil
 }
 
-// ListMetadataGroupsOfMember returns the ids of the deb, rpm or pacman group repositories
+// ListMetadataGroupsOfMember returns the ids of the deb, rpm/apk or pacman group repositories
 // that list memberRepoID as a member.
 func (p *PostgresDB) ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT g.id FROM repository_group_members gm
 		JOIN repositories g ON g.id = gm.group_repo_id
-		WHERE gm.member_repo_id = $1 AND g.deleted_at IS NULL AND g.repo_type = 'group' AND g.format IN ('deb', 'rpm', 'pacman')`, memberRepoID)
+		WHERE gm.member_repo_id = $1 AND g.deleted_at IS NULL AND g.repo_type = 'group'
+		AND g.format IN ('deb', 'rpm', 'apk', 'pacman')`, memberRepoID)
 	if err != nil {
 		return nil, fmt.Errorf("list groups of member: %w", err)
 	}
@@ -84,13 +85,13 @@ func (p *PostgresDB) ListMetadataGroupsOfMember(ctx context.Context, memberRepoI
 	return ids, nil
 }
 
-// ListStaleMetadataGroups returns the deb, rpm or pacman group repositories whose merged
+// ListStaleMetadataGroups returns the deb, rpm/apk or pacman group repositories whose merged
 // metadata is stale or was never generated.
 func (p *PostgresDB) ListStaleMetadataGroups(ctx context.Context) ([]string, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT r.id FROM repositories r
 		LEFT JOIN group_metadata_state s ON s.repository_id = r.id
-		WHERE r.deleted_at IS NULL AND r.repo_type = 'group' AND r.format IN ('deb', 'rpm', 'pacman')
+		WHERE r.deleted_at IS NULL AND r.repo_type = 'group' AND r.format IN ('deb', 'rpm', 'apk', 'pacman')
 		  AND (s.repository_id IS NULL OR s.stale)`)
 	if err != nil {
 		return nil, fmt.Errorf("list stale metadata groups: %w", err)

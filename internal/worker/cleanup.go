@@ -70,6 +70,7 @@ type CleanupWorker struct {
 	wg     sync.WaitGroup // manually triggered policy runs
 
 	rpmNotifier, debNotifier, pacmanNotifier MetadataNotifier
+	apkNotifier                              MetadataNotifier
 	mavenNotifier                            MavenNotifier
 	npmNotifier                              NPMNotifier
 	dockerGC                                 DockerGCRunner
@@ -465,6 +466,10 @@ func (w *CleanupWorker) SetMetadataNotifiers(rpm, deb MetadataNotifier) {
 // when that worker is not running.
 func (w *CleanupWorker) SetPacmanNotifier(n MetadataNotifier) { w.pacmanNotifier = n }
 
+// SetApkNotifier wires the apk metadata worker so a cleanup run that removed
+// packages regenerates the repository's APKINDEX files. It may be nil.
+func (w *CleanupWorker) SetApkNotifier(apk MetadataNotifier) { w.apkNotifier = apk }
+
 // refreshMetadata runs once per policy run for the repository the run touched.
 // rpm is marked stale in the database first, so the stale sweep recovers the
 // refresh even if the notifier is absent or the process dies.
@@ -488,6 +493,10 @@ func (w *CleanupWorker) refreshMetadata(ctx context.Context, repo *models.Reposi
 	case "pacman":
 		if w.pacmanNotifier != nil {
 			w.pacmanNotifier.NotifyStale(repo.ID)
+		}
+	case "apk":
+		if w.apkNotifier != nil {
+			w.apkNotifier.NotifyStale(repo.ID)
 		}
 	}
 }

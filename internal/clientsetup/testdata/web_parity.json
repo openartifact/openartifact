@@ -1,31 +1,5 @@
 [
   {
-    "format": "pacman",
-    "repo_type": "proxy",
-    "origin": "https://artifacts.example.com:8443",
-    "repo": "my repo",
-    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
-    "snippets": [
-      {
-        "client": "pacman",
-        "configure": "# top of /etc/pacman.d/mirrorlist\nServer = https://artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\nsudo pacman -Syu"
-      }
-    ]
-  },
-  {
-    "format": "pacman",
-    "repo_type": "group",
-    "origin": "https://artifacts.example.com:8443",
-    "repo": "my repo",
-    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
-    "snippets": [
-      {
-        "client": "pacman",
-        "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key too (it is the group's when they share the active key), for example\n# curl -fsSL https://artifacts.example.com:8443/repos/\u003cmember\u003e/public.key | sudo pacman-key --add -"
-      }
-    ]
-  },
-  {
     "format": "npm",
     "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
@@ -538,6 +512,86 @@
     ]
   },
   {
+    "format": "apk",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-repo1.rsa.pub https://artifacts.example.com:8443/repos/repo1/public.key\necho \"https://artifacts.example.com:8443/repos/repo1/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE",
+        "publish": "curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer \u003cTOKEN\u003e\" https://artifacts.example.com:8443/repos/repo1/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n# or through the REST API\ncurl -H \"Authorization: Bearer \u003cTOKEN\u003e\" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://artifacts.example.com:8443/api/v1/repositories/repo1/apks"
+      }
+    ]
+  },
+  {
+    "format": "apk",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-my repo.rsa.pub https://artifacts.example.com:8443/repos/my%20repo/public.key\necho \"https://artifacts.example.com:8443/repos/my%20repo/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE",
+        "publish": "curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer \u003cTOKEN\u003e\" https://artifacts.example.com:8443/repos/my%20repo/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n# or through the REST API\ncurl -H \"Authorization: Bearer \u003cTOKEN\u003e\" -F file=@my-pkg-1.0-r0.apk -F branch=v3.20 -F repo=main https://artifacts.example.com:8443/api/v1/repositories/my%20repo/apks"
+      }
+    ]
+  },
+  {
+    "format": "apk",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# the mirror's own signatures are kept: Alpine's keys (alpine-keys) are already installed in official images\n# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/v3.20/main\necho \"https://artifacts.example.com:8443/repos/repo1/v3.20/main\" \u003e\u003e /etc/apk/repositories\necho \"https://artifacts.example.com:8443/repos/repo1/v3.20/community\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE"
+      }
+    ]
+  },
+  {
+    "format": "apk",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# the mirror's own signatures are kept: Alpine's keys (alpine-keys) are already installed in official images\n# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/v3.20/main\necho \"https://artifacts.example.com:8443/repos/my%20repo/v3.20/main\" \u003e\u003e /etc/apk/repositories\necho \"https://artifacts.example.com:8443/repos/my%20repo/v3.20/community\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE"
+      }
+    ]
+  },
+  {
+    "format": "apk",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# the group signs its indexes with its own key, not its members'\n# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-repo1.rsa.pub https://artifacts.example.com:8443/repos/repo1/public.key\necho \"https://artifacts.example.com:8443/repos/repo1/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE"
+      }
+    ]
+  },
+  {
+    "format": "apk",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "apk",
+        "configure": "# the group signs its indexes with its own key, not its members'\n# private repository: put the credentials in the URL, https://\u003cUSERNAME\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/v3.20/main, and fetch the key with wget --user \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nwget -O /etc/apk/keys/openartifact-my repo.rsa.pub https://artifacts.example.com:8443/repos/my%20repo/public.key\necho \"https://artifacts.example.com:8443/repos/my%20repo/v3.20/main\" \u003e\u003e /etc/apk/repositories\napk update\napk add PACKAGE"
+      }
+    ]
+  },
+  {
     "format": "pacman",
     "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",
@@ -562,6 +616,58 @@
         "client": "pacman",
         "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
         "publish": "curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst https://artifacts.example.com:8443/repos/my%20repo/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst\n\n# optional detached signature\ncurl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T my-package-1.0-1-x86_64.pkg.tar.zst.sig https://artifacts.example.com:8443/repos/my%20repo/os/x86_64/my-package-1.0-1-x86_64.pkg.tar.zst.sig"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# top of /etc/pacman.d/mirrorlist\nServer = https://artifacts.example.com:8443/repos/repo1/$repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/$repo/os/$arch\n\nsudo pacman -Syu"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# top of /etc/pacman.d/mirrorlist\nServer = https://artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/$repo/os/$arch\n\nsudo pacman -Syu"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[repo1]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/repo1/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/repo1/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key too (it is the group's when they share the active key), for example\n# curl -fsSL https://artifacts.example.com:8443/repos/\u003cmember\u003e/public.key | sudo pacman-key --add -"
+      }
+    ]
+  },
+  {
+    "format": "pacman",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key too (it is the group's when they share the active key), for example\n# curl -fsSL https://artifacts.example.com:8443/repos/\u003cmember\u003e/public.key | sudo pacman-key --add -"
       }
     ]
   }

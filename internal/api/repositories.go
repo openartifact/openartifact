@@ -63,6 +63,7 @@ var validFormats = map[string]bool{
 	"conda":     true,
 	"conan":     true,
 	"ivy":       true,
+	"apk":       true,
 	"sbt":       true,
 	"pacman":    true,
 	"terraform": true,
@@ -145,12 +146,12 @@ func (h *RepositoriesHandler) WithPublisher(p webhook.Publisher) *RepositoriesHa
 	return h
 }
 
-// GroupMetadataNotifier invalidates the generated metadata of deb, rpm and
-// pacman group repositories (worker.GroupMetadataWorker).
+// GroupMetadataNotifier invalidates the generated metadata of deb, rpm and apk
+// group repositories (worker.GroupMetadataWorker).
 type GroupMetadataNotifier interface {
 	// NotifyStale marks a group's metadata stale and schedules its regeneration.
 	NotifyStale(groupID string)
-	// NotifyMemberChanged does so for every deb/rpm group listing the repository.
+	// NotifyMemberChanged does so for every deb/rpm/apk group listing the repository.
 	NotifyMemberChanged(repoID string)
 }
 
@@ -163,7 +164,7 @@ func (h *RepositoriesHandler) WithGroupMetadata(n GroupMetadataNotifier) *Reposi
 }
 
 // metadataChanged invalidates the merged metadata a change to repo affects: a
-// deb/rpm group's own, or its member's groups'.
+// deb/rpm/apk group's own, or its member's groups'.
 func (h *RepositoriesHandler) metadataChanged(repo *models.Repository) {
 	notifyGroupMetadata(h.groupMeta, repo)
 }
@@ -1241,7 +1242,7 @@ func deleteConfirmation(r *http.Request) string {
 	return body.Confirm
 }
 
-// metadataGroupsOf returns the deb/rpm groups whose merged metadata lists repo.
+// metadataGroupsOf returns the deb/rpm/apk groups whose merged metadata lists repo.
 func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models.Repository) []string {
 	if h.groupMeta == nil || repo.RepoType == repotype.Group || !repotype.GeneratedGroupMetadata(repo.Format) {
 		return nil

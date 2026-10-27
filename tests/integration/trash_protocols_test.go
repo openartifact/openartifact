@@ -200,7 +200,7 @@ func (e *tprEnv) buildRouter() http.Handler {
 
 	trashHandler := api.NewTrashHandler(db, log, evaluator).
 		WithBlobStore(bs).
-		WithRegenerator(api.NewWorkerRegenerator(debW, nil, nil, mavenW, npmW))
+		WithRegenerator(api.NewWorkerRegenerator(debW, nil, nil, nil, mavenW, npmW))
 
 	r := chi.NewRouter()
 	r.Use(e.authenticate)

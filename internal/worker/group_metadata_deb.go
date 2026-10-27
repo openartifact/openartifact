@@ -73,8 +73,17 @@ type debContribution struct {
 }
 
 // checkDist returns group.ErrDistNotFound unless some member has dist (a
-// proxy member is asked, its answer cached by the proxy).
-func (w *GroupMetadataWorker) checkDist(ctx context.Context, dist string, members []*models.Repository) error {
+// proxy member is asked, its answer cached by the proxy). For an apk group dist
+// is a branch/repo/arch directory.
+func (w *GroupMetadataWorker) checkDist(ctx context.Context, grp *models.Repository, dist string, members []*models.Repository) error {
+	if grp.Format == "apk" {
+		return w.checkApkDir(ctx, dist, members)
+	}
+
+	if grp.Format != "deb" {
+		return nil
+	}
+
 	if !ValidDistName(dist) {
 		return group.ErrDistNotFound
 	}

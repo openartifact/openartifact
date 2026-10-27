@@ -13,6 +13,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -48,6 +49,8 @@ type Handler struct {
 	// blobs and metadata serve deb, rpm and pacman groups (WithMetadata).
 	blobs    storage.BlobStore
 	metadata MetadataGenerator
+	// apkKeys serves the public key of an apk group (WithApkKeys).
+	apkKeys formatapk.KeyProvider
 }
 
 // NewHandler creates the group handler.
@@ -113,7 +116,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget, conan, conda, deb, rpm, pacman) merges over its members; false
+// (maven, pypi, npm, helm, cargo, go, nuget, conan, conda, deb, rpm, apk, pacman) merges over its members; false
 // means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
@@ -151,6 +154,10 @@ func (h *Handler) serveMerged(
 		return h.serveConda(w, r, grp, readable, relPath, be)
 	case "deb", "rpm", "pacman":
 		h.serveDebRPM(w, r, grp, readable, relPath, be)
+
+		return true
+	case "apk":
+		h.serveApk(w, r, grp, readable, relPath, be)
 
 		return true
 	}

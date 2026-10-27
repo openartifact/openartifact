@@ -184,6 +184,19 @@ FROM (
     FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
+    -- apk: arch = architecture; the filename is the .apk
+    SELECT t.id::uuid, 'apk'::text, t.name::text, t.version::text, t.arch::text,
+           t.name || '-' || t.version || '.apk'::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, t.description::text, t.license::text, t.url::text, ''::text, ''::text,
+           jsonb_build_object('branch', t.branch, 'repo', t.repo, 'origin', t.origin, 'maintainer', t.maintainer,
+                              'commit', t.commit, 'installed_size', t.installed_size::text, 'build_time', t.build_time::text,
+                              'checksum', t.checksum, 'data_sha256', t.data_sha256,
+                              'download_count', t.download_count::text)::jsonb,
+           NULL::jsonb
+    FROM apk_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
     -- terraform module
     SELECT t.id::uuid, 'terraform'::text, ('modules/' || t.name || '/' || t.system)::text, t.version::text, ''::text,
            t.name || '-' || t.system || '-' || t.version || '.' || t.archive_ext::text, t.created_at::timestamptz, t.updated_at::timestamptz,

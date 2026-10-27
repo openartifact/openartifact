@@ -9,7 +9,7 @@ import "testing"
 func TestGeneratedGroupMetadata(t *testing.T) {
 	t.Parallel()
 
-	for _, f := range []string{"deb", "rpm", "pacman"} {
+	for _, f := range []string{"deb", "rpm", "apk", "pacman"} {
 		if !GeneratedGroupMetadata(f) || !GroupSupported(f) {
 			t.Errorf("%s groups serve generated metadata and must be supported", f)
 		}

@@ -39,6 +39,7 @@ func ProxySupported(format string) bool {
 		"conan",
 		"rubygems",
 		"conda",
+		"apk",
 		"pacman":
 		return true
 	}
@@ -72,6 +73,7 @@ func GroupSupported(format string) bool {
 		"conan",
 		"rubygems",
 		"conda",
+		"apk",
 		"pacman":
 		return true
 	}
@@ -80,11 +82,11 @@ func GroupSupported(format string) bool {
 }
 
 // GeneratedGroupMetadata reports whether the groups of format serve metadata
-// the group worker generates from their members (deb, rpm and pacman) rather
+// the group worker generates from their members (deb, rpm, apk and pacman) rather
 // than resolving requests member by member.
 func GeneratedGroupMetadata(format string) bool {
 	switch format {
-	case "deb", "rpm", "pacman":
+	case "deb", "rpm", "apk", "pacman":
 		return true
 	}
 
@@ -118,12 +120,12 @@ func DefaultUpstreamURL(format string) string {
 
 // ProxyFormats lists the proxy-capable formats for error messages.
 func ProxyFormats() string {
-	return "cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
 }
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string {
-	return "cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
+	return "apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
 }
 
 // FederationSupported reports whether hosted repositories of format can be
