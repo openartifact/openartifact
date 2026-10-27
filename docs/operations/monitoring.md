@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Monitoring and logging
 
-Health and readiness endpoints, Prometheus metrics, OpenTelemetry tracing, the audit log and server logs.
+Health and readiness endpoints, Prometheus metrics, OpenTelemetry (traces, metrics and log records over OTLP), the audit log and server logs.
 
 The REST API, OpenAPI spec and interactive API reference are covered in [API](../integrations/api.md).
 
@@ -173,7 +173,7 @@ increase(openartifact_scanner_db_update_attempts_total{result="failure"}[6h]) > 
 
 For allocation and CPU profiling see [performance](performance.md).
 
-## OpenTelemetry tracing
+## OpenTelemetry
 
 OpenArtifact can export distributed traces, metrics and log records over OTLP to any collector (OpenTelemetry Collector, Jaeger, Tempo, Honeycomb, ...). It is **off by default**: while disabled no provider is installed, no span is created and no `traceparent` header is sent.
 
