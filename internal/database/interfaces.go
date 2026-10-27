@@ -595,6 +595,9 @@ type Database interface {
 	CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error
 	GetSecretScanResult(ctx context.Context, repoID, artifactID string) (*models.SecretScanResult, error)
 	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
+	// DeleteSecretScanResult deletes one secret scan result by ID, scoped to repoID
+	// (ErrSecretScanNotFound when absent).
+	DeleteSecretScanResult(ctx context.Context, repoID, id string) error
 	QuarantineArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error
 
 	// Vulnerability scanning methods

@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -214,12 +215,22 @@ func (h *SecretsHandler) handleDeleteScan(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_, ok = h.findScan(w, r, repo, "delete secret scan: db error")
-	if !ok {
+	id := urlparams.Vars(r)["id"]
+	if !requireUUID(w, id, "secret scan") {
 		return
 	}
 
-	// The spec says DELETE returns 204.
+	if err := h.db.DeleteSecretScanResult(r.Context(), repo.ID, id); err != nil {
+		if errors.Is(err, database.ErrSecretScanNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
+			return
+		}
+
+		h.dbError(w, "delete secret scan: db error", err)
+
+		return
+	}
+
 	writeNoContent(w)
 }
 
