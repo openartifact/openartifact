@@ -35,6 +35,9 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
 	case "nuget":
 		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
+	case "conda":
+		// Package files only; repodata and channeldata are streamed.
+		return strings.HasSuffix(base, ".conda") || strings.HasSuffix(base, ".tar.bz2")
 	case "raw":
 		return true
 	case "pypi":

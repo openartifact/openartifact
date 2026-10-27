@@ -52,6 +52,11 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"nuget", "v3/package/newtonsoft.json/13.0.1/newtonsoft.json.nuspec", false},
 		{"nuget", "v3/package/newtonsoft.json/index.json", false},
 		{"nuget", "v3/registration/newtonsoft.json/index.json", false},
+		{"conda", "linux-64/numpy-1.26.4-py312_0.conda", true},
+		{"conda", "noarch/six-1.16.0-pyh6c4a22f_0.tar.bz2", true},
+		{"conda", "linux-64/repodata.json", false},
+		{"conda", "linux-64/repodata.json.zst", false},
+		{"conda", "channeldata.json", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

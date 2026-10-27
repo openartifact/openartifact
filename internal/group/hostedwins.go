@@ -39,6 +39,11 @@ import (
 //	maven   <g>/<a>[/<v>]/maven-metadata.xml     (file paths: <g>/<a>/maven-metadata.xml)
 //	helm    index.yaml of each hosted member     (charts/<file> only; index.yaml is
 //	                                              filtered in serveHelm instead)
+//	conda   package names of the hosted members  (package files only: a name held in
+//	                                              any platform hides the proxies' files
+//	                                              of that name; repodata.json is
+//	                                              merged in serveConda with the proxies'
+//	                                              entries of those names left out)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
 //	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
 //	                                              member's table; no document to probe)
@@ -66,6 +71,9 @@ type pkgRef struct {
 	// nonEmpty requires the 200 probe answer to carry a body (go: an empty
 	// version list means the module has no versions).
 	nonEmpty bool
+	// condaName is set for a conda package file: ownership is then decided
+	// from the hosted members' package names in the database, in any platform.
+	condaName string
 	// chartFile is set for a helm chart download: ownership is then decided
 	// from the hosted members' index.yaml, not from a probe document.
 	chartFile string
@@ -107,6 +115,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = helmRef(relPath)
 	case "ivy", "sbt":
 		ref, ok = fileRepoRef(relPath)
+	case "conda":
+		ref, ok = condaRef(relPath)
 	}
 
 	if !ok {
@@ -444,6 +454,10 @@ func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Ba
 
 	if len(ref.modules) > 0 {
 		return h.ownsFileModule(mr.Context(), m, ref.modules)
+	}
+
+	if ref.condaName != "" {
+		return h.ownsCondaName(mr, m, ref.condaName)
 	}
 
 	sw := &statusWriter{header: make(http.Header)}

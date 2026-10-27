@@ -31,6 +31,7 @@ import (
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
+	pkgconda "github.com/openartifact/openartifact/pkg/conda"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -231,7 +232,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	filename := urlparams.Vars(r)["filename"]
 
-	file, ok := parsePackageFilename(filename)
+	file, ok := pkgconda.ParseFilename(filename)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -242,9 +243,9 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pkg, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.name, file.version, file.build, platform, file.ext)
+	pkg, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.Name, file.Version, file.Build, platform, file.Ext)
 	if err != nil {
-		h.Log.Errorw("failed to get conda package", "name", file.name, "error", err)
+		h.Log.Errorw("failed to get conda package", "name", file.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -313,7 +314,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, ok := parsePackageFilename(filename)
+	file, ok := pkgconda.ParseFilename(filename)
 	if !ok {
 		http.Error(w, "invalid filename format", http.StatusBadRequest)
 		return
@@ -337,14 +338,14 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 	defer spool.Close()
 
-	idx := readPackageIndex(file.ext, spool, spool.Size())
+	idx := readPackageIndex(file.Ext, spool, spool.Size())
 	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, idx.License) {
 		return
 	}
 
-	existing, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.name, file.version, file.build, platform, file.ext)
+	existing, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.Name, file.Version, file.Build, platform, file.Ext)
 	if err != nil {
-		h.Log.Errorw("failed to check existing conda package", "name", file.name, "error", err)
+		h.Log.Errorw("failed to check existing conda package", "name", file.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -381,7 +382,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.Log.Errorw("failed to store conda package", "name", file.name, "error", err)
+		h.Log.Errorw("failed to store conda package", "name", file.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -390,8 +391,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
 		Repository: repoName,
 		Format:     "conda",
-		Name:       file.name,
-		Version:    file.version,
+		Name:       file.Name,
+		Version:    file.Version,
 		Path:       platform + "/" + filename,
 		SHA256:     pkg.SHA256,
 		Size:       pkg.SizeBytes,
@@ -411,14 +412,14 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // newPackage builds the database record for an uploaded package file.
-func newPackage(repoID, platform string, file packageFile, idx packageIndex, body *base.Spool, md5Hex string) *models.CondaPackage {
+func newPackage(repoID, platform string, file pkgconda.File, idx packageIndex, body *base.Spool, md5Hex string) *models.CondaPackage {
 	return &models.CondaPackage{
 		RepositoryID: repoID,
-		Name:         file.name,
-		Version:      file.version,
-		BuildString:  file.build,
+		Name:         file.Name,
+		Version:      file.Version,
+		BuildString:  file.Build,
 		Platform:     platform,
-		Extension:    file.ext,
+		Extension:    file.Ext,
 		BuildNumber:  idx.BuildNumber,
 		Timestamp:    idx.Timestamp,
 		Depends:      idx.Depends,
@@ -473,7 +474,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	filename := urlparams.Vars(r)["filename"]
 
-	file, ok := parsePackageFilename(filename)
+	file, ok := pkgconda.ParseFilename(filename)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -484,9 +485,9 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pkg, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.name, file.version, file.build, platform, file.ext)
+	pkg, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.Name, file.Version, file.Build, platform, file.Ext)
 	if err != nil {
-		h.Log.Errorw("failed to get conda package", "name", file.name, "error", err)
+		h.Log.Errorw("failed to get conda package", "name", file.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -503,7 +504,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.Log.Errorw("failed to check release immutability", "name", file.name, "error", gErr)
+		h.Log.Errorw("failed to check release immutability", "name", file.Name, "error", gErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return

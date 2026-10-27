@@ -31,3 +31,17 @@ WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.v
 SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cp.id::text, 0)), 0)::text)::text AS stamp
 FROM conda_packages cp
 WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL;
+
+-- name: ListCondaPackageNames :many
+-- Distinct names of the live packages of a repository, in any platform, for a
+-- group's hosted-wins rule (compared case-insensitively, as lowercase names).
+SELECT DISTINCT lower(cp.name)::text AS name
+FROM conda_packages cp
+WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL
+ORDER BY 1;
+
+-- name: HasCondaPackageName :one
+SELECT EXISTS (
+    SELECT 1 FROM conda_packages cp
+    WHERE cp.repository_id = $1 AND lower(cp.name) = lower(sqlc.arg(name)::text) AND cp.deleted_at IS NULL
+)::boolean AS present;

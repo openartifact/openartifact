@@ -255,7 +255,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f := &a.web.formats
 
 	routers := map[string]*chi.Mux{}
-	for _, name := range []string{"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt"} {
+	for _, name := range []string{"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conda"} {
 		routers[name] = chi.NewRouter()
 	}
 
@@ -273,6 +273,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.docker.RegisterRoutes(routers["docker"])
 	f.deb.RegisterRepoRoutes(routers["deb"])
 	f.rpm.RegisterRepoRoutes(routers["rpm"])
+	f.conda.RegisterRepoRoutes(routers["conda"])
 
 	hosted := make(map[string]http.Handler, len(routers))
 	for name, r := range routers {
