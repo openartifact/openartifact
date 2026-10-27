@@ -36,44 +36,29 @@ func (p *PostgresDB) CreatePromotionPipeline(ctx context.Context, pp *models.Pro
 }
 
 func (p *PostgresDB) GetPromotionPipelineByName(ctx context.Context, name string) (*models.PromotionPipeline, error) {
-	pp := &models.PromotionPipeline{}
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT pp.id, pp.name, COALESCE(pp.description,''), pp.stages, COALESCE(u.username,''), pp.created_at, pp.updated_at
-		 FROM promotion_pipelines pp
-		 LEFT JOIN auth_users u ON u.id = pp.creator_id
-		 WHERE pp.name = $1`, name,
-	).Scan(&pp.ID, &pp.Name, &pp.Description, &pp.StagesRaw, &pp.CreatedBy, &pp.CreatedAt, &pp.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get promotion pipeline by name: %w", err)
-	}
-
-	if err := json.Unmarshal(pp.StagesRaw, &pp.Stages); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal pipeline stages: %w", err)
-	}
-
-	return pp, nil
+	return p.getPromotionPipeline(ctx, "name", name)
 }
 
 func (p *PostgresDB) GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error) {
+	return p.getPromotionPipeline(ctx, "id", id)
+}
+
+// getPromotionPipeline reads one promotion pipeline by its id or name column.
+func (p *PostgresDB) getPromotionPipeline(ctx context.Context, column, value string) (*models.PromotionPipeline, error) {
 	pp := &models.PromotionPipeline{}
 
 	err := p.db.QueryRowContext(ctx,
 		`SELECT pp.id, pp.name, COALESCE(pp.description,''), pp.stages, COALESCE(u.username,''), pp.created_at, pp.updated_at
 		 FROM promotion_pipelines pp
 		 LEFT JOIN auth_users u ON u.id = pp.creator_id
-		 WHERE pp.id = $1`, id,
+		 WHERE pp.`+column+` = $1`, value,
 	).Scan(&pp.ID, &pp.Name, &pp.Description, &pp.StagesRaw, &pp.CreatedBy, &pp.CreatedAt, &pp.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get promotion pipeline by id: %w", err)
+		return nil, fmt.Errorf("failed to get promotion pipeline by %s: %w", column, err)
 	}
 
 	if err := json.Unmarshal(pp.StagesRaw, &pp.Stages); err != nil {

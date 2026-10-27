@@ -341,26 +341,6 @@ func apkBlobAttrs(repoID, path, sum string) map[string]string {
 
 // listApkMetadata returns path -> blob sha256 of the generated index rows.
 func listApkMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("apk worker: listing repo_metadata: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	old := make(map[string]string)
-
-	for rows.Next() {
-		var path, sum string
-		if err := rows.Scan(&path, &sum); err != nil {
-			return nil, fmt.Errorf("apk worker: scanning repo_metadata: %w", err)
-		}
-
-		old[path] = sum
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("apk worker: listing repo_metadata: %w", err)
-	}
-
-	return old, nil
+	return queryMetadataSums(ctx, tx, "apk worker", "repo_metadata",
+		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, repoID)
 }

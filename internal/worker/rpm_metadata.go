@@ -451,31 +451,11 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 // worker generates (repodata/* and public.key). comps.xml is uploaded by users
 // and is deliberately excluded.
 func listOldRPMMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT path, blob_sha256 FROM repository_metadata
-		WHERE repository_id = $1 AND (path LIKE 'repodata/%' OR path = 'public.key')
-	`, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("rpm worker: listing repository_metadata: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	old := make(map[string]string)
-
-	for rows.Next() {
-		var path, sum string
-		if err := rows.Scan(&path, &sum); err != nil {
-			return nil, fmt.Errorf("rpm worker: scanning repository_metadata: %w", err)
-		}
-
-		old[path] = sum
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rpm worker: listing repository_metadata: %w", err)
-	}
-
-	return old, nil
+	return queryMetadataSums(ctx, tx, "rpm worker", "repository_metadata",
+		`SELECT path, blob_sha256 FROM repository_metadata
+		WHERE repository_id = $1 AND (path LIKE 'repodata/%' OR path = 'public.key')`,
+		repoID,
+	)
 }
 
 // blobs returns the shared blob bookkeeping (see metadataBlobs) for this worker.

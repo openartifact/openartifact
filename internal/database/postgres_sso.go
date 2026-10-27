@@ -365,27 +365,7 @@ func (p *PostgresDB) GetUserByEmail(ctx context.Context, email string) (*models.
 }
 
 func (p *PostgresDB) GetGroupByName(ctx context.Context, name string) (*models.Group, error) {
-	g := &models.Group{}
-
-	var description sql.NullString
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, name, description, created_at, updated_at FROM auth_groups WHERE name = $1`,
-		name,
-	).Scan(&g.ID, &g.Name, &description, &g.CreatedAt, &g.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get group by name: %w", err)
-	}
-
-	if description.Valid {
-		g.Description = &description.String
-	}
-
-	return g, nil
+	return p.getGroup(ctx, "name", name)
 }
 
 func (p *PostgresDB) GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error) {

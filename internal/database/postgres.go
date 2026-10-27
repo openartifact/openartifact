@@ -318,24 +318,7 @@ func (p *PostgresDB) ListRepositories(ctx context.Context, page, limit int, form
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var repos []*models.Repository
-
-	for rows.Next() {
-		r := &models.Repository{}
-		if err := rows.Scan(repoScanDest(r)...); err != nil {
-			return nil, fmt.Errorf("failed to scan repository: %w", err)
-		}
-
-		repos = append(repos, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate repositories: %w", err)
-	}
-
-	return repos, nil
+	return collectRows(rows, "failed to scan repository", "failed to iterate repositories", scanRepository)
 }
 
 func (p *PostgresDB) CountRepositories(ctx context.Context, formatFilter string) (int, error) {
@@ -2155,24 +2138,7 @@ func (p *PostgresDB) ListGroupMemberRepositories(ctx context.Context, groupRepoI
 		return nil, fmt.Errorf("failed to list group member repositories: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var repos []*models.Repository
-
-	for rows.Next() {
-		r := &models.Repository{}
-		if err := rows.Scan(repoScanDest(r)...); err != nil {
-			return nil, fmt.Errorf("failed to scan group member repository: %w", err)
-		}
-
-		repos = append(repos, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to list group member repositories: %w", err)
-	}
-
-	return repos, nil
+	return collectRows(rows, "failed to scan group member repository", "failed to list group member repositories", scanRepository)
 }
 
 func (p *PostgresDB) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
@@ -2189,24 +2155,7 @@ func (p *PostgresDB) ListGroupsOfMember(ctx context.Context, memberRepoID string
 		return nil, fmt.Errorf("failed to list groups of member: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var repos []*models.Repository
-
-	for rows.Next() {
-		r := &models.Repository{}
-		if err := rows.Scan(repoScanDest(r)...); err != nil {
-			return nil, fmt.Errorf("failed to scan group repository: %w", err)
-		}
-
-		repos = append(repos, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to list groups of member: %w", err)
-	}
-
-	return repos, nil
+	return collectRows(rows, "failed to scan group repository", "failed to list groups of member", scanRepository)
 }
 
 func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey string) (*models.ProxyCacheEntry, error) {
@@ -3496,6 +3445,35 @@ func (p *PostgresDB) CreateWebhook(ctx context.Context, wh *models.Webhook) erro
 }
 
 // GetWebhook retrieves a webhook by ID.
+// webhookFromRow maps a sqlc webhook row to the model. The list row types share
+// GetWebhookRow's layout and are converted to it by the callers.
+func webhookFromRow(r dbsqlc.GetWebhookRow) *models.Webhook {
+	repoID := ""
+
+	if r.RepositoryID != nil {
+		if s, ok := r.RepositoryID.(string); ok {
+			repoID = s
+		}
+	}
+
+	return &models.Webhook{
+		ID:             r.ID,
+		RepositoryID:   repoID,
+		Name:           r.Name,
+		URL:            r.Url,
+		SecretEnc:      r.SecretEnc,
+		Enabled:        r.Enabled,
+		Events:         r.Events,
+		ContentType:    r.ContentType,
+		PayloadFormat:  r.PayloadFormat,
+		SSLVerify:      r.SslVerify,
+		MaxRetries:     int(r.MaxRetries),
+		TimeoutSeconds: int(r.TimeoutSeconds),
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+	}
+}
+
 func (p *PostgresDB) GetWebhook(ctx context.Context, id string) (*models.Webhook, error) {
 	row, err := p.q.GetWebhook(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -3506,31 +3484,7 @@ func (p *PostgresDB) GetWebhook(ctx context.Context, id string) (*models.Webhook
 		return nil, fmt.Errorf("failed to get webhook: %w", err)
 	}
 
-	// Convert repoID from interface{} to string
-	repoID := ""
-
-	if row.RepositoryID != nil {
-		if s, ok := row.RepositoryID.(string); ok {
-			repoID = s
-		}
-	}
-
-	return &models.Webhook{
-		ID:             row.ID,
-		RepositoryID:   repoID,
-		Name:           row.Name,
-		URL:            row.Url,
-		SecretEnc:      row.SecretEnc,
-		Enabled:        row.Enabled,
-		Events:         row.Events,
-		ContentType:    row.ContentType,
-		PayloadFormat:  row.PayloadFormat,
-		SSLVerify:      row.SslVerify,
-		MaxRetries:     int(row.MaxRetries),
-		TimeoutSeconds: int(row.TimeoutSeconds),
-		CreatedAt:      row.CreatedAt,
-		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	return webhookFromRow(row), nil
 }
 
 // UpdateWebhook updates an existing webhook.
@@ -3576,31 +3530,7 @@ func (p *PostgresDB) ListWebhooks(ctx context.Context, repoID string) ([]*models
 		}
 
 		for _, r := range rows {
-			repoIDStr := ""
-
-			if r.RepositoryID != nil {
-				if s, ok := r.RepositoryID.(string); ok {
-					repoIDStr = s
-				}
-			}
-
-			wh := &models.Webhook{
-				ID:             r.ID,
-				RepositoryID:   repoIDStr,
-				Name:           r.Name,
-				URL:            r.Url,
-				SecretEnc:      r.SecretEnc,
-				Enabled:        r.Enabled,
-				Events:         r.Events,
-				ContentType:    r.ContentType,
-				PayloadFormat:  r.PayloadFormat,
-				SSLVerify:      r.SslVerify,
-				MaxRetries:     int(r.MaxRetries),
-				TimeoutSeconds: int(r.TimeoutSeconds),
-				CreatedAt:      r.CreatedAt,
-				UpdatedAt:      r.UpdatedAt,
-			}
-			webhooks = append(webhooks, wh)
+			webhooks = append(webhooks, webhookFromRow(dbsqlc.GetWebhookRow(r)))
 		}
 	} else {
 		rows, err := p.q.ListWebhooksByRepo(ctx, &repoID)
@@ -3609,31 +3539,7 @@ func (p *PostgresDB) ListWebhooks(ctx context.Context, repoID string) ([]*models
 		}
 
 		for _, r := range rows {
-			repoIDStr := ""
-
-			if r.RepositoryID != nil {
-				if s, ok := r.RepositoryID.(string); ok {
-					repoIDStr = s
-				}
-			}
-
-			wh := &models.Webhook{
-				ID:             r.ID,
-				RepositoryID:   repoIDStr,
-				Name:           r.Name,
-				URL:            r.Url,
-				SecretEnc:      r.SecretEnc,
-				Enabled:        r.Enabled,
-				Events:         r.Events,
-				ContentType:    r.ContentType,
-				PayloadFormat:  r.PayloadFormat,
-				SSLVerify:      r.SslVerify,
-				MaxRetries:     int(r.MaxRetries),
-				TimeoutSeconds: int(r.TimeoutSeconds),
-				CreatedAt:      r.CreatedAt,
-				UpdatedAt:      r.UpdatedAt,
-			}
-			webhooks = append(webhooks, wh)
+			webhooks = append(webhooks, webhookFromRow(dbsqlc.GetWebhookRow(r)))
 		}
 	}
 
@@ -3658,31 +3564,7 @@ func (p *PostgresDB) ListWebhooksForEvent(ctx context.Context, repoID, eventType
 	var webhooks []*models.Webhook
 
 	for _, r := range rows {
-		repoIDStr := ""
-
-		if r.RepositoryID != nil {
-			if s, ok := r.RepositoryID.(string); ok {
-				repoIDStr = s
-			}
-		}
-
-		wh := &models.Webhook{
-			ID:             r.ID,
-			RepositoryID:   repoIDStr,
-			Name:           r.Name,
-			URL:            r.Url,
-			SecretEnc:      r.SecretEnc,
-			Enabled:        r.Enabled,
-			Events:         r.Events,
-			ContentType:    r.ContentType,
-			PayloadFormat:  r.PayloadFormat,
-			SSLVerify:      r.SslVerify,
-			MaxRetries:     int(r.MaxRetries),
-			TimeoutSeconds: int(r.TimeoutSeconds),
-			CreatedAt:      r.CreatedAt,
-			UpdatedAt:      r.UpdatedAt,
-		}
-		webhooks = append(webhooks, wh)
+		webhooks = append(webhooks, webhookFromRow(dbsqlc.GetWebhookRow(r)))
 	}
 
 	return webhooks, nil
@@ -4240,21 +4122,9 @@ func (p *PostgresDB) CreateRubyGem(ctx context.Context, gem *models.RubyGem) err
 	return nil
 }
 
-func (p *PostgresDB) GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error) {
-	row, err := p.q.GetRubyGem(ctx, dbsqlc.GetRubyGemParams{
-		RepositoryID: repoID,
-		Name:         name,
-		Version:      version,
-		Platform:     platform,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ruby gem: %w", err)
-	}
-
+// rubyGemFromRow maps a sqlc ruby gem row to the model. The List/Search row
+// types share GetRubyGemRow's layout and are converted to it by the callers.
+func rubyGemFromRow(row dbsqlc.GetRubyGemRow) *models.RubyGem {
 	return &models.RubyGem{
 		ID:             row.ID,
 		RepositoryID:   row.RepositoryID,
@@ -4275,7 +4145,25 @@ func (p *PostgresDB) GetRubyGem(ctx context.Context, repoID, name, version, plat
 		Size:           row.Size,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	}
+}
+
+func (p *PostgresDB) GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error) {
+	row, err := p.q.GetRubyGem(ctx, dbsqlc.GetRubyGemParams{
+		RepositoryID: repoID,
+		Name:         name,
+		Version:      version,
+		Platform:     platform,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ruby gem: %w", err)
+	}
+
+	return rubyGemFromRow(row), nil
 }
 
 func (p *PostgresDB) ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
@@ -4287,28 +4175,7 @@ func (p *PostgresDB) ListRubyGems(ctx context.Context, repoID string) ([]*models
 	var gems []*models.RubyGem
 
 	for _, row := range rows {
-		gem := &models.RubyGem{
-			ID:             row.ID,
-			RepositoryID:   row.RepositoryID,
-			Name:           row.Name,
-			Version:        row.Version,
-			Platform:       row.Platform,
-			Description:    derefStr(row.Description),
-			Summary:        derefStr(row.Summary),
-			Homepage:       derefStr(row.Homepage),
-			Authors:        row.Authors,
-			Licenses:       row.Licenses,
-			Dependencies:   row.Dependencies,
-			MetadataJSON:   row.MetadataJson,
-			BlobKey:        row.BlobKey,
-			ChecksumSHA256: row.ChecksumSha256,
-			Yanked:         row.Yanked,
-			DownloadCount:  int(row.DownloadCount),
-			Size:           row.Size,
-			CreatedAt:      row.CreatedAt,
-			UpdatedAt:      row.UpdatedAt,
-		}
-		gems = append(gems, gem)
+		gems = append(gems, rubyGemFromRow(dbsqlc.GetRubyGemRow(row)))
 	}
 
 	return gems, nil
@@ -4326,28 +4193,7 @@ func (p *PostgresDB) ListRubyGemVersions(ctx context.Context, repoID, name strin
 	var gems []*models.RubyGem
 
 	for _, row := range rows {
-		gem := &models.RubyGem{
-			ID:             row.ID,
-			RepositoryID:   row.RepositoryID,
-			Name:           row.Name,
-			Version:        row.Version,
-			Platform:       row.Platform,
-			Description:    derefStr(row.Description),
-			Summary:        derefStr(row.Summary),
-			Homepage:       derefStr(row.Homepage),
-			Authors:        row.Authors,
-			Licenses:       row.Licenses,
-			Dependencies:   row.Dependencies,
-			MetadataJSON:   row.MetadataJson,
-			BlobKey:        row.BlobKey,
-			ChecksumSHA256: row.ChecksumSha256,
-			Yanked:         row.Yanked,
-			DownloadCount:  int(row.DownloadCount),
-			Size:           row.Size,
-			CreatedAt:      row.CreatedAt,
-			UpdatedAt:      row.UpdatedAt,
-		}
-		gems = append(gems, gem)
+		gems = append(gems, rubyGemFromRow(dbsqlc.GetRubyGemRow(row)))
 	}
 
 	return gems, nil
@@ -4365,28 +4211,7 @@ func (p *PostgresDB) SearchRubyGems(ctx context.Context, repoID, query string) (
 	var gems []*models.RubyGem
 
 	for _, row := range rows {
-		gem := &models.RubyGem{
-			ID:             row.ID,
-			RepositoryID:   row.RepositoryID,
-			Name:           row.Name,
-			Version:        row.Version,
-			Platform:       row.Platform,
-			Description:    derefStr(row.Description),
-			Summary:        derefStr(row.Summary),
-			Homepage:       derefStr(row.Homepage),
-			Authors:        row.Authors,
-			Licenses:       row.Licenses,
-			Dependencies:   row.Dependencies,
-			MetadataJSON:   row.MetadataJson,
-			BlobKey:        row.BlobKey,
-			ChecksumSHA256: row.ChecksumSha256,
-			Yanked:         row.Yanked,
-			DownloadCount:  int(row.DownloadCount),
-			Size:           row.Size,
-			CreatedAt:      row.CreatedAt,
-			UpdatedAt:      row.UpdatedAt,
-		}
-		gems = append(gems, gem)
+		gems = append(gems, rubyGemFromRow(dbsqlc.GetRubyGemRow(row)))
 	}
 
 	return gems, nil

@@ -710,33 +710,11 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 // rows: all of them for the shared index (so regenerating it drops the
 // variants), those under scope for a variant.
 func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope string) (map[string]string, error) {
-	rows, err := tx.QueryContext(
-		ctx,
+	return queryMetadataSums(ctx, tx, "group worker", "repository_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
 		groupID,
 		scope,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("group worker: listing repository_metadata: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	old := make(map[string]string)
-
-	for rows.Next() {
-		var path, sum string
-		if err := rows.Scan(&path, &sum); err != nil {
-			return nil, fmt.Errorf("group worker: scanning repository_metadata: %w", err)
-		}
-
-		old[path] = sum
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("group worker: listing repository_metadata: %w", err)
-	}
-
-	return old, nil
 }
 
 // replaceOwners swaps the group's owner table for owners; rows under a path
