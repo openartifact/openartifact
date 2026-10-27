@@ -23,7 +23,11 @@ import (
 
 // listOldMetadata returns path -> blob sha256 of the generated dists/ metadata rows.
 func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'dists/%' OR path = 'public.key')`, repoID)
+	rows, err := tx.QueryContext(
+		ctx,
+		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'dists/%' OR path = 'public.key')`,
+		repoID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("deb worker: listing repo_metadata: %w", err)
 	}
@@ -231,7 +235,12 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
 
 	for _, path := range stalePaths {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`, repoID, path); err != nil {
+		if _, err := tx.ExecContext(
+			ctx,
+			`DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`,
+			repoID,
+			path,
+		); err != nil {
 			return fmt.Errorf("deb worker: deleting stale repo_metadata %s: %w", path, err)
 		}
 	}
@@ -262,7 +271,13 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 // Release.gpg for one distribution into blobs, keyed by full "dists/..." path.
 // Every component x architecture pair gets an index (empty when no packages
 // remain) so stale listings can never be served after deletions.
-func (w *DebMetadataWorker) generateDistribution(ctx context.Context, dist models.DebianDistribution, entries []models.DebPackageEntry, signer gpg.Signer, blobs map[string][]byte) error {
+func (w *DebMetadataWorker) generateDistribution(
+	ctx context.Context,
+	dist models.DebianDistribution,
+	entries []models.DebPackageEntry,
+	signer gpg.Signer,
+	blobs map[string][]byte,
+) error {
 	components, err := w.db.GetDebianComponentsByDist(ctx, dist.ID)
 	if err != nil {
 		return fmt.Errorf("deb worker: querying components for dist %s: %w", dist.Name, err)

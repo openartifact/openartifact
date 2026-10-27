@@ -384,7 +384,10 @@ func TestS3DiscardUnverifiedCopy(t *testing.T) {
 
 	t.Cleanup(func() { _ = s.Delete(ctx, sha) })
 
-	if _, err := s.client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(data)}); err != nil {
+	if _, err := s.client.PutObject(
+		ctx,
+		&s3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(data)},
+	); err != nil {
 		t.Fatal(err)
 	}
 

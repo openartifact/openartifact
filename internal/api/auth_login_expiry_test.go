@@ -72,7 +72,13 @@ func TestLoginRejectsExpiredGeneratedPassword(t *testing.T) {
 			}
 
 			db := &loginExpiryDB{
-				user:      &models.User{ID: "u1", Username: "admin", PasswordHash: &hash, MustChangePassword: true, Kind: models.UserKindHuman},
+				user: &models.User{
+					ID:                 "u1",
+					Username:           "admin",
+					PasswordHash:       &hash,
+					MustChangePassword: true,
+					Kind:               models.UserKindHuman,
+				},
 				expiresAt: tc.expiresAt,
 			}
 			h := NewAuthHandler(db, log, nil, nil)

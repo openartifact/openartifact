@@ -66,7 +66,10 @@ func TestPublishLargeCrateIsStoredIntact(t *testing.T) {
 	h, db, bs, _ := newCargoHandler(t)
 	crate := bigCrate(t)
 
-	w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", framedPublish(crate, uint32(len(crate)))))
+	w := formattest.Do(
+		h.RegisterRepoRoutes,
+		formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", framedPublish(crate, uint32(len(crate)))),
+	)
 	if w.Code != http.StatusOK {
 		t.Fatalf("publish status = %d: %s", w.Code, w.Body.String())
 	}
@@ -99,7 +102,10 @@ func TestPublishTruncatedCrateStoresNothing(t *testing.T) {
 			h, db, bs, pub := newCargoHandler(t)
 
 			// Declare 100 bytes more than are sent.
-			w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", framedPublish(crate, uint32(len(crate))+100)))
+			w := formattest.Do(
+				h.RegisterRepoRoutes,
+				formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", framedPublish(crate, uint32(len(crate))+100)),
+			)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
 			}

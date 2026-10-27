@@ -150,7 +150,8 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 
 			// A project token's service account is a repository credential
 			// only: it gets no /api/v1 list endpoint, not even a filtered one.
-			if (((scope.anyAuthenticated || scope.bundles) && principal.ServiceProjectID == "") || isDockerRootless(r)) && !principal.IsAnonymous {
+			if (((scope.anyAuthenticated || scope.bundles) && principal.ServiceProjectID == "") || isDockerRootless(r)) &&
+				!principal.IsAnonymous {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -223,7 +224,13 @@ func evaluateRepoScope(ctx context.Context, evaluator *auth.Evaluator, principal
 // the caller cannot even read the repository (it looks like an unknown one, so
 // a maintainer of another project learns nothing); a caller who can read it
 // gets the regular 403 from the caller. It reports whether it wrote.
-func writeDelegatedHidden(w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator, principal *auth.Principal, repoName string) bool {
+func writeDelegatedHidden(
+	w http.ResponseWriter,
+	r *http.Request,
+	evaluator *auth.Evaluator,
+	principal *auth.Principal,
+	repoName string,
+) bool {
 	if principal.IsAnonymous {
 		return false
 	}
@@ -334,7 +341,16 @@ func passwordChangeBlocked(r *http.Request, principal *auth.Principal) bool {
 		(r.URL.Path != "/api/v1/auth/change-password" && r.URL.Path != "/api/v1/auth/logout")
 }
 
-func writeAccessDenied(w http.ResponseWriter, r *http.Request, cfg RBACConfig, db database.Database, log *logger.Logger, principal *auth.Principal, credential string, scope routeScope) {
+func writeAccessDenied(
+	w http.ResponseWriter,
+	r *http.Request,
+	cfg RBACConfig,
+	db database.Database,
+	log *logger.Logger,
+	principal *auth.Principal,
+	credential string,
+	scope routeScope,
+) {
 	principalName := "anonymous"
 	if principal.Username != "" {
 		principalName = principal.Username
@@ -421,7 +437,13 @@ type principalUser struct {
 // deprecated legacy API key. It returns the principal and the credential kind
 // (also stored in principal.Credential so CSRF can tell ambient cookie auth
 // from explicit header auth).
-func resolvePrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, db database.Database, log *logger.Logger) (*auth.Principal, string) {
+func resolvePrincipal(
+	ctx context.Context,
+	r *http.Request,
+	cfg RBACConfig,
+	db database.Database,
+	log *logger.Logger,
+) (*auth.Principal, string) {
 	if p := sessionPrincipal(ctx, r, db, log); p != nil {
 		return p, auth.CredentialSession
 	}

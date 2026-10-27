@@ -122,8 +122,16 @@ func TestIndex_RewriteURLsDropsUnservableVersionsAndKeepsTheRest(t *testing.T) {
 }
 
 func TestMergeIndexes_FirstWinsPerNameAndVersion(t *testing.T) {
-	a, _ := ParseIndex([]byte("apiVersion: v1\nentries:\n  x:\n  - {name: x, version: '1.0', digest: A, urls: [a]}\n  - {name: x, version: '2.0', digest: A2, urls: [a2]}\n"))
-	b, _ := ParseIndex([]byte("apiVersion: v1\nentries:\n  x:\n  - {name: x, version: '1.0', digest: B, urls: [b]}\n  - {name: x, version: '3.0', digest: B3, urls: [b3]}\n  y:\n  - {name: y, version: '1', digest: BY, urls: [by]}\n  - {name: y, urls: [noversion]}\n"))
+	a, _ := ParseIndex(
+		[]byte(
+			"apiVersion: v1\nentries:\n  x:\n  - {name: x, version: '1.0', digest: A, urls: [a]}\n  - {name: x, version: '2.0', digest: A2, urls: [a2]}\n",
+		),
+	)
+	b, _ := ParseIndex(
+		[]byte(
+			"apiVersion: v1\nentries:\n  x:\n  - {name: x, version: '1.0', digest: B, urls: [b]}\n  - {name: x, version: '3.0', digest: B3, urls: [b3]}\n  y:\n  - {name: y, version: '1', digest: BY, urls: [by]}\n  - {name: y, urls: [noversion]}\n",
+		),
+	)
 	empty, _ := ParseIndex([]byte("apiVersion: v1\n"))
 
 	merged := MergeIndexes([]*Index{empty, a, b})

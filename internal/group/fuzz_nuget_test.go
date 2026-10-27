@@ -306,8 +306,16 @@ func FuzzNuGetGroupVersions(f *testing.F) {
 	f.Add([]byte(`{"versions":["1.0.0","2.0.0"]}`), []byte(`{"versions":["2.0.0","3.0.0-beta.1","1.0.0+meta"]}`), uint8(2|4))
 	f.Add([]byte(`{"versions":["1.0.0"]}`), []byte(`{"versions":["9.9.9"]}`), uint8(1|2|4))
 	f.Add([]byte(`{"versions":["1.0.0"]}`), []byte(`{"versions":["9.9.9"]}`), uint8(1|4))
-	f.Add([]byte(`{"versions":["1.0","01.00.00.0","1.0.0-RC.1","1.0.0-rc.1"," 1.0.0 "]}`), []byte(`{"versions":["x","","X","1.0.0.0"]}`), uint8(2|4))
-	f.Add([]byte(`{"versions":["`+nugetFuzzMemberV3("mirror")+`x"]}`), []byte(`{"versions":["`+nugetFuzzMemberV3("hosted")+`x"]}`), uint8(2|4))
+	f.Add(
+		[]byte(`{"versions":["1.0","01.00.00.0","1.0.0-RC.1","1.0.0-rc.1"," 1.0.0 "]}`),
+		[]byte(`{"versions":["x","","X","1.0.0.0"]}`),
+		uint8(2|4),
+	)
+	f.Add(
+		[]byte(`{"versions":["`+nugetFuzzMemberV3("mirror")+`x"]}`),
+		[]byte(`{"versions":["`+nugetFuzzMemberV3("hosted")+`x"]}`),
+		uint8(2|4),
+	)
 	f.Add([]byte(`not json`), []byte(`{"versions":["1.0.0"]}`), uint8(2|4))
 	f.Add([]byte(`{"versions":null}`), []byte(`{"versions":["1.0.0"]}`), uint8(2|4))
 	f.Add([]byte(`{}`), []byte(`{"versions":[]} trailing`), uint8(2|4))
@@ -397,7 +405,12 @@ func FuzzNuGetGroupRegistration(f *testing.F) {
 		high = append(high, fmt.Sprintf("1.%d.0", i+40))
 	}
 
-	f.Add([]byte(nugetInlineIndex("hosted", nugetFuzzID, low...)), []byte(nugetInlineIndex("mirror", nugetFuzzID, high...)), []byte(page), uint8(2|4))
+	f.Add(
+		[]byte(nugetInlineIndex("hosted", nugetFuzzID, low...)),
+		[]byte(nugetInlineIndex("mirror", nugetFuzzID, high...)),
+		[]byte(page),
+		uint8(2|4),
+	)
 	f.Add([]byte(hosted), []byte(mirror), []byte(page), uint8(2|4|8))
 	f.Add([]byte(hosted), []byte(mirror), []byte(page), uint8(1|2|4|8))
 	f.Add([]byte(hosted), []byte(mirror), []byte(page), uint8(1|4|8))
@@ -405,7 +418,14 @@ func FuzzNuGetGroupRegistration(f *testing.F) {
 	f.Add([]byte(hosted), []byte(mirrorPaged), []byte(page), uint8(2|4))
 	f.Add([]byte(hosted), []byte(mirrorPaged), []byte(`{"items":3}`), uint8(2|4|8))
 	f.Add([]byte(`{"items":[{"lower":"a/b","upper":"c","count":1}]}`), []byte(mirror), []byte(page), uint8(2|4|8))
-	f.Add([]byte(`{"items":[{"items":[{"@id":"x/Foo.json"},{"@id":"x/1.json","catalogEntry":{"version":"1.0.0-A"}},{"@id":"x/index.json"},7,{"catalogEntry":{"version":"1"}}]}]}`), []byte(`[]`), []byte(page), uint8(2|4|8))
+	f.Add(
+		[]byte(
+			`{"items":[{"items":[{"@id":"x/Foo.json"},{"@id":"x/1.json","catalogEntry":{"version":"1.0.0-A"}},{"@id":"x/index.json"},7,{"catalogEntry":{"version":"1"}}]}]}`,
+		),
+		[]byte(`[]`),
+		[]byte(page),
+		uint8(2|4|8),
+	)
 	f.Add([]byte(`not json`), []byte(mirror), []byte(page), uint8(2|4|8))
 	f.Add([]byte(`{}`), []byte(`{"items":null}`), []byte(page), uint8(2|4|8))
 
@@ -483,7 +503,9 @@ func nugetFuzzCheckRegistration(t *testing.T, body []byte, sources [][]json.RawM
 	got := map[string]json.RawMessage{}
 
 	for i, p := range top.Items {
-		if p.Count != len(p.Items) || len(p.Items) == 0 || len(p.Items) > nugetFuzzPageMax || (i < len(top.Items)-1 && len(p.Items) != nugetFuzzPageMax) || p.Parent != indexURL {
+		if p.Count != len(p.Items) || len(p.Items) == 0 || len(p.Items) > nugetFuzzPageMax ||
+			(i < len(top.Items)-1 && len(p.Items) != nugetFuzzPageMax) ||
+			p.Parent != indexURL {
 			t.Fatalf("page %d is not a page of the index (count %d, %d items): %s", i, p.Count, len(p.Items), body)
 		}
 

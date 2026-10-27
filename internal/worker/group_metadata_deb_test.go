@@ -284,7 +284,15 @@ func TestBuildDebDistMergesProxyMembers(t *testing.T) {
 		}
 
 		sum := sha256.Sum256([]byte(plain))
-		if line := fmt.Sprintf(" %s %10d %s", hex.EncodeToString(sum[:]), len(plain), strings.TrimPrefix(base, "dists/noble/")); !strings.Contains(release, line) {
+		if line := fmt.Sprintf(
+			" %s %10d %s",
+			hex.EncodeToString(sum[:]),
+			len(plain),
+			strings.TrimPrefix(base, "dists/noble/"),
+		); !strings.Contains(
+			release,
+			line,
+		) {
 			t.Errorf("Release lacks the plain index entry %q", line)
 		}
 
@@ -292,7 +300,15 @@ func TestBuildDebDistMergesProxyMembers(t *testing.T) {
 			data := j.blobs[base+ext]
 			gsum := sha256.Sum256(data)
 
-			if line := fmt.Sprintf(" %s %10d %s", hex.EncodeToString(gsum[:]), len(data), strings.TrimPrefix(base, "dists/noble/")+ext); !strings.Contains(release, line) {
+			if line := fmt.Sprintf(
+				" %s %10d %s",
+				hex.EncodeToString(gsum[:]),
+				len(data),
+				strings.TrimPrefix(base, "dists/noble/")+ext,
+			); !strings.Contains(
+				release,
+				line,
+			) {
 				t.Errorf("Release lacks %q", line)
 			}
 		}
@@ -328,8 +344,20 @@ func TestBuildDebDistClaimOrderIsDeterministic(t *testing.T) {
 		pb.sha = strings.Repeat("cd", 32) // same pool path, other content
 		pb.version = "1.1"                // another version, so it is not a duplicate
 
-		ma := up.addMember(t, "ma", "noble", false, []debSynthIndex{{comp: "main", arch: "amd64", packages: []debSynthPackage{pa}}, {comp: "main", arch: "arm64"}})
-		mb := up.addMember(t, "mb", "noble", false, []debSynthIndex{{comp: "main", arch: "amd64"}, {comp: "main", arch: "arm64", packages: []debSynthPackage{pb}}})
+		ma := up.addMember(
+			t,
+			"ma",
+			"noble",
+			false,
+			[]debSynthIndex{{comp: "main", arch: "amd64", packages: []debSynthPackage{pa}}, {comp: "main", arch: "arm64"}},
+		)
+		mb := up.addMember(
+			t,
+			"mb",
+			"noble",
+			false,
+			[]debSynthIndex{{comp: "main", arch: "amd64"}, {comp: "main", arch: "arm64", packages: []debSynthPackage{pb}}},
+		)
 		j := newDebMergeJob(t, up, ma, mb)
 
 		if _, err := j.buildDebDist(t.Context(), "noble", nil); err != nil {

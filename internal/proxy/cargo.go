@@ -186,7 +186,12 @@ func (s *Service) cargoDownloadTemplate(ctx context.Context, repo *models.Reposi
 // template gives and caches it only when it matches the cksum of its index
 // entry. A version the index does not list is errNotFound without a negative
 // cache entry: the index may simply be stale.
-func (s *Service) fetchCargoCrate(ctx context.Context, repo *models.Repository, p pkgcargo.Path, key string) (*models.ProxyCacheEntry, error) {
+func (s *Service) fetchCargoCrate(
+	ctx context.Context,
+	repo *models.Repository,
+	p pkgcargo.Path,
+	key string,
+) (*models.ProxyCacheEntry, error) {
 	idx := pkgcargo.Path{Kind: pkgcargo.KindIndex, Crate: strings.ToLower(p.Crate)}
 	idx.IndexPath = pkgcargo.IndexPathFor(idx.Crate)
 

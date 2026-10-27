@@ -121,7 +121,13 @@ func seedSource(t *testing.T, store storage.BlobStore) (*sql.DB, *Journal, seede
 	a := seedRaw(t, src, store, "raw-a", "dir/a.txt", []byte("alpha"))
 	b := seedRaw(t, src, store, "raw-b", "b.bin", []byte("bravo"))
 
-	mustExec(t, src, `INSERT INTO raw_artifacts (repository_id, path, blob_id, deleted_at, deleted_by) VALUES ($1, 'trashed.txt', $2, now(), 'tester')`, a.repoID, a.blobID)
+	mustExec(
+		t,
+		src,
+		`INSERT INTO raw_artifacts (repository_id, path, blob_id, deleted_at, deleted_by) VALUES ($1, 'trashed.txt', $2, now(), 'tester')`,
+		a.repoID,
+		a.blobID,
+	)
 	mustExec(t, src, `UPDATE raw_artifacts SET metadata = '{"k": "v"}' WHERE id = $1`, b.artifactID)
 	drain(t, j)
 
@@ -166,7 +172,12 @@ func TestRebuildRoundTrip(t *testing.T) {
 		t.Fatalf("repositories recovered = %v", rep.ReposRecovered)
 	}
 
-	if trashed := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE deleted_at IS NOT NULL AND repository_id = $1`, a.repoID); trashed != 1 {
+	if trashed := mustCount(
+		t,
+		dst,
+		`SELECT count(*) FROM raw_artifacts WHERE deleted_at IS NOT NULL AND repository_id = $1`,
+		a.repoID,
+	); trashed != 1 {
 		t.Fatalf("trashed row restored as live (trashed=%d)", trashed)
 	}
 
@@ -255,11 +266,22 @@ func TestRebuildSupersededAndDeepAndInvalid(t *testing.T) {
 	newest := putSidecar(t, store, a.artifactID, time.Now().Add(time.Hour), row("new/type"), true)
 
 	// A sidecar that lost its marker is only found with --deep.
-	lost := putSidecar(t, store, "11111111-1111-1111-1111-111111111111", time.Now(), strings.Replace(row("x/y"), a.artifactID, "11111111-1111-1111-1111-111111111111", 1), false)
+	lost := putSidecar(
+		t,
+		store,
+		"11111111-1111-1111-1111-111111111111",
+		time.Now(),
+		strings.Replace(row("x/y"), a.artifactID, "11111111-1111-1111-1111-111111111111", 1),
+		false,
+	)
 
 	// A marked blob whose content is not a sidecar is invalid.
 	badSum := sha256.Sum256([]byte("garbage"))
-	badID, err := store.Put(context.Background(), strings.NewReader("garbage"), SidecarMetadata("raw_artifacts", hex.EncodeToString(badSum[:])))
+	badID, err := store.Put(
+		context.Background(),
+		strings.NewReader("garbage"),
+		SidecarMetadata("raw_artifacts", hex.EncodeToString(badSum[:])),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

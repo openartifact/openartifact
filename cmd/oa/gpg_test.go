@@ -29,15 +29,24 @@ func TestContractGPGDelete(t *testing.T) {
 			name:    "--force deletes it",
 			args:    []string{"gpg", "delete", id, "--force"},
 			replies: map[string]reply{"GET /api/v1/admin/gpg/keys": ok(list), path: {status: http.StatusNoContent}},
-			calls:   []call{{method: "GET", pattern: "/api/v1/admin/gpg/keys"}, {method: "DELETE", pattern: "/api/v1/admin/gpg/keys/{id}", query: map[string]string{"force": "true"}}},
-			out:     "GPG key deleted.",
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/admin/gpg/keys"},
+				{method: "DELETE", pattern: "/api/v1/admin/gpg/keys/{id}", query: map[string]string{"force": "true"}},
+			},
+			out: "GPG key deleted.",
 		},
 		{
-			name:    "other conflicts keep the server message",
-			args:    []string{"gpg", "delete", id},
-			replies: map[string]reply{"GET /api/v1/admin/gpg/keys": ok(list), path: {status: http.StatusConflict, body: `{"error":"the config key is read-only","code":"read_only"}`}},
-			calls:   []call{{method: "GET", pattern: "/api/v1/admin/gpg/keys"}, {method: "DELETE", pattern: "/api/v1/admin/gpg/keys/{id}"}},
-			fail:    "read-only",
+			name: "other conflicts keep the server message",
+			args: []string{"gpg", "delete", id},
+			replies: map[string]reply{
+				"GET /api/v1/admin/gpg/keys": ok(list),
+				path: {
+					status: http.StatusConflict,
+					body:   `{"error":"the config key is read-only","code":"read_only"}`,
+				},
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/admin/gpg/keys"}, {method: "DELETE", pattern: "/api/v1/admin/gpg/keys/{id}"}},
+			fail:  "read-only",
 		},
 	})
 }

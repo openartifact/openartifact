@@ -207,12 +207,31 @@ func TestProjectChange_UnknownProject(t *testing.T) {
 
 	const missing = "99999999-9999-9999-9999-999999999999"
 
-	if err := f.pg.ChangeProjectMember(ctx, missing, f.alice.ID, models.ProjectRoleViewer, nil); !errors.Is(err, database.ErrProjectNotFound) {
+	if err := f.pg.ChangeProjectMember(
+		ctx,
+		missing,
+		f.alice.ID,
+		models.ProjectRoleViewer,
+		nil,
+	); !errors.Is(
+		err,
+		database.ErrProjectNotFound,
+	) {
 		t.Fatalf("member: err = %v", err)
 	}
 
 	g := f.newGroup(t, "ghosts")
-	if err := f.pg.ChangeProjectGroup(ctx, missing, g.ID, models.ProjectRoleViewer, nil, nil); !errors.Is(err, database.ErrProjectNotFound) {
+	if err := f.pg.ChangeProjectGroup(
+		ctx,
+		missing,
+		g.ID,
+		models.ProjectRoleViewer,
+		nil,
+		nil,
+	); !errors.Is(
+		err,
+		database.ErrProjectNotFound,
+	) {
 		t.Fatalf("group: err = %v", err)
 	}
 }

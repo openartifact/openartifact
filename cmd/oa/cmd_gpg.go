@@ -119,7 +119,10 @@ func gpgActiveLabel(k map[string]any) string {
 func gpgList(client *Client, outFmt string) {
 	keys, can := gpgFetchKeys(client)
 	if !can {
-		fmt.Fprintln(os.Stderr, "Warning: server cannot store keys (OPENARTIFACT_SECRET_KEY is not set); import and generate are unavailable.")
+		fmt.Fprintln(
+			os.Stderr,
+			"Warning: server cannot store keys (OPENARTIFACT_SECRET_KEY is not set); import and generate are unavailable.",
+		)
 	}
 
 	if outFmt == "json" {

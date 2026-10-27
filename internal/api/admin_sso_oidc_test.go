@@ -38,14 +38,30 @@ func TestValidateOIDCConfig(t *testing.T) {
 		{"unknown type", base(func(c *models.OIDCConfig) { c.Type = "saml" }), "type"},
 		{"issuer must be https", base(func(c *models.OIDCConfig) { c.Issuer = "http://8.8.8.8/realm" }), "issuer"},
 		{"issuer must not be private", base(func(c *models.OIDCConfig) { c.Issuer = "https://10.0.0.1/realm" }), "issuer"},
-		{"scopes may not contain whitespace", base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.Scopes = []string{"openid email"} }), "scopes"},
-		{"graph endpoint is SSRF validated", base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.GraphEndpoint = "https://169.254.169.254" }), "graph_endpoint"},
-		{"allowed tenants must be guids", base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.AllowedTenants = []string{"contoso"} }), "allowed_tenants"},
+		{
+			"scopes may not contain whitespace",
+			base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.Scopes = []string{"openid email"} }),
+			"scopes",
+		},
+		{
+			"graph endpoint is SSRF validated",
+			base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.GraphEndpoint = "https://169.254.169.254" }),
+			"graph_endpoint",
+		},
+		{
+			"allowed tenants must be guids",
+			base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.AllowedTenants = []string{"contoso"} }),
+			"allowed_tenants",
+		},
 		{"guid tenants are fine", base(func(c *models.OIDCConfig) { c.Issuer = testIssuer; c.AllowedTenants = []string{tenant} }), ""},
 
 		{"github with orgs", base(func(c *models.OIDCConfig) { c.Type = "github"; c.AllowedOrgs = []string{"acme"} }), ""},
 		{"github does not need an issuer but needs orgs", base(func(c *models.OIDCConfig) { c.Type = "github" }), "allowed_orgs"},
-		{"github org entries are logins", base(func(c *models.OIDCConfig) { c.Type = "github"; c.AllowedOrgs = []string{"acme/team"} }), "allowed_orgs"},
+		{
+			"github org entries are logins",
+			base(func(c *models.OIDCConfig) { c.Type = "github"; c.AllowedOrgs = []string{"acme/team"} }),
+			"allowed_orgs",
+		},
 		{"github enterprise urls", base(func(c *models.OIDCConfig) {
 			c.Type = "github"
 			c.AllowedOrgs = []string{"acme"}
@@ -140,7 +156,12 @@ func TestMergeOIDCPatch(t *testing.T) {
 	})
 
 	t.Run("switching to github enforces its rules on the merged result", func(t *testing.T) {
-		if _, err := mergeOIDCPatch(t.Context(), stored, json.RawMessage(`{"type":"github"}`)); err == nil || !strings.Contains(err.Error(), "allowed_orgs") {
+		if _, err := mergeOIDCPatch(
+			t.Context(),
+			stored,
+			json.RawMessage(`{"type":"github"}`),
+		); err == nil ||
+			!strings.Contains(err.Error(), "allowed_orgs") {
 			t.Fatalf("expected an allowed_orgs error, got %v", err)
 		}
 

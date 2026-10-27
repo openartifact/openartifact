@@ -97,7 +97,10 @@ func TestConanV1AgainstPostgres(t *testing.T) {
 	}
 
 	// Another repository cannot reach that content by checksum.
-	if code := srv.deploy("/repos/conan-other/v1/files/zlib/1.3/_/_/0/export/conanfile.py", sha1OfString("v1:conanfile.py")); code != http.StatusNotFound {
+	if code := srv.deploy(
+		"/repos/conan-other/v1/files/zlib/1.3/_/_/0/export/conanfile.py",
+		sha1OfString("v1:conanfile.py"),
+	); code != http.StatusNotFound {
 		t.Errorf("deploy across repositories = %d, want 404", code)
 	}
 

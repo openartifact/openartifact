@@ -278,8 +278,16 @@ func TestIsArtifactQuarantined(t *testing.T) {
 		}
 	}
 
-	scan(&refID, `INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'pkg/bad-1.0.tgz', 'raw') RETURNING id`, repo.ID)
-	scan(&jobID, `INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status) VALUES ($1, 'vuln', 'osv', 'completed') RETURNING id`, refID)
+	scan(
+		&refID,
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'pkg/bad-1.0.tgz', 'raw') RETURNING id`,
+		repo.ID,
+	)
+	scan(
+		&jobID,
+		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status) VALUES ($1, 'vuln', 'osv', 'completed') RETURNING id`,
+		refID,
+	)
 	mustExec(`INSERT INTO vuln_results (scan_job_id, quarantined) VALUES ($1, false)`, jobID)
 
 	check := func(repoID string, want bool, keys ...string) {
@@ -308,8 +316,16 @@ func TestIsArtifactQuarantined(t *testing.T) {
 	// A secret-scan quarantine blocks as well.
 	var secretRef, secretJob string
 
-	scan(&secretRef, `INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'pkg/leak.zip', 'raw') RETURNING id`, repo.ID)
-	scan(&secretJob, `INSERT INTO scan_jobs (artifact_ref_id, scan_type, status) VALUES ($1, 'secret', 'completed') RETURNING id`, secretRef)
+	scan(
+		&secretRef,
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'pkg/leak.zip', 'raw') RETURNING id`,
+		repo.ID,
+	)
+	scan(
+		&secretJob,
+		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, status) VALUES ($1, 'secret', 'completed') RETURNING id`,
+		secretRef,
+	)
 	mustExec(`INSERT INTO secret_results (scan_job_id, quarantined) VALUES ($1, true)`, secretJob)
 
 	check(repo.ID, true, "pkg/leak.zip")
@@ -380,7 +396,13 @@ func TestNullableTimestampsCleanupPolicy(t *testing.T) {
 	}
 
 	keep := 3
-	policy := &models.CleanupPolicy{RepositoryID: repo.ID, Name: "p", Enabled: true, KeepLastN: &keep, ScheduleCron: models.DefaultCleanupCron}
+	policy := &models.CleanupPolicy{
+		RepositoryID: repo.ID,
+		Name:         "p",
+		Enabled:      true,
+		KeepLastN:    &keep,
+		ScheduleCron: models.DefaultCleanupCron,
+	}
 
 	if err := pg.CreateCleanupPolicy(ctx, policy); err != nil {
 		t.Fatalf("CreateCleanupPolicy: %v", err)

@@ -212,7 +212,11 @@ func TestMCPProtocolErrorsUseJSONRPCCodes(t *testing.T) {
 		want int
 	}{
 		{"unknown tool", rpcBody(t, 1, "tools/call", map[string]any{"name": "drop_database"}), jsonRPCInvalidParams},
-		{"tools/call without a tool name", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{}}}`, jsonRPCInvalidParams},
+		{
+			"tools/call without a tool name",
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{}}}`,
+			jsonRPCInvalidParams,
+		},
 		{"tools/call params of the wrong type", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":"x"}`, jsonRPCInvalidParams},
 	}
 

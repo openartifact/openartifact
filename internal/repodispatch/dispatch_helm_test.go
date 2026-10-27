@@ -137,7 +137,8 @@ func TestHelmProxyAndGroupThroughDispatch(t *testing.T) {
 
 	t.Run("group merges the hosted and the proxy member", func(t *testing.T) {
 		urls := chartURLs(t, npmGet(h, "/repos/all/index.yaml"))
-		if urls["local"] != helmBase+"/repos/all/charts/local-2.0.0.tgz" || urls["remote"] != helmBase+"/repos/all/charts/remote-1.0.0.tgz" {
+		if urls["local"] != helmBase+"/repos/all/charts/local-2.0.0.tgz" ||
+			urls["remote"] != helmBase+"/repos/all/charts/remote-1.0.0.tgz" {
 			t.Errorf("urls = %v", urls)
 		}
 	})

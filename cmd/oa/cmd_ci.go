@@ -192,7 +192,13 @@ func (a *ciAPI) packages(ctx context.Context, repo, q string, fn func(ciPackage)
 			query.Set("q", q)
 		}
 
-		if err := a.call(ctx, http.MethodGet, "/api/v1/repositories/"+url.PathEscape(repo)+"/packages?"+query.Encode(), nil, &out); err != nil {
+		if err := a.call(
+			ctx,
+			http.MethodGet,
+			"/api/v1/repositories/"+url.PathEscape(repo)+"/packages?"+query.Encode(),
+			nil,
+			&out,
+		); err != nil {
 			return err
 		}
 
@@ -219,7 +225,13 @@ func (a *ciAPI) searchProperty(ctx context.Context, repo, key, value string) ([]
 		ArtifactIDs []string `json:"artifact_ids"`
 	}
 
-	if err := a.call(ctx, http.MethodGet, "/api/v1/repositories/"+url.PathEscape(repo)+"/artifacts/search?"+q.Encode(), nil, &out); err != nil {
+	if err := a.call(
+		ctx,
+		http.MethodGet,
+		"/api/v1/repositories/"+url.PathEscape(repo)+"/artifacts/search?"+q.Encode(),
+		nil,
+		&out,
+	); err != nil {
 		return nil, err
 	}
 

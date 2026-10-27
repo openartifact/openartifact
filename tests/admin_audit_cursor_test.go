@@ -67,7 +67,12 @@ func newAuditListClient(t *testing.T) (auditListClient, []string) {
 		id := fmt.Sprintf("00000000-0000-4000-8000-%012d", i)
 		ids = append(ids, id)
 
-		row := &models.AuditLog{ID: id, Action: "auth.login", DetailsJSON: detailsJSON("admin", ""), CreatedAt: base.Add(-time.Duration(i) * time.Second)}
+		row := &models.AuditLog{
+			ID:          id,
+			Action:      "auth.login",
+			DetailsJSON: detailsJSON("admin", ""),
+			CreatedAt:   base.Add(-time.Duration(i) * time.Second),
+		}
 		if err := db.InsertAuditLog(context.Background(), row); err != nil {
 			t.Fatalf("InsertAuditLog: %v", err)
 		}

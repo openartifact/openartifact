@@ -17,7 +17,8 @@ import (
 func npmDistTags(h *harness, pkgID string) map[string]string {
 	h.t.Helper()
 
-	rows, err := h.pg.GetDB().QueryContext(context.Background(), `SELECT tag, version FROM npm_dist_tags WHERE package_id = $1::uuid`, pkgID)
+	rows, err := h.pg.GetDB().
+		QueryContext(context.Background(), `SELECT tag, version FROM npm_dist_tags WHERE package_id = $1::uuid`, pkgID)
 	if err != nil {
 		h.t.Fatalf("list dist-tags: %v", err)
 	}
@@ -90,7 +91,8 @@ func TestNpmGoConanNPMSecondVersionKeepsDistTags(t *testing.T) {
 		t.Fatalf("promote: %v", err)
 	}
 
-	if len(res.Copied) != 1 || res.Copied[0].Name != "@acme/shop" || res.Copied[0].Version != "1.1.0" || res.Copied[0].Path != "shop-1.1.0.tgz" {
+	if len(res.Copied) != 1 || res.Copied[0].Name != "@acme/shop" || res.Copied[0].Version != "1.1.0" ||
+		res.Copied[0].Path != "shop-1.1.0.tgz" {
 		t.Errorf("copied = %+v, want @acme/shop 1.1.0", res.Copied)
 	}
 
@@ -168,7 +170,8 @@ func TestNpmGoConanGoMatchedByModBlob(t *testing.T) {
 		t.Fatalf("promote by go.mod and path: %v", err)
 	}
 
-	if len(res.Copied) != 1 || res.Copied[0].Name != goFixtureModule || res.Copied[0].Version != "v1.5.0" || res.Copied[0].Path != "v1.5.0.zip" {
+	if len(res.Copied) != 1 || res.Copied[0].Name != goFixtureModule || res.Copied[0].Version != "v1.5.0" ||
+		res.Copied[0].Path != "v1.5.0.zip" {
 		t.Fatalf("copied = %+v, want %s v1.5.0", res.Copied, goFixtureModule)
 	}
 
@@ -176,7 +179,11 @@ func TestNpmGoConanGoMatchedByModBlob(t *testing.T) {
 		t.Errorf("usage = %+v, want zip and go.mod bytes (%d) and 1 artifact", res.Usage, want)
 	}
 
-	if n := h.count(`SELECT COUNT(*) FROM gomod_modules WHERE repository_id = $1 AND version = 'v1.5.0' AND zip_blob_id = $2::uuid AND mod_blob_id IS NOT NULL`, dst.ID, zipB); n != 1 {
+	if n := h.count(
+		`SELECT COUNT(*) FROM gomod_modules WHERE repository_id = $1 AND version = 'v1.5.0' AND zip_blob_id = $2::uuid AND mod_blob_id IS NOT NULL`,
+		dst.ID,
+		zipB,
+	); n != 1 {
 		t.Errorf("v1.5.0 rows with its zip and go.mod in the target = %d, want 1", n)
 	}
 

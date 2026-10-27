@@ -262,12 +262,24 @@ func fedDigest(b []byte) string {
 
 func newFedImage(name string) *fedImage {
 	layer := bytes.Repeat([]byte("layer of "+name+"\n"), 200)
-	config := []byte(fmt.Sprintf(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[%q]},"config":{"Labels":{"name":%q}}}`, fedDigest(layer), name))
+	config := []byte(
+		fmt.Sprintf(
+			`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[%q]},"config":{"Labels":{"name":%q}}}`,
+			fedDigest(layer),
+			name,
+		),
+	)
 	manifest, _ := json.Marshal(map[string]any{
 		"schemaVersion": 2,
 		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
-		"config":        map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": fedDigest(config), "size": len(config)},
-		"layers":        []any{map[string]any{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": fedDigest(layer), "size": len(layer)}},
+		"config": map[string]any{
+			"mediaType": "application/vnd.oci.image.config.v1+json",
+			"digest":    fedDigest(config),
+			"size":      len(config),
+		},
+		"layers": []any{
+			map[string]any{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": fedDigest(layer), "size": len(layer)},
+		},
 	})
 
 	return &fedImage{config: config, layer: layer, manifest: manifest}
@@ -300,12 +312,24 @@ func (n *fedNode) pushImage(t *testing.T, image, tag string, img *fedImage) {
 			sep = "&"
 		}
 
-		if code, body := n.do(t, http.MethodPut, loc+sep+"digest="+fedDigest(blob), "application/octet-stream", blob); code != http.StatusCreated {
+		if code, body := n.do(
+			t,
+			http.MethodPut,
+			loc+sep+"digest="+fedDigest(blob),
+			"application/octet-stream",
+			blob,
+		); code != http.StatusCreated {
 			t.Fatalf("%s upload blob: HTTP %d: %s", n.name, code, body)
 		}
 	}
 
-	if code, body := n.do(t, http.MethodPut, base+"/manifests/"+tag, "application/vnd.oci.image.manifest.v1+json", img.manifest); code != http.StatusCreated {
+	if code, body := n.do(
+		t,
+		http.MethodPut,
+		base+"/manifests/"+tag,
+		"application/vnd.oci.image.manifest.v1+json",
+		img.manifest,
+	); code != http.StatusCreated {
 		t.Fatalf("%s push manifest: HTTP %d: %s", n.name, code, body)
 	}
 }
@@ -458,7 +482,15 @@ func fedTriTombstone(t *testing.T, m *fedMesh) {
 	// A full resync of a node that is not the origin must not bring it back.
 	b := m.nodes[1]
 	for _, p := range b.status(t, fedRawRepo).Peers {
-		b.call(t, http.MethodPost, fedAPI(fedRawRepo)+"/peers/"+p.ID+"/resync", nil, http.StatusAccepted, http.StatusOK, http.StatusNoContent)
+		b.call(
+			t,
+			http.MethodPost,
+			fedAPI(fedRawRepo)+"/peers/"+p.ID+"/resync",
+			nil,
+			http.StatusAccepted,
+			http.StatusOK,
+			http.StatusNoContent,
+		)
 	}
 
 	poll(t, "resync done", fedWait, func() bool {
@@ -524,7 +556,13 @@ func fedTriResume(t *testing.T, m *fedMesh) {
 	sum := sha256.Sum256(big)
 	want := hex.EncodeToString(sum[:])
 
-	if code, body := a.do(t, http.MethodPut, "/repos/raw/"+fedRawRepo+"/big/blob.bin", "application/octet-stream", big); code != http.StatusCreated {
+	if code, body := a.do(
+		t,
+		http.MethodPut,
+		"/repos/raw/"+fedRawRepo+"/big/blob.bin",
+		"application/octet-stream",
+		big,
+	); code != http.StatusCreated {
 		t.Fatalf("a: put big blob: HTTP %d: %s", code, body)
 	}
 
@@ -545,7 +583,11 @@ func fedTriResume(t *testing.T, m *fedMesh) {
 
 	moved := viaA.blobBytes.Load() - before
 	if moved < fedBigBlob || moved >= 2*fedBigBlob {
-		t.Errorf("%d blob bytes crossed the faulty link for a %d byte blob, want at least the blob and less than twice it", moved, fedBigBlob)
+		t.Errorf(
+			"%d blob bytes crossed the faulty link for a %d byte blob, want at least the blob and less than twice it",
+			moved,
+			fedBigBlob,
+		)
 	}
 
 	t.Logf("%d blob bytes crossed the faulty link for a %d byte blob", moved, fedBigBlob)

@@ -50,7 +50,12 @@ func TestRejectNonPull(t *testing.T) {
 }
 
 func TestNotFoundCode(t *testing.T) {
-	want := map[Kind]string{KindBlob: "BLOB_UNKNOWN", KindManifest: "MANIFEST_UNKNOWN", KindTags: "NAME_UNKNOWN", KindReferrers: "NAME_UNKNOWN"}
+	want := map[Kind]string{
+		KindBlob:      "BLOB_UNKNOWN",
+		KindManifest:  "MANIFEST_UNKNOWN",
+		KindTags:      "NAME_UNKNOWN",
+		KindReferrers: "NAME_UNKNOWN",
+	}
 
 	for kind, code := range want {
 		if got, msg := NotFoundCode(kind); got != code || msg == "" {

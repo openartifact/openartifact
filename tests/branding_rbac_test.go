@@ -103,7 +103,15 @@ func TestBrandingRBAC_PublicVersusAdmin(t *testing.T) {
 
 	// The administrator can do all of it.
 	adm := cookies[brAdmin]
-	if rw := brandingDo(t, router, adm, http.MethodPut, "/api/v1/admin/branding", "application/json", `{"product_name":"Acme"}`); rw.Code != http.StatusOK {
+	if rw := brandingDo(
+		t,
+		router,
+		adm,
+		http.MethodPut,
+		"/api/v1/admin/branding",
+		"application/json",
+		`{"product_name":"Acme"}`,
+	); rw.Code != http.StatusOK {
 		t.Fatalf("admin PUT = %d %s", rw.Code, rw.Body)
 	}
 

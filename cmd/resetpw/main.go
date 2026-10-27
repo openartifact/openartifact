@@ -124,9 +124,11 @@ func resetPassword(ctx context.Context, db *sql.DB, username, hash string) error
 	// forced-change flag and any password expiry are cleared.
 	var userID string
 
-	err = tx.QueryRowContext(ctx,
+	err = tx.QueryRowContext(
+		ctx,
 		`UPDATE auth_users SET password_hash = $1, must_change_password = false, password_expires_at = NULL WHERE username = $2 RETURNING id`,
-		hash, username,
+		hash,
+		username,
 	).Scan(&userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: %q", errUserNotFound, username)

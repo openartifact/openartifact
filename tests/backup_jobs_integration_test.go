@@ -190,7 +190,10 @@ func TestBackupAPIRunsEveryAcceptedTypeEndToEnd(t *testing.T) {
 			}
 
 			dl := httptest.NewRecorder()
-			r.ServeHTTP(dl, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/backup/"+created.ID+"/download", nil))
+			r.ServeHTTP(
+				dl,
+				httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/backup/"+created.ID+"/download", nil),
+			)
 
 			if dl.Code != http.StatusOK || dl.Body.Len() == 0 {
 				t.Errorf("download: status = %d, %d bytes; want 200 and the archive", dl.Code, dl.Body.Len())

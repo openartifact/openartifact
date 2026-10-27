@@ -101,8 +101,14 @@ func TestWebhookCreateNeverReturnsSecretAndEncryptsIt(t *testing.T) {
 	db := &webhooksMockDB{}
 	r, base := newWebhooksTestRouter(t, db)
 
-	rw := doWebhookRequest(t, r, base, http.MethodPost, "/api/v1/webhooks",
-		`{"name":"ci","url":"http://127.0.0.1:9/hook","secret":"s3cret","events":["artifact.uploaded","artifact.uploaded"],"ssl_verify":false,"max_retries":99,"timeout_seconds":0}`)
+	rw := doWebhookRequest(
+		t,
+		r,
+		base,
+		http.MethodPost,
+		"/api/v1/webhooks",
+		`{"name":"ci","url":"http://127.0.0.1:9/hook","secret":"s3cret","events":["artifact.uploaded","artifact.uploaded"],"ssl_verify":false,"max_retries":99,"timeout_seconds":0}`,
+	)
 	if rw.Code != http.StatusBadRequest && rw.Code != http.StatusCreated {
 		t.Fatalf("unexpected status %d: %s", rw.Code, rw.Body.String())
 	}
@@ -111,7 +117,8 @@ func TestWebhookCreateNeverReturnsSecretAndEncryptsIt(t *testing.T) {
 		t.Fatalf("create rejected: %s", rw.Body.String())
 	}
 
-	if strings.Contains(rw.Body.String(), "s3cret") || strings.Contains(rw.Body.String(), "secret_enc") || strings.Contains(strings.ToLower(rw.Body.String()), "secretenc") {
+	if strings.Contains(rw.Body.String(), "s3cret") || strings.Contains(rw.Body.String(), "secret_enc") ||
+		strings.Contains(strings.ToLower(rw.Body.String()), "secretenc") {
 		t.Fatalf("response leaks secret: %s", rw.Body.String())
 	}
 
@@ -120,7 +127,8 @@ func TestWebhookCreateNeverReturnsSecretAndEncryptsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resp["id"] != "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11" || resp["has_secret"] != true || resp["ssl_verify"] != false || resp["enabled"] != true {
+	if resp["id"] != "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11" || resp["has_secret"] != true || resp["ssl_verify"] != false ||
+		resp["enabled"] != true {
 		t.Fatalf("unexpected response: %v", resp)
 	}
 
@@ -184,7 +192,14 @@ func TestWebhookUpdateHonoursSSLVerifyAndSecretIsKept(t *testing.T) {
 	}}
 	r, base := newWebhooksTestRouter(t, db)
 
-	rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"ssl_verify":false,"enabled":false,"timeout_seconds":1000}`)
+	rw := doWebhookRequest(
+		t,
+		r,
+		base,
+		http.MethodPut,
+		"/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11",
+		`{"ssl_verify":false,"enabled":false,"timeout_seconds":1000}`,
+	)
 	if rw.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rw.Code, rw.Body.String())
 	}
@@ -250,17 +265,39 @@ func TestWebhookPayloadFormat(t *testing.T) {
 
 	t.Run("update changes and validates", func(t *testing.T) {
 		db := &webhooksMockDB{stored: &models.Webhook{
-			ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "ci", URL: "https://93.184.216.34/h", Enabled: true, Events: []string{"artifact.uploaded"},
-			ContentType: "application/json", PayloadFormat: "openartifact", SSLVerify: true, MaxRetries: 3, TimeoutSeconds: 30,
+			ID:             "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11",
+			Name:           "ci",
+			URL:            "https://93.184.216.34/h",
+			Enabled:        true,
+			Events:         []string{"artifact.uploaded"},
+			ContentType:    "application/json",
+			PayloadFormat:  "openartifact",
+			SSLVerify:      true,
+			MaxRetries:     3,
+			TimeoutSeconds: 30,
 		}}
 		r, base := newWebhooksTestRouter(t, db)
 
-		rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"payload_format":"nope"}`)
+		rw := doWebhookRequest(
+			t,
+			r,
+			base,
+			http.MethodPut,
+			"/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11",
+			`{"payload_format":"nope"}`,
+		)
 		if rw.Code != http.StatusBadRequest || db.stored.PayloadFormat != "openartifact" {
 			t.Fatalf("invalid format: status %d, stored %q", rw.Code, db.stored.PayloadFormat)
 		}
 
-		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", `{"payload_format":"teams"}`)
+		rw = doWebhookRequest(
+			t,
+			r,
+			base,
+			http.MethodPut,
+			"/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11",
+			`{"payload_format":"teams"}`,
+		)
 		if rw.Code != http.StatusOK || db.stored.PayloadFormat != "teams" {
 			t.Fatalf("status %d, stored %q: %s", rw.Code, db.stored.PayloadFormat, rw.Body.String())
 		}
@@ -273,7 +310,9 @@ func TestWebhookPayloadFormat(t *testing.T) {
 	})
 
 	t.Run("rows predating the column read as openartifact", func(t *testing.T) {
-		db := &webhooksMockDB{stored: &models.Webhook{ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "old", URL: "https://93.184.216.34/h"}}
+		db := &webhooksMockDB{
+			stored: &models.Webhook{ID: "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", Name: "old", URL: "https://93.184.216.34/h"},
+		}
 		r, base := newWebhooksTestRouter(t, db)
 
 		rw := doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks/6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11", "")

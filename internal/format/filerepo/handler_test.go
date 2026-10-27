@@ -123,7 +123,12 @@ type rig struct {
 func newRig(t *testing.T, spec func(*store) filerepo.Spec[fileRow]) *rig {
 	t.Helper()
 
-	r := &rig{t: t, tbl: &store{rows: map[string]*fileRow{}}, bs: &metaStore{BlobStore: formattest.NewBlobStore()}, pub: &formattest.Publisher{}}
+	r := &rig{
+		t:   t,
+		tbl: &store{rows: map[string]*fileRow{}},
+		bs:  &metaStore{BlobStore: formattest.NewBlobStore()},
+		pub: &formattest.Publisher{},
+	}
 	r.h = filerepo.New(spec(r.tbl), formattest.NewLogger(t), quotaDB{formattest.NewDB()}, r.bs, "http://localhost")
 	r.h.SetPublisher(r.pub)
 

@@ -248,7 +248,12 @@ func TestServe_RevalidationReplacesStaleEntry(t *testing.T) {
 
 	w := sf.do(http.MethodGet, metaKey)
 	if w.Code != http.StatusOK || w.Body.String() != freshBody || w.Header().Get("Warning") != "" {
-		t.Fatalf("status %d body %q warning %q, want the refetched copy without a warning", w.Code, w.Body.String(), w.Header().Get("Warning"))
+		t.Fatalf(
+			"status %d body %q warning %q, want the refetched copy without a warning",
+			w.Code,
+			w.Body.String(),
+			w.Header().Get("Warning"),
+		)
 	}
 
 	e := sf.db.entry("repo-1", metaKey)

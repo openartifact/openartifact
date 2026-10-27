@@ -108,7 +108,10 @@ func (a *app) startMetadataWorkers() {
 	w.deb.WithStaleHook(w.groupMeta.NotifyMemberChanged)
 
 	// A key change re-signs a group through the group worker, not the hosted ones.
-	w.gpgKeys.SetRefreshers(groupRefresher{db: db, hosted: w.rpm, group: w.groupMeta}, groupRefresher{db: db, hosted: w.deb, group: w.groupMeta})
+	w.gpgKeys.SetRefreshers(
+		groupRefresher{db: db, hosted: w.rpm, group: w.groupMeta},
+		groupRefresher{db: db, hosted: w.deb, group: w.groupMeta},
+	)
 
 	a.tasks.Go(w.groupMeta.RegenerateStale)
 
@@ -166,7 +169,8 @@ func (a *app) startHousekeepingWorkers() {
 	// Audit log retention: deletes entries older than audit.retentionDays in
 	// paced batches, one replica at a time (advisory lock). Off by default (see
 	// docs/operations/audit-retention.md).
-	w.auditRetention = worker.NewAuditRetentionWorker(db, log, cfg.Audit.RetentionDays, cfg.Audit.PurgeInterval, cfg.Audit.PurgeBatchSize).WithMetrics(reg)
+	w.auditRetention = worker.NewAuditRetentionWorker(db, log, cfg.Audit.RetentionDays, cfg.Audit.PurgeInterval, cfg.Audit.PurgeBatchSize).
+		WithMetrics(reg)
 	w.auditRetention.Start()
 }
 
@@ -188,7 +192,8 @@ func (a *app) startStorageWorkers() {
 	// Blob deletion sweeper: removes the bytes of deleted blobs and retired
 	// tier copies after the grace period and once no running backup can still
 	// need them. Every replica may run one (no global lock).
-	w.blobSweeper = worker.NewBlobDeletionSweeper(a.db, s.sweep, a.log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).WithMetrics(a.reg)
+	w.blobSweeper = worker.NewBlobDeletionSweeper(a.db, s.sweep, a.log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).
+		WithMetrics(a.reg)
 	w.blobSweeper.Start()
 
 	if s.replSvc != nil {
@@ -258,7 +263,9 @@ func autoGenerateGPGKey(ctx context.Context, svc *gpgkeys.Service, log *logger.L
 
 	switch {
 	case errors.Is(err, gpgkeys.ErrSecretKeyRequired):
-		log.Warnw("gpg.autoGenerate is on but OPENARTIFACT_SECRET_KEY is not set: private keys are only stored encrypted, so no key was generated")
+		log.Warnw(
+			"gpg.autoGenerate is on but OPENARTIFACT_SECRET_KEY is not set: private keys are only stored encrypted, so no key was generated",
+		)
 	case err != nil:
 		log.Errorw("gpg.autoGenerate failed", "error", err)
 	case created:

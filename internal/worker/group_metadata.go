@@ -79,7 +79,14 @@ type GroupMetadataWorker struct {
 // NewGroupMetadataWorker creates the worker. signers resolves the key that signs
 // each group's metadata (nil, or a nil result, for an unsigned group); it is
 // asked per generation so a key change takes effect.
-func NewGroupMetadataWorker(db sq.Database, blobStore storage.BlobStore, opener MemberOpener, rpm RPMPackageLoader, signers gpg.Resolver, log *logger.Logger) *GroupMetadataWorker {
+func NewGroupMetadataWorker(
+	db sq.Database,
+	blobStore storage.BlobStore,
+	opener MemberOpener,
+	rpm RPMPackageLoader,
+	signers gpg.Resolver,
+	log *logger.Logger,
+) *GroupMetadataWorker {
 	w := &GroupMetadataWorker{db: db, blobStore: blobStore, opener: opener, rpm: rpm, signers: signers, log: log}
 	w.q = newRegenQueue("group", log, func(ctx context.Context, groupID string) error {
 		err := w.generate(ctx, groupID, "", false, nil)
@@ -382,7 +389,13 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 }
 
 // run is one locked generation of grp.
-func (w *GroupMetadataWorker) run(ctx context.Context, grp *models.Repository, hint string, members []*models.Repository, scope string) error {
+func (w *GroupMetadataWorker) run(
+	ctx context.Context,
+	grp *models.Repository,
+	hint string,
+	members []*models.Repository,
+	scope string,
+) error {
 	if err := w.ensureState(ctx, grp.ID); err != nil {
 		return err
 	}
@@ -556,7 +569,12 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
 
 	for _, path := range stalePaths {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`, groupID, path); err != nil {
+		if _, err := tx.ExecContext(
+			ctx,
+			`DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`,
+			groupID,
+			path,
+		); err != nil {
 			return fmt.Errorf("group worker: deleting superseded repository_metadata %s: %w", path, err)
 		}
 	}
@@ -587,7 +605,12 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 // rows: all of them for the shared index (so regenerating it drops the
 // variants), those under scope for a variant.
 func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND ($2 = '' OR starts_with(path, $2))`, groupID, scope)
+	rows, err := tx.QueryContext(
+		ctx,
+		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
+		groupID,
+		scope,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("group worker: listing repository_metadata: %w", err)
 	}
@@ -613,7 +636,12 @@ func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope
 
 // replaceOwners swaps the group's owner table for owners.
 func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string, owners map[string]groupOwner) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))`, groupID, scope); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
+		groupID,
+		scope,
+	); err != nil {
 		return fmt.Errorf("group worker: clearing owners: %w", err)
 	}
 
@@ -651,7 +679,14 @@ func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string
 // markGenerated records the generation: the stale flag is only cleared when no
 // change was recorded since the state was read (the change's own notification
 // schedules the follow-up run).
-func markGenerated(ctx context.Context, tx sq.Transaction, groupID string, st *models.GroupMetadataState, dists []string, refresh *time.Time) error {
+func markGenerated(
+	ctx context.Context,
+	tx sq.Transaction,
+	groupID string,
+	st *models.GroupMetadataState,
+	dists []string,
+	refresh *time.Time,
+) error {
 	if dists == nil {
 		dists = []string{}
 	}

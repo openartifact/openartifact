@@ -195,7 +195,12 @@ func TestOCIGroupResolvesFirstMemberThatHasIt(t *testing.T) {
 		}
 	}
 
-	if got := e.do(http.MethodGet, "/v2/dgrp/team/app/manifests/1").Header().Get("Docker-Content-Digest"); !strings.HasPrefix(got, "sha256:") {
+	if got := e.do(http.MethodGet, "/v2/dgrp/team/app/manifests/1").
+		Header().
+		Get("Docker-Content-Digest"); !strings.HasPrefix(
+		got,
+		"sha256:",
+	) {
 		t.Errorf("group lost the proxy member's Docker-Content-Digest: %q", got)
 	}
 
@@ -251,7 +256,11 @@ func TestOCIGroupTagListIsMergedAndPaginated(t *testing.T) {
 		t.Errorf("last page = %v link %q", l.Tags, link)
 	}
 
-	if w := e.do(http.MethodGet, "/v2/dgrp/team/ghost/tags/list"); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "NAME_UNKNOWN") {
+	if w := e.do(
+		http.MethodGet,
+		"/v2/dgrp/team/ghost/tags/list",
+	); w.Code != http.StatusNotFound ||
+		!strings.Contains(w.Body.String(), "NAME_UNKNOWN") {
 		t.Errorf("tags of an unknown image = %d %q", w.Code, w.Body.String())
 	}
 }

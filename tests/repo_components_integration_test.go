@@ -81,7 +81,13 @@ func seedNpmAndRaw(t *testing.T, pg *database.PostgresDB) npmRawFixture {
 	// A package in another repository must not leak into npm-main.
 	insertNpmVersion(t, pg, insertNpmPackage(t, pg, otherNpmRepo, "leak"), "9.9.9", "leak-9.9.9.tgz", blobID)
 
-	execSQL(t, pg, `INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'dir/a.txt', $2), ($1, 'b.bin', $2)`, f.rawRepo, blobID)
+	execSQL(
+		t,
+		pg,
+		`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'dir/a.txt', $2), ($1, 'b.bin', $2)`,
+		f.rawRepo,
+		blobID,
+	)
 
 	return f
 }
@@ -211,42 +217,96 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		query                                 string
 		args                                  []any
 	}{
-		{"deb", "dpkg", "1.0", "amd64", "dpkg_1.0_amd64.deb",
+		{
+			"deb",
+			"dpkg",
+			"1.0",
+			"amd64",
+			"dpkg_1.0_amd64.deb",
 			`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, filename) VALUES ($1,$2,$3,$4,'dpkg','1.0','amd64','dpkg_1.0_amd64.deb')`,
-			[]any{repo, distID, compID, blobID}},
-		{"rpm", "rpmpkg", "2.0", "x86_64", "rpmpkg-2.0-1.x86_64.rpm",
+			[]any{repo, distID, compID, blobID},
+		},
+		{
+			"rpm",
+			"rpmpkg",
+			"2.0",
+			"x86_64",
+			"rpmpkg-2.0-1.x86_64.rpm",
 			`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, arch, filename, package_size) VALUES ($1,$2,'rpmpkg','2.0','1','x86_64','rpmpkg-2.0-1.x86_64.rpm',4096)`,
-			[]any{repo, blobID}},
-		{"npm", "n", "3.0.0", "", "n-3.0.0.tgz",
+			[]any{repo, blobID},
+		},
+		{
+			"npm",
+			"n",
+			"3.0.0",
+			"",
+			"n-3.0.0.tgz",
 			`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id) VALUES ($1,'3.0.0','{}'::jsonb,'i','s','n-3.0.0.tgz',$2)`,
-			[]any{npmPkgID, blobID}},
-		{"pypi", "pyp", "4.0", "py3", "pyp-4.0-py3-none-any.whl",
+			[]any{npmPkgID, blobID},
+		},
+		{
+			"pypi",
+			"pyp",
+			"4.0",
+			"py3",
+			"pyp-4.0-py3-none-any.whl",
 			`INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, blob_id) VALUES ($1,'pyp','4.0','pyp-4.0-py3-none-any.whl','bdist_wheel','py3',$2)`,
-			[]any{repo, blobID}},
-		{"maven", "org.acme:lib", "5.0", "sources", "org/acme/lib/5.0/lib-5.0-sources.jar",
+			[]any{repo, blobID},
+		},
+		{
+			"maven",
+			"org.acme:lib",
+			"5.0",
+			"sources",
+			"org/acme/lib/5.0/lib-5.0-sources.jar",
 			`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, classifier, extension, repo_path, blob_id) VALUES ($1,'org.acme','lib','5.0','sources','jar','org/acme/lib/5.0/lib-5.0-sources.jar',$2)`,
-			[]any{repo, blobID}},
-		{"ivy", "org.acme:mod", "6.0", "", "mod.jar",
+			[]any{repo, blobID},
+		},
+		{
+			"ivy",
+			"org.acme:mod",
+			"6.0",
+			"",
+			"mod.jar",
 			`INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_ext, blob_id) VALUES ($1,'org.acme','mod','6.0','mod','jar',$2)`,
-			[]any{repo, blobID}},
-		{"sbt", "org.acme:lib_2.13", "7.0", "2.13", "lib_2.13-7.0.jar",
+			[]any{repo, blobID},
+		},
+		{
+			"sbt",
+			"org.acme:lib_2.13",
+			"7.0",
+			"2.13",
+			"lib_2.13-7.0.jar",
 			`INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, scala_version, filename, blob_id) VALUES ($1,'org.acme','lib_2.13','7.0','2.13','lib_2.13-7.0.jar',$2)`,
-			[]any{repo, blobID}},
+			[]any{repo, blobID},
+		},
 		{"nuget", "Acme.Lib", "8.0", "", "Acme.Lib.8.0.nupkg",
 			`INSERT INTO nuget_packages (repository_id, package_id, version, blob_id) VALUES ($1,'Acme.Lib','8.0',$2)`,
 			[]any{repo, blobID}},
-		{"go", "example.com/mod", "v9.0.0", "", "v9.0.0.zip",
+		{
+			"go",
+			"example.com/mod",
+			"v9.0.0",
+			"",
+			"v9.0.0.zip",
 			`INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id) VALUES ($1,'example.com/mod','v9.0.0','module example.com/mod',$2)`,
-			[]any{repo, blobID}},
+			[]any{repo, blobID},
+		},
 		{"cargo", "crt", "10.0.0", "", "crt-10.0.0.crate",
 			`INSERT INTO cargo_crates (repository_id, name, version, blob_id) VALUES ($1,'crt','10.0.0',$2)`,
 			[]any{repo, blobID}},
 		{"rubygems", "gem", "11.0", "java", "gem-11.0-java.gem",
 			`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'gem','11.0','java',$2,4096)`,
 			[]any{repo, blobID}},
-		{"conda", "cnd", "12.0", "linux-64", "cnd-12.0-h0_0.tar.bz2",
+		{
+			"conda",
+			"cnd",
+			"12.0",
+			"linux-64",
+			"cnd-12.0-h0_0.tar.bz2",
 			`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, blob_id) VALUES ($1,'cnd','12.0','h0_0','linux-64',$2)`,
-			[]any{repo, blobID}},
+			[]any{repo, blobID},
+		},
 		{"conan", "cn", "13.0", "", "cn/13.0@_/_#0",
 			`INSERT INTO conan_packages (repository_id, name, version) VALUES ($1,'cn','13.0')`,
 			[]any{repo}},
@@ -256,10 +316,16 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		{"raw", "some/file.txt", "", "", "some/file.txt",
 			`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1,'some/file.txt',$2)`,
 			[]any{repo, blobID}},
-		{"docker", "everything", "latest", "", "sha256:" + componentsBlobSHA,
+		{
+			"docker",
+			"everything",
+			"latest",
+			"",
+			"sha256:" + componentsBlobSHA,
 			`WITH m AS (INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1,'sha256:` + componentsBlobSHA + `','application/vnd.oci.image.manifest.v1+json',4096,$2) RETURNING repository_id, digest)
 			 INSERT INTO docker_tags (repository_id, name, manifest_digest) SELECT repository_id, 'latest', digest FROM m`,
-			[]any{repo, blobID}},
+			[]any{repo, blobID},
+		},
 	}
 
 	for _, s := range seeds {
@@ -373,7 +439,12 @@ func TestDownloadPackage_NpmAndRaw(t *testing.T) {
 
 	userID := "download-admin"
 	download := func(repoName, id string) *httptest.ResponseRecorder {
-		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/repositories/"+repoName+"/packages/"+id+"/download", http.NoBody)
+		req := httptest.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			"/api/v1/repositories/"+repoName+"/packages/"+id+"/download",
+			http.NoBody,
+		)
 		req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{UserID: &userID, Username: "admin"}))
 
 		rw := httptest.NewRecorder()
@@ -400,7 +471,10 @@ func TestDownloadPackage_NpmAndRaw(t *testing.T) {
 				t.Errorf("Content-Length = %q, want %d", got, len(content))
 			}
 
-			if _, params, err := mime.ParseMediaType(rw.Header().Get("Content-Disposition")); err != nil || params["filename"] != tc.filename {
+			if _, params, err := mime.ParseMediaType(
+				rw.Header().Get("Content-Disposition"),
+			); err != nil ||
+				params["filename"] != tc.filename {
 				t.Errorf("Content-Disposition = %q, want attachment filename %q", rw.Header().Get("Content-Disposition"), tc.filename)
 			}
 		})

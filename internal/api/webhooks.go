@@ -31,7 +31,12 @@ type WebhooksHandler struct {
 	dispatcher *webhook.Dispatcher
 }
 
-func NewWebhooksHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, dispatcher *webhook.Dispatcher) *WebhooksHandler {
+func NewWebhooksHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	dispatcher *webhook.Dispatcher,
+) *WebhooksHandler {
 	return &WebhooksHandler{
 		db:         db,
 		log:        log,

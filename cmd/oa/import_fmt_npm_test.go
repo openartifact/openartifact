@@ -445,11 +445,22 @@ func npmNexusFixtures(t *testing.T) ([]fakeFile, []npmWant) {
 		wants = append(wants, npmWant{s.name, s.version, data})
 	}
 
-	files = append(files,
+	files = append(
+		files,
 		// The packuments of Nexus carry the dist-tags; these two name no "latest",
 		// which is then derived from the versions.
-		fakeFile{path: "left-pad", data: []byte(`{"name":"left-pad","dist-tags":{"beta":"2.0.0-beta.1","legacy":"1.0.0"}}`), created: nexusStamp, contentType: "application/json"},
-		fakeFile{path: "@acme/widget", data: []byte(`{"name":"@acme/widget","dist-tags":{"rc":"0.2.0-rc.1"}}`), created: nexusStamp, contentType: "application/json"},
+		fakeFile{
+			path:        "left-pad",
+			data:        []byte(`{"name":"left-pad","dist-tags":{"beta":"2.0.0-beta.1","legacy":"1.0.0"}}`),
+			created:     nexusStamp,
+			contentType: "application/json",
+		},
+		fakeFile{
+			path:        "@acme/widget",
+			data:        []byte(`{"name":"@acme/widget","dist-tags":{"rc":"0.2.0-rc.1"}}`),
+			created:     nexusStamp,
+			contentType: "application/json",
+		},
 	)
 
 	return files, wants
@@ -537,7 +548,14 @@ func TestImportNPMNexusPublishesInVersionOrderAndSetsLatest(t *testing.T) {
 	}
 
 	// The prerelease sits above the last stable version but must not take "latest".
-	if got, want := n.tags["reg/left-pad"], map[string]string{"latest": "1.1.0", "beta": "2.0.0-beta.1", "legacy": "1.0.0"}; !maps.Equal(got, want) {
+	if got, want := n.tags["reg/left-pad"], map[string]string{
+		"latest": "1.1.0",
+		"beta":   "2.0.0-beta.1",
+		"legacy": "1.0.0",
+	}; !maps.Equal(
+		got,
+		want,
+	) {
 		t.Errorf("left-pad tags = %v, want %v", got, want)
 	}
 
@@ -582,9 +600,19 @@ func TestImportNPMArtifactory(t *testing.T) {
 			scoped := npmTestTarball(t, "@acme/widget", "1.0.0", nil)
 			plain := npmTestTarball(t, "left-pad", "1.0.0", nil)
 			arti := newFakeArtifactory(t, fakeSourceRepo{name: "npm-local", format: "npm", kind: "local", files: []fakeFile{
-				{path: "left-pad/-/left-pad-1.0.0.tgz", data: plain, created: artiStamp, props: map[string][]string{"npm.name": {"left-pad"}, "team": {"x"}}},
+				{
+					path:    "left-pad/-/left-pad-1.0.0.tgz",
+					data:    plain,
+					created: artiStamp,
+					props:   map[string][]string{"npm.name": {"left-pad"}, "team": {"x"}},
+				},
 				// Artifactory repeats the scope in front of a scoped tarball's file name.
-				{path: "@acme/widget/-/@acme/widget-1.0.0.tgz", data: scoped, created: artiStamp, props: map[string][]string{"npm.name": {"@acme/widget"}}},
+				{
+					path:    "@acme/widget/-/@acme/widget-1.0.0.tgz",
+					data:    scoped,
+					created: artiStamp,
+					props:   map[string][]string{"npm.name": {"@acme/widget"}},
+				},
 				{path: ".npm/left-pad/package.json", data: []byte(`{"name":"left-pad"}`), created: artiStamp},
 				{path: ".npm/@acme/widget/package.json", data: []byte(`{"name":"@acme/widget"}`), created: artiStamp},
 			}})

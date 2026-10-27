@@ -45,7 +45,12 @@ type SystemInfoHandler struct {
 	storageStatus string
 }
 
-func NewSystemInfoHandler(version, commit, buildTime string, db database.Database, blobStore storage.BlobStore, storageType string) *SystemInfoHandler {
+func NewSystemInfoHandler(
+	version, commit, buildTime string,
+	db database.Database,
+	blobStore storage.BlobStore,
+	storageType string,
+) *SystemInfoHandler {
 	return &SystemInfoHandler{
 		version:     version,
 		commit:      commit,

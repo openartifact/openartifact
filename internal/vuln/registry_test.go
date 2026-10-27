@@ -254,9 +254,23 @@ for a in "$@"; do
     --download-db-only) mkdir -p "$dir/db"; echo x > "$dir/db/trivy.db"; echo '{}' > "$dir/db/metadata.json" ;;
   esac
 done`)
-	installFakeScanner(t, "grype", `mkdir -p "$GRYPE_DB_CACHE_DIR/6"; echo x > "$GRYPE_DB_CACHE_DIR/6/vulnerability.db"; echo "$GRYPE_DB_UPDATE_URL" > `+filepath.Join(t.TempDir(), "unused"))
+	installFakeScanner(
+		t,
+		"grype",
+		`mkdir -p "$GRYPE_DB_CACHE_DIR/6"; echo x > "$GRYPE_DB_CACHE_DIR/6/vulnerability.db"; echo "$GRYPE_DB_UPDATE_URL" > `+filepath.Join(
+			t.TempDir(),
+			"unused",
+		),
+	)
 
-	r := NewRegistry(log, Options{CacheDir: cache, Trivy: TrivyOptions{DBRepository: "mirror.example/trivy-db"}, Grype: GrypeOptions{DBURL: "https://mirror.example/grype/listing.json"}})
+	r := NewRegistry(
+		log,
+		Options{
+			CacheDir: cache,
+			Trivy:    TrivyOptions{DBRepository: "mirror.example/trivy-db"},
+			Grype:    GrypeOptions{DBURL: "https://mirror.example/grype/listing.json"},
+		},
+	)
 
 	if statusByName(t, r, "trivy").Ready {
 		t.Fatal("trivy ready before any download")

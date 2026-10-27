@@ -74,7 +74,10 @@ func benchRPMPackages(n int) []pkgrpm.Package {
 		)
 
 		for j := range 14 {
-			p.Requires = append(p.Requires, pkgrpm.Dependency{Name: fmt.Sprintf("dep%d", j), Flags: pkgrpm.SENSE_GREATEREQUAL, Version: "2." + strconv.Itoa(j)})
+			p.Requires = append(
+				p.Requires,
+				pkgrpm.Dependency{Name: fmt.Sprintf("dep%d", j), Flags: pkgrpm.SENSE_GREATEREQUAL, Version: "2." + strconv.Itoa(j)},
+			)
 		}
 
 		p.Recommends = []pkgrpm.Dependency{{Name: "recommended-tool"}}
@@ -282,7 +285,10 @@ func BenchmarkPrimaryPipeline(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				if _, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) }, len(pkgs)*2048); err != nil {
+				if _, err := CompressMetadataStream(
+					func(w io.Writer) error { return WritePrimaryXML(w, pkgs) },
+					len(pkgs)*2048,
+				); err != nil {
 					b.Fatal(err)
 				}
 			}

@@ -64,7 +64,10 @@ func (s *trashSpec) blobSHAExpr() string {
 		return "''::text"
 	}
 
-	return "COALESCE((SELECT string_agg(DISTINCT bb.sha256, ',') FROM blobs bb WHERE bb.id IN (" + strings.Join(s.blobCols, ", ") + ")), '')"
+	return "COALESCE((SELECT string_agg(DISTINCT bb.sha256, ',') FROM blobs bb WHERE bb.id IN (" + strings.Join(
+		s.blobCols,
+		", ",
+	) + ")), '')"
 }
 
 // trashSpecs lists every soft-deletable package kind, in the order the trash

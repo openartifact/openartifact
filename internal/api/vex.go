@@ -112,7 +112,12 @@ func (h *VEXHandler) handleDocument(w http.ResponseWriter, r *http.Request) {
 
 	specVersion := q.Get("spec_version")
 	if specVersion != "" && (format != sbom.VEXCycloneDX || !sbom.CycloneDXVersionSupported(specVersion)) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "spec_version applies to cyclonedx only and must be '1.4', '1.5' or '1.6'")
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"validation_failed",
+			"spec_version applies to cyclonedx only and must be '1.4', '1.5' or '1.6'",
+		)
 		return
 	}
 

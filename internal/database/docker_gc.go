@@ -58,7 +58,13 @@ type DockerGCStore interface {
 	// ListDockerGCBlobs returns up to limit blob records of the repository that
 	// no manifest other than excludeManifestIDs references and that have not
 	// been used within grace.
-	ListDockerGCBlobs(ctx context.Context, repoID string, grace time.Duration, excludeManifestIDs []string, limit int) ([]*models.DockerGCBlob, error)
+	ListDockerGCBlobs(
+		ctx context.Context,
+		repoID string,
+		grace time.Duration,
+		excludeManifestIDs []string,
+		limit int,
+	) ([]*models.DockerGCBlob, error)
 
 	// DeleteDockerBlobsForGC deletes the given blob records (by digest) that are
 	// still unreferenced and unused within grace, and returns the ones actually
@@ -115,14 +121,22 @@ func (p *PostgresDB) DockerBlobVisible(ctx context.Context, repoID, image, diges
 }
 
 func (p *PostgresDB) LinkDockerBlob(ctx context.Context, repoID, image, digest string) error {
-	if err := p.q.LinkDockerBlobImages(ctx, dbsqlc.LinkDockerBlobImagesParams{RepositoryID: repoID, Image: image, Digests: []string{digest}}); err != nil {
+	if err := p.q.LinkDockerBlobImages(
+		ctx,
+		dbsqlc.LinkDockerBlobImagesParams{RepositoryID: repoID, Image: image, Digests: []string{digest}},
+	); err != nil {
 		return fmt.Errorf("link docker blob to image: %w", err)
 	}
 
 	return nil
 }
 
-func insertDockerManifestRefs(ctx context.Context, q *dbsqlc.Queries, manifestID, repoID, image string, refs *models.DockerManifestRefs) error {
+func insertDockerManifestRefs(
+	ctx context.Context,
+	q *dbsqlc.Queries,
+	manifestID, repoID, image string,
+	refs *models.DockerManifestRefs,
+) error {
 	for _, set := range []struct {
 		kind    string
 		digests []string
@@ -178,7 +192,12 @@ func (p *PostgresDB) ListUnindexedDockerManifests(ctx context.Context, repoID st
 	return out, nil
 }
 
-func (p *PostgresDB) SetDockerManifestRefs(ctx context.Context, repoID string, m *models.DockerGCManifest, refs models.DockerManifestRefs) error {
+func (p *PostgresDB) SetDockerManifestRefs(
+	ctx context.Context,
+	repoID string,
+	m *models.DockerGCManifest,
+	refs models.DockerManifestRefs,
+) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin docker refs tx: %w", err)
@@ -232,7 +251,12 @@ func (p *PostgresDB) ListDockerGCManifests(ctx context.Context, repoID string, g
 	return out, nil
 }
 
-func (p *PostgresDB) DeleteDockerManifestsForGC(ctx context.Context, repoID string, ids []string, grace time.Duration) ([]*models.DockerGCManifest, error) {
+func (p *PostgresDB) DeleteDockerManifestsForGC(
+	ctx context.Context,
+	repoID string,
+	ids []string,
+	grace time.Duration,
+) ([]*models.DockerGCManifest, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -265,7 +289,13 @@ func (p *PostgresDB) DeleteDockerManifestsForGC(ctx context.Context, repoID stri
 	return out, nil
 }
 
-func (p *PostgresDB) ListDockerGCBlobs(ctx context.Context, repoID string, grace time.Duration, excludeManifestIDs []string, limit int) ([]*models.DockerGCBlob, error) {
+func (p *PostgresDB) ListDockerGCBlobs(
+	ctx context.Context,
+	repoID string,
+	grace time.Duration,
+	excludeManifestIDs []string,
+	limit int,
+) ([]*models.DockerGCBlob, error) {
 	if excludeManifestIDs == nil {
 		excludeManifestIDs = []string{}
 	}
@@ -288,7 +318,12 @@ func (p *PostgresDB) ListDockerGCBlobs(ctx context.Context, repoID string, grace
 	return out, nil
 }
 
-func (p *PostgresDB) DeleteDockerBlobsForGC(ctx context.Context, repoID string, digests []string, grace time.Duration) ([]*models.DockerGCBlob, error) {
+func (p *PostgresDB) DeleteDockerBlobsForGC(
+	ctx context.Context,
+	repoID string,
+	digests []string,
+	grace time.Duration,
+) ([]*models.DockerGCBlob, error) {
 	if len(digests) == 0 {
 		return nil, nil
 	}

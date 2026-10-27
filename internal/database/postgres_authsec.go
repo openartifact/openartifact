@@ -53,7 +53,8 @@ func (p *PostgresDB) DeleteUser(ctx context.Context, id string) (bool, error) {
 	}
 
 	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_users WHERE id = $1 AND kind = 'human')`, id).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_users WHERE id = $1 AND kind = 'human')`, id).
+		Scan(&exists); err != nil {
 		return false, fmt.Errorf("delete user lookup: %w", err)
 	}
 
@@ -73,7 +74,11 @@ func (p *PostgresDB) DeleteUser(ctx context.Context, id string) (bool, error) {
 		return false, ErrLastAdmin
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM permission_assignments WHERE principal_type = 'user' AND principal_id = $1`, id); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`DELETE FROM permission_assignments WHERE principal_type = 'user' AND principal_id = $1`,
+		id,
+	); err != nil {
 		return false, fmt.Errorf("delete user assignments: %w", err)
 	}
 
@@ -175,7 +180,10 @@ func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, spec BootstrapAdm
 	}
 
 	if n, _ := res.RowsAffected(); n == 0 {
-		return false, fmt.Errorf("bootstrap assign admin-all: permission target %q not found", "admin-all") //nolint:err113 // dynamic error with runtime context
+		return false, fmt.Errorf(
+			"bootstrap assign admin-all: permission target %q not found",
+			"admin-all",
+		) //nolint:err113 // dynamic error with runtime context
 	}
 
 	if spec.TokenHash != "" {

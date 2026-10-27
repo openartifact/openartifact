@@ -214,7 +214,10 @@ func promoteConanRevision(ctx context.Context, tx Tx, req Request, rev conanRevi
 				return nil, err
 			}
 
-			res.Replaced = append(res.Replaced, Artifact{Name: rev.name, Version: rev.version, Path: f.path(rev), SHA256: f.dst.sha, Size: f.dst.size})
+			res.Replaced = append(
+				res.Replaced,
+				Artifact{Name: rev.name, Version: rev.version, Path: f.path(rev), SHA256: f.dst.sha, Size: f.dst.size},
+			)
 			f.dst = destRow{}
 		}
 
@@ -255,7 +258,18 @@ func conanRevisionFiles(ctx context.Context, tx Tx, req Request, rev conanRevisi
 	for rs.Next() {
 		var f conanDest
 
-		if err := rs.Scan(&f.id, &f.packageID, &f.packageRevision, &f.filename, &f.sha, &f.size, &f.dst.id, &f.dst.sha, &f.dst.size, &f.same); err != nil {
+		if err := rs.Scan(
+			&f.id,
+			&f.packageID,
+			&f.packageRevision,
+			&f.filename,
+			&f.sha,
+			&f.size,
+			&f.dst.id,
+			&f.dst.sha,
+			&f.dst.size,
+			&f.same,
+		); err != nil {
 			return nil, fmt.Errorf("scan conan recipe revision file: %w", err)
 		}
 

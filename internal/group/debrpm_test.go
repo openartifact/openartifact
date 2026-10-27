@@ -157,7 +157,11 @@ func TestRPMGroupServesRepodata(t *testing.T) {
 	f.db.put(f.blobs, "repodata/abc-primary.xml.gz", "gz")
 	f.db.put(f.blobs, "repodata/abc-primary.xml.zst", "zst")
 
-	if w := f.get(http.MethodGet, "repodata/repomd.xml"); w.Code != http.StatusOK || w.Body.String() != "<repomd/>" || w.Header().Get("Content-Type") != "application/xml" {
+	if w := f.get(
+		http.MethodGet,
+		"repodata/repomd.xml",
+	); w.Code != http.StatusOK || w.Body.String() != "<repomd/>" ||
+		w.Header().Get("Content-Type") != "application/xml" {
 		t.Errorf("repomd = %d %q %s", w.Code, w.Body.String(), w.Header().Get("Content-Type"))
 	}
 
@@ -213,7 +217,12 @@ func TestGroupGenerationFailureIs503AndRetriesInBackground(t *testing.T) {
 
 	w := f.get(http.MethodGet, "repodata/repomd.xml")
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" || w.Header().Get("Cache-Control") != "no-store" {
-		t.Errorf("failed generation = %d (Retry-After %q, Cache-Control %q), want 503 with retry hints", w.Code, w.Header().Get("Retry-After"), w.Header().Get("Cache-Control"))
+		t.Errorf(
+			"failed generation = %d (Retry-After %q, Cache-Control %q), want 503 with retry hints",
+			w.Code,
+			w.Header().Get("Retry-After"),
+			w.Header().Get("Cache-Control"),
+		)
 	}
 
 	if f.gen.refreshed != 1 {
@@ -345,7 +354,11 @@ func TestRPMGroupDoesNotServeSubPathsOfAnUnreadableTreeMember(t *testing.T) {
 	f.set("tree", "9/os/Packages/hello-1.rpm", 200, "HELLO")
 	f.denied["tree"] = true
 
-	if w := f.get(http.MethodGet, "9/os/Packages/hello-1.rpm"); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "HELLO") {
+	if w := f.get(
+		http.MethodGet,
+		"9/os/Packages/hello-1.rpm",
+	); w.Code != http.StatusNotFound ||
+		strings.Contains(w.Body.String(), "HELLO") {
 		t.Errorf("sub-path of a member the caller cannot read = %d %q, want 404", w.Code, w.Body.String())
 	}
 

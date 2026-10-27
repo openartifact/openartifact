@@ -93,7 +93,11 @@ func BenchmarkS3PutPeakHeap(b *testing.B) {
 				h := sha256.New()
 				_, _ = io.Copy(h, newPatternReader(size, byte(u)))
 
-				if _, err := store.Put(context.Background(), newPatternReader(size, byte(u)), map[string]string{"sha256": hex.EncodeToString(h.Sum(nil))}); err != nil {
+				if _, err := store.Put(
+					context.Background(),
+					newPatternReader(size, byte(u)),
+					map[string]string{"sha256": hex.EncodeToString(h.Sum(nil))},
+				); err != nil {
 					b.Error(err)
 				}
 			})

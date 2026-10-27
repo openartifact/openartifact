@@ -69,7 +69,13 @@ func (s *S3BlobStore) InitiateMultipart(ctx context.Context, id string, _, _ int
 
 // PresignStagingPart returns a presigned UploadPart URL for one part. The part
 // length is part of the signature.
-func (s *S3BlobStore) PresignStagingPart(ctx context.Context, id, handle string, number int, length int64, ttl time.Duration) (PresignedPut, error) {
+func (s *S3BlobStore) PresignStagingPart(
+	ctx context.Context,
+	id, handle string,
+	number int,
+	length int64,
+	ttl time.Duration,
+) (PresignedPut, error) {
 	key, err := stagingKey(id)
 	if err != nil {
 		return PresignedPut{}, err
@@ -342,7 +348,10 @@ func (s *S3BlobStore) copyStaging(ctx context.Context, src, dst, version string,
 	size := int64(-1)
 
 	if !s.gcs {
-		head, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(src), IfMatch: aws.String(version)})
+		head, err := s.client.HeadObject(
+			ctx,
+			&s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(src), IfMatch: aws.String(version)},
+		)
 		if err != nil {
 			return mapCopyError(err, src, dst)
 		}

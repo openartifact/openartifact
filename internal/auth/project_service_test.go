@@ -22,7 +22,9 @@ func serviceToken(project string) Principal {
 // TestServiceAccountAccess: a project token's service account holds the role of
 // its own project only, never anything from permission targets, never manage.
 func TestServiceAccountAccess(t *testing.T) {
-	admin := []*models.PermissionTarget{{ID: "t", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read", "write", "delete", "manage"}}}
+	admin := []*models.PermissionTarget{
+		{ID: "t", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"read", "write", "delete", "manage"}},
+	}
 
 	tests := []struct {
 		name    string
@@ -32,10 +34,34 @@ func TestServiceAccountAccess(t *testing.T) {
 		want    map[string]bool
 	}{
 		{"viewer token reads its project", []*models.ProjectGrant{g(projA, models.ProjectRoleViewer)}, nil, "in-a", wantActions("read")},
-		{"developer token writes its project", []*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper)}, nil, "in-a", wantActions("read", "write")},
-		{"developer token has nothing in another project", []*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper)}, nil, "in-b", wantActions()},
-		{"a stray membership elsewhere is ignored", []*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper), g(projB, models.ProjectRoleOwner)}, nil, "in-b", wantActions()},
-		{"admin targets assigned to the service user are ignored", []*models.ProjectGrant{g(projA, models.ProjectRoleViewer)}, admin, "in-a", wantActions("read")},
+		{
+			"developer token writes its project",
+			[]*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper)},
+			nil,
+			"in-a",
+			wantActions("read", "write"),
+		},
+		{
+			"developer token has nothing in another project",
+			[]*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper)},
+			nil,
+			"in-b",
+			wantActions(),
+		},
+		{
+			"a stray membership elsewhere is ignored",
+			[]*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper), g(projB, models.ProjectRoleOwner)},
+			nil,
+			"in-b",
+			wantActions(),
+		},
+		{
+			"admin targets assigned to the service user are ignored",
+			[]*models.ProjectGrant{g(projA, models.ProjectRoleViewer)},
+			admin,
+			"in-a",
+			wantActions("read"),
+		},
 		{"admin targets give nothing outside the project", nil, admin, "in-b", wantActions()},
 		{"admin targets never give manage", nil, admin, "", wantActions()},
 	}

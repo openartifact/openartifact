@@ -314,7 +314,8 @@ func TestTrashListShapeAndPaging(t *testing.T) {
 		t.Errorf("unexpected item: %v", item)
 	}
 
-	if !db.listFilter.IncludeRepositories || db.listFilter.Kind != models.TrashKindMaven || db.listFilter.Limit != 200 || db.listFilter.Page != 1 {
+	if !db.listFilter.IncludeRepositories || db.listFilter.Kind != models.TrashKindMaven || db.listFilter.Limit != 200 ||
+		db.listFilter.Page != 1 {
 		t.Errorf("filter = %+v", db.listFilter)
 	}
 }
@@ -352,7 +353,10 @@ func TestTrashRepoRoutesNeedRepoDeletePermission(t *testing.T) {
 		t.Fatalf("list other: status = %d, want 403", rw.Code)
 	}
 
-	if rw := serve(r, trashRequest(http.MethodPost, "/api/v1/repositories/other/trash/maven_artifact/"+trashItemID+"/restore", "")); rw.Code != http.StatusForbidden {
+	if rw := serve(
+		r,
+		trashRequest(http.MethodPost, "/api/v1/repositories/other/trash/maven_artifact/"+trashItemID+"/restore", ""),
+	); rw.Code != http.StatusForbidden {
 		t.Fatalf("restore in other: status = %d, want 403", rw.Code)
 	}
 
@@ -367,11 +371,20 @@ func TestTrashRepoRoutesNeedRepoDeletePermission(t *testing.T) {
 func TestTrashRepoRestoreScoping(t *testing.T) {
 	db, regen, pub, r := newTrashFixture(t, adminOnlyTargets())
 	db.items["maven_artifact/"+trashItemID] = mavenItem(trashRepoID, "app")
-	db.items["repository/"+trashRepoID] = &models.TrashItem{ID: trashRepoID, Kind: models.TrashKindRepository, RepositoryID: trashRepoID, RepositoryName: "app", Name: "app"}
+	db.items["repository/"+trashRepoID] = &models.TrashItem{
+		ID:             trashRepoID,
+		Kind:           models.TrashKindRepository,
+		RepositoryID:   trashRepoID,
+		RepositoryName: "app",
+		Name:           "app",
+	}
 	db.regenA, db.regenB = "com.acme", "lib"
 
 	// An item of another repository must not be restorable through this one.
-	if rw := serve(r, trashRequest(http.MethodPost, "/api/v1/repositories/other/trash/maven_artifact/"+trashItemID+"/restore", "")); rw.Code != http.StatusNotFound {
+	if rw := serve(
+		r,
+		trashRequest(http.MethodPost, "/api/v1/repositories/other/trash/maven_artifact/"+trashItemID+"/restore", ""),
+	); rw.Code != http.StatusNotFound {
 		t.Fatalf("foreign item: status = %d, want 404; body = %s", rw.Code, rw.Body.String())
 	}
 
@@ -380,7 +393,10 @@ func TestTrashRepoRestoreScoping(t *testing.T) {
 	}
 
 	// Repositories are not restorable from a repository route.
-	if rw := serve(r, trashRequest(http.MethodPost, "/api/v1/repositories/app/trash/repository/"+trashRepoID+"/restore", "")); rw.Code != http.StatusForbidden {
+	if rw := serve(
+		r,
+		trashRequest(http.MethodPost, "/api/v1/repositories/app/trash/repository/"+trashRepoID+"/restore", ""),
+	); rw.Code != http.StatusForbidden {
 		t.Fatalf("repository kind: status = %d, want 403", rw.Code)
 	}
 
@@ -484,7 +500,14 @@ func TestTrashRestoreRegenByFormat(t *testing.T) {
 
 func TestTrashRestoreRepositoryEmitsRepoEvent(t *testing.T) {
 	db, regen, pub, r := newTrashFixture(t, adminOnlyTargets())
-	db.items["repository/"+trashRepoID] = &models.TrashItem{ID: trashRepoID, Kind: models.TrashKindRepository, RepositoryID: trashRepoID, RepositoryName: "app", Format: "maven", Name: "app"}
+	db.items["repository/"+trashRepoID] = &models.TrashItem{
+		ID:             trashRepoID,
+		Kind:           models.TrashKindRepository,
+		RepositoryID:   trashRepoID,
+		RepositoryName: "app",
+		Format:         "maven",
+		Name:           "app",
+	}
 
 	rw := serve(r, trashRequest(http.MethodPost, "/api/v1/trash/repository/"+trashRepoID+"/restore", ""))
 	if rw.Code != http.StatusOK {
@@ -549,7 +572,14 @@ func TestTrashPurgeErrorMapping(t *testing.T) {
 
 func TestTrashPurgeRepositoryEmitsRepoEvent(t *testing.T) {
 	db, _, pub, r := newTrashFixture(t, adminOnlyTargets())
-	db.purgeRes = &models.TrashPurgeResult{Kind: models.TrashKindRepository, ID: trashRepoID, RepositoryID: trashRepoID, RepositoryName: "app", Format: "maven", Name: "app"}
+	db.purgeRes = &models.TrashPurgeResult{
+		Kind:           models.TrashKindRepository,
+		ID:             trashRepoID,
+		RepositoryID:   trashRepoID,
+		RepositoryName: "app",
+		Format:         "maven",
+		Name:           "app",
+	}
 
 	rw := serve(r, trashRequest(http.MethodDelete, "/api/v1/trash/repository/"+trashRepoID, ""))
 	if rw.Code != http.StatusNoContent {
@@ -713,7 +743,8 @@ func TestRepositoryCreateTrashFields(t *testing.T) {
 				return
 			}
 
-			if (created.TrashRetentionDays == nil) != (tc.wantDays == nil) || (tc.wantDays != nil && *created.TrashRetentionDays != *tc.wantDays) {
+			if (created.TrashRetentionDays == nil) != (tc.wantDays == nil) ||
+				(tc.wantDays != nil && *created.TrashRetentionDays != *tc.wantDays) {
 				t.Errorf("TrashRetentionDays = %v, want %v", created.TrashRetentionDays, tc.wantDays)
 			}
 
@@ -779,7 +810,8 @@ func TestNullableIntDistinguishesAbsentNullAndNumber(t *testing.T) {
 			continue
 		}
 
-		if body.Days.Set != tc.wantSet || (body.Days.Value == nil) != (tc.wantVal == nil) || (tc.wantVal != nil && *body.Days.Value != *tc.wantVal) {
+		if body.Days.Set != tc.wantSet || (body.Days.Value == nil) != (tc.wantVal == nil) ||
+			(tc.wantVal != nil && *body.Days.Value != *tc.wantVal) {
 			t.Errorf("%s: got %+v, want set=%v value=%v", tc.raw, body.Days, tc.wantSet, tc.wantVal)
 		}
 	}
@@ -804,7 +836,9 @@ func TestRepositoryUpdateTrashFieldsTriState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := &fakeTrashDB{
 				targets: adminOnlyTargets(),
-				repos:   map[string]*models.Repository{"app": {ID: trashRepoID, Name: "app", Format: "raw", RepoType: "hosted", TrashRetentionDays: tc.start}},
+				repos: map[string]*models.Repository{
+					"app": {ID: trashRepoID, Name: "app", Format: "raw", RepoType: "hosted", TrashRetentionDays: tc.start},
+				},
 			}
 			capture := &captureUpdateDB{fakeTrashDB: db}
 			h := NewRepositoriesHandler(capture, log, auth.NewEvaluator(capture, log, false))
@@ -821,7 +855,8 @@ func TestRepositoryUpdateTrashFieldsTriState(t *testing.T) {
 			}
 
 			got := capture.updated
-			if got == nil || (got.TrashRetentionDays == nil) != (tc.want == nil) || (tc.want != nil && *got.TrashRetentionDays != *tc.want) {
+			if got == nil || (got.TrashRetentionDays == nil) != (tc.want == nil) ||
+				(tc.want != nil && *got.TrashRetentionDays != *tc.want) {
 				t.Errorf("updated TrashRetentionDays = %v, want %v", got, tc.want)
 			}
 

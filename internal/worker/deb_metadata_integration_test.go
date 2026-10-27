@@ -61,7 +61,8 @@ func debRepo(t *testing.T, pg *database.PostgresDB, name string) (string, string
 func metadataSHAs(t *testing.T, pg *database.PostgresDB, repoID string) map[string]string {
 	t.Helper()
 
-	rows, err := pg.GetDB().QueryContext(context.Background(), `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, repoID)
+	rows, err := pg.GetDB().
+		QueryContext(context.Background(), `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, repoID)
 	if err != nil {
 		t.Fatalf("list repository_metadata: %v", err)
 	}
@@ -233,7 +234,9 @@ func TestDebRegenerateReclaimsOnlyUnreferencedMetadataBlobs(t *testing.T) {
 
 	// B drops its component too; now nothing references the blob.
 	var distB string
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT id FROM debian_distributions WHERE repository_id = $1`, repoB).Scan(&distB); err != nil {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT id FROM debian_distributions WHERE repository_id = $1`, repoB).
+		Scan(&distB); err != nil {
 		t.Fatal(err)
 	}
 

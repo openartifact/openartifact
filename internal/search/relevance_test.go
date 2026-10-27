@@ -161,7 +161,9 @@ func TestSearchPageRanksBeforeRecencyAndBindsRankArguments(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(pageCols()))
 
 	readable := map[uuid.UUID]struct{}{uuid.New(): {}}
-	if _, _, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{}, 5, 0, readable); err != nil {
+	if _, _, err := NewExecutor(
+		db,
+	).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{}, 5, 0, readable); err != nil {
 		t.Fatalf("SearchPage: %v", err)
 	}
 
@@ -183,7 +185,9 @@ func TestSearchPageGroupsByPackage(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(pageCols()).
 			AddRow(repoID.String(), "repo", "npm", "lodash", "4.17.21", "", "", int64(0), time.Now(), nil, nil, nil, int64(3), int64(0)))
 
-	results, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{GroupByPackage: true}, 8, 0, map[uuid.UUID]struct{}{repoID: {}})
+	results, total, err := NewExecutor(
+		db,
+	).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{GroupByPackage: true}, 8, 0, map[uuid.UUID]struct{}{repoID: {}})
 	if err != nil {
 		t.Fatalf("SearchPage: %v", err)
 	}
@@ -210,7 +214,9 @@ func TestSearchPageGroupedCountsPackagesPastTheEnd(t *testing.T) {
 	mock.ExpectQuery(`(?s)SELECT DISTINCT repository_id, format, name FROM m`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(4))
 
-	_, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "x"}, PageOptions{GroupByPackage: true}, 8, 40, map[uuid.UUID]struct{}{uuid.New(): {}})
+	_, total, err := NewExecutor(
+		db,
+	).SearchPage(context.Background(), SearchFilter{FreeText: "x"}, PageOptions{GroupByPackage: true}, 8, 40, map[uuid.UUID]struct{}{uuid.New(): {}})
 	if err != nil || total != 4 {
 		t.Fatalf("total %d, err %v; want 4, nil", total, err)
 	}
@@ -243,5 +249,20 @@ func TestSearchRepositoriesRanksExactThenPrefixThenName(t *testing.T) {
 }
 
 func pageCols() []string {
-	return []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
+	return []string{
+		"repository_id",
+		"repository",
+		"format",
+		"name",
+		"version",
+		"path",
+		"sha256",
+		"size",
+		"created_at",
+		"group_id",
+		"artifact_id_coord",
+		"scope",
+		"total",
+		"version_count",
+	}
 }

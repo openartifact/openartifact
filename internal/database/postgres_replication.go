@@ -28,7 +28,12 @@ func (p *PostgresDB) EnqueueBlobReplication(ctx context.Context, sha256, op stri
 }
 
 // ClaimBlobReplications hands out up to limit operations due at asOf.
-func (p *PostgresDB) ClaimBlobReplications(ctx context.Context, asOf time.Time, limit int, claimFor time.Duration) ([]BlobReplication, error) {
+func (p *PostgresDB) ClaimBlobReplications(
+	ctx context.Context,
+	asOf time.Time,
+	limit int,
+	claimFor time.Duration,
+) ([]BlobReplication, error) {
 	rows, err := p.q.ClaimBlobReplications(ctx, dbsqlc.ClaimBlobReplicationsParams{
 		ClaimUntil: asOf.Add(claimFor), AsOf: asOf, Batch: toInt32(limit),
 	})
@@ -38,7 +43,10 @@ func (p *PostgresDB) ClaimBlobReplications(ctx context.Context, asOf time.Time, 
 
 	out := make([]BlobReplication, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, BlobReplication{SHA256: r.Sha256, Op: r.Op, Version: r.Version, Attempts: int(r.Attempts), EnqueuedAt: r.EnqueuedAt})
+		out = append(
+			out,
+			BlobReplication{SHA256: r.Sha256, Op: r.Op, Version: r.Version, Attempts: int(r.Attempts), EnqueuedAt: r.EnqueuedAt},
+		)
 	}
 
 	return out, nil
@@ -55,7 +63,13 @@ func (p *PostgresDB) CompleteBlobReplication(ctx context.Context, sha256 string,
 }
 
 // FailBlobReplication records a failed attempt.
-func (p *PostgresDB) FailBlobReplication(ctx context.Context, sha256 string, version int64, lastError string, nextAttempt time.Time) (bool, error) {
+func (p *PostgresDB) FailBlobReplication(
+	ctx context.Context,
+	sha256 string,
+	version int64,
+	lastError string,
+	nextAttempt time.Time,
+) (bool, error) {
 	n, err := p.q.FailBlobReplication(ctx, dbsqlc.FailBlobReplicationParams{
 		LastError: lastError, NextAttemptAt: nextAttempt, Sha256: sha256, Version: version,
 	})
@@ -99,7 +113,12 @@ func (p *PostgresDB) BlobReplicationBacklog(ctx context.Context, failingAttempts
 		return BlobReplicationBacklog{}, fmt.Errorf("count blob replication backlog: %w", err)
 	}
 
-	return BlobReplicationBacklog{Copy: r.CopyBacklog, Delete: r.DeleteBacklog, Failing: r.Failing, OldestAgeSeconds: r.OldestAgeSeconds}, nil
+	return BlobReplicationBacklog{
+		Copy:             r.CopyBacklog,
+		Delete:           r.DeleteBacklog,
+		Failing:          r.Failing,
+		OldestAgeSeconds: r.OldestAgeSeconds,
+	}, nil
 }
 
 // ListBlobSHAs returns one keyset page of the blobs table.

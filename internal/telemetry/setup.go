@@ -132,7 +132,12 @@ func Setup(ctx context.Context, cfg Config, build Build, gatherer prometheus.Gat
 
 // startProviders creates and installs the provider of every enabled signal.
 // It returns the stop function of each one installed so far, also on error.
-func startProviders(ctx context.Context, o OTLPConfig, res *resource.Resource, gatherer prometheus.Gatherer) ([]func(context.Context) error, error) {
+func startProviders(
+	ctx context.Context,
+	o OTLPConfig,
+	res *resource.Resource,
+	gatherer prometheus.Gatherer,
+) ([]func(context.Context) error, error) {
 	var stops []func(context.Context) error
 
 	if o.Traces {

@@ -153,7 +153,14 @@ func TestProjectQuota_PutKeepsOmittedFields(t *testing.T) {
 	db.quota = &models.ProjectQuota{MaxSizeBytes: 500, MaxArtifactCount: 9, WarnThresholdPercent: 60}
 	router := newQuotaRouter(t, db)
 
-	if code, body := projectJSON(t, router, uAdmin1, http.MethodPut, "/api/v1/projects/acme/quota", `{"max_size_bytes":700}`); code != http.StatusOK {
+	if code, body := projectJSON(
+		t,
+		router,
+		uAdmin1,
+		http.MethodPut,
+		"/api/v1/projects/acme/quota",
+		`{"max_size_bytes":700}`,
+	); code != http.StatusOK {
 		t.Fatalf("status = %d; body = %v", code, body)
 	}
 
@@ -241,7 +248,14 @@ func TestProjectCleanupPolicies_Permissions(t *testing.T) {
 		db := newQuotaMock()
 		router := newQuotaRouter(t, db)
 
-		code, body := projectJSON(t, router, tt.user, http.MethodPost, "/api/v1/projects/acme/cleanup-policies", `{"name":"d","enabled":true,"keep_last_n":3}`)
+		code, body := projectJSON(
+			t,
+			router,
+			tt.user,
+			http.MethodPost,
+			"/api/v1/projects/acme/cleanup-policies",
+			`{"name":"d","enabled":true,"keep_last_n":3}`,
+		)
 		if code != tt.status {
 			t.Errorf("POST as %s = %d, want %d; body = %v", tt.user, code, tt.status, body)
 		}
@@ -252,7 +266,14 @@ func TestProjectCleanupPolicies_Lifecycle(t *testing.T) {
 	db := newQuotaMock()
 	router := newQuotaRouter(t, db)
 
-	code, body := projectJSON(t, router, uOwner1, http.MethodPost, "/api/v1/projects/acme/cleanup-policies", `{"name":"d","enabled":true,"keep_last_n":3}`)
+	code, body := projectJSON(
+		t,
+		router,
+		uOwner1,
+		http.MethodPost,
+		"/api/v1/projects/acme/cleanup-policies",
+		`{"name":"d","enabled":true,"keep_last_n":3}`,
+	)
 	if code != http.StatusCreated {
 		t.Fatalf("create = %d; body = %v", code, body)
 	}
@@ -262,19 +283,48 @@ func TestProjectCleanupPolicies_Lifecycle(t *testing.T) {
 		t.Fatalf("created policy = %v, want a project_id and no repo_id", body)
 	}
 
-	if code, body := projectJSON(t, router, uOwner1, http.MethodPost, "/api/v1/projects/acme/cleanup-policies", `{"name":"bad","enabled":true}`); code != http.StatusBadRequest {
+	if code, body := projectJSON(
+		t,
+		router,
+		uOwner1,
+		http.MethodPost,
+		"/api/v1/projects/acme/cleanup-policies",
+		`{"name":"bad","enabled":true}`,
+	); code != http.StatusBadRequest {
 		t.Fatalf("a policy that keeps everything = %d (%v), want 400", code, body)
 	}
 
-	if code, body := projectJSON(t, router, uOwner1, http.MethodPut, "/api/v1/projects/acme/cleanup-policies/"+id, `{"keep_last_n":5}`); code != http.StatusOK || db.policies[id].KeepLastN == nil || *db.policies[id].KeepLastN != 5 {
+	if code, body := projectJSON(
+		t,
+		router,
+		uOwner1,
+		http.MethodPut,
+		"/api/v1/projects/acme/cleanup-policies/"+id,
+		`{"keep_last_n":5}`,
+	); code != http.StatusOK || db.policies[id].KeepLastN == nil ||
+		*db.policies[id].KeepLastN != 5 {
 		t.Fatalf("update = %d (%v), want keep_last_n 5", code, body)
 	}
 
-	if code, body := projectJSON(t, router, uMaint1, http.MethodDelete, "/api/v1/projects/acme/cleanup-policies/"+id, ""); code != http.StatusForbidden {
+	if code, body := projectJSON(
+		t,
+		router,
+		uMaint1,
+		http.MethodDelete,
+		"/api/v1/projects/acme/cleanup-policies/"+id,
+		"",
+	); code != http.StatusForbidden {
 		t.Fatalf("maintainer delete = %d (%v), want 403", code, body)
 	}
 
-	if code, body := projectJSON(t, router, uOwner1, http.MethodDelete, "/api/v1/projects/acme/cleanup-policies/"+id, ""); code != http.StatusNoContent {
+	if code, body := projectJSON(
+		t,
+		router,
+		uOwner1,
+		http.MethodDelete,
+		"/api/v1/projects/acme/cleanup-policies/"+id,
+		"",
+	); code != http.StatusNoContent {
 		t.Fatalf("delete = %d (%v), want 204", code, body)
 	}
 
@@ -286,16 +336,38 @@ func TestProjectCleanupPolicies_Lifecycle(t *testing.T) {
 // A policy of a repository or of another project is not reachable through this project.
 func TestProjectCleanupPolicies_ScopedToProject(t *testing.T) {
 	db := newQuotaMock()
-	db.policies["00000000-0000-4000-8000-00000000d001"] = &models.CleanupPolicy{ID: "00000000-0000-4000-8000-00000000d001", RepositoryID: "repo-1", Name: "repo"}
-	db.policies["00000000-0000-4000-8000-00000000d002"] = &models.CleanupPolicy{ID: "00000000-0000-4000-8000-00000000d002", ProjectID: "other-project", Name: "foreign"}
+	db.policies["00000000-0000-4000-8000-00000000d001"] = &models.CleanupPolicy{
+		ID:           "00000000-0000-4000-8000-00000000d001",
+		RepositoryID: "repo-1",
+		Name:         "repo",
+	}
+	db.policies["00000000-0000-4000-8000-00000000d002"] = &models.CleanupPolicy{
+		ID:        "00000000-0000-4000-8000-00000000d002",
+		ProjectID: "other-project",
+		Name:      "foreign",
+	}
 	router := newQuotaRouter(t, db)
 
 	for id := range db.policies {
-		if code, _ := projectJSON(t, router, uOwner1, http.MethodPut, "/api/v1/projects/acme/cleanup-policies/"+id, `{"enabled":false}`); code != http.StatusNotFound {
+		if code, _ := projectJSON(
+			t,
+			router,
+			uOwner1,
+			http.MethodPut,
+			"/api/v1/projects/acme/cleanup-policies/"+id,
+			`{"enabled":false}`,
+		); code != http.StatusNotFound {
 			t.Errorf("PUT foreign policy %s = %d, want 404", id, code)
 		}
 
-		if code, _ := projectJSON(t, router, uOwner1, http.MethodDelete, "/api/v1/projects/acme/cleanup-policies/"+id, ""); code != http.StatusNotFound {
+		if code, _ := projectJSON(
+			t,
+			router,
+			uOwner1,
+			http.MethodDelete,
+			"/api/v1/projects/acme/cleanup-policies/"+id,
+			"",
+		); code != http.StatusNotFound {
 			t.Errorf("DELETE foreign policy %s = %d, want 404", id, code)
 		}
 	}
@@ -347,14 +419,22 @@ func TestProjectCleanupPolicies_DryRun(t *testing.T) {
 	router := chi.NewRouter()
 	h.RegisterRoutes(router)
 
-	_, body := projectJSON(t, router, uOwner1, http.MethodPost, "/api/v1/projects/acme/cleanup-policies", `{"name":"d","enabled":true,"keep_last_n":3}`)
+	_, body := projectJSON(
+		t,
+		router,
+		uOwner1,
+		http.MethodPost,
+		"/api/v1/projects/acme/cleanup-policies",
+		`{"name":"d","enabled":true,"keep_last_n":3}`,
+	)
 	id, _ := body["id"].(string)
 	path := "/api/v1/projects/acme/cleanup-policies/" + id + "/dry-run"
 
 	code, body := projectJSON(t, router, uOwner1, http.MethodPost, path, "")
 	repos, _ := body["repositories"].([]any)
 
-	if code != http.StatusOK || body["dry_run"] != true || body["rows"] != float64(3) || len(repos) != 2 || len(prev.ids) != 1 || prev.ids[0] != id {
+	if code != http.StatusOK || body["dry_run"] != true || body["rows"] != float64(3) || len(repos) != 2 || len(prev.ids) != 1 ||
+		prev.ids[0] != id {
 		t.Fatalf("dry-run = %d %v (calls %v), want 200 with 3 rows over 2 repositories", code, body, prev.ids)
 	}
 
@@ -362,7 +442,14 @@ func TestProjectCleanupPolicies_DryRun(t *testing.T) {
 		t.Errorf("maintainer dry-run = %d, want 403", code)
 	}
 
-	if code, _ := projectJSON(t, router, uOwner1, http.MethodPost, "/api/v1/projects/acme/cleanup-policies/00000000-0000-4000-8000-00000000ffff/dry-run", ""); code != http.StatusNotFound {
+	if code, _ := projectJSON(
+		t,
+		router,
+		uOwner1,
+		http.MethodPost,
+		"/api/v1/projects/acme/cleanup-policies/00000000-0000-4000-8000-00000000ffff/dry-run",
+		"",
+	); code != http.StatusNotFound {
 		t.Errorf("unknown policy dry-run = %d, want 404", code)
 	}
 }

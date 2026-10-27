@@ -158,7 +158,13 @@ func (s *Store) countRead(t *Tier) {
 // sweepTiers runs fn against every usable tier not yet tried. ok reports a
 // success (and caches the placement); otherwise err is the first failure that
 // was not "not found", or nil when every tier said not found.
-func sweepTiers[T any](s *Store, id string, snap *Snapshot, tried map[string]bool, fn func(st storage.BlobStore) (T, error)) (T, *Tier, bool, error) {
+func sweepTiers[T any](
+	s *Store,
+	id string,
+	snap *Snapshot,
+	tried map[string]bool,
+	fn func(st storage.BlobStore) (T, error),
+) (T, *Tier, bool, error) {
 	var (
 		zero   T
 		failed error
@@ -799,7 +805,13 @@ func (s *Store) InitiateMultipart(ctx context.Context, id string, size, partSize
 }
 
 // PresignStagingPart implements storage.MultipartStagingStore.
-func (s *Store) PresignStagingPart(ctx context.Context, id, handle string, number int, length int64, ttl time.Duration) (storage.PresignedPut, error) {
+func (s *Store) PresignStagingPart(
+	ctx context.Context,
+	id, handle string,
+	number int,
+	length int64,
+	ttl time.Duration,
+) (storage.PresignedPut, error) {
 	st, ok := s.primaryMultipart()
 	if !ok {
 		return storage.PresignedPut{}, storage.ErrPresignNotSupported

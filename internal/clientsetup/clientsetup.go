@@ -186,20 +186,26 @@ func pypiSnippets(c target) []Snippet {
 		},
 		{
 			Client: "twine",
-			Configure: fmt.Sprintf("# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = %s/legacy/\nusername = <USERNAME>\npassword = <TOKEN>",
-				c.base),
+			Configure: fmt.Sprintf(
+				"# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = %s/legacy/\nusername = <USERNAME>\npassword = <TOKEN>",
+				c.base,
+			),
 			Publish: "twine upload --repository openartifact dist/*",
 		},
 	}
 }
 
 func mavenSnippets(c target) []Snippet {
-	return []Snippet{{
-		Client: "Maven",
-		Configure: fmt.Sprintf("<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>%s</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>",
-			c.repo),
-		Publish: fmt.Sprintf("mvn deploy -DaltDeploymentRepository=%s::default::%s", c.repo, c.base),
-	}}
+	return []Snippet{
+		{
+			Client: "Maven",
+			Configure: fmt.Sprintf(
+				"<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>%s</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>",
+				c.repo,
+			),
+			Publish: fmt.Sprintf("mvn deploy -DaltDeploymentRepository=%s::default::%s", c.repo, c.base),
+		},
+	}
 }
 
 func helmSnippets(c target) []Snippet {
@@ -211,23 +217,36 @@ func helmSnippets(c target) []Snippet {
 }
 
 func debSnippets(c target) []Snippet {
-	return []Snippet{{
-		Client: "apt",
-		Configure: fmt.Sprintf("curl -fsSL %[1]s/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/%[2]s.gpg\necho \"deb [signed-by=/etc/apt/keyrings/%[2]s.gpg] %[1]s stable main\" | sudo tee /etc/apt/sources.list.d/%[2]s.list\nsudo apt update",
-			c.base, c.repo),
-		Publish: fmt.Sprintf("curl -u <USERNAME>:<TOKEN> -F file=@my-package_1.0_amd64.deb -F distribution=stable -F component=main %s/api/v1/repositories/%s/debs",
-			c.origin, c.esc),
-	}}
+	return []Snippet{
+		{
+			Client: "apt",
+			Configure: fmt.Sprintf(
+				"curl -fsSL %[1]s/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/%[2]s.gpg\necho \"deb [signed-by=/etc/apt/keyrings/%[2]s.gpg] %[1]s stable main\" | sudo tee /etc/apt/sources.list.d/%[2]s.list\nsudo apt update",
+				c.base,
+				c.repo,
+			),
+			Publish: fmt.Sprintf(
+				"curl -u <USERNAME>:<TOKEN> -F file=@my-package_1.0_amd64.deb -F distribution=stable -F component=main %s/api/v1/repositories/%s/debs",
+				c.origin,
+				c.esc,
+			),
+		},
+	}
 }
 
 func rpmSnippets(c target) []Snippet {
-	return []Snippet{{
-		Client: "dnf / yum",
-		Configure: fmt.Sprintf("# /etc/yum.repos.d/%[1]s.repo\n[%[1]s]\nname=%[1]s\nbaseurl=%[2]s\nenabled=1\nrepo_gpgcheck=1\ngpgkey=%[2]s/public.key",
-			c.repo, c.base),
-		Publish: fmt.Sprintf("curl -u <USERNAME>:<TOKEN> -F file=@my-package-1.0.x86_64.rpm %s/api/v1/repositories/%s/packages",
-			c.origin, c.esc),
-	}}
+	return []Snippet{
+		{
+			Client: "dnf / yum",
+			Configure: fmt.Sprintf(
+				"# /etc/yum.repos.d/%[1]s.repo\n[%[1]s]\nname=%[1]s\nbaseurl=%[2]s\nenabled=1\nrepo_gpgcheck=1\ngpgkey=%[2]s/public.key",
+				c.repo,
+				c.base,
+			),
+			Publish: fmt.Sprintf("curl -u <USERNAME>:<TOKEN> -F file=@my-package-1.0.x86_64.rpm %s/api/v1/repositories/%s/packages",
+				c.origin, c.esc),
+		},
+	}
 }
 
 func cargoSnippets(c target) []Snippet {
@@ -247,12 +266,17 @@ func gomodSnippets(c target) []Snippet {
 }
 
 func nugetSnippets(c target) []Snippet {
-	return []Snippet{{
-		Client: "dotnet",
-		Configure: fmt.Sprintf("dotnet nuget add source %s/v3/index.json --name %s --username <USERNAME> --password <TOKEN> --store-password-in-clear-text",
-			c.base, c.repo),
-		Publish: fmt.Sprintf("dotnet nuget push my-package.1.0.0.nupkg --source %s --api-key <TOKEN>", c.repo),
-	}}
+	return []Snippet{
+		{
+			Client: "dotnet",
+			Configure: fmt.Sprintf(
+				"dotnet nuget add source %s/v3/index.json --name %s --username <USERNAME> --password <TOKEN> --store-password-in-clear-text",
+				c.base,
+				c.repo,
+			),
+			Publish: fmt.Sprintf("dotnet nuget push my-package.1.0.0.nupkg --source %s --api-key <TOKEN>", c.repo),
+		},
+	}
 }
 
 func rubygemsSnippets(c target) []Snippet {
@@ -272,12 +296,16 @@ func rawSnippets(c target) []Snippet {
 }
 
 func condaSnippets(c target) []Snippet {
-	return []Snippet{{
-		Client:    "conda",
-		Configure: "conda config --add channels " + c.base,
-		Publish: fmt.Sprintf("curl -u <USERNAME>:<TOKEN> -H \"X-Filename: my-package-1.0-0.conda\" --data-binary @my-package-1.0-0.conda %s/linux-64",
-			c.base),
-	}}
+	return []Snippet{
+		{
+			Client:    "conda",
+			Configure: "conda config --add channels " + c.base,
+			Publish: fmt.Sprintf(
+				"curl -u <USERNAME>:<TOKEN> -H \"X-Filename: my-package-1.0-0.conda\" --data-binary @my-package-1.0-0.conda %s/linux-64",
+				c.base,
+			),
+		},
+	}
 }
 
 func conanSnippets(c target) []Snippet {
@@ -289,18 +317,29 @@ func conanSnippets(c target) []Snippet {
 }
 
 func sbtSnippets(c target) []Snippet {
-	return []Snippet{{
-		Client: "sbt",
-		Configure: fmt.Sprintf("// build.sbt\nresolvers += \"%[1]s\" at \"%[2]s\"\ncredentials += Credentials(\"openartifact\", \"%[3]s\", \"<USERNAME>\", \"<TOKEN>\")",
-			c.repo, c.base, c.name),
-		Publish: fmt.Sprintf("ThisBuild / publishTo := Some(\"%s\" at \"%s\")\n// then: sbt publish", c.repo, c.base),
-	}}
+	return []Snippet{
+		{
+			Client: "sbt",
+			Configure: fmt.Sprintf(
+				"// build.sbt\nresolvers += \"%[1]s\" at \"%[2]s\"\ncredentials += Credentials(\"openartifact\", \"%[3]s\", \"<USERNAME>\", \"<TOKEN>\")",
+				c.repo,
+				c.base,
+				c.name,
+			),
+			Publish: fmt.Sprintf("ThisBuild / publishTo := Some(\"%s\" at \"%s\")\n// then: sbt publish", c.repo, c.base),
+		},
+	}
 }
 
 func ivySnippets(c target) []Snippet {
-	return []Snippet{{
-		Client:    "Ivy",
-		Configure: fmt.Sprintf("<ibiblio name=\"%s\" m2compatible=\"true\" root=\"%s\"/>", c.repo, c.base),
-		Publish:   fmt.Sprintf("<ivy:publish resolver=\"%s\" pubrevision=\"1.0\" overwrite=\"true\">\n  <artifacts pattern=\"dist/[artifact]-[revision].[ext]\"/>\n</ivy:publish>", c.repo),
-	}}
+	return []Snippet{
+		{
+			Client:    "Ivy",
+			Configure: fmt.Sprintf("<ibiblio name=\"%s\" m2compatible=\"true\" root=\"%s\"/>", c.repo, c.base),
+			Publish: fmt.Sprintf(
+				"<ivy:publish resolver=\"%s\" pubrevision=\"1.0\" overwrite=\"true\">\n  <artifacts pattern=\"dist/[artifact]-[revision].[ext]\"/>\n</ivy:publish>",
+				c.repo,
+			),
+		},
+	}
 }

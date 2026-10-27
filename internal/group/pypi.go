@@ -43,7 +43,14 @@ const (
 // merges proxy versions) members is already narrowed to the hosted ones by
 // applyHostedWins, so the page lists only hosted files and a proxy-only file of
 // that project is 404. The index lists names only and is merged as is.
-func (h *Handler) servePyPI(w http.ResponseWriter, r *http.Request, grp *models.Repository, members []*models.Repository, relPath string, be Backend) bool {
+func (h *Handler) servePyPI(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	members []*models.Repository,
+	relPath string,
+	be Backend,
+) bool {
 	kind, project, filename := pypisimple.ParsePath(relPath)
 
 	switch kind {
@@ -75,7 +82,13 @@ func pypiFilePath(m *models.Repository, project, filename string) string {
 // memberPages asks every member for the simple page at path and returns the
 // bodies (with their content types) of those that have one. failed reports
 // that a member errored out, in which case the result may be incomplete.
-func (h *Handler) memberPages(r *http.Request, sess *mergeSession, members []*models.Repository, path string, be Backend) ([]memberPage, bool) {
+func (h *Handler) memberPages(
+	r *http.Request,
+	sess *mergeSession,
+	members []*models.Repository,
+	path string,
+	be Backend,
+) ([]memberPage, bool) {
 	// Members are asked for the page itself, always with GET and without the
 	// client's conditional headers.
 	mr := r.Clone(r.Context())
@@ -170,7 +183,14 @@ func (h *Handler) servePyPIIndex(w http.ResponseWriter, r *http.Request, grp *mo
 	writePyPIPage(w, r, grp, offer, out, failed)
 }
 
-func (h *Handler) servePyPIProject(w http.ResponseWriter, r *http.Request, grp *models.Repository, members []*models.Repository, project string, be Backend) {
+func (h *Handler) servePyPIProject(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	members []*models.Repository,
+	project string,
+	be Backend,
+) {
 	offer, ok := pypisimple.Negotiate(r.Header.Get("Accept"))
 	if !ok {
 		http.Error(w, "no acceptable simple API serialization", http.StatusNotAcceptable)

@@ -48,7 +48,12 @@ type DependencyTrackHandler struct {
 }
 
 // NewDependencyTrackHandler creates the handler; pusher may be nil (manual pushes then answer 501).
-func NewDependencyTrackHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, pusher DTrackPusher) *DependencyTrackHandler {
+func NewDependencyTrackHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	pusher DTrackPusher,
+) *DependencyTrackHandler {
 	return &DependencyTrackHandler{db: db, log: log, evaluator: evaluator, pusher: pusher}
 }
 

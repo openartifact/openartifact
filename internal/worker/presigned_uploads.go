@@ -44,7 +44,12 @@ type PresignedUploadWorker struct {
 // lifetime the server signs with; staging objects without a row are only
 // deleted once they are older than that plus the complete grace. A blobStore
 // that cannot stage uploads yields a worker that only removes the rows.
-func NewPresignedUploadWorker(db database.Database, blobStore storage.BlobStore, urlTTL time.Duration, log *logger.Logger) *PresignedUploadWorker {
+func NewPresignedUploadWorker(
+	db database.Database,
+	blobStore storage.BlobStore,
+	urlTTL time.Duration,
+	log *logger.Logger,
+) *PresignedUploadWorker {
 	var staging storage.StagingStore
 	if s, ok := blobStore.(storage.StagingStore); ok && s.StagingSupported() {
 		staging = s

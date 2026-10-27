@@ -173,9 +173,18 @@ func TestTarballSizeComesFromDatabase(t *testing.T) {
 			router.Route("/repos/{name}", func(r chi.Router) { h.RegisterRepoRoutes(r) })
 
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.NoBody))
+			router.ServeHTTP(
+				w,
+				httptest.NewRequestWithContext(
+					context.Background(),
+					http.MethodGet,
+					"/repos/myrepo/lodash/-/lodash-1.0.0.tgz",
+					http.NoBody,
+				),
+			)
 
-			if w.Code != http.StatusOK || w.Header().Get("Content-Length") != strconv.Itoa(len(payload)) || !bytes.Equal(w.Body.Bytes(), payload) {
+			if w.Code != http.StatusOK || w.Header().Get("Content-Length") != strconv.Itoa(len(payload)) ||
+				!bytes.Equal(w.Body.Bytes(), payload) {
 				t.Fatalf("status %d, Content-Length %q, body %q", w.Code, w.Header().Get("Content-Length"), w.Body.String())
 			}
 

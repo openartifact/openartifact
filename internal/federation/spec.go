@@ -316,7 +316,13 @@ func (c *tableCodec) describe(repoID string, row Row, ch *Change) {
 	}
 }
 
-func (c *tableCodec) Import(ctx context.Context, tx *sql.Tx, repoID, key string, content *Content, blobIDs map[string]string) (*Change, error) {
+func (c *tableCodec) Import(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID, key string,
+	content *Content,
+	blobIDs map[string]string,
+) (*Change, error) {
 	var data Row
 	if err := json.Unmarshal(content.Data, &data); err != nil {
 		return nil, fmt.Errorf("%w: decode unit data: %v", ErrInvalid, err) //nolint:errorlint // client-safe text only

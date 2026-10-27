@@ -36,7 +36,10 @@ func seedACL(t *testing.T, pg *PostgresDB, s *quotaSeeder) aclSeed {
 		t.Fatalf("CreateGroup: %v", err)
 	}
 
-	target, err := pg.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "lists", RepositoryFilter: "*", PathPattern: "**", Actions: []string{"read"}})
+	target, err := pg.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "lists", RepositoryFilter: "*", PathPattern: "**", Actions: []string{"read"}},
+	)
 	if err != nil {
 		t.Fatalf("CreatePermissionTarget: %v", err)
 	}
@@ -57,7 +60,10 @@ func seedACL(t *testing.T, pg *PostgresDB, s *quotaSeeder) aclSeed {
 		t.Fatalf("GetOrCreateStorageQuota: %v", err)
 	}
 
-	if err := pg.UpdateStorageQuota(ctx, &models.StorageQuota{RepositoryID: s.repo, MaxSizeBytes: 4096, MaxArtifactCount: 7, WarnThresholdPercent: 65}); err != nil {
+	if err := pg.UpdateStorageQuota(
+		ctx,
+		&models.StorageQuota{RepositoryID: s.repo, MaxSizeBytes: 4096, MaxArtifactCount: 7, WarnThresholdPercent: 65},
+	); err != nil {
 		t.Fatalf("UpdateStorageQuota: %v", err)
 	}
 

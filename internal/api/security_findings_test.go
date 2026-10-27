@@ -64,7 +64,11 @@ type securityMockDB struct {
 
 var _ database.Database = (*securityMockDB)(nil)
 
-func (db *securityMockDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
+func (db *securityMockDB) GetPermissionTargetsForPrincipal(
+	_ context.Context,
+	userID string,
+	_ []string,
+) ([]*models.PermissionTarget, error) {
 	if db.admins[userID] {
 		return adminTargets(), nil
 	}
@@ -163,7 +167,12 @@ func securityCallers() []securityCaller {
 		{"user without role", &auth.Principal{UserID: new(uPlain1), Username: "plain-1"}, nil, false},
 		{"anonymous", &auth.Principal{IsAnonymous: true}, nil, false},
 		{"no principal", nil, nil, false},
-		{"scoped token of a maintainer", &auth.Principal{UserID: new(uMaint1), TokenKind: auth.TokenKindAccess, TokenScopes: []string{"t-1"}}, nil, false},
+		{
+			"scoped token of a maintainer",
+			&auth.Principal{UserID: new(uMaint1), TokenKind: auth.TokenKindAccess, TokenScopes: []string{"t-1"}},
+			nil,
+			false,
+		},
 		{"deploy token of a maintainer", &auth.Principal{UserID: new(uMaint1), TokenKind: auth.TokenKindDeploy}, nil, false},
 		{"deploy token of an admin", &auth.Principal{UserID: new(uAdmin1), TokenKind: auth.TokenKindDeploy}, nil, false},
 		{"project token service account", &auth.Principal{UserID: new(uMaint1), ServiceProjectID: secProjectA}, nil, false},
@@ -528,7 +537,14 @@ func TestSecurityFindings_ResponseShape(t *testing.T) {
 			PackageName: "lodash", PackageVersion: "4.0.0", Scanner: "osv", Critical: 1, High: 2, Status: "open",
 			VEXStatus: "affected", SeverityRank: 4, Title: "CVE-2026-1", ScannedAt: at,
 		},
-		{ID: "9a000000-0000-4000-8000-000000000002", Type: "license", Repository: "r", Status: "quarantined", Quarantined: true, ScannedAt: at},
+		{
+			ID:          "9a000000-0000-4000-8000-000000000002",
+			Type:        "license",
+			Repository:  "r",
+			Status:      "quarantined",
+			Quarantined: true,
+			ScannedAt:   at,
+		},
 	}}}
 
 	rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings")
@@ -565,7 +581,8 @@ func TestSecurityFindings_ResponseShape(t *testing.T) {
 	}
 
 	f := got.Findings[0]
-	if f["severity"] != "critical" || f["title"] != "CVE-2026-1" || f["vex_status"] != "affected" || f["scanned_at"] != at.Format(time.RFC3339Nano) {
+	if f["severity"] != "critical" || f["title"] != "CVE-2026-1" || f["vex_status"] != "affected" ||
+		f["scanned_at"] != at.Format(time.RFC3339Nano) {
 		t.Errorf("finding = %v", f)
 	}
 
@@ -640,7 +657,8 @@ func TestSecuritySummary_Response(t *testing.T) {
 
 	decodeBody(t, rw, &got)
 
-	if got.ScannedRepositories != 5 || got.TotalRepositories != 7 || got.LastScanAt == nil || *got.LastScanAt != at.Format(time.RFC3339Nano) {
+	if got.ScannedRepositories != 5 || got.TotalRepositories != 7 || got.LastScanAt == nil ||
+		*got.LastScanAt != at.Format(time.RFC3339Nano) {
 		t.Fatalf("body = %s", rw.Body.String())
 	}
 
@@ -782,8 +800,24 @@ func TestSecurityExport_VEX(t *testing.T) {
 	}
 	// the same package hosted in two repositories, a license finding that VEX ignores
 	db.pages = []*models.FindingPage{{Findings: []*models.Finding{
-		{ID: secFindingID, Type: "vuln", RepositoryID: "repo-1", Repository: "npm-a", Format: "npm", ArtifactID: "lodash@4.0.0", ScannedAt: at},
-		{ID: "9a000000-0000-4000-8000-000000000002", Type: "vuln", RepositoryID: "repo-2", Repository: "npm-b", Format: "npm", ArtifactID: "lodash@4.0.0", ScannedAt: at},
+		{
+			ID:           secFindingID,
+			Type:         "vuln",
+			RepositoryID: "repo-1",
+			Repository:   "npm-a",
+			Format:       "npm",
+			ArtifactID:   "lodash@4.0.0",
+			ScannedAt:    at,
+		},
+		{
+			ID:           "9a000000-0000-4000-8000-000000000002",
+			Type:         "vuln",
+			RepositoryID: "repo-2",
+			Repository:   "npm-b",
+			Format:       "npm",
+			ArtifactID:   "lodash@4.0.0",
+			ScannedAt:    at,
+		},
 	}}}
 
 	rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings/export?format=vex&type=vuln,license")
@@ -871,7 +905,12 @@ func TestSecurityRepoSummary_PublicRepositoryIsReadableAnonymously(t *testing.T)
 	db.repos["pub"] = &models.Repository{ID: "repo-1", Name: "pub", Public: true}
 	db.repoSum = &models.RepoSecuritySummary{}
 
-	if rw := serveSecurity(t, db, &auth.Principal{IsAnonymous: true}, "/api/v1/repositories/pub/security/summary"); rw.Code != http.StatusOK {
+	if rw := serveSecurity(
+		t,
+		db,
+		&auth.Principal{IsAnonymous: true},
+		"/api/v1/repositories/pub/security/summary",
+	); rw.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", rw.Code, rw.Body.String())
 	}
 }
@@ -921,7 +960,13 @@ func TestSecurityRepoSummary_Response(t *testing.T) {
 func TestSecurityRepoSummary_NeverLeaksFindingDetails(t *testing.T) {
 	db := newSecurityMockDB()
 	db.repos["app"] = &models.Repository{ID: "repo-1", Name: "app", ProjectID: new(secProjectA)}
-	db.repoSum = &models.RepoSecuritySummary{VulnCritical: 1, LicenseViolations: 1, SecretCount: 1, AIQuarantineRecommended: 1, Quarantined: 1}
+	db.repoSum = &models.RepoSecuritySummary{
+		VulnCritical:            1,
+		LicenseViolations:       1,
+		SecretCount:             1,
+		AIQuarantineRecommended: 1,
+		Quarantined:             1,
+	}
 	// findings that exist in the store must not surface through the summary
 	db.pages = []*models.FindingPage{{Findings: []*models.Finding{{
 		ID: secFindingID, Title: "CVE-2026-SECRET-TITLE", ArtifactID: "internal-lib@9.9.9", PackageName: "internal-lib",

@@ -13,9 +13,16 @@ import (
 
 func TestGeneratePrimaryXML_WeakDepsAndOrder(t *testing.T) {
 	pkg := pkgrpm.Package{
-		Name: "p", Version: "1", Release: "1", Arch: "noarch",
-		Provides:    []pkgrpm.Dependency{{Name: "p", Flags: pkgrpm.SENSE_EQUAL, Version: "1-1", Epoch: 1}},
-		Requires:    []pkgrpm.Dependency{{Name: "rpmlib(X)", Flags: pkgrpm.SENSE_RPMLIB | pkgrpm.SENSE_LESSEQUAL, Version: "1"}, {Name: "sh", Flags: pkgrpm.SENSE_PREREQ}, {Name: "lib"}},
+		Name:     "p",
+		Version:  "1",
+		Release:  "1",
+		Arch:     "noarch",
+		Provides: []pkgrpm.Dependency{{Name: "p", Flags: pkgrpm.SENSE_EQUAL, Version: "1-1", Epoch: 1}},
+		Requires: []pkgrpm.Dependency{
+			{Name: "rpmlib(X)", Flags: pkgrpm.SENSE_RPMLIB | pkgrpm.SENSE_LESSEQUAL, Version: "1"},
+			{Name: "sh", Flags: pkgrpm.SENSE_PREREQ},
+			{Name: "lib"},
+		},
 		Conflicts:   []pkgrpm.Dependency{{Name: "c", Flags: pkgrpm.SENSE_LESS, Version: "2.0"}},
 		Obsoletes:   []pkgrpm.Dependency{{Name: "o"}},
 		Recommends:  []pkgrpm.Dependency{{Name: "rec"}},

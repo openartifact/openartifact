@@ -74,11 +74,36 @@ func TestEvaluate(t *testing.T) {
 		{"license outside the allow list", policytest.Policy("block", []string{"MIT"}, nil), []string{"GPL-3.0"}, []string{"block"}},
 		{"license inside the allow list", policytest.Policy("block", []string{"MIT"}, nil), []string{"MIT"}, nil},
 		{"other license is not denied", policytest.Policy("block", nil, []string{"GPL-3.0"}), []string{"MIT"}, nil},
-		{"-only spelling of a denied family", policytest.Policy("block", nil, []string{"GPL-3.0"}), []string{"GPL-3.0-only"}, []string{"block"}},
-		{"-or-later spelling of a denied family", policytest.Policy("block", nil, []string{"GPL-3.0"}), []string{"GPL-3.0-or-later"}, []string{"block"}},
-		{"plus spelling of a denied family", policytest.Policy("block", nil, []string{"GPL-3.0-only"}), []string{"GPL-3.0+"}, []string{"block"}},
-		{"legacy rpm spelling of a denied family", policytest.Policy("block", nil, []string{"GPL-3.0"}), []string{"GPLv3+"}, []string{"block"}},
-		{"expression containing a denied license", policytest.Policy("block", nil, []string{"GPL-3.0"}), []string{"MIT OR GPL-3.0"}, []string{"block"}},
+		{
+			"-only spelling of a denied family",
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			[]string{"GPL-3.0-only"},
+			[]string{"block"},
+		},
+		{
+			"-or-later spelling of a denied family",
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			[]string{"GPL-3.0-or-later"},
+			[]string{"block"},
+		},
+		{
+			"plus spelling of a denied family",
+			policytest.Policy("block", nil, []string{"GPL-3.0-only"}),
+			[]string{"GPL-3.0+"},
+			[]string{"block"},
+		},
+		{
+			"legacy rpm spelling of a denied family",
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			[]string{"GPLv3+"},
+			[]string{"block"},
+		},
+		{
+			"expression containing a denied license",
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			[]string{"MIT OR GPL-3.0"},
+			[]string{"block"},
+		},
 		{"nothing declared never violates", policytest.Policy("block", []string{"MIT"}, []string{"GPL-3.0"}), nil, nil},
 		{"blank entries are not licenses", policytest.Policy("block", []string{"MIT"}, nil), []string{"", "  "}, nil},
 	}
@@ -153,7 +178,16 @@ func TestEnforce_BlockedBody(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 
-	if !licensepolicy.Enforce(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/x", nil), store, testLog(), "repo-1", " GPLv3 ", "GPL-3.0-only", "MIT") {
+	if !licensepolicy.Enforce(
+		rec,
+		httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/x", nil),
+		store,
+		testLog(),
+		"repo-1",
+		" GPLv3 ",
+		"GPL-3.0-only",
+		"MIT",
+	) {
 		t.Fatal("upload must be stopped")
 	}
 
@@ -176,7 +210,8 @@ func TestEnforce_BlockedBody(t *testing.T) {
 		t.Fatalf("got %d %+v", rec.Code, body)
 	}
 
-	if len(body.Policies) != 1 || body.Policies[0].PolicyName != "no copyleft" || body.Policies[0].Action != "block" || body.Policies[0].Violation == "" {
+	if len(body.Policies) != 1 || body.Policies[0].PolicyName != "no copyleft" || body.Policies[0].Action != "block" ||
+		body.Policies[0].Violation == "" {
 		t.Errorf("policies = %+v", body.Policies)
 	}
 
@@ -219,13 +254,27 @@ func TestRecord_Modes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newMemStore(tt.policy)
 
-			res, violations, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "pkg@1.0.0", []string{"GPL-3.0"}, models.LicenseSourceArtifact)
+			res, violations, err := licensepolicy.Record(
+				context.Background(),
+				store,
+				testLog(),
+				"repo-1",
+				"pkg@1.0.0",
+				[]string{"GPL-3.0"},
+				models.LicenseSourceArtifact,
+			)
 			if err != nil {
 				t.Fatalf("Record: %v", err)
 			}
 
 			if res.Quarantined != tt.wantQuarantined || len(violations) != tt.wantViolations {
-				t.Errorf("quarantined=%v violations=%d, want %v/%d", res.Quarantined, len(violations), tt.wantQuarantined, tt.wantViolations)
+				t.Errorf(
+					"quarantined=%v violations=%d, want %v/%d",
+					res.Quarantined,
+					len(violations),
+					tt.wantQuarantined,
+					tt.wantViolations,
+				)
 			}
 
 			stored := store.results["pkg@1.0.0"]
@@ -293,7 +342,15 @@ func TestRecord_Errors(t *testing.T) {
 		store := newMemStore(policytest.Policy("block", nil, []string{"GPL-3.0"}))
 		store.listErr = errBackend
 
-		if _, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "a", []string{"GPL-3.0"}, models.LicenseSourceArtifact); err == nil {
+		if _, _, err := licensepolicy.Record(
+			context.Background(),
+			store,
+			testLog(),
+			"repo-1",
+			"a",
+			[]string{"GPL-3.0"},
+			models.LicenseSourceArtifact,
+		); err == nil {
 			t.Fatal("Record must fail when policies cannot be read")
 		}
 
@@ -306,7 +363,15 @@ func TestRecord_Errors(t *testing.T) {
 		store := newMemStore()
 		store.createErr = errBackend
 
-		if _, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "a", []string{"MIT"}, models.LicenseSourceArtifact); err == nil {
+		if _, _, err := licensepolicy.Record(
+			context.Background(),
+			store,
+			testLog(),
+			"repo-1",
+			"a",
+			[]string{"MIT"},
+			models.LicenseSourceArtifact,
+		); err == nil {
 			t.Fatal("Record must report a storage failure")
 		}
 	})
@@ -338,7 +403,11 @@ func TestRefuseUnderivable(t *testing.T) {
 }
 
 func TestHasBlocking(t *testing.T) {
-	blocking, err := licensepolicy.HasBlocking(context.Background(), newMemStore(policytest.Policy("warn", nil, nil), policytest.Policy("block", nil, nil)), "repo-1")
+	blocking, err := licensepolicy.HasBlocking(
+		context.Background(),
+		newMemStore(policytest.Policy("warn", nil, nil), policytest.Policy("block", nil, nil)),
+		"repo-1",
+	)
 	if err != nil || !blocking {
 		t.Fatalf("HasBlocking = %v, %v; want true", blocking, err)
 	}

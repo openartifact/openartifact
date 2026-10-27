@@ -100,7 +100,8 @@ func TestReadFallback(t *testing.T) {
 					t.Fatalf("served = %v (err %v), want %v", served, err, tc.wantServed)
 				}
 
-				if !tc.wantServed && tc.primaryErr == nil && c.name != "exists" && c.name != "exists by sha" && c.name != "metadata" && !errors.Is(err, storage.ErrBlobNotFound) {
+				if !tc.wantServed && tc.primaryErr == nil && c.name != "exists" && c.name != "exists by sha" && c.name != "metadata" &&
+					!errors.Is(err, storage.ErrBlobNotFound) {
 					t.Fatalf("err = %v, want the primary's not-found", err)
 				}
 

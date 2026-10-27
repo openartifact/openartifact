@@ -36,7 +36,10 @@ func newAuthCacheFixture(t *testing.T) authCacheFixture {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	tok, err := pg.CreateToken(ctx, &models.Token{UserID: user.ID, Name: "t", Kind: "access", TokenHash: "cache-hash-1", Scopes: []string{"read"}})
+	tok, err := pg.CreateToken(
+		ctx,
+		&models.Token{UserID: user.ID, Name: "t", Kind: "access", TokenHash: "cache-hash-1", Scopes: []string{"read"}},
+	)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -115,7 +118,10 @@ func TestAuthCache_PermissionsVisible(t *testing.T) {
 	f := newAuthCacheFixture(t)
 	ctx := context.Background()
 
-	pt, err := f.pg.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "cache-pt", RepositoryFilter: "*", PathPattern: "**", Actions: []string{"read"}})
+	pt, err := f.pg.CreatePermissionTarget(
+		ctx,
+		&models.PermissionTarget{Name: "cache-pt", RepositoryFilter: "*", PathPattern: "**", Actions: []string{"read"}},
+	)
 	if err != nil {
 		t.Fatalf("CreatePermissionTarget: %v", err)
 	}

@@ -66,7 +66,18 @@ func TestEmitDetachesFromRequestCancellation(t *testing.T) {
 }
 
 func TestArtifactPayload(t *testing.T) {
-	p := ArtifactPayload(EventArtifactDeleted, Artifact{Repository: "r", Format: "npm", Name: "left-pad", Version: "1.0.0", Path: "left-pad/-/left-pad-1.0.0.tgz", SHA256: "abc", Size: 12})
+	p := ArtifactPayload(
+		EventArtifactDeleted,
+		Artifact{
+			Repository: "r",
+			Format:     "npm",
+			Name:       "left-pad",
+			Version:    "1.0.0",
+			Path:       "left-pad/-/left-pad-1.0.0.tgz",
+			SHA256:     "abc",
+			Size:       12,
+		},
+	)
 
 	if p["event"] != EventArtifactDeleted || p["repository"] != "r" || p["format"] != "npm" {
 		t.Errorf("envelope = %v", p)

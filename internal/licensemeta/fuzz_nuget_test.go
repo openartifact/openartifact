@@ -50,7 +50,9 @@ func FuzzNuGetNuspec(f *testing.F) {
 	f.Add(`<package><metadata><licenseUrl>https://licenses.nuget.org/MIT</licenseUrl></metadata></package>`)
 	f.Add(`<package><metadata><licenseUrl>http://www.apache.org/licenses/LICENSE-2.0.html</licenseUrl></metadata></package>`)
 	f.Add(`<package><metadata><licenseUrl>https://example.com/eula</licenseUrl></metadata></package>`)
-	f.Add(`<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd"><metadata><license type="expression"/></metadata></package>`)
+	f.Add(
+		`<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd"><metadata><license type="expression"/></metadata></package>`,
+	)
 	f.Add(`<package><metadata><license type="expression">MIT</license><license type="file">x</license></metadata></package>`)
 	f.Add(`<package`)
 	f.Add(``)

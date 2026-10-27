@@ -101,7 +101,12 @@ func (r *Registry) refreshLoop(ctx context.Context, t *cliTool, update func(cont
 
 // refreshOnce runs one update and returns how long to wait before the next and
 // whether there is a next one.
-func (r *Registry) refreshOnce(ctx context.Context, t *cliTool, update func(context.Context) error, retry *time.Duration) (time.Duration, bool) {
+func (r *Registry) refreshOnce(
+	ctx context.Context,
+	t *cliTool,
+	update func(context.Context) error,
+	retry *time.Duration,
+) (time.Duration, bool) {
 	t.beginUpdate()
 
 	uctx, cancel := context.WithTimeout(ctx, dbUpdateTimeout)

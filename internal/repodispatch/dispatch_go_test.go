@@ -82,8 +82,18 @@ func goEnv(t *testing.T) http.Handler {
 	}
 
 	db := &goDB{fakeDB: base, mods: map[string]*models.GoModule{
-		"2|example.com/local|v0.1.0":  {RepositoryID: "2", ModulePath: "example.com/local", Version: "v0.1.0", GoModContent: "module example.com/local\n"},
-		"2|example.com/Shared|v1.0.0": {RepositoryID: "2", ModulePath: "example.com/Shared", Version: "v1.0.0", GoModContent: "module example.com/Shared\n"},
+		"2|example.com/local|v0.1.0": {
+			RepositoryID: "2",
+			ModulePath:   "example.com/local",
+			Version:      "v0.1.0",
+			GoModContent: "module example.com/local\n",
+		},
+		"2|example.com/Shared|v1.0.0": {
+			RepositoryID: "2",
+			ModulePath:   "example.com/Shared",
+			Version:      "v1.0.0",
+			GoModContent: "module example.com/Shared\n",
+		},
 	}}
 
 	log, err := logger.New("error", "json", "stderr")
@@ -132,15 +142,39 @@ func TestGoProxyAndGroupThroughDispatch(t *testing.T) {
 		{"proxy mod", http.MethodGet, "/repos/mirror/example.com/remote/@v/v1.1.0.mod", 200, "module example.com/remote\n"},
 		{"proxy unknown module", http.MethodGet, "/repos/mirror/example.com/nope/@v/list", 404, ""},
 		{"proxy refuses uploads", http.MethodPut, "/repos/mirror/example.com/remote/@v/v1.2.0.zip", 405, ""},
-		{"group list of a shared module is the hosted member's alone", http.MethodGet, "/repos/all/example.com/!shared/@v/list", 200, "v1.0.0"},
+		{
+			"group list of a shared module is the hosted member's alone",
+			http.MethodGet,
+			"/repos/all/example.com/!shared/@v/list",
+			200,
+			"v1.0.0",
+		},
 		{"group list of a proxy-only module", http.MethodGet, "/repos/all/example.com/remote/@v/list", 200, "v1.1.0\nv1.0.0"},
 		{"group list of a hosted-only module", http.MethodGet, "/repos/all/example.com/local/@v/list", 200, "v0.1.0"},
-		{"group mod from the hosted member", http.MethodGet, "/repos/all/example.com/local/@v/v0.1.0.mod", 200, "module example.com/local\n"},
-		{"group mod from the proxy member", http.MethodGet, "/repos/all/example.com/remote/@v/v1.1.0.mod", 200, "module example.com/remote\n"},
+		{
+			"group mod from the hosted member",
+			http.MethodGet,
+			"/repos/all/example.com/local/@v/v0.1.0.mod",
+			200,
+			"module example.com/local\n",
+		},
+		{
+			"group mod from the proxy member",
+			http.MethodGet,
+			"/repos/all/example.com/remote/@v/v1.1.0.mod",
+			200,
+			"module example.com/remote\n",
+		},
 		{"group unknown", http.MethodGet, "/repos/all/example.com/nope/@v/list", 404, ""},
 		{"group refuses uploads", http.MethodPut, "/repos/all/example.com/local/@v/v0.2.0.zip", 405, ""},
 		{"group has no checksum database", http.MethodGet, "/repos/all/sumdb/sum.golang.org/supported", 404, ""},
-		{"hosted repository still reaches the format handler", http.MethodPut, "/repos/local/example.com/local/@v/v0.2.0.zip", http.StatusTeapot, "format-handler\n"},
+		{
+			"hosted repository still reaches the format handler",
+			http.MethodPut,
+			"/repos/local/example.com/local/@v/v0.2.0.zip",
+			http.StatusTeapot,
+			"format-handler\n",
+		},
 	}
 
 	for _, c := range cases {

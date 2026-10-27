@@ -225,7 +225,13 @@ func TestCanonicalSPDXExpression(t *testing.T) {
 
 func TestFindingsStatusRules(t *testing.T) {
 	decision := func(status, just string) *models.VEXStatement {
-		return &models.VEXStatement{VulnID: "CVE-2024-0001", Status: status, Justification: just, ImpactStatement: "not reachable", UpdatedAt: time.Now()}
+		return &models.VEXStatement{
+			VulnID:          "CVE-2024-0001",
+			Status:          status,
+			Justification:   just,
+			ImpactStatement: "not reachable",
+			UpdatedAt:       time.Now(),
+		}
 	}
 	fixed := testVuln
 	fixed.ID = "CVE-2024-0002"
@@ -238,10 +244,39 @@ func TestFindingsStatusRules(t *testing.T) {
 		wantAction  bool
 		wantJustify string
 	}{
-		{"default is under_investigation", &Input{Version: "1.0.0", Scan: scanned(testVuln), Decisions: map[string]*models.VEXStatement{}}, "under_investigation", false, ""},
-		{"quarantine means affected", &Input{Version: "1.0.0", Quarantined: true, Scan: scanned(testVuln), Decisions: map[string]*models.VEXStatement{}}, "affected", true, ""},
-		{"fixed_in <= version means fixed", &Input{Version: "1.0.0", Scan: scanned(fixed), Decisions: map[string]*models.VEXStatement{}}, "fixed", false, ""},
-		{"decision wins over quarantine", &Input{Version: "1.0.0", Quarantined: true, Scan: scanned(testVuln), Decisions: map[string]*models.VEXStatement{"CVE-2024-0001": decision("not_affected", "vulnerable_code_not_present")}}, "not_affected", false, "vulnerable_code_not_present"},
+		{
+			"default is under_investigation",
+			&Input{Version: "1.0.0", Scan: scanned(testVuln), Decisions: map[string]*models.VEXStatement{}},
+			"under_investigation",
+			false,
+			"",
+		},
+		{
+			"quarantine means affected",
+			&Input{Version: "1.0.0", Quarantined: true, Scan: scanned(testVuln), Decisions: map[string]*models.VEXStatement{}},
+			"affected",
+			true,
+			"",
+		},
+		{
+			"fixed_in <= version means fixed",
+			&Input{Version: "1.0.0", Scan: scanned(fixed), Decisions: map[string]*models.VEXStatement{}},
+			"fixed",
+			false,
+			"",
+		},
+		{
+			"decision wins over quarantine",
+			&Input{
+				Version:     "1.0.0",
+				Quarantined: true,
+				Scan:        scanned(testVuln),
+				Decisions:   map[string]*models.VEXStatement{"CVE-2024-0001": decision("not_affected", "vulnerable_code_not_present")},
+			},
+			"not_affected",
+			false,
+			"vulnerable_code_not_present",
+		},
 	}
 
 	for _, c := range cases {
@@ -258,7 +293,14 @@ func TestOpenVEXDocument(t *testing.T) {
 	db := &fakeDB{
 		vulns: []*models.VulnScanResult{scanned(testVuln)},
 		stmts: []*models.VEXStatement{
-			{ArtifactID: "other@2", VulnID: "CVE-2023-9", Status: "not_affected", Justification: "component_not_present", ImpactStatement: "n/a", UpdatedAt: time.Now()},
+			{
+				ArtifactID:      "other@2",
+				VulnID:          "CVE-2023-9",
+				Status:          "not_affected",
+				Justification:   "component_not_present",
+				ImpactStatement: "n/a",
+				UpdatedAt:       time.Now(),
+			},
 		},
 		comps: []*models.Component{{Version: "1.0.0", SHA256: testSHA}},
 	}
@@ -288,7 +330,8 @@ func TestOpenVEXDocument(t *testing.T) {
 		byVuln[s.Vulnerability.Name] = s
 	}
 
-	if s := byVuln["CVE-2024-0001"]; s.Status != "under_investigation" || s.Products[0].Identifiers["purl"] != "pkg:npm/lib@1.0.0" || s.Products[0].Hashes["sha-256"] != testSHA {
+	if s := byVuln["CVE-2024-0001"]; s.Status != "under_investigation" || s.Products[0].Identifiers["purl"] != "pkg:npm/lib@1.0.0" ||
+		s.Products[0].Hashes["sha-256"] != testSHA {
 		t.Errorf("scan statement = %+v", s)
 	}
 
@@ -302,7 +345,10 @@ func TestCycloneDXVEXMapsAnalysis(t *testing.T) {
 		Format: "npm", ArtifactID: "lib@1.0.0", Name: "lib", Version: "1.0.0", PURL: "pkg:npm/lib@1.0.0",
 		Scan: scanned(testVuln),
 		Decisions: map[string]*models.VEXStatement{"CVE-2024-0001": {
-			VulnID: "CVE-2024-0001", Status: "not_affected", Justification: "vulnerable_code_not_in_execute_path", ImpactStatement: "never called",
+			VulnID:          "CVE-2024-0001",
+			Status:          "not_affected",
+			Justification:   "vulnerable_code_not_in_execute_path",
+			ImpactStatement: "never called",
 		}},
 	}
 

@@ -437,7 +437,10 @@ func TestImportDockerParseDigestPath(t *testing.T) {
 			t.Errorf("dockerParseDigestPath(%q) = %+v, %v; want %s, %v", c.path, id, ok, c.image, c.match)
 		}
 
-		if want := c.match || strings.HasSuffix(c.path, "1.0/manifest.json") || strings.HasSuffix(c.path, "latest"); dockerImportable(c.path) != want {
+		if want := c.match || strings.HasSuffix(c.path, "1.0/manifest.json") ||
+			strings.HasSuffix(c.path, "latest"); dockerImportable(
+			c.path,
+		) != want {
 			t.Errorf("dockerImportable(%q) = %v, want %v", c.path, !want, want)
 		}
 	}

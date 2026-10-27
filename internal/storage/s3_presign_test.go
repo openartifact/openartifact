@@ -139,7 +139,10 @@ func TestPresignStagingPut(t *testing.T) {
 	}
 
 	if !strings.Contains(strings.ToLower(u.Query().Get("X-Amz-SignedHeaders")), "content-length") {
-		t.Errorf("content-length is not signed (SignedHeaders = %q): the object store would accept any size", u.Query().Get("X-Amz-SignedHeaders"))
+		t.Errorf(
+			"content-length is not signed (SignedHeaders = %q): the object store would accept any size",
+			u.Query().Get("X-Amz-SignedHeaders"),
+		)
 	}
 
 	for name := range put.Headers {

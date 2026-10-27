@@ -225,7 +225,11 @@ func (p *PostgresDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUU
 // UpdateDockerUploadOffset moves the session's offset from oldOffset to
 // newOffset and reports whether it did: false means the offset no longer
 // equals oldOffset (another request advanced or completed the session).
-func (p *PostgresDB) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+func (p *PostgresDB) UpdateDockerUploadOffset(
+	ctx context.Context,
+	repositoryID, uploadUUID string,
+	oldOffset, newOffset int64,
+) (bool, error) {
 	n, err := p.q.UpdateDockerUploadOffset(ctx, dbsqlc.UpdateDockerUploadOffsetParams{
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
@@ -314,7 +318,11 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`, dockerRepoLockKey(m.RepositoryID)); err != nil {
+	if _, err := tx.Exec(
+		ctx,
+		`SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`,
+		dockerRepoLockKey(m.RepositoryID),
+	); err != nil {
 		return fmt.Errorf("lock docker repository: %w", err)
 	}
 
@@ -443,7 +451,10 @@ func (p *PostgresDB) ListDockerManifestsByRepo(ctx context.Context, repoID strin
 // `subject` field points at subjectDigest, for the Referrers API
 // (GET /v2/<name>/referrers/<digest>). No sqlc query exists for this
 // lookup, so it runs directly against p.db.
-func (p *PostgresDB) ListDockerManifestsBySubject(ctx context.Context, repoID, image, subjectDigest string) ([]*models.DockerManifest, error) {
+func (p *PostgresDB) ListDockerManifestsBySubject(
+	ctx context.Context,
+	repoID, image, subjectDigest string,
+) ([]*models.DockerManifest, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, repository_id, image, digest, media_type, blob_id, size,
 		        COALESCE(subject_digest, ''), created_at, updated_at

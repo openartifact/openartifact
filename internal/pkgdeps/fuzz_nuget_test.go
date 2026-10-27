@@ -73,11 +73,19 @@ func fuzzNuGetCheckPinned(t *testing.T, deps []Dep) {
 
 // FuzzNuGetDeps reads the dependencies of any .nuspec text.
 func FuzzNuGetDeps(f *testing.F) {
-	f.Add(`<package><metadata><dependencies><dependency id="a" version="[1.0.0]"/><dependency id="b" version="1.0"/></dependencies></metadata></package>`)
-	f.Add(`<package><metadata><dependencies><group targetFramework="net8.0"><dependency id="a" version="[1.0.0, 2.0.0)"/><dependency id=" b " version=" [ 2.0 ] "/></group></dependencies></metadata></package>`)
-	f.Add(`<package><metadata><dependencies><dependency id="a"/><dependency id="a" version="[1]"/><dependency id="a" version="2"/></dependencies></metadata></package>`)
+	f.Add(
+		`<package><metadata><dependencies><dependency id="a" version="[1.0.0]"/><dependency id="b" version="1.0"/></dependencies></metadata></package>`,
+	)
+	f.Add(
+		`<package><metadata><dependencies><group targetFramework="net8.0"><dependency id="a" version="[1.0.0, 2.0.0)"/><dependency id=" b " version=" [ 2.0 ] "/></group></dependencies></metadata></package>`,
+	)
+	f.Add(
+		`<package><metadata><dependencies><dependency id="a"/><dependency id="a" version="[1]"/><dependency id="a" version="2"/></dependencies></metadata></package>`,
+	)
 	f.Add(`<package><metadata><dependencies><dependency id="" version="1"/><dependency id="  "/></dependencies></metadata></package>`)
-	f.Add(`<package><metadata><dependencies><dependency id="a" version="[1,]"/><dependency id="b" version="[[1]]"/></dependencies></metadata></package>`)
+	f.Add(
+		`<package><metadata><dependencies><dependency id="a" version="[1,]"/><dependency id="b" version="[[1]]"/></dependencies></metadata></package>`,
+	)
 	f.Add(`<package><metadata/></package>`)
 	f.Add(`<package`)
 	f.Add(``)

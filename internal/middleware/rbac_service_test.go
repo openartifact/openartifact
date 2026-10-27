@@ -27,7 +27,9 @@ func TestRBACProjectTokenServiceAccount(t *testing.T) {
 
 	// The service user also holds an admin permission target: it must be ignored.
 	db := &projectRBACDB{grants: []*models.ProjectGrant{{ProjectID: acmeProjectID, Role: models.ProjectRoleDeveloper}}}
-	db.targets = []*models.PermissionTarget{{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}}}
+	db.targets = []*models.PermissionTarget{
+		{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}},
+	}
 	db.repos = map[string]*models.Repository{
 		"acme-npm": {Name: "acme-npm", ProjectID: &acme},
 		"beta-npm": {Name: "beta-npm", ProjectID: &beta},

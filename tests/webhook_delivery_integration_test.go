@@ -34,7 +34,13 @@ import (
 )
 
 // seedWebhookFor creates a webhook (global when repoID is empty) subscribed to events.
-func seedWebhookFor(t *testing.T, pg *database.PostgresDB, name, repoID, url, secretEnc string, enabled bool, events ...string) *models.Webhook {
+func seedWebhookFor(
+	t *testing.T,
+	pg *database.PostgresDB,
+	name, repoID, url, secretEnc string,
+	enabled bool,
+	events ...string,
+) *models.Webhook {
 	t.Helper()
 
 	wh := &models.Webhook{
@@ -366,7 +372,11 @@ func TestWebhooksDeliveredAfterRepoCreateAndUpload(t *testing.T) {
 	otherScoped := seedWebhookFor(t, pg, "other-scoped", otherRepoID, url+"/other", "", true, webhook.EventArtifactUploaded)
 
 	// Creating a repository publishes repository.created to the global webhook.
-	if rw := stack.serve(http.MethodPost, "/api/v1/repositories", `{"name":"raw-main","format":"raw","repo_type":"hosted"}`); rw.Code != http.StatusCreated {
+	if rw := stack.serve(
+		http.MethodPost,
+		"/api/v1/repositories",
+		`{"name":"raw-main","format":"raw","repo_type":"hosted"}`,
+	); rw.Code != http.StatusCreated {
 		t.Fatalf("create repository: status %d: %s", rw.Code, rw.Body.String())
 	}
 

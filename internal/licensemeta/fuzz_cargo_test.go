@@ -52,7 +52,10 @@ func FuzzReadCargoCrate(f *testing.F) {
 	toml := "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nlicense = \"MIT/Apache-2.0\"\n"
 
 	f.Add(cargoFuzzCrate([2]string{"demo-0.1.0/Cargo.toml", toml}), "demo-0.1.0.crate")
-	f.Add(cargoFuzzCrate([2]string{"demo-0.1.0/Cargo.toml", "[package]\nname = \"demo\"\nlicense-file = \"LICENSE\"\n"}), "demo-0.1.0.crate")
+	f.Add(
+		cargoFuzzCrate([2]string{"demo-0.1.0/Cargo.toml", "[package]\nname = \"demo\"\nlicense-file = \"LICENSE\"\n"}),
+		"demo-0.1.0.crate",
+	)
 	f.Add(cargoFuzzCrate([2]string{"demo-0.1.0/Cargo.toml", toml}, [2]string{"other/Cargo.toml", toml}), "demo-0.1.0.crate")
 	f.Add(cargoFuzzCrate([2]string{"demo-0.1.0/Cargo.toml", "[package\n"}), "demo-0.1.0.crate")
 	f.Add(cargoFuzzCrate([2]string{"demo-0.1.0/Cargo.toml", "[package]\nlicense = 5\n"}), "demo-0.1.0.crate")

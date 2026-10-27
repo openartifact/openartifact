@@ -95,7 +95,10 @@ func TestPushAndDeleteEmitEvents(t *testing.T) {
 		t.Fatal("blob not stored under the package's BlobKey")
 	}
 
-	if w := formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/Newtonsoft.Json/13.0.3", nil)); w.Code != http.StatusNoContent {
+	if w := formattest.Do(
+		register(h),
+		formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/Newtonsoft.Json/13.0.3", nil),
+	); w.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d", w.Code)
 	}
 
@@ -111,7 +114,10 @@ func TestDownloadQuarantine(t *testing.T) {
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {
-		return formattest.Do(register(h), formattest.Request(http.MethodGet, "/repos/myrepo/v3/package/foo/1.0.0/foo.1.0.0.nupkg", nil)).Code
+		return formattest.Do(
+			register(h),
+			formattest.Request(http.MethodGet, "/repos/myrepo/v3/package/foo/1.0.0/foo.1.0.0.nupkg", nil),
+		).Code
 	}
 
 	if c := get(); c != http.StatusOK {
@@ -138,7 +144,13 @@ func nuspecWithLicense(licenseXML string) string {
 </package>`
 }
 
-func pushNuspec(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, nuspec string) *httptest.ResponseRecorder {
+func pushNuspec(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	nuspec string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")

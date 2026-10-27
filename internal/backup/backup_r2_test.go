@@ -59,7 +59,10 @@ func (d *fakeDB) ListGroupMembers(_ context.Context, groupID string) ([]*models.
 
 func (d *fakeDB) AddGroupMember(_ context.Context, groupID, memberID string, priority int) error {
 	s := r2(d)
-	s.members[groupID] = append(s.members[groupID], &models.RepositoryGroupMember{GroupRepoID: groupID, MemberRepoID: memberID, Priority: priority})
+	s.members[groupID] = append(
+		s.members[groupID],
+		&models.RepositoryGroupMember{GroupRepoID: groupID, MemberRepoID: memberID, Priority: priority},
+	)
 
 	return nil
 }
@@ -169,7 +172,16 @@ func TestBackupRestore_GoModulesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r2(src).goModules[repo.ID] = []*models.GoModule{{RepositoryID: repo.ID, ModulePath: "example.com/m", Version: "v1.0.0", GoModContent: "module example.com/m", ZipHash: strings.Repeat("c", 64), ZipBlobKey: strings.Repeat("c", 64)}}
+	r2(src).goModules[repo.ID] = []*models.GoModule{
+		{
+			RepositoryID: repo.ID,
+			ModulePath:   "example.com/m",
+			Version:      "v1.0.0",
+			GoModContent: "module example.com/m",
+			ZipHash:      strings.Repeat("c", 64),
+			ZipBlobKey:   strings.Repeat("c", 64),
+		},
+	}
 
 	dst := backupAndRestore(t, src, nil)
 
@@ -225,7 +237,9 @@ func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	}
 
 	sha := "0000000000000000000000000000000000000000000000000000000000000001"
-	r2(src).maven[mvn.ID] = []*models.MavenArtifact{{RepositoryID: mvn.ID, GroupID: "com.x", ArtifactCoord: "app", Version: "1.0", Extension: "jar", BlobSHA256: sha, BlobSizeBytes: 1}}
+	r2(src).maven[mvn.ID] = []*models.MavenArtifact{
+		{RepositoryID: mvn.ID, GroupID: "com.x", ArtifactCoord: "app", Version: "1.0", Extension: "jar", BlobSHA256: sha, BlobSizeBytes: 1},
+	}
 
 	regen := &recordingRegen{}
 	dst := backupAndRestore(t, src, func(e *Engine) { e.SetRegenerator(regen) })

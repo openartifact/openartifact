@@ -93,7 +93,10 @@ func TestBlobUploadNotSubjectToLicensePolicy(t *testing.T) {
 	policy := policytest.Policy("block", nil, []string{"GPL-3.0"})
 	g := newRegistry(t, &policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}})
 
-	if rec := g.pushBlob("reg/app", []byte(`{"config":{"Labels":{"org.opencontainers.image.licenses":"GPL-3.0"}}}`)); rec.Code != http.StatusCreated {
+	if rec := g.pushBlob(
+		"reg/app",
+		[]byte(`{"config":{"Labels":{"org.opencontainers.image.licenses":"GPL-3.0"}}}`),
+	); rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 }

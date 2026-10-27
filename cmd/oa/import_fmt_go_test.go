@@ -317,7 +317,8 @@ func TestImportGoChecksumMismatchIsFailure(t *testing.T) {
 	}
 
 	f := rep.Failures[0]
-	if !strings.Contains(f.Error, "checksum mismatch") || !strings.Contains(f.Error, "cannot remove") || !strings.HasSuffix(f.Path, "bad/@v/v1.0.0.zip") {
+	if !strings.Contains(f.Error, "checksum mismatch") || !strings.Contains(f.Error, "cannot remove") ||
+		!strings.HasSuffix(f.Path, "bad/@v/v1.0.0.zip") {
 		t.Fatalf("failure = %+v", f)
 	}
 

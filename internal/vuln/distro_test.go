@@ -147,7 +147,12 @@ func TestScannersFor(t *testing.T) {
 		{"trivy with a supported distro stays", []string{"trivy"}, Package{Ecosystem: "deb", Distro: "ubuntu-22.04"}, []string{"trivy"}},
 		{"trivy with amazon linux stays", []string{"trivy"}, Package{Ecosystem: "rpm", Distro: "amzn-2023"}, []string{"trivy"}},
 		{"trivy has no fedora advisories", []string{"trivy"}, Package{Ecosystem: "rpm", Distro: "fedora-39"}, []string{"osv"}},
-		{"fedora keeps grype and replaces trivy", []string{"grype", "trivy"}, Package{Ecosystem: "rpm", Distro: "fedora-39"}, []string{"grype", "osv"}},
+		{
+			"fedora keeps grype and replaces trivy",
+			[]string{"grype", "trivy"},
+			Package{Ecosystem: "rpm", Distro: "fedora-39"},
+			[]string{"grype", "osv"},
+		},
 		{"result is sorted", []string{"grype", "osv", "trivy"}, Package{Ecosystem: "rpm"}, []string{"osv"}},
 		{"without grype and trivy nothing changes", []string{"osv"}, Package{Ecosystem: "deb"}, []string{"osv"}},
 		{"trivy on npm stays", []string{"trivy"}, Package{Ecosystem: "npm"}, []string{"trivy"}},

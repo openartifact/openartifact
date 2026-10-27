@@ -146,7 +146,10 @@ func TestRegistrationIndexRevalidation(t *testing.T) {
 	}
 
 	// Deleting a version does too.
-	if w := formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/contoso.lib/2.0.0", nil)); w.Code >= 300 {
+	if w := formattest.Do(
+		register(h),
+		formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/contoso.lib/2.0.0", nil),
+	); w.Code >= 300 {
 		t.Fatalf("delete = %d", w.Code)
 	}
 

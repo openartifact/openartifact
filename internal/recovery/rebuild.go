@@ -153,8 +153,11 @@ func (r *Rebuilder) Run(ctx context.Context) (*Report, error) {
 	}
 
 	if rep.ObjectsListed > 0 && len(scan.candidates) == 0 {
-		rep.Warnings = append(rep.Warnings, "the store holds objects but none is marked as a sidecar: wrong store or storage settings, a journal that was disabled, "+
-			"or a copy that dropped object metadata (try --deep)")
+		rep.Warnings = append(
+			rep.Warnings,
+			"the store holds objects but none is marked as a sidecar: wrong store or storage settings, a journal that was disabled, "+
+				"or a copy that dropped object metadata (try --deep)",
+		)
 	}
 
 	winners, err := r.fetch(ctx, rep, scan.candidates)

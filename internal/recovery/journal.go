@@ -342,8 +342,14 @@ func (j *Journal) loadRows(ctx context.Context, t *Table, keys []string) (map[st
 		return map[string]string{}, nil
 	}
 
-	q := fmt.Sprintf(`SELECT %s, (to_jsonb(t) - %s)::text FROM %s t JOIN %s ON %s`, //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
-		t.KeyExpr("t"), t.ExcludeSQL(), t.Name, t.unnestSQL(), t.joinSQL())
+	q := fmt.Sprintf(
+		`SELECT %s, (to_jsonb(t) - %s)::text FROM %s t JOIN %s ON %s`, //nolint:gosec // G201: identifiers come from the compiled-in table registry, values are bound
+		t.KeyExpr("t"),
+		t.ExcludeSQL(),
+		t.Name,
+		t.unnestSQL(),
+		t.joinSQL(),
+	)
 
 	// to_jsonb renders timestamps in the session time zone; pin UTC so the row
 	// image (and its hash) is the same whichever replica or session computes it.

@@ -271,7 +271,12 @@ func WriteDir(dir string, docs []ExportDoc) ([]string, error) {
 	for _, d := range docs {
 		rel := filepath.Join(strings.ToLower(d.Kind), unsafeFileRe.ReplaceAllString(d.Key, "_")+".yaml")
 		if prev, dup := seen[rel]; dup {
-			return paths, fmt.Errorf("export file name collision: %s and %s both map to %s", prev, Ident(d.Kind, d.Key), rel) //nolint:err113 // user-facing message
+			return paths, fmt.Errorf(
+				"export file name collision: %s and %s both map to %s",
+				prev,
+				Ident(d.Kind, d.Key),
+				rel,
+			) //nolint:err113 // user-facing message
 		}
 
 		seen[rel] = Ident(d.Kind, d.Key)

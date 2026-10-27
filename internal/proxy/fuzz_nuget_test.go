@@ -347,7 +347,8 @@ func nugetFuzzCheckUpstreamURL(t *testing.T, p nugetPath, dir, key string) {
 
 	u, err := url.Parse(want)
 	if err != nil || u.Host != "up.example" || u.RawQuery != "" || u.Fragment != "" || u.Path != strings.TrimPrefix(want, "https://up.example") ||
-		path.Clean(u.Path) != u.Path || !strings.HasPrefix(u.Path, strings.TrimPrefix(base, "https://up.example")) {
+		path.Clean(u.Path) != u.Path ||
+		!strings.HasPrefix(u.Path, strings.TrimPrefix(base, "https://up.example")) {
 		t.Fatalf("%+v maps to %q, which leaves the upstream's base (%v)", p, want, err)
 	}
 }
@@ -373,7 +374,11 @@ func FuzzNuGetRenderDoc(f *testing.F) {
 	f.Add([]byte(nuget), []byte(`{"versions":["1.0.0"]}`), uint8(3))
 	f.Add([]byte(nuget), []byte(`[]`), uint8(0))
 	f.Add([]byte(nuget), []byte(`{"items":[null,5,{"lower":"1","upper":"2"},{"lower":"a b","upper":"c/d","items":null}]}`), uint8(0))
-	f.Add([]byte(nuget), []byte(`{"@id":"https://api.nuget.org/v3-flatcontainer/","k":[["https://api.nuget.org/v3-flatcontainer/x"]]} trailing`), uint8(1))
+	f.Add(
+		[]byte(nuget),
+		[]byte(`{"@id":"https://api.nuget.org/v3-flatcontainer/","k":[["https://api.nuget.org/v3-flatcontainer/x"]]} trailing`),
+		uint8(1),
+	)
 
 	f.Fuzz(func(t *testing.T, indexDoc, doc []byte, sel uint8) {
 		idx, err := pkgnuget.ParseServiceIndex(indexDoc)
@@ -541,7 +546,12 @@ func FuzzNuGetProxyServe(f *testing.F) {
 
 	f.Add([]byte(index), []byte(reg), []byte(`{"versions":["1.0.0","3.0.0"]}`), false)
 	f.Add([]byte(index), []byte(reg), []byte(`{"versions":["1.0.0","3.0.0"]}`), true)
-	f.Add([]byte(index), []byte(`{"@id":"UPSTREAM/reg/lib/1.0.0.json","catalogEntry":"UPSTREAM/catalog/lib.1.0.0.json"}`), []byte(`{"versions":[]}`), false)
+	f.Add(
+		[]byte(index),
+		[]byte(`{"@id":"UPSTREAM/reg/lib/1.0.0.json","catalogEntry":"UPSTREAM/catalog/lib.1.0.0.json"}`),
+		[]byte(`{"versions":[]}`),
+		false,
+	)
 	f.Add([]byte(index), []byte(`<html>`), []byte(`[]`), false)
 	f.Add([]byte(index), []byte{}, []byte("\x1f\x8bgarbage"), false)
 	f.Add([]byte(`{"resources":[]}`), []byte(`{}`), []byte(`{}`), false)
@@ -668,12 +678,27 @@ func nugetFuzzCheckServedDoc(t *testing.T, f *fixture, up *nugetFuzzFeed, idx *p
 	nugetFuzzCheckRendered(t, p.kind, p.id, doc, w.Body.Bytes(), idx, nugetRepoURL)
 
 	hits := f.hits.Load()
-	if again := f.do(http.MethodGet, route); again.Code != http.StatusOK || !bytes.Equal(again.Body.Bytes(), w.Body.Bytes()) || f.hits.Load() != hits {
+	if again := f.do(
+		http.MethodGet,
+		route,
+	); again.Code != http.StatusOK || !bytes.Equal(again.Body.Bytes(), w.Body.Bytes()) ||
+		f.hits.Load() != hits {
 		t.Fatalf("GET %s again = %d (%d upstream requests more): %s", route, again.Code, f.hits.Load()-hits, again.Body.String())
 	}
 
-	if head := f.do(http.MethodHead, route); head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Content-Length") != w.Header().Get("Content-Length") {
-		t.Fatalf("HEAD %s = %d, %d bytes, length %q; GET gave length %q", route, head.Code, head.Body.Len(), head.Header().Get("Content-Length"), w.Header().Get("Content-Length"))
+	if head := f.do(
+		http.MethodHead,
+		route,
+	); head.Code != http.StatusOK || head.Body.Len() != 0 ||
+		head.Header().Get("Content-Length") != w.Header().Get("Content-Length") {
+		t.Fatalf(
+			"HEAD %s = %d, %d bytes, length %q; GET gave length %q",
+			route,
+			head.Code,
+			head.Body.Len(),
+			head.Header().Get("Content-Length"),
+			w.Header().Get("Content-Length"),
+		)
 	}
 }
 
@@ -705,7 +730,10 @@ func nugetFuzzPackage(entries ...[2]string) []byte {
 // published hash vouches for is not cached as immutable. The catalog text may
 // contain HASH64, replaced by the base64 SHA-512 digest of the package.
 func FuzzNuGetProxyPackage(f *testing.F) {
-	nupkg := nugetFuzzPackage([2]string{"lib.nuspec", `<package><metadata><id>lib</id><version>1.0.0</version></metadata></package>`}, [2]string{"lib/a.dll", "MZ"})
+	nupkg := nugetFuzzPackage(
+		[2]string{"lib.nuspec", `<package><metadata><id>lib</id><version>1.0.0</version></metadata></package>`},
+		[2]string{"lib/a.dll", "MZ"},
+	)
 	nuspec := []byte(`<?xml version="1.0"?><package><metadata><id>lib</id></metadata></package>`)
 	catalog := `{"id":"lib","version":"1.0.0","packageHash":"HASH64","packageHashAlgorithm":"SHA512","packageSize":0}`
 

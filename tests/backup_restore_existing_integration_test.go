@@ -35,7 +35,10 @@ func TestRestoreIntoBootstrappedInstanceSkipsExistingRecordsWithoutFailing(t *te
 	}
 
 	srcAdmin, _ := src.GetUserByUsername(ctx, "admin")
-	if _, err := src.CreateToken(ctx, &models.Token{UserID: srcAdmin.ID, Name: "ci", Kind: "access", TokenHash: "hash-of-ci", Scopes: []string{}}); err != nil {
+	if _, err := src.CreateToken(
+		ctx,
+		&models.Token{UserID: srcAdmin.ID, Name: "ci", Kind: "access", TokenHash: "hash-of-ci", Scopes: []string{}},
+	); err != nil {
 		t.Fatal(err)
 	}
 

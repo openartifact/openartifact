@@ -34,7 +34,14 @@ func (s *purgeSeed) proxyRepo(name string, maxStale int) string {
 
 	org := trashTestOrgID
 
-	repo := &models.Repository{Name: name, Format: "npm", RepoType: "proxy", ProjectID: &org, UpstreamURL: "https://example.com/", MaxStaleSeconds: maxStale}
+	repo := &models.Repository{
+		Name:            name,
+		Format:          "npm",
+		RepoType:        "proxy",
+		ProjectID:       &org,
+		UpstreamURL:     "https://example.com/",
+		MaxStaleSeconds: maxStale,
+	}
 	if err := s.pg.CreateRepository(context.Background(), repo); err != nil {
 		s.t.Fatalf("CreateRepository(%s): %v", name, err)
 	}

@@ -99,7 +99,10 @@ func (gomodPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 				return nil, err
 			}
 
-			res.Replaced = append(res.Replaced, Artifact{Name: r.name, Version: r.version, Path: r.version + ".zip", SHA256: dest.sha, Size: dest.size})
+			res.Replaced = append(
+				res.Replaced,
+				Artifact{Name: r.name, Version: r.version, Path: r.version + ".zip", SHA256: dest.sha, Size: dest.size},
+			)
 			dest = destRow{}
 		}
 

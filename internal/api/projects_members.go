@@ -231,7 +231,11 @@ func (h *ProjectsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Requ
 		return guard(current)
 	}
 
-	if h.writeChangeError(w, "update project member role", h.db.ChangeProjectMember(r.Context(), access.project.ID, userID, req.Role, recording)) {
+	if h.writeChangeError(
+		w,
+		"update project member role",
+		h.db.ChangeProjectMember(r.Context(), access.project.ID, userID, req.Role, recording),
+	) {
 		return
 	}
 
@@ -247,7 +251,12 @@ func (h *ProjectsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Requ
 
 // existingMember loads the member row, answering 404 when the user holds no
 // direct membership (the guard re-checks under the lock).
-func (h *ProjectsHandler) existingMember(w http.ResponseWriter, r *http.Request, access *projectAccess, userID string) (*models.ProjectMember, bool) {
+func (h *ProjectsHandler) existingMember(
+	w http.ResponseWriter,
+	r *http.Request,
+	access *projectAccess,
+	userID string,
+) (*models.ProjectMember, bool) {
 	member, err := h.db.GetProjectMember(r.Context(), access.project.ID, userID)
 	if err != nil {
 		h.dbError(w, "get project member", err)

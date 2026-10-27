@@ -47,8 +47,16 @@ func seedNPMContent(t *testing.T, db *sql.DB, repoID string) {
 		}
 	}
 
-	exec(`INSERT INTO npm_packages (repository_id, scope, name, full_name, latest_version) VALUES ($1, '@acme', 'widget', $2, '1.0.0')`, repoID, npmScopedPkg)
-	exec(`INSERT INTO npm_packages (repository_id, scope, name, full_name, latest_version) VALUES ($1, '', 'plain', $2, '2.0.0')`, repoID, npmPlainPkg)
+	exec(
+		`INSERT INTO npm_packages (repository_id, scope, name, full_name, latest_version) VALUES ($1, '@acme', 'widget', $2, '1.0.0')`,
+		repoID,
+		npmScopedPkg,
+	)
+	exec(
+		`INSERT INTO npm_packages (repository_id, scope, name, full_name, latest_version) VALUES ($1, '', 'plain', $2, '2.0.0')`,
+		repoID,
+		npmPlainPkg,
+	)
 
 	blobA, _ := seedBlob(t, db, "tarball widget 1.0.0")
 	blobB, _ := seedBlob(t, db, "tarball widget 1.1.0")
@@ -253,7 +261,8 @@ func TestNPMCodecExportVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if vd.FullName != npmScopedPkg || vd.Version != "1.0.0" || vd.BlobID != ver.Blobs[0].SHA256 || vd.TarballFilename != "@acme/widget-1.0.0.tgz" {
+	if vd.FullName != npmScopedPkg || vd.Version != "1.0.0" || vd.BlobID != ver.Blobs[0].SHA256 ||
+		vd.TarballFilename != "@acme/widget-1.0.0.tgz" {
 		t.Fatalf("version data = %+v", vd)
 	}
 
@@ -394,7 +403,12 @@ func TestNPMCodecImportTagCreatesParentAndMovesTag(t *testing.T) {
 	}
 
 	// Moving the tag updates the row in place.
-	if _, err := db.ExecContext(ctx, `UPDATE npm_dist_tags SET version = '1.1.0' WHERE tag = 'latest' AND package_id = (SELECT id FROM npm_packages WHERE repository_id = $1 AND full_name = $2)`, repoA, npmScopedPkg); err != nil {
+	if _, err := db.ExecContext(
+		ctx,
+		`UPDATE npm_dist_tags SET version = '1.1.0' WHERE tag = 'latest' AND package_id = (SELECT id FROM npm_packages WHERE repository_id = $1 AND full_name = $2)`,
+		repoA,
+		npmScopedPkg,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,7 +426,9 @@ func TestNPMCodecImportTagCreatesParentAndMovesTag(t *testing.T) {
 
 	var n int
 
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM npm_dist_tags d JOIN npm_packages p ON p.id = d.package_id WHERE p.repository_id = $1`, repoB).Scan(&n); err != nil || n != 1 {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM npm_dist_tags d JOIN npm_packages p ON p.id = d.package_id WHERE p.repository_id = $1`, repoB).
+		Scan(&n); err != nil ||
+		n != 1 {
 		t.Fatalf("tag rows = %d, %v; want 1", n, err)
 	}
 }
@@ -438,16 +454,21 @@ func TestNPMCodecImportReplacesVersionInPlace(t *testing.T) {
 	})
 
 	var firstID string
-	if err := db.QueryRowContext(ctx, `SELECT v.id::text FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id WHERE p.repository_id = $1`, repoB).Scan(&firstID); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT v.id::text FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id WHERE p.repository_id = $1`, repoB).
+		Scan(&firstID); err != nil {
 		t.Fatal(err)
 	}
 
 	// Same version republished at the origin with another tarball and manifest.
 	newBlobID, newSha := seedBlob(t, db, "tarball widget 1.0.0 rebuilt")
-	if _, err := db.ExecContext(ctx,
+	if _, err := db.ExecContext(
+		ctx,
 		`UPDATE npm_versions SET blob_id = $2::uuid, manifest_json = '{"name": "@acme/widget", "version": "1.0.0", "deprecated": "no"}'::jsonb
 		  WHERE package_id = (SELECT id FROM npm_packages WHERE repository_id = $1 AND full_name = $3) AND version = '1.0.0'`,
-		repoA, newBlobID, npmScopedPkg); err != nil {
+		repoA,
+		newBlobID,
+		npmScopedPkg,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -479,9 +500,12 @@ func TestNPMCodecImportReplacesVersionInPlace(t *testing.T) {
 		n                int
 	)
 
-	if err := db.QueryRowContext(ctx,
+	if err := db.QueryRowContext(
+		ctx,
 		`SELECT v.id::text, v.blob_id::text, (SELECT count(*) FROM npm_versions x JOIN npm_packages xp ON xp.id = x.package_id WHERE xp.repository_id = $1)
-		   FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id WHERE p.repository_id = $1`, repoB).Scan(&secondID, &blobID, &n); err != nil {
+		   FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id WHERE p.repository_id = $1`,
+		repoB,
+	).Scan(&secondID, &blobID, &n); err != nil {
 		t.Fatal(err)
 	}
 
@@ -532,7 +556,9 @@ func TestNPMCodecDeleteSoft(t *testing.T) {
 	}
 
 	var deletedBy string
-	if err := db.QueryRowContext(ctx, `SELECT deleted_by FROM npm_versions WHERE package_id = $1 AND version = '1.0.0' AND deleted_at IS NOT NULL`, pkgID).Scan(&deletedBy); err != nil || deletedBy != "alice" {
+	if err := db.QueryRowContext(ctx, `SELECT deleted_by FROM npm_versions WHERE package_id = $1 AND version = '1.0.0' AND deleted_at IS NOT NULL`, pkgID).
+		Scan(&deletedBy); err != nil ||
+		deletedBy != "alice" {
 		t.Fatalf("deleted_by = %q, %v", deletedBy, err)
 	}
 
@@ -584,7 +610,9 @@ func TestNPMCodecDeleteHard(t *testing.T) {
 	npmDelete(t, db, repoA, npmPlainVer, false, "")
 
 	var n int
-	if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM npm_packages WHERE repository_id = $1 AND full_name = $2`, repoA, npmPlainPkg).Scan(&n); err != nil || n != 0 {
+	if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM npm_packages WHERE repository_id = $1 AND full_name = $2`, repoA, npmPlainPkg).
+		Scan(&n); err != nil ||
+		n != 0 {
 		t.Fatalf("plain package rows = %d, %v; want 0", n, err)
 	}
 }
@@ -694,7 +722,20 @@ func TestNPMVersionColumnsPinned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantVersions := []string{"id", "package_id", "version", "manifest_json", "integrity", "shasum", "tarball_filename", "created_at", "blob_id", "updated_at", "deleted_at", "deleted_by"}
+	wantVersions := []string{
+		"id",
+		"package_id",
+		"version",
+		"manifest_json",
+		"integrity",
+		"shasum",
+		"tarball_filename",
+		"created_at",
+		"blob_id",
+		"updated_at",
+		"deleted_at",
+		"deleted_by",
+	}
 	if !sameSet(versions, wantVersions) {
 		t.Fatalf("npm_versions columns = %v; update codec_npm.go and this list", versions)
 	}

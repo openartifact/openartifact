@@ -24,11 +24,17 @@ import (
 // cap is checked in the database transaction (ErrProjectRepoLimit).
 func checkProjectRepoPolicy(project *models.Project, name, format, repoType string, public bool) (int, string, string) {
 	if len(project.AllowedFormats) > 0 && !slices.Contains(project.AllowedFormats, format) {
-		return http.StatusBadRequest, "validation_failed", "format " + format + " is not allowed in this project; allowed: " + strings.Join(project.AllowedFormats, ", ")
+		return http.StatusBadRequest, "validation_failed", "format " + format + " is not allowed in this project; allowed: " + strings.Join(
+			project.AllowedFormats,
+			", ",
+		)
 	}
 
 	if !slices.Contains(project.AllowedRepoTypes, repoType) {
-		return http.StatusBadRequest, "validation_failed", "repo_type " + repoType + " is not allowed in this project; allowed: " + strings.Join(project.AllowedRepoTypes, ", ")
+		return http.StatusBadRequest, "validation_failed", "repo_type " + repoType + " is not allowed in this project; allowed: " + strings.Join(
+			project.AllowedRepoTypes,
+			", ",
+		)
 	}
 
 	if !strings.HasPrefix(name, project.RepoNamePrefix) {
@@ -58,7 +64,12 @@ func (h *RepositoriesHandler) delegatedActor(ctx context.Context, p *auth.Princi
 // an update, or "" when it is allowed: moving a repository (project), blocking
 // it and the presign override stay global-admin controls, and public access
 // needs the project policy to allow it.
-func (h *RepositoriesHandler) delegatedUpdateViolation(ctx context.Context, repo *models.Repository, blocked, presign, project bool, public *bool) string {
+func (h *RepositoriesHandler) delegatedUpdateViolation(
+	ctx context.Context,
+	repo *models.Repository,
+	blocked, presign, project bool,
+	public *bool,
+) string {
 	switch {
 	case project:
 		return "only an administrator can move a repository to another project; use the project transfer route"
@@ -229,7 +240,12 @@ func (h *RepositoriesHandler) handleTransfer(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, database.ErrProjectRepoLimit):
 			writeError(w, http.StatusConflict, "project_repository_limit", "the target project has reached its repository limit")
 		case errors.Is(err, database.ErrProjectQuotaExceeded):
-			writeError(w, http.StatusConflict, "project_quota_exceeded", "the target project's storage quota cannot take this repository's usage")
+			writeError(
+				w,
+				http.StatusConflict,
+				"project_quota_exceeded",
+				"the target project's storage quota cannot take this repository's usage",
+			)
 		case errors.Is(err, database.ErrRepositoryNotFound):
 			writeError(w, http.StatusNotFound, "not_found", "repository not found")
 		default:

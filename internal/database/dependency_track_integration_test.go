@@ -71,7 +71,10 @@ func TestDependencyTrackRowsCascadeWithRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := pg.UpsertDependencyTrackPush(ctx, &models.DependencyTrackPush{RepositoryID: s.repo, ArtifactID: "a@1", State: models.DTrackPushQueued}); err != nil {
+	if err := pg.UpsertDependencyTrackPush(
+		ctx,
+		&models.DependencyTrackPush{RepositoryID: s.repo, ArtifactID: "a@1", State: models.DTrackPushQueued},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -115,7 +118,10 @@ func TestDependencyTrackPushStateUpsertListAndConstraint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := pg.UpsertDependencyTrackPush(ctx, &models.DependencyTrackPush{RepositoryID: s.repo, ArtifactID: "b@2", State: models.DTrackPushRunning}); err != nil {
+	if err := pg.UpsertDependencyTrackPush(
+		ctx,
+		&models.DependencyTrackPush{RepositoryID: s.repo, ArtifactID: "b@2", State: models.DTrackPushRunning},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,7 +138,10 @@ func TestDependencyTrackPushStateUpsertListAndConstraint(t *testing.T) {
 		t.Fatalf("limit 1 returned %d rows", len(one))
 	}
 
-	if err := pg.UpsertDependencyTrackPush(ctx, &models.DependencyTrackPush{RepositoryID: s.repo, ArtifactID: "c", State: "bogus"}); err == nil {
+	if err := pg.UpsertDependencyTrackPush(
+		ctx,
+		&models.DependencyTrackPush{RepositoryID: s.repo, ArtifactID: "c", State: "bogus"},
+	); err == nil {
 		t.Fatal("an unknown state was accepted")
 	}
 }
@@ -178,7 +187,9 @@ func TestRepositoryAttestationAttachDefaultsOffAndCascades(t *testing.T) {
 	}
 
 	var n int
-	if err := pg.pool.QueryRow(ctx, `SELECT count(*) FROM repository_attestation_attach WHERE repository_id = $1`, s.repo).Scan(&n); err != nil || n != 0 {
+	if err := pg.pool.QueryRow(ctx, `SELECT count(*) FROM repository_attestation_attach WHERE repository_id = $1`, s.repo).
+		Scan(&n); err != nil ||
+		n != 0 {
 		t.Fatalf("setting rows after the repository was deleted = %d, %v; want 0", n, err)
 	}
 }

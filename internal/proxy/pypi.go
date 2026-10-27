@@ -148,7 +148,12 @@ func (s *Service) fetchPage(ctx context.Context, repo *models.Repository, key, t
 // rendering the body (release is nil when err != nil). When the cache row
 // outlived its blob the row is dropped and the page refetched once, with the
 // slot given up for the duration of the network fetch.
-func (s *Service) readPage(ctx context.Context, repo *models.Repository, key, target string, res *resolution) (*resolution, []byte, func(), error) {
+func (s *Service) readPage(
+	ctx context.Context,
+	repo *models.Repository,
+	key, target string,
+	res *resolution,
+) (*resolution, []byte, func(), error) {
 	if err := s.packuments.Acquire(ctx); err != nil {
 		return nil, nil, nil, err //nolint:wrapcheck // caller checks for cancellation
 	}
@@ -338,7 +343,11 @@ func (s *Service) servePyPIFile(w http.ResponseWriter, r *http.Request, repo *mo
 // fetchPyPIFile downloads a distribution file (or its PEP 658 .metadata) from
 // where the cached project page says it lives, verifies it against the
 // published sha256 and caches it. A file the page does not list is not found.
-func (s *Service) fetchPyPIFile(ctx context.Context, repo *models.Repository, project, filename, key string) (*models.ProxyCacheEntry, error) {
+func (s *Service) fetchPyPIFile(
+	ctx context.Context,
+	repo *models.Repository,
+	project, filename, key string,
+) (*models.ProxyCacheEntry, error) {
 	page, err := s.loadPyPIProject(ctx, repo, project)
 	if err != nil {
 		return nil, err

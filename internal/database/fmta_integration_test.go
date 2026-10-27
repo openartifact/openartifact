@@ -54,7 +54,15 @@ func TestGetLatestSnapshotFile(t *testing.T) {
 		}
 
 		if a.SnapshotTimestamp != tc.ts || a.BlobSizeBytes != tc.size || a.Classifier != tc.cls || a.Extension != tc.ext {
-			t.Errorf("(%q,%q) = ts %s size %d cls %q ext %q", tc.cls, tc.ext, a.SnapshotTimestamp, a.BlobSizeBytes, a.Classifier, a.Extension)
+			t.Errorf(
+				"(%q,%q) = ts %s size %d cls %q ext %q",
+				tc.cls,
+				tc.ext,
+				a.SnapshotTimestamp,
+				a.BlobSizeBytes,
+				a.Classifier,
+				a.Extension,
+			)
 		}
 	}
 
@@ -116,7 +124,10 @@ func TestDeleteStaleDockerUploads(t *testing.T) {
 	}
 
 	var n int
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_uploads WHERE upload_uuid = 'fresh'`).Scan(&n); err != nil || n != 1 {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_uploads WHERE upload_uuid = 'fresh'`).
+		Scan(&n); err != nil ||
+		n != 1 {
 		t.Fatalf("fresh session survived: %d, %v", n, err)
 	}
 }

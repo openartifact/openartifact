@@ -424,7 +424,9 @@ func fuzzWantRemoveFiles(body []byte, rows []models.ConanPackage) fuzzRemoved {
 		Files []string `json:"files"`
 	}
 
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&req); err != nil || slices.ContainsFunc(req.Files, func(n string) bool { return !validFilename(n) }) {
+	if err := json.NewDecoder(bytes.NewReader(body)).
+		Decode(&req); err != nil ||
+		slices.ContainsFunc(req.Files, func(n string) bool { return !validFilename(n) }) {
 		return fuzzRemoved{status: http.StatusBadRequest}
 	}
 
@@ -556,7 +558,8 @@ func FuzzChecksumDeploy(f *testing.F) {
 			return
 		}
 
-		if len(rows) != 2 || rows[1].Filename != "b.txt" || rows[1].SHA256 != rows[0].SHA256 || rows[1].SizeBytes != 1 || rows[1].SHA1 != lower {
+		if len(rows) != 2 || rows[1].Filename != "b.txt" || rows[1].SHA256 != rows[0].SHA256 || rows[1].SizeBytes != 1 ||
+			rows[1].SHA1 != lower {
 			t.Fatalf("deploy of %q stored %+v", header, rows)
 		}
 	})
@@ -987,7 +990,12 @@ func FuzzSearchQuery(f *testing.F) {
 		refs := map[string]recipeRef{}
 
 		for _, r := range [][4]string{{"zlib", "1.3", "_", "_"}, {"fmt", "10.2", "acme", "stable"}, {"Boost", "1.84", "_", "dev"}} {
-			e.mustDo(http.MethodPut, "/repos/myrepo/v2/conans/"+r[0]+"/"+r[1]+"/"+r[2]+"/"+r[3]+"/revisions/"+rrev1+"/files/"+manifestFile, "m", http.StatusCreated)
+			e.mustDo(
+				http.MethodPut,
+				"/repos/myrepo/v2/conans/"+r[0]+"/"+r[1]+"/"+r[2]+"/"+r[3]+"/revisions/"+rrev1+"/files/"+manifestFile,
+				"m",
+				http.StatusCreated,
+			)
 
 			ref := splitRecipe(models.ConanRecipe{Name: r[0], Version: r[1], UserChannel: joinUserChannel(r[2], r[3])})
 			refs[ref.String()] = ref

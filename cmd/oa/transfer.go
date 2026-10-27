@@ -27,7 +27,9 @@ const (
 )
 
 var (
-	errPasswordFlag   = errors.New("--password is no longer supported (it leaks into shell history and process lists); use --password-stdin or the interactive prompt")
+	errPasswordFlag = errors.New(
+		"--password is no longer supported (it leaks into shell history and process lists); use --password-stdin or the interactive prompt",
+	)
 	errRedirectLimit  = errors.New("stopped after too many redirects")
 	errHTTPSDowngrade = errors.New("refusing redirect from https to http")
 	errEmptyPassword  = errors.New("no password supplied on stdin")

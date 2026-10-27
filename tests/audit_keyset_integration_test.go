@@ -261,9 +261,23 @@ func TestAuditTotalAvoidsCountOnLargeTables(t *testing.T) {
 	}{
 		{name: "unfiltered uses the planner estimate", params: models.AuditListParams{Limit: 25}, wantTotal: rows},
 		{name: "filtered reports a lower bound", params: models.AuditListParams{Limit: 25, Action: "artifact.downloaded"}, wantTotal: 26},
-		{name: "filtered lower bound honours offset", params: models.AuditListParams{Limit: 25, Offset: 50, Action: "artifact.downloaded"}, wantTotal: 76},
-		{name: "filtered final page is exact", params: models.AuditListParams{Limit: 25, Offset: 100, Action: "auth.login"}, wantTotal: 120, wantExact: true},
-		{name: "unfiltered final page is exact", params: models.AuditListParams{Limit: 25, Offset: rows - 10}, wantTotal: rows, wantExact: true},
+		{
+			name:      "filtered lower bound honours offset",
+			params:    models.AuditListParams{Limit: 25, Offset: 50, Action: "artifact.downloaded"},
+			wantTotal: 76,
+		},
+		{
+			name:      "filtered final page is exact",
+			params:    models.AuditListParams{Limit: 25, Offset: 100, Action: "auth.login"},
+			wantTotal: 120,
+			wantExact: true,
+		},
+		{
+			name:      "unfiltered final page is exact",
+			params:    models.AuditListParams{Limit: 25, Offset: rows - 10},
+			wantTotal: rows,
+			wantExact: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -342,7 +356,13 @@ func TestAuditProjectScopeIncludesOwnedRepositoriesOnly(t *testing.T) {
 		t.Fatalf("ListAuditLogs beta: %v", err)
 	}
 
-	if gotBeta, wantBeta := auditIDs(page.Logs), []string{ids["beta-repo"], ids["beta-project"]}; !slices.Equal(gotBeta, wantBeta) || page.Next != nil || page.Total != 0 {
+	if gotBeta, wantBeta := auditIDs(
+		page.Logs,
+	), []string{
+		ids["beta-repo"],
+		ids["beta-project"],
+	}; !slices.Equal(gotBeta, wantBeta) || page.Next != nil ||
+		page.Total != 0 {
 		t.Errorf("beta activity = %v (next %v, total %d), want %v with no count", gotBeta, page.Next, page.Total, wantBeta)
 	}
 

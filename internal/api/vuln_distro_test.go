@@ -119,7 +119,15 @@ func newDistroScanDB() *distroScanDB {
 			{ID: distroDistID, Name: "bookworm"},
 		},
 		components: map[string]*models.Component{
-			distroRPMID: {ID: distroRPMID, RepositoryID: testRepoID, Format: "rpm", Name: "openssl", Version: "3.0.7", Release: "24.el9", Epoch: 1},
+			distroRPMID: {
+				ID:           distroRPMID,
+				RepositoryID: testRepoID,
+				Format:       "rpm",
+				Name:         "openssl",
+				Version:      "3.0.7",
+				Release:      "24.el9",
+				Epoch:        1,
+			},
 		},
 	}
 }
@@ -229,8 +237,16 @@ func TestVulnScan_DebRPMDistro(t *testing.T) {
 			name:        "fedora rpm",
 			mutate:      func(db *distroScanDB) { db.components[distroRPMID].Release = "3.fc39" },
 			body:        scanBody(distroRPMID, "openssl", "3.0.7", "rpm", `["grype"]`),
-			wantScanner: "grype", wantRan: []string{"grype"},
-			wantPkg:     vuln.Package{Name: "openssl", Version: "3.0.7", Release: "3.fc39", Epoch: 1, Ecosystem: "rpm", Distro: "fedora-39"},
+			wantScanner: "grype",
+			wantRan:     []string{"grype"},
+			wantPkg: vuln.Package{
+				Name:      "openssl",
+				Version:   "3.0.7",
+				Release:   "3.fc39",
+				Epoch:     1,
+				Ecosystem: "rpm",
+				Distro:    "fedora-39",
+			},
 			wantLookups: []string{"rpm component"},
 		},
 		{
@@ -308,7 +324,12 @@ func TestVulnScan_DebRPMDistro(t *testing.T) {
 
 			// The scan completed: it was neither refused nor recorded as unsupported.
 			if stored.ScanStatus != "completed" || stored.ScanError != "" || len(stored.FailedScanners) != 0 {
-				t.Errorf("stored status=%q error=%q failed=%v, want a completed scan", stored.ScanStatus, stored.ScanError, stored.FailedScanners)
+				t.Errorf(
+					"stored status=%q error=%q failed=%v, want a completed scan",
+					stored.ScanStatus,
+					stored.ScanError,
+					stored.FailedScanners,
+				)
 			}
 
 			if stored.Scanner != tt.wantScanner {

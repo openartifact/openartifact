@@ -374,8 +374,13 @@ require %s %s
 		return os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0600)
 
 	case "rubygems":
-		content := fmt.Sprintf("GEM\n  remote: https://rubygems.org/\n  specs:\n    %s (%s)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  %s (= %s)\n",
-			packageName, version, packageName, version)
+		content := fmt.Sprintf(
+			"GEM\n  remote: https://rubygems.org/\n  specs:\n    %s (%s)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  %s (= %s)\n",
+			packageName,
+			version,
+			packageName,
+			version,
+		)
 
 		return os.WriteFile(filepath.Join(dir, "Gemfile.lock"), []byte(content), 0600)
 

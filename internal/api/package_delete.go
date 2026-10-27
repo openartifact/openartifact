@@ -19,7 +19,13 @@ import (
 // PackageDeleter deletes a package row of any hosted format by its listing id.
 // It is satisfied by *worker.CleanupWorker.
 type PackageDeleter interface {
-	DeletePackage(ctx context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error, actor string) (*worker.DeletedPackage, error)
+	DeletePackage(
+		ctx context.Context,
+		repo *models.Repository,
+		id string,
+		guard func(worker.DeletedPackage) error,
+		actor string,
+	) (*worker.DeletedPackage, error)
 }
 
 // SetPackageDeleter wires the deleter behind DELETE /repositories/{name}/packages/{id}
@@ -56,14 +62,32 @@ func (h *RPMUploadHandler) deleteOtherFormat(w http.ResponseWriter, r *http.Requ
 
 	trash.AuditDeleted(r.Context(), repo.ID, res.Kind, res.ID, res.Trashed, res.Name+" "+res.Version, res.Name, res.Version)
 
-	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repo.Name,
-		Format:     repo.Format,
-		Name:       res.Name,
-		Version:    res.Version,
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repo.ID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repo.Name,
+			Format:     repo.Format,
+			Name:       res.Name,
+			Version:    res.Version,
+		}),
+	)
 
-	h.log.Infow("package deleted", "repository", repo.Name, "format", repo.Format, "package_id", packageID, "rows", res.Rows, "trashed", res.Trashed)
+	h.log.Infow(
+		"package deleted",
+		"repository",
+		repo.Name,
+		"format",
+		repo.Format,
+		"package_id",
+		packageID,
+		"rows",
+		res.Rows,
+		"trashed",
+		res.Trashed,
+	)
 
 	writeJSON(w, http.StatusOK, Response{
 		Success: true,

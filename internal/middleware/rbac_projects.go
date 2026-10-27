@@ -127,7 +127,17 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 //	/api/v1/projects/{project}  a project role that allows the action, or admin;
 //	                            a caller with no role gets 404 (like an unknown
 //	                            project), a member with too low a role 403
-func authorizeProjectRoute(w http.ResponseWriter, r *http.Request, cfg RBACConfig, evaluator *auth.Evaluator, log *logger.Logger, principal *auth.Principal, credential string, scope routeScope, db database.Database) bool {
+func authorizeProjectRoute(
+	w http.ResponseWriter,
+	r *http.Request,
+	cfg RBACConfig,
+	evaluator *auth.Evaluator,
+	log *logger.Logger,
+	principal *auth.Principal,
+	credential string,
+	scope routeScope,
+	db database.Database,
+) bool {
 	if principal.IsAnonymous || principal.TokenKind == auth.TokenKindDeploy {
 		writeAccessDenied(w, r, cfg, db, log, principal, credential, scope)
 		return false
@@ -158,7 +168,17 @@ func authorizeProjectRoute(w http.ResponseWriter, r *http.Request, cfg RBACConfi
 }
 
 // authorizeProjectsRoot gates GET/POST /api/v1/projects.
-func authorizeProjectsRoot(w http.ResponseWriter, r *http.Request, cfg RBACConfig, evaluator *auth.Evaluator, log *logger.Logger, principal *auth.Principal, credential string, scope routeScope, db database.Database) bool {
+func authorizeProjectsRoot(
+	w http.ResponseWriter,
+	r *http.Request,
+	cfg RBACConfig,
+	evaluator *auth.Evaluator,
+	log *logger.Logger,
+	principal *auth.Principal,
+	credential string,
+	scope routeScope,
+	db database.Database,
+) bool {
 	if r.Method != http.MethodPost {
 		return true // the handler returns the caller's projects (?all=true is admin-only there)
 	}

@@ -80,7 +80,8 @@ func TestSearchChecksumFindsFilesInReadableRepositoriesOnly(t *testing.T) {
 			}
 
 			for _, r := range got {
-				if r.Name != "widget" || r.Version != "1.0.0" || r.Format != "npm" || r.Checksum != tc.digest || r.Algorithm != tc.algorithm {
+				if r.Name != "widget" || r.Version != "1.0.0" || r.Format != "npm" || r.Checksum != tc.digest ||
+					r.Algorithm != tc.algorithm {
 					t.Fatalf("result %+v", r)
 				}
 

@@ -106,7 +106,11 @@ type projectsMockDB struct {
 
 var _ database.Database = (*projectsMockDB)(nil)
 
-func (db *projectsMockDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
+func (db *projectsMockDB) GetPermissionTargetsForPrincipal(
+	_ context.Context,
+	userID string,
+	_ []string,
+) ([]*models.PermissionTarget, error) {
 	if db.admins[userID] {
 		return adminTargets(), nil
 	}
@@ -266,7 +270,12 @@ func (db *projectsMockDB) ownerCount(projectID string) int {
 
 // ChangeProjectGroup mirrors PostgresDB.ChangeProjectGroup: guard first, then
 // attach, change or (newRole "") detach.
-func (db *projectsMockDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard database.ProjectRoleGuard) error {
+func (db *projectsMockDB) ChangeProjectGroup(
+	ctx context.Context,
+	projectID, groupID, newRole string,
+	createdBy *string,
+	guard database.ProjectRoleGuard,
+) error {
 	if project, _ := db.GetProject(ctx, projectID); project == nil {
 		return database.ErrProjectNotFound
 	}
@@ -431,7 +440,13 @@ func (db *projectsMockDB) GetProjectGroup(_ context.Context, _, groupID string) 
 func (db *projectsMockDB) SetProjectGroup(_ context.Context, projectID, groupID, role string, createdBy *string) error {
 	db.setGroups[groupID] = role
 	db.setGroupBy = createdBy
-	db.projectGroup[groupID] = &models.ProjectGroup{ProjectID: projectID, GroupID: groupID, GroupName: db.groups[groupID].Name, Role: role, CreatedAt: time.Now()}
+	db.projectGroup[groupID] = &models.ProjectGroup{
+		ProjectID: projectID,
+		GroupID:   groupID,
+		GroupName: db.groups[groupID].Name,
+		Role:      role,
+		CreatedAt: time.Now(),
+	}
 
 	return nil
 }
@@ -630,7 +645,8 @@ func checkUpdateKeepsOmitted(t *testing.T, p *models.Project) {
 		t.Errorf("description/display = %q/%q", *p.Description, *p.DisplayName)
 	}
 
-	if !slices.Equal(p.AllowedFormats, []string{"maven"}) || p.RepoNamePrefix != "acme-" || p.MaxRepositories != 10 || p.TokenMaxTTLDays != 30 {
+	if !slices.Equal(p.AllowedFormats, []string{"maven"}) || p.RepoNamePrefix != "acme-" || p.MaxRepositories != 10 ||
+		p.TokenMaxTTLDays != 30 {
 		t.Errorf("policy changed: %+v", p)
 	}
 }
@@ -653,8 +669,10 @@ func TestProjectsCreatePolicy(t *testing.T) {
 	}{
 		{"defaults", `{"name":"My_Proj"}`, http.StatusCreated, checkCreateDefaults},
 		{
-			"with policy", `{"name":"x","allowed_formats":["go","raw","go"],"allowed_repo_types":["hosted","proxy"],"repo_name_prefix":"team_","allow_public_repos":true,"max_repositories":3,"token_max_ttl_days":0}`,
-			http.StatusCreated, checkCreateWithPolicy,
+			"with policy",
+			`{"name":"x","allowed_formats":["go","raw","go"],"allowed_repo_types":["hosted","proxy"],"repo_name_prefix":"team_","allow_public_repos":true,"max_repositories":3,"token_max_ttl_days":0}`,
+			http.StatusCreated,
+			checkCreateWithPolicy,
 		},
 		{"empty allowed_formats means every format", `{"name":"x","allowed_formats":[]}`, http.StatusCreated, checkNilFormats},
 		{"empty prefix allowed", `{"name":"x","repo_name_prefix":""}`, http.StatusCreated, checkEmptyPrefix},
@@ -773,7 +791,13 @@ func TestProjectsUpdatePolicy(t *testing.T) {
 		{"developer 403", uDev1, `{"display_name":"x"}`, http.StatusForbidden, nil},
 		{"viewer 403", uView1, `{"display_name":"x"}`, http.StatusForbidden, nil},
 		{"outsider 404", uNewbie, `{"display_name":"x"}`, http.StatusNotFound, nil},
-		{"admin non-member policy ok", uAdmin1, `{"allowed_formats":["raw","go"],"allowed_repo_types":["hosted","group"],"repo_name_prefix":"","allow_public_repos":true,"max_repositories":0,"token_max_ttl_days":7}`, http.StatusOK, checkAdminPolicyUpdate},
+		{
+			"admin non-member policy ok",
+			uAdmin1,
+			`{"allowed_formats":["raw","go"],"allowed_repo_types":["hosted","group"],"repo_name_prefix":"","allow_public_repos":true,"max_repositories":0,"token_max_ttl_days":7}`,
+			http.StatusOK,
+			checkAdminPolicyUpdate,
+		},
 		{"admin empty allowed_formats stores nil", uAdmin1, `{"allowed_formats":[]}`, http.StatusOK, checkNilFormats},
 		{"admin unknown format 400", uAdmin1, `{"allowed_formats":["nope"]}`, http.StatusBadRequest, nil},
 		{"admin empty repo types 400", uAdmin1, `{"allowed_repo_types":[]}`, http.StatusBadRequest, nil},
@@ -921,7 +945,8 @@ func TestProjectsList(t *testing.T) {
 
 			for i, item := range list {
 				p, _ := item.(map[string]any)
-				if p["name"] != tt.wantNames[i] || p["my_role"] != tt.wantRole || p["repository_count"] != float64(2) || p["is_system"] != false {
+				if p["name"] != tt.wantNames[i] || p["my_role"] != tt.wantRole || p["repository_count"] != float64(2) ||
+					p["is_system"] != false {
 					t.Errorf("project = %v, want %s as %s with 2 repositories", p, tt.wantNames[i], tt.wantRole)
 				}
 			}
@@ -938,17 +963,59 @@ func TestProjectsAddMember(t *testing.T) {
 		wantRole string
 	}{
 		{"owner grants owner", uOwner1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"owner"}`, http.StatusCreated, "owner"},
-		{"owner grants maintainer", uOwner1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"maintainer"}`, http.StatusCreated, "maintainer"},
-		{"maintainer grants maintainer", uMaint1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"maintainer"}`, http.StatusForbidden, ""},
+		{
+			"owner grants maintainer",
+			uOwner1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"maintainer"}`,
+			http.StatusCreated,
+			"maintainer",
+		},
+		{
+			"maintainer grants maintainer",
+			uMaint1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"maintainer"}`,
+			http.StatusForbidden,
+			"",
+		},
 		{"maintainer grants owner", uMaint1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"owner"}`, http.StatusForbidden, ""},
-		{"maintainer grants developer", uMaint1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"developer"}`, http.StatusCreated, "developer"},
-		{"maintainer grants viewer", uMaint1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"viewer"}`, http.StatusCreated, "viewer"},
+		{
+			"maintainer grants developer",
+			uMaint1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"developer"}`,
+			http.StatusCreated,
+			"developer",
+		},
+		{
+			"maintainer grants viewer",
+			uMaint1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"viewer"}`,
+			http.StatusCreated,
+			"viewer",
+		},
 		{"role defaults to viewer", uMaint1, `{"user_id":"0f000000-0000-4000-8000-000000000041"}`, http.StatusCreated, "viewer"},
 		{"developer cannot add", uDev1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"viewer"}`, http.StatusForbidden, ""},
 		{"viewer cannot add", uView1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"viewer"}`, http.StatusForbidden, ""},
-		{"global admin grants owner", uAdmin1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"owner"}`, http.StatusCreated, "owner"},
-		{"old admin role rejected", uOwner1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"admin"}`, http.StatusBadRequest, ""},
-		{"old member role rejected", uOwner1, `{"user_id":"0f000000-0000-4000-8000-000000000041","role":"member"}`, http.StatusBadRequest, ""},
+		{
+			"global admin grants owner",
+			uAdmin1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"owner"}`,
+			http.StatusCreated,
+			"owner",
+		},
+		{
+			"old admin role rejected",
+			uOwner1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"admin"}`,
+			http.StatusBadRequest,
+			"",
+		},
+		{
+			"old member role rejected",
+			uOwner1,
+			`{"user_id":"0f000000-0000-4000-8000-000000000041","role":"member"}`,
+			http.StatusBadRequest,
+			"",
+		},
 		{"unknown user", uOwner1, `{"user_id":"0f000000-0000-4000-8000-0000000000ff","role":"viewer"}`, http.StatusNotFound, ""},
 		{"already a member", uOwner1, `{"user_id":"0f000000-0000-4000-8000-000000000021","role":"viewer"}`, http.StatusConflict, ""},
 		{"invalid body", uOwner1, `nope`, http.StatusBadRequest, ""},
@@ -1002,12 +1069,26 @@ func TestProjectsUpdateMemberRole(t *testing.T) {
 		{"maintainer raises viewer to developer", uMaint1, uView1, `{"role":"developer"}`, nil, http.StatusOK},
 		{"maintainer cannot demote maintainer", uMaint1, uMaint2, `{"role":"developer"}`, nil, http.StatusForbidden},
 		{"maintainer cannot demote owner", uMaint1, uOwner2, `{"role":"developer"}`, nil, http.StatusForbidden},
-		{"maintainer cannot touch a maintainer even to the same role", uMaint1, uMaint2, `{"role":"maintainer"}`, nil, http.StatusForbidden},
+		{
+			"maintainer cannot touch a maintainer even to the same role",
+			uMaint1,
+			uMaint2,
+			`{"role":"maintainer"}`,
+			nil,
+			http.StatusForbidden,
+		},
 		{"owner same role is a no-op", uOwner1, uMaint2, `{"role":"maintainer"}`, nil, http.StatusOK},
 		{"developer cannot change", uDev1, uView1, `{"role":"developer"}`, nil, http.StatusForbidden},
 		{"recorded owner is immutable", uOwner2, uOwner1, `{"role":"maintainer"}`, nil, http.StatusConflict},
 		{"global admin cannot demote recorded owner", uAdmin1, uOwner1, `{"role":"viewer"}`, nil, http.StatusConflict},
-		{"last owner cannot be demoted", uOwner1, uOwner2, `{"role":"developer"}`, func(db *projectsMockDB) { dropMember(db, uOwner1) }, http.StatusConflict},
+		{
+			"last owner cannot be demoted",
+			uOwner1,
+			uOwner2,
+			`{"role":"developer"}`,
+			func(db *projectsMockDB) { dropMember(db, uOwner1) },
+			http.StatusConflict,
+		},
 		{"invalid role admin", uOwner1, uDev1, `{"role":"admin"}`, nil, http.StatusBadRequest},
 		{"invalid role member", uOwner1, uDev1, `{"role":"member"}`, nil, http.StatusBadRequest},
 		{"empty role", uOwner1, uDev1, `{}`, nil, http.StatusBadRequest},
@@ -1095,7 +1176,12 @@ func TestProjectsGroupsList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := newProjectsMock()
-			db.projectGroup[testGroupID] = &models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, GroupName: testGroupName, Role: models.ProjectRoleDeveloper}
+			db.projectGroup[testGroupID] = &models.ProjectGroup{
+				ProjectID: testAcmeID,
+				GroupID:   testGroupID,
+				GroupName: testGroupName,
+				Role:      models.ProjectRoleDeveloper,
+			}
 			router := newProjectsRouter(t, db)
 
 			code, body := projectJSON(t, router, tt.user, http.MethodGet, "/api/v1/projects/acme/groups", "")
@@ -1136,9 +1222,33 @@ func TestProjectsSetGroup(t *testing.T) {
 		{"maintainer attaches by name", uMaint1, testGroupName, `{"role":"developer"}`, nil, http.StatusOK, "developer"},
 		{"owner attaches maintainer", uOwner1, testGroupID, `{"role":"maintainer"}`, nil, http.StatusOK, "maintainer"},
 		{"owner attaches maintainer by name", uOwner1, testGroupName, `{"role":"maintainer"}`, nil, http.StatusOK, "maintainer"},
-		{"maintainer cannot alter a maintainer group", uMaint1, testGroupID, `{"role":"viewer"}`, &models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, Role: models.ProjectRoleMaintainer}, http.StatusForbidden, ""},
-		{"owner alters a maintainer group", uOwner1, testGroupID, `{"role":"viewer"}`, &models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, Role: models.ProjectRoleMaintainer}, http.StatusOK, "viewer"},
-		{"maintainer alters a developer group", uMaint1, testGroupID, `{"role":"viewer"}`, &models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, Role: models.ProjectRoleDeveloper}, http.StatusOK, "viewer"},
+		{
+			"maintainer cannot alter a maintainer group",
+			uMaint1,
+			testGroupID,
+			`{"role":"viewer"}`,
+			&models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, Role: models.ProjectRoleMaintainer},
+			http.StatusForbidden,
+			"",
+		},
+		{
+			"owner alters a maintainer group",
+			uOwner1,
+			testGroupID,
+			`{"role":"viewer"}`,
+			&models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, Role: models.ProjectRoleMaintainer},
+			http.StatusOK,
+			"viewer",
+		},
+		{
+			"maintainer alters a developer group",
+			uMaint1,
+			testGroupID,
+			`{"role":"viewer"}`,
+			&models.ProjectGroup{ProjectID: testAcmeID, GroupID: testGroupID, Role: models.ProjectRoleDeveloper},
+			http.StatusOK,
+			"viewer",
+		},
 		{"global admin attaches viewer", uAdmin1, testGroupID, `{"role":"viewer"}`, nil, http.StatusOK, "viewer"},
 		{"groups never owner", uOwner1, testGroupID, `{"role":"owner"}`, nil, http.StatusBadRequest, ""},
 		{"old admin role", uOwner1, testGroupID, `{"role":"admin"}`, nil, http.StatusBadRequest, ""},
@@ -1217,7 +1327,14 @@ func TestProjectsRemoveGroup(t *testing.T) {
 	t.Run("group not attached", func(t *testing.T) {
 		router := newProjectsRouter(t, newProjectsMock())
 
-		if code, body := projectJSON(t, router, uOwner1, http.MethodDelete, "/api/v1/projects/acme/groups/"+testGroupID, ""); code != http.StatusNotFound {
+		if code, body := projectJSON(
+			t,
+			router,
+			uOwner1,
+			http.MethodDelete,
+			"/api/v1/projects/acme/groups/"+testGroupID,
+			"",
+		); code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404; body = %v", code, body)
 		}
 	})
@@ -1233,12 +1350,44 @@ func TestRepositoriesProjectAssignment(t *testing.T) {
 		wantProjectID string // project_id stored; "" when nothing is written
 		wantProject   string // project in the response
 	}{
-		{"create defaults to system project", http.MethodPost, "/api/v1/repositories", `{"name":"r","format":"raw"}`, http.StatusCreated, models.SystemProjectID, ""},
-		{"create in named project", http.MethodPost, "/api/v1/repositories", `{"name":"r","format":"raw","project":"acme"}`, http.StatusCreated, testAcmeID, "acme"},
-		{"create in unknown project", http.MethodPost, "/api/v1/repositories", `{"name":"r","format":"raw","project":"ghost"}`, http.StatusNotFound, "", ""},
+		{
+			"create defaults to system project",
+			http.MethodPost,
+			"/api/v1/repositories",
+			`{"name":"r","format":"raw"}`,
+			http.StatusCreated,
+			models.SystemProjectID,
+			"",
+		},
+		{
+			"create in named project",
+			http.MethodPost,
+			"/api/v1/repositories",
+			`{"name":"r","format":"raw","project":"acme"}`,
+			http.StatusCreated,
+			testAcmeID,
+			"acme",
+		},
+		{
+			"create in unknown project",
+			http.MethodPost,
+			"/api/v1/repositories",
+			`{"name":"r","format":"raw","project":"ghost"}`,
+			http.StatusNotFound,
+			"",
+			"",
+		},
 		{"move to named project", http.MethodPatch, "/api/v1/repository/old", `{"project":"acme"}`, http.StatusOK, testAcmeID, "acme"},
 		{"move to unknown project", http.MethodPatch, "/api/v1/repository/old", `{"project":"ghost"}`, http.StatusNotFound, "", ""},
-		{"patch without project keeps it", http.MethodPatch, "/api/v1/repository/old", `{"description":"d"}`, http.StatusOK, models.SystemProjectID, ""},
+		{
+			"patch without project keeps it",
+			http.MethodPatch,
+			"/api/v1/repository/old",
+			`{"description":"d"}`,
+			http.StatusOK,
+			models.SystemProjectID,
+			"",
+		},
 	}
 
 	for _, tt := range tests {

@@ -133,7 +133,12 @@ func TestRepositoriesListClampsHugePage(t *testing.T) {
 	h := NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false))
 	userID := "u"
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/repositories?page=9223372036854775807&limit=100", nil)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/repositories?page=9223372036854775807&limit=100",
+		nil,
+	)
 	req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{UserID: &userID, Username: "u"}))
 	rw := httptest.NewRecorder()
 

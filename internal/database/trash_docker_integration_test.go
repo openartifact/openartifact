@@ -51,7 +51,10 @@ func TestTrashDockerTagRestoreNeedsLiveManifest(t *testing.T) {
 	}
 
 	var n int
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_tags WHERE id = $1 AND deleted_at IS NULL`, tagID).Scan(&n); err != nil || n != 1 {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_tags WHERE id = $1 AND deleted_at IS NULL`, tagID).
+		Scan(&n); err != nil ||
+		n != 1 {
 		t.Fatalf("tag live after manifest restore: %d, %v", n, err)
 	}
 

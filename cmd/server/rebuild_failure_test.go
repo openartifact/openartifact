@@ -32,8 +32,14 @@ func TestRunRebuildStartupFailures(t *testing.T) {
 			want:     "open blob store",
 		},
 		{
-			name:     "unreachable database",
-			env:      map[string]string{"STORAGE_PATH": "", "DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_SSLMODE": "disable", "DB_CONNECT_TIMEOUT": "0"},
+			name: "unreachable database",
+			env: map[string]string{
+				"STORAGE_PATH":       "",
+				"DB_HOST":            "127.0.0.1",
+				"DB_PORT":            "1",
+				"DB_SSLMODE":         "disable",
+				"DB_CONNECT_TIMEOUT": "0",
+			},
 			wantExit: recovery.ExitFailed,
 			want:     "connect to database",
 		},

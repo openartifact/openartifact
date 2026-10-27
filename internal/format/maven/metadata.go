@@ -63,7 +63,12 @@ type snapshotVersionXML struct {
 	Updated    string `xml:"updated"`
 }
 
-func GenerateGroupMetadataXML(groupID, artifactID string, versions []string, latestRelease, latestVersion string, lastUpdated time.Time) ([]byte, error) {
+func GenerateGroupMetadataXML(
+	groupID, artifactID string,
+	versions []string,
+	latestRelease, latestVersion string,
+	lastUpdated time.Time,
+) ([]byte, error) {
 	metadata := groupMetadataXML{
 		GroupID:    groupID,
 		ArtifactID: artifactID,
@@ -83,7 +88,13 @@ func GenerateGroupMetadataXML(groupID, artifactID string, versions []string, lat
 	return append([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"), output...), nil
 }
 
-func GenerateSnapshotMetadataXML(coord pkgmaven.Coordinate, snapshotTimestamp string, snapshotBuildNumber int, lastUpdated time.Time, entries []SnapshotEntry) ([]byte, error) {
+func GenerateSnapshotMetadataXML(
+	coord pkgmaven.Coordinate,
+	snapshotTimestamp string,
+	snapshotBuildNumber int,
+	lastUpdated time.Time,
+	entries []SnapshotEntry,
+) ([]byte, error) {
 	snapshotVersions := make([]snapshotVersionXML, len(entries))
 	for i, e := range entries {
 		snapshotVersions[i] = snapshotVersionXML{

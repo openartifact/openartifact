@@ -98,7 +98,10 @@ const (
 // OA_WEBHOOK_SECRET, never from argv where ps and shell history expose it.
 func resolveWebhookSecret(file, legacy string) string {
 	if legacy != "" {
-		dief("--secret was removed because argv is visible in the process list; use --secret-file FILE (or '-' for stdin), or set %s", envWebhookSecret)
+		dief(
+			"--secret was removed because argv is visible in the process list; use --secret-file FILE (or '-' for stdin), or set %s",
+			envWebhookSecret,
+		)
 	}
 
 	switch file {
@@ -226,7 +229,11 @@ func handleSBOM(args []string, client *Client, outFmt string) {
 		fs := flag.NewFlagSet("sbom generate", flag.ExitOnError)
 		artifactID := fs.String("artifact-id", "", "Artifact (package) id to build the SBOM for")
 		format := fs.String("format", "cyclonedx", "SBOM format: cyclonedx|spdx|spdx-json|spdx3-json")
-		specVersion := fs.String("spec-version", "", "Spec version (CycloneDX 1.4|1.5|1.6, SPDX 2.3, SPDX 3 3.0.1); default 1.5 / 2.3 / 3.0.1")
+		specVersion := fs.String(
+			"spec-version",
+			"",
+			"Spec version (CycloneDX 1.4|1.5|1.6, SPDX 2.3, SPDX 3 3.0.1); default 1.5 / 2.3 / 3.0.1",
+		)
 		_ = fs.Parse(args[2:])
 
 		spec, ok := sbomSpecVersions[*format]
@@ -255,7 +262,11 @@ func handleSBOM(args []string, client *Client, outFmt string) {
 		needArgs(args, 4, "Usage: oa sbom download <repo> <id> <dest> [--attest true|bundle]")
 
 		fs := flag.NewFlagSet("sbom download", flag.ExitOnError)
-		attest := fs.String("attest", "", "Download a signed in-toto attestation instead: true (DSSE envelope) or bundle (Sigstore bundle, for cosign)")
+		attest := fs.String(
+			"attest",
+			"",
+			"Download a signed in-toto attestation instead: true (DSSE envelope) or bundle (Sigstore bundle, for cosign)",
+		)
 		_ = fs.Parse(args[4:])
 
 		path := base + "/" + escape(args[2]) + "/download"
@@ -654,7 +665,11 @@ func handleProps(args []string, client *Client, outFmt string) {
 		fmt.Printf("Property '%s' set.\n", args[3])
 	case "delete":
 		needArgs(args, 4, "Usage: oa props delete <repo> <artifact-id> <key>")
-		deleteResource(client, repo+"/artifacts/"+escape(args[2])+"/properties/"+escape(args[3]), fmt.Sprintf("Property '%s' deleted.", args[3]))
+		deleteResource(
+			client,
+			repo+"/artifacts/"+escape(args[2])+"/properties/"+escape(args[3]),
+			fmt.Sprintf("Property '%s' deleted.", args[3]),
+		)
 	case "search":
 		needArgs(args, 4, "Usage: oa props search <repo> <key> <value>")
 		propsSearch(client, repo, args[2], args[3], outFmt)

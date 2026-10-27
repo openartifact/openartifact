@@ -80,7 +80,12 @@ func TestStorageBackendUpdateConflictsWhenBackendBusy(t *testing.T) {
 			})
 			NewAdminStorageHandler(db, log, nil).Register(r)
 
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodPatch, "/api/v1/admin/storage/cold", strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPatch,
+				"/api/v1/admin/storage/cold",
+				strings.NewReader(tc.body),
+			)
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 
@@ -127,7 +132,8 @@ func TestStorageBackendTestRunsRealChecksForEveryKind(t *testing.T) {
 			r.ServeHTTP(rec, req)
 
 			body := rec.Body.String()
-			if rec.Code != http.StatusOK || !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "invalid_config") || strings.Contains(body, "not_implemented") {
+			if rec.Code != http.StatusOK || !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "invalid_config") ||
+				strings.Contains(body, "not_implemented") {
 				t.Fatalf("status = %d, body = %s", rec.Code, body)
 			}
 		})

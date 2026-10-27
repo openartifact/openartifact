@@ -17,7 +17,9 @@ const (
 )
 
 var (
-	errTierNoBackend    = errors.New("a storage tier needs a backend: the primary tier is created by the server and cannot be created declaratively")
+	errTierNoBackend = errors.New(
+		"a storage tier needs a backend: the primary tier is created by the server and cannot be created declaratively",
+	)
 	errTierPolicyFromTo = errors.New("from_tier must differ from target_tier")
 )
 

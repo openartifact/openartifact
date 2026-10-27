@@ -183,7 +183,13 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 // immutable releases, and the quota is reserved before persist runs. persist
 // writes the blob and the row; it returns errChecksumMiss when a deploy finds
 // its source gone, which is a 404 (the client then uploads the bytes).
-func (h *HTTPHandler) commit(w http.ResponseWriter, r *http.Request, s *scope, file *models.ConanPackage, persist func(ctx context.Context) error) {
+func (h *HTTPHandler) commit(
+	w http.ResponseWriter,
+	r *http.Request,
+	s *scope,
+	file *models.ConanPackage,
+	persist func(ctx context.Context) error,
+) {
 	previous, err := h.DB.GetConanPackage(r.Context(), s.repoID, s.key(s.filename))
 	if err != nil {
 		h.fail(w, "failed to look up conan file", err, "path", s.resource()+"/"+s.filename)

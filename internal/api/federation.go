@@ -114,7 +114,14 @@ type FederationHandler struct {
 }
 
 // NewFederationHandler creates the handler.
-func NewFederationHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, store *federation.Store, serverEnabled bool, kick func()) *FederationHandler {
+func NewFederationHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	store *federation.Store,
+	serverEnabled bool,
+	kick func(),
+) *FederationHandler {
 	return &FederationHandler{db: db, log: log, evaluator: evaluator, store: store, serverEnabled: serverEnabled, kick: kick}
 }
 
@@ -326,7 +333,12 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 		}
 
 		if !h.supported(repo) {
-			writeError(w, http.StatusBadRequest, "validation_failed", "only hosted repositories of formats with federation support can be federated")
+			writeError(
+				w,
+				http.StatusBadRequest,
+				"validation_failed",
+				"only hosted repositories of formats with federation support can be federated",
+			)
 
 			return
 		}
@@ -588,7 +600,12 @@ func (h *FederationHandler) handleCreateToken(w http.ResponseWriter, r *http.Req
 	}
 
 	if !peerNameRe.MatchString(body.Name) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-63 characters: letters, digits, '.', '_' or '-', starting with a letter or digit")
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"validation_failed",
+			"name must be 1-63 characters: letters, digits, '.', '_' or '-', starting with a letter or digit",
+		)
 
 		return
 	}

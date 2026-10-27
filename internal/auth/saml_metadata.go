@@ -178,7 +178,12 @@ func (c *idpMetadataCache) metadata(ctx context.Context, cfg models.SAMLConfig, 
 	return nil, errNoIDPMetadata
 }
 
-func (c *idpMetadataCache) fromURL(ctx context.Context, metadataURL string, refresh time.Duration, log *logger.Logger) (*saml.EntityDescriptor, error) {
+func (c *idpMetadataCache) fromURL(
+	ctx context.Context,
+	metadataURL string,
+	refresh time.Duration,
+	log *logger.Logger,
+) (*saml.EntityDescriptor, error) {
 	e := c.entry(metadataURL)
 
 	for {
@@ -230,7 +235,12 @@ func (c *idpMetadataCache) fromURL(ctx context.Context, metadataURL string, refr
 }
 
 // refresh downloads and installs new metadata; the caller owns e.refreshing.
-func (c *idpMetadataCache) refresh(ctx context.Context, e *idpMetadataEntry, metadataURL string, log *logger.Logger) (*saml.EntityDescriptor, error) {
+func (c *idpMetadataCache) refresh(
+	ctx context.Context,
+	e *idpMetadataEntry,
+	metadataURL string,
+	log *logger.Logger,
+) (*saml.EntityDescriptor, error) {
 	// One caller's cancelled request must not fail the refresh everyone shares.
 	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), idpMetadataFetchTimeout)
 	defer cancel()

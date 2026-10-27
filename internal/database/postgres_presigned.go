@@ -215,7 +215,10 @@ func (p *PostgresDB) SetPresignedUploadMultipartID(ctx context.Context, id, mult
 		return nil
 	}
 
-	if err := p.q.SetPresignedUploadMultipartID(ctx, dbsqlc.SetPresignedUploadMultipartIDParams{ID: id, MultipartID: multipartID}); err != nil {
+	if err := p.q.SetPresignedUploadMultipartID(
+		ctx,
+		dbsqlc.SetPresignedUploadMultipartIDParams{ID: id, MultipartID: multipartID},
+	); err != nil {
 		return fmt.Errorf("failed to set presigned upload multipart id: %w", err)
 	}
 

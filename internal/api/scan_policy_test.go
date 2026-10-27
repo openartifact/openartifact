@@ -232,10 +232,17 @@ func TestVulnScan_FailureIsRecordedNotClean(t *testing.T) {
 		wantErrParts []string
 	}{
 		{
-			name:        "only scanner is missing",
-			body:        `{"artifact_id":"left-pad@1.0.0","package_name":"left-pad","package_version":"1.0.0","ecosystem":"npm","scanner":"trivy"}`,
-			backends:    map[string]vuln.ScannerBackend{"trivy": stubScanner{name: "trivy", err: &vuln.ScanError{Scanner: "trivy", Kind: vuln.FailureUnavailable, Err: errScannerBroke}}},
-			wantScanner: "trivy", wantStatus: "failed", wantFailed: []string{"trivy"},
+			name: "only scanner is missing",
+			body: `{"artifact_id":"left-pad@1.0.0","package_name":"left-pad","package_version":"1.0.0","ecosystem":"npm","scanner":"trivy"}`,
+			backends: map[string]vuln.ScannerBackend{
+				"trivy": stubScanner{
+					name: "trivy",
+					err:  &vuln.ScanError{Scanner: "trivy", Kind: vuln.FailureUnavailable, Err: errScannerBroke},
+				},
+			},
+			wantScanner:  "trivy",
+			wantStatus:   "failed",
+			wantFailed:   []string{"trivy"},
 			wantErrParts: []string{"trivy: scanner is not available on the server"},
 		},
 		{
@@ -249,30 +256,50 @@ func TestVulnScan_FailureIsRecordedNotClean(t *testing.T) {
 			name: "two scanners, one fails",
 			body: `{"artifact_id":"left-pad@1.0.0","package_name":"left-pad","package_version":"1.0.0","ecosystem":"npm","scanners":["trivy","osv"]}`,
 			backends: map[string]vuln.ScannerBackend{
-				"osv":   stubScanner{name: "osv", vulns: []models.Vulnerability{{ID: "GHSA-1", Severity: "HIGH"}}},
-				"trivy": stubScanner{name: "trivy", err: &vuln.ScanError{Scanner: "trivy", Kind: vuln.FailureTimeout, Err: errScannerBroke}},
+				"osv": stubScanner{name: "osv", vulns: []models.Vulnerability{{ID: "GHSA-1", Severity: "HIGH"}}},
+				"trivy": stubScanner{
+					name: "trivy",
+					err:  &vuln.ScanError{Scanner: "trivy", Kind: vuln.FailureTimeout, Err: errScannerBroke},
+				},
 			},
-			wantScanner: "osv,trivy", wantStatus: "partial", wantFailed: []string{"trivy"}, wantVulns: 1,
+			wantScanner:  "osv,trivy",
+			wantStatus:   "partial",
+			wantFailed:   []string{"trivy"},
+			wantVulns:    1,
 			wantErrParts: []string{"trivy: scan timed out"},
 		},
 		{
 			name: "two scanners both fail",
 			body: `{"artifact_id":"left-pad@1.0.0","package_name":"left-pad","package_version":"1.0.0","ecosystem":"npm","scanners":["grype","trivy"]}`,
 			backends: map[string]vuln.ScannerBackend{
-				"grype": stubScanner{name: "grype", err: &vuln.ScanError{Scanner: "grype", Kind: vuln.FailureExecution, Err: errScannerBroke}},
-				"trivy": stubScanner{name: "trivy", err: &vuln.ScanError{Scanner: "trivy", Kind: vuln.FailureInvalidOutput, Err: errScannerBroke}},
+				"grype": stubScanner{
+					name: "grype",
+					err:  &vuln.ScanError{Scanner: "grype", Kind: vuln.FailureExecution, Err: errScannerBroke},
+				},
+				"trivy": stubScanner{
+					name: "trivy",
+					err:  &vuln.ScanError{Scanner: "trivy", Kind: vuln.FailureInvalidOutput, Err: errScannerBroke},
+				},
 			},
-			wantScanner: "grype,trivy", wantStatus: "failed", wantFailed: []string{"grype", "trivy"},
+			wantScanner:  "grype,trivy",
+			wantStatus:   "failed",
+			wantFailed:   []string{"grype", "trivy"},
 			wantErrParts: []string{"grype: scanner exited with an error", "trivy: scanner output could not be parsed"},
 		},
 		{
 			name: "every scanner works",
 			body: `{"artifact_id":"left-pad@1.0.0","package_name":"left-pad","package_version":"1.0.0","ecosystem":"npm","scanners":["osv","grype"]}`,
 			backends: map[string]vuln.ScannerBackend{
-				"osv":   stubScanner{name: "osv", vulns: []models.Vulnerability{{ID: "GHSA-1", Severity: "CRITICAL"}}},
-				"grype": stubScanner{name: "grype", vulns: []models.Vulnerability{{ID: "GHSA-1", Severity: "CRITICAL"}, {ID: "CVE-2", Severity: "LOW"}}},
+				"osv": stubScanner{name: "osv", vulns: []models.Vulnerability{{ID: "GHSA-1", Severity: "CRITICAL"}}},
+				"grype": stubScanner{
+					name:  "grype",
+					vulns: []models.Vulnerability{{ID: "GHSA-1", Severity: "CRITICAL"}, {ID: "CVE-2", Severity: "LOW"}},
+				},
 			},
-			wantScanner: "grype,osv", wantStatus: "completed", wantFailed: []string{}, wantVulns: 2,
+			wantScanner: "grype,osv",
+			wantStatus:  "completed",
+			wantFailed:  []string{},
+			wantVulns:   2,
 		},
 	}
 
@@ -341,10 +368,26 @@ func TestVulnScan_ScannersValidation(t *testing.T) {
 		body string
 		want int
 	}{
-		{"unknown scanner", `{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanners":["osv","nessus"]}`, http.StatusBadRequest},
-		{"unknown single scanner", `{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanner":"nessus"}`, http.StatusBadRequest},
-		{"empty scanner name", `{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanners":[""]}`, http.StatusBadRequest},
-		{"scanner and scanners merge, duplicates collapse", `{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanner":"OSV","scanners":["osv","trivy"]}`, http.StatusOK},
+		{
+			"unknown scanner",
+			`{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanners":["osv","nessus"]}`,
+			http.StatusBadRequest,
+		},
+		{
+			"unknown single scanner",
+			`{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanner":"nessus"}`,
+			http.StatusBadRequest,
+		},
+		{
+			"empty scanner name",
+			`{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanners":[""]}`,
+			http.StatusBadRequest,
+		},
+		{
+			"scanner and scanners merge, duplicates collapse",
+			`{"artifact_id":"a","package_name":"p","package_version":"1","ecosystem":"npm","scanner":"OSV","scanners":["osv","trivy"]}`,
+			http.StatusOK,
+		},
 	}
 
 	for _, tt := range tests {
@@ -506,11 +549,32 @@ func TestLicenseQuarantine_Rejections(t *testing.T) {
 		setErr    error
 		want      int
 	}{
-		{"anonymous cannot approve", &auth.Principal{IsAnonymous: true}, quarantineScanID, `{"quarantined":false}`, nil, http.StatusForbidden},
+		{
+			"anonymous cannot approve",
+			&auth.Principal{IsAnonymous: true},
+			quarantineScanID,
+			`{"quarantined":false}`,
+			nil,
+			http.StatusForbidden,
+		},
 		{"bad JSON", &auth.Principal{Username: "admin", IsLegacy: true}, quarantineScanID, `{`, nil, http.StatusBadRequest},
 		{"id is not a UUID", &auth.Principal{Username: "admin", IsLegacy: true}, "nope", `{"quarantined":false}`, nil, http.StatusNotFound},
-		{"unknown scan", &auth.Principal{Username: "admin", IsLegacy: true}, "77777777-7777-7777-7777-777777777777", `{"quarantined":false}`, nil, http.StatusNotFound},
-		{"database failure is not leaked", &auth.Principal{Username: "admin", IsLegacy: true}, quarantineScanID, `{"quarantined":false}`, errScannerBroke, http.StatusInternalServerError},
+		{
+			"unknown scan",
+			&auth.Principal{Username: "admin", IsLegacy: true},
+			"77777777-7777-7777-7777-777777777777",
+			`{"quarantined":false}`,
+			nil,
+			http.StatusNotFound,
+		},
+		{
+			"database failure is not leaked",
+			&auth.Principal{Username: "admin", IsLegacy: true},
+			quarantineScanID,
+			`{"quarantined":false}`,
+			errScannerBroke,
+			http.StatusInternalServerError,
+		},
 	}
 
 	for _, tt := range tests {
@@ -549,12 +613,54 @@ func TestProperties_LicenseKeyQuarantines(t *testing.T) {
 		wantQuarantined bool
 		wantScanned     bool
 	}{
-		{"PUT license under block policy", http.MethodPut, `{"properties":{"license":"GPL-3.0"}}`, policytest.Policy("block", nil, []string{"GPL-3.0"}), true, true},
-		{"PATCH license under block policy", http.MethodPatch, `{"license":"GPL-3.0-only"}`, policytest.Policy("block", nil, []string{"GPL-3.0"}), true, true},
-		{"PATCH license under warn policy", http.MethodPatch, `{"license":"GPL-3.0"}`, policytest.Policy("warn", nil, []string{"GPL-3.0"}), false, true},
-		{"PATCH license under allow policy", http.MethodPatch, `{"license":"GPL-3.0"}`, policytest.Policy("allow", nil, []string{"GPL-3.0"}), false, true},
-		{"PATCH harmless license under block policy", http.MethodPatch, `{"license":"MIT"}`, policytest.Policy("block", nil, []string{"GPL-3.0"}), false, true},
-		{"PATCH unrelated property is not a license event", http.MethodPatch, `{"team":"blue"}`, policytest.Policy("block", nil, []string{"GPL-3.0"}), false, false},
+		{
+			"PUT license under block policy",
+			http.MethodPut,
+			`{"properties":{"license":"GPL-3.0"}}`,
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			true,
+			true,
+		},
+		{
+			"PATCH license under block policy",
+			http.MethodPatch,
+			`{"license":"GPL-3.0-only"}`,
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			true,
+			true,
+		},
+		{
+			"PATCH license under warn policy",
+			http.MethodPatch,
+			`{"license":"GPL-3.0"}`,
+			policytest.Policy("warn", nil, []string{"GPL-3.0"}),
+			false,
+			true,
+		},
+		{
+			"PATCH license under allow policy",
+			http.MethodPatch,
+			`{"license":"GPL-3.0"}`,
+			policytest.Policy("allow", nil, []string{"GPL-3.0"}),
+			false,
+			true,
+		},
+		{
+			"PATCH harmless license under block policy",
+			http.MethodPatch,
+			`{"license":"MIT"}`,
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			false,
+			true,
+		},
+		{
+			"PATCH unrelated property is not a license event",
+			http.MethodPatch,
+			`{"team":"blue"}`,
+			policytest.Policy("block", nil, []string{"GPL-3.0"}),
+			false,
+			false,
+		},
 	}
 
 	for _, tt := range tests {

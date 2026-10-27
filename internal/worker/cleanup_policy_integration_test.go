@@ -291,7 +291,10 @@ func TestCleanupPolicyRefcountsSharedBlobs(t *testing.T) {
 	}
 
 	// Now the shared blob's rows go, one repository at a time.
-	s.exec(`UPDATE maven_artifacts SET artifact_id_coord = 'x', version = '3', created_at = now() - interval '30 days' WHERE id = $1`, sharedB)
+	s.exec(
+		`UPDATE maven_artifacts SET artifact_id_coord = 'x', version = '3', created_at = now() - interval '30 days' WHERE id = $1`,
+		sharedB,
+	)
 
 	if _, err := s.w.runPolicy(ctx, s.policy(repoB, nil, new(1), "")); err != nil {
 		t.Fatal(err)
@@ -329,14 +332,22 @@ func TestCleanupPolicyProtections(t *testing.T) {
 	bundled, bundledSHA = s.mvn(repoID, mvnRow{artifact: "bundled", version: "1.0-SNAPSHOT", ext: "jar", ageDays: 90})
 	quarantined, _ = s.mvn(repoID, mvnRow{artifact: "quar", version: "1.0-SNAPSHOT", ext: "jar", ageDays: 90})
 	released, _ = s.mvn(repoID, mvnRow{artifact: "rel", version: "1.0", ext: "jar", ageDays: 90})
-	snapOld, _ = s.mvn(repoID, mvnRow{artifact: "snap", version: "2.0-SNAPSHOT", ext: "jar", ageDays: 90, snapTS: "20200101.000000", snapBuild: 1})
-	snapNew, _ = s.mvn(repoID, mvnRow{artifact: "snap", version: "2.0-SNAPSHOT", ext: "jar", ageDays: 80, snapTS: "20200102.000000", snapBuild: 2})
+	snapOld, _ = s.mvn(
+		repoID,
+		mvnRow{artifact: "snap", version: "2.0-SNAPSHOT", ext: "jar", ageDays: 90, snapTS: "20200101.000000", snapBuild: 1},
+	)
+	snapNew, _ = s.mvn(
+		repoID,
+		mvnRow{artifact: "snap", version: "2.0-SNAPSHOT", ext: "jar", ageDays: 80, snapTS: "20200102.000000", snapBuild: 2},
+	)
 	plain, _ = s.mvn(repoID, mvnRow{artifact: "plain", version: "1.0-SNAPSHOT", ext: "jar", ageDays: 90})
 
 	s.exec(`UPDATE repositories SET immutable_releases = true WHERE id = $1`, repoID)
 
 	var bundleID string
-	if err := s.pg.GetDB().QueryRowContext(ctx, `INSERT INTO release_bundles (name, version) VALUES ('b', '1') RETURNING id`).Scan(&bundleID); err != nil {
+	if err := s.pg.GetDB().
+		QueryRowContext(ctx, `INSERT INTO release_bundles (name, version) VALUES ('b', '1') RETURNING id`).
+		Scan(&bundleID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -345,12 +356,14 @@ func TestCleanupPolicyProtections(t *testing.T) {
 
 	var refID, jobID string
 	if err := s.pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, $2, 'maven') RETURNING id`, repoID, quarantined).Scan(&refID); err != nil {
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, $2, 'maven') RETURNING id`, repoID, quarantined).
+		Scan(&refID); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := s.pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status) VALUES ($1, 'vuln', 'osv', 'completed') RETURNING id`, refID).Scan(&jobID); err != nil {
+		`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status) VALUES ($1, 'vuln', 'osv', 'completed') RETURNING id`, refID).
+		Scan(&jobID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -405,7 +418,14 @@ func TestCleanupPolicyPreviewIsBounded(t *testing.T) {
 
 	prev := s.preview(s.policy(repoID, new(1), nil, ""))
 	if prev.Rows != total-1 || len(prev.Items) != CleanupPreviewLimit || !prev.Truncated {
-		t.Fatalf("preview rows=%d items=%d truncated=%v; want %d, %d, true", prev.Rows, len(prev.Items), prev.Truncated, total-1, CleanupPreviewLimit)
+		t.Fatalf(
+			"preview rows=%d items=%d truncated=%v; want %d, %d, true",
+			prev.Rows,
+			len(prev.Items),
+			prev.Truncated,
+			total-1,
+			CleanupPreviewLimit,
+		)
 	}
 
 	prev = s.preview(s.policy(repoID, new(total), nil, ""))

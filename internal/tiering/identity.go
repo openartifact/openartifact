@@ -47,7 +47,12 @@ func locate(cfg storage.StorageConfig) location {
 	case "azure":
 		account := strings.ToLower(cfg.AzureAccountName)
 
-		return location{key: "azure|" + normalizeEndpoint(cfg.AzureEndpoint, account+".blob.core.windows.net") + "|" + account + "|" + cfg.AzureContainerName}
+		return location{
+			key: "azure|" + normalizeEndpoint(
+				cfg.AzureEndpoint,
+				account+".blob.core.windows.net",
+			) + "|" + account + "|" + cfg.AzureContainerName,
+		}
 	case "oci":
 		return location{key: "oci|" + normalizeEndpoint(cfg.Endpoint, "") + "|" + cfg.Bucket}
 	default:

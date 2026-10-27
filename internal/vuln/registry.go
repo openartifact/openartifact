@@ -271,9 +271,12 @@ func (r *Registry) LogStatus() {
 
 		switch {
 		case !s.Available && s.InstallState == InstallStateInstalling:
-			r.log.Infow("vulnerability scanner is installed by the server (install: auto): an installed copy is reused, else the pinned release is downloaded",
-				"scanner", s.Name,
-				"offline", r.opts.Offline,
+			r.log.Infow(
+				"vulnerability scanner is installed by the server (install: auto): an installed copy is reused, else the pinned release is downloaded",
+				"scanner",
+				s.Name,
+				"offline",
+				r.opts.Offline,
 			)
 		case !s.Available:
 			r.log.Warnw("vulnerability scanner not available: scans selecting it will fail",

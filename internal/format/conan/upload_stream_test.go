@@ -28,7 +28,8 @@ func TestUploadLargeFileDigests(t *testing.T) {
 	row := e.file(rrev1, "conanfile.py")
 	sum := sha256.Sum256([]byte(body))
 
-	if row.SHA256 != hex.EncodeToString(sum[:]) || row.SHA1 != sha1Hex(body) || row.MD5 != md5Hex(body) || row.SizeBytes != int64(len(body)) {
+	if row.SHA256 != hex.EncodeToString(sum[:]) || row.SHA1 != sha1Hex(body) || row.MD5 != md5Hex(body) ||
+		row.SizeBytes != int64(len(body)) {
 		t.Errorf("row = %+v, want the digests of the %d-byte body", row, len(body))
 	}
 

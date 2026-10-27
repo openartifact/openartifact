@@ -44,7 +44,8 @@ func (f *authPurgeFixture) serviceUser(name string) string {
 
 	var id string
 	if err := f.pg.GetDB().QueryRowContext(context.Background(),
-		`INSERT INTO auth_users (username, kind, project_id) VALUES ($1, 'service', $2) RETURNING id`, name, trashTestOrgID).Scan(&id); err != nil {
+		`INSERT INTO auth_users (username, kind, project_id) VALUES ($1, 'service', $2) RETURNING id`, name, trashTestOrgID).
+		Scan(&id); err != nil {
 		f.t.Fatal(err)
 	}
 

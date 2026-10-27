@@ -65,7 +65,10 @@ func TestPostgresDeleteUser_RemovesEverythingAndSSOReprovisions(t *testing.T) {
 		t.Fatalf("provision: %v", err)
 	}
 
-	if _, err := pg.CreateSession(ctx, &models.Session{UserID: first.ID, TokenHash: "sh", ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+	if _, err := pg.CreateSession(
+		ctx,
+		&models.Session{UserID: first.ID, TokenHash: "sh", ExpiresAt: time.Now().Add(time.Hour)},
+	); err != nil {
 		t.Fatal(err)
 	}
 

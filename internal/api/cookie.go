@@ -39,30 +39,36 @@ func isSecureRequest(r *http.Request) bool {
 // script), Secure whenever the request arrived over TLS, SameSite=Lax and
 // scoped to the whole site.
 func setSessionCookie(w http.ResponseWriter, secure bool, value string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme or https base URL so plain-HTTP dev setups still work
-		Name:     auth.SessionCookieName,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-		// Absolute lifetime: the sliding idle expiry is enforced server-side.
-		MaxAge: int(auth.SessionAbsoluteLifetime().Seconds()),
-	})
+	http.SetCookie(
+		w,
+		&http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme or https base URL so plain-HTTP dev setups still work
+			Name:     auth.SessionCookieName,
+			Value:    value,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+			// Absolute lifetime: the sliding idle expiry is enforced server-side.
+			MaxAge: int(auth.SessionAbsoluteLifetime().Seconds()),
+		},
+	)
 }
 
 // clearSessionCookie expires the session cookie using the same attributes it
 // was set with, so browsers match and drop it.
 func clearSessionCookie(w http.ResponseWriter, secure bool) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme or https base URL so plain-HTTP dev setups still work
-		Name:     auth.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
+	http.SetCookie(
+		w,
+		&http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme or https base URL so plain-HTTP dev setups still work
+			Name:     auth.SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		},
+	)
 }
 
 func setCSRFCookie(w http.ResponseWriter, secure bool, token string) {
@@ -97,28 +103,34 @@ func isSecureContext(r *http.Request, baseURL string) bool {
 // setSSOStateCookie issues a short-lived, HttpOnly, SameSite=Lax cookie used to
 // carry SSO flow state (PKCE verifier, state, nonce, post-login redirect).
 func setSSOStateCookie(w http.ResponseWriter, r *http.Request, baseURL, name, value string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure follows TLS / https base URL so plain-HTTP dev setups still work
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureContext(r, baseURL),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   300,
-	})
+	http.SetCookie(
+		w,
+		&http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure follows TLS / https base URL so plain-HTTP dev setups still work
+			Name:     name,
+			Value:    value,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   isSecureContext(r, baseURL),
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   300,
+		},
+	)
 }
 
 // clearSSOStateCookie expires a cookie set by setSSOStateCookie.
 func clearSSOStateCookie(w http.ResponseWriter, r *http.Request, baseURL, name string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure follows TLS / https base URL so plain-HTTP dev setups still work
-		Name:     name,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureContext(r, baseURL),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
+	http.SetCookie(
+		w,
+		&http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure follows TLS / https base URL so plain-HTTP dev setups still work
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   isSecureContext(r, baseURL),
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		},
+	)
 }
 
 // safeRedirectPath returns p when it is a same-origin relative path and "/"

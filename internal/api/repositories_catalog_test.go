@@ -231,7 +231,8 @@ func TestRepositoriesListStatsShapeAndNoNPlusOne(t *testing.T) {
 		t.Fatalf("beta stats %+v", beta.Stats)
 	}
 
-	if gamma := body.Repositories[2]; gamma.Stats.Quota.LimitBytes != nil || gamma.Stats.LastPublishedAt != nil || gamma.Stats.Security.ScannedAt != nil {
+	if gamma := body.Repositories[2]; gamma.Stats.Quota.LimitBytes != nil || gamma.Stats.LastPublishedAt != nil ||
+		gamma.Stats.Security.ScannedAt != nil {
 		t.Fatalf("unlimited, never published, unscanned repository must omit those fields: %+v", gamma.Stats)
 	}
 
@@ -254,7 +255,15 @@ func TestPackagesRollup(t *testing.T) {
 	db := &catalogDB{
 		repo: &models.Repository{ID: "r1", Name: "pkgs", Format: "npm"},
 		rollup: []models.PackageRollup{
-			{Format: "npm", Name: "@acme/widget", LatestVersion: "2.0.0", VersionCount: 4, SizeBytes: 55, UpdatedAt: scanned, LatestIDs: []string{"a", "b"}},
+			{
+				Format:        "npm",
+				Name:          "@acme/widget",
+				LatestVersion: "2.0.0",
+				VersionCount:  4,
+				SizeBytes:     55,
+				UpdatedAt:     scanned,
+				LatestIDs:     []string{"a", "b"},
+			},
 			{Format: "npm", Name: "plain", LatestVersion: "1.0.0", VersionCount: 1, LatestIDs: []string{"c"}},
 		},
 		security: map[string]models.ArtifactSecurity{
@@ -484,7 +493,11 @@ func TestPackageDetail(t *testing.T) {
 
 func TestPackageDetailReadPermission(t *testing.T) {
 	db := &detailDB{repo: &models.Repository{ID: "r1", Name: "pkgs", Format: "npm"}}
-	h := newCatalogHandler(t, &db.catalogDB, []*models.PermissionTarget{{RepositoryFilter: `other`, PathPattern: `.*`, Actions: []string{"read"}}})
+	h := newCatalogHandler(
+		t,
+		&db.catalogDB,
+		[]*models.PermissionTarget{{RepositoryFilter: `other`, PathPattern: `.*`, Actions: []string{"read"}}},
+	)
 	h.db = db
 
 	router := chi.NewRouter()

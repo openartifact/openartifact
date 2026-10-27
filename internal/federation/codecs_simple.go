@@ -109,7 +109,12 @@ func helmSpec() tableSpec {
 		backfillRef: "federation_blob_sha(t.blob_id)",
 		blobCols:    []string{"blob_id"},
 		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{Name: r.Str("name"), Version: r.Str("version"), Path: r.Str("name") + "-" + r.Str("version") + ".tgz", SHA256: r.Str("blob_id")}
+			return &ArtifactInfo{
+				Name:    r.Str("name"),
+				Version: r.Str("version"),
+				Path:    r.Str("name") + "-" + r.Str("version") + ".tgz",
+				SHA256:  r.Str("blob_id"),
+			}
 		},
 	}
 }
@@ -125,7 +130,12 @@ func cargoSpec() tableSpec {
 		blobCols:    []string{"blob_id"},
 		exclude:     []string{"download_count"},
 		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{Name: r.Str("name"), Version: r.Str("version"), Path: r.Str("name") + "-" + r.Str("version") + ".crate", SHA256: r.Str("blob_id")}
+			return &ArtifactInfo{
+				Name:    r.Str("name"),
+				Version: r.Str("version"),
+				Path:    r.Str("name") + "-" + r.Str("version") + ".crate",
+				SHA256:  r.Str("blob_id"),
+			}
 		},
 	}
 }
@@ -141,7 +151,12 @@ func nugetSpec() tableSpec {
 		blobCols:    []string{"blob_id"},
 		exclude:     []string{"download_count"},
 		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{Name: r.Str("package_id"), Version: r.Str("version"), Path: r.Str("package_id") + "." + r.Str("version") + ".nupkg", SHA256: r.Str("blob_id")}
+			return &ArtifactInfo{
+				Name:    r.Str("package_id"),
+				Version: r.Str("version"),
+				Path:    r.Str("package_id") + "." + r.Str("version") + ".nupkg",
+				SHA256:  r.Str("blob_id"),
+			}
 		},
 	}
 }
@@ -156,7 +171,12 @@ func goSpec() tableSpec {
 		backfillRef: "federation_blob_sha(COALESCE(t.zip_blob_id, t.mod_blob_id))",
 		blobCols:    []string{"zip_blob_id", "mod_blob_id"},
 		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{Name: r.Str("module_path"), Version: r.Str("version"), Path: r.Str("module_path") + "/@v/" + r.Str("version") + ".zip", SHA256: r.Str("zip_blob_id")}
+			return &ArtifactInfo{
+				Name:    r.Str("module_path"),
+				Version: r.Str("version"),
+				Path:    r.Str("module_path") + "/@v/" + r.Str("version") + ".zip",
+				SHA256:  r.Str("zip_blob_id"),
+			}
 		},
 	}
 }

@@ -96,13 +96,16 @@ func parseUploadArgs(args []string, errorHandling flag.ErrorHandling, output io.
 	fs.StringVar(&opts.remotePath, "path", "", "Artifact path in the repository (--presigned; default: the file name)")
 	fs.StringVar(&opts.contentType, "content-type", "", "Content type (--presigned; default: detected by the server)")
 	fs.BoolVar(&opts.multipart, "multipart", false, "Upload in parts at any size (--presigned; automatic above 5 GiB)")
-	fs.Func("part-size", "Part size such as 128M, 1G or a byte count, 5M to 4000M (--presigned; implies --multipart; default: chosen by the server)",
+	fs.Func(
+		"part-size",
+		"Part size such as 128M, 1G or a byte count, 5M to 4000M (--presigned; implies --multipart; default: chosen by the server)",
 		func(s string) error {
 			n, err := parsePartSize(s)
 			opts.partSize = n
 
 			return err
-		})
+		},
+	)
 	fs.IntVar(&opts.parallel, "parallel", defaultUploadParallel, "Parts uploaded at the same time, 1 to 16 (--presigned, multipart)")
 
 	var positional []string
@@ -173,7 +176,14 @@ func artifactUploadPresigned(client *Client, opts uploadOptions) {
 		dief("%v", err)
 	}
 
-	fmt.Printf("Uploaded '%s' to '%s' as '%s' (%d bytes, sha256 %v).\n", filepath.Base(opts.filePath), opts.repo, res.remotePath, res.size, res.sha256)
+	fmt.Printf(
+		"Uploaded '%s' to '%s' as '%s' (%d bytes, sha256 %v).\n",
+		filepath.Base(opts.filePath),
+		opts.repo,
+		res.remotePath,
+		res.size,
+		res.sha256,
+	)
 }
 
 // presignedUploader uploads files straight to the object store. The knobs are

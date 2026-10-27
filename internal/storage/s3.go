@@ -209,7 +209,14 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 // seekable file whose sha256 was verified, so that digest is used as the
 // signed x-amz-content-sha256 payload hash instead: the object store still
 // checks the received bytes against it, with no extra pass over the body.
-func (s *S3BlobStore) putSingle(ctx context.Context, key string, spool io.ReadSeeker, size int64, sha string, metadata map[string]string) error {
+func (s *S3BlobStore) putSingle(
+	ctx context.Context,
+	key string,
+	spool io.ReadSeeker,
+	size int64,
+	sha string,
+	metadata map[string]string,
+) error {
 	_, err := s.client.PutObject(v4.SetPayloadHash(ctx, sha), &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
 		Key:           aws.String(key),

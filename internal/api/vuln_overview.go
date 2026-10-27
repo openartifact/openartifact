@@ -346,7 +346,13 @@ func (h *VulnHandler) handleExportOverview(w http.ResponseWriter, r *http.Reques
 }
 
 // writeVulnExport renders items in format; asJSON builds the JSON body.
-func (h *VulnHandler) writeVulnExport(w http.ResponseWriter, format, filename string, items []scanexport.VulnItem, truncated bool, asJSON func() any) {
+func (h *VulnHandler) writeVulnExport(
+	w http.ResponseWriter,
+	format, filename string,
+	items []scanexport.VulnItem,
+	truncated bool,
+	asJSON func() any,
+) {
 	switch format {
 	case exportFormatSARIF:
 		log, cut := scanexport.VulnSARIF(items)

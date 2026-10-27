@@ -84,7 +84,12 @@ func TestUploadLicensePolicy(t *testing.T) {
 func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
 	db := newHelmDB()
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
-	h := NewHTTPHandler(formattest.NewLogger(t), (&policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}}), formattest.NewBlobStore(), "http://localhost")
+	h := NewHTTPHandler(
+		formattest.NewLogger(t),
+		(&policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}}),
+		formattest.NewBlobStore(),
+		"http://localhost",
+	)
 
 	if code, body := uploadWithPolicy(h, createHelmChart(t, sampleChartYAML)); code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", code, body)

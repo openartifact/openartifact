@@ -155,7 +155,11 @@ func expandPaths(opts LoadOptions) ([]manifestFile, error) {
 	}
 
 	if len(files) == 0 && len(opts.Paths) > 0 {
-		return nil, fmt.Errorf("%w in %s (only *.yaml and *.yml are read; add -R to descend into subdirectories)", errNoManifests, strings.Join(opts.Paths, ", "))
+		return nil, fmt.Errorf(
+			"%w in %s (only *.yaml and *.yml are read; add -R to descend into subdirectories)",
+			errNoManifests,
+			strings.Join(opts.Paths, ", "),
+		)
 	}
 
 	if len(files) == 0 {

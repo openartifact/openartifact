@@ -83,8 +83,12 @@ func TestMetadataStamps(t *testing.T) {
 		other := stamp("noarch")()
 
 		stampMoves(t, "package on platform", stamp("linux-64"), func() {
-			s.exec(`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-			        VALUES ($1,'numpy','1.0','h1','linux-64','{}',$2,'.conda',0,'m',1,'{}')`, s.repo, s.blob(5))
+			s.exec(
+				`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
+			        VALUES ($1,'numpy','1.0','h1','linux-64','{}',$2,'.conda',0,'m',1,'{}')`,
+				s.repo,
+				s.blob(5),
+			)
 		})
 
 		if got := stamp("noarch")(); got != other {
@@ -104,7 +108,11 @@ func TestMetadataStamps(t *testing.T) {
 		}
 
 		stampMoves(t, "publish", stamp, func() {
-			s.exec(`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake','1.0','ruby',$2,5)`, s.repo, s.blob(5))
+			s.exec(
+				`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake','1.0','ruby',$2,5)`,
+				s.repo,
+				s.blob(5),
+			)
 		})
 		stampMoves(t, "yank", stamp, func() {
 			s.exec(`UPDATE rubygems_gems SET yanked = true WHERE repository_id = $1`, s.repo)
@@ -132,7 +140,12 @@ func TestMetadataStamps(t *testing.T) {
 		}
 
 		insert := func(version string) {
-			s.exec(`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`, s.repo, version, s.blob(5))
+			s.exec(
+				`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`,
+				s.repo,
+				version,
+				s.blob(5),
+			)
 		}
 
 		stampMoves(t, "publish (name matches case-insensitively)", stamp, func() { insert("1.0.0") })

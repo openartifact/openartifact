@@ -114,7 +114,14 @@ func (s *Service) ServeOCI(w http.ResponseWriter, r *http.Request, repo *models.
 	}
 }
 
-func (s *Service) serveOCIManifest(w http.ResponseWriter, r *http.Request, repo *models.Repository, req ocipath.Request, image string, up ociUpstream) {
+func (s *Service) serveOCIManifest(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	req ocipath.Request,
+	image string,
+	up ociUpstream,
+) {
 	ref := req.Ref
 	if !digestRE.MatchString(ref) && !tagRE.MatchString(ref) {
 		ocipath.WriteError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest not found")
@@ -129,7 +136,14 @@ func (s *Service) serveOCIManifest(w http.ResponseWriter, r *http.Request, repo 
 	s.serveOCIEntry(w, r, repo, req, key, fetch)
 }
 
-func (s *Service) serveOCIBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, req ocipath.Request, image string, up ociUpstream) {
+func (s *Service) serveOCIBlob(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	req ocipath.Request,
+	image string,
+	up ociUpstream,
+) {
 	digest := req.Ref
 	if !digestRE.MatchString(digest) {
 		ocipath.WriteError(w, http.StatusBadRequest, "DIGEST_INVALID", "invalid digest")
@@ -147,7 +161,14 @@ func (s *Service) serveOCIBlob(w http.ResponseWriter, r *http.Request, repo *mod
 // serveOCIEntry resolves key (fetching on a miss or an expired tag) and writes
 // the manifest or blob. A cache row whose blob disappeared from storage is
 // dropped and fetched once more.
-func (s *Service) serveOCIEntry(w http.ResponseWriter, r *http.Request, repo *models.Repository, req ocipath.Request, key string, fetch fetchFunc) {
+func (s *Service) serveOCIEntry(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	req ocipath.Request,
+	key string,
+	fetch fetchFunc,
+) {
 	var (
 		res *resolution
 		rc  io.ReadCloser
@@ -169,7 +190,12 @@ func (s *Service) serveOCIEntry(w http.ResponseWriter, r *http.Request, repo *mo
 			s.renewDigestEntry(r.Context(), repo, entry)
 		}
 
-		if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID, req.Name+"/"+kindSegment(req.Kind)+"/"+req.Ref, req.Ref, r.URL.Path)...) {
+		if quarantine.Enforce(
+			w,
+			r,
+			s.db,
+			repo.ID,
+			quarantine.PathKeys(key, entry.ID, req.Name+"/"+kindSegment(req.Kind)+"/"+req.Ref, req.Ref, r.URL.Path)...) {
 			return
 		}
 
@@ -310,7 +336,12 @@ func (s *Service) writeOCIResolveError(w http.ResponseWriter, kind ocipath.Kind,
 // fetchOCIManifest pulls manifests/<ref>. A tag that is already cached (and
 // merely expired) is revalidated with a HEAD first: when the upstream still
 // reports the cached digest only the expiry moves and no body is transferred.
-func (s *Service) fetchOCIManifest(ctx context.Context, repo *models.Repository, up ociUpstream, ref, key string) (*models.ProxyCacheEntry, error) {
+func (s *Service) fetchOCIManifest(
+	ctx context.Context,
+	repo *models.Repository,
+	up ociUpstream,
+	ref, key string,
+) (*models.ProxyCacheEntry, error) {
 	target := up.base + "/v2/" + up.name + "/manifests/" + ref
 
 	if !digestRE.MatchString(ref) {
@@ -339,7 +370,13 @@ func (s *Service) fetchOCIManifest(ctx context.Context, repo *models.Repository,
 // revalidateOCITag HEADs the tag. It returns the refreshed entry when the
 // upstream digest still matches the cached copy, (nil, nil) when a full fetch
 // is needed, and an error when the upstream says the tag is gone or is down.
-func (s *Service) revalidateOCITag(ctx context.Context, repo *models.Repository, up ociUpstream, target, key string, prior *models.ProxyCacheEntry) (*models.ProxyCacheEntry, error) {
+func (s *Service) revalidateOCITag(
+	ctx context.Context,
+	repo *models.Repository,
+	up ociUpstream,
+	target, key string,
+	prior *models.ProxyCacheEntry,
+) (*models.ProxyCacheEntry, error) {
 	resp, err := s.ociDo(ctx, repo, up, http.MethodHead, target, ociManifestAccept)
 	if err != nil {
 		return nil, err
@@ -372,7 +409,12 @@ func (s *Service) revalidateOCITag(ctx context.Context, repo *models.Repository,
 }
 
 // fetchOCIBlob pulls blobs/<digest>.
-func (s *Service) fetchOCIBlob(ctx context.Context, repo *models.Repository, up ociUpstream, digest, key string) (*models.ProxyCacheEntry, error) {
+func (s *Service) fetchOCIBlob(
+	ctx context.Context,
+	repo *models.Repository,
+	up ociUpstream,
+	digest, key string,
+) (*models.ProxyCacheEntry, error) {
 	target := up.base + "/v2/" + up.name + "/blobs/" + digest
 
 	return s.getOCI(ctx, repo, up, target, key, "", ociSpec{digest: digest, limit: s.maxBody})
@@ -382,7 +424,13 @@ func (s *Service) fetchOCIBlob(ctx context.Context, repo *models.Repository, up 
 // of the upstream-download gate (see Service.acquireFetch) from the request to
 // the end of the store; the tag-revalidation HEAD before it carries no body and
 // is not counted.
-func (s *Service) getOCI(ctx context.Context, repo *models.Repository, up ociUpstream, target, key, accept string, spec ociSpec) (*models.ProxyCacheEntry, error) {
+func (s *Service) getOCI(
+	ctx context.Context,
+	repo *models.Repository,
+	up ociUpstream,
+	target, key, accept string,
+	spec ociSpec,
+) (*models.ProxyCacheEntry, error) {
 	if aerr := s.acquireFetch(ctx, repo, key); aerr != nil {
 		return nil, aerr
 	}
@@ -422,7 +470,13 @@ func (s *Service) ociStatusError(ctx context.Context, repo *models.Repository, k
 
 // storeOCI spools the response, verifies its digest, and stores the blob and
 // cache entry under the blob lock. Nothing is cached when verification fails.
-func (s *Service) storeOCI(ctx context.Context, repo *models.Repository, key string, resp *http.Response, spec ociSpec) (*models.ProxyCacheEntry, error) {
+func (s *Service) storeOCI(
+	ctx context.Context,
+	repo *models.Repository,
+	key string,
+	resp *http.Response,
+	spec ociSpec,
+) (*models.ProxyCacheEntry, error) {
 	if resp.ContentLength > spec.limit {
 		s.log.Warnw("docker proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
 		return nil, errUpstream

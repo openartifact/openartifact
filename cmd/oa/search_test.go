@@ -75,7 +75,8 @@ func TestSearchPrintsRepositoriesBeforePackages(t *testing.T) {
 	}
 
 	js := captureStdout(t, func() { handleSearch([]string{"ui-kit"}, client, "json") })
-	if !strings.Contains(js, `"repositories"`) || !strings.Contains(js, `"results"`) || strings.Index(js, `"repositories"`) > strings.Index(js, `"results"`) {
+	if !strings.Contains(js, `"repositories"`) || !strings.Contains(js, `"results"`) ||
+		strings.Index(js, `"repositories"`) > strings.Index(js, `"results"`) {
 		t.Fatalf("json output: %s", js)
 	}
 }

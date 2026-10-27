@@ -81,7 +81,12 @@ func generateSelfSignedCert() (*rsa.PrivateKey, *x509.Certificate, error) {
 // and OPENARTIFACT_SAML_SP_KEY win when both are set. Otherwise a self-signed
 // RSA-2048 pair is created once and stored in system_settings, so restarts and
 // every replica present the same certificate to the IdP.
-func loadOrGenerateSAMLKeypair(ctx context.Context, store SettingsStore, cfg *config.Config, log *logger.Logger) (*rsa.PrivateKey, *x509.Certificate, error) {
+func loadOrGenerateSAMLKeypair(
+	ctx context.Context,
+	store SettingsStore,
+	cfg *config.Config,
+	log *logger.Logger,
+) (*rsa.PrivateKey, *x509.Certificate, error) {
 	if cfg != nil && cfg.Auth.SAMLSPCertPEM != "" && cfg.Auth.SAMLSPKeyPEM != "" {
 		key, cert, err := parseSAMLKeypair([]byte(cfg.Auth.SAMLSPKeyPEM), []byte(cfg.Auth.SAMLSPCertPEM))
 		if err != nil {
@@ -113,8 +118,11 @@ func loadOrGenerateSAMLKeypair(ctx context.Context, store SettingsStore, cfg *co
 	}
 
 	if log != nil {
-		log.Infow("SAML SP keypair not configured via environment variables; using the keypair stored in the database (shared by all replicas)",
-			"cert_subject", cert.Subject.String())
+		log.Infow(
+			"SAML SP keypair not configured via environment variables; using the keypair stored in the database (shared by all replicas)",
+			"cert_subject",
+			cert.Subject.String(),
+		)
 
 		if !crypto.Enabled() {
 			log.Warnw("OPENARTIFACT_SECRET_KEY not set; the generated SAML SP private key is stored unencrypted")

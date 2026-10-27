@@ -38,7 +38,10 @@ func npmSeedPackage(h *harness, repoID, latest string) string {
 func npmSeedVersion(h *harness, pkgID, blobID, version string) {
 	h.t.Helper()
 
-	manifest := fmt.Sprintf(`{"name":"@acme/shop","version":%q,"description":"a shop","license":"MIT","dist":{"tarball":"http://x/shop.tgz"}}`, version)
+	manifest := fmt.Sprintf(
+		`{"name":"@acme/shop","version":%q,"description":"a shop","license":"MIT","dist":{"tarball":"http://x/shop.tgz"}}`,
+		version,
+	)
 
 	h.exec(`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
 		VALUES ($1::uuid, $2, $3::jsonb, $4, $5, $6, $7::uuid)`,
@@ -148,7 +151,13 @@ func conanFixtureFiles(rrev string) []conanSeedFile {
 		{filename: "conanfile.py", content: "class Shop " + rrev, conanfile: "class Shop: pass"},
 		{filename: "conanmanifest.txt", item: true},
 		{filename: "conandata.yml"},
-		{packageID: "pkg1", packageRevision: "prev1", filename: "conaninfo.txt", content: "[settings] " + rrev, conaninfo: "[settings]\nos=Linux"},
+		{
+			packageID:       "pkg1",
+			packageRevision: "prev1",
+			filename:        "conaninfo.txt",
+			content:         "[settings] " + rrev,
+			conaninfo:       "[settings]\nos=Linux",
+		},
 		{packageID: "pkg1", packageRevision: "prev1", filename: "conanmanifest.txt", content: "package manifest " + rrev},
 		{packageID: "pkg1", packageRevision: "prev1", filename: "conan_package.tgz", content: "package tgz " + rrev},
 	}

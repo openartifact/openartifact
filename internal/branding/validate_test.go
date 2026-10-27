@@ -105,7 +105,10 @@ func TestValidateLinks(t *testing.T) {
 }
 
 func TestValidateLoginMessage(t *testing.T) {
-	if got, err := ValidateLoginMessage("Welcome\r\n\r\n**Acme** [help](https://x.example)\ttab"); err != nil || strings.Contains(got, "\r") {
+	if got, err := ValidateLoginMessage(
+		"Welcome\r\n\r\n**Acme** [help](https://x.example)\ttab",
+	); err != nil ||
+		strings.Contains(got, "\r") {
 		t.Errorf("valid message rejected or CR kept: %q, %v", got, err)
 	}
 
@@ -140,7 +143,8 @@ func TestConfig(t *testing.T) {
 		}
 	}
 
-	if _, err := (Config{LogoLight: "/nonexistent/logo.png"}).Defaults(); err == nil || !strings.Contains(err.Error(), "branding.logoLight") {
+	if _, err := (Config{LogoLight: "/nonexistent/logo.png"}).Defaults(); err == nil ||
+		!strings.Contains(err.Error(), "branding.logoLight") {
 		t.Errorf("missing logo file: %v", err)
 	}
 }

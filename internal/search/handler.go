@@ -24,11 +24,27 @@ import (
 type Searcher interface {
 	// SearchPage returns one page of results and the number of matches (capped
 	// at MaxSearchResults+1) from a single scan.
-	SearchPage(ctx context.Context, filter SearchFilter, opts PageOptions, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, int64, error)
-	SearchRepositories(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]RepositoryResult, error)
+	SearchPage(
+		ctx context.Context,
+		filter SearchFilter,
+		opts PageOptions,
+		limit, offset int,
+		readableRepos map[uuid.UUID]struct{},
+	) ([]SearchResult, int64, error)
+	SearchRepositories(
+		ctx context.Context,
+		filter SearchFilter,
+		limit, offset int,
+		readableRepos map[uuid.UUID]struct{},
+	) ([]RepositoryResult, error)
 	// SearchChecksum returns the files whose stored checksum equals digest (see
 	// ParseChecksum), or ErrChecksumTooBroad.
-	SearchChecksum(ctx context.Context, digest, algorithm string, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]ChecksumResult, int, error)
+	SearchChecksum(
+		ctx context.Context,
+		digest, algorithm string,
+		limit, offset int,
+		readableRepos map[uuid.UUID]struct{},
+	) ([]ChecksumResult, int, error)
 }
 
 type Handler struct {

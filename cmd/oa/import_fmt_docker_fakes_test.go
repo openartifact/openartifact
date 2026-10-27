@@ -106,7 +106,13 @@ func (d *fakeDocker) peek(name string) *fakeDockerImage {
 		return img
 	}
 
-	return &fakeDockerImage{blobs: map[string][]byte{}, manifests: map[string][]byte{}, types: map[string]string{}, tags: map[string]string{}, subjects: map[string]string{}}
+	return &fakeDockerImage{
+		blobs:     map[string][]byte{},
+		manifests: map[string][]byte{},
+		types:     map[string]string{},
+		tags:      map[string]string{},
+		subjects:  map[string]string{},
+	}
 }
 
 func (d *fakeDocker) fail(w http.ResponseWriter, code int, errCode string) {
@@ -698,7 +704,14 @@ func (fx *dockerFixture) artifactoryFiles(created string, props map[string]map[s
 		}
 
 		for _, c := range t.img.children {
-			files = append(files, fakeFile{path: t.image + "/" + strings.Replace(c.digest, ":", "__", 1) + "/manifest.json", data: c.manifest, created: created})
+			files = append(
+				files,
+				fakeFile{
+					path:    t.image + "/" + strings.Replace(c.digest, ":", "__", 1) + "/manifest.json",
+					data:    c.manifest,
+					created: created,
+				},
+			)
 		}
 
 		for _, b := range t.img.blobs {
@@ -708,7 +721,14 @@ func (fx *dockerFixture) artifactoryFiles(created string, props map[string]map[s
 
 	for _, l := range fx.loose {
 		for _, m := range l.img.allManifests() {
-			files = append(files, fakeFile{path: l.image + "/" + strings.Replace(m, ":", "__", 1) + "/manifest.json", data: fx.manifests[m], created: created})
+			files = append(
+				files,
+				fakeFile{
+					path:    l.image + "/" + strings.Replace(m, ":", "__", 1) + "/manifest.json",
+					data:    fx.manifests[m],
+					created: created,
+				},
+			)
 		}
 	}
 

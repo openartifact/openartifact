@@ -71,7 +71,13 @@ type SnapshotReader interface {
 	GetDebianPackagesByDistComp(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.Component, error)
 	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
 	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
-	ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit, offset int,
+	) ([]*models.AIAnalysis, int, error)
 	ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error)
 	ListAllNPMPackages(ctx context.Context, repoID string) ([]*models.NPMPackage, error)
 	ListAllProjects(ctx context.Context) ([]*models.Project, error)

@@ -214,7 +214,12 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 // raw or imported artifacts, takes effect). It does nothing when props carry no
 // license key. It returns false after answering 500 when the evaluation failed:
 // the properties are stored, and repeating the request repeats the evaluation.
-func (h *PropertiesHandler) applyLicensePolicy(w http.ResponseWriter, r *http.Request, repoID, artifactID string, props map[string]string) bool {
+func (h *PropertiesHandler) applyLicensePolicy(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID, artifactID string,
+	props map[string]string,
+) bool {
 	touched := false
 
 	for key := range props {

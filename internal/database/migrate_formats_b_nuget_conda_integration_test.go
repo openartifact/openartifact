@@ -31,9 +31,13 @@ func nugetRow(t *testing.T, db *sql.DB, repo, blob, id, version, createdAt strin
 func nugetVersions(t *testing.T, db *sql.DB, repo, id string, trashed bool) []string {
 	t.Helper()
 
-	rows, err := db.QueryContext(context.Background(),
+	rows, err := db.QueryContext(
+		context.Background(),
 		`SELECT version FROM nuget_packages WHERE repository_id = $1 AND package_id = $2 AND (deleted_at IS NOT NULL) = $3 ORDER BY created_at, id`,
-		repo, id, trashed)
+		repo,
+		id,
+		trashed,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +72,23 @@ func TestMigrationFormatsBNuGetVersionBackfill(t *testing.T) {
 
 	const systemOrg = "00000000-0000-0000-0000-000000000001"
 
-	blob := mustScan[string](t, db, `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('a', 64), 3, repeat('a', 64)) RETURNING id`)
-	repoA := mustScan[string](t, db, `INSERT INTO repositories (name, format, org_id) VALUES ('nuget-a', 'nuget', $1) RETURNING id`, systemOrg)
-	repoB := mustScan[string](t, db, `INSERT INTO repositories (name, format, org_id) VALUES ('nuget-b', 'nuget', $1) RETURNING id`, systemOrg)
+	blob := mustScan[string](
+		t,
+		db,
+		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('a', 64), 3, repeat('a', 64)) RETURNING id`,
+	)
+	repoA := mustScan[string](
+		t,
+		db,
+		`INSERT INTO repositories (name, format, org_id) VALUES ('nuget-a', 'nuget', $1) RETURNING id`,
+		systemOrg,
+	)
+	repoB := mustScan[string](
+		t,
+		db,
+		`INSERT INTO repositories (name, format, org_id) VALUES ('nuget-b', 'nuget', $1) RETURNING id`,
+		systemOrg,
+	)
 
 	ts := func(minute int) string { return fmt.Sprintf("2025-01-01 00:%02d:00+00", minute) }
 
@@ -129,7 +147,11 @@ func TestMigrationFormatsBCondaExtension(t *testing.T) {
 
 	const systemOrg = "00000000-0000-0000-0000-000000000001"
 
-	blob := mustScan[string](t, db, `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('b', 64), 3, repeat('b', 64)) RETURNING id`)
+	blob := mustScan[string](
+		t,
+		db,
+		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('b', 64), 3, repeat('b', 64)) RETURNING id`,
+	)
 	repo := mustScan[string](t, db, `INSERT INTO repositories (name, format, org_id) VALUES ('conda', 'conda', $1) RETURNING id`, systemOrg)
 	pre := mustScan[string](t, db,
 		`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, blob_id)
@@ -159,13 +181,23 @@ func TestMigrationFormatsBCondaExtension(t *testing.T) {
 		"ca-certificates-2024.2.2-h_0": "ca-certificates|2024.2.2|h_0",
 		"numpy-1.26.4-py311_0":         "numpy|1.26.4|py311_0",
 	} {
-		got := mustScan[string](t, db, `SELECT name || '|' || version || '|' || build_string FROM conda_packages WHERE id = $1`, legacy[file])
+		got := mustScan[string](
+			t,
+			db,
+			`SELECT name || '|' || version || '|' || build_string FROM conda_packages WHERE id = $1`,
+			legacy[file],
+		)
 		if got != want {
 			t.Errorf("legacy %s = %q, want %q", file, got, want)
 		}
 	}
 
-	if got := mustScan[string](t, db, `SELECT name || '|' || version || '|' || build_string FROM conda_packages WHERE id = $1`, pre); got != "scikit-learn|1.0|py39_0" {
+	if got := mustScan[string](
+		t,
+		db,
+		`SELECT name || '|' || version || '|' || build_string FROM conda_packages WHERE id = $1`,
+		pre,
+	); got != "scikit-learn|1.0|py39_0" {
 		t.Errorf("a row with a hyphen-free build was changed: %q", got)
 	}
 
@@ -173,8 +205,12 @@ func TestMigrationFormatsBCondaExtension(t *testing.T) {
 		t.Errorf("legacy row extension = %q, want .tar.bz2", got)
 	}
 
-	if got := mustScan[string](t, db,
-		`SELECT build_number || '|' || md5 || '|' || timestamp_ms || '|' || index_extra::text || '|' || cardinality(depends) FROM conda_packages WHERE id = $1`, pre); got != "0||0|{}|0" {
+	if got := mustScan[string](
+		t,
+		db,
+		`SELECT build_number || '|' || md5 || '|' || timestamp_ms || '|' || index_extra::text || '|' || cardinality(depends) FROM conda_packages WHERE id = $1`,
+		pre,
+	); got != "0||0|{}|0" {
 		t.Errorf("legacy row defaults = %q", got)
 	}
 

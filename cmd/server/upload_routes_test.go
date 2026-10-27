@@ -38,22 +38,37 @@ type documentedUpload struct {
 // every format to the route table. Changing a route, or the documentation of
 // one, fails a test here until both agree.
 var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals // read-only test table
-	"maven":    {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
-	"sbt":      {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
-	"ivy":      {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
-	"raw":      {http.MethodPut, "/repos/raw/{name}/*", "PUT <path>", "-T file.bin HOST/repos/raw/REPO/path/to/file.bin"},
-	"npm":      {http.MethodPut, "/repos/{name}/*", "PUT /<pkg>", "PUT /repos/REPO/<package>"},
-	"pypi":     {http.MethodPost, "/repos/{name}/legacy/", "HOST/repos/REPO/legacy/", "HOST/repos/REPO/legacy/"},
-	"docker":   {http.MethodPost, "/v2/*", "docker push", "docker push HOSTPORT/REPO:latest"},
-	"helm":     {http.MethodPost, "/repos/{name}/charts", "POST /charts", "HOST/repos/REPO/charts"},
-	"deb":      {http.MethodPost, "/api/v1/repositories/{name}/debs", "POST /api/v1/repositories/REPO/debs", "POST /api/v1/repositories/REPO/debs"},
-	"rpm":      {http.MethodPost, "/api/v1/repositories/{name}/packages", "POST /api/v1/repositories/REPO/packages", "POST /api/v1/repositories/REPO/packages"},
+	"maven":  {http.MethodPut, "/repos/maven/{name}/*", "mvn deploy", "PUT /repos/maven/REPO/<group/path>/<artifactId>/<version>/<file>"},
+	"sbt":    {http.MethodPut, "/repos/sbt/{name}/*", "sbt publish", "HOST/repos/sbt/REPO"},
+	"ivy":    {http.MethodPut, "/repos/ivy/{name}/*", "ivy:publish", "HOST/repos/ivy/REPO"},
+	"raw":    {http.MethodPut, "/repos/raw/{name}/*", "PUT <path>", "-T file.bin HOST/repos/raw/REPO/path/to/file.bin"},
+	"npm":    {http.MethodPut, "/repos/{name}/*", "PUT /<pkg>", "PUT /repos/REPO/<package>"},
+	"pypi":   {http.MethodPost, "/repos/{name}/legacy/", "HOST/repos/REPO/legacy/", "HOST/repos/REPO/legacy/"},
+	"docker": {http.MethodPost, "/v2/*", "docker push", "docker push HOSTPORT/REPO:latest"},
+	"helm":   {http.MethodPost, "/repos/{name}/charts", "POST /charts", "HOST/repos/REPO/charts"},
+	"deb": {
+		http.MethodPost,
+		"/api/v1/repositories/{name}/debs",
+		"POST /api/v1/repositories/REPO/debs",
+		"POST /api/v1/repositories/REPO/debs",
+	},
+	"rpm": {
+		http.MethodPost,
+		"/api/v1/repositories/{name}/packages",
+		"POST /api/v1/repositories/REPO/packages",
+		"POST /api/v1/repositories/REPO/packages",
+	},
 	"go":       {http.MethodPut, "/repos/{name}/*", "PUT <module>/@v/<version>", "HOST/repos/REPO/example.com/mymod/@v/v1.0.0"},
 	"cargo":    {http.MethodPut, "/repos/{name}/api/v1/crates/new", "PUT /api/v1/crates/new", "| `PUT /api/v1/crates/new` | publish |"},
 	"nuget":    {http.MethodPut, "/repos/{name}/v3/package", "PUT /v3/package", "`PackagePublish/2.0.0` | `/v3/package`"},
 	"rubygems": {http.MethodPost, "/repos/{name}/api/v1/gems", "POST /api/v1/gems", "| `POST /api/v1/gems` | push"},
 	"conda":    {http.MethodPost, "/repos/{name}/{platform}", "POST /<platform>", "| `POST /<platform>` | upload"},
-	"conan":    {http.MethodPut, "/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/files/*", "conan upload", "conan upload"},
+	"conan": {
+		http.MethodPut,
+		"/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/files/*",
+		"conan upload",
+		"conan upload",
+	},
 }
 
 // uploadRouteTable registers the real upload-capable routes the way the
@@ -205,7 +220,11 @@ func TestNoDocumentedGenericUploadEndpoint(t *testing.T) {
 			for line := range strings.SplitSeq(string(raw), "\n") {
 				// The pages that say the path answers 404 may name it.
 				if m := staleUploadPath.FindString(line); m != "" && !strings.Contains(line, "404") {
-					t.Errorf("%s mentions %q as an upload endpoint: there is none (deb: POST /api/v1/repositories/REPO/debs, rpm: .../packages)", path, m)
+					t.Errorf(
+						"%s mentions %q as an upload endpoint: there is none (deb: POST /api/v1/repositories/REPO/debs, rpm: .../packages)",
+						path,
+						m,
+					)
 				}
 			}
 

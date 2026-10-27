@@ -58,19 +58,34 @@ func platformSeed(t *testing.T, pg *PostgresDB) platformFixture {
 	// Personal: dana's CI token expires in the past, lee's never; dana's revoked one is hidden.
 	exec(`INSERT INTO auth_tokens (user_id, name, kind, token_hash, scopes, expires_at, created_at)
 	      VALUES ($1, 'dana-ci', 'access', 'h1', '["pt-1"]', now() - interval '1 day', now() - interval '3 hours')`, f.dana)
-	exec(`INSERT INTO auth_tokens (user_id, name, kind, token_hash, created_at) VALUES ($1, 'lee-laptop', 'access', 'h2', now() - interval '2 hours')`, f.lee)
+	exec(
+		`INSERT INTO auth_tokens (user_id, name, kind, token_hash, created_at) VALUES ($1, 'lee-laptop', 'access', 'h2', now() - interval '2 hours')`,
+		f.lee,
+	)
 	exec(`INSERT INTO auth_tokens (user_id, name, kind, token_hash, revoked_at) VALUES ($1, 'dana-old', 'access', 'h3', now())`, f.dana)
 	// Project: a token of acme created by lee, one of beta created by dana.
 	exec(`INSERT INTO auth_tokens (user_id, name, kind, token_hash, project_id, project_role, created_by, expires_at, created_at)
 	      VALUES ($1, 'acme-deploy', 'deploy', 'h4', $2, 'developer', $3, now() + interval '10 days', now() - interval '1 hour')`, f.service, f.acmeID, f.lee)
 	// Federation: a token of acme's r1 and one of beta's r2 (+ a revoked one).
 	exec(`INSERT INTO federation_repos (repo_id) VALUES ($1), ($2)`, f.r1, f.r2)
-	exec(`INSERT INTO federation_peer_tokens (repo_id, name, token_hash, created_by, created_at) VALUES ($1, 'peer-a', '\x01', 'lee', now() - interval '30 minutes')`, f.r1)
-	exec(`INSERT INTO federation_peer_tokens (repo_id, name, token_hash, created_by, created_at) VALUES ($1, 'peer-b', '\x02', 'dana', now() - interval '20 minutes')`, f.r2)
-	exec(`INSERT INTO federation_peer_tokens (repo_id, name, token_hash, created_by, revoked_at) VALUES ($1, 'peer-gone', '\x03', 'dana', now())`, f.r1)
+	exec(
+		`INSERT INTO federation_peer_tokens (repo_id, name, token_hash, created_by, created_at) VALUES ($1, 'peer-a', '\x01', 'lee', now() - interval '30 minutes')`,
+		f.r1,
+	)
+	exec(
+		`INSERT INTO federation_peer_tokens (repo_id, name, token_hash, created_by, created_at) VALUES ($1, 'peer-b', '\x02', 'dana', now() - interval '20 minutes')`,
+		f.r2,
+	)
+	exec(
+		`INSERT INTO federation_peer_tokens (repo_id, name, token_hash, created_by, revoked_at) VALUES ($1, 'peer-gone', '\x03', 'dana', now())`,
+		f.r1,
+	)
 
 	// Quotas: r1 is limited and over it, r2 has counters only; acme has a ceiling.
-	exec(`INSERT INTO storage_quotas (repository_id, max_size_bytes, current_size_bytes, current_artifact_count) VALUES ($1, 100, 150, 3)`, f.r1)
+	exec(
+		`INSERT INTO storage_quotas (repository_id, max_size_bytes, current_size_bytes, current_artifact_count) VALUES ($1, 100, 150, 3)`,
+		f.r1,
+	)
 	exec(`INSERT INTO storage_quotas (repository_id, current_size_bytes) VALUES ($1, 40)`, f.r2)
 	exec(`INSERT INTO project_quotas (project_id, max_size_bytes) VALUES ($1, 1000)`, f.acmeID)
 	exec(`INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner'), ($1, $3, 'viewer')`, f.acmeID, f.dana, f.lee)
@@ -195,7 +210,8 @@ func checkUnifiedTokenFields(t *testing.T, pg *PostgresDB) {
 		byName[it.Name] = it
 	}
 
-	if p := byName["acme-deploy"]; p.Type != "project" || p.Project != "acme" || p.Role != "developer" || p.Owner != "lee" || p.ExpiresAt == nil {
+	if p := byName["acme-deploy"]; p.Type != "project" || p.Project != "acme" || p.Role != "developer" || p.Owner != "lee" ||
+		p.ExpiresAt == nil {
 		t.Errorf("project token = %+v", p)
 	}
 
@@ -223,7 +239,8 @@ func TestListQuotaOverview(t *testing.T) {
 		byKey[it.Scope+"/"+it.Name] = it
 	}
 
-	if total != len(items) || byKey["repository/r1"] == nil || byKey["repository/r2"] == nil || byKey["project/acme"] == nil || byKey["project/beta"] == nil {
+	if total != len(items) || byKey["repository/r1"] == nil || byKey["repository/r2"] == nil || byKey["project/acme"] == nil ||
+		byKey["project/beta"] == nil {
 		t.Fatalf("total %d, items %v", total, byKey)
 	}
 
@@ -262,7 +279,10 @@ func checkQuotaOverviewFilters(t *testing.T, pg *PostgresDB, items []*models.Quo
 		t.Errorf("limited quotas = %d, want r1 and acme", len(limited))
 	}
 
-	repos, total, err := pg.ListQuotaOverview(ctx, models.QuotaListParams{Scope: models.QuotaScopeRepository, Query: "R2", Page: 1, Limit: 50})
+	repos, total, err := pg.ListQuotaOverview(
+		ctx,
+		models.QuotaListParams{Scope: models.QuotaScopeRepository, Query: "R2", Page: 1, Limit: 50},
+	)
 	if err != nil || total != 1 || len(repos) != 1 || repos[0].Name != "r2" {
 		t.Errorf("scope+q = %v (total %d), %v", repos, total, err)
 	}
@@ -312,7 +332,8 @@ func TestGetRepositoryUsage(t *testing.T) {
 	}
 
 	var blobID string
-	if err := db.QueryRowContext(ctx, `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('a', 64), 10, 'k') RETURNING id`).Scan(&blobID); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('a', 64), 10, 'k') RETURNING id`).
+		Scan(&blobID); err != nil {
 		t.Fatalf("insert blob: %v", err)
 	}
 
@@ -328,7 +349,12 @@ func TestGetRepositoryUsage(t *testing.T) {
 
 	want := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	if usage.PackageCount != 2 || usage.VersionCount != 2 || usage.LastPublishedAt == nil || !usage.LastPublishedAt.Equal(want) {
-		t.Errorf("usage = %+v (last %v), want 2 packages, 2 versions, last %v (soft-deleted and other-repository rows excluded)", usage, usage.LastPublishedAt, want)
+		t.Errorf(
+			"usage = %+v (last %v), want 2 packages, 2 versions, last %v (soft-deleted and other-repository rows excluded)",
+			usage,
+			usage.LastPublishedAt,
+			want,
+		)
 	}
 }
 
@@ -346,12 +372,15 @@ func TestResolveAuditNames(t *testing.T) {
 	db := pg.GetDB()
 
 	var providerID, groupID string
-	if err := db.QueryRowContext(context.Background(),
-		`INSERT INTO auth_sso_providers (slug, kind, display_name, oidc_config) VALUES ('corp', 'oidc', 'Corp', '{}') RETURNING id`).Scan(&providerID); err != nil {
+	if err := db.QueryRowContext(
+		context.Background(),
+		`INSERT INTO auth_sso_providers (slug, kind, display_name, oidc_config) VALUES ('corp', 'oidc', 'Corp', '{}') RETURNING id`,
+	).Scan(&providerID); err != nil {
 		t.Fatalf("insert provider: %v", err)
 	}
 
-	if err := db.QueryRowContext(context.Background(), `INSERT INTO auth_groups (name) VALUES ('eng') RETURNING id`).Scan(&groupID); err != nil {
+	if err := db.QueryRowContext(context.Background(), `INSERT INTO auth_groups (name) VALUES ('eng') RETURNING id`).
+		Scan(&groupID); err != nil {
 		t.Fatalf("insert group: %v", err)
 	}
 

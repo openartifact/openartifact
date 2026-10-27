@@ -85,7 +85,9 @@ func (a *app) addBaseMiddleware(srv *api.HTTPServer) {
 	cfg := a.cfg
 
 	srv.AddMiddleware(middleware.MaxBodyMiddleware(cfg.Server.MaxBodyBytes))
-	srv.AddMiddleware(middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled || strings.HasPrefix(strings.ToLower(cfg.BaseURL), "https://")))
+	srv.AddMiddleware(
+		middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled || strings.HasPrefix(strings.ToLower(cfg.BaseURL), "https://")),
+	)
 	srv.AddMiddleware(middleware.RecoveryMiddleware(a.log))
 	srv.AddMiddleware(middleware.RequestIDMiddleware)
 	srv.AddMiddleware(middleware.MetricsMiddleware(a.reg))

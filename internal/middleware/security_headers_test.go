@@ -50,7 +50,9 @@ func TestSecurityHeadersArtifactsSandboxedAndAttached(t *testing.T) {
 			t.Errorf("%q: Content-Disposition=%q, want attachment", ct, got)
 		}
 
-		if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") || !strings.Contains(csp, "default-src 'none'") {
+		if csp := w.Header().
+			Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") ||
+			!strings.Contains(csp, "default-src 'none'") {
 			t.Errorf("%q: CSP=%q lacks sandbox", ct, csp)
 		}
 	}

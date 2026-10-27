@@ -93,7 +93,14 @@ func (h *HTTPHandler) AttachReferrer(ctx context.Context, repo *models.Repositor
 	digest := "sha256:" + manifestHex
 
 	// One writer per slot, across replicas.
-	slot := sha256.Sum256([]byte("referrer\x00" + repo.ID + "\x00" + req.Image + "\x00" + req.SubjectDigest + "\x00" + req.ArtifactType + "\x00" + slotValue(req.Annotations, req.SlotKeys)))
+	slot := sha256.Sum256(
+		[]byte(
+			"referrer\x00" + repo.ID + "\x00" + req.Image + "\x00" + req.SubjectDigest + "\x00" + req.ArtifactType + "\x00" + slotValue(
+				req.Annotations,
+				req.SlotKeys,
+			),
+		),
+	)
 
 	var res *ReferrerResult
 
@@ -191,7 +198,12 @@ func slotValue(annotations map[string]string, keys []string) string {
 // FindReferrer returns the digest of the referrer of subjectDigest that has the
 // artifact type and carries every given annotation ("" when there is none), so a
 // caller can skip rebuilding what is already attached.
-func (h *HTTPHandler) FindReferrer(ctx context.Context, repo *models.Repository, image, subjectDigest, artifactType string, annotations map[string]string) (string, error) {
+func (h *HTTPHandler) FindReferrer(
+	ctx context.Context,
+	repo *models.Repository,
+	image, subjectDigest, artifactType string,
+	annotations map[string]string,
+) (string, error) {
 	existing, err := h.db.ListDockerManifestsBySubject(ctx, repo.ID, image, subjectDigest)
 	if err != nil {
 		return "", fmt.Errorf("list referrers: %w", err)
@@ -270,7 +282,13 @@ func (h *HTTPHandler) ensureBlob(ctx context.Context, repo *models.Repository, i
 	return err
 }
 
-func (h *HTTPHandler) storeReferrerManifest(ctx context.Context, repo *models.Repository, req ReferrerRequest, body []byte, digest, manifestHex string) error {
+func (h *HTTPHandler) storeReferrerManifest(
+	ctx context.Context,
+	repo *models.Repository,
+	req ReferrerRequest,
+	body []byte,
+	digest, manifestHex string,
+) error {
 	size := int64(len(body))
 
 	existing, err := h.db.GetDockerManifest(ctx, repo.ID, req.Image, digest)

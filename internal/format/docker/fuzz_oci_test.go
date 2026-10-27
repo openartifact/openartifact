@@ -98,63 +98,74 @@ func FuzzParseOCIManifestMeta(f *testing.F) {
 // output is deterministic, and what the Referrers API reads back from it
 // (subject, artifactType, annotations, referenced blobs) is what was put in.
 func FuzzReferrerManifest(f *testing.F) {
-	f.Add("application/vnd.cyclonedx+json", "sha256:aaaa", "application/vnd.oci.image.manifest.v1+json", "sha256:bbbb", int64(7), "k", "v", []byte("{}"))
+	f.Add(
+		"application/vnd.cyclonedx+json",
+		"sha256:aaaa",
+		"application/vnd.oci.image.manifest.v1+json",
+		"sha256:bbbb",
+		int64(7),
+		"k",
+		"v",
+		[]byte("{}"),
+	)
 	f.Add("", "", "", "", int64(-1), "", "", []byte(nil))
 	f.Add("a/b\"c\\", "sha256:x", "text/html", "sha256:y", int64(math.MaxInt64), "a\x00b", "\xff", []byte{0xff})
 
-	f.Fuzz(func(t *testing.T, artifactType, layerDigest, subjectType, subjectDigest string, subjectSize int64, annKey, annValue string, content []byte) {
-		subject := &models.DockerManifest{MediaType: subjectType, Digest: subjectDigest, Size: subjectSize}
-		req := ReferrerRequest{
-			SubjectDigest: subjectDigest,
-			ArtifactType:  artifactType,
-			Content:       content,
-			Annotations:   map[string]string{annKey: annValue},
-		}
+	f.Fuzz(
+		func(t *testing.T, artifactType, layerDigest, subjectType, subjectDigest string, subjectSize int64, annKey, annValue string, content []byte) {
+			subject := &models.DockerManifest{MediaType: subjectType, Digest: subjectDigest, Size: subjectSize}
+			req := ReferrerRequest{
+				SubjectDigest: subjectDigest,
+				ArtifactType:  artifactType,
+				Content:       content,
+				Annotations:   map[string]string{annKey: annValue},
+			}
 
-		body, err := referrerManifest(subject, layerDigest, req)
-		if err != nil {
-			t.Fatalf("referrerManifest: %v", err)
-		}
+			body, err := referrerManifest(subject, layerDigest, req)
+			if err != nil {
+				t.Fatalf("referrerManifest: %v", err)
+			}
 
-		again, err := referrerManifest(subject, layerDigest, req)
-		if err != nil || !bytes.Equal(body, again) {
-			t.Fatalf("referrerManifest is not deterministic: %q vs %q (%v)", body, again, err)
-		}
+			again, err := referrerManifest(subject, layerDigest, req)
+			if err != nil || !bytes.Equal(body, again) {
+				t.Fatalf("referrerManifest is not deterministic: %q vs %q (%v)", body, again, err)
+			}
 
-		// json.Marshal replaces invalid UTF-8 with U+FFFD, so only valid strings round-trip exactly.
-		if !allValidUTF8(artifactType, layerDigest, subjectType, subjectDigest, annKey, annValue) {
-			return
-		}
+			// json.Marshal replaces invalid UTF-8 with U+FFFD, so only valid strings round-trip exactly.
+			if !allValidUTF8(artifactType, layerDigest, subjectType, subjectDigest, annKey, annValue) {
+				return
+			}
 
-		meta := parseOCIManifestMeta(body)
+			meta := parseOCIManifestMeta(body)
 
-		if meta.Subject == nil || meta.Subject.Digest != subjectDigest {
-			t.Fatalf("subject digest of %s = %+v, want %q", body, meta.Subject, subjectDigest)
-		}
+			if meta.Subject == nil || meta.Subject.Digest != subjectDigest {
+				t.Fatalf("subject digest of %s = %+v, want %q", body, meta.Subject, subjectDigest)
+			}
 
-		if meta.ArtifactType != artifactType {
-			t.Fatalf("artifactType of %s = %q, want %q", body, meta.ArtifactType, artifactType)
-		}
+			if meta.ArtifactType != artifactType {
+				t.Fatalf("artifactType of %s = %q, want %q", body, meta.ArtifactType, artifactType)
+			}
 
-		if meta.Annotations[annKey] != annValue || len(meta.Annotations) != 1 {
-			t.Fatalf("annotations of %s = %v, want {%q: %q}", body, meta.Annotations, annKey, annValue)
-		}
+			if meta.Annotations[annKey] != annValue || len(meta.Annotations) != 1 {
+				t.Fatalf("annotations of %s = %v, want {%q: %q}", body, meta.Annotations, annKey, annValue)
+			}
 
-		if meta.Config == nil || meta.Config.MediaType != mediaTypeOCIEmpty || meta.Config.Digest != emptyConfigDigest {
-			t.Fatalf("config of %s = %+v, want the empty descriptor", body, meta.Config)
-		}
+			if meta.Config == nil || meta.Config.MediaType != mediaTypeOCIEmpty || meta.Config.Digest != emptyConfigDigest {
+				t.Fatalf("config of %s = %+v, want the empty descriptor", body, meta.Config)
+			}
 
-		refs := ocimanifest.ParseRefs(body)
+			refs := ocimanifest.ParseRefs(body)
 
-		want := []string{emptyConfigDigest}
-		if layerDigest != "" && layerDigest != emptyConfigDigest {
-			want = append(want, layerDigest)
-		}
+			want := []string{emptyConfigDigest}
+			if layerDigest != "" && layerDigest != emptyConfigDigest {
+				want = append(want, layerDigest)
+			}
 
-		if !slices.Equal(refs.Blobs, want) || len(refs.Manifests) != 0 {
-			t.Fatalf("refs of %s = %+v, want blobs %v and no manifests", body, refs, want)
-		}
-	})
+			if !slices.Equal(refs.Blobs, want) || len(refs.Manifests) != 0 {
+				t.Fatalf("refs of %s = %+v, want blobs %v and no manifests", body, refs, want)
+			}
+		},
+	)
 }
 
 // fuzzCatalog serves the names "img00000", "img00001", ... in bytewise order,

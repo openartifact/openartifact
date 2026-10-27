@@ -220,7 +220,12 @@ func (j *groupJob) fetchRepomd(ctx context.Context, m *models.Repository) (map[s
 func (j *groupJob) openRPMDocument(ctx context.Context, src *rpmSource, typ string) (io.ReadCloser, error) {
 	href, ok := formatrpm.SafeLocation(src.hrefs[typ])
 	if !ok {
-		return nil, fmt.Errorf("group worker: unsafe %s location %q of %s", typ, src.hrefs[typ], src.member.Name) //nolint:err113 // dynamic context
+		return nil, fmt.Errorf(
+			"group worker: unsafe %s location %q of %s",
+			typ,
+			src.hrefs[typ],
+			src.member.Name,
+		) //nolint:err113 // dynamic context
 	}
 
 	rc, err := j.w.opener.Open(ctx, src.member, href)
@@ -320,7 +325,14 @@ func (j *groupJob) selectProxyPackages(ctx context.Context, src *rpmSource, seen
 
 // writeRPMDocument renders one merged document: hosted packages are rendered,
 // proxy members' elements copied from their upstream document.
-func (j *groupJob) writeRPMDocument(ctx context.Context, out io.Writer, typ string, kind formatrpm.DocKind, sources []*rpmSource, count int) error {
+func (j *groupJob) writeRPMDocument(
+	ctx context.Context,
+	out io.Writer,
+	typ string,
+	kind formatrpm.DocKind,
+	sources []*rpmSource,
+	count int,
+) error {
 	d := formatrpm.NewDocWriter(out, kind, count)
 
 	for _, src := range sources {

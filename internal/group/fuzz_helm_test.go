@@ -42,7 +42,8 @@ func helmFuzzListing(t *testing.T, doc []byte) map[string]map[string]bool {
 				}
 
 				for k := 0; k+1 < len(e.Content); k += 2 {
-					if v := e.Content[k+1]; e.Content[k].Value == "version" && v.Kind == yaml.ScalarNode && v.Tag != "!!null" && v.Value != "" {
+					if v := e.Content[k+1]; e.Content[k].Value == "version" && v.Kind == yaml.ScalarNode && v.Tag != "!!null" &&
+						v.Value != "" {
 						if out[key] == nil {
 							out[key] = map[string]bool{}
 						}
@@ -69,11 +70,19 @@ func FuzzServeHelmGroup(f *testing.F) {
 	mirror := memberIndex("mirror", map[string][]string{"internal": {"9.9.9"}, "app": {"1.0.0", "2.0.0"}, "other": {"0.1.0"}})
 
 	f.Add([]byte(hosted), []byte(mirror))
-	f.Add([]byte(hosted), []byte("apiVersion: v1\nentries:\n  other:\n  - {name: other, version: 99.0.0, urls: ['https://elsewhere.example/other-99.0.0.tgz']}\n"))
+	f.Add(
+		[]byte(hosted),
+		[]byte(
+			"apiVersion: v1\nentries:\n  other:\n  - {name: other, version: 99.0.0, urls: ['https://elsewhere.example/other-99.0.0.tgz']}\n",
+		),
+	)
 	f.Add([]byte("apiVersion: v1\nentries:\n  a: &x []\n  b: *x\n"), []byte(mirror))
 	f.Add([]byte("not an index"), []byte(mirror))
 	f.Add([]byte(hosted), []byte("<html>"))
-	f.Add([]byte("apiVersion: v1\nentries: {}\n"), []byte("apiVersion: v1\nentries:\n  a:\n  - {version: 1.0.0, urls: ['../x/../a-1.0.0.tgz', 'oci://r/a', '']}\n"))
+	f.Add(
+		[]byte("apiVersion: v1\nentries: {}\n"),
+		[]byte("apiVersion: v1\nentries:\n  a:\n  - {version: 1.0.0, urls: ['../x/../a-1.0.0.tgz', 'oci://r/a', '']}\n"),
+	)
 
 	f.Fuzz(helmFuzzServe)
 }
@@ -166,8 +175,15 @@ func helmFuzzServe(t *testing.T, hostedDoc, mirrorDoc []byte) {
 
 		for v := range versions {
 			if !owned[v] {
-				t.Fatalf("chart %q version %q comes from the proxy although the hosted member lists %q\nhosted:\n%s\nproxy:\n%s\nmerged:\n%s",
-					key, v, key, hostedDoc, mirrorDoc, body)
+				t.Fatalf(
+					"chart %q version %q comes from the proxy although the hosted member lists %q\nhosted:\n%s\nproxy:\n%s\nmerged:\n%s",
+					key,
+					v,
+					key,
+					hostedDoc,
+					mirrorDoc,
+					body,
+				)
 			}
 		}
 	}

@@ -48,7 +48,13 @@ func TestMCPRequiresBearerCredential(t *testing.T) {
 		{"no credential", "", nil, nil, http.StatusUnauthorized},
 		{"unknown token", "", map[string]string{"Authorization": "Bearer oa_pat_" + strings.Repeat("0", 64)}, nil, http.StatusUnauthorized},
 		{"garbage bearer", "", map[string]string{"Authorization": "Bearer not-a-token"}, nil, http.StatusUnauthorized},
-		{"valid token as basic password", "", map[string]string{"Authorization": "Basic " + basic("reader", st.secrets["reader"])}, nil, http.StatusUnauthorized},
+		{
+			"valid token as basic password",
+			"",
+			map[string]string{"Authorization": "Basic " + basic("reader", st.secrets["reader"])},
+			nil,
+			http.StatusUnauthorized,
+		},
 		{"valid session cookie", "", nil, cookie, http.StatusUnauthorized},
 		{"cookie next to a valid token still authenticates by the token only", "reader", nil, cookie, http.StatusOK},
 	}
@@ -153,7 +159,12 @@ func TestMCPOriginValidation(t *testing.T) {
 func TestMCPOriginAllowlistEmptyWithoutBaseURL(t *testing.T) {
 	st := newStack(t, func(o *stackOptions) { o.baseURL = "" })
 
-	if rec := st.do(http.MethodPost, "reader", listBody(t), map[string]string{"Origin": "https://artifacts.example.com"}); rec.Code != http.StatusForbidden {
+	if rec := st.do(
+		http.MethodPost,
+		"reader",
+		listBody(t),
+		map[string]string{"Origin": "https://artifacts.example.com"},
+	); rec.Code != http.StatusForbidden {
 		t.Fatalf("with no BASE_URL and no configured origins every Origin must be refused, got %d", rec.Code)
 	}
 }
@@ -161,7 +172,12 @@ func TestMCPOriginAllowlistEmptyWithoutBaseURL(t *testing.T) {
 func TestMCPBodyLimit(t *testing.T) {
 	st := newStack(t, func(o *stackOptions) { o.server.MaxBodyBytes = 300 })
 
-	big := rpcBody(t, 1, "tools/call", map[string]any{"name": "get_repository", "arguments": map[string]any{"name": strings.Repeat("a", 400)}})
+	big := rpcBody(
+		t,
+		1,
+		"tools/call",
+		map[string]any{"name": "get_repository", "arguments": map[string]any{"name": strings.Repeat("a", 400)}},
+	)
 
 	t.Run("declared length over the cap", func(t *testing.T) {
 		if rec := st.do(http.MethodPost, "reader", big, nil); rec.Code != http.StatusRequestEntityTooLarge {

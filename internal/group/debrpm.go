@@ -80,7 +80,14 @@ const (
 // serveDebRPM answers a request of a deb or rpm group: the merged metadata
 // from the group's own generated rows, and package files from the member the
 // merged index lists them for. readable are the members the caller may read.
-func (h *Handler) serveDebRPM(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, relPath string, be Backend) {
+func (h *Handler) serveDebRPM(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	readable []*models.Repository,
+	relPath string,
+	be Backend,
+) {
 	if h.metadata == nil || h.blobs == nil {
 		http.Error(w, "deb and rpm groups are not available", http.StatusNotImplemented)
 		return
@@ -244,7 +251,14 @@ func classifyRPM(relPath string) debRPMPath {
 // whose metadata does not exist yet is generated on the spot (the request waits
 // for it, bounded); one whose cached metadata is stale or past a proxy member's
 // cache lifetime is served as is while a refresh runs in the background.
-func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, relPath, scope string, readable []string) {
+func (h *Handler) serveGroupMetadata(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	p debRPMPath,
+	relPath, scope string,
+	readable []string,
+) {
 	if p.gunzip {
 		relPath += ".gz"
 	}
@@ -278,7 +292,14 @@ func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 // generateOnMiss generates the group's metadata when its anchor row is absent
 // and returns the requested row afterwards. ok is false once a response was
 // written.
-func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, key string, readable []string) (*models.RepoMetadata, bool) {
+func (h *Handler) generateOnMiss(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	p debRPMPath,
+	key string,
+	readable []string,
+) (*models.RepoMetadata, bool) {
 	if !h.worthGenerating(w, r, grp, p) {
 		return nil, false
 	}
@@ -380,7 +401,13 @@ func (h *Handler) refreshIfExpired(ctx context.Context, grp *models.Repository) 
 	}
 }
 
-func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, meta *models.RepoMetadata) {
+func (h *Handler) writeGroupMetadata(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	p debRPMPath,
+	meta *models.RepoMetadata,
+) {
 	etag := `"` + meta.BlobSHA256 + `"`
 	if p.gunzip {
 		etag = `"` + meta.BlobSHA256 + `-plain"`
@@ -431,7 +458,14 @@ func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 // serveGroupFile serves a package file from the member the merged index owns
 // it for. A file the index does not list, or whose owner the caller cannot
 // read, does not exist for this caller.
-func (h *Handler) serveGroupFile(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, scope, relPath string, be Backend) {
+func (h *Handler) serveGroupFile(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	readable []*models.Repository,
+	scope, relPath string,
+	be Backend,
+) {
 	// classifyDeb and classifyRPM only admit relative paths of plain segments.
 	key := relPath
 

@@ -36,7 +36,14 @@ func newBrandingRouter(t *testing.T) (http.Handler, *branding.Manager) {
 	return r, mgr
 }
 
-func brandReq(t *testing.T, router http.Handler, p *auth.Principal, method, target, ctype string, body []byte, hdr ...string) *httptest.ResponseRecorder {
+func brandReq(
+	t *testing.T,
+	router http.Handler,
+	p *auth.Principal,
+	method, target, ctype string,
+	body []byte,
+	hdr ...string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	req := httptest.NewRequestWithContext(context.Background(), method, target, bytes.NewReader(body))
@@ -72,7 +79,11 @@ func TestBranding_PublicGetAnonymous(t *testing.T) {
 		Revision    string  `json:"revision"`
 		Theme       *string `json:"theme"`
 	}
-	if err := json.Unmarshal(rw.Body.Bytes(), &got); err != nil || got.ProductName != "OpenArtifact" || got.SourceURL != branding.DefaultSourceURL || got.Revision == "" {
+	if err := json.Unmarshal(
+		rw.Body.Bytes(),
+		&got,
+	); err != nil || got.ProductName != "OpenArtifact" || got.SourceURL != branding.DefaultSourceURL ||
+		got.Revision == "" {
 		t.Fatalf("body = %s (%v)", rw.Body, err)
 	}
 
@@ -84,7 +95,9 @@ func TestBranding_PublicGetAnonymous(t *testing.T) {
 		t.Errorf("anonymous Cache-Control = %q, want public", cc)
 	}
 
-	if v := rw.Header().Values("Vary"); !strings.Contains(strings.Join(v, ","), "Cookie") || !strings.Contains(strings.Join(v, ","), "Authorization") {
+	if v := rw.Header().
+		Values("Vary"); !strings.Contains(strings.Join(v, ","), "Cookie") ||
+		!strings.Contains(strings.Join(v, ","), "Authorization") {
 		t.Errorf("Vary = %v", v)
 	}
 }
@@ -150,7 +163,15 @@ func TestBranding_ImageServing(t *testing.T) {
 		t.Errorf("unknown asset = %d", rw.Code)
 	}
 
-	if rw := brandReq(t, router, admin, http.MethodPut, "/api/v1/admin/branding/logo-light", "image/svg+xml", []byte(brandSVG)); rw.Code != http.StatusOK {
+	if rw := brandReq(
+		t,
+		router,
+		admin,
+		http.MethodPut,
+		"/api/v1/admin/branding/logo-light",
+		"image/svg+xml",
+		[]byte(brandSVG),
+	); rw.Code != http.StatusOK {
 		t.Fatalf("upload = %d: %s", rw.Code, rw.Body)
 	}
 
@@ -168,7 +189,17 @@ func TestBranding_ImageServing(t *testing.T) {
 	}
 
 	etag := h.Get("ETag")
-	if rw := brandReq(t, router, nil, http.MethodGet, "/api/v1/branding/logo-light", "", nil, "If-None-Match", etag); rw.Code != http.StatusNotModified ||
+	if rw := brandReq(
+		t,
+		router,
+		nil,
+		http.MethodGet,
+		"/api/v1/branding/logo-light",
+		"",
+		nil,
+		"If-None-Match",
+		etag,
+	); rw.Code != http.StatusNotModified ||
 		rw.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Errorf("image revalidation = %d headers %v", rw.Code, rw.Header())
 	}
@@ -237,12 +268,24 @@ func TestBranding_AdminUpdateReset(t *testing.T) {
 	}
 
 	if got.Effective.ProductName != "Acme" || got.Effective.PrimaryColor != "#0f766e" || got.Effective.SupportURL != "mailto:it@acme.test" ||
-		got.Defaults.ProductName != "OpenArtifact" || !got.Overrides["product_name"] || got.Overrides["source_url"] {
+		got.Defaults.ProductName != "OpenArtifact" || !got.Overrides["product_name"] ||
+		got.Overrides["source_url"] {
 		t.Errorf("response = %s", rw.Body)
 	}
 
 	// The public document reflects it immediately.
-	if pub := brandReq(t, router, nil, http.MethodGet, "/api/v1/branding", "", nil); !strings.Contains(pub.Body.String(), `"product_name":"Acme"`) {
+	if pub := brandReq(
+		t,
+		router,
+		nil,
+		http.MethodGet,
+		"/api/v1/branding",
+		"",
+		nil,
+	); !strings.Contains(
+		pub.Body.String(),
+		`"product_name":"Acme"`,
+	) {
 		t.Errorf("public = %s", pub.Body)
 	}
 

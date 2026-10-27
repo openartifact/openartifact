@@ -277,7 +277,11 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(blob.id, pkgName+"@"+blob.version, pkgName+"/-/"+tarball, tarball, r.URL.Path)...) {
+	if h.DenyIfQuarantined(
+		w,
+		r,
+		repoID,
+		quarantine.PathKeys(blob.id, pkgName+"@"+blob.version, pkgName+"/-/"+tarball, tarball, r.URL.Path)...) {
 		return
 	}
 

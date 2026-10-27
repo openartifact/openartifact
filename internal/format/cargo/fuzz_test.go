@@ -121,7 +121,12 @@ func fuzzPublishSeeds(f *testing.F) {
 
 	f.Add(fuzzFrame(meta, crate))
 	f.Add(fuzzFrame(`{"name":"Demo_X-1","vers":"1.2.3-rc.1+build.5"}`, []byte("not a crate")))
-	f.Add(fuzzFrame(`{"name":"demo","vers":"0.1.0"}`, fuzzCrate([2]string{"demo-0.1.0/Cargo.toml", toml}, [2]string{"other-1.0.0/Cargo.toml", toml})))
+	f.Add(
+		fuzzFrame(
+			`{"name":"demo","vers":"0.1.0"}`,
+			fuzzCrate([2]string{"demo-0.1.0/Cargo.toml", toml}, [2]string{"other-1.0.0/Cargo.toml", toml}),
+		),
+	)
 	f.Add(fuzzFrame(`{"name":"demo","vers":"0.1.0"}`, fuzzCrate([2]string{"demo-0.1.0/Cargo.toml", "[package\n"})))
 	f.Add(fuzzFrame(`{"name":"1demo","vers":"0.1.0"}`, nil))
 	f.Add(fuzzFrame(`{"name":"demo","vers":"01.0.0"}`, nil))
@@ -193,10 +198,17 @@ func fuzzCheckPublished(t *testing.T, h *HTTPHandler, db *cargoDB, bs *formattes
 	digest := hex.EncodeToString(sum[:])
 
 	if len(db.crates) != 1 || db.used != int64(len(crate)) || db.artifacts != 1 || !bytes.Equal(bs.Blobs[digest], crate) {
-		t.Fatalf("accepted crate stored as crates=%d used=%d artifacts=%d blob=%v", len(db.crates), db.used, db.artifacts, bs.Blobs[digest] != nil)
+		t.Fatalf(
+			"accepted crate stored as crates=%d used=%d artifacts=%d blob=%v",
+			len(db.crates),
+			db.used,
+			db.artifacts,
+			bs.Blobs[digest] != nil,
+		)
 	}
 
-	if c := db.crates[0]; c.Name != name || c.Version != version || c.Checksum != digest || c.SizeBytes != int64(len(crate)) || !json.Valid(c.MetadataJSON) {
+	if c := db.crates[0]; c.Name != name || c.Version != version || c.Checksum != digest || c.SizeBytes != int64(len(crate)) ||
+		!json.Valid(c.MetadataJSON) {
 		t.Fatalf("stored row %+v does not match the published %s %s", c, name, version)
 	}
 
@@ -226,7 +238,11 @@ func fuzzCheckServed(t *testing.T, h *HTTPHandler, name, version, digest string,
 		Links  *string `json:"links"`
 	}
 
-	if err := json.Unmarshal(entries[0].Line, &line); err != nil || line.Name != name || line.Cksum != digest || line.Yanked || line.Deps == nil {
+	if err := json.Unmarshal(
+		entries[0].Line,
+		&line,
+	); err != nil || line.Name != name || line.Cksum != digest || line.Yanked ||
+		line.Deps == nil {
 		t.Fatalf("index entry %s is not the published crate (%v)", entries[0].Line, err)
 	}
 
@@ -260,7 +276,12 @@ func fuzzCheckRepublish(t *testing.T, h *HTTPHandler, name, version string, crat
 		{name, versionIdentity(version) + "+again"},
 	} {
 		meta, _ := json.Marshal(map[string]string{"name": c.name, "vers": c.version})
-		if w := call(h, http.MethodPut, "/api/v1/crates/new", bytes.NewReader(fuzzFrame(string(meta), crate))); w.Code != http.StatusConflict {
+		if w := call(
+			h,
+			http.MethodPut,
+			"/api/v1/crates/new",
+			bytes.NewReader(fuzzFrame(string(meta), crate)),
+		); w.Code != http.StatusConflict {
 			t.Fatalf("republishing %s %s as %s %s answered %d, want 409: %s", name, version, c.name, c.version, w.Code, w.Body.String())
 		}
 	}
@@ -317,7 +338,8 @@ func fuzzCheckCrateVersion(t *testing.T, version string) {
 		return
 	}
 
-	if !semver.IsValid("v"+version) || len(version) > 100 || versionIdentity(version) == "" || strings.Contains(versionIdentity(version), "+") {
+	if !semver.IsValid("v"+version) || len(version) > 100 || versionIdentity(version) == "" ||
+		strings.Contains(versionIdentity(version), "+") {
 		t.Fatalf("validCrateVersion(%q)", version)
 	}
 
@@ -329,7 +351,9 @@ func fuzzCheckCrateVersion(t *testing.T, version string) {
 // FuzzTransformCargoIndexDeps translates arbitrary publish "deps" JSON into
 // index dependencies: always a list that marshals, and one entry per object.
 func FuzzTransformCargoIndexDeps(f *testing.F) {
-	f.Add(`[{"name":"serde","version_req":"^1.0","features":["derive"],"optional":true,"default_features":false,"target":"cfg(windows)","kind":"dev","registry":null},{"name":"rand","explicit_name_in_toml":"random","version_req":">=0.8"}]`)
+	f.Add(
+		`[{"name":"serde","version_req":"^1.0","features":["derive"],"optional":true,"default_features":false,"target":"cfg(windows)","kind":"dev","registry":null},{"name":"rand","explicit_name_in_toml":"random","version_req":">=0.8"}]`,
+	)
 	f.Add(`[null,1,"x",[],{}]`)
 	f.Add(`{"name":"x"}`)
 	f.Add(`null`)

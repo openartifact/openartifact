@@ -220,7 +220,15 @@ func (r *Registry) Refresh(ctx context.Context) error {
 	hasPrimary := false
 
 	for _, row := range rows {
-		t := &Tier{ID: row.ID, Name: row.Name, BackendID: row.BackendID, BackendName: row.BackendName, Kind: row.BackendKind, Rank: row.Rank, PromoteOnRead: row.PromoteOnRead}
+		t := &Tier{
+			ID:            row.ID,
+			Name:          row.Name,
+			BackendID:     row.BackendID,
+			BackendName:   row.BackendName,
+			Kind:          row.BackendKind,
+			Rank:          row.Rank,
+			PromoteOnRead: row.PromoteOnRead,
+		}
 
 		if t.Primary() {
 			hasPrimary = true

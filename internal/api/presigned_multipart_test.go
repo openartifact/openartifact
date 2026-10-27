@@ -43,7 +43,13 @@ func (m *multipartStore) InitiateMultipart(_ context.Context, id string, _, _ in
 	return "handle-" + id, nil
 }
 
-func (m *multipartStore) PresignStagingPart(_ context.Context, id, handle string, number int, length int64, ttl time.Duration) (storage.PresignedPut, error) {
+func (m *multipartStore) PresignStagingPart(
+	_ context.Context,
+	id, handle string,
+	number int,
+	length int64,
+	ttl time.Duration,
+) (storage.PresignedPut, error) {
 	if handle != "handle-"+id {
 		return storage.PresignedPut{}, fmt.Errorf("wrong handle %q", handle)
 	}
@@ -211,14 +217,54 @@ func TestPresignedMultipart_CreateValidation(t *testing.T) {
 		want int
 		code string
 	}{
-		{"above single limit without multipart", CreatePresignedUploadRequest{Path: "a", Size: 6 << 30, SHA256: good}, http.StatusBadRequest, "invalid_size"},
-		{"part size without multipart", CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: good, PartSize: 10 << 20}, http.StatusBadRequest, "invalid_part_size"},
-		{"empty file", CreatePresignedUploadRequest{Path: "a", Size: 0, SHA256: good, Multipart: true}, http.StatusBadRequest, "invalid_size"},
-		{"part size too small", CreatePresignedUploadRequest{Path: "a", Size: 10, SHA256: good, Multipart: true, PartSize: 1 << 20}, http.StatusBadRequest, "invalid_part_size"},
-		{"part size too large", CreatePresignedUploadRequest{Path: "a", Size: 10, SHA256: good, Multipart: true, PartSize: 5 << 30}, http.StatusBadRequest, "invalid_part_size"},
-		{"too many parts", CreatePresignedUploadRequest{Path: "a", Size: 1 << 40, SHA256: good, Multipart: true, PartSize: 64 << 20}, http.StatusBadRequest, "invalid_part_size"},
-		{"above the object limit", CreatePresignedUploadRequest{Path: "a", Size: 6 << 40, SHA256: good, Multipart: true}, http.StatusBadRequest, "invalid_size"},
-		{"small file may use multipart", CreatePresignedUploadRequest{Path: "a", Size: 10, SHA256: good, Multipart: true}, http.StatusCreated, ""},
+		{
+			"above single limit without multipart",
+			CreatePresignedUploadRequest{Path: "a", Size: 6 << 30, SHA256: good},
+			http.StatusBadRequest,
+			"invalid_size",
+		},
+		{
+			"part size without multipart",
+			CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: good, PartSize: 10 << 20},
+			http.StatusBadRequest,
+			"invalid_part_size",
+		},
+		{
+			"empty file",
+			CreatePresignedUploadRequest{Path: "a", Size: 0, SHA256: good, Multipart: true},
+			http.StatusBadRequest,
+			"invalid_size",
+		},
+		{
+			"part size too small",
+			CreatePresignedUploadRequest{Path: "a", Size: 10, SHA256: good, Multipart: true, PartSize: 1 << 20},
+			http.StatusBadRequest,
+			"invalid_part_size",
+		},
+		{
+			"part size too large",
+			CreatePresignedUploadRequest{Path: "a", Size: 10, SHA256: good, Multipart: true, PartSize: 5 << 30},
+			http.StatusBadRequest,
+			"invalid_part_size",
+		},
+		{
+			"too many parts",
+			CreatePresignedUploadRequest{Path: "a", Size: 1 << 40, SHA256: good, Multipart: true, PartSize: 64 << 20},
+			http.StatusBadRequest,
+			"invalid_part_size",
+		},
+		{
+			"above the object limit",
+			CreatePresignedUploadRequest{Path: "a", Size: 6 << 40, SHA256: good, Multipart: true},
+			http.StatusBadRequest,
+			"invalid_size",
+		},
+		{
+			"small file may use multipart",
+			CreatePresignedUploadRequest{Path: "a", Size: 10, SHA256: good, Multipart: true},
+			http.StatusCreated,
+			"",
+		},
 	}
 
 	for _, tc := range tests {
@@ -253,7 +299,12 @@ func TestPresignedMultipart_UnsupportedBackend(t *testing.T) {
 		t.Fatalf("status = %d, rows %d; body %s", rw.Code, len(f.db.uploads), rw.Body.String())
 	}
 
-	if single := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))}); single.Code != http.StatusCreated {
+	if single := f.call(
+		t,
+		false,
+		"/api/v1/repositories/files/uploads",
+		CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))},
+	); single.Code != http.StatusCreated {
 		t.Errorf("single upload status = %d", single.Code)
 	}
 }
@@ -284,7 +335,12 @@ func TestPresignedMultipart_PartsValidationAndAccess(t *testing.T) {
 	})
 
 	t.Run("unknown upload", func(t *testing.T) {
-		if rw := f.call(t, false, partsPath("00000000-0000-0000-0000-000000000000"), PresignedPartsRequest{PartNumbers: []int{1}}); rw.Code != http.StatusNotFound {
+		if rw := f.call(
+			t,
+			false,
+			partsPath("00000000-0000-0000-0000-000000000000"),
+			PresignedPartsRequest{PartNumbers: []int{1}},
+		); rw.Code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", rw.Code)
 		}
 	})
@@ -339,7 +395,8 @@ func TestPresignedMultipart_PartsSignExactSizesAndExtendTheUpload(t *testing.T) 
 
 	for i, w := range want {
 		p := parts.Parts[i]
-		if p.PartNumber != w.number || p.Size != w.size || p.Method != http.MethodPut || !strings.Contains(p.UploadURL, fmt.Sprintf("partNumber=%d&size=%d", w.number, w.size)) {
+		if p.PartNumber != w.number || p.Size != w.size || p.Method != http.MethodPut ||
+			!strings.Contains(p.UploadURL, fmt.Sprintf("partNumber=%d&size=%d", w.number, w.size)) {
 			t.Errorf("part %d = %+v, want number %d size %d", i, p, w.number, w.size)
 		}
 	}

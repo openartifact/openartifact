@@ -193,8 +193,14 @@ func TestEnvMentionsAndRender(t *testing.T) {
 	}
 
 	probes := []cmdProbe{
-		{Path: []string{"import", "nexus"}, Flags: []flagDoc{{Name: "-source-user", Value: "string", Description: "user (or OA_IMPORT_USER)"}}},
-		{Path: []string{"import", "artifactory"}, Flags: []flagDoc{{Name: "-source-user", Value: "string", Description: "user (or OA_IMPORT_USER)"}}},
+		{
+			Path:  []string{"import", "nexus"},
+			Flags: []flagDoc{{Name: "-source-user", Value: "string", Description: "user (or OA_IMPORT_USER)"}},
+		},
+		{
+			Path:  []string{"import", "artifactory"},
+			Flags: []flagDoc{{Name: "-source-user", Value: "string", Description: "user (or OA_IMPORT_USER)"}},
+		},
 		{Path: []string{"auth"}, Usage: "Usage: oa auth <login>\n  second line"},
 	}
 

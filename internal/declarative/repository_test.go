@@ -801,8 +801,11 @@ func TestRepositoryValidate(t *testing.T) {
 			wantErr: "group repositories are not supported",
 		},
 		{
-			name:    "upstream url with credentials",
-			obj:     &Object{Name: "r", Spec: map[string]any{"format": "npm", "repo_type": "proxy", "upstream_url": "https://u:p@x.example.com"}},
+			name: "upstream url with credentials",
+			obj: &Object{
+				Name: "r",
+				Spec: map[string]any{"format": "npm", "repo_type": "proxy", "upstream_url": "https://u:p@x.example.com"},
+			},
 			wantErr: "plain http(s) base URL",
 		},
 		{

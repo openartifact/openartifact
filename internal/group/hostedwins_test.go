@@ -41,10 +41,31 @@ func hostedWinsCases() map[string]hostedWinsCase {
 				t.Helper()
 
 				f.h.SetBaseURL(npmBase)
-				f.set("hosted", "lib", 200, packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA"}, map[string]string{"latest": "1.0.0"}))
-				f.set("mirror", "lib", 200, packument(t, "mirror", "lib", map[string]string{"1.0.0": "BBBB", "9.9.9": "CCCC"}, map[string]string{"latest": "9.9.9"}))
+				f.set(
+					"hosted",
+					"lib",
+					200,
+					packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA"}, map[string]string{"latest": "1.0.0"}),
+				)
+				f.set(
+					"mirror",
+					"lib",
+					200,
+					packument(
+						t,
+						"mirror",
+						"lib",
+						map[string]string{"1.0.0": "BBBB", "9.9.9": "CCCC"},
+						map[string]string{"latest": "9.9.9"},
+					),
+				)
 				f.set("mirror", "lib/-/lib-9.9.9.tgz", 200, "evil")
-				f.set("mirror", "other", 200, packument(t, "mirror", "other", map[string]string{"1.0.0": "DDDD"}, map[string]string{"latest": "1.0.0"}))
+				f.set(
+					"mirror",
+					"other",
+					200,
+					packument(t, "mirror", "other", map[string]string{"1.0.0": "DDDD"}, map[string]string{"latest": "1.0.0"}),
+				)
 			},
 			meta: "lib", probe: "lib",
 			hostedHas: `"1.0.0"`, proxyOnly: `"9.9.9"`,
@@ -152,7 +173,8 @@ func TestHostedWins_MergeProxyVersionsKeepsTheUnion(t *testing.T) {
 			f.grp.MergeProxyVersions = true
 
 			w := f.get(http.MethodGet, c.meta)
-			if body := w.Body.String(); w.Code != http.StatusOK || !strings.Contains(body, c.hostedHas) || !strings.Contains(body, c.proxyOnly) {
+			if body := w.Body.String(); w.Code != http.StatusOK || !strings.Contains(body, c.hostedHas) ||
+				!strings.Contains(body, c.proxyOnly) {
 				t.Errorf("metadata = %d, want the union:\n%s", w.Code, body)
 			}
 
@@ -451,7 +473,10 @@ func ociHostedWins(t *testing.T) *fixture {
 func TestHostedWins_DockerImages(t *testing.T) {
 	f := ociHostedWins(t)
 
-	if w := f.getOCI("img/tags/list"); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"h1"`) || strings.Contains(w.Body.String(), "m1") {
+	if w := f.getOCI(
+		"img/tags/list",
+	); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"h1"`) ||
+		strings.Contains(w.Body.String(), "m1") {
 		t.Errorf("tags = %d %s, want the hosted tags only", w.Code, w.Body.String())
 	}
 

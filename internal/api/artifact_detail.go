@@ -62,7 +62,11 @@ func (h *RepositoriesHandler) handlePackageDetail(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *RepositoriesHandler) packageDetailResponse(ctx context.Context, repo *models.Repository, d *models.ComponentDetail) (*responses.PackageDetailResponse, error) {
+func (h *RepositoriesHandler) packageDetailResponse(
+	ctx context.Context,
+	repo *models.Repository,
+	d *models.ComponentDetail,
+) (*responses.PackageDetailResponse, error) {
 	files, err := h.versionFiles(ctx, repo.ID, d)
 	if err != nil {
 		return nil, err
@@ -96,7 +100,11 @@ func (h *RepositoriesHandler) packageDetailResponse(ctx context.Context, repo *m
 // versionFiles lists the rows that share the package name and version of d: the
 // files of one version. The listing's substring filter narrows the read, the
 // exact version match is made here.
-func (h *RepositoriesHandler) versionFiles(ctx context.Context, repoID string, d *models.ComponentDetail) ([]responses.PackageFileResponse, error) {
+func (h *RepositoriesHandler) versionFiles(
+	ctx context.Context,
+	repoID string,
+	d *models.ComponentDetail,
+) ([]responses.PackageFileResponse, error) {
 	components, _, err := h.listComponents(ctx, repoID, database.ComponentListOptions{
 		Format: d.Format, Name: d.Name, Query: d.Version, Page: 1, Limit: maxDetailFiles,
 	})

@@ -65,7 +65,10 @@ func (e *importEnv) check(t *testing.T, table, id string, want time.Time) {
 func (e *importEnv) createNpm(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
-	pkg, err := e.pg.CreateNPMPackage(e.ctx, &models.NPMPackage{RepositoryID: repo, Name: e.uniq("n"), FullName: e.uniq("n"), LatestVersion: "1.0.0"})
+	pkg, err := e.pg.CreateNPMPackage(
+		e.ctx,
+		&models.NPMPackage{RepositoryID: repo, Name: e.uniq("n"), FullName: e.uniq("n"), LatestVersion: "1.0.0"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,8 +175,20 @@ func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string
 func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
-	p := &models.ConanPackage{RepositoryID: repo, Name: "z", Version: "1.3", UserChannel: "_/_", RecipeRevision: "r",
-		PackageID: "_", PackageRevision: "_", Filename: "conanfile.py", SHA256: e.uniq("sha"), BlobKey: e.uniq("k"), SizeBytes: 1, CreatedAt: at}
+	p := &models.ConanPackage{
+		RepositoryID:    repo,
+		Name:            "z",
+		Version:         "1.3",
+		UserChannel:     "_/_",
+		RecipeRevision:  "r",
+		PackageID:       "_",
+		PackageRevision: "_",
+		Filename:        "conanfile.py",
+		SHA256:          e.uniq("sha"),
+		BlobKey:         e.uniq("k"),
+		SizeBytes:       1,
+		CreatedAt:       at,
+	}
 	if err := e.pg.CreateConanPackage(e.ctx, p); err != nil {
 		t.Fatal(err)
 	}
@@ -253,8 +268,15 @@ func (e *importEnv) dockerCreatedAt(t *testing.T, origin time.Time) {
 			blobID := s.blob(10)
 			digest := "sha256:" + e.uniq("d")
 
-			m := &models.DockerManifest{RepositoryID: s.repo, Image: "img", Digest: digest, MediaType: "application/vnd.oci.image.manifest.v1+json",
-				BlobID: blobID, Size: 10, CreatedAt: tc.at}
+			m := &models.DockerManifest{
+				RepositoryID: s.repo,
+				Image:        "img",
+				Digest:       digest,
+				MediaType:    "application/vnd.oci.image.manifest.v1+json",
+				BlobID:       blobID,
+				Size:         10,
+				CreatedAt:    tc.at,
+			}
 			if err := pg.CreateDockerManifest(ctx, m); err != nil {
 				t.Fatal(err)
 			}
@@ -269,7 +291,13 @@ func (e *importEnv) dockerCreatedAt(t *testing.T, origin time.Time) {
 			e.check(t, "docker_tags", tag.ID, tc.at)
 
 			// Moving the tag keeps its created_at: only the target changes.
-			moved := &models.DockerTag{RepositoryID: s.repo, Image: "img", Name: "latest", ManifestDigest: digest, CreatedAt: time.Now().Add(time.Hour)}
+			moved := &models.DockerTag{
+				RepositoryID:   s.repo,
+				Image:          "img",
+				Name:           "latest",
+				ManifestDigest: digest,
+				CreatedAt:      time.Now().Add(time.Hour),
+			}
 			if err := pg.UpsertDockerTag(ctx, moved); err != nil {
 				t.Fatal(err)
 			}

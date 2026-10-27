@@ -59,9 +59,17 @@ const (
 func npmTarball(t *testing.T) []byte {
 	t.Helper()
 
-	return archivetest.TarGz(t,
-		archivetest.File("package/package.json", `{"name":"lib","version":"1.0.0","dependencies":{"left-pad":"1.3.0","lodash":"^4.17.0","@babel/core":"7.0.0"}}`),
-		archivetest.File("package/npm-shrinkwrap.json", `{"lockfileVersion":3,"packages":{"":{},"node_modules/lodash":{"version":"4.17.21","license":"MIT"}}}`))
+	return archivetest.TarGz(
+		t,
+		archivetest.File(
+			"package/package.json",
+			`{"name":"lib","version":"1.0.0","dependencies":{"left-pad":"1.3.0","lodash":"^4.17.0","@babel/core":"7.0.0"}}`,
+		),
+		archivetest.File(
+			"package/npm-shrinkwrap.json",
+			`{"lockfileVersion":3,"packages":{"":{},"node_modules/lodash":{"version":"4.17.21","license":"MIT"}}}`,
+		),
+	)
 }
 
 func cdxComponents(t *testing.T, res *SBOMResult) map[string]cdxComponent {
@@ -157,7 +165,9 @@ func TestSBOMRangeOnlyDependencyHasNoInventedVersion(t *testing.T) {
 func TestSBOMSubjectFromListingRowID(t *testing.T) {
 	const rowID = "0b7e7f64-3a4f-4b43-9d0f-7a3a3a3a3a3a"
 
-	db := &rowDB{blob: &models.ComponentBlob{ID: rowID, Format: "npm", Name: "lib", Version: "1.0.0", Filename: "lib-1.0.0.tgz", SHA256: shaTGZ}}
+	db := &rowDB{
+		blob: &models.ComponentBlob{ID: rowID, Format: "npm", Name: "lib", Version: "1.0.0", Filename: "lib-1.0.0.tgz", SHA256: shaTGZ},
+	}
 	g := newFakeGen(&db.fakeDB).WithBlobStore(&memBlobs{files: map[string][]byte{shaTGZ: npmTarball(t)}})
 	g.db = db
 
@@ -187,8 +197,10 @@ func TestSBOMSubjectFromListingRowID(t *testing.T) {
 
 func TestSBOMMavenReadsPomNotJar(t *testing.T) {
 	pom := `<project><dependencies><dependency><groupId>g</groupId><artifactId>a</artifactId><version>1.0</version></dependency></dependencies></project>`
-	jar := archivetest.Zip(t, archivetest.File("META-INF/maven/x/y/pom.xml",
-		`<project><dependencies><dependency><groupId>jar</groupId><artifactId>only</artifactId><version>2</version></dependency></dependencies></project>`))
+	jar := archivetest.Zip(t, archivetest.File(
+		"META-INF/maven/x/y/pom.xml",
+		`<project><dependencies><dependency><groupId>jar</groupId><artifactId>only</artifactId><version>2</version></dependency></dependencies></project>`,
+	))
 	db := &fakeDB{comps: []*models.Component{
 		{Format: "maven", Name: "org.demo:app", Version: "1.0", Filename: "app-1.0.jar", SHA256: shaJAR},
 		{Format: "maven", Name: "org.demo:app", Version: "1.0", Filename: "app-1.0.pom", SHA256: shaPOM},
@@ -208,7 +220,11 @@ func TestSBOMMavenReadsPomNotJar(t *testing.T) {
 
 func TestSBOMDebDependenciesCarryDistroNamespace(t *testing.T) {
 	deb := debPackage(t, "Package: demo\nVersion: 1.0-1ubuntu1\nArchitecture: amd64\nDepends: libc6 (>= 2.31), zlib1g (= 1:1.2.11)\n")
-	db := &fakeDB{comps: []*models.Component{{Format: "deb", Name: "demo", Version: "1.0-1ubuntu1", Filename: "demo_1.0-1ubuntu1_amd64.deb", SHA256: shaTGZ}}}
+	db := &fakeDB{
+		comps: []*models.Component{
+			{Format: "deb", Name: "demo", Version: "1.0-1ubuntu1", Filename: "demo_1.0-1ubuntu1_amd64.deb", SHA256: shaTGZ},
+		},
+	}
 	g := newFakeGen(db).WithBlobStore(&memBlobs{files: map[string][]byte{shaTGZ: deb}})
 
 	res, err := g.GenerateCycloneDX(context.Background(), "repo", "demo@1.0-1ubuntu1", "deb", nil)

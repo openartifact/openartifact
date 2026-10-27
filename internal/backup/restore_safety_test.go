@@ -80,7 +80,10 @@ func TestRestore_FailureCountIsPerRun(t *testing.T) {
 	db := newFakeDB("dst")
 	eng, _ := newTestEngine(t, db)
 
-	bad := writeLegacyArchive(t, []legacyEntry{{"repositories.jsonl", []map[string]any{{"ID": "r1", "Name": "raw", "Format": "raw", "RepoType": "hosted"}}}})
+	bad := writeLegacyArchive(
+		t,
+		[]legacyEntry{{"repositories.jsonl", []map[string]any{{"ID": "r1", "Name": "raw", "Format": "raw", "RepoType": "hosted"}}}},
+	)
 	good := writeLegacyArchive(t, []legacyEntry{{"users.jsonl", []map[string]any{{"ID": "u1", "Username": "alice"}}}})
 
 	if err := eng.RunRestore(ctx, bad); !errors.Is(err, ErrRestoreIncomplete) {

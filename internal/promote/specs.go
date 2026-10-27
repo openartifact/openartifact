@@ -87,12 +87,14 @@ func rowSpecs() []rowSpec {
 			},
 		},
 		{
-			format:   "rubygems",
-			kind:     models.TrashKindRubyGems,
-			table:    "rubygems_gems",
-			name:     "s.name",
-			version:  "s.version",
-			idents:   []string{"s.name || '-' || s.version || CASE WHEN s.platform IN ('', 'ruby') THEN '' ELSE '-' || s.platform END || '.gem'"},
+			format:  "rubygems",
+			kind:    models.TrashKindRubyGems,
+			table:   "rubygems_gems",
+			name:    "s.name",
+			version: "s.version",
+			idents: []string{
+				"s.name || '-' || s.version || CASE WHEN s.platform IN ('', 'ruby') THEN '' ELSE '-' || s.platform END || '.gem'",
+			},
 			key:      []string{"name", "version", "platform"},
 			licenses: "s.licenses",
 			cols: []string{

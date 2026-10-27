@@ -258,7 +258,10 @@ func TestDownloadQuarantine(t *testing.T) {
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {
-		return formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodGet, "/repos/myrepo/api/v1/crates/demo/0.1.0/download", nil)).Code
+		return formattest.Do(
+			h.RegisterRepoRoutes,
+			formattest.Request(http.MethodGet, "/repos/myrepo/api/v1/crates/demo/0.1.0/download", nil),
+		).Code
 	}
 
 	if c := get(); c != http.StatusOK {
@@ -272,7 +275,13 @@ func TestDownloadQuarantine(t *testing.T) {
 	}
 }
 
-func publishCrate(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, meta string) *httptest.ResponseRecorder {
+func publishCrate(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	meta string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	return publishCrateData(t, db, bs, pub, meta, plainCrate(t))
@@ -288,7 +297,14 @@ func plainCrate(t *testing.T) []byte {
 
 // publishCrateData publishes crate with the given publish metadata JSON, the
 // way cargo (or curl) sends it.
-func publishCrateData(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, meta string, crateData []byte) *httptest.ResponseRecorder {
+func publishCrateData(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	meta string,
+	crateData []byte,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -440,11 +456,36 @@ func TestPublishLicensePolicyReadsTheCrate(t *testing.T) {
 		meta string
 		want policytest.Outcome
 	}{
-		{"no license in the publish metadata", "[package]\nname = \"demo\"\nlicense = \"GPL-3.0-only\"\n", `{"name":"demo","vers":"0.1.0"}`, policytest.Blocked},
-		{"publish metadata claims MIT, crate is GPL", "[package]\nname = \"demo\"\nlicense = \"GPL-3.0-only\"\n", `{"name":"demo","vers":"0.1.0","license":"MIT"}`, policytest.Blocked},
-		{"publish metadata claims GPL, crate is MIT", "[package]\nname = \"demo\"\nlicense = \"MIT\"\n", `{"name":"demo","vers":"0.1.0","license":"GPL-3.0-only"}`, policytest.Admitted},
-		{"legacy slash expression", "[package]\nname = \"demo\"\nlicense = \"MIT/GPL-3.0-only\"\n", `{"name":"demo","vers":"0.1.0"}`, policytest.Blocked},
-		{"crate declares nothing: publish metadata is the fallback", "[package]\nname = \"demo\"\n", `{"name":"demo","vers":"0.1.0","license":"GPL-3.0-only"}`, policytest.Blocked},
+		{
+			"no license in the publish metadata",
+			"[package]\nname = \"demo\"\nlicense = \"GPL-3.0-only\"\n",
+			`{"name":"demo","vers":"0.1.0"}`,
+			policytest.Blocked,
+		},
+		{
+			"publish metadata claims MIT, crate is GPL",
+			"[package]\nname = \"demo\"\nlicense = \"GPL-3.0-only\"\n",
+			`{"name":"demo","vers":"0.1.0","license":"MIT"}`,
+			policytest.Blocked,
+		},
+		{
+			"publish metadata claims GPL, crate is MIT",
+			"[package]\nname = \"demo\"\nlicense = \"MIT\"\n",
+			`{"name":"demo","vers":"0.1.0","license":"GPL-3.0-only"}`,
+			policytest.Admitted,
+		},
+		{
+			"legacy slash expression",
+			"[package]\nname = \"demo\"\nlicense = \"MIT/GPL-3.0-only\"\n",
+			`{"name":"demo","vers":"0.1.0"}`,
+			policytest.Blocked,
+		},
+		{
+			"crate declares nothing: publish metadata is the fallback",
+			"[package]\nname = \"demo\"\n",
+			`{"name":"demo","vers":"0.1.0","license":"GPL-3.0-only"}`,
+			policytest.Blocked,
+		},
 	}
 
 	for _, tc := range tests {

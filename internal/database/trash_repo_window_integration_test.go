@@ -88,7 +88,10 @@ func TestTrashRepositoryRestoreKeepsRemainingWindow(t *testing.T) {
 	}
 
 	var live int
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_tags WHERE id = $1 AND deleted_at IS NULL`, tagID).Scan(&live); err != nil || live != 1 {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_tags WHERE id = $1 AND deleted_at IS NULL`, tagID).
+		Scan(&live); err != nil ||
+		live != 1 {
 		t.Fatalf("tag not restored with its manifest: %d, %v", live, err)
 	}
 }

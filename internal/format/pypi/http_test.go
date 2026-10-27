@@ -184,7 +184,13 @@ func TestDownloadQuarantine(t *testing.T) {
 
 type pypiField struct{ key, value string }
 
-func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, fields ...pypiField) *httptest.ResponseRecorder {
+func uploadWithFields(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	fields ...pypiField,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	// An sdist whose PKG-INFO declares no license: the form fields are the only
@@ -196,7 +202,15 @@ func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobSto
 
 // uploadFile uploads content as filename the way twine does, with the given
 // extra form fields (name and version are always sent).
-func uploadFile(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, filename string, content []byte, fields ...pypiField) *httptest.ResponseRecorder {
+func uploadFile(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	filename string,
+	content []byte,
+	fields ...pypiField,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -370,11 +384,17 @@ func TestDownloadAmbiguousFilename(t *testing.T) {
 	}
 	bs.Blobs["a1"], bs.Blobs["f1"] = []byte("A"), []byte("F")
 
-	if c := formattest.Do(register(h), formattest.Request(http.MethodGet, "/repos/myrepo/files/foo-1.0.tar.gz", nil)).Code; c == http.StatusOK {
+	if c := formattest.Do(
+		register(h),
+		formattest.Request(http.MethodGet, "/repos/myrepo/files/foo-1.0.tar.gz", nil),
+	).Code; c == http.StatusOK {
 		t.Errorf("ambiguous filename served with 200")
 	}
 
-	if c := formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/files/foo-1.0.tar.gz", nil)).Code; c != http.StatusConflict {
+	if c := formattest.Do(
+		register(h),
+		formattest.Request(http.MethodDelete, "/repos/myrepo/files/foo-1.0.tar.gz", nil),
+	).Code; c != http.StatusConflict {
 		t.Errorf("ambiguous delete = %d, want 409", c)
 	}
 
@@ -530,8 +550,18 @@ func TestUploadLicensePolicyArtifactBeatsFormFields(t *testing.T) {
 		fields   []pypiField
 		want     policytest.Outcome
 	}{
-		{"form claims MIT, wheel is GPL", "License-Expression: GPL-3.0-only\n", []pypiField{{"license_expression", "MIT"}, {"license", "MIT"}}, policytest.Blocked},
-		{"form claims GPL, wheel is MIT", "License-Expression: MIT\n", []pypiField{{"license_expression", "GPL-3.0-only"}}, policytest.Admitted},
+		{
+			"form claims MIT, wheel is GPL",
+			"License-Expression: GPL-3.0-only\n",
+			[]pypiField{{"license_expression", "MIT"}, {"license", "MIT"}},
+			policytest.Blocked,
+		},
+		{
+			"form claims GPL, wheel is MIT",
+			"License-Expression: MIT\n",
+			[]pypiField{{"license_expression", "GPL-3.0-only"}},
+			policytest.Admitted,
+		},
 		{"wheel declares nothing: the form is the fallback", "", []pypiField{{"license_expression", "GPL-3.0-only"}}, policytest.Blocked},
 	}
 
@@ -565,9 +595,15 @@ func TestUploadLicensePolicyDjangoStyleBSD(t *testing.T) {
 }
 
 func TestUploadSdistLicenseFromPKGINFO(t *testing.T) {
-	sdist := archivetest.TarGz(t, archivetest.File("demo_pkg-1.0/PKG-INFO", "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\nLicense: GPL-3.0-only\n"))
+	sdist := archivetest.TarGz(
+		t,
+		archivetest.File("demo_pkg-1.0/PKG-INFO", "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\nLicense: GPL-3.0-only\n"),
+	)
 
-	c := policytest.Case{Want: policytest.Blocked, Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})}}
+	c := policytest.Case{
+		Want:     policytest.Blocked,
+		Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})},
+	}
 	inner := &pypiDB{DB: formattest.NewDB()}
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
@@ -581,7 +617,10 @@ func TestUploadRejectsUnsafeArchives(t *testing.T) {
 	const header = "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\n"
 
 	archives := map[string][]byte{
-		"zip bomb METADATA": archivetest.Zip(t, archivetest.File("demo_pkg-1.0.dist-info/METADATA", header+"Description: "+strings.Repeat("A", 8<<20))),
+		"zip bomb METADATA": archivetest.Zip(
+			t,
+			archivetest.File("demo_pkg-1.0.dist-info/METADATA", header+"Description: "+strings.Repeat("A", 8<<20)),
+		),
 		"two METADATA files": archivetest.Zip(t,
 			archivetest.File("demo_pkg-1.0.dist-info/METADATA", header+"License: MIT\n"),
 			archivetest.File("other-1.0.dist-info/METADATA", header+"License: GPL-3.0-only\n")),

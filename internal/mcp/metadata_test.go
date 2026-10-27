@@ -141,8 +141,12 @@ func TestMCPAcceptsOIDCAccessTokenForTheMappedUser(t *testing.T) {
 		o.bearerVerify = func(ctx context.Context, token string) (*models.User, error) { return stubOIDCVerifier(st)(ctx, token) }
 	})
 
-	rec := st.do(http.MethodPost, "", rpcBody(t, 1, "tools/call", map[string]any{"name": "list_repositories", "arguments": map[string]any{}}),
-		map[string]string{"Authorization": "Bearer " + oidcAccessToken})
+	rec := st.do(
+		http.MethodPost,
+		"",
+		rpcBody(t, 1, "tools/call", map[string]any{"name": "list_repositories", "arguments": map[string]any{}}),
+		map[string]string{"Authorization": "Bearer " + oidcAccessToken},
+	)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}

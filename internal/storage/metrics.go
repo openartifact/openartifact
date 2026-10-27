@@ -259,7 +259,13 @@ func (m *MetricsBlobStore) InitiateMultipart(ctx context.Context, id string, siz
 }
 
 // PresignStagingPart forwards to the wrapped store.
-func (m *MetricsBlobStore) PresignStagingPart(ctx context.Context, id, handle string, number int, length int64, ttl time.Duration) (PresignedPut, error) {
+func (m *MetricsBlobStore) PresignStagingPart(
+	ctx context.Context,
+	id, handle string,
+	number int,
+	length int64,
+	ttl time.Duration,
+) (PresignedPut, error) {
 	s, ok := m.inner.(MultipartStagingStore)
 	if !ok {
 		return PresignedPut{}, ErrPresignNotSupported

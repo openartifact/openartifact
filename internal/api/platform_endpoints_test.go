@@ -149,11 +149,25 @@ func TestUnifiedTokensAdminSeesEverythingAndFlagsExpired(t *testing.T) {
 	past, future := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
 	db := &platformMockDB{tokens: []*models.TokenListItem{
 		{ID: "t1", Type: models.TokenListPersonal, Name: "ci", Owner: "dana", CreatedAt: past, ExpiresAt: &past},
-		{ID: "t2", Type: models.TokenListProject, Name: "deploy", Owner: "lee", Project: "acme", Role: "developer", CreatedAt: past, ExpiresAt: &future},
+		{
+			ID:        "t2",
+			Type:      models.TokenListProject,
+			Name:      "deploy",
+			Owner:     "lee",
+			Project:   "acme",
+			Role:      "developer",
+			CreatedAt: past,
+			ExpiresAt: &future,
+		},
 		{ID: "t3", Type: models.TokenListFederation, Name: "peer", Owner: "lee", Repository: "r", CreatedAt: past},
 	}}
 
-	code, body := platformGet(t, platformRouter(t, db), platAdminP(), "/api/v1/tokens?type=project&project=acme&q=dep&expires_before=2030-01-02&page=2&limit=500")
+	code, body := platformGet(
+		t,
+		platformRouter(t, db),
+		platAdminP(),
+		"/api/v1/tokens?type=project&project=acme&q=dep&expires_before=2030-01-02&page=2&limit=500",
+	)
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, body = %v", code, body)
 	}
@@ -162,7 +176,9 @@ func TestUnifiedTokensAdminSeesEverythingAndFlagsExpired(t *testing.T) {
 		t.Errorf("admin query must be unrestricted: %+v", db.tokSeen)
 	}
 
-	if !slices.Equal(db.tokSeen.Types, []string{"project"}) || db.tokSeen.Query != "dep" || db.tokSeen.Project != "acme" || db.tokSeen.Page != 2 || db.tokSeen.Limit != unifiedTokensMaxLimit {
+	if !slices.Equal(db.tokSeen.Types, []string{"project"}) || db.tokSeen.Query != "dep" || db.tokSeen.Project != "acme" ||
+		db.tokSeen.Page != 2 ||
+		db.tokSeen.Limit != unifiedTokensMaxLimit {
 		t.Errorf("query = %+v", db.tokSeen)
 	}
 
@@ -309,7 +325,12 @@ func TestRepositoryUsageUnlimitedOmitsLimits(t *testing.T) {
 func TestRepositoryUsageAndActivityAuthorization(t *testing.T) {
 	for _, path := range []string{"/api/v1/repositories/r/usage", "/api/v1/repositories/r/activity"} {
 		t.Run(path, func(t *testing.T) {
-			db := &platformMockDB{repo: &models.Repository{ID: platRepoID, Name: "r"}, quota: &models.StorageQuota{}, usage: &models.RepositoryUsage{}, audit: &models.AuditPage{}}
+			db := &platformMockDB{
+				repo:  &models.Repository{ID: platRepoID, Name: "r"},
+				quota: &models.StorageQuota{},
+				usage: &models.RepositoryUsage{},
+				audit: &models.AuditPage{},
+			}
 
 			for _, p := range []*auth.Principal{platAnonP(), platUser()} {
 				if code, _ := platformGet(t, platformRouter(t, db), p, path); code != http.StatusForbidden {
@@ -327,7 +348,15 @@ func TestRepositoryUsageAndActivityAuthorization(t *testing.T) {
 
 func TestAdminQuotasListAndFilters(t *testing.T) {
 	db := &platformMockDB{overview: []*models.QuotaOverview{
-		{Scope: models.QuotaScopeRepository, Name: "r", Project: "acme", MaxSizeBytes: 100, WarnThresholdPercent: 90, UsedBytes: 100, ArtifactCount: 4},
+		{
+			Scope:                models.QuotaScopeRepository,
+			Name:                 "r",
+			Project:              "acme",
+			MaxSizeBytes:         100,
+			WarnThresholdPercent: 90,
+			UsedBytes:            100,
+			ArtifactCount:        4,
+		},
 		{Scope: models.QuotaScopeProject, Name: "acme", UsedBytes: 7, WarnThresholdPercent: 80},
 	}}
 
@@ -336,14 +365,17 @@ func TestAdminQuotasListAndFilters(t *testing.T) {
 		t.Fatalf("status = %d, body = %v", code, body)
 	}
 
-	if db.quotaSeen.Scope != "repository" || !db.quotaSeen.LimitedOnly || db.quotaSeen.Query != "r" || db.quotaSeen.Limit != quotaOverviewDefaultLimit {
+	if db.quotaSeen.Scope != "repository" || !db.quotaSeen.LimitedOnly || db.quotaSeen.Query != "r" ||
+		db.quotaSeen.Limit != quotaOverviewDefaultLimit {
 		t.Errorf("query = %+v", db.quotaSeen)
 	}
 
 	quotas := body["quotas"].([]any)
 	first, second := quotas[0].(map[string]any), quotas[1].(map[string]any)
 
-	if first["scope"] != "repository" || first["name"] != "r" || first["project"] != "acme" || first["limit_bytes"] != 100.0 || first["exceeded"] != true || first["usage_percent"] != 100.0 {
+	if first["scope"] != "repository" || first["name"] != "r" || first["project"] != "acme" || first["limit_bytes"] != 100.0 ||
+		first["exceeded"] != true ||
+		first["usage_percent"] != 100.0 {
 		t.Errorf("first = %v", first)
 	}
 
@@ -370,9 +402,35 @@ func platformAuditRows() []*models.AuditLog {
 	userType, userRT, userID := "user", "user", platUserID
 
 	return []*models.AuditLog{
-		{ID: "e1", Action: "repository.update", RepositoryID: &repo, ProjectID: &proj, ActorID: &actor, ActorType: &userType, ResourceType: &rt, ResourceID: &repo, CreatedAt: time.Now()},
-		{ID: "e2", Action: "trash.delete", RepositoryID: &repo, ResourceType: &pkgType, ResourceID: &pkgID, DetailsJSON: json.RawMessage(`{"actor":"cleanup-policy","package":"left-pad","version":"1.0.0"}`), CreatedAt: time.Now()},
-		{ID: "e3", Action: "user.update", ActorID: &actor, ActorType: &userType, ResourceType: &userRT, ResourceID: &userID, CreatedAt: time.Now()},
+		{
+			ID:           "e1",
+			Action:       "repository.update",
+			RepositoryID: &repo,
+			ProjectID:    &proj,
+			ActorID:      &actor,
+			ActorType:    &userType,
+			ResourceType: &rt,
+			ResourceID:   &repo,
+			CreatedAt:    time.Now(),
+		},
+		{
+			ID:           "e2",
+			Action:       "trash.delete",
+			RepositoryID: &repo,
+			ResourceType: &pkgType,
+			ResourceID:   &pkgID,
+			DetailsJSON:  json.RawMessage(`{"actor":"cleanup-policy","package":"left-pad","version":"1.0.0"}`),
+			CreatedAt:    time.Now(),
+		},
+		{
+			ID:           "e3",
+			Action:       "user.update",
+			ActorID:      &actor,
+			ActorType:    &userType,
+			ResourceType: &userRT,
+			ResourceID:   &userID,
+			CreatedAt:    time.Now(),
+		},
 		{ID: "e4", Action: "http.request", DetailsJSON: json.RawMessage(`{"method":"GET"}`), CreatedAt: time.Now()},
 	}
 }
@@ -393,7 +451,12 @@ func TestRepositoryActivityResolvesNamesInOneBatch(t *testing.T) {
 		names: platformNames(),
 	}
 
-	code, body := platformGet(t, platformRouter(t, db), platAdminP(), "/api/v1/repositories/payments/activity?package_name=left-pad&version=1.0.0&limit=10")
+	code, body := platformGet(
+		t,
+		platformRouter(t, db),
+		platAdminP(),
+		"/api/v1/repositories/payments/activity?package_name=left-pad&version=1.0.0&limit=10",
+	)
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, body = %v", code, body)
 	}
@@ -419,7 +482,8 @@ func checkResolvedActivityRows(t *testing.T, data []any) {
 		t.Errorf("actor resolved from id = %v", e(0)["actor_name"])
 	}
 
-	if s := e(0)["subject"].(map[string]any); s["kind"] != "repository" || s["name"] != "payments" || s["project"] != "acme" || s["repository"] != "payments" {
+	if s := e(0)["subject"].(map[string]any); s["kind"] != "repository" || s["name"] != "payments" || s["project"] != "acme" ||
+		s["repository"] != "payments" {
 		t.Errorf("repository subject = %v", s)
 	}
 
@@ -468,7 +532,12 @@ func TestRepositoryActivityKeysetPaging(t *testing.T) {
 		t.Errorf("activity must not count rows: %v", body)
 	}
 
-	if code, _ := platformGet(t, platformRouter(t, db), platAdminP(), "/api/v1/repositories/payments/activity?cursor=%21%21"); code != http.StatusBadRequest {
+	if code, _ := platformGet(
+		t,
+		platformRouter(t, db),
+		platAdminP(),
+		"/api/v1/repositories/payments/activity?cursor=%21%21",
+	); code != http.StatusBadRequest {
 		t.Errorf("malformed cursor status = %d, want 400", code)
 	}
 }
@@ -566,7 +635,8 @@ func TestProjectsListCarriesStatsFromOneBatchedLookup(t *testing.T) {
 	}
 
 	p := body["projects"].([]any)[0].(map[string]any)
-	if p["member_count"] != 4.0 || p["usage"].(map[string]any)["size_bytes"] != 2048.0 || p["quota"].(map[string]any)["limit_bytes"] != 10000.0 {
+	if p["member_count"] != 4.0 || p["usage"].(map[string]any)["size_bytes"] != 2048.0 ||
+		p["quota"].(map[string]any)["limit_bytes"] != 10000.0 {
 		t.Errorf("project = %v", p)
 	}
 }

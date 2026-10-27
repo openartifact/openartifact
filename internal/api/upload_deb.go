@@ -230,7 +230,14 @@ func (h *DebUploadHandler) resolveRepoID(r *http.Request, repoName string) (stri
 }
 
 //nolint:gocyclo,cyclop // upload pipeline: sequential validation and cleanup branches
-func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request, file io.Reader, repoName string, distribution string, component string) (map[string]any, error) {
+func (h *DebUploadHandler) uploadPipeline(
+	w http.ResponseWriter,
+	r *http.Request,
+	file io.Reader,
+	repoName string,
+	distribution string,
+	component string,
+) (map[string]any, error) {
 	repoID, err := h.resolveRepoID(r, repoName)
 	if err != nil {
 		return nil, err
@@ -418,10 +425,16 @@ func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 		h.debWorker.NotifyStale(repoID)
 	}
 
-	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: repoName, Format: "deb", Name: pkg.Package, Version: pkg.Version,
-		Path: filename, SHA256: sha256sum, Size: written,
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repoID,
+		webhook.EventArtifactUploaded,
+		webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+			Repository: repoName, Format: "deb", Name: pkg.Package, Version: pkg.Version,
+			Path: filename, SHA256: sha256sum, Size: written,
+		}),
+	)
 
 	return map[string]any{
 		"id":           record.ID,
@@ -516,7 +529,12 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	err = trash.Delete(r.Context(), h.db, trash.Request{
-		RepoID: repoID, Kind: models.TrashKindDeb, IDs: []string{packageID}, Resource: comp.Filename, Package: comp.Name, Version: comp.Version,
+		RepoID:   repoID,
+		Kind:     models.TrashKindDeb,
+		IDs:      []string{packageID},
+		Resource: comp.Filename,
+		Package:  comp.Name,
+		Version:  comp.Version,
 	}, func() error {
 		return h.hardDelete(r.Context(), repoID, repoName, packageID, sha, size)
 	})
@@ -529,10 +547,16 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		h.debWorker.NotifyStale(repoID)
 	}
 
-	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repoName, Format: "deb", Name: comp.Name, Version: comp.Version,
-		Path: comp.Filename, SHA256: sha, Size: size,
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repoID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repoName, Format: "deb", Name: comp.Name, Version: comp.Version,
+			Path: comp.Filename, SHA256: sha, Size: size,
+		}),
+	)
 
 	h.log.Infow("Deb package deleted", "repository", repoName, "package_id", packageID)
 

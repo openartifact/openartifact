@@ -123,7 +123,14 @@ func TestGetBlobQuarantine(t *testing.T) {
 	}
 
 	digest := "sha256:" + sha
-	db.blob = &models.DockerBlob{ID: "b1", RepositoryID: "repo-1", Digest: digest, MediaType: "application/octet-stream", Size: int64(len(payload)), BlobSHA256: sha}
+	db.blob = &models.DockerBlob{
+		ID:           "b1",
+		RepositoryID: "repo-1",
+		Digest:       digest,
+		MediaType:    "application/octet-stream",
+		Size:         int64(len(payload)),
+		BlobSHA256:   sha,
+	}
 
 	get := func() int {
 		req := withChiVars(

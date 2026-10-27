@@ -49,7 +49,9 @@ func FuzzUploadChart(f *testing.F) {
 	}
 
 	f.Add("apiVersion: v2\nname: mychart\nversion: 1.0.0\ndescription: A test chart\n")
-	f.Add("apiVersion: v2\nname: web\nversion: 2.3.4-rc.1+build.5\nappVersion: \"1.16.0\"\nkeywords: [a, b]\nhome: https://example.com\nsources: [https://example.com/src]\nmaintainers:\n- {name: Alice, email: a@example.com}\nicon: https://example.com/i.png\ntype: library\n")
+	f.Add(
+		"apiVersion: v2\nname: web\nversion: 2.3.4-rc.1+build.5\nappVersion: \"1.16.0\"\nkeywords: [a, b]\nhome: https://example.com\nsources: [https://example.com/src]\nmaintainers:\n- {name: Alice, email: a@example.com}\nicon: https://example.com/i.png\ntype: library\n",
+	)
 	f.Add("apiVersion: v2\nname: \"a b\"\nversion: 1.0.0\n")
 	f.Add("apiVersion: v2\nname: ..\nversion: 1.0.0\n")
 	f.Add("apiVersion: v2\nname: web\nversion: 1.0\n")
@@ -121,7 +123,8 @@ func fuzzCheckListed(t *testing.T, h *HTTPHandler, name, version, digest string,
 		listed = append(listed, cv)
 	}
 
-	if len(listed) != 1 || listed[0].Name != name || listed[0].Version != version || listed[0].Digest != digest || len(listed[0].URLs) != 1 {
+	if len(listed) != 1 || listed[0].Name != name || listed[0].Version != version || listed[0].Digest != digest ||
+		len(listed[0].URLs) != 1 {
 		t.Fatalf("index lists %+v for %q %q (digest %s)\n%s", listed, name, version, digest, idx.Body.String())
 	}
 

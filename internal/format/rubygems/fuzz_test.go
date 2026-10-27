@@ -104,7 +104,9 @@ func fuzzAliasBomb() []byte {
 
 	for i := 1; i <= 9; i++ {
 		prev := "*x" + string(rune('0'+i-1))
-		b.WriteString("x" + string(rune('0'+i)) + ": &x" + string(rune('0'+i)) + " [" + strings.TrimSuffix(strings.Repeat(prev+",", 9), ",") + "]\n")
+		b.WriteString(
+			"x" + string(rune('0'+i)) + ": &x" + string(rune('0'+i)) + " [" + strings.TrimSuffix(strings.Repeat(prev+",", 9), ",") + "]\n",
+		)
 	}
 
 	return []byte(b.String())
@@ -144,7 +146,9 @@ func fuzzMetadataSeeds() [][]byte {
 		[]byte(`{"name":"a","version":"1","dependencies":[{"name":"x","requirement":",","type":""}]}`),
 		[]byte(`{"name":"a","version":"1","dependencies":"x","licenses":"MIT","authors":[1,"b"]}`),
 		[]byte("name: a\nversion: 1.0\n"),
-		[]byte("name: a\nversion: {version: 1}\ndependencies: [{name: x, requirement: {requirements: [[\">=\", {version: 1}]]}, type: ':development'}]\n"),
+		[]byte(
+			"name: a\nversion: {version: 1}\ndependencies: [{name: x, requirement: {requirements: [[\">=\", {version: 1}]]}, type: ':development'}]\n",
+		),
 		[]byte("[]"),
 		[]byte("---\n- a\n"),
 		[]byte("&a [*a]"),
@@ -514,7 +518,14 @@ func checkAcceptedGem(t *testing.T, h *HTTPHandler, db *fuzzGemsDB, gem []byte) 
 
 	file := strings.TrimSuffix(gemFilename(g), ".gem")
 
-	if w := fuzzGemPathRequest(h, http.MethodGet, "gems/"+file+".gem", "", nil); w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), gem) {
+	if w := fuzzGemPathRequest(
+		h,
+		http.MethodGet,
+		"gems/"+file+".gem",
+		"",
+		nil,
+	); w.Code != http.StatusOK ||
+		!bytes.Equal(w.Body.Bytes(), gem) {
 		t.Fatalf("download of %q = %d (%d bytes, want %d)", file, w.Code, w.Body.Len(), len(gem))
 	}
 
@@ -846,7 +857,20 @@ func checkSelectSpecs(t *testing.T, versions []string) {
 // them again: what the registry writes it must be able to read back, and a
 // second round trip must not change anything.
 func FuzzMarshalRoundTrip(f *testing.F) {
-	f.Add("rails", "7.0.0", "ruby", "summary", "desc", "https://x.example", "me@x.example", "me", "MIT", "rack", "~> 2.0, >= 2.0.1", "runtime")
+	f.Add(
+		"rails",
+		"7.0.0",
+		"ruby",
+		"summary",
+		"desc",
+		"https://x.example",
+		"me@x.example",
+		"me",
+		"MIT",
+		"rack",
+		"~> 2.0, >= 2.0.1",
+		"runtime",
+	)
 	f.Add("a", "1", "java", "", "", "", "", "", "", "x", ">=", "development")
 	f.Add("a\xff", "1.\x00", "", "\xc3\x28", "\n", "", "", "", "", "", ",,", "")
 	f.Add("a", "1", "ruby", "", "", "", "", "", "", "d", "= >1", ":x")

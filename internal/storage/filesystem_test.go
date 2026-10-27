@@ -556,7 +556,14 @@ func TestAzurePutRejectsDigestMismatchWithoutRequest(t *testing.T) {
 
 	s := azureTestStore(t, srv.URL)
 
-	if _, err := s.Put(context.Background(), strings.NewReader("bytes"), map[string]string{"sha256": strings.Repeat("0", 64)}); !errors.Is(err, ErrDigestMismatch) {
+	if _, err := s.Put(
+		context.Background(),
+		strings.NewReader("bytes"),
+		map[string]string{"sha256": strings.Repeat("0", 64)},
+	); !errors.Is(
+		err,
+		ErrDigestMismatch,
+	) {
 		t.Fatalf("Put = %v, want ErrDigestMismatch", err)
 	}
 

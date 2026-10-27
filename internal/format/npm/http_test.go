@@ -248,18 +248,44 @@ func TestHandleTarball_Resolution(t *testing.T) {
 	}{
 		{"conventional", "lodash-1.0.0.tgz", "lodash-1.0.0.tgz", "lodash", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusOK, 1},
 		{"scoped", "core-1.0.0.tgz", "core-1.0.0.tgz", "@acme/core", "/repos/myrepo/@acme/core/-/core-1.0.0.tgz", http.StatusOK, 1},
-		{"unconventional stored name", "lodash-1.0.0.tgz", "custom-name.tgz", "lodash", "/repos/myrepo/lodash/-/custom-name.tgz", http.StatusOK, 0},
-		{"unknown version", "lodash-1.0.0.tgz", "lodash-1.0.0.tgz", "lodash", "/repos/myrepo/lodash/-/lodash-9.9.9.tgz", http.StatusNotFound, 1},
-		{"stored filename differs from the derived one", "lodash-1.0.0.tgz", "other.tgz", "lodash", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusNotFound, 1},
+		{
+			"unconventional stored name",
+			"lodash-1.0.0.tgz",
+			"custom-name.tgz",
+			"lodash",
+			"/repos/myrepo/lodash/-/custom-name.tgz",
+			http.StatusOK,
+			0,
+		},
+		{
+			"unknown version",
+			"lodash-1.0.0.tgz",
+			"lodash-1.0.0.tgz",
+			"lodash",
+			"/repos/myrepo/lodash/-/lodash-9.9.9.tgz",
+			http.StatusNotFound,
+			1,
+		},
+		{
+			"stored filename differs from the derived one",
+			"lodash-1.0.0.tgz",
+			"other.tgz",
+			"lodash",
+			"/repos/myrepo/lodash/-/lodash-1.0.0.tgz",
+			http.StatusNotFound,
+			1,
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			bs := &tarballMockBlobStore{blobs: map[string][]byte{"sha-abc": []byte("data")}}
 			db := &tarballMockDB{
-				repo:     &models.Repository{ID: "repo-1", Name: "myrepo"},
-				pkg:      &models.NPMPackage{ID: "pkg-1", FullName: tc.pkg},
-				versions: []*models.NPMVersion{{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: tc.stored}},
+				repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+				pkg:  &models.NPMPackage{ID: "pkg-1", FullName: tc.pkg},
+				versions: []*models.NPMVersion{
+					{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: tc.stored},
+				},
 			}
 
 			log, err := logger.New("info", "json", "stdout")

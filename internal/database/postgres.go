@@ -197,7 +197,33 @@ func (p *PostgresDB) Migrate(ctx context.Context) error {
 const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages, federated, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
 
 func repoScanDest(r *models.Repository) []any {
-	return []any{&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.ProjectID, &r.PresignDownloads, &r.TrashRetentionDays, &r.ImmutableReleases, &r.MergeProxyVersions, &r.SignPackages, &r.Federated, &r.DeletedAt, &r.DeletedBy, &r.CreatedAt, &r.UpdatedAt}
+	return []any{
+		&r.ID,
+		&r.Name,
+		&r.Format,
+		&r.Description,
+		&r.Public,
+		&r.AllowFullUnpublish,
+		&r.RepoType,
+		&r.UpstreamURL,
+		&r.UpstreamUsername,
+		&r.UpstreamPasswordEnc,
+		&r.CacheTTLSeconds,
+		&r.NegativeCacheTTLSeconds,
+		&r.MaxStaleSeconds,
+		&r.Blocked,
+		&r.ProjectID,
+		&r.PresignDownloads,
+		&r.TrashRetentionDays,
+		&r.ImmutableReleases,
+		&r.MergeProxyVersions,
+		&r.SignPackages,
+		&r.Federated,
+		&r.DeletedAt,
+		&r.DeletedBy,
+		&r.CreatedAt,
+		&r.UpdatedAt,
+	}
 }
 
 func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name string) (*models.Repository, error) {
@@ -270,9 +296,12 @@ func (p *PostgresDB) ListRepositories(ctx context.Context, page, limit int, form
 		err  error
 	)
 	if formatFilter != "" {
-		rows, err = p.db.QueryContext(ctx,
+		rows, err = p.db.QueryContext(
+			ctx,
 			`SELECT `+repoColumns+` FROM repositories WHERE format = $1 AND deleted_at IS NULL ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
-			formatFilter, limit, offset,
+			formatFilter,
+			limit,
+			offset,
 		)
 	} else {
 		rows, err = p.db.QueryContext(ctx,
@@ -340,9 +369,26 @@ type repoExecer interface {
 }
 
 func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository) error {
-	_, err := db.ExecContext(ctx,
+	_, err := db.ExecContext(
+		ctx,
 		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12, immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now() WHERE id = $14 AND deleted_at IS NULL`,
-		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.ID, repo.PresignDownloads, repo.MergeProxyVersions, repo.SignPackages,
+		repo.Description,
+		repo.Public,
+		repo.RepoType,
+		repo.UpstreamURL,
+		repo.UpstreamUsername,
+		repo.UpstreamPasswordEnc,
+		repo.CacheTTLSeconds,
+		repo.NegativeCacheTTLSeconds,
+		repo.MaxStaleSeconds,
+		repo.Blocked,
+		repo.ProjectID,
+		repo.TrashRetentionDays,
+		repo.ImmutableReleases,
+		repo.ID,
+		repo.PresignDownloads,
+		repo.MergeProxyVersions,
+		repo.SignPackages,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update repository: %w", err)
@@ -366,7 +412,11 @@ func (p *PostgresDB) DeleteRepository(ctx context.Context, id string) error {
 // ListComponentsByRepo lists the packages of one repository across every
 // format (see ListRepoComponents in queries/components.sql for the per-format
 // mapping). formatFilter, when non-empty, restricts the result to one format.
-func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error) {
+func (p *PostgresDB) ListComponentsByRepo(
+	ctx context.Context,
+	repoID, formatFilter string,
+	page, limit int,
+) ([]*models.Component, int, error) {
 	return p.SearchComponents(ctx, repoID, ComponentListOptions{Format: formatFilter, Page: page, Limit: limit})
 }
 
@@ -505,9 +555,28 @@ func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Reposito
 		repoType = "hosted"
 	}
 
-	return p.db.QueryRowContext(ctx,
+	return p.db.QueryRowContext(
+		ctx,
 		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id, trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions, sign_packages) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.PresignDownloads, repo.AllowFullUnpublish, repo.MergeProxyVersions, repo.SignPackages,
+		repo.Name,
+		repo.Format,
+		repo.Description,
+		repo.Public,
+		repoType,
+		repo.UpstreamURL,
+		repo.UpstreamUsername,
+		repo.UpstreamPasswordEnc,
+		repo.CacheTTLSeconds,
+		repo.NegativeCacheTTLSeconds,
+		repo.MaxStaleSeconds,
+		repo.Blocked,
+		repo.ProjectID,
+		repo.TrashRetentionDays,
+		repo.ImmutableReleases,
+		repo.PresignDownloads,
+		repo.AllowFullUnpublish,
+		repo.MergeProxyVersions,
+		repo.SignPackages,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 
@@ -577,14 +646,27 @@ func createdAtOrNil(t time.Time) *time.Time {
 
 // CreateDebPackage inserts a DEB package with distribution and component references.
 func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error {
-	err := p.db.QueryRowContext(ctx,
+	err := p.db.QueryRowContext(
+		ctx,
 		`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, description, summary, license, maintainer, homepage, filename, installed_size, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::timestamptz, now()))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
-		pkg.RepositoryID, distID, compID, pkg.ArtifactID, pkg.Name, pkg.Version,
-		pkg.Arch, pkg.Description, pkg.Summary, pkg.License, "", "",
-		pkg.Filename, pkg.InstalledSize, createdAtOrNil(pkg.CreatedAt),
+		pkg.RepositoryID,
+		distID,
+		compID,
+		pkg.ArtifactID,
+		pkg.Name,
+		pkg.Version,
+		pkg.Arch,
+		pkg.Description,
+		pkg.Summary,
+		pkg.License,
+		"",
+		"",
+		pkg.Filename,
+		pkg.InstalledSize,
+		createdAtOrNil(pkg.CreatedAt),
 	).Scan(&pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrDuplicate
@@ -595,17 +677,36 @@ func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component
 
 // CreateRpmPackage inserts an RPM package.
 func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {
-	err := p.db.QueryRowContext(ctx,
+	err := p.db.QueryRowContext(
+		ctx,
 		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename, header_start, header_end, rpm_extra, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb),COALESCE($25::timestamptz, now()))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
-		pkg.RepositoryID, pkg.ArtifactID, pkg.Name, pkg.Version,
-		pkg.Release, int64(pkg.Epoch), pkg.Arch,
-		pkg.Description, pkg.Summary, pkg.License, pkg.URL,
-		pkg.Vendor, pkg.Group, pkg.Packager, pkg.SourceRPM,
-		pkg.BuildHost, pkg.BuildTime, pkg.PackageSize, pkg.ArchiveSize,
-		pkg.InstalledSize, pkg.Filename, pkg.HeaderStart, pkg.HeaderEnd, nullableJSON(pkg.RPMExtra),
+		pkg.RepositoryID,
+		pkg.ArtifactID,
+		pkg.Name,
+		pkg.Version,
+		pkg.Release,
+		int64(pkg.Epoch),
+		pkg.Arch,
+		pkg.Description,
+		pkg.Summary,
+		pkg.License,
+		pkg.URL,
+		pkg.Vendor,
+		pkg.Group,
+		pkg.Packager,
+		pkg.SourceRPM,
+		pkg.BuildHost,
+		pkg.BuildTime,
+		pkg.PackageSize,
+		pkg.ArchiveSize,
+		pkg.InstalledSize,
+		pkg.Filename,
+		pkg.HeaderStart,
+		pkg.HeaderEnd,
+		nullableJSON(pkg.RPMExtra),
 		createdAtOrNil(pkg.CreatedAt),
 	).Scan(&pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -692,7 +793,12 @@ func (p *PostgresDB) GetComponentByID(ctx context.Context, id string) (*models.C
 }
 
 func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.filename = $2 AND rp.deleted_at IS NULL", repoID, filename)
+	c, err := p.scanRpmComponent(
+		ctx,
+		"SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.filename = $2 AND rp.deleted_at IS NULL",
+		repoID,
+		filename,
+	)
 	if err == nil {
 		return c, nil
 	}
@@ -701,7 +807,12 @@ func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, 
 		return nil, fmt.Errorf("failed to get component by filename: %w", err)
 	}
 
-	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND dp.filename = $2 AND dp.deleted_at IS NULL", repoID, filename)
+	c, err = p.scanDebComponent(
+		ctx,
+		"SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND dp.filename = $2 AND dp.deleted_at IS NULL",
+		repoID,
+		filename,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -716,7 +827,12 @@ func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, 
 // GetComponentBySHA256 finds a live rpm or deb package in a repository by the
 // sha256 of its blob using a single-row lookup per table.
 func (p *PostgresDB) GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND b.sha256 = $2 AND rp.deleted_at IS NULL LIMIT 1", repoID, sha256)
+	c, err := p.scanRpmComponent(
+		ctx,
+		"SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND b.sha256 = $2 AND rp.deleted_at IS NULL LIMIT 1",
+		repoID,
+		sha256,
+	)
 	if err == nil {
 		return c, nil
 	}
@@ -725,7 +841,12 @@ func (p *PostgresDB) GetComponentBySHA256(ctx context.Context, repoID, sha256 st
 		return nil, fmt.Errorf("failed to get component by sha256: %w", err)
 	}
 
-	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND b.sha256 = $2 AND dp.deleted_at IS NULL LIMIT 1", repoID, sha256)
+	c, err = p.scanDebComponent(
+		ctx,
+		"SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND b.sha256 = $2 AND dp.deleted_at IS NULL LIMIT 1",
+		repoID,
+		sha256,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -869,9 +990,11 @@ func (p *PostgresDB) GetRpmPackageByID(ctx context.Context, id string) (*models.
 func (p *PostgresDB) GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error) {
 	m := &models.RepoMetadata{}
 
-	err := p.db.QueryRowContext(ctx,
+	err := p.db.QueryRowContext(
+		ctx,
 		`SELECT id, repository_id, path, blob_sha256, blob_size, last_generated FROM repository_metadata WHERE repository_id = $1 AND path = $2`,
-		repositoryID, path,
+		repositoryID,
+		path,
 	).Scan(&m.ID, &m.RepositoryID, &m.Path, &m.BlobSHA256, &m.BlobSize, &m.LastGenerated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
@@ -913,9 +1036,13 @@ func (p *PostgresDB) GetRepoMetadataByRepo(ctx context.Context, repositoryID str
 }
 
 func (p *PostgresDB) UpsertRepoMetadata(ctx context.Context, meta *models.RepoMetadata) error {
-	return p.db.QueryRowContext(ctx,
+	return p.db.QueryRowContext(
+		ctx,
 		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, $2, $3, $4) ON CONFLICT (repository_id, path) DO UPDATE SET blob_sha256 = $3, blob_size = $4, last_generated = now() RETURNING id, last_generated`,
-		meta.RepositoryID, meta.Path, meta.BlobSHA256, meta.BlobSize,
+		meta.RepositoryID,
+		meta.Path,
+		meta.BlobSHA256,
+		meta.BlobSize,
 	).Scan(&meta.ID, &meta.LastGenerated)
 }
 
@@ -1110,7 +1237,13 @@ func (p *PostgresDB) GetDebianPackageByFilename(ctx context.Context, repoID stri
 	}, nil
 }
 
-func (p *PostgresDB) GetDebianPackagesByDistComp(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.Component, error) {
+func (p *PostgresDB) GetDebianPackagesByDistComp(
+	ctx context.Context,
+	repoID string,
+	dist string,
+	comp string,
+	arch string,
+) ([]models.Component, error) {
 	rows, err := p.q.GetDebianPackagesByDistComp(ctx, dbsqlc.GetDebianPackagesByDistCompParams{
 		RepositoryID: repoID,
 		Dist:         dist,
@@ -1207,7 +1340,10 @@ func (p *PostgresDB) GetMavenArtifactByPath(ctx context.Context, repoID, path st
 	return art, nil
 }
 
-func (p *PostgresDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error) {
+func (p *PostgresDB) GetMavenArtifactsByGAV(
+	ctx context.Context,
+	repoID, groupID, artifactID, version string,
+) ([]*models.MavenArtifact, error) {
 	rows, err := p.q.GetMavenArtifactsByGAV(ctx, dbsqlc.GetMavenArtifactsByGAVParams{
 		RepositoryID:    repoID,
 		GroupID:         groupID,
@@ -1318,7 +1454,10 @@ func (p *PostgresDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, art
 	return art, nil
 }
 
-func (p *PostgresDB) GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error) {
+func (p *PostgresDB) GetLatestSnapshotFile(
+	ctx context.Context,
+	repoID, groupID, artifactID, version, classifier, extension string,
+) (*models.MavenArtifact, error) {
 	row, err := p.q.GetLatestSnapshotFile(ctx, dbsqlc.GetLatestSnapshotFileParams{
 		RepositoryID:    repoID,
 		GroupID:         groupID,
@@ -1717,9 +1856,11 @@ func (p *PostgresDB) UpsertBlob(ctx context.Context, sha256, blobKey string, siz
 
 func (p *PostgresDB) ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error) {
 	var exists bool
-	err := p.db.QueryRowContext(ctx,
+	err := p.db.QueryRowContext(
+		ctx,
 		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id = $2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
-		sha256, repositoryID,
+		sha256,
+		repositoryID,
 	).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check artifact existence: %w", err)
@@ -1777,7 +1918,10 @@ var blobRefSumExpr = buildBlobRefExpr(" +\n", "(SELECT COUNT(*) FROM %s WHERE %s
 // blobUnreferencedExpr is true when no table references blob alias b. NOT
 // EXISTS short-circuits at the first hit and never counts, unlike
 // blobRefSumExpr = 0.
-var blobUnreferencedExpr = buildBlobRefExpr(" AND\n", "NOT EXISTS (SELECT 1 FROM %s WHERE %s)") //nolint:gochecknoglobals // built once, read-only
+var blobUnreferencedExpr = buildBlobRefExpr(
+	" AND\n",
+	"NOT EXISTS (SELECT 1 FROM %s WHERE %s)",
+) //nolint:gochecknoglobals // built once, read-only
 
 func buildBlobRefExpr(sep, format string) string {
 	parts := make([]string, len(blobRefSpecs))
@@ -2678,7 +2822,10 @@ func auditFilterWhere(params models.AuditListParams) (string, []any) {
 	// becomes a semi-join and forces a scan of the whole table).
 	if projectID != "" {
 		args = append(args, projectID)
-		where += fmt.Sprintf(" AND (project_id = $%[1]d::uuid OR repository_id = ANY(ARRAY(SELECT id FROM repositories WHERE project_id = $%[1]d::uuid)))", len(args))
+		where += fmt.Sprintf(
+			" AND (project_id = $%[1]d::uuid OR repository_id = ANY(ARRAY(SELECT id FROM repositories WHERE project_id = $%[1]d::uuid)))",
+			len(args),
+		)
 	}
 
 	// One repository's own activity: its entries only, no project fold-in.
@@ -2754,7 +2901,12 @@ func (p *PostgresDB) ListAuditLogs(ctx context.Context, params models.AuditListP
 	// The formatted parts are the predicate built by auditFilterWhere from
 	// constant clauses and $n placeholders (values are always bound
 	// arguments) and placeholder numbers; no caller input reaches the text.
-	query := fmt.Sprintf("SELECT id, action, project_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d", where, len(args)-1, len(args)) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
+	query := fmt.Sprintf(
+		"SELECT id, action, project_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d",
+		where,
+		len(args)-1,
+		len(args),
+	) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -2772,7 +2924,19 @@ func (p *PostgresDB) ListAuditLogs(ctx context.Context, params models.AuditListP
 			ipStr      *string
 		)
 
-		if err := rows.Scan(&l.ID, &l.Action, &l.ProjectID, &l.RepositoryID, &l.ActorID, &l.ActorType, &detailsStr, &l.ResourceType, &l.ResourceID, &ipStr, &l.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&l.ID,
+			&l.Action,
+			&l.ProjectID,
+			&l.RepositoryID,
+			&l.ActorID,
+			&l.ActorType,
+			&detailsStr,
+			&l.ResourceType,
+			&l.ResourceID,
+			&ipStr,
+			&l.CreatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan audit log: %w", err)
 		}
 
@@ -2820,7 +2984,14 @@ func (p *PostgresDB) ListAuditLogs(ctx context.Context, params models.AuditListP
 //
 // An empty page past the end of a large filtered result still needs the
 // bounded count, because offset says nothing about the real total there.
-func (p *PostgresDB) auditTotal(ctx context.Context, where string, args []any, filtered bool, offset, returned int, hasMore bool) (int, bool, error) {
+func (p *PostgresDB) auditTotal(
+	ctx context.Context,
+	where string,
+	args []any,
+	filtered bool,
+	offset, returned int,
+	hasMore bool,
+) (int, bool, error) {
 	seen := offset + returned
 	if !hasMore && (returned > 0 || offset == 0) {
 		return seen, true, nil
@@ -2846,7 +3017,11 @@ func (p *PostgresDB) auditTotal(ctx context.Context, where string, args []any, f
 
 	var counted int
 
-	countQuery := fmt.Sprintf("SELECT count(*) FROM (SELECT 1 FROM audit_logs %s LIMIT $%d) s", where, len(args)+1) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
+	countQuery := fmt.Sprintf(
+		"SELECT count(*) FROM (SELECT 1 FROM audit_logs %s LIMIT $%d) s",
+		where,
+		len(args)+1,
+	) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
 	if err := p.db.QueryRowContext(ctx, countQuery, append(args, auditExactCountMax+1)...).Scan(&counted); err != nil {
 		return 0, false, fmt.Errorf("count audit logs: %w", err)
 	}
@@ -3886,7 +4061,11 @@ func (p *PostgresDB) SearchCargoCrates(ctx context.Context, repoID, query string
 	return crates, nil
 }
 
-func (p *PostgresDB) SearchCargoCrateSummaries(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrateSummary, int, error) {
+func (p *PostgresDB) SearchCargoCrateSummaries(
+	ctx context.Context,
+	repoID, query string,
+	limit int,
+) ([]*models.CargoCrateSummary, int, error) {
 	rows, err := p.q.SearchCargoCrateSummaries(ctx, dbsqlc.SearchCargoCrateSummariesParams{
 		RepositoryID: repoID,
 		Name:         "%" + escapeLike(query) + "%",
@@ -4839,8 +5018,19 @@ func (p *PostgresDB) ListSecretScanResults(ctx context.Context, repoID string, f
 			jobStatus   string
 		)
 
-		if err := rows.Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &jobStatus, &findingsRaw, &result.FindingCount, &result.Quarantined,
-			&errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&result.ID,
+			&result.RepositoryID,
+			&result.ArtifactID,
+			&jobStatus,
+			&findingsRaw,
+			&result.FindingCount,
+			&result.Quarantined,
+			&errMsg,
+			&scannedAt,
+			&result.CreatedAt,
+			&result.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("failed to scan secret scan result: %w", err)
 		}
 
@@ -5583,7 +5773,10 @@ func (p *PostgresDB) CreateCondaPackage(ctx context.Context, pkg *models.CondaPa
 
 // GetCondaPackageFile returns the live package file with this exact
 // name, version, build, platform and extension, or nil.
-func (p *PostgresDB) GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error) {
+func (p *PostgresDB) GetCondaPackageFile(
+	ctx context.Context,
+	repoID, name, version, buildString, platform, extension string,
+) (*models.CondaPackage, error) {
 	row, err := p.q.GetCondaPackageFile(ctx, dbsqlc.GetCondaPackageFileParams{
 		RepositoryID: repoID,
 		Name:         name,
@@ -5880,7 +6073,10 @@ func (p *PostgresDB) CreateIvyArtifact(ctx context.Context, artifact *models.Ivy
 	return nil
 }
 
-func (p *PostgresDB) GetIvyArtifact(ctx context.Context, repoID, organisation, module, revision, artifactName, artifactExt string) (*models.IvyArtifact, error) {
+func (p *PostgresDB) GetIvyArtifact(
+	ctx context.Context,
+	repoID, organisation, module, revision, artifactName, artifactExt string,
+) (*models.IvyArtifact, error) {
 	row, err := p.q.GetIvyArtifact(ctx, dbsqlc.GetIvyArtifactParams{
 		RepositoryID: repoID,
 		Organisation: organisation,
@@ -5979,7 +6175,10 @@ func (p *PostgresDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBT
 	return nil
 }
 
-func (p *PostgresDB) GetSBTArtifact(ctx context.Context, repoID, groupID, artifactID, version, filename string) (*models.SBTArtifact, error) {
+func (p *PostgresDB) GetSBTArtifact(
+	ctx context.Context,
+	repoID, groupID, artifactID, version, filename string,
+) (*models.SBTArtifact, error) {
 	row, err := p.q.GetSBTArtifact(ctx, dbsqlc.GetSBTArtifactParams{
 		RepositoryID: repoID,
 		GroupID:      groupID,
@@ -6118,7 +6317,13 @@ func (p *PostgresDB) GetAIAnalysis(ctx context.Context, repoID, artifactID strin
 
 // ListAIAnalyses lists AI analyses for a repository with optional status and
 // REVIEW_REQUIRED license filters.
-func (p *PostgresDB) ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error) {
+func (p *PostgresDB) ListAIAnalyses(
+	ctx context.Context,
+	repoID string,
+	status string,
+	licenseReviewOnly bool,
+	limit, offset int,
+) ([]*models.AIAnalysis, int, error) {
 	args := []any{repoID}
 	where := "WHERE sj.scan_type = 'ai' AND ref.repository_id = $1"
 

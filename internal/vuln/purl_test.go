@@ -25,13 +25,25 @@ func TestBuildPURL(t *testing.T) {
 		{"pypi is lowercased with dashes", "PyPI", "Django_Foo", "3.0", "pkg:pypi/django-foo@3.0"},
 		{"npm plain", "npm", "lodash", "4.17.20", "pkg:npm/lodash@4.17.20"},
 		{"npm scoped", "npm", "@angular/core", "8.0.0", "pkg:npm/%40angular/core@8.0.0"},
-		{"maven group and artifact", "maven", "org.apache.logging.log4j:log4j-core", "2.14.1", "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"},
+		{
+			"maven group and artifact",
+			"maven",
+			"org.apache.logging.log4j:log4j-core",
+			"2.14.1",
+			"pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+		},
 		{"maven bare name is its own group", "maven", "junit", "4.12", "pkg:maven/junit/junit@4.12"},
 		{"cargo", "cargo", "regex", "1.5.4", "pkg:cargo/regex@1.5.4"},
 		{"rubygems", "rubygems", "nokogiri", "1.10.0", "pkg:gem/nokogiri@1.10.0"},
 		{"nuget keeps case", "nuget", "Newtonsoft.Json", "12.0.0", "pkg:nuget/Newtonsoft.Json@12.0.0"},
 		{"go module path", "go", "golang.org/x/text", "v0.3.0", "pkg:golang/golang.org/x/text@v0.3.0"},
-		{"go deep module path", "go", "github.com/aws/aws-sdk-go-v2/service/s3", "v1.0.0", "pkg:golang/github.com/aws/aws-sdk-go-v2/service/s3@v1.0.0"},
+		{
+			"go deep module path",
+			"go",
+			"github.com/aws/aws-sdk-go-v2/service/s3",
+			"v1.0.0",
+			"pkg:golang/github.com/aws/aws-sdk-go-v2/service/s3@v1.0.0",
+		},
 		{"go uppercase letters are case-encoded", "go", "github.com/!azure/go", "v1.0.0", "pkg:golang/github.com/%21azure/go@v1.0.0"},
 		{"version with plus and tilde", "pypi", "pkg", "1.0+local~1", "pkg:pypi/pkg@1.0%2Blocal~1"},
 		{"epoch colon in version", "pypi", "pkg", "1:2.0", "pkg:pypi/pkg@1%3A2.0"},
@@ -92,15 +104,18 @@ func TestBuildPURL_DebAndRPM(t *testing.T) {
 			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1",
 		},
 		{
-			"epoch field wins over the prefix", Package{Name: "openssl", Version: "1:3.0.7-24.el9", Epoch: 2, Ecosystem: "rpm", Distro: "rhel-9"},
+			"epoch field wins over the prefix",
+			Package{Name: "openssl", Version: "1:3.0.7-24.el9", Epoch: 2, Ecosystem: "rpm", Distro: "rhel-9"},
 			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=2",
 		},
 		{
-			"release is appended to a bare version", Package{Name: "openssl", Version: "3.0.7", Release: "24.el9_2", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
+			"release is appended to a bare version",
+			Package{Name: "openssl", Version: "3.0.7", Release: "24.el9_2", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
 			"pkg:rpm/redhat/openssl@3.0.7-24.el9_2?distro=rhel-9&epoch=1",
 		},
 		{
-			"release is not appended twice", Package{Name: "openssl", Version: "3.0.7-24.el9", Release: "24.el9", Ecosystem: "rpm", Distro: "rhel-9"},
+			"release is not appended twice",
+			Package{Name: "openssl", Version: "3.0.7-24.el9", Release: "24.el9", Ecosystem: "rpm", Distro: "rhel-9"},
 			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9",
 		},
 		{
@@ -176,7 +191,10 @@ func TestBuildPURL_Refusals(t *testing.T) {
 		{"empty version", "cargo", "regex", "", errNoPURL},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, err := buildPURL(Package{Name: tt.pkg, Version: tt.version, Ecosystem: tt.ecosystem}); !errors.Is(err, tt.want) || got != "" {
+			if got, err := buildPURL(
+				Package{Name: tt.pkg, Version: tt.version, Ecosystem: tt.ecosystem},
+			); !errors.Is(err, tt.want) ||
+				got != "" {
 				t.Errorf("buildPURL = %q, %v; want error %v", got, err, tt.want)
 			}
 		})
@@ -281,7 +299,8 @@ func TestGrypeScan_DebAndRPMGetTheirDistro(t *testing.T) {
 			"pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12",
 		},
 		{
-			"rhel with epoch and release", Package{Name: "openssl", Version: "3.0.7", Release: "24.el9", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
+			"rhel with epoch and release",
+			Package{Name: "openssl", Version: "3.0.7", Release: "24.el9", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
 			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1",
 		},
 	}
@@ -321,10 +340,22 @@ func TestTrivyManifest_UsesLockfilesTrivyReads(t *testing.T) {
 		{"npm", "@angular/core", "8.0.0", "package-lock.json", []string{`"node_modules/@angular/core":{"version":"8.0.0"}`}},
 		{"cargo", "regex", "1.5.4", "Cargo.lock", []string{"[[package]]\nname = \"regex\"\nversion = \"1.5.4\""}},
 		{"rubygems", "nokogiri", "1.10.0", "Gemfile.lock", []string{"    nokogiri (1.10.0)", "DEPENDENCIES"}},
-		{"nuget", "Newtonsoft.Json", "12.0.0", "packages.lock.json", []string{`"Newtonsoft.Json":{"requested":"[12.0.0, )","resolved":"12.0.0","type":"Direct"}`}},
+		{
+			"nuget",
+			"Newtonsoft.Json",
+			"12.0.0",
+			"packages.lock.json",
+			[]string{`"Newtonsoft.Json":{"requested":"[12.0.0, )","resolved":"12.0.0","type":"Direct"}`},
+		},
 		{"pypi", "django", "3.0", "requirements.txt", []string{"django==3.0"}},
 		{"go", "golang.org/x/text", "v0.3.0", "go.mod", []string{"require golang.org/x/text v0.3.0"}},
-		{"maven", "org.apache.logging.log4j:log4j-core", "2.14.1", "pom.xml", []string{"<artifactId>log4j-core</artifactId>", "<version>2.14.1</version>"}},
+		{
+			"maven",
+			"org.apache.logging.log4j:log4j-core",
+			"2.14.1",
+			"pom.xml",
+			[]string{"<artifactId>log4j-core</artifactId>", "<version>2.14.1</version>"},
+		},
 	}
 
 	for _, tt := range tests {

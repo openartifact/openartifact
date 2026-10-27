@@ -65,7 +65,17 @@ func (r *rig) addExtraTier(kind string, cfg map[string]any) {
 	raw, _ := json.Marshal(cfg)
 
 	r.db.backends = append(r.db.backends, &models.StorageBackend{ID: testExtraBackend, Name: "extra", Kind: kind, Config: raw})
-	r.db.tiers = append(r.db.tiers, &models.StorageTier{ID: testExtraTierID, Name: "extra", BackendID: testExtraBackend, BackendName: "extra", BackendKind: kind, Rank: 20})
+	r.db.tiers = append(
+		r.db.tiers,
+		&models.StorageTier{
+			ID:          testExtraTierID,
+			Name:        "extra",
+			BackendID:   testExtraBackend,
+			BackendName: "extra",
+			BackendKind: kind,
+			Rank:        20,
+		},
+	)
 }
 
 // --- finding 1: aliased backends --------------------------------------------

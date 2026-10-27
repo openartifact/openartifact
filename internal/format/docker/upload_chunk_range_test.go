@@ -30,7 +30,12 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 	h, _ := newTestHandler(t, db)
 
 	req := withChiVars(
-		httptest.NewRequestWithContext(context.Background(), http.MethodPatch, "/v2/myrepo/blobs/uploads/"+uid, strings.NewReader("gap chunk")),
+		httptest.NewRequestWithContext(
+			context.Background(),
+			http.MethodPatch,
+			"/v2/myrepo/blobs/uploads/"+uid,
+			strings.NewReader("gap chunk"),
+		),
 		map[string]string{"name": "myrepo", "uuid": uid},
 	)
 	req.Header.Set("Content-Range", "50-58")

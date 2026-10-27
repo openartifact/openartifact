@@ -98,7 +98,13 @@ type BlobDeletionSweeper struct {
 // scheduled passes (a non-positive interval disables the schedule; RunOnce still
 // works) and batch the number of deletions claimed at a time. Without a
 // database that implements database.BlobDeletionStore the sweeper does nothing.
-func NewBlobDeletionSweeper(db database.Database, store BlobByteStore, log *logger.Logger, interval time.Duration, batch int) *BlobDeletionSweeper {
+func NewBlobDeletionSweeper(
+	db database.Database,
+	store BlobByteStore,
+	log *logger.Logger,
+	interval time.Duration,
+	batch int,
+) *BlobDeletionSweeper {
 	runCtx, cancel := context.WithCancel(context.Background())
 
 	queue, _ := db.(database.BlobDeletionStore)

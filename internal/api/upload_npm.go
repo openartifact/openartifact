@@ -56,7 +56,13 @@ type NPMUploadHandler struct {
 	publishSlots chan struct{} // bounds concurrent publishes
 }
 
-func NewNPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string, reg *metrics.Registry) *NPMUploadHandler {
+func NewNPMUploadHandler(
+	log *logger.Logger,
+	db database.Database,
+	blobStore storage.BlobStore,
+	baseURL string,
+	reg *metrics.Registry,
+) *NPMUploadHandler {
 	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, reg: reg,
 		publishSlots: make(chan struct{}, maxConcurrentNPMPublishes)}
 }
@@ -242,7 +248,12 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 // the ones it ships. A tarball that cannot be read safely is refused, and so is
 // one that cannot be read at all while the repository has a blocking policy
 // (false, response written).
-func (h *NPMUploadHandler) npmLicenses(w http.ResponseWriter, r *http.Request, repoID string, prepared []*npmPreparedVersion) ([]string, bool) {
+func (h *NPMUploadHandler) npmLicenses(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoID string,
+	prepared []*npmPreparedVersion,
+) ([]string, bool) {
 	var declared []string
 
 	for _, pv := range prepared {
@@ -607,15 +618,21 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 	}
 
 	for _, pv := range createdVersions {
-		webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-			Repository: repo.Name,
-			Format:     "npm",
-			Name:       pub.Name,
-			Version:    pv.version,
-			Path:       pv.filename,
-			SHA256:     pv.sha256Hex,
-			Size:       pv.att.size,
-		}))
+		webhook.Emit(
+			r.Context(),
+			h.publisher,
+			repo.ID,
+			webhook.EventArtifactUploaded,
+			webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+				Repository: repo.Name,
+				Format:     "npm",
+				Name:       pub.Name,
+				Version:    pv.version,
+				Path:       pv.filename,
+				SHA256:     pv.sha256Hex,
+				Size:       pv.att.size,
+			}),
+		)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -763,16 +780,28 @@ func (h *NPMUploadHandler) writeNPMRemoveError(w http.ResponseWriter, pkgName st
 	}
 }
 
-func (h *NPMUploadHandler) emitNPMDeleted(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, v *models.NPMVersion, size int64) {
-	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repo.Name,
-		Format:     "npm",
-		Name:       pkg.FullName,
-		Version:    v.Version,
-		Path:       v.TarballFilename,
-		SHA256:     v.BlobSHA256,
-		Size:       size,
-	}))
+func (h *NPMUploadHandler) emitNPMDeleted(
+	ctx context.Context,
+	repo *models.Repository,
+	pkg *models.NPMPackage,
+	v *models.NPMVersion,
+	size int64,
+) {
+	webhook.Emit(
+		ctx,
+		h.publisher,
+		repo.ID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repo.Name,
+			Format:     "npm",
+			Name:       pkg.FullName,
+			Version:    v.Version,
+			Path:       v.TarballFilename,
+			SHA256:     v.BlobSHA256,
+			Size:       size,
+		}),
+	)
 }
 
 // removeNPMVersions unpublishes the given live versions through trash.Delete
@@ -782,7 +811,12 @@ func (h *NPMUploadHandler) emitNPMDeleted(ctx context.Context, repo *models.Repo
 // packument is marked stale so its ETag changes. Otherwise the rows, their
 // orphaned dist-tags and unreferenced blobs are removed and each version's
 // quota released. Callers must have checked canUnpublish and guardNPMReleases.
-func (h *NPMUploadHandler) removeNPMVersions(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, versions []*models.NPMVersion) error {
+func (h *NPMUploadHandler) removeNPMVersions(
+	ctx context.Context,
+	repo *models.Repository,
+	pkg *models.NPMPackage,
+	versions []*models.NPMVersion,
+) error {
 	if len(versions) == 0 {
 		return nil
 	}
@@ -831,7 +865,13 @@ func (h *NPMUploadHandler) removeNPMVersions(ctx context.Context, repo *models.R
 // hardDeleteNPMVersions is the permanent unpublish: version rows, quota, the
 // artifact.deleted event, unreferenced blobs and the dist-tags of the removed
 // versions.
-func (h *NPMUploadHandler) hardDeleteNPMVersions(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, versions []*models.NPMVersion, sizes []int64) error {
+func (h *NPMUploadHandler) hardDeleteNPMVersions(
+	ctx context.Context,
+	repo *models.Repository,
+	pkg *models.NPMPackage,
+	versions []*models.NPMVersion,
+	sizes []int64,
+) error {
 	removed := make(map[string]bool, len(versions))
 
 	// Read the tags while the versions are still live: GetNPMDistTags only
@@ -877,7 +917,13 @@ func (h *NPMUploadHandler) hardDeleteNPMVersions(ctx context.Context, repo *mode
 
 // handleRevPut handles the PUT /pkg/-rev/<rev> step of `npm unpublish pkg@ver`:
 // versions missing from the submitted packument are removed.
-func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, repo *models.Repository, pkg *models.NPMPackage, pub *npmPublishBody) {
+func (h *NPMUploadHandler) handleRevPut(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	pkg *models.NPMPackage,
+	pub *npmPublishBody,
+) {
 	if pkg == nil {
 		http.NotFound(w, r)
 		return

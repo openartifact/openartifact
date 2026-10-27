@@ -192,20 +192,32 @@ type clientSetupIn struct {
 }
 
 func (s *Server) registerTools() {
-	addTool(s, readTool("list_repositories", "List repositories",
-		"List the artifact repositories you can read. Returns repository names, formats, and descriptions. Requires read permission on each listed repository."),
+	addTool(s, readTool(
+		"list_repositories",
+		"List repositories",
+		"List the artifact repositories you can read. Returns repository names, formats, and descriptions. Requires read permission on each listed repository.",
+	),
 		true, s.listRepositories)
 
-	addTool(s, readTool("search_artifacts", "Search artifacts",
-		"Search the most recent packages of the repositories you can read by keyword. Matches package name, version, architecture and filename (case-insensitive substring)."),
+	addTool(s, readTool(
+		"search_artifacts",
+		"Search artifacts",
+		"Search the most recent packages of the repositories you can read by keyword. Matches package name, version, architecture and filename (case-insensitive substring).",
+	),
 		true, s.searchArtifacts)
 
-	addTool(s, readTool("get_artifact_analysis", "Get artifact AI analysis",
-		"Retrieve the AI-generated analysis for a specific artifact: summary, tags, license status, security notes, and quarantine recommendation. Requires read permission on the repository."),
+	addTool(s, readTool(
+		"get_artifact_analysis",
+		"Get artifact AI analysis",
+		"Retrieve the AI-generated analysis for a specific artifact: summary, tags, license status, security notes, and quarantine recommendation. Requires read permission on the repository.",
+	),
 		true, s.getArtifactAnalysis)
 
-	addTool(s, readTool("list_ai_analyses", "List AI analyses",
-		"List AI analysis results for a repository. Useful for auditing license compliance, finding quarantined packages, or reviewing security notes. Requires read permission on the repository."),
+	addTool(s, readTool(
+		"list_ai_analyses",
+		"List AI analyses",
+		"List AI analysis results for a repository. Useful for auditing license compliance, finding quarantined packages, or reviewing security notes. Requires read permission on the repository.",
+	),
 		true, s.listAIAnalyses)
 
 	addTool(s, &sdk.Tool{
@@ -221,23 +233,38 @@ func (s *Server) registerTools() {
 		},
 	}, false, s.triggerAIAnalysis)
 
-	addTool(s, readTool("get_repository", "Get repository",
-		"Get details about a specific repository by name, including its format, description, and configuration. Requires read permission on the repository."),
+	addTool(s, readTool(
+		"get_repository",
+		"Get repository",
+		"Get details about a specific repository by name, including its format, description, and configuration. Requires read permission on the repository.",
+	),
 		true, s.getRepository)
 
-	addTool(s, readTool("list_packages", "List packages",
-		"List the packages stored in a repository (any format), newest first. Returns name, version, format, architecture, size, sha256, filename and creation time. Requires read permission on the repository."),
+	addTool(s, readTool(
+		"list_packages",
+		"List packages",
+		"List the packages stored in a repository (any format), newest first. Returns name, version, format, architecture, size, sha256, filename and creation time. Requires read permission on the repository.",
+	),
 		true, s.listPackages)
 
-	addTool(s, readTool("get_package", "Get package",
-		"Get every version of a package in a repository, with filename, sha256, size, creation time and a download URL. Requires read permission on the repository."),
+	addTool(s, readTool(
+		"get_package",
+		"Get package",
+		"Get every version of a package in a repository, with filename, sha256, size, creation time and a download URL. Requires read permission on the repository.",
+	),
 		true, s.getPackage)
 
-	addTool(s, readTool("get_vulnerabilities", "Get vulnerabilities",
-		"Summarize known vulnerabilities from stored scan results for a repository: severity counts plus the most severe findings (capped at 100). Requires administrator (global manage) permission, like the REST vulnerability scan endpoints."),
+	addTool(s, readTool(
+		"get_vulnerabilities",
+		"Get vulnerabilities",
+		"Summarize known vulnerabilities from stored scan results for a repository: severity counts plus the most severe findings (capped at 100). Requires administrator (global manage) permission, like the REST vulnerability scan endpoints.",
+	),
 		true, s.getVulnerabilities)
 
-	addTool(s, readTool("client_setup", "Get client setup",
-		"Get the commands to configure and publish with the native client tools for a repository (npm, docker, pip, mvn, apt, ...). Credentials are placeholders: <USERNAME> and <TOKEN>. Requires read permission on the repository."),
+	addTool(s, readTool(
+		"client_setup",
+		"Get client setup",
+		"Get the commands to configure and publish with the native client tools for a repository (npm, docker, pip, mvn, apt, ...). Credentials are placeholders: <USERNAME> and <TOKEN>. Requires read permission on the repository.",
+	),
 		false, s.clientSetup)
 }

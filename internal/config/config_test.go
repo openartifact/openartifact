@@ -877,7 +877,8 @@ func TestLoad_TieringDefaultsAndEnv(t *testing.T) {
 	}
 
 	d := cfg.Tiering
-	if !d.Enabled || !d.VerifyReadback || d.Interval != 5*time.Minute || d.Batch != 200 || d.Concurrency != 2 || d.MaxBytesPerSecond != 64<<20 {
+	if !d.Enabled || !d.VerifyReadback || d.Interval != 5*time.Minute || d.Batch != 200 || d.Concurrency != 2 ||
+		d.MaxBytesPerSecond != 64<<20 {
 		t.Errorf("unexpected tiering defaults: %+v", d)
 	}
 

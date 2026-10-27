@@ -364,7 +364,13 @@ func (h *RPMUploadHandler) dropOrphanBlob(ctx context.Context, sha256sum, reason
 // the DB work) so a concurrent unpublish/cleanup cannot delete the blob in
 // between. The caller holds the quota reservation and releases it unless the
 // package was created.
-func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repository, sp *rpmSpool, pkg *pkgrpm.Package, extra []byte) (*formatrpm.UploadResult, error) {
+func (h *RPMUploadHandler) persistPackage(
+	ctx context.Context,
+	repo *models.Repository,
+	sp *rpmSpool,
+	pkg *pkgrpm.Package,
+	extra []byte,
+) (*formatrpm.UploadResult, error) {
 	var (
 		blobID  string
 		created bool
@@ -523,7 +529,12 @@ func (h *RPMUploadHandler) signUpload(ctx context.Context, repo *models.Reposito
 // errResponseWritten means a policy check already wrote the HTTP response.
 var errResponseWritten = errors.New("response already written")
 
-func (h *RPMUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request, file io.Reader, repo *models.Repository) (*formatrpm.UploadResult, error) {
+func (h *RPMUploadHandler) uploadPipeline(
+	w http.ResponseWriter,
+	r *http.Request,
+	file io.Reader,
+	repo *models.Repository,
+) (*formatrpm.UploadResult, error) {
 	ctx := r.Context()
 
 	if err := h.ensureRPMRepo(ctx, repo.ID); err != nil {
@@ -607,15 +618,21 @@ func (h *RPMUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 		h.rpmWorker.NotifyStale(repo.ID)
 	}
 
-	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: repo.Name,
-		Format:     "rpm",
-		Name:       pkg.Name,
-		Version:    rpmVersionRelease(pkg.Version, pkg.Release),
-		Path:       rpmFilename(pkg),
-		SHA256:     sp.sha256,
-		Size:       sp.size,
-	}))
+	webhook.Emit(
+		ctx,
+		h.publisher,
+		repo.ID,
+		webhook.EventArtifactUploaded,
+		webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+			Repository: repo.Name,
+			Format:     "rpm",
+			Name:       pkg.Name,
+			Version:    rpmVersionRelease(pkg.Version, pkg.Release),
+			Path:       rpmFilename(pkg),
+			SHA256:     sp.sha256,
+			Size:       sp.size,
+		}),
+	)
 
 	return result, nil
 }
@@ -678,7 +695,12 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	err = trash.Delete(r.Context(), h.db, trash.Request{
-		RepoID: repoID, Kind: models.TrashKindRPM, IDs: []string{packageID}, Resource: comp.Filename, Package: comp.Name, Version: comp.Version,
+		RepoID:   repoID,
+		Kind:     models.TrashKindRPM,
+		IDs:      []string{packageID},
+		Resource: comp.Filename,
+		Package:  comp.Name,
+		Version:  comp.Version,
 	}, func() error {
 		if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
 			return err
@@ -708,15 +730,21 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		h.rpmWorker.NotifyStale(repoID)
 	}
 
-	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repoName,
-		Format:     "rpm",
-		Name:       comp.Name,
-		Version:    rpmVersionRelease(comp.Version, comp.Release),
-		Path:       comp.Filename,
-		SHA256:     blobSHA,
-		Size:       size,
-	}))
+	webhook.Emit(
+		r.Context(),
+		h.publisher,
+		repoID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repoName,
+			Format:     "rpm",
+			Name:       comp.Name,
+			Version:    rpmVersionRelease(comp.Version, comp.Release),
+			Path:       comp.Filename,
+			SHA256:     blobSHA,
+			Size:       size,
+		}),
+	)
 
 	h.log.Infow("RPM package deleted", "repository", repoName, "package_id", packageID)
 
@@ -815,7 +843,12 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 			BlobSize:     int64(len(body)),
 		}
 		if upErr := h.db.UpsertRepoMetadata(ctx, meta); upErr != nil {
-			return &compsStoreError{status: http.StatusInternalServerError, code: "DATABASE_ERROR", msg: "failed to store comps metadata", err: upErr}
+			return &compsStoreError{
+				status: http.StatusInternalServerError,
+				code:   "DATABASE_ERROR",
+				msg:    "failed to store comps metadata",
+				err:    upErr,
+			}
 		}
 
 		return nil

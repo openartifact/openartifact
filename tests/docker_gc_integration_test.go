@@ -531,7 +531,9 @@ func TestDockerGC_RunsDoNotOverlap(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	var held bool
-	if err := conn.QueryRowContext(context.Background(), `SELECT pg_try_advisory_lock(hashtext($1))`, "docker-gc:"+f.repoID).Scan(&held); err != nil || !held {
+	if err := conn.QueryRowContext(context.Background(), `SELECT pg_try_advisory_lock(hashtext($1))`, "docker-gc:"+f.repoID).
+		Scan(&held); err != nil ||
+		!held {
 		t.Fatalf("take the repository's GC lock: held=%v err=%v", held, err)
 	}
 
@@ -562,7 +564,12 @@ func (f *gcFixture) adminGC(repo, body string) *httptest.ResponseRecorder {
 func (f *gcFixture) gcRequest(p *auth.Principal, repo, body string) *httptest.ResponseRecorder {
 	f.t.Helper()
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/repositories/"+repo+"/registry-gc", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/api/v1/repositories/"+repo+"/registry-gc",
+		strings.NewReader(body),
+	)
 	req = req.WithContext(middleware.WithPrincipal(req.Context(), p))
 
 	rec := httptest.NewRecorder()

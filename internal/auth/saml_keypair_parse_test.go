@@ -89,7 +89,12 @@ func TestParseSAMLKeypair(t *testing.T) {
 		{name: "key and cert swapped", key: valid, cert: pkcs1, wantErr: true},
 		{name: "key does not match cert", key: pkcs1, cert: otherCert, wantErr: true},
 		{name: "non-RSA key", key: ecPEM, cert: valid, wantErr: true},
-		{name: "corrupt key body", key: pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: []byte("xx")}), cert: valid, wantErr: true},
+		{
+			name:    "corrupt key body",
+			key:     pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: []byte("xx")}),
+			cert:    valid,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -126,18 +131,40 @@ func TestGroupsFromClaims(t *testing.T) {
 		want        []string
 		wantPresent bool
 	}{
-		{name: "string array", claims: map[string]any{"groups": []string{"a", "b"}}, key: "groups", want: []string{"a", "b"}, wantPresent: true},
+		{
+			name:        "string array",
+			claims:      map[string]any{"groups": []string{"a", "b"}},
+			key:         "groups",
+			want:        []string{"a", "b"},
+			wantPresent: true,
+		},
 		{name: "any array", claims: map[string]any{"groups": []any{"a", "b"}}, key: "groups", want: []string{"a", "b"}, wantPresent: true},
-		{name: "non-string items dropped", claims: map[string]any{"groups": []any{"a", 3, nil, "b"}}, key: "groups", want: []string{"a", "b"}, wantPresent: true},
+		{
+			name:        "non-string items dropped",
+			claims:      map[string]any{"groups": []any{"a", 3, nil, "b"}},
+			key:         "groups",
+			want:        []string{"a", "b"},
+			wantPresent: true,
+		},
 		{name: "empty array is present", claims: map[string]any{"groups": []any{}}, key: "groups", want: []string{}, wantPresent: true},
 		{name: "bare string", claims: map[string]any{"groups": "solo"}, key: "groups", want: []string{"solo"}, wantPresent: true},
 		{name: "empty string is empty list", claims: map[string]any{"groups": ""}, key: "groups", want: []string{}, wantPresent: true},
-		{name: "custom claim key", claims: map[string]any{"roles": []any{"r"}, "groups": []any{"g"}}, key: "roles", want: []string{"r"}, wantPresent: true},
+		{
+			name:        "custom claim key",
+			claims:      map[string]any{"roles": []any{"r"}, "groups": []any{"g"}},
+			key:         "roles",
+			want:        []string{"r"},
+			wantPresent: true,
+		},
 		{name: "missing", claims: map[string]any{}, key: "groups"},
 		{name: "null", claims: map[string]any{"groups": nil}, key: "groups"},
 		{name: "number", claims: map[string]any{"groups": 5.0}, key: "groups"},
 		{name: "bool", claims: map[string]any{"groups": true}, key: "groups"},
-		{name: "nested object is not dotted lookup", claims: map[string]any{"realm": map[string]any{"groups": []any{"a"}}}, key: "realm.groups"},
+		{
+			name:   "nested object is not dotted lookup",
+			claims: map[string]any{"realm": map[string]any{"groups": []any{"a"}}},
+			key:    "realm.groups",
+		},
 		{name: "object value", claims: map[string]any{"groups": map[string]any{"a": "b"}}, key: "groups"},
 		{name: "nil claims", claims: nil, key: "groups"},
 	}

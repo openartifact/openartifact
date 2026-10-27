@@ -59,7 +59,10 @@ func TestPutReservesQuotaAndDeleteReleasesIt(t *testing.T) {
 		t.Errorf("quota used=%d artifacts=%d, want 5/1", db.used, db.artifacts)
 	}
 
-	if code := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodDelete, quotaTarget, nil)).Code; code != http.StatusNoContent {
+	if code := formattest.Do(
+		h.RegisterRepoRoutes,
+		formattest.Request(http.MethodDelete, quotaTarget, nil),
+	).Code; code != http.StatusNoContent {
 		t.Fatalf("delete status = %d", code)
 	}
 
@@ -77,7 +80,14 @@ func TestPutOverQuotaReturns507AndPersistsNothing(t *testing.T) {
 	}
 
 	if db.art != nil || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.used != 0 || db.artifacts != 0 {
-		t.Errorf("art=%v blobs=%d events=%d used=%d artifacts=%d; want nothing persisted", db.art, len(bs.Blobs), len(pub.Events()), db.used, db.artifacts)
+		t.Errorf(
+			"art=%v blobs=%d events=%d used=%d artifacts=%d; want nothing persisted",
+			db.art,
+			len(bs.Blobs),
+			len(pub.Events()),
+			db.used,
+			db.artifacts,
+		)
 	}
 }
 

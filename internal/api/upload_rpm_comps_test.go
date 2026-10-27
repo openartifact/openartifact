@@ -66,7 +66,15 @@ func TestCompsUploadReplacesRow(t *testing.T) {
 		t.Helper()
 
 		rw := httptest.NewRecorder()
-		router.ServeHTTP(rw, httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/repositories/rpms/comps", strings.NewReader(body)))
+		router.ServeHTTP(
+			rw,
+			httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPut,
+				"/api/v1/repositories/rpms/comps",
+				strings.NewReader(body),
+			),
+		)
 
 		if rw.Code >= 300 {
 			t.Fatalf("status %d: %s", rw.Code, rw.Body.String())

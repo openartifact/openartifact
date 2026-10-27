@@ -147,11 +147,26 @@ func TestUploadAndDeleteEmitEvents(t *testing.T) {
 
 func TestDownloadQuarantine(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
-	db.pkgs = []*models.CondaPackage{{ID: "p", Name: "demo", Version: "1.0", BuildString: "py_0", Platform: "linux-64", Extension: models.CondaExtTarBz2, BlobKey: "abc", SHA256: "abc", SizeBytes: 3}}
+	db.pkgs = []*models.CondaPackage{
+		{
+			ID:          "p",
+			Name:        "demo",
+			Version:     "1.0",
+			BuildString: "py_0",
+			Platform:    "linux-64",
+			Extension:   models.CondaExtTarBz2,
+			BlobKey:     "abc",
+			SHA256:      "abc",
+			SizeBytes:   3,
+		},
+	}
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {
-		return formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodGet, "/repos/myrepo/linux-64/demo-1.0-py_0.tar.bz2", nil)).Code
+		return formattest.Do(
+			h.RegisterRepoRoutes,
+			formattest.Request(http.MethodGet, "/repos/myrepo/linux-64/demo-1.0-py_0.tar.bz2", nil),
+		).Code
 	}
 
 	if c := get(); c != http.StatusOK {
@@ -167,7 +182,19 @@ func TestDownloadQuarantine(t *testing.T) {
 
 func TestDownloadContentDispositionEscapesFilename(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
-	db.pkgs = []*models.CondaPackage{{ID: "p", Name: `ev"il;x=y`, Version: "1.0", BuildString: "py_0", Platform: "linux-64", Extension: models.CondaExtTarBz2, BlobKey: "abc", SHA256: "abc", SizeBytes: 3}}
+	db.pkgs = []*models.CondaPackage{
+		{
+			ID:          "p",
+			Name:        `ev"il;x=y`,
+			Version:     "1.0",
+			BuildString: "py_0",
+			Platform:    "linux-64",
+			Extension:   models.CondaExtTarBz2,
+			BlobKey:     "abc",
+			SHA256:      "abc",
+			SizeBytes:   3,
+		},
+	}
 	bs.Blobs["abc"] = []byte("xyz")
 
 	name := `ev"il;x=y-1.0-py_0.tar.bz2`

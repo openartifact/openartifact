@@ -40,7 +40,10 @@ func newTierFixture(t *testing.T) *tierFixture {
 		t.Fatalf("CreateStorageBackend: %v", err)
 	}
 
-	if err := pg.CreateStorageTier(ctx, &models.StorageTier{ID: uuid.New().String(), Name: "cold", BackendID: b.ID, Rank: 100}); err != nil {
+	if err := pg.CreateStorageTier(
+		ctx,
+		&models.StorageTier{ID: uuid.New().String(), Name: "cold", BackendID: b.ID, Rank: 100},
+	); err != nil {
 		t.Fatalf("CreateStorageTier: %v", err)
 	}
 
@@ -116,7 +119,8 @@ func TestTieringTierAndPolicyConstraints(t *testing.T) {
 	}
 
 	got, err := f.pg.GetStoragePolicy(ctx, pol.ID)
-	if err != nil || got == nil || got.RepoGlob != "rel*" || len(got.Formats) != 2 || got.MinAgeSeconds == nil || *got.MinAgeSeconds != 86400 {
+	if err != nil || got == nil || got.RepoGlob != "rel*" || len(got.Formats) != 2 || got.MinAgeSeconds == nil ||
+		*got.MinAgeSeconds != 86400 {
 		t.Fatalf("policy round trip = %+v, %v", got, err)
 	}
 
@@ -146,7 +150,10 @@ func TestDeleteStorageTierIfUnusedRefusesBlobsAndMoves(t *testing.T) {
 	ctx := context.Background()
 	sha := f.addBlob(t, "held", 10, time.Hour)
 
-	if _, _, err := f.pg.BeginStorageTierMove(ctx, &models.StorageTierMove{SHA256: sha, FromBackendID: "", ToBackendID: f.cold, SizeBytes: 10, Reason: "t"}); err != nil {
+	if _, _, err := f.pg.BeginStorageTierMove(
+		ctx,
+		&models.StorageTierMove{SHA256: sha, FromBackendID: "", ToBackendID: f.cold, SizeBytes: 10, Reason: "t"},
+	); err != nil {
 		t.Fatalf("BeginStorageTierMove: %v", err)
 	}
 
@@ -182,14 +189,26 @@ func TestFlipBlobPlacement(t *testing.T) {
 	ctx := context.Background()
 	sha := f.addBlob(t, "flip", 10, time.Hour)
 
-	if _, _, err := f.pg.BeginStorageTierMove(ctx, &models.StorageTierMove{SHA256: sha, FromBackendID: "", ToBackendID: f.cold, SizeBytes: 10, Reason: "t"}); err != nil {
+	if _, _, err := f.pg.BeginStorageTierMove(
+		ctx,
+		&models.StorageTierMove{SHA256: sha, FromBackendID: "", ToBackendID: f.cold, SizeBytes: 10, Reason: "t"},
+	); err != nil {
 		t.Fatalf("BeginStorageTierMove: %v", err)
 	}
 
 	verifyErr := errors.New("target copy vanished")
 
 	// A failing verify aborts before any change.
-	if _, err := f.pg.FlipBlobPlacement(ctx, sha, "", f.cold, func(context.Context) error { return verifyErr }); !errors.Is(err, verifyErr) {
+	if _, err := f.pg.FlipBlobPlacement(
+		ctx,
+		sha,
+		"",
+		f.cold,
+		func(context.Context) error { return verifyErr },
+	); !errors.Is(
+		err,
+		verifyErr,
+	) {
 		t.Fatalf("flip with failing verify = %v", err)
 	}
 
@@ -216,7 +235,10 @@ func TestFlipBlobPlacement(t *testing.T) {
 	}
 
 	var changed *time.Time
-	if err := f.pg.GetDB().QueryRowContext(ctx, `SELECT tier_changed_at FROM blobs WHERE sha256 = $1`, sha).Scan(&changed); err != nil || changed == nil {
+	if err := f.pg.GetDB().
+		QueryRowContext(ctx, `SELECT tier_changed_at FROM blobs WHERE sha256 = $1`, sha).
+		Scan(&changed); err != nil ||
+		changed == nil {
 		t.Errorf("tier_changed_at = %v (%v), want set", changed, err)
 	}
 
@@ -291,13 +313,19 @@ func TestStorageTierMoveJournal(t *testing.T) {
 	ctx := context.Background()
 	sha := f.addBlob(t, "journal", 10, time.Hour)
 
-	row, created, err := f.pg.BeginStorageTierMove(ctx, &models.StorageTierMove{SHA256: sha, ToBackendID: f.cold, SizeBytes: 10, Reason: "a"})
+	row, created, err := f.pg.BeginStorageTierMove(
+		ctx,
+		&models.StorageTierMove{SHA256: sha, ToBackendID: f.cold, SizeBytes: 10, Reason: "a"},
+	)
 	if err != nil || !created || row.State != models.TierMoveCopying {
 		t.Fatalf("Begin = %+v, %v, %v", row, created, err)
 	}
 
 	// A second claim returns the existing row and does not create another.
-	row2, created, err := f.pg.BeginStorageTierMove(ctx, &models.StorageTierMove{SHA256: sha, FromBackendID: f.cold, ToBackendID: "", SizeBytes: 10, Reason: "b"})
+	row2, created, err := f.pg.BeginStorageTierMove(
+		ctx,
+		&models.StorageTierMove{SHA256: sha, FromBackendID: f.cold, ToBackendID: "", SizeBytes: 10, Reason: "b"},
+	)
 	if err != nil || created || row2.ToBackendID != f.cold {
 		t.Fatalf("second Begin = %+v, %v, %v; want the first row back", row2, created, err)
 	}
@@ -343,7 +371,8 @@ func TestScanTierCandidatesAndPromotion(t *testing.T) {
 	young := f.addBlob(t, "young", 5000, time.Hour)
 	onCold := f.addBlob(t, "already-cold", 5000, 40*24*time.Hour)
 
-	if _, err := f.pg.GetDB().ExecContext(ctx, `UPDATE blobs SET storage_backend_id = $1::uuid, tier_changed_at = now() - interval '1 day' WHERE sha256 = $2`, f.cold, onCold); err != nil {
+	if _, err := f.pg.GetDB().
+		ExecContext(ctx, `UPDATE blobs SET storage_backend_id = $1::uuid, tier_changed_at = now() - interval '1 day' WHERE sha256 = $2`, f.cold, onCold); err != nil {
 		t.Fatal(err)
 	}
 
@@ -362,7 +391,10 @@ func TestScanTierCandidatesAndPromotion(t *testing.T) {
 	}
 
 	// An in-flight move hides the blob from the scan.
-	if _, _, err := f.pg.BeginStorageTierMove(ctx, &models.StorageTierMove{SHA256: oldBig, ToBackendID: f.cold, SizeBytes: 5000}); err != nil {
+	if _, _, err := f.pg.BeginStorageTierMove(
+		ctx,
+		&models.StorageTierMove{SHA256: oldBig, ToBackendID: f.cold, SizeBytes: 5000},
+	); err != nil {
 		t.Fatal(err)
 	}
 

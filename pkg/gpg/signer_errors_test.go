@@ -232,7 +232,12 @@ type failingReader struct{}
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
 
 func TestAlgorithmNames(t *testing.T) {
-	ecdsa, err := openpgp.NewEntity("e", "", "e@example.com", &packet.Config{Algorithm: packet.PubKeyAlgoECDSA, Curve: packet.CurveNistP256})
+	ecdsa, err := openpgp.NewEntity(
+		"e",
+		"",
+		"e@example.com",
+		&packet.Config{Algorithm: packet.PubKeyAlgoECDSA, Curve: packet.CurveNistP256},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

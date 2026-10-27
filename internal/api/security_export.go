@@ -50,7 +50,11 @@ func securityExportFormat(r *http.Request) (string, bool) {
 
 // collectFindings reads every page of the selection, up to limit findings.
 // truncated is true when more findings exist than were read.
-func (h *SecurityHandler) collectFindings(ctx context.Context, params models.FindingListParams, limit int) ([]*models.Finding, bool, error) {
+func (h *SecurityHandler) collectFindings(
+	ctx context.Context,
+	params models.FindingListParams,
+	limit int,
+) ([]*models.Finding, bool, error) {
 	params.After = nil
 	params.Limit = securityFindingsMaxLimit
 

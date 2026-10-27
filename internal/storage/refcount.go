@@ -157,7 +157,13 @@ func CollectOrphanBlobs(ctx context.Context, db database.Database, blobStore Blo
 // windows and stops early once the cursor wrapped past the end of the blobs
 // table, i.e. every blob was examined once. The scheduled sweep uses it so
 // that a large table is covered within one tick, in bounded steps.
-func CollectOrphanBlobsSweep(ctx context.Context, db database.Database, blobStore BlobStore, minAge time.Duration, batch, maxWindows int) (int, error) {
+func CollectOrphanBlobsSweep(
+	ctx context.Context,
+	db database.Database,
+	blobStore BlobStore,
+	minAge time.Duration,
+	batch, maxWindows int,
+) (int, error) {
 	total := 0
 
 	var errs []error
@@ -179,7 +185,13 @@ func CollectOrphanBlobsSweep(ctx context.Context, db database.Database, blobStor
 }
 
 // collectOrphanWindow does one window and reports the cursor it left behind.
-func collectOrphanWindow(ctx context.Context, db database.Database, blobStore BlobStore, minAge time.Duration, batch int) (int, string, error) {
+func collectOrphanWindow(
+	ctx context.Context,
+	db database.Database,
+	blobStore BlobStore,
+	minAge time.Duration,
+	batch int,
+) (int, string, error) {
 	l, ok := db.(unreferencedLister)
 	if !ok {
 		return 0, "", nil
@@ -241,7 +253,8 @@ func ReclaimMetadataBlob(ctx context.Context, db database.Database, blobStore Bl
 
 	return WithBlobLock(ctx, db, sha, func(ctx context.Context) error {
 		var refs int
-		if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, sha).Scan(&refs); err != nil {
+		if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, sha).
+			Scan(&refs); err != nil {
 			return fmt.Errorf("count metadata references of %s: %w", sha, err)
 		}
 

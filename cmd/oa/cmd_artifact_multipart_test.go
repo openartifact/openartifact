@@ -140,7 +140,11 @@ func (f *uploadFixture) handleInit(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 
 	if !multipart || f.ignoreMultipart {
-		writeJSONReply(w, http.StatusCreated, `{"id":"`+fakeUploadID+`","method":"PUT","upload_url":"`+f.store.URL+`/single?X-Amz-Signature=secretsig","headers":{}}`)
+		writeJSONReply(
+			w,
+			http.StatusCreated,
+			`{"id":"`+fakeUploadID+`","method":"PUT","upload_url":"`+f.store.URL+`/single?X-Amz-Signature=secretsig","headers":{}}`,
+		)
 		return
 	}
 
@@ -158,8 +162,12 @@ func (f *uploadFixture) handleInit(w http.ResponseWriter, r *http.Request) {
 	f.partSize = partSize
 	f.mu.Unlock()
 
-	writeJSONReply(w, http.StatusCreated, fmt.Sprintf(`{"id":%q,"multipart":true,"part_size":%d,"part_count":%d,"expires_at":"2030-01-01T00:00:00Z"}`,
-		fakeUploadID, partSize, count))
+	writeJSONReply(
+		w,
+		http.StatusCreated,
+		fmt.Sprintf(`{"id":%q,"multipart":true,"part_size":%d,"part_count":%d,"expires_at":"2030-01-01T00:00:00Z"}`,
+			fakeUploadID, partSize, count),
+	)
 }
 
 func (f *uploadFixture) handleParts(w http.ResponseWriter, r *http.Request) {
@@ -316,7 +324,10 @@ func (f *uploadFixture) handleSinglePut(w http.ResponseWriter, r *http.Request) 
 	body, _ := io.ReadAll(r.Body)
 
 	f.mu.Lock()
-	f.attempts = append(f.attempts, fakePutAttempt{status: http.StatusOK, body: body, contentLength: r.ContentLength, hasAuth: r.Header.Get("Authorization") != ""})
+	f.attempts = append(
+		f.attempts,
+		fakePutAttempt{status: http.StatusOK, body: body, contentLength: r.ContentLength, hasAuth: r.Header.Get("Authorization") != ""},
+	)
 	f.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
@@ -543,7 +554,8 @@ func TestMultipartRetriesTransientAndExpiredParts(t *testing.T) {
 	f.expiredFirst[3] = true
 
 	// One worker keeps the order of the backoff waits deterministic.
-	if _, err := f.uploader().upload(uploadOptions{repo: "files", filePath: path, multipart: true, partSize: partSize, parallel: 1}); err != nil {
+	if _, err := f.uploader().
+		upload(uploadOptions{repo: "files", filePath: path, multipart: true, partSize: partSize, parallel: 1}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -599,7 +611,8 @@ func TestMultipartAbortsWhenAPartFailsForGood(t *testing.T) {
 				t.Fatal("the upload succeeded although part 2 never did")
 			}
 
-			if !strings.Contains(err.Error(), "part 2 of 3") || !strings.Contains(err.Error(), tc.wantStatus) || strings.Contains(err.Error(), "secretsig") {
+			if !strings.Contains(err.Error(), "part 2 of 3") || !strings.Contains(err.Error(), tc.wantStatus) ||
+				strings.Contains(err.Error(), "secretsig") {
 				t.Errorf("error = %q, want it to name part 2 and %s without the URL", err, tc.wantStatus)
 			}
 
@@ -642,7 +655,10 @@ func TestMultipartUnreachableStoreRedactsURLAndAborts(t *testing.T) {
 func TestMultipartCompleteIncompleteIsAHardError(t *testing.T) {
 	path, _ := writeUploadFile(t, "inc.bin", 200)
 	f := newUploadFixture(t)
-	f.completeReply = &fakeAPIReply{status: http.StatusConflict, body: `{"error":"incomplete","code":"upload_incomplete","message":"part 2 is missing"}`}
+	f.completeReply = &fakeAPIReply{
+		status: http.StatusConflict,
+		body:   `{"error":"incomplete","code":"upload_incomplete","message":"part 2 is missing"}`,
+	}
 
 	_, err := f.uploader().upload(uploadOptions{repo: "files", filePath: path, multipart: true, partSize: 100, parallel: 1})
 	if err == nil || !strings.Contains(err.Error(), "part 2 is missing") {
@@ -699,7 +715,8 @@ func TestMultipartParallelismIsBounded(t *testing.T) {
 	f := newUploadFixture(t)
 	f.gateSize = workers
 
-	if _, err := f.uploader().upload(uploadOptions{repo: "files", filePath: path, multipart: true, partSize: partSize, parallel: workers}); err != nil {
+	if _, err := f.uploader().
+		upload(uploadOptions{repo: "files", filePath: path, multipart: true, partSize: partSize, parallel: workers}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -757,8 +774,13 @@ func TestUploadSelectsMultipartByThreshold(t *testing.T) {
 			}
 
 			if !tc.wantMultipart {
-				if len(f.attempts) != 1 || f.attempts[0].part != 0 || !bytes.Equal(f.attempts[0].body, content) || len(f.partRequests) != 0 {
-					t.Errorf("want one single PUT of the whole file and no part requests, got %d PUTs, %d part requests", len(f.attempts), len(f.partRequests))
+				if len(f.attempts) != 1 || f.attempts[0].part != 0 || !bytes.Equal(f.attempts[0].body, content) ||
+					len(f.partRequests) != 0 {
+					t.Errorf(
+						"want one single PUT of the whole file and no part requests, got %d PUTs, %d part requests",
+						len(f.attempts),
+						len(f.partRequests),
+					)
 				}
 
 				return
@@ -955,7 +977,10 @@ func TestMultipartCLIHitsServedRoutes(t *testing.T) {
 	store, storeSrv := newObjectStore(t)
 
 	cs, srv := newContractServer(t, map[string]reply{
-		"POST " + uploads: {status: http.StatusCreated, body: `{"id":"u-1","multipart":true,"part_size":5242880,"part_count":1,"expires_at":"2030-01-01T00:00:00Z"}`},
+		"POST " + uploads: {
+			status: http.StatusCreated,
+			body:   `{"id":"u-1","multipart":true,"part_size":5242880,"part_count":1,"expires_at":"2030-01-01T00:00:00Z"}`,
+		},
 		"POST " + uploads + "/{id}/parts": {status: http.StatusOK, body: `{"parts":[{"part_number":1,"upload_url":"` + storeSrv.URL +
 			`/parts/1?X-Amz-Signature=secretsig","method":"PUT","headers":{"X-Test":"1"},"size":7}],"expires_at":"2030-01-01T00:00:00Z"}`},
 		"POST " + uploads + "/{id}/complete": {status: http.StatusCreated, body: `{"id":"a-1","path":"tiny.bin","size":7,"sha256":"abc"}`},
@@ -975,7 +1000,14 @@ func TestMultipartCLIHitsServedRoutes(t *testing.T) {
 		got = append(got, r.method+" "+r.pattern)
 	}
 
-	if want := []string{"POST " + uploads, "POST " + uploads + "/{id}/parts", "POST " + uploads + "/{id}/complete"}; !slices.Equal(got, want) {
+	if want := []string{
+		"POST " + uploads,
+		"POST " + uploads + "/{id}/parts",
+		"POST " + uploads + "/{id}/complete",
+	}; !slices.Equal(
+		got,
+		want,
+	) {
 		t.Fatalf("API calls = %v, want %v", got, want)
 	}
 
@@ -1005,7 +1037,10 @@ func TestMultipartCLIAbortsOverServedRoute(t *testing.T) {
 	t.Cleanup(refusing.Close)
 
 	cs, srv := newContractServer(t, map[string]reply{
-		"POST " + uploads: {status: http.StatusCreated, body: `{"id":"u-1","multipart":true,"part_size":5242880,"part_count":1,"expires_at":"2030-01-01T00:00:00Z"}`},
+		"POST " + uploads: {
+			status: http.StatusCreated,
+			body:   `{"id":"u-1","multipart":true,"part_size":5242880,"part_count":1,"expires_at":"2030-01-01T00:00:00Z"}`,
+		},
 		"POST " + uploads + "/{id}/parts": {status: http.StatusOK, body: `{"parts":[{"part_number":1,"upload_url":"` + refusing.URL +
 			`/parts/1?X-Amz-Signature=secretsig","method":"PUT","headers":{},"size":7}],"expires_at":"2030-01-01T00:00:00Z"}`},
 		"POST " + uploads + "/{id}/abort": {status: http.StatusNoContent},

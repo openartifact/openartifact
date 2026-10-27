@@ -52,7 +52,9 @@ func newApp(opts options) (*app, error) {
 // logStartup reports the encryption state and the build being started.
 func (a *app) logStartup() {
 	if !crypto.Enabled() {
-		a.log.Warnw("OPENARTIFACT_SECRET_KEY not set: webhook secrets, upstream passwords and other stored credentials are NOT encrypted at rest")
+		a.log.Warnw(
+			"OPENARTIFACT_SECRET_KEY not set: webhook secrets, upstream passwords and other stored credentials are NOT encrypted at rest",
+		)
 	}
 
 	a.log.Infow("Starting artifact repository manager",

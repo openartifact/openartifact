@@ -121,7 +121,8 @@ func TestBootstrapSuppliedSecretsServer(t *testing.T) {
 
 	// The server only logs after it is healthy; give the bootstrap banner a
 	// chance to appear if it were (wrongly) printed.
-	if out := stderr.String(); strings.Contains(out, "OPENARTIFACT BOOTSTRAP") || strings.Contains(out, password) || strings.Contains(out, token) {
+	if out := stderr.String(); strings.Contains(out, "OPENARTIFACT BOOTSTRAP") || strings.Contains(out, password) ||
+		strings.Contains(out, token) {
 		t.Fatalf("a supplied secret or the banner was printed:\n%s", out)
 	}
 
@@ -142,7 +143,8 @@ func TestBootstrapSuppliedSecretsServer(t *testing.T) {
 	var tokens int
 
 	if err := s.openDB(t).QueryRowContext(context.Background(),
-		`SELECT count(*) FROM auth_tokens WHERE name = 'bootstrap' AND kind = 'access' AND expires_at > now()`).Scan(&tokens); err != nil || tokens != 1 {
+		`SELECT count(*) FROM auth_tokens WHERE name = 'bootstrap' AND kind = 'access' AND expires_at > now()`).
+		Scan(&tokens); err != nil || tokens != 1 {
 		t.Fatalf("bootstrap tokens with expiry = %d (%v), want 1", tokens, err)
 	}
 }
@@ -151,7 +153,8 @@ func TestBootstrapGeneratedPasswordExpiryServer(t *testing.T) {
 	s, stderr := startServerProc(t, nil)
 	s.password = waitBootstrapPassword(t, stderr)
 
-	if out := stderr.String(); !strings.Contains(out, "valid for 24h0m0s") || !strings.Contains(out, "OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE") {
+	if out := stderr.String(); !strings.Contains(out, "valid for 24h0m0s") ||
+		!strings.Contains(out, "OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE") {
 		t.Fatalf("banner lacks the expiry or the _FILE hint:\n%s", out)
 	}
 
@@ -190,7 +193,9 @@ func TestBootstrapGeneratedPasswordExpiryServer(t *testing.T) {
 
 	var expires sql.NullTime
 
-	if err := db.QueryRowContext(context.Background(), `SELECT password_expires_at FROM auth_users WHERE username = 'admin'`).Scan(&expires); err != nil || expires.Valid {
+	if err := db.QueryRowContext(context.Background(), `SELECT password_expires_at FROM auth_users WHERE username = 'admin'`).
+		Scan(&expires); err != nil ||
+		expires.Valid {
 		t.Fatalf("resetpw left password_expires_at = %v (%v)", expires, err)
 	}
 

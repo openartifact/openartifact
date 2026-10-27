@@ -28,7 +28,10 @@ func (e *Evaluator) RepoReadFilter(ctx context.Context, principal Principal) (fu
 // a repository, so a permission target whose path_pattern limits it to part of
 // the repository (one docker image, say) is matched against the path. The
 // targets are loaded once, however many (repository, path) pairs are checked.
-func (e *Evaluator) PathReadFilter(ctx context.Context, principal Principal) (func(repo *models.Repository, artifactPath string) (bool, error), error) {
+func (e *Evaluator) PathReadFilter(
+	ctx context.Context,
+	principal Principal,
+) (func(repo *models.Repository, artifactPath string) (bool, error), error) {
 	if principal.IsLegacy {
 		return func(*models.Repository, string) (bool, error) { return true, nil }, nil
 	}

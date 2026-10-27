@@ -237,7 +237,11 @@ func (m *provMockDB) DeleteReleaseBundle(ctx context.Context, id string) error {
 	return nil
 }
 
-func (m *provMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error) {
+func (m *provMockDB) ListReleaseBundles(
+	ctx context.Context,
+	nameFilter, stateFilter string,
+	page, limit int,
+) ([]*models.ReleaseBundle, int, error) {
 	return nil, 0, nil
 }
 
@@ -1001,7 +1005,11 @@ func TestProvisioner_ReLoginUsesNarrowUpdate(t *testing.T) {
 
 	p := newTestProvisioner(db)
 
-	if _, err := p.Provision(context.Background(), testProvider(true, false, nil), testClaims("sub|narrow", "n@example.com", "narrow", nil)); err != nil {
+	if _, err := p.Provision(
+		context.Background(),
+		testProvider(true, false, nil),
+		testClaims("sub|narrow", "n@example.com", "narrow", nil),
+	); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

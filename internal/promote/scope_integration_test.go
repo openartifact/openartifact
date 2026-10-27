@@ -109,7 +109,10 @@ func TestEngineForcedPromotionReportsReplaced(t *testing.T) {
 		t.Errorf("target has %d live rows, want 2", n)
 	}
 
-	if n := env.h.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'alice'`, env.dst.ID); n != 1 {
+	if n := env.h.count(
+		`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'alice'`,
+		env.dst.ID,
+	); n != 1 {
 		t.Errorf("%d rows trashed by the promoter, want 1", n)
 	}
 }

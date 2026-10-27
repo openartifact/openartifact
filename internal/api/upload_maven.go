@@ -57,7 +57,12 @@ func (h *MavenUploadHandler) SetPublisher(p webhook.Publisher) {
 	h.publisher = p
 }
 
-func NewMavenUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *MavenUploadHandler {
+func NewMavenUploadHandler(
+	log *logger.Logger,
+	db database.Database,
+	blobStore storage.BlobStore,
+	reg *metrics.Registry,
+) *MavenUploadHandler {
 	return &MavenUploadHandler{log: log, db: db, blobStore: blobStore, reg: reg}
 }
 
@@ -475,7 +480,12 @@ type pomLicenseInfo struct {
 // version cannot be downloaded through them. A pom that cannot be read declares
 // nothing the policy can check: without a blocking policy it is admitted, with
 // one it is refused with 422 LICENSE_METADATA_UNREADABLE.
-func (h *MavenUploadHandler) enforcePomLicenses(w http.ResponseWriter, r *http.Request, pomFile *os.File, repoID, groupID, artifactID, version, artPath string) (bool, pomLicenseInfo) {
+func (h *MavenUploadHandler) enforcePomLicenses(
+	w http.ResponseWriter,
+	r *http.Request,
+	pomFile *os.File,
+	repoID, groupID, artifactID, version, artPath string,
+) (bool, pomLicenseInfo) {
 	pom := parseUploadedPOM(pomFile)
 	if pom == nil {
 		return licensepolicy.RefuseUnderivable(w, r, h.db, h.log, repoID), pomLicenseInfo{}

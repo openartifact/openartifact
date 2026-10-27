@@ -43,7 +43,11 @@ func (db *repositoriesListMockDB) CountRepositories(_ context.Context, _ string)
 	return len(db.repos), nil
 }
 
-func (db *repositoriesListMockDB) GetPermissionTargetsForPrincipal(_ context.Context, _ string, _ []string) ([]*models.PermissionTarget, error) {
+func (db *repositoriesListMockDB) GetPermissionTargetsForPrincipal(
+	_ context.Context,
+	_ string,
+	_ []string,
+) ([]*models.PermissionTarget, error) {
 	return db.targets, nil
 }
 
@@ -82,7 +86,12 @@ func TestRepositoriesHandlerHandleListFiltersBeforePagination(t *testing.T) {
 		{page: 2, names: []string{"visible-three"}},
 	} {
 		t.Run("page-"+strconv.Itoa(tt.page), func(t *testing.T) {
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/repositories?page="+strconv.Itoa(tt.page)+"&limit=2", nil)
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodGet,
+				"/api/v1/repositories?page="+strconv.Itoa(tt.page)+"&limit=2",
+				nil,
+			)
 			req = req.WithContext(middleware.WithPrincipal(req.Context(), principal))
 			rw := httptest.NewRecorder()
 

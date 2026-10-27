@@ -157,7 +157,11 @@ func checkCondaRow(t *testing.T, got *models.CondaPackage) {
 	}
 
 	var extra map[string]string
-	if err := json.Unmarshal(got.Extra, &extra); err != nil || extra["license"] != "BSD-3-Clause" || extra["noarch"] != "python" || len(extra) != 2 {
+	if err := json.Unmarshal(
+		got.Extra,
+		&extra,
+	); err != nil || extra["license"] != "BSD-3-Clause" || extra["noarch"] != "python" ||
+		len(extra) != 2 {
 		t.Errorf("extra = %s (%v)", got.Extra, err)
 	}
 }
@@ -202,7 +206,16 @@ func TestCondaFilesRoundTripAndCoexist(t *testing.T) {
 
 	checkCondaRow(t, got)
 
-	if missing, err := pg.GetCondaPackageFile(ctx, repoID, "scikit-learn", "1.0", "py39_0", "osx-64", models.CondaExtConda); err != nil || missing != nil {
+	if missing, err := pg.GetCondaPackageFile(
+		ctx,
+		repoID,
+		"scikit-learn",
+		"1.0",
+		"py39_0",
+		"osx-64",
+		models.CondaExtConda,
+	); err != nil ||
+		missing != nil {
 		t.Errorf("lookup on another platform = %v, %v; want nil", missing, err)
 	}
 

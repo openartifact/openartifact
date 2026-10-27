@@ -187,7 +187,10 @@ func TestHandleGet_Quarantine(t *testing.T) {
 		NewHTTPHandler(log, db, bs).RegisterRoutes(router, "/repos/{name}")
 
 		w := httptest.NewRecorder()
-		router.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/a/1.0/a-1.0.jar", nil))
+		router.ServeHTTP(
+			w,
+			httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/a/1.0/a-1.0.jar", nil),
+		)
 
 		want := http.StatusOK
 		if quarantined {

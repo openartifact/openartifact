@@ -203,7 +203,9 @@ func TestReserveStorageUsage_UnlimitedProjectIsNotTracked(t *testing.T) {
 	}
 
 	var rows int
-	if err := pg.GetDB().QueryRowContext(context.Background(), `SELECT COUNT(*) FROM project_quotas WHERE project_id = $1`, project).Scan(&rows); err != nil {
+	if err := pg.GetDB().
+		QueryRowContext(context.Background(), `SELECT COUNT(*) FROM project_quotas WHERE project_id = $1`, project).
+		Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 
@@ -253,7 +255,16 @@ func TestSetProjectQuota_InitialisesFromRepositories(t *testing.T) {
 		t.Fatalf("usage = %+v, want 500 bytes / 2 artifacts, repositories largest first", usage)
 	}
 
-	if _, err := pg.SetProjectQuota(context.Background(), "00000000-0000-4000-8000-0000000000ff", 1, 0, 80); !errors.Is(err, ErrProjectNotFound) {
+	if _, err := pg.SetProjectQuota(
+		context.Background(),
+		"00000000-0000-4000-8000-0000000000ff",
+		1,
+		0,
+		80,
+	); !errors.Is(
+		err,
+		ErrProjectNotFound,
+	) {
 		t.Fatalf("SetProjectQuota on an unknown project = %v, want ErrProjectNotFound", err)
 	}
 }
@@ -268,13 +279,15 @@ func TestReconcileStorageUsage_RepairsProjectDrift(t *testing.T) {
 	setProjectLimit(t, pg, project, 1000, 0)
 	mustReserve(t, pg, repo, 100)
 
-	if _, err := pg.GetDB().ExecContext(ctx, `UPDATE project_quotas SET current_size_bytes = 999, current_artifact_count = 42 WHERE project_id = $1`, project); err != nil {
+	if _, err := pg.GetDB().
+		ExecContext(ctx, `UPDATE project_quotas SET current_size_bytes = 999, current_artifact_count = 42 WHERE project_id = $1`, project); err != nil {
 		t.Fatal(err)
 	}
 
 	// No package rows exist and the reservation is abandoned (older than any
 	// upload can take), so the repository recount is 0 and the project follows.
-	if _, err := pg.GetDB().ExecContext(ctx, `UPDATE quota_pending SET created_at = now() - interval '2 hours' WHERE repository_id = $1`, repo); err != nil {
+	if _, err := pg.GetDB().
+		ExecContext(ctx, `UPDATE quota_pending SET created_at = now() - interval '2 hours' WHERE repository_id = $1`, repo); err != nil {
 		t.Fatal(err)
 	}
 
@@ -286,7 +299,8 @@ func TestReconcileStorageUsage_RepairsProjectDrift(t *testing.T) {
 		t.Fatalf("project counters = %d/%d after a repository reconcile, want 0/0", size, count)
 	}
 
-	if _, err := pg.GetDB().ExecContext(ctx, `UPDATE project_quotas SET current_size_bytes = 7 WHERE project_id = $1`, project); err != nil {
+	if _, err := pg.GetDB().
+		ExecContext(ctx, `UPDATE project_quotas SET current_size_bytes = 7 WHERE project_id = $1`, project); err != nil {
 		t.Fatal(err)
 	}
 
@@ -326,7 +340,10 @@ func TestMoveRepositoryToProject_MovesUsage(t *testing.T) {
 	}
 
 	var owner string
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT project_id FROM repositories WHERE id = $1`, moving).Scan(&owner); err != nil || owner != from {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT project_id FROM repositories WHERE id = $1`, moving).
+		Scan(&owner); err != nil ||
+		owner != from {
 		t.Fatalf("repository project = %q, %v after a refused move, want %s", owner, err, from)
 	}
 
@@ -428,12 +445,18 @@ func TestMigration027_CleanupPolicyScope(t *testing.T) {
 	}
 
 	var valid bool
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint WHERE conname = 'chk_cleanup_policy_scope'`).Scan(&valid); err != nil || !valid {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint WHERE conname = 'chk_cleanup_policy_scope'`).
+		Scan(&valid); err != nil ||
+		!valid {
 		t.Fatalf("chk_cleanup_policy_scope validated = %v, err = %v", valid, err)
 	}
 
 	var indexValid bool
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT indisvalid FROM pg_index WHERE indexrelid = 'idx_cleanup_policies_project'::regclass`).Scan(&indexValid); err != nil || !indexValid {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT indisvalid FROM pg_index WHERE indexrelid = 'idx_cleanup_policies_project'::regclass`).
+		Scan(&indexValid); err != nil ||
+		!indexValid {
 		t.Fatalf("idx_cleanup_policies_project valid = %v, err = %v", indexValid, err)
 	}
 }

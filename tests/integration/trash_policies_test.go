@@ -268,7 +268,12 @@ func tpoCreateRepo(t *testing.T, env *tpoEnv, name, format string, opts map[stri
 
 func tpoPatchRepo(t *testing.T, env *tpoEnv, name, body string) {
 	t.Helper()
-	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodPatch, "/api/v1/repository/"+name, []byte(body)), http.StatusOK, "patch "+name+" "+body)
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodPatch, "/api/v1/repository/"+name, []byte(body)),
+		http.StatusOK,
+		"patch "+name+" "+body,
+	)
 }
 
 func tpoRepoInfo(t *testing.T, env *tpoEnv, name string) responses.RepositoryResponse {
@@ -735,7 +740,12 @@ func TestTrashPolicies_ImmutableReleasesMaven(t *testing.T) {
 	tpoAssertGone(t, env, releaseURL)
 
 	item := tpoTrashItem(t, env, repo, release)
-	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/trash/"+item.Kind+"/"+item.ID+"/restore", nil), http.StatusOK, "restore")
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/trash/"+item.Kind+"/"+item.ID+"/restore", nil),
+		http.StatusOK,
+		"restore",
+	)
 	tpoAssertServes(t, env, releaseURL, original)
 }
 
@@ -789,7 +799,13 @@ func TestTrashPolicies_RepositoryDeleteConfirmationAndTrash(t *testing.T) {
 
 	del := "/api/v1/repository/" + repo
 
-	tpoExpectError(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, del, nil), http.StatusBadRequest, "confirmation_required", "delete without confirm")
+	tpoExpectError(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodDelete, del, nil),
+		http.StatusBadRequest,
+		"confirmation_required",
+		"delete without confirm",
+	)
 	tpoExpectError(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, del+"?confirm=not-the-name", nil),
 		http.StatusBadRequest, "confirmation_required", "delete with a wrong confirm")
 	tpoExpect(t, tpoSend(t, env, tpoWriter, http.MethodDelete, del+"?confirm="+repo, nil), http.StatusForbidden, "delete as non-admin")
@@ -822,7 +838,13 @@ func TestTrashPolicies_RepositoryDeleteConfirmationAndTrash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tpoExpectError(t, tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/repositories", create), http.StatusConflict, "name_reserved", "create under a reserved name")
+	tpoExpectError(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/repositories", create),
+		http.StatusConflict,
+		"name_reserved",
+		"create under a reserved name",
+	)
 
 	restore := "/api/v1/trash/repository/" + item.ID + "/restore"
 
@@ -842,7 +864,13 @@ func TestTrashPolicies_RepositoryDeleteConfirmationAndTrash(t *testing.T) {
 	}
 
 	// Restored: the name is an ordinary conflict again.
-	tpoExpectError(t, tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/repositories", create), http.StatusConflict, "conflict", "create under a live name")
+	tpoExpectError(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/repositories", create),
+		http.StatusConflict,
+		"conflict",
+		"create under a live name",
+	)
 }
 
 func TestTrashPolicies_RepositoryRetentionZeroHardDeletes(t *testing.T) {
@@ -863,7 +891,13 @@ func TestTrashPolicies_RepositoryRetentionZeroHardDeletes(t *testing.T) {
 	del := "/api/v1/repository/" + repo
 
 	// The confirmation is required here too.
-	tpoExpectError(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, del, nil), http.StatusBadRequest, "confirmation_required", "delete without confirm")
+	tpoExpectError(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodDelete, del, nil),
+		http.StatusBadRequest,
+		"confirmation_required",
+		"delete without confirm",
+	)
 	tpoAssertServes(t, env, target, content)
 
 	body, err := json.Marshal(map[string]string{"confirm": repo})
@@ -939,7 +973,13 @@ func tpoRunRestoreConflict(t *testing.T, tc tpoFormatCase) {
 	scoped := "/api/v1/repositories/" + repo + "/trash/" + old.Kind + "/" + old.ID + "/restore"
 	global := "/api/v1/trash/" + old.Kind + "/" + old.ID + "/restore"
 
-	tpoExpectError(t, tpoSend(t, env, tpoWriter, http.MethodPost, scoped, nil), http.StatusConflict, "trash_conflict", "repository-scoped restore")
+	tpoExpectError(
+		t,
+		tpoSend(t, env, tpoWriter, http.MethodPost, scoped, nil),
+		http.StatusConflict,
+		"trash_conflict",
+		"repository-scoped restore",
+	)
 	tpoExpectError(t, tpoSend(t, env, tpoAdmin, http.MethodPost, global, nil), http.StatusConflict, "trash_conflict", "admin restore")
 
 	tpoAssertServes(t, env, target, newContent)
@@ -982,7 +1022,12 @@ func TestTrashPolicies_QuotaCountsTrashedBytesUntilPurge(t *testing.T) {
 
 	// A manual purge gives the quota back.
 	item := tpoTrashItem(t, env, repo, firstPath)
-	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, "/api/v1/trash/"+item.Kind+"/"+item.ID, nil), http.StatusNoContent, "purge first")
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodDelete, "/api/v1/trash/"+item.Kind+"/"+item.ID, nil),
+		http.StatusNoContent,
+		"purge first",
+	)
 	tpoAssertQuota(t, repo, 0, 0)
 
 	tpoPut(t, env, tpoMavenURL(repo, secondPath), second, http.StatusCreated)
@@ -1003,7 +1048,12 @@ func TestTrashPolicies_QuotaCountsTrashedBytesUntilPurge(t *testing.T) {
 	tpoPatchRepo(t, env, repo, `{"trash_retention_days":0}`)
 	tpoPut(t, env, tpoMavenURL(repo, firstPath), first, http.StatusCreated)
 	tpoAssertQuota(t, repo, len(first), 1)
-	tpoExpect(t, tpoSend(t, env, tpoWriter, http.MethodDelete, tpoMavenURL(repo, firstPath), nil), http.StatusNoContent, "hard delete first")
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoWriter, http.MethodDelete, tpoMavenURL(repo, firstPath), nil),
+		http.StatusNoContent,
+		"hard delete first",
+	)
 	tpoAssertQuota(t, repo, 0, 0)
 }
 
@@ -1077,12 +1127,22 @@ func TestTrashPolicies_AuditTrail(t *testing.T) {
 	trashed(tpoWriter)
 
 	item := tpoTrashItem(t, env, repo, path)
-	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/trash/"+item.Kind+"/"+item.ID+"/restore", nil), http.StatusOK, "restore")
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodPost, "/api/v1/trash/"+item.Kind+"/"+item.ID+"/restore", nil),
+		http.StatusOK,
+		"restore",
+	)
 
 	trashed(tpoWriter)
 
 	item = tpoTrashItem(t, env, repo, path)
-	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, "/api/v1/trash/"+item.Kind+"/"+item.ID, nil), http.StatusNoContent, "manual purge")
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodDelete, "/api/v1/trash/"+item.Kind+"/"+item.ID, nil),
+		http.StatusNoContent,
+		"manual purge",
+	)
 
 	tpoPut(t, env, target, tpoContent("two"), http.StatusCreated)
 	trashed(tpoWriter)

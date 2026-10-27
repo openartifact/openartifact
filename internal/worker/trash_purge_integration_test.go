@@ -322,7 +322,9 @@ func reservePurgeQuota(t *testing.T, s *purgeSeed, repoID string, blobIDs ...str
 
 	for _, id := range blobIDs {
 		var size int64
-		if err := s.pg.GetDB().QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, id).Scan(&size); err != nil {
+		if err := s.pg.GetDB().
+			QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, id).
+			Scan(&size); err != nil {
 			t.Fatal(err)
 		}
 
@@ -461,7 +463,9 @@ func TestTrashPurgeIntegrationSkipsWhileAnotherReplicaHoldsTheLock(t *testing.T)
 
 	// The pass released its own lock: the other session can take it again.
 	var acquired bool
-	if err := other.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, trashPurgeLockKey).Scan(&acquired); err != nil || !acquired {
+	if err := other.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, trashPurgeLockKey).
+		Scan(&acquired); err != nil ||
+		!acquired {
 		t.Fatalf("lock after the pass = %v, %v; the pass must release it", acquired, err)
 	}
 }

@@ -20,7 +20,11 @@ func TestParse(t *testing.T) {
 		{"upload session", "reg/org/app/blobs/uploads/8f1c", Request{KindUpload, "reg/org/app", "8f1c"}},
 		{"tags list", "reg/org/app/tags/list", Request{Kind: KindTags, Name: "reg/org/app"}},
 		{"referrers", "reg/org/app/referrers/sha256:abcd", Request{KindReferrers, "reg/org/app", "sha256:abcd"}},
-		{"name containing a marker segment", "reg/manifests/latest/manifests/sha256:abcd", Request{KindManifest, "reg/manifests/latest", "sha256:abcd"}},
+		{
+			"name containing a marker segment",
+			"reg/manifests/latest/manifests/sha256:abcd",
+			Request{KindManifest, "reg/manifests/latest", "sha256:abcd"},
+		},
 		{"name ending in blobs", "reg/blobs/manifests/1", Request{KindManifest, "reg/blobs", "1"}},
 		{"name containing blobs/uploads", "reg/blobs/uploads/manifests/1", Request{KindManifest, "reg/blobs/uploads", "1"}},
 		{"no sub-resource", "reg/org/app", Request{Name: "reg/org/app"}},

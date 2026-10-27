@@ -33,10 +33,21 @@ func seedScanJob(t *testing.T, db *sql.DB, repoID, path, scanType, scanner, stat
 func seedVulnResult(t *testing.T, db *sql.DB, jobID, vulns string, crit, high, medium, low int, quarantined bool) string {
 	t.Helper()
 
-	return mustScan[string](t, db, `INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
+	return mustScan[string](
+		t,
+		db,
+		`INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
 		quarantined, package_name, package_version, ecosystem)
 		VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, '', '', 'npm') RETURNING id`,
-		jobID, vulns, crit+high+medium+low, crit, high, medium, low, quarantined)
+		jobID,
+		vulns,
+		crit+high+medium+low,
+		crit,
+		high,
+		medium,
+		low,
+		quarantined,
+	)
 }
 
 // securityFixture is a database with findings of every type in two projects.
@@ -81,8 +92,13 @@ func newSecurityFixture(t *testing.T) *securityFixture {
 		VALUES ($1, '[{"type":"aws-key","description":"AWS access key","severity":"high"},{"type":"x","severity":"weird"}]', 2) RETURNING id`, job)
 
 	job = seedScanJob(t, db, f.repoA, "evil@2.0.0", "ai", "ai", "completed", done(4*time.Hour))
-	f.ids["ai"] = mustScan[string](t, db, `INSERT INTO ai_results (scan_job_id, summary, security_notes, quarantine_recommended, artifact_name, artifact_version)
-		VALUES ($1, 'looks fine', E'Downloads a payload at install time.\nSecond line', true, 'evil', '2.0.0') RETURNING id`, job)
+	f.ids["ai"] = mustScan[string](
+		t,
+		db,
+		`INSERT INTO ai_results (scan_job_id, summary, security_notes, quarantine_recommended, artifact_name, artifact_version)
+		VALUES ($1, 'looks fine', E'Downloads a payload at install time.\nSecond line', true, 'evil', '2.0.0') RETURNING id`,
+		job,
+	)
 
 	// repo B: a high vulnerability fully resolved by a VEX decision.
 	job = seedScanJob(t, db, f.repoB, "requests@2.0", "vuln", "osv", "completed", done(5*time.Hour))
@@ -168,7 +184,8 @@ func checkFindingDetails(t *testing.T, f *securityFixture, byID map[string]*mode
 func checkOtherFindingDetails(t *testing.T, f *securityFixture, byID map[string]*models.Finding) {
 	t.Helper()
 
-	if lic := byID[f.ids["license"]]; lic.Status != "quarantined" || !lic.Quarantined || lic.Title != "GPL-3.0-only" || lic.Severity() != "high" {
+	if lic := byID[f.ids["license"]]; lic.Status != "quarantined" || !lic.Quarantined || lic.Title != "GPL-3.0-only" ||
+		lic.Severity() != "high" {
 		t.Fatalf("license finding = %+v", lic)
 	}
 
@@ -177,7 +194,8 @@ func checkOtherFindingDetails(t *testing.T, f *securityFixture, byID map[string]
 		t.Fatalf("secret finding = %+v", sec)
 	}
 
-	if ai := byID[f.ids["ai"]]; ai.Title != "Downloads a payload at install time." || ai.PackageName != "evil" || ai.PackageVersion != "2.0.0" {
+	if ai := byID[f.ids["ai"]]; ai.Title != "Downloads a payload at install time." || ai.PackageName != "evil" ||
+		ai.PackageVersion != "2.0.0" {
 		t.Fatalf("ai finding = %+v", ai)
 	}
 
@@ -333,7 +351,12 @@ func TestSecurityHealthStats(t *testing.T) {
 
 	seedScanJob(t, f.db, f.repoB, "queued@1", "vuln", "osv", "pending", f.now)
 	// a failure older than 24 hours (an update trigger would reset updated_at, so insert it)
-	refID := mustScan[string](t, f.db, `INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'old-fail@1', 'raw') RETURNING id`, f.repoB)
+	refID := mustScan[string](
+		t,
+		f.db,
+		`INSERT INTO artifact_refs (repository_id, artifact_path, format) VALUES ($1, 'old-fail@1', 'raw') RETURNING id`,
+		f.repoB,
+	)
 	mustExec(t, f.db, `INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status, updated_at)
 		VALUES ($1, 'vuln', 'osv', 'failed', now() - interval '2 days')`, refID)
 
@@ -351,7 +374,12 @@ func TestSecurityHealthStats(t *testing.T) {
 		t.Fatalf("no push yet: %v, %v", last, err)
 	}
 
-	mustExec(t, f.db, `INSERT INTO dependency_track_pushes (repository_id, artifact_id, state) VALUES ($1, 'a@1', 'done'), ($1, 'b@1', 'running')`, f.repoA)
+	mustExec(
+		t,
+		f.db,
+		`INSERT INTO dependency_track_pushes (repository_id, artifact_id, state) VALUES ($1, 'a@1', 'done'), ($1, 'b@1', 'running')`,
+		f.repoA,
+	)
 
 	last, err = f.pg.LatestFinishedDependencyTrackPush(ctx)
 	if err != nil || last == nil || !last.OK || last.At.IsZero() {

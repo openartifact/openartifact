@@ -256,7 +256,11 @@ func TestGroupResolvesHostedAndProxyMembersInOrder(t *testing.T) {
 func TestGroupDoesNotExposeMemberTheCallerCannotRead(t *testing.T) {
 	e := newEnv(t, denyAuthorizer{"private": true})
 
-	if w := e.do(http.MethodGet, "/repos/raw/all/secret.txt"); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "secret") {
+	if w := e.do(
+		http.MethodGet,
+		"/repos/raw/all/secret.txt",
+	); w.Code != http.StatusNotFound ||
+		strings.Contains(w.Body.String(), "secret") {
 		t.Errorf("secret.txt = %d %q, want 404", w.Code, w.Body.String())
 	}
 

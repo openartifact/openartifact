@@ -163,10 +163,25 @@ func TestTriggerAIAnalysisAlwaysChecksTheArtifact(t *testing.T) {
 	}{
 		{"existing artifact", "admin", map[string]any{"repository_id": "r-npm", "artifact_id": "c1"}, ""},
 		{"unknown artifact", "admin", map[string]any{"repository_id": "r-npm", "artifact_id": "nope"}, errArtifactMissing},
-		{"unknown artifact with caller manifest text", "admin", map[string]any{"repository_id": "r-npm", "artifact_id": "nope", "manifest_text": "{}"}, errArtifactMissing},
-		{"artifact of another repository", "admin", map[string]any{"repository_id": "r-docker", "artifact_id": "c1", "manifest_text": "{}"}, errArtifactMissing},
+		{
+			"unknown artifact with caller manifest text",
+			"admin",
+			map[string]any{"repository_id": "r-npm", "artifact_id": "nope", "manifest_text": "{}"},
+			errArtifactMissing,
+		},
+		{
+			"artifact of another repository",
+			"admin",
+			map[string]any{"repository_id": "r-docker", "artifact_id": "c1", "manifest_text": "{}"},
+			errArtifactMissing,
+		},
 		{"unknown repository", "admin", map[string]any{"repository_id": "r-none", "artifact_id": "c1", "manifest_text": "{}"}, msgNotFound},
-		{"existing artifact with manifest text", "admin", map[string]any{"repository_id": "r-npm", "artifact_id": "c1", "manifest_text": "{}"}, ""},
+		{
+			"existing artifact with manifest text",
+			"admin",
+			map[string]any{"repository_id": "r-npm", "artifact_id": "c1", "manifest_text": "{}"},
+			"",
+		},
 	}
 
 	for _, tt := range tests {

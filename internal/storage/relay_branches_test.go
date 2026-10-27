@@ -52,7 +52,8 @@ func TestRelayDisabledStoreRefusesEveryEntryPoint(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	fsys.RelayHandler().ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/upload-relay/"+relayTestID+"/1", strings.NewReader("x")))
+	fsys.RelayHandler().
+		ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/upload-relay/"+relayTestID+"/1", strings.NewReader("x")))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("relay handler status = %d, want 404", rec.Code)
@@ -203,7 +204,12 @@ func TestRelayPutRouting(t *testing.T) {
 		{"id is not a uuid", strings.Replace(put.URL, relayTestID, "not-a-uuid", 1), bytes.NewReader(data), http.StatusNotFound},
 		{"part is not a number", strings.Replace(put.URL, "/1?", "/one?", 1), bytes.NewReader(data), http.StatusNotFound},
 		{"part beyond the plan", strings.Replace(put.URL, "/1?", "/2?", 1), bytes.NewReader(data), http.StatusNotFound},
-		{"unplanned upload", strings.Replace(put.URL, relayTestID, "ffffffff-ffff-4fff-8fff-ffffffffffff", 1), bytes.NewReader(data), http.StatusNotFound},
+		{
+			"unplanned upload",
+			strings.Replace(put.URL, relayTestID, "ffffffff-ffff-4fff-8fff-ffffffffffff", 1),
+			bytes.NewReader(data),
+			http.StatusNotFound,
+		},
 		{"no signature", env.srv.URL + "/upload-relay/" + relayTestID + "/1", bytes.NewReader(data), http.StatusForbidden},
 		// A body of unknown length (chunked) cannot be checked against the plan.
 		{"chunked body", put.URL, io.NopCloser(bytes.NewReader(data)), http.StatusLengthRequired},

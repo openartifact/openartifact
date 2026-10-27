@@ -105,10 +105,26 @@ func TestReplicationStatus(t *testing.T) {
 	errAt := finished.Add(time.Hour)
 
 	svc := &fakeReplication{status: replication.Status{
-		Enabled: true, Replica: replication.ReplicaInfo{Type: "s3", Location: "s3.example.com/dr"}, ReadFallback: "notfound",
-		BacklogCopy: 3, BacklogDelete: 1, OldestPendingSeconds: 12.5, Failing: 1,
-		ReplicatedTotal: 40, ReplicatedBytes: 4096, LastError: "replica down", LastErrorAt: &errAt,
-		LastVerify:    &replication.VerifyResult{StartedAt: finished.Add(-time.Minute), FinishedAt: &finished, Checked: 10, MissingReplica: 2, Repaired: 2, ReplicaListed: true, Listing: "list"},
+		Enabled:              true,
+		Replica:              replication.ReplicaInfo{Type: "s3", Location: "s3.example.com/dr"},
+		ReadFallback:         "notfound",
+		BacklogCopy:          3,
+		BacklogDelete:        1,
+		OldestPendingSeconds: 12.5,
+		Failing:              1,
+		ReplicatedTotal:      40,
+		ReplicatedBytes:      4096,
+		LastError:            "replica down",
+		LastErrorAt:          &errAt,
+		LastVerify: &replication.VerifyResult{
+			StartedAt:      finished.Add(-time.Minute),
+			FinishedAt:     &finished,
+			Checked:        10,
+			MissingReplica: 2,
+			Repaired:       2,
+			ReplicaListed:  true,
+			Listing:        "list",
+		},
 		VerifyRunning: &replication.VerifyResult{StartedAt: errAt, Checked: 1},
 	}}
 

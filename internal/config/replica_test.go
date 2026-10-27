@@ -75,7 +75,8 @@ storage:
 
 	r := cfg.StorageReplica
 
-	if !r.Enabled() || r.Type != "s3" || r.Bucket != "replica-bucket" || r.Region != "eu-central-1" || r.AccessKey != "AK" || r.SecretKey != "SK" {
+	if !r.Enabled() || r.Type != "s3" || r.Bucket != "replica-bucket" || r.Region != "eu-central-1" || r.AccessKey != "AK" ||
+		r.SecretKey != "SK" {
 		t.Fatalf("replica backend = %+v", r.StorageConfig)
 	}
 
@@ -227,7 +228,15 @@ func TestReplicaSummaryHidesCredentials(t *testing.T) {
 		cfg  storage.StorageConfig
 		want string
 	}{
-		{storage.StorageConfig{Type: "s3", Endpoint: "https://" + "who" + ":" + "secret" + "@" + "s3.example.com:9000/path?x=1", Bucket: "b", SecretKey: "sk"}, "s3.example.com:9000/b"},
+		{
+			storage.StorageConfig{
+				Type:      "s3",
+				Endpoint:  "https://" + "who" + ":" + "secret" + "@" + "s3.example.com:9000/path?x=1",
+				Bucket:    "b",
+				SecretKey: "sk",
+			},
+			"s3.example.com:9000/b",
+		},
 		{storage.StorageConfig{Type: "azure", AzureAccountName: "acct", AzureContainerName: "c", AzureAccountKey: "key"}, "acct/c"},
 		{storage.StorageConfig{Type: "gcs", GCSBucket: "gb", GCSHMACSecret: "x"}, "gb"},
 		{storage.StorageConfig{Type: "filesystem", Path: "/data"}, "/data"},

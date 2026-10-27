@@ -117,11 +117,33 @@ func checkVersionTriple(t *testing.T, a, b, c fuzzVersion) {
 	ab, bc, ac := a.cmp(b), b.cmp(c), a.cmp(c)
 
 	if (ab <= 0 && bc <= 0 && ac > 0) || (ab >= 0 && bc >= 0 && ac < 0) {
-		t.Fatalf("not transitive: compare(%q, %q) = %d, compare(%q, %q) = %d, compare(%q, %q) = %d", a.raw, b.raw, ab, b.raw, c.raw, bc, a.raw, c.raw, ac)
+		t.Fatalf(
+			"not transitive: compare(%q, %q) = %d, compare(%q, %q) = %d, compare(%q, %q) = %d",
+			a.raw,
+			b.raw,
+			ab,
+			b.raw,
+			c.raw,
+			bc,
+			a.raw,
+			c.raw,
+			ac,
+		)
 	}
 
 	if (ab == 0 && bc != ac) || (bc == 0 && ab != ac) {
-		t.Fatalf("equal versions compare differently: compare(%q, %q) = %d, compare(%q, %q) = %d, compare(%q, %q) = %d", a.raw, b.raw, ab, b.raw, c.raw, bc, a.raw, c.raw, ac)
+		t.Fatalf(
+			"equal versions compare differently: compare(%q, %q) = %d, compare(%q, %q) = %d, compare(%q, %q) = %d",
+			a.raw,
+			b.raw,
+			ab,
+			b.raw,
+			c.raw,
+			bc,
+			a.raw,
+			c.raw,
+			ac,
+		)
 	}
 }
 
@@ -274,7 +296,9 @@ func fuzzGenerator() *Generator {
 var (
 	spdxRefRE    = regexp.MustCompile(`^SPDXRef-[A-Za-z0-9.-]+$`)
 	licenseRefRE = regexp.MustCompile(`LicenseRef-[A-Za-z0-9.-]+`)
-	tagValueLine = regexp.MustCompile(`^(SPDXVersion|DataLicense|SPDXID|DocumentName|DocumentNamespace|Creator|Created|PackageName|PackageVersion|PackageDownloadLocation|FilesAnalyzed|PackageChecksum|PackageLicenseConcluded|PackageLicenseDeclared|PackageCopyrightText|PrimaryPackagePurpose|ExternalRef|Relationship|LicenseID|ExtractedText|LicenseName): `)
+	tagValueLine = regexp.MustCompile(
+		`^(SPDXVersion|DataLicense|SPDXID|DocumentName|DocumentNamespace|Creator|Created|PackageName|PackageVersion|PackageDownloadLocation|FilesAnalyzed|PackageChecksum|PackageLicenseConcluded|PackageLicenseDeclared|PackageCopyrightText|PrimaryPackagePurpose|ExternalRef|Relationship|LicenseID|ExtractedText|LicenseName): `,
+	)
 )
 
 // FuzzGenerateDocuments builds every SBOM flavour (CycloneDX, SPDX 2.3 JSON and
@@ -282,9 +306,27 @@ var (
 // documents are well-formed and self-consistent whatever the metadata says,
 // and untrusted text cannot add a line to the tag-value document.
 func FuzzGenerateDocuments(f *testing.F) {
-	f.Add("npm", "@babel/core@7.0.0", `{"license":"MIT","dependencies":[{"name":"a","version":"1","sha256":"`+strings.Repeat("a", 64)+`","license":["MIT","Custom <b>"]}]}`, uint8(1))
-	f.Add("maven", "g:a@1", `{"licenses":[{"type":"Apache 2.0"},{"name":"X"}],"dependencies":[{"name":"g:b","purl":"pkg:maven/g/b@1"},{"name":"g:b","purl":"pkg:maven/g/b@1"},5,null]}`, uint8(0))
-	f.Add("docker", "img@sha256:abc", `{"license":"MIT AND (ISC OR BSD-2-Clause)","dependencies":[{"name":"a\nSPDXID: x","version":"\u2028"}]}`, uint8(2))
+	f.Add(
+		"npm",
+		"@babel/core@7.0.0",
+		`{"license":"MIT","dependencies":[{"name":"a","version":"1","sha256":"`+strings.Repeat(
+			"a",
+			64,
+		)+`","license":["MIT","Custom <b>"]}]}`,
+		uint8(1),
+	)
+	f.Add(
+		"maven",
+		"g:a@1",
+		`{"licenses":[{"type":"Apache 2.0"},{"name":"X"}],"dependencies":[{"name":"g:b","purl":"pkg:maven/g/b@1"},{"name":"g:b","purl":"pkg:maven/g/b@1"},5,null]}`,
+		uint8(0),
+	)
+	f.Add(
+		"docker",
+		"img@sha256:abc",
+		`{"license":"MIT AND (ISC OR BSD-2-Clause)","dependencies":[{"name":"a\nSPDXID: x","version":"\u2028"}]}`,
+		uint8(2),
+	)
 	f.Add("", "", `null`, uint8(0))
 
 	f.Fuzz(func(t *testing.T, format, artifactID, metadata string, spec uint8) {
@@ -531,8 +573,18 @@ func checkSPDX3(t *testing.T, r *SBOMResult) {
 // where a reported fix is at or below the artifact version, and the documents
 // are well-formed.
 func FuzzGenerateVEX(f *testing.F) {
-	f.Add("npm", "lib@1.2.3", `[{"id":"CVE-2021-1","fixed_in":"1.2.3","severity":"HIGH","cvss":7.5,"cwes":["CWE-79","x"]},{"id":"cve-2021-1"},{"id":"GHSA-xxxx","fixed_in":"2.0.0, 1.0.0"},{"id":""}]`, uint8(0))
-	f.Add("maven", "g:a@1.0", `[{"id":"CVE-1","fixed_in":"1.0-SNAPSHOT","cvss":-1,"references":["http://x"],"published_at":"bad"}]`, uint8(1))
+	f.Add(
+		"npm",
+		"lib@1.2.3",
+		`[{"id":"CVE-2021-1","fixed_in":"1.2.3","severity":"HIGH","cvss":7.5,"cwes":["CWE-79","x"]},{"id":"cve-2021-1"},{"id":"GHSA-xxxx","fixed_in":"2.0.0, 1.0.0"},{"id":""}]`,
+		uint8(0),
+	)
+	f.Add(
+		"maven",
+		"g:a@1.0",
+		`[{"id":"CVE-1","fixed_in":"1.0-SNAPSHOT","cvss":-1,"references":["http://x"],"published_at":"bad"}]`,
+		uint8(1),
+	)
 	f.Add("", "", `[]`, uint8(0))
 
 	f.Fuzz(func(t *testing.T, format, artifactID, vulns string, flags uint8) {

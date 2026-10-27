@@ -450,7 +450,13 @@ func (h *SecretsHandler) handleExportScan(w http.ResponseWriter, r *http.Request
 
 	for _, res := range ex.results {
 		if res.ID == id {
-			writeSecretsExport(w, ex.format, exportFileName(ex.format, "secrets", ex.repoName, id), ex.repoName, []*models.SecretScanResult{res})
+			writeSecretsExport(
+				w,
+				ex.format,
+				exportFileName(ex.format, "secrets", ex.repoName, id),
+				ex.repoName,
+				[]*models.SecretScanResult{res},
+			)
 			return
 		}
 	}

@@ -25,9 +25,18 @@ func benchPackument(member string, n int) string {
 		}
 
 		v := fmt.Sprintf("%d.%d.%d", i/10000, (i/100)%100, i%100)
-		fmt.Fprintf(&sb, `%q:{"name":"lib","version":%q,"description":"An example package used for benchmarking merges","main":"dist/index.js",`+
-			`"dependencies":{"lodash":"^4.17.21","express":"^4.18.2","zod":"^3.22.0"},"devDependencies":{"typescript":"^5.3.0","jest":"^29.7.0"},`+
-			`"dist":{"tarball":"https://%s.example/lib/-/lib-%s.tgz","integrity":"sha512-%088d","shasum":"%040d"}}`, v, v, member, v, i, i)
+		fmt.Fprintf(
+			&sb,
+			`%q:{"name":"lib","version":%q,"description":"An example package used for benchmarking merges","main":"dist/index.js",`+
+				`"dependencies":{"lodash":"^4.17.21","express":"^4.18.2","zod":"^3.22.0"},"devDependencies":{"typescript":"^5.3.0","jest":"^29.7.0"},`+
+				`"dist":{"tarball":"https://%s.example/lib/-/lib-%s.tgz","integrity":"sha512-%088d","shasum":"%040d"}}`,
+			v,
+			v,
+			member,
+			v,
+			i,
+			i,
+		)
 	}
 
 	sb.WriteString(`}}`)

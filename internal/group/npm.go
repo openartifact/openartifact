@@ -42,7 +42,14 @@ func (h *Handler) SetBaseURL(baseURL string) { h.baseURL = strings.TrimRight(bas
 // are already narrowed by applyHostedWins: for a package a hosted member holds
 // (and unless the group merges proxy versions) only the hosted members are
 // left, so a proxy's versions of that name never reach the merged packument.
-func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
+func (h *Handler) serveNPM(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	relPath string,
+	members []*models.Repository,
+	be Backend,
+) bool {
 	p, err := pkgnpm.ParsePath(relPath)
 	if err != nil || p.Kind == pkgnpm.KindTarball {
 		return false

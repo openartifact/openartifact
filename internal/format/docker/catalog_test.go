@@ -75,7 +75,11 @@ func hostedEntry(repo, image string) *models.DockerCatalogEntry {
 	return &models.DockerCatalogEntry{Name: name, Repository: r, Image: image, Sources: []*models.Repository{r}}
 }
 
-func newCatalogRegistry(t *testing.T, entries []*models.DockerCatalogEntry, allow func(repoName, path string) bool) (*registry, *catalogDB) {
+func newCatalogRegistry(
+	t *testing.T,
+	entries []*models.DockerCatalogEntry,
+	allow func(repoName, path string) bool,
+) (*registry, *catalogDB) {
 	t.Helper()
 
 	db := &catalogDB{regFakeDB: newRegFakeDB(), entries: entries, trashed: map[string]bool{}}

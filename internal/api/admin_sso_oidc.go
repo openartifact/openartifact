@@ -23,18 +23,26 @@ func validateOIDCConfig(ctx context.Context, cfg *models.OIDCConfig) error {
 	switch cfg.Type {
 	case models.OIDCTypeOIDC:
 		if cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
-			return errors.New("oidc_config requires issuer, client_id, and client_secret") //nolint:err113 // validation message surfaced to the admin
+			return errors.New(
+				"oidc_config requires issuer, client_id, and client_secret",
+			) //nolint:err113 // validation message surfaced to the admin
 		}
 	case models.OIDCTypeGitHub, models.OIDCTypeOAuth2:
 		if cfg.ClientID == "" || cfg.ClientSecret == "" {
-			return errors.New("oidc_config requires client_id and client_secret") //nolint:err113 // validation message surfaced to the admin
+			return errors.New(
+				"oidc_config requires client_id and client_secret",
+			) //nolint:err113 // validation message surfaced to the admin
 		}
 	default:
-		return errors.New(`oidc_config.type must be empty, "github" or "oauth2"`) //nolint:err113 // validation message surfaced to the admin
+		return errors.New(
+			`oidc_config.type must be empty, "github" or "oauth2"`,
+		) //nolint:err113 // validation message surfaced to the admin
 	}
 
 	if crypto.IsEncrypted(cfg.ClientSecret) {
-		return errors.New("oidc_config.client_secret must be the plaintext secret") //nolint:err113 // validation message surfaced to the admin
+		return errors.New(
+			"oidc_config.client_secret must be the plaintext secret",
+		) //nolint:err113 // validation message surfaced to the admin
 	}
 
 	if err := validateOIDCURLs(ctx, cfg); err != nil {
@@ -57,7 +65,9 @@ func validateOIDCConfig(ctx context.Context, cfg *models.OIDCConfig) error {
 
 	for _, s := range cfg.Scopes {
 		if s == "" || strings.ContainsAny(s, " \t\r\n") {
-			return errors.New("oidc_config.scopes entries must be non-empty and contain no whitespace") //nolint:err113 // validation message surfaced to the admin
+			return errors.New(
+				"oidc_config.scopes entries must be non-empty and contain no whitespace",
+			) //nolint:err113 // validation message surfaced to the admin
 		}
 	}
 
@@ -81,7 +91,10 @@ func validateOIDCURLs(ctx context.Context, cfg *models.OIDCConfig) error {
 	if cfg.Type == models.OIDCTypeOAuth2 {
 		for _, u := range urls[1:4] {
 			if u.value == "" {
-				return fmt.Errorf("oidc_config.%s is required for type oauth2", u.field) //nolint:err113 // validation message surfaced to the admin
+				return fmt.Errorf(
+					"oidc_config.%s is required for type oauth2",
+					u.field,
+				) //nolint:err113 // validation message surfaced to the admin
 			}
 		}
 	}
@@ -108,23 +121,31 @@ func validateOIDCURLs(ctx context.Context, cfg *models.OIDCConfig) error {
 func validateOIDCTypeRules(cfg *models.OIDCConfig) error {
 	if cfg.Type == models.OIDCTypeGitHub {
 		if len(cfg.AllowedOrgs) == 0 {
-			return errors.New("oidc_config.allowed_orgs is required for type github") //nolint:err113 // validation message surfaced to the admin
+			return errors.New(
+				"oidc_config.allowed_orgs is required for type github",
+			) //nolint:err113 // validation message surfaced to the admin
 		}
 
 		for _, o := range cfg.AllowedOrgs {
 			if o == "" || strings.ContainsAny(o, " \t\r\n/") {
-				return errors.New("oidc_config.allowed_orgs entries must be organization logins") //nolint:err113 // validation message surfaced to the admin
+				return errors.New(
+					"oidc_config.allowed_orgs entries must be organization logins",
+				) //nolint:err113 // validation message surfaced to the admin
 			}
 		}
 	}
 
 	if cfg.Type == models.OIDCTypeOIDC && auth.IsEntraMultiTenantAuthority(cfg.Issuer) && len(cfg.AllowedTenants) == 0 {
-		return errors.New("oidc_config.allowed_tenants is required for a multi-tenant Entra authority (common, organizations, consumers)") //nolint:err113 // validation message surfaced to the admin
+		return errors.New(
+			"oidc_config.allowed_tenants is required for a multi-tenant Entra authority (common, organizations, consumers)",
+		) //nolint:err113 // validation message surfaced to the admin
 	}
 
 	for _, t := range cfg.AllowedTenants {
 		if !auth.IsEntraGUID(t) {
-			return errors.New("oidc_config.allowed_tenants entries must be tenant IDs (GUIDs)") //nolint:err113 // validation message surfaced to the admin
+			return errors.New(
+				"oidc_config.allowed_tenants entries must be tenant IDs (GUIDs)",
+			) //nolint:err113 // validation message surfaced to the admin
 		}
 	}
 

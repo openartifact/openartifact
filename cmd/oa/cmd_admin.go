@@ -542,7 +542,10 @@ func storageConfig(inline, file string) map[string]any {
 
 	if file == "" {
 		if key := findSecretConfigKey(cfg); key != "" {
-			dief("refusing inline --config: %q looks like a credential and would be visible in the process list; put the config in a file and use --config-file (or --config-file - to read stdin)", key)
+			dief(
+				"refusing inline --config: %q looks like a credential and would be visible in the process list; put the config in a file and use --config-file (or --config-file - to read stdin)",
+				key,
+			)
 		}
 	}
 

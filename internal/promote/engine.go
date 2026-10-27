@@ -169,7 +169,11 @@ func (e *Engine) sources(ctx context.Context, p Params) (map[string]*models.Repo
 		}
 
 		if repo.Format != p.Target.Format || repo.Format != it.Format {
-			return nil, &ItemError{SHA256: it.SHA256, Path: it.ArtifactPath, Err: fmt.Errorf("%w: %s is %s, target is %s", ErrFormatMismatch, repo.Name, repo.Format, p.Target.Format)}
+			return nil, &ItemError{
+				SHA256: it.SHA256,
+				Path:   it.ArtifactPath,
+				Err:    fmt.Errorf("%w: %s is %s, target is %s", ErrFormatMismatch, repo.Name, repo.Format, p.Target.Format),
+			}
 		}
 
 		srcs[it.SourceRepoID] = repo
@@ -222,7 +226,11 @@ func (e *Engine) copyItems(ctx context.Context, tx Tx, p Params, srcs map[string
 
 		src := srcs[it.SourceRepoID]
 
-		res, err := promoter.Promote(ctx, tx, Request{Src: src, Dst: p.Target, SHA256: it.SHA256, Path: it.ArtifactPath, Force: p.Force, Actor: p.Promoter})
+		res, err := promoter.Promote(
+			ctx,
+			tx,
+			Request{Src: src, Dst: p.Target, SHA256: it.SHA256, Path: it.ArtifactPath, Force: p.Force, Actor: p.Promoter},
+		)
 		if err != nil {
 			return nil, total, nil, &ItemError{SHA256: it.SHA256, Path: it.ArtifactPath, Err: err}
 		}

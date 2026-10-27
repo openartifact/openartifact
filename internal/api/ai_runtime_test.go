@@ -222,7 +222,11 @@ func TestAdminAIConfigAppliesToRunningWorker(t *testing.T) {
 	rw := e.do(http.MethodGet, "/api/v1/admin/ai/config", "")
 
 	var cfg map[string]any
-	if err := json.Unmarshal(rw.Body.Bytes(), &cfg); err != nil || cfg["model"] != "model-2" || cfg["auto_analyze"] != false || cfg["provider"] != "custom" {
+	if err := json.Unmarshal(
+		rw.Body.Bytes(),
+		&cfg,
+	); err != nil || cfg["model"] != "model-2" || cfg["auto_analyze"] != false ||
+		cfg["provider"] != "custom" {
 		t.Errorf("config = %v (%v)", cfg, err)
 	}
 
@@ -264,7 +268,14 @@ func TestAITriggerWithoutManifestText(t *testing.T) {
 	srv := chatEndpoint(t)
 	e := newAIRuntimeEnv(t)
 	e.db.blobs["npm-1"] = &models.ComponentBlob{ID: "npm-1", Format: "npm", Filename: "a-1.tgz", Name: "a", Version: "1", SHA256: "s"}
-	e.db.blobs["docker-1"] = &models.ComponentBlob{ID: "docker-1", Format: "docker", Filename: "sha256:x", Name: "i", Version: "1", SHA256: "d"}
+	e.db.blobs["docker-1"] = &models.ComponentBlob{
+		ID:       "docker-1",
+		Format:   "docker",
+		Filename: "sha256:x",
+		Name:     "i",
+		Version:  "1",
+		SHA256:   "d",
+	}
 	e.put(t, `{"enabled":true,"provider":"custom","base_url":"`+srv.URL+`","model":"m"}`)
 
 	tests := []struct {
@@ -296,7 +307,11 @@ func TestAdminAIConfigGetReflectsEffectiveConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env := ai.Settings{Enabled: true, AutoAnalyze: true, Config: ai.Config{Provider: "ollama", BaseURL: "http://ollama.local:11434", Model: "env-model"}}
+	env := ai.Settings{
+		Enabled:     true,
+		AutoAnalyze: true,
+		Config:      ai.Config{Provider: "ollama", BaseURL: "http://ollama.local:11434", Model: "env-model"},
+	}
 	db := newAIRuntimeDB()
 
 	r := chi.NewRouter()

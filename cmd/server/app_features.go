@@ -68,7 +68,15 @@ func (a *app) setupAI() {
 	aiWorker.Configure(aiSettings)
 
 	if aiSettings.Enabled {
-		a.log.Infow("AI analysis enabled", "provider", aiSettings.Config.Provider, "model", aiSettings.Config.Model, "auto_analyze", aiSettings.AutoAnalyze)
+		a.log.Infow(
+			"AI analysis enabled",
+			"provider",
+			aiSettings.Config.Provider,
+			"model",
+			aiSettings.Config.Model,
+			"auto_analyze",
+			aiSettings.AutoAnalyze,
+		)
 	} else {
 		a.log.Infow("AI analysis disabled")
 	}

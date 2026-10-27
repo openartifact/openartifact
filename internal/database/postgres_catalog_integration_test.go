@@ -169,7 +169,8 @@ func TestCatalogRecentPackages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(recent) != 2 || recent[0].Name != "beta" || recent[1].Name != "alpha" || recent[1].Version != "2.0.0" || recent[0].Repository != "catalog-npm" {
+	if len(recent) != 2 || recent[0].Name != "beta" || recent[1].Name != "alpha" || recent[1].Version != "2.0.0" ||
+		recent[0].Repository != "catalog-npm" {
 		t.Fatalf("recent %+v", recent)
 	}
 

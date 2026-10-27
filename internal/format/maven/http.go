@@ -76,7 +76,13 @@ func (h *HTTPHandler) handlePath(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, repoPublic bool, art *models.MavenArtifact, contentType string) {
+func (h *HTTPHandler) serveArtifactBlob(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoPublic bool,
+	art *models.MavenArtifact,
+	contentType string,
+) {
 	if base.Revalidate(w, r, repoPublic, `"`+art.SHA256+`"`, metadataMaxAge) {
 		return
 	}
@@ -89,7 +95,11 @@ func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: art.SHA256, Size: art.BlobSizeBytes, Filename: filepath.Base(art.RepoPath), ContentType: contentType}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{SHA256: art.SHA256, Size: art.BlobSizeBytes, Filename: filepath.Base(art.RepoPath), ContentType: contentType},
+	) {
 		return
 	}
 
@@ -315,7 +325,13 @@ func (h *HTTPHandler) serveMetadata(w http.ResponseWriter, r *http.Request, repo
 // The checksum is a pure function of the metadata blob, so the blob digest
 // (plus the algorithm) is a complete validator: a revalidation never reads the
 // blob, and a cache miss hashes it with the one algorithm asked for.
-func (h *HTTPHandler) serveMetadataChecksum(w http.ResponseWriter, r *http.Request, repoPublic bool, meta *models.RepoMetadata, suffix string) {
+func (h *HTTPHandler) serveMetadataChecksum(
+	w http.ResponseWriter,
+	r *http.Request,
+	repoPublic bool,
+	meta *models.RepoMetadata,
+	suffix string,
+) {
 	if base.Revalidate(w, r, repoPublic, `"`+meta.BlobSHA256+suffix+`"`, metadataMaxAge) {
 		return
 	}

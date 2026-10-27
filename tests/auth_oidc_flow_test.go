@@ -31,8 +31,21 @@ func TestOIDC_Login_DefaultScopesAndHostedDomainHint(t *testing.T) {
 		wantNonceC bool
 	}{
 		{name: "defaults have no groups scope", wantScope: "openid email profile", wantNonce: true, wantNonceC: true},
-		{name: "groups is opt-in through scopes", cfg: models.OIDCConfig{Scopes: []string{"openid", "email", "groups"}}, wantScope: "openid email groups", wantNonce: true, wantNonceC: true},
-		{name: "hosted domain adds the hd hint", cfg: models.OIDCConfig{HostedDomain: "example.com"}, wantScope: "openid email profile", wantHD: "example.com", wantNonce: true, wantNonceC: true},
+		{
+			name:       "groups is opt-in through scopes",
+			cfg:        models.OIDCConfig{Scopes: []string{"openid", "email", "groups"}},
+			wantScope:  "openid email groups",
+			wantNonce:  true,
+			wantNonceC: true,
+		},
+		{
+			name:       "hosted domain adds the hd hint",
+			cfg:        models.OIDCConfig{HostedDomain: "example.com"},
+			wantScope:  "openid email profile",
+			wantHD:     "example.com",
+			wantNonce:  true,
+			wantNonceC: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -82,7 +95,12 @@ func TestOIDC_Callback_GroupsPresence(t *testing.T) {
 	}{
 		{name: "absent claim keeps memberships (no sync)", groups: nil, wantSynced: false},
 		{name: "empty list clears SSO memberships", groups: []string{}, wantSynced: true, wantNames: []string{}},
-		{name: "present list syncs mapped groups only", groups: []string{"devs", "unmapped"}, wantSynced: true, wantNames: []string{"local-devs"}},
+		{
+			name:       "present list syncs mapped groups only",
+			groups:     []string{"devs", "unmapped"},
+			wantSynced: true,
+			wantNames:  []string{"local-devs"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -301,14 +319,47 @@ func TestOIDC_Callback_LoginPolicy(t *testing.T) {
 		claims map[string]any
 		deny   bool
 	}{
-		{name: "verified email passes", cfg: models.OIDCConfig{RequireEmailVerified: true}, claims: map[string]any{"email": "a@example.com", "email_verified": true}},
-		{name: "unverified email rejected", cfg: models.OIDCConfig{RequireEmailVerified: true}, claims: map[string]any{"email": "a@example.com", "email_verified": false}, deny: true},
-		{name: "missing email_verified rejected", cfg: models.OIDCConfig{RequireEmailVerified: true}, claims: map[string]any{"email": "a@example.com"}, deny: true},
+		{
+			name:   "verified email passes",
+			cfg:    models.OIDCConfig{RequireEmailVerified: true},
+			claims: map[string]any{"email": "a@example.com", "email_verified": true},
+		},
+		{
+			name:   "unverified email rejected",
+			cfg:    models.OIDCConfig{RequireEmailVerified: true},
+			claims: map[string]any{"email": "a@example.com", "email_verified": false},
+			deny:   true,
+		},
+		{
+			name:   "missing email_verified rejected",
+			cfg:    models.OIDCConfig{RequireEmailVerified: true},
+			claims: map[string]any{"email": "a@example.com"},
+			deny:   true,
+		},
 		{name: "unverified email fine when not required", claims: map[string]any{"email": "a@example.com", "email_verified": false}},
-		{name: "hd matches case-insensitively", cfg: models.OIDCConfig{HostedDomain: "Example.COM"}, claims: map[string]any{"hd": "example.com"}},
-		{name: "hd mismatch rejected", cfg: models.OIDCConfig{HostedDomain: "example.com"}, claims: map[string]any{"hd": "evil.example"}, deny: true},
-		{name: "missing hd rejected", cfg: models.OIDCConfig{HostedDomain: "example.com"}, claims: map[string]any{"email": "a@example.com", "email_verified": true}, deny: true},
-		{name: "hd suffix is not a match", cfg: models.OIDCConfig{HostedDomain: "example.com"}, claims: map[string]any{"hd": "example.com.evil.example"}, deny: true},
+		{
+			name:   "hd matches case-insensitively",
+			cfg:    models.OIDCConfig{HostedDomain: "Example.COM"},
+			claims: map[string]any{"hd": "example.com"},
+		},
+		{
+			name:   "hd mismatch rejected",
+			cfg:    models.OIDCConfig{HostedDomain: "example.com"},
+			claims: map[string]any{"hd": "evil.example"},
+			deny:   true,
+		},
+		{
+			name:   "missing hd rejected",
+			cfg:    models.OIDCConfig{HostedDomain: "example.com"},
+			claims: map[string]any{"email": "a@example.com", "email_verified": true},
+			deny:   true,
+		},
+		{
+			name:   "hd suffix is not a match",
+			cfg:    models.OIDCConfig{HostedDomain: "example.com"},
+			claims: map[string]any{"hd": "example.com.evil.example"},
+			deny:   true,
+		},
 	}
 
 	for _, tc := range tests {

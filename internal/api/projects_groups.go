@@ -95,7 +95,11 @@ func (h *ProjectsHandler) handleSetGroup(w http.ResponseWriter, r *http.Request)
 		return guard(current)
 	}
 
-	if h.writeChangeError(w, "set project group", h.db.ChangeProjectGroup(r.Context(), access.project.ID, group.ID, req.Role, access.userID(), recording)) {
+	if h.writeChangeError(
+		w,
+		"set project group",
+		h.db.ChangeProjectGroup(r.Context(), access.project.ID, group.ID, req.Role, access.userID(), recording),
+	) {
 		return
 	}
 
@@ -150,7 +154,11 @@ func (h *ProjectsHandler) handleRemoveGroup(w http.ResponseWriter, r *http.Reque
 		return guard(current)
 	}
 
-	if h.writeChangeError(w, "remove project group", h.db.ChangeProjectGroup(r.Context(), access.project.ID, group.ID, "", nil, recording)) {
+	if h.writeChangeError(
+		w,
+		"remove project group",
+		h.db.ChangeProjectGroup(r.Context(), access.project.ID, group.ID, "", nil, recording),
+	) {
 		return
 	}
 

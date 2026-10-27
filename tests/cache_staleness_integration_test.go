@@ -80,7 +80,11 @@ type staleEnv struct {
 	seq    int
 }
 
-func newStaleEnv(t *testing.T, format string, mount func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler) *staleEnv {
+func newStaleEnv(
+	t *testing.T,
+	format string,
+	mount func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler,
+) *staleEnv {
 	t.Helper()
 
 	pg := freshPostgres(t, 5)
@@ -309,7 +313,9 @@ func (e *staleEnv) withBlob(sql string, args ...any) {
 
 // --- mounts --------------------------------------------------------------
 
-func mountRepoRoutes(register func(log *logger.Logger, pg *database.PostgresDB, bs storage.BlobStore) func(chi.Router)) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
+func mountRepoRoutes(
+	register func(log *logger.Logger, pg *database.PostgresDB, bs storage.BlobStore) func(chi.Router),
+) func(*testing.T, *database.PostgresDB, storage.BlobStore) http.Handler {
 	return func(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) http.Handler {
 		t.Helper()
 
@@ -362,8 +368,13 @@ func TestCachedRepodataStaysCurrentConda(t *testing.T) {
 
 	add := func(platform, name string) func() {
 		return func() {
-			e.withBlob(`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-			            VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`, e.repoID, name, platform)
+			e.withBlob(
+				`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
+			            VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`,
+				e.repoID,
+				name,
+				platform,
+			)
 		}
 	}
 	pkg := func() string {
@@ -394,13 +405,21 @@ func TestCachedRepodataStaysCurrentConda(t *testing.T) {
 // --- rubygems ------------------------------------------------------------
 
 func TestCachedSpecsStayCurrentRubyGems(t *testing.T) {
-	e := newStaleEnv(t, "rubygems", mountRepoRoutes(func(log *logger.Logger, pg *database.PostgresDB, bs storage.BlobStore) func(chi.Router) {
-		return formatrubygems.NewHTTPHandler(log, pg, bs, stalenessBaseURL).RegisterRepoRoutes
-	}))
+	e := newStaleEnv(
+		t,
+		"rubygems",
+		mountRepoRoutes(func(log *logger.Logger, pg *database.PostgresDB, bs storage.BlobStore) func(chi.Router) {
+			return formatrubygems.NewHTTPHandler(log, pg, bs, stalenessBaseURL).RegisterRepoRoutes
+		}),
+	)
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake',$2,'ruby',$3,5)`, e.repoID, version)
+			e.withBlob(
+				`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake',$2,'ruby',$3,5)`,
+				e.repoID,
+				version,
+			)
 		}
 	}
 	gem := func() string {
@@ -455,7 +474,11 @@ func TestCachedIndexStaysCurrentCargo(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`, e.repoID, version)
+			e.withBlob(
+				`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`,
+				e.repoID,
+				version,
+			)
 		}
 	}
 	crate := func() string {
@@ -670,7 +693,10 @@ func TestCachedPackumentStaysCurrentNPM(t *testing.T) {
 		// Writers that do not go through the upload handler (backup restore,
 		// maintenance scripts) must move the validator too.
 		{name: "dist-tag upsert in the database", do: func() {
-			if _, err := e.pg.UpsertNPMDistTag(context.Background(), &models.NPMDistTag{PackageID: pkgID(), Tag: "next", Version: "1.1.0"}); err != nil {
+			if _, err := e.pg.UpsertNPMDistTag(
+				context.Background(),
+				&models.NPMDistTag{PackageID: pkgID(), Tag: "next", Version: "1.1.0"},
+			); err != nil {
 				t.Fatalf("UpsertNPMDistTag: %v", err)
 			}
 		}, changes: both},

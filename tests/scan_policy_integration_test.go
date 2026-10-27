@@ -207,9 +207,14 @@ func TestMigration014SanitizesLegacyFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := db.QueryRowContext(ctx,
+		if err := db.QueryRowContext(
+			ctx,
 			`INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status, error_message) VALUES ($1, $2, 'trivy', $3, NULLIF($4, '')) RETURNING id`,
-			refID, scanType, status, message).Scan(&jobID); err != nil {
+			refID,
+			scanType,
+			status,
+			message,
+		).Scan(&jobID); err != nil {
 			t.Fatal(err)
 		}
 
@@ -253,7 +258,8 @@ func TestMigration014SanitizesLegacyFailures(t *testing.T) {
 	}
 
 	var failedScanners int
-	if err := db.QueryRowContext(ctx, `SELECT cardinality(failed_scanners) FROM vuln_results WHERE scan_job_id = $1`, failedVuln).Scan(&failedScanners); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT cardinality(failed_scanners) FROM vuln_results WHERE scan_job_id = $1`, failedVuln).
+		Scan(&failedScanners); err != nil {
 		t.Fatalf("failed_scanners must exist after the migration: %v", err)
 	}
 
@@ -273,7 +279,15 @@ func assertLicenseSourceRoundTrip(t *testing.T, pg *database.PostgresDB, ctx con
 
 	log := newTestLogger(t)
 
-	if _, _, err := licensepolicy.Record(ctx, pg, log, repoID, "decl-pkg@1.0.0", []string{"MIT"}, models.LicenseSourceClientDeclared); err != nil {
+	if _, _, err := licensepolicy.Record(
+		ctx,
+		pg,
+		log,
+		repoID,
+		"decl-pkg@1.0.0",
+		[]string{"MIT"},
+		models.LicenseSourceClientDeclared,
+	); err != nil {
 		t.Fatalf("Record MIT: %v", err)
 	}
 
@@ -287,7 +301,8 @@ func assertLicenseSourceRoundTrip(t *testing.T, pg *database.PostgresDB, ctx con
 	}
 
 	stored, err := pg.GetLicenseScanResult(ctx, repoID, "bsd-pkg@1.0.0")
-	if err != nil || stored == nil || stored.LicenseSource != models.LicenseSourceArtifact || len(stored.UnresolvedLicenses) != 1 || stored.UnresolvedLicenses[0] != "BSD" {
+	if err != nil || stored == nil || stored.LicenseSource != models.LicenseSourceArtifact || len(stored.UnresolvedLicenses) != 1 ||
+		stored.UnresolvedLicenses[0] != "BSD" {
 		t.Fatalf("stored result = %+v (%v), want license_source artifact and BSD unresolved", stored, err)
 	}
 }
@@ -304,7 +319,15 @@ func TestLicenseQuarantineLifecycle(t *testing.T) {
 	scanPolicyBlock(t, pg, repo.ID, "block", "GPL-3.0")
 
 	// Detected after upload: the policy blocks it, so the artifact is quarantined.
-	res, violations, err := licensepolicy.Record(ctx, pg, log, repo.ID, "leftpad@1.0.0", []string{"GPL-3.0"}, models.LicenseSourceClientDeclared)
+	res, violations, err := licensepolicy.Record(
+		ctx,
+		pg,
+		log,
+		repo.ID,
+		"leftpad@1.0.0",
+		[]string{"GPL-3.0"},
+		models.LicenseSourceClientDeclared,
+	)
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -321,7 +344,16 @@ func TestLicenseQuarantineLifecycle(t *testing.T) {
 	assertQuarantined(t, pg, other.ID, false, "leftpad@1.0.0") // per repository
 
 	// A re-scan does not release it.
-	if res, _, err = licensepolicy.Record(ctx, pg, log, repo.ID, "leftpad@1.0.0", []string{"GPL-3.0-or-later"}, models.LicenseSourceClientDeclared); err != nil || !res.Quarantined {
+	if res, _, err = licensepolicy.Record(
+		ctx,
+		pg,
+		log,
+		repo.ID,
+		"leftpad@1.0.0",
+		[]string{"GPL-3.0-or-later"},
+		models.LicenseSourceClientDeclared,
+	); err != nil ||
+		!res.Quarantined {
 		t.Fatalf("re-scan: %+v %v", res, err)
 	}
 
@@ -338,14 +370,32 @@ func TestLicenseQuarantineLifecycle(t *testing.T) {
 	}
 
 	// The approval holds for a re-scan of the same licenses ...
-	if res, _, err = licensepolicy.Record(ctx, pg, log, repo.ID, "leftpad@1.0.0", []string{"GPL-3.0-or-later"}, models.LicenseSourceClientDeclared); err != nil || res.Quarantined || !res.QuarantineApproved {
+	if res, _, err = licensepolicy.Record(
+		ctx,
+		pg,
+		log,
+		repo.ID,
+		"leftpad@1.0.0",
+		[]string{"GPL-3.0-or-later"},
+		models.LicenseSourceClientDeclared,
+	); err != nil || res.Quarantined ||
+		!res.QuarantineApproved {
 		t.Fatalf("re-scan after approval: %+v %v", res, err)
 	}
 
 	assertQuarantined(t, pg, repo.ID, false, "leftpad@1.0.0")
 
 	// ... not for different licenses ...
-	if res, _, err = licensepolicy.Record(ctx, pg, log, repo.ID, "leftpad@1.0.0", []string{"GPL-3.0-only"}, models.LicenseSourceClientDeclared); err != nil || !res.Quarantined || res.QuarantineApproved {
+	if res, _, err = licensepolicy.Record(
+		ctx,
+		pg,
+		log,
+		repo.ID,
+		"leftpad@1.0.0",
+		[]string{"GPL-3.0-only"},
+		models.LicenseSourceClientDeclared,
+	); err != nil || !res.Quarantined ||
+		res.QuarantineApproved {
 		t.Fatalf("other licenses after approval: %+v %v", res, err)
 	}
 
@@ -373,7 +423,15 @@ func TestLicenseQuarantineIsScopedToRepository(t *testing.T) {
 
 	scanPolicyBlock(t, pg, repo.ID, "block", "GPL-3.0")
 
-	res, _, err := licensepolicy.Record(ctx, pg, newTestLogger(t), repo.ID, "leftpad@1.0.0", []string{"GPL-3.0"}, models.LicenseSourceClientDeclared)
+	res, _, err := licensepolicy.Record(
+		ctx,
+		pg,
+		newTestLogger(t),
+		repo.ID,
+		"leftpad@1.0.0",
+		[]string{"GPL-3.0"},
+		models.LicenseSourceClientDeclared,
+	)
 	if err != nil || !res.Quarantined {
 		t.Fatalf("Record: %+v %v", res, err)
 	}
@@ -382,7 +440,15 @@ func TestLicenseQuarantineIsScopedToRepository(t *testing.T) {
 		t.Errorf("approve through another repository: err = %v, want ErrLicenseScanNotFound", err)
 	}
 
-	if err := pg.SetLicenseScanQuarantine(ctx, repo.ID, "77777777-7777-7777-7777-777777777777", false); !errors.Is(err, database.ErrLicenseScanNotFound) {
+	if err := pg.SetLicenseScanQuarantine(
+		ctx,
+		repo.ID,
+		"77777777-7777-7777-7777-777777777777",
+		false,
+	); !errors.Is(
+		err,
+		database.ErrLicenseScanNotFound,
+	) {
 		t.Errorf("unknown scan: err = %v, want ErrLicenseScanNotFound", err)
 	}
 
@@ -398,7 +464,15 @@ func TestLicenseWarnAndAllowNeverQuarantine(t *testing.T) {
 	scanPolicyBlock(t, pg, repo.ID, "warn", "AGPL-3.0")
 	scanPolicyBlock(t, pg, repo.ID, "allow", "AGPL-3.0")
 
-	res, violations, err := licensepolicy.Record(ctx, pg, newTestLogger(t), repo.ID, "agpl-pkg@1.0.0", []string{"AGPL-3.0"}, models.LicenseSourceClientDeclared)
+	res, violations, err := licensepolicy.Record(
+		ctx,
+		pg,
+		newTestLogger(t),
+		repo.ID,
+		"agpl-pkg@1.0.0",
+		[]string{"AGPL-3.0"},
+		models.LicenseSourceClientDeclared,
+	)
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}

@@ -227,7 +227,16 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: artifact.BlobKey, Size: artifact.SizeBytes, Filename: path[strings.LastIndexByte(path, '/')+1:], ContentType: artifact.ContentType}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{
+			SHA256:      artifact.BlobKey,
+			Size:        artifact.SizeBytes,
+			Filename:    path[strings.LastIndexByte(path, '/')+1:],
+			ContentType: artifact.ContentType,
+		},
+	) {
 		return
 	}
 

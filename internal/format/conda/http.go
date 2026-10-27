@@ -259,7 +259,11 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: pkg.BlobKey, Size: pkg.SizeBytes, Filename: filename, ContentType: "application/octet-stream"}) {
+	if h.TryPresign(
+		w,
+		r,
+		presign.Blob{SHA256: pkg.BlobKey, Size: pkg.SizeBytes, Filename: filename, ContentType: "application/octet-stream"},
+	) {
 		return
 	}
 

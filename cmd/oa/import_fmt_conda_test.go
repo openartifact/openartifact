@@ -198,7 +198,8 @@ func TestImportCondaArtifactory(t *testing.T) {
 		{"noarch", "my-pkg-2.0-py_0.tar.bz2", "my-pkg", "2.0", "my-pkg-bz2"},
 	} {
 		it := condaStored(oa, want.subdir, want.file)
-		if it == nil || it.name != want.name || it.version != want.version || it.sha != sum256([]byte(want.data)) || it.created != artiWant {
+		if it == nil || it.name != want.name || it.version != want.version || it.sha != sum256([]byte(want.data)) ||
+			it.created != artiWant {
 			t.Fatalf("%s/%s: item = %+v", want.subdir, want.file, it)
 		}
 

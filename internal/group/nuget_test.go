@@ -27,8 +27,14 @@ func nugetGroup(t *testing.T) *fixture {
 func nugetItem(member, id, version string) string {
 	v3 := nugetBase + "/repos/" + member + "/v3/"
 
-	return fmt.Sprintf(`{"@id":"%[1]sregistration/%[2]s/%[3]s.json","catalogEntry":{"@id":"%[1]sregistration/%[2]s/%[3]s.json","version":%[3]q,"marker":%[4]q},`+
-		`"packageContent":"%[1]spackage/%[2]s/%[3]s/%[2]s.%[3]s.nupkg","registration":"%[1]sregistration/%[2]s/index.json"}`, v3, id, version, member)
+	return fmt.Sprintf(
+		`{"@id":"%[1]sregistration/%[2]s/%[3]s.json","catalogEntry":{"@id":"%[1]sregistration/%[2]s/%[3]s.json","version":%[3]q,"marker":%[4]q},`+
+			`"packageContent":"%[1]spackage/%[2]s/%[3]s/%[2]s.%[3]s.nupkg","registration":"%[1]sregistration/%[2]s/index.json"}`,
+		v3,
+		id,
+		version,
+		member,
+	)
 }
 
 // nugetInlineIndex is an index with one inline page holding the versions.
@@ -40,8 +46,14 @@ func nugetInlineIndex(member, id string, versions ...string) string {
 		items[i] = nugetItem(member, id, v)
 	}
 
-	return fmt.Sprintf(`{"@id":%[1]q,"count":1,"items":[{"@id":"%[1]s#page/%[2]s/%[3]s","count":%[4]d,"lower":%[2]q,"upper":%[3]q,"parent":%[1]q,"items":[%[5]s]}]}`,
-		idx, versions[0], versions[len(versions)-1], len(versions), strings.Join(items, ","))
+	return fmt.Sprintf(
+		`{"@id":%[1]q,"count":1,"items":[{"@id":"%[1]s#page/%[2]s/%[3]s","count":%[4]d,"lower":%[2]q,"upper":%[3]q,"parent":%[1]q,"items":[%[5]s]}]}`,
+		idx,
+		versions[0],
+		versions[len(versions)-1],
+		len(versions),
+		strings.Join(items, ","),
+	)
 }
 
 func nugetVersionsOf(t *testing.T, body []byte) []string {
@@ -81,7 +93,8 @@ func TestNuGetGroup_ServiceIndexIsTheGroups(t *testing.T) {
 	}
 
 	reg, pkg := nugetBase+"/repos/all/v3/registration/", nugetBase+"/repos/all/v3/package/"
-	if got["RegistrationsBaseUrl/3.6.0"] != reg || got["RegistrationsBaseUrl"] != reg || got["PackageBaseAddress/3.0.0"] != pkg || len(got) != 4 {
+	if got["RegistrationsBaseUrl/3.6.0"] != reg || got["RegistrationsBaseUrl"] != reg || got["PackageBaseAddress/3.0.0"] != pkg ||
+		len(got) != 4 {
 		t.Errorf("resources = %v", got)
 	}
 
@@ -162,7 +175,11 @@ func TestNuGetGroup_RegistrationsAreMergedAndRewritten(t *testing.T) {
 			`{"@id":"%[1]spage/1.0.0/2.0.0.json","count":2,"lower":"1.0.0","upper":"2.0.0","parent":"%[1]sindex.json"},`+
 			`{"@id":"%[1]spage/3.0.0/3.0.0.json","count":1,"lower":"3.0.0","upper":"3.0.0","parent":"%[1]sindex.json"}]}`, m3))
 	f.set("mirror", "v3/registration/lib/page/1.0.0/2.0.0.json", 200, fmt.Sprintf(
-		`{"@id":"%spage/1.0.0/2.0.0.json","count":2,"items":[%s,%s]}`, m3, nugetItem("mirror", "lib", "1.0.0"), nugetItem("mirror", "lib", "2.0.0")))
+		`{"@id":"%spage/1.0.0/2.0.0.json","count":2,"items":[%s,%s]}`,
+		m3,
+		nugetItem("mirror", "lib", "1.0.0"),
+		nugetItem("mirror", "lib", "2.0.0"),
+	))
 	f.set("mirror", "v3/registration/lib/page/3.0.0/3.0.0.json", 200, fmt.Sprintf(
 		`{"@id":"%spage/3.0.0/3.0.0.json","count":1,"items":[%s]}`, m3, nugetItem("mirror", "lib", "3.0.0")))
 
@@ -196,7 +213,9 @@ func TestNuGetGroup_RegistrationsAreMergedAndRewritten(t *testing.T) {
 	}
 
 	idx := nugetBase + "/repos/all/v3/registration/lib/index.json"
-	if doc.ID != idx || doc.Count != 1 || len(doc.Items) != 1 || doc.Items[0].ID != idx+"#page/1.0.0/3.0.0" || doc.Items[0].Lower != "1.0.0" || doc.Items[0].Upper != "3.0.0" {
+	if doc.ID != idx || doc.Count != 1 || len(doc.Items) != 1 || doc.Items[0].ID != idx+"#page/1.0.0/3.0.0" ||
+		doc.Items[0].Lower != "1.0.0" ||
+		doc.Items[0].Upper != "3.0.0" {
 		t.Fatalf("index = %+v", doc)
 	}
 
@@ -213,7 +232,11 @@ func TestNuGetGroup_RegistrationsAreMergedAndRewritten(t *testing.T) {
 			t.Errorf("item %d = %s from %s, want %s from %s", i, it.CatalogEntry.Version, it.CatalogEntry.Marker, wv.version, wv.marker)
 		}
 
-		if wantURL := fmt.Sprintf("%s/repos/all/v3/package/lib/%[2]s/lib.%[2]s.nupkg", nugetBase, wv.version); it.PackageContent != wantURL {
+		if wantURL := fmt.Sprintf(
+			"%s/repos/all/v3/package/lib/%[2]s/lib.%[2]s.nupkg",
+			nugetBase,
+			wv.version,
+		); it.PackageContent != wantURL {
 			t.Errorf("item %d packageContent = %s, want %s", i, it.PackageContent, wantURL)
 		}
 	}
@@ -265,7 +288,8 @@ func TestNuGetGroup_LeafAndPackageFilesComeFromTheFirstMemberThatHasThem(t *test
 		`"packageContent":"`+nugetBase+`/repos/mirror/v3/package/lib/1.0.0/lib.1.0.0.nupkg"}`)
 
 	w := f.get(http.MethodGet, "v3/registration/lib/1.0.0.json")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), nugetBase+"/repos/all/v3/package/lib/1.0.0/lib.1.0.0.nupkg") || strings.Contains(w.Body.String(), "/mirror/") {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), nugetBase+"/repos/all/v3/package/lib/1.0.0/lib.1.0.0.nupkg") ||
+		strings.Contains(w.Body.String(), "/mirror/") {
 		t.Errorf("leaf = %d %s", w.Code, w.Body.String())
 	}
 

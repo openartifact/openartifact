@@ -220,7 +220,8 @@ func TestNPMProxy_AbbreviatedAndFullPackumentsCacheSeparately(t *testing.T) {
 		t.Errorf("upstream requests = %d, want 2 (one per variant)", got)
 	}
 
-	if len(reg.accepts) != 2 || !strings.Contains(reg.accepts[0], pkgnpm.AbbreviatedContentType) || strings.Contains(reg.accepts[1], "vnd.npm") {
+	if len(reg.accepts) != 2 || !strings.Contains(reg.accepts[0], pkgnpm.AbbreviatedContentType) ||
+		strings.Contains(reg.accepts[1], "vnd.npm") {
 		t.Errorf("upstream Accept headers = %q, want abbreviated then plain JSON", reg.accepts)
 	}
 }
@@ -329,7 +330,11 @@ func TestNPMProxy_VersionManifestIsCutFromThePackument(t *testing.T) {
 			Dist    pkgnpm.Dist `json:"dist"`
 		}
 
-		if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil || v.Version != "1.0.0" || v.Dist.Tarball != oaBase+"/repos/npmjs/lib/-/lib-1.0.0.tgz" {
+		if err := json.Unmarshal(
+			w.Body.Bytes(),
+			&v,
+		); err != nil || v.Version != "1.0.0" ||
+			v.Dist.Tarball != oaBase+"/repos/npmjs/lib/-/lib-1.0.0.tgz" {
 			t.Errorf("GET %s = %s (%v)", path, w.Body.String(), err)
 		}
 	}

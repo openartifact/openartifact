@@ -116,7 +116,13 @@ SELECT pq.project_id
 // and returns the rows the last one affected. The setting and the statements
 // travel in one batch, i.e. one round trip; the batch is a single implicit
 // transaction, so either every statement applies or none does.
-func (p *PostgresDB) execQuota(ctx context.Context, sizeBytes int64, artifactCount int, repoID string, statements ...string) (int64, error) {
+func (p *PostgresDB) execQuota(
+	ctx context.Context,
+	sizeBytes int64,
+	artifactCount int,
+	repoID string,
+	statements ...string,
+) (int64, error) {
 	batch := &pgx.Batch{}
 	batch.Queue(`SELECT set_config('synchronous_commit', 'off', true)`)
 
@@ -457,7 +463,9 @@ func (p *PostgresDB) ReconcileStorageUsage(ctx context.Context, repoID string) (
 	}
 
 	var projectID string
-	if err := p.pool.QueryRow(ctx, `SELECT COALESCE(project_id::text, '') FROM repositories WHERE id = $1`, repoID).Scan(&projectID); err == nil && projectID != "" {
+	if err := p.pool.QueryRow(ctx, `SELECT COALESCE(project_id::text, '') FROM repositories WHERE id = $1`, repoID).
+		Scan(&projectID); err == nil &&
+		projectID != "" {
 		if _, err := p.reconcileProjects(ctx, projectID); err != nil {
 			return nil, err
 		}

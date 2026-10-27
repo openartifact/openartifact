@@ -12,10 +12,16 @@ formatters:
   enable:
     - gofmt
     - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 140
+      reformat-tags: false
   exclusions:
     generated: lax
     paths:
       - internal/database/dbsqlc/
+      - web/
 
 linters:
   default: all
@@ -38,7 +44,6 @@ linters:
     - wsl_v5 # successor of wsl, same rationale
     - nlreturn # newline before return — too opinionated
     - testpackage # _test package naming — we use same-package tests
-    - lll # line length — handled by editor, not enforced
     - varnamelen # variable name length — too noisy for short-lived vars
     - depguard # dependency guard — not configured
     - forbidigo # forbidden identifiers — not configured

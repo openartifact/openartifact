@@ -387,7 +387,12 @@ func TestSSO_Update(t *testing.T) {
 		t.Fatalf("marshal patch: %v", err)
 	}
 
-	req := httptest.NewRequestWithContext(context.Background(), "PATCH", "/api/v1/admin/sso-providers/update-test", bytes.NewReader(patchBytes))
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"PATCH",
+		"/api/v1/admin/sso-providers/update-test",
+		bytes.NewReader(patchBytes),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	req = withPrincipalSSO(req, principal)
 	rw := httptest.NewRecorder()

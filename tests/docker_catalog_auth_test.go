@@ -28,9 +28,15 @@ func TestRBAC_DockerCatalogAllowsAnyAuthenticatedPrincipal(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	handler := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+	handler := newRBACMiddleware(
+		db,
+		middleware.RBACConfig{},
+		newMWLogger(t),
+	)(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 
 	if rw := serve(handler, http.MethodGet, "/v2/_catalog", bearerHeader(tok)); rw.Code != http.StatusOK {
 		t.Errorf("authenticated GET /v2/_catalog = %d, want 200", rw.Code)

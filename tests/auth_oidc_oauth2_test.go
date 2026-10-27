@@ -376,9 +376,13 @@ func TestGitHub_Callback_Failures(t *testing.T) {
 		},
 		{
 			name: "token endpoint errors",
-			fixture: githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}, token: func(w http.ResponseWriter, _ *http.Request) {
-				http.Error(w, "down", http.StatusInternalServerError)
-			}},
+			fixture: githubFixture{
+				user: octocat(),
+				orgs: [][]any{{ghMembership("acme")}},
+				token: func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "down", http.StatusInternalServerError)
+				},
+			},
 			wantCode: http.StatusBadGateway,
 		},
 		{

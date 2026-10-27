@@ -175,7 +175,12 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(body.ManifestText) > aiMaxManifestBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "manifest_text exceeds "+strconv.Itoa(aiMaxManifestBytes)+" bytes")
+		writeError(
+			w,
+			http.StatusRequestEntityTooLarge,
+			"payload_too_large",
+			"manifest_text exceeds "+strconv.Itoa(aiMaxManifestBytes)+" bytes",
+		)
 		return
 	}
 

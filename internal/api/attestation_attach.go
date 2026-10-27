@@ -53,7 +53,12 @@ var (
 // ReferrerRegistry is the docker registry's way of storing a referrer.
 type ReferrerRegistry interface {
 	AttachReferrer(ctx context.Context, repo *models.Repository, req docker.ReferrerRequest) (*docker.ReferrerResult, error)
-	FindReferrer(ctx context.Context, repo *models.Repository, image, subjectDigest, artifactType string, annotations map[string]string) (string, error)
+	FindReferrer(
+		ctx context.Context,
+		repo *models.Repository,
+		image, subjectDigest, artifactType string,
+		annotations map[string]string,
+	) (string, error)
 }
 
 // AttestationAttacher signs SBOMs and VEX documents and attaches them to the
@@ -68,7 +73,13 @@ type AttestationAttacher struct {
 }
 
 // NewAttestationAttacher builds the attacher.
-func NewAttestationAttacher(db database.Database, log *logger.Logger, gen *sbom.Generator, svc *attest.Service, reg ReferrerRegistry) *AttestationAttacher {
+func NewAttestationAttacher(
+	db database.Database,
+	log *logger.Logger,
+	gen *sbom.Generator,
+	svc *attest.Service,
+	reg ReferrerRegistry,
+) *AttestationAttacher {
 	return &AttestationAttacher{db: db, log: log, gen: gen, svc: svc, reg: reg}
 }
 
@@ -214,7 +225,12 @@ func (a *AttestationAttacher) attach(ctx context.Context, repo *models.Repositor
 }
 
 // AttachSBOM attaches the stored SBOM report's document (JSON formats only).
-func (a *AttestationAttacher) AttachSBOM(ctx context.Context, repo *models.Repository, report *models.SBOMReport, doc []byte) (*responses.AttestationAttachResponse, error) {
+func (a *AttestationAttacher) AttachSBOM(
+	ctx context.Context,
+	repo *models.Repository,
+	report *models.SBOMReport,
+	doc []byte,
+) (*responses.AttestationAttachResponse, error) {
 	predicate := attestPredicate(report.Format)
 	if predicate == "" {
 		return nil, errAttachNotJSON
@@ -227,7 +243,11 @@ func (a *AttestationAttacher) AttachSBOM(ctx context.Context, repo *models.Repos
 var errAttachNotJSON = errors.New("only JSON SBOMs can be attested")
 
 // AttachVEX builds the VEX document of one artifact and attaches it.
-func (a *AttestationAttacher) AttachVEX(ctx context.Context, repo *models.Repository, artifactID, format string) (*responses.AttestationAttachResponse, error) {
+func (a *AttestationAttacher) AttachVEX(
+	ctx context.Context,
+	repo *models.Repository,
+	artifactID, format string,
+) (*responses.AttestationAttachResponse, error) {
 	metadata, err := storedArtifactMetadata(ctx, a.db, repo.ID, artifactID)
 	if err != nil {
 		return nil, fmt.Errorf("artifact properties: %w", err)
@@ -309,7 +329,13 @@ type AttestationAttachHandler struct {
 }
 
 // NewAttestationAttachHandler builds the handler.
-func NewAttestationAttachHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, attacher *AttestationAttacher, blobs storage.BlobStore) *AttestationAttachHandler {
+func NewAttestationAttachHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	attacher *AttestationAttacher,
+	blobs storage.BlobStore,
+) *AttestationAttachHandler {
 	return &AttestationAttachHandler{db: db, log: log, evaluator: evaluator, attacher: attacher, blobs: blobs}
 }
 
@@ -401,7 +427,12 @@ func (h *AttestationAttachHandler) attachError(w http.ResponseWriter, err error)
 	case errors.Is(err, errAttachNotDocker):
 		writeError(w, http.StatusBadRequest, "validation_failed", "attaching attestations needs a hosted docker repository")
 	case errors.Is(err, errAttachNotJSON):
-		writeError(w, http.StatusBadRequest, "validation_failed", "only JSON SBOMs can be attested; generate cyclonedx, spdx-json or spdx3-json")
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"validation_failed",
+			"only JSON SBOMs can be attested; generate cyclonedx, spdx-json or spdx3-json",
+		)
 	case errors.Is(err, errAttachNoSubject), errors.Is(err, docker.ErrSubjectNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "no image in the repository matches the artifact")
 	case errors.Is(err, quota.ErrExceeded):

@@ -176,7 +176,13 @@ func TestExportVulnOverview_PagesThroughAllFiltersAndSkipsEmpty(t *testing.T) {
 func secretScans() []*models.SecretScanResult {
 	return []*models.SecretScanResult{
 		{ID: "ss1", ArtifactID: ".env", ScanStatus: "flagged", FindingCount: 1, Findings: []models.SecretFinding{
-			{Type: "aws_access_key", Description: "AWS Access Key ID", Severity: "critical", RedactedValue: "AKIA****LEAK", LineHint: "hint-LEAK"},
+			{
+				Type:          "aws_access_key",
+				Description:   "AWS Access Key ID",
+				Severity:      "critical",
+				RedactedValue: "AKIA****LEAK",
+				LineHint:      "hint-LEAK",
+			},
 		}},
 		{ID: "ss2", ArtifactID: "ok.txt", ScanStatus: "clean"},
 	}
@@ -195,7 +201,8 @@ func TestExportSecretScans_NeverLeakValues(t *testing.T) {
 				t.Fatalf("%s: %d %s", target, code, body)
 			}
 
-			if strings.Contains(body, "LEAK") || strings.Contains(body, "AKIA") || strings.Contains(body, "redacted") || strings.Contains(body, "line_hint") {
+			if strings.Contains(body, "LEAK") || strings.Contains(body, "AKIA") || strings.Contains(body, "redacted") ||
+				strings.Contains(body, "line_hint") {
 				t.Fatalf("%s leaks a secret value: %s", target, body)
 			}
 		}

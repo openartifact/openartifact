@@ -92,7 +92,10 @@ func run(root string, check bool) error {
 
 	if check {
 		if len(drift) > 0 {
-			return fmt.Errorf("generated pages are out of date: %s; run `make docs-gen` and commit docs/reference", strings.Join(drift, ", "))
+			return fmt.Errorf(
+				"generated pages are out of date: %s; run `make docs-gen` and commit docs/reference",
+				strings.Join(drift, ", "),
+			)
 		}
 
 		return nil

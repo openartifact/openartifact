@@ -126,16 +126,38 @@ func (e *Engine) restorePermissionAssignments(ctx context.Context, r io.Reader, 
 
 		if !ok {
 			if a.PrincipalType == "user" {
-				e.restoreMissingUser(st, a.PrincipalID, "skipping permission assignment: principal not restored", "principal_type", a.PrincipalType, "principal_id", a.PrincipalID)
+				e.restoreMissingUser(
+					st,
+					a.PrincipalID,
+					"skipping permission assignment: principal not restored",
+					"principal_type",
+					a.PrincipalType,
+					"principal_id",
+					a.PrincipalID,
+				)
 			} else {
-				e.restoreWarn("skipping permission assignment: principal not restored", "principal_type", a.PrincipalType, "principal_id", a.PrincipalID)
+				e.restoreWarn(
+					"skipping permission assignment: principal not restored",
+					"principal_type",
+					a.PrincipalType,
+					"principal_id",
+					a.PrincipalID,
+				)
 			}
 
 			continue
 		}
 
 		if err := e.db.GetOrCreatePermissionAssignment(ctx, targetID, a.PrincipalType, principalID); err != nil {
-			e.restoreWarn("failed to restore permission assignment", "target_id", a.PermissionTargetID, "principal_id", a.PrincipalID, "error", err)
+			e.restoreWarn(
+				"failed to restore permission assignment",
+				"target_id",
+				a.PermissionTargetID,
+				"principal_id",
+				a.PrincipalID,
+				"error",
+				err,
+			)
 		}
 	}
 
@@ -162,7 +184,15 @@ func (e *Engine) restoreUserGroups(ctx context.Context, r io.Reader, st *restore
 
 		if !uok || !gok {
 			if _, kept := st.keptUsers[m.UserID]; kept && gok {
-				e.restoreMissingUser(st, m.UserID, "skipping group membership: user not restored", "user_id", m.UserID, "group_id", m.GroupID)
+				e.restoreMissingUser(
+					st,
+					m.UserID,
+					"skipping group membership: user not restored",
+					"user_id",
+					m.UserID,
+					"group_id",
+					m.GroupID,
+				)
 			} else {
 				e.restoreWarn("skipping group membership: user or group not restored", "user_id", m.UserID, "group_id", m.GroupID)
 			}

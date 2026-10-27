@@ -74,7 +74,13 @@ type SAMLProvider struct {
 
 // LoadSAMLProvider loads an enabled SAML provider. Disabled providers are
 // rejected with ErrSSOProviderDisabled.
-func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL string, appCfg *config.Config, log *logger.Logger) (*SAMLProvider, error) {
+func LoadSAMLProvider(
+	ctx context.Context,
+	db database.Database,
+	slug, baseURL string,
+	appCfg *config.Config,
+	log *logger.Logger,
+) (*SAMLProvider, error) {
 	row, err := db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("get sso provider: %w", err)
@@ -95,11 +101,22 @@ func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL s
 // checking Enabled; it exists so admins can test-connect a disabled provider.
 // Public login paths MUST use LoadSAMLProvider. store persists the generated SP
 // keypair when none is configured.
-func LoadSAMLProviderRow(ctx context.Context, store SettingsStore, row *models.SSOProvider, baseURL string, appCfg *config.Config, log *logger.Logger) (*SAMLProvider, error) {
+func LoadSAMLProviderRow(
+	ctx context.Context,
+	store SettingsStore,
+	row *models.SSOProvider,
+	baseURL string,
+	appCfg *config.Config,
+	log *logger.Logger,
+) (*SAMLProvider, error) {
 	slug := row.Slug
 
 	if row.Kind != "saml" {
-		return nil, fmt.Errorf("provider %q is not a saml provider (kind=%s)", slug, row.Kind) //nolint:err113 // dynamic error with runtime context
+		return nil, fmt.Errorf(
+			"provider %q is not a saml provider (kind=%s)",
+			slug,
+			row.Kind,
+		) //nolint:err113 // dynamic error with runtime context
 	}
 
 	var samlCfg models.SAMLConfig
@@ -326,7 +343,11 @@ func (p *SAMLProvider) StartLogin(w http.ResponseWriter, relayState string, trac
 
 	sp := &p.SP.ServiceProvider
 
-	authnReq, err := sp.MakeAuthenticationRequest(sp.GetSSOBindingLocation(saml.HTTPRedirectBinding), saml.HTTPRedirectBinding, saml.HTTPPostBinding)
+	authnReq, err := sp.MakeAuthenticationRequest(
+		sp.GetSSOBindingLocation(saml.HTTPRedirectBinding),
+		saml.HTTPRedirectBinding,
+		saml.HTTPPostBinding,
+	)
 	if err != nil {
 		return "", fmt.Errorf("make authn request: %w", err)
 	}
@@ -386,7 +407,9 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 		return "", false
 	}
 
-	dec := xml.NewDecoder(bytes.NewReader(raw)) //nolint:gosec // G709: stops at the root start element; body capped by net/http ParseForm (10 MiB)
+	dec := xml.NewDecoder(
+		bytes.NewReader(raw),
+	) //nolint:gosec // G709: stops at the root start element; body capped by net/http ParseForm (10 MiB)
 
 	for {
 		tok, err := dec.Token()
@@ -424,7 +447,12 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 // IdP-initiated (opt-in): the same validation, with InResponseTo required to be
 // empty on the response and on every SubjectConfirmationData; no tracker is
 // consulted and an SP-initiated tracker cookie is left alone.
-func (p *SAMLProvider) ParseCallback(w http.ResponseWriter, r *http.Request, db database.Database, trackerKey []byte) (*saml.Assertion, error) {
+func (p *SAMLProvider) ParseCallback(
+	w http.ResponseWriter,
+	r *http.Request,
+	db database.Database,
+	trackerKey []byte,
+) (*saml.Assertion, error) {
 	if len(trackerKey) == 0 {
 		return nil, ErrSAMLTrackerKey
 	}

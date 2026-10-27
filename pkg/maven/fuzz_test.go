@@ -42,7 +42,11 @@ func FuzzParsePOM(f *testing.F) {
 
 // FuzzParseMetadata feeds arbitrary maven-metadata.xml documents.
 func FuzzParseMetadata(f *testing.F) {
-	f.Add([]byte(`<metadata><groupId>g</groupId><artifactId>a</artifactId><versioning><versions><version>1</version></versions></versioning></metadata>`))
+	f.Add(
+		[]byte(
+			`<metadata><groupId>g</groupId><artifactId>a</artifactId><versioning><versions><version>1</version></versions></versioning></metadata>`,
+		),
+	)
 	f.Add([]byte("<metadata>"))
 
 	f.Fuzz(func(_ *testing.T, in []byte) {

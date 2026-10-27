@@ -44,7 +44,14 @@ func nullableString(s string) *string {
 	return &s
 }
 
-func tierFromRow(id, name string, backendID *string, rank int32, promote bool, createdAt, updatedAt time.Time, backendName, backendKind, backendStatus string) *models.StorageTier {
+func tierFromRow(
+	id, name string,
+	backendID *string,
+	rank int32,
+	promote bool,
+	createdAt, updatedAt time.Time,
+	backendName, backendKind, backendStatus string,
+) *models.StorageTier {
 	return &models.StorageTier{
 		ID: id, Name: name, BackendID: backendIDString(backendID), Rank: int(rank), PromoteOnRead: promote,
 		BackendName: backendName, BackendKind: backendKind, BackendStatus: backendStatus,
@@ -61,7 +68,21 @@ func (p *PostgresDB) ListStorageTiers(ctx context.Context) ([]*models.StorageTie
 
 	out := make([]*models.StorageTier, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, tierFromRow(r.ID, r.Name, r.BackendID, r.Rank, r.PromoteOnRead, r.CreatedAt, r.UpdatedAt, r.BackendName, r.BackendKind, r.BackendStatus))
+		out = append(
+			out,
+			tierFromRow(
+				r.ID,
+				r.Name,
+				r.BackendID,
+				r.Rank,
+				r.PromoteOnRead,
+				r.CreatedAt,
+				r.UpdatedAt,
+				r.BackendName,
+				r.BackendKind,
+				r.BackendStatus,
+			),
+		)
 	}
 
 	return out, nil
@@ -78,13 +99,28 @@ func (p *PostgresDB) GetStorageTierByName(ctx context.Context, name string) (*mo
 		return nil, fmt.Errorf("get storage tier: %w", err)
 	}
 
-	return tierFromRow(r.ID, r.Name, r.BackendID, r.Rank, r.PromoteOnRead, r.CreatedAt, r.UpdatedAt, r.BackendName, r.BackendKind, r.BackendStatus), nil
+	return tierFromRow(
+		r.ID,
+		r.Name,
+		r.BackendID,
+		r.Rank,
+		r.PromoteOnRead,
+		r.CreatedAt,
+		r.UpdatedAt,
+		r.BackendName,
+		r.BackendKind,
+		r.BackendStatus,
+	), nil
 }
 
 // CreateStorageTier inserts a tier (t.ID must be set).
 func (p *PostgresDB) CreateStorageTier(ctx context.Context, t *models.StorageTier) error {
 	return p.q.CreateStorageTier(ctx, dbsqlc.CreateStorageTierParams{
-		ID: t.ID, Name: t.Name, BackendID: nullableBackendID(t.BackendID), Rank: int32(t.Rank), PromoteOnRead: t.PromoteOnRead, //nolint:gosec // rank is validated by the API
+		ID:            t.ID,
+		Name:          t.Name,
+		BackendID:     nullableBackendID(t.BackendID),
+		Rank:          int32(t.Rank),
+		PromoteOnRead: t.PromoteOnRead, //nolint:gosec // rank is validated by the API
 	})
 }
 
@@ -111,7 +147,8 @@ func (p *PostgresDB) DeleteStorageTierIfUnused(ctx context.Context, tierID strin
 	defer func() { _ = tx.Rollback() }()
 
 	var backendID sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT backend_id FROM storage_tiers WHERE id = $1 FOR UPDATE`, tierID).Scan(&backendID); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT backend_id FROM storage_tiers WHERE id = $1 FOR UPDATE`, tierID).
+		Scan(&backendID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
@@ -128,7 +165,8 @@ func (p *PostgresDB) DeleteStorageTierIfUnused(ctx context.Context, tierID strin
 	}
 
 	var policies bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM storage_policies WHERE target_tier_id = $1 OR from_tier_id = $1)`, tierID).Scan(&policies); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM storage_policies WHERE target_tier_id = $1 OR from_tier_id = $1)`, tierID).
+		Scan(&policies); err != nil {
 		return "", fmt.Errorf("check storage tier policies: %w", err)
 	}
 
@@ -315,7 +353,12 @@ func (p *PostgresDB) BeginStorageTierMove(ctx context.Context, m *models.Storage
 
 // ListRecoverableStorageTierMoves returns journal rows that still have attempts
 // left, or that last failed more than retryAfter ago.
-func (p *PostgresDB) ListRecoverableStorageTierMoves(ctx context.Context, maxAttempts int, retryAfter time.Duration, limit int) ([]*models.StorageTierMove, error) {
+func (p *PostgresDB) ListRecoverableStorageTierMoves(
+	ctx context.Context,
+	maxAttempts int,
+	retryAfter time.Duration,
+	limit int,
+) ([]*models.StorageTierMove, error) {
 	rows, err := p.q.ListRecoverableStorageTierMoves(ctx, dbsqlc.ListRecoverableStorageTierMovesParams{
 		Attempts: int32(maxAttempts), Column2: retryAfter.Seconds(), Limit: int32(limit), //nolint:gosec // small bounded config values
 	})
@@ -375,7 +418,11 @@ func (p *PostgresDB) FinishStorageTierMove(ctx context.Context, sha256 string) e
 // still exists: every path that removes a copy (uploaders settling a race,
 // SafeDeleteBlob) does so under the same lock, so a copy confirmed here cannot
 // vanish before the flip commits.
-func (p *PostgresDB) FlipBlobPlacement(ctx context.Context, sha256, from, to string, verify func(ctx context.Context) error) (models.FlipOutcome, error) {
+func (p *PostgresDB) FlipBlobPlacement(
+	ctx context.Context,
+	sha256, from, to string,
+	verify func(ctx context.Context) error,
+) (models.FlipOutcome, error) {
 	release, err := p.acquireLockSlot(ctx)
 	if err != nil {
 		return 0, err
@@ -506,7 +553,12 @@ func (p *PostgresDB) tierScanWindowUpper(ctx context.Context, after string, wind
 // the cursor and returns those matching any clause (and not already being
 // moved). next is the cursor for the following call, "" once the end of the
 // table was reached; scanned is how many rows the window covered.
-func (p *PostgresDB) ScanTierCandidates(ctx context.Context, after string, window int, clauses []models.TierScanClause) ([]models.BlobFacts, string, int, error) {
+func (p *PostgresDB) ScanTierCandidates(
+	ctx context.Context,
+	after string,
+	window int,
+	clauses []models.TierScanClause,
+) ([]models.BlobFacts, string, int, error) {
 	upper, bounded, err := p.tierScanWindowUpper(ctx, after, window)
 	if err != nil {
 		return nil, "", 0, err
@@ -648,7 +700,12 @@ const promotionCandidatesQuery = `SELECT b.sha256, b.size_bytes, b.created_at, b
 // ListPromotionCandidates returns blobs placed on one of backendIDs that were
 // read after they arrived there (last_accessed_at > tier_changed_at), ordered
 // by sha256 after the cursor, skipping blobs with a move in flight.
-func (p *PostgresDB) ListPromotionCandidates(ctx context.Context, backendIDs []string, after string, limit int) ([]models.BlobFacts, error) {
+func (p *PostgresDB) ListPromotionCandidates(
+	ctx context.Context,
+	backendIDs []string,
+	after string,
+	limit int,
+) ([]models.BlobFacts, error) {
 	if len(backendIDs) == 0 {
 		return nil, nil
 	}
@@ -678,7 +735,12 @@ type blobRefScopeSpec struct {
 var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built once, read-only
 	{"rpm_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
 	{"deb_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
-	{"npm_versions t JOIN npm_packages np ON np.id = t.package_id", "np.repository_id", "t.blob_id = b.id", "np.full_name || '/' || t.tarball_filename"},
+	{
+		"npm_versions t JOIN npm_packages np ON np.id = t.package_id",
+		"np.repository_id",
+		"t.blob_id = b.id",
+		"np.full_name || '/' || t.tarball_filename",
+	},
 	{"maven_artifacts t", "t.repository_id", "t.blob_id = b.id", "t.repo_path"},
 	{"docker_blobs t", "t.repository_id", "t.blob_id = b.id", "t.digest"},
 	{"docker_manifests t", "t.repository_id", "t.blob_id = b.id", "t.digest"},
@@ -690,8 +752,18 @@ var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built o
 	{"rubygems_gems t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
 	{"conda_packages t", "t.repository_id", "t.blob_id = b.id", "t.platform || '/' || t.name || '-' || t.version || '-' || t.build_string"},
 	{"conan_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
-	{"ivy_artifacts t", "t.repository_id", "t.blob_id = b.id", "t.organisation || '/' || t.module || '/' || t.revision || '/' || t.artifact_name"},
-	{"sbt_artifacts t", "t.repository_id", "t.blob_id = b.id", "t.group_id || '/' || t.artifact_id || '/' || t.version || '/' || t.filename"},
+	{
+		"ivy_artifacts t",
+		"t.repository_id",
+		"t.blob_id = b.id",
+		"t.organisation || '/' || t.module || '/' || t.revision || '/' || t.artifact_name",
+	},
+	{
+		"sbt_artifacts t",
+		"t.repository_id",
+		"t.blob_id = b.id",
+		"t.group_id || '/' || t.artifact_id || '/' || t.version || '/' || t.filename",
+	},
 	{"helm_charts t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
 	{"raw_artifacts t", "t.repository_id", "t.blob_id = b.id", "t.path"},
 	{"proxy_cache_entries t", "t.repository_id", "t.blob_key = b.sha256", "t.cache_key"},
@@ -704,7 +776,11 @@ func buildBlobRefsSQL() string {
 	for i, s := range blobRefScopeSpecs {
 		parts[i] = fmt.Sprintf(
 			`SELECT b.sha256, r.name, r.format, %s::text FROM blobs b JOIN %s ON %s JOIN repositories r ON r.id = %s WHERE b.sha256 = ANY($1::text[])`,
-			s.path, s.from, s.blobCond, s.repoID)
+			s.path,
+			s.from,
+			s.blobCond,
+			s.repoID,
+		)
 	}
 
 	return strings.Join(parts, "\nUNION ALL\n")

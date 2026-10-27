@@ -339,15 +339,53 @@ func TestSSOValidate(t *testing.T) {
 		{"valid saml xml", "okta", map[string]any{"kind": "saml", "saml_config": map[string]any{"idp_metadata_xml": "<x/>"}}, false},
 		{"bad slug", "Corp!", map[string]any{"kind": "oidc", "oidc_config": oidcCfg(nil)}, true},
 		{"oidc without config", "corp", map[string]any{"kind": "oidc"}, true},
-		{"oidc without secret", "corp", map[string]any{"kind": "oidc", "oidc_config": map[string]any{"issuer": "https://idp", "client_id": "c"}}, true},
-		{"oidc without issuer", "corp", map[string]any{"kind": "oidc", "oidc_config": map[string]any{"client_id": "c", "client_secret": secret}}, true},
-		{"oidc with saml block", "corp", map[string]any{"kind": "oidc", "oidc_config": oidcCfg(nil), "saml_config": map[string]any{}}, true},
-		{"github without orgs", "gh", map[string]any{"kind": "oidc", "oidc_config": map[string]any{"type": "github", "client_id": "c", "client_secret": secret}}, true},
-		{"github with orgs", "gh", map[string]any{"kind": "oidc", "oidc_config": map[string]any{"type": "github", "client_id": "c", "client_secret": secret, "allowed_orgs": []any{"acme"}}}, false},
-		{"oauth2 without urls", "o2", map[string]any{"kind": "oidc", "oidc_config": map[string]any{"type": "oauth2", "client_id": "c", "client_secret": secret}}, true},
+		{
+			"oidc without secret",
+			"corp",
+			map[string]any{"kind": "oidc", "oidc_config": map[string]any{"issuer": "https://idp", "client_id": "c"}},
+			true,
+		},
+		{
+			"oidc without issuer",
+			"corp",
+			map[string]any{"kind": "oidc", "oidc_config": map[string]any{"client_id": "c", "client_secret": secret}},
+			true,
+		},
+		{
+			"oidc with saml block",
+			"corp",
+			map[string]any{"kind": "oidc", "oidc_config": oidcCfg(nil), "saml_config": map[string]any{}},
+			true,
+		},
+		{
+			"github without orgs",
+			"gh",
+			map[string]any{"kind": "oidc", "oidc_config": map[string]any{"type": "github", "client_id": "c", "client_secret": secret}},
+			true,
+		},
+		{
+			"github with orgs",
+			"gh",
+			map[string]any{
+				"kind":        "oidc",
+				"oidc_config": map[string]any{"type": "github", "client_id": "c", "client_secret": secret, "allowed_orgs": []any{"acme"}},
+			},
+			false,
+		},
+		{
+			"oauth2 without urls",
+			"o2",
+			map[string]any{"kind": "oidc", "oidc_config": map[string]any{"type": "oauth2", "client_id": "c", "client_secret": secret}},
+			true,
+		},
 		{"saml without metadata", "okta", map[string]any{"kind": "saml", "saml_config": map[string]any{}}, true},
 		{"saml without config", "okta", map[string]any{"kind": "saml"}, true},
-		{"saml with oidc block", "okta", map[string]any{"kind": "saml", "saml_config": map[string]any{"idp_metadata_url": "https://x"}, "oidc_config": map[string]any{}}, true},
+		{
+			"saml with oidc block",
+			"okta",
+			map[string]any{"kind": "saml", "saml_config": map[string]any{"idp_metadata_url": "https://x"}, "oidc_config": map[string]any{}},
+			true,
+		},
 	}
 
 	for _, tc := range tests {

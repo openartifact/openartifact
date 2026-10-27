@@ -118,7 +118,10 @@ func (npmPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, er
 				return nil, err
 			}
 
-			res.Replaced = append(res.Replaced, Artifact{Name: r.name, Version: r.version, Path: r.filename, SHA256: dest.sha, Size: dest.size})
+			res.Replaced = append(
+				res.Replaced,
+				Artifact{Name: r.name, Version: r.version, Path: r.filename, SHA256: dest.sha, Size: dest.size},
+			)
 			dest = destRow{}
 		}
 

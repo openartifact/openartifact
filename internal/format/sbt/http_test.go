@@ -137,7 +137,18 @@ func TestUploadAndDeleteEmitEvents(t *testing.T) {
 
 func TestDownloadQuarantine(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
-	db.seed(&models.SBTArtifact{ID: "a", GroupID: "org.example", ArtifactID: "mod", Version: "1.0", Filename: "mod-1.0.jar", BlobKey: "abc", SHA256: "abc", SizeBytes: 3})
+	db.seed(
+		&models.SBTArtifact{
+			ID:         "a",
+			GroupID:    "org.example",
+			ArtifactID: "mod",
+			Version:    "1.0",
+			Filename:   "mod-1.0.jar",
+			BlobKey:    "abc",
+			SHA256:     "abc",
+			SizeBytes:  3,
+		},
+	)
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {
@@ -292,7 +303,18 @@ func TestMavenLayoutGroups(t *testing.T) {
 func TestLegacyRowsStayReachable(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
 
-	db.seed(&models.SBTArtifact{ID: "old", GroupID: "com", ArtifactID: "example", Version: "lib", Filename: "1.0/lib-1.0.jar", BlobKey: "abc", SHA256: "abc", SizeBytes: 3})
+	db.seed(
+		&models.SBTArtifact{
+			ID:         "old",
+			GroupID:    "com",
+			ArtifactID: "example",
+			Version:    "lib",
+			Filename:   "1.0/lib-1.0.jar",
+			BlobKey:    "abc",
+			SHA256:     "abc",
+			SizeBytes:  3,
+		},
+	)
 	bs.Blobs["abc"] = []byte("xyz")
 
 	u := "/repos/myrepo/com/example/lib/1.0/lib-1.0.jar"
@@ -329,7 +351,17 @@ func TestTooShortOrEmptySegmentsAreRejected(t *testing.T) {
 func TestImmutableGuardSeesLegacyRow(t *testing.T) {
 	h, db, _, _ := newTestHandler(t)
 	db.Repo.ImmutableReleases = true
-	db.seed(&models.SBTArtifact{ID: "legacy", GroupID: "com", ArtifactID: "example", Version: "lib", Filename: "1.0/lib-1.0.jar", SHA256: "old", BlobKey: "old"})
+	db.seed(
+		&models.SBTArtifact{
+			ID:         "legacy",
+			GroupID:    "com",
+			ArtifactID: "example",
+			Version:    "lib",
+			Filename:   "1.0/lib-1.0.jar",
+			SHA256:     "old",
+			BlobKey:    "old",
+		},
+	)
 
 	u := "/repos/myrepo/com/example/lib/1.0/lib-1.0.jar"
 	if w := send(t, h, http.MethodPut, u, "tampered"); w.Code != http.StatusConflict {

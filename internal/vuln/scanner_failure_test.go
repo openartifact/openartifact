@@ -196,9 +196,10 @@ func TestCLIScanners_Success(t *testing.T) {
 		want    []string
 	}{
 		{
-			name: "trivy findings", scanner: "trivy",
-			script: `echo '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-2024-1","Severity":"HIGH"},{"VulnerabilityID":"CVE-2024-1","Severity":"HIGH"},{"VulnerabilityID":"CVE-2024-2","Severity":"LOW"}]}]}'`,
-			want:   []string{"CVE-2024-1", "CVE-2024-2"},
+			name:    "trivy findings",
+			scanner: "trivy",
+			script:  `echo '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-2024-1","Severity":"HIGH"},{"VulnerabilityID":"CVE-2024-1","Severity":"HIGH"},{"VulnerabilityID":"CVE-2024-2","Severity":"LOW"}]}]}'`,
+			want:    []string{"CVE-2024-1", "CVE-2024-2"},
 		},
 		{
 			name: "grype findings", scanner: "grype",

@@ -345,8 +345,14 @@ func (p *PostgresDB) ListTrash(ctx context.Context, f models.TrashFilter) ([]*mo
 
 	args = append(args, limit, offset)
 
-	rows, err := p.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT kind, id, repo_id, repo_name, format, name, version, size_bytes, deleted_at, deleted_by, purge_at FROM (%s) u ORDER BY deleted_at DESC, id LIMIT $%d OFFSET $%d`, union, len(args)-1, len(args)),
+	rows, err := p.db.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			`SELECT kind, id, repo_id, repo_name, format, name, version, size_bytes, deleted_at, deleted_by, purge_at FROM (%s) u ORDER BY deleted_at DESC, id LIMIT $%d OFFSET $%d`,
+			union,
+			len(args)-1,
+			len(args),
+		),
 		args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list trash: %w", err)
@@ -373,7 +379,13 @@ func (p *PostgresDB) ListTrash(ctx context.Context, f models.TrashFilter) ([]*mo
 }
 
 // getTrashItem loads one trashed row; lock adds FOR UPDATE.
-func (p *PostgresDB) getTrashItem(ctx context.Context, q trashQuerier, kind models.TrashKind, id string, lock bool) (*models.TrashItem, error) {
+func (p *PostgresDB) getTrashItem(
+	ctx context.Context,
+	q trashQuerier,
+	kind models.TrashKind,
+	id string,
+	lock bool,
+) (*models.TrashItem, error) {
 	var query string
 
 	suffix := ""

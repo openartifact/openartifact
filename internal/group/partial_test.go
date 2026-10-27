@@ -35,10 +35,20 @@ func TestGroupMerge_PartialResultIsNotCacheable(t *testing.T) {
 			func(t *testing.T, f *fixture, ok bool) {
 				t.Helper()
 
-				f.set("hosted", "lib", 200, packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA"}, map[string]string{"latest": "1.0.0"}))
+				f.set(
+					"hosted",
+					"lib",
+					200,
+					packument(t, "hosted", "lib", map[string]string{"1.0.0": "AAAA"}, map[string]string{"latest": "1.0.0"}),
+				)
 
 				if ok {
-					f.set("mirror", "lib", 200, packument(t, "mirror", "lib", map[string]string{"2.0.0": "BBBB"}, map[string]string{"next": "2.0.0"}))
+					f.set(
+						"mirror",
+						"lib",
+						200,
+						packument(t, "mirror", "lib", map[string]string{"2.0.0": "BBBB"}, map[string]string{"next": "2.0.0"}),
+					)
 				} else {
 					f.set("mirror", "lib", 502, "down")
 				}

@@ -139,7 +139,11 @@ func checkConanProtocol(t *testing.T, srv *formatServer) {
 	t.Helper()
 
 	var latest struct{ Revision string }
-	if err := json.Unmarshal(srv.must(http.MethodGet, conanBase+"/latest", "", http.StatusOK).Body.Bytes(), &latest); err != nil || latest.Revision != conanRrev {
+	if err := json.Unmarshal(
+		srv.must(http.MethodGet, conanBase+"/latest", "", http.StatusOK).Body.Bytes(),
+		&latest,
+	); err != nil ||
+		latest.Revision != conanRrev {
 		t.Fatalf("latest = %+v, %v; want %s", latest, err, conanRrev)
 	}
 
@@ -147,7 +151,10 @@ func checkConanProtocol(t *testing.T, srv *formatServer) {
 		Files map[string]struct{ Size int64 } `json:"files"`
 	}
 
-	if err := json.Unmarshal(srv.must(http.MethodGet, conanBase+"/revisions/"+conanRrev+"/files", "", http.StatusOK).Body.Bytes(), &files); err != nil {
+	if err := json.Unmarshal(
+		srv.must(http.MethodGet, conanBase+"/revisions/"+conanRrev+"/files", "", http.StatusOK).Body.Bytes(),
+		&files,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,7 +168,12 @@ func checkConanProtocol(t *testing.T, srv *formatServer) {
 		}
 	}
 
-	if got := srv.must(http.MethodGet, conanPackageFile("conan_package.tgz"), "", http.StatusOK).Body.String(); got != "package:conan_package.tgz" {
+	if got := srv.must(
+		http.MethodGet,
+		conanPackageFile("conan_package.tgz"),
+		"",
+		http.StatusOK,
+	).Body.String(); got != "package:conan_package.tgz" {
 		t.Errorf("package download = %q", got)
 	}
 }
@@ -208,7 +220,11 @@ func TestConanLegacyRowsAreHiddenButDeletable(t *testing.T) {
 	srv.must(http.MethodGet, conanBase+"/latest", "", http.StatusNotFound)
 
 	var res struct{ Results []string }
-	if err := json.Unmarshal(srv.must(http.MethodGet, "/repos/conan/v2/conans/search?q=*", "", http.StatusOK).Body.Bytes(), &res); err != nil || len(res.Results) != 0 {
+	if err := json.Unmarshal(
+		srv.must(http.MethodGet, "/repos/conan/v2/conans/search?q=*", "", http.StatusOK).Body.Bytes(),
+		&res,
+	); err != nil ||
+		len(res.Results) != 0 {
 		t.Fatalf("search = %+v, %v; want nothing", res, err)
 	}
 

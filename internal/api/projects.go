@@ -49,7 +49,12 @@ type ProjectsHandler struct {
 // NewProjectsHandler returns the projects handler. evaluator decides roles and
 // who is a global admin (implicit owner of every project); settings holds the
 // projects.self_create switch.
-func NewProjectsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, settings *auth.ProjectSettings) *ProjectsHandler {
+func NewProjectsHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	settings *auth.ProjectSettings,
+) *ProjectsHandler {
 	return &ProjectsHandler{db: db, log: log, evaluator: evaluator, settings: settings}
 }
 
@@ -361,7 +366,12 @@ func (req *createProjectRequest) validate() string {
 
 // resolveOwner returns the new project's owner: the caller, or for an admin
 // the user named in the request. It writes the error response on failure.
-func (h *ProjectsHandler) resolveOwner(w http.ResponseWriter, r *http.Request, p *auth.Principal, req *createProjectRequest) (*models.User, bool) {
+func (h *ProjectsHandler) resolveOwner(
+	w http.ResponseWriter,
+	r *http.Request,
+	p *auth.Principal,
+	req *createProjectRequest,
+) (*models.User, bool) {
 	var (
 		user *models.User
 		err  error
@@ -669,7 +679,12 @@ func (h *ProjectsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.db.DeleteProject(r.Context(), access.project.ID); err != nil {
 		if database.IsForeignKeyViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "project still owns repositories (including repositories in the trash, which must be purged or restored first)")
+			writeError(
+				w,
+				http.StatusConflict,
+				"conflict",
+				"project still owns repositories (including repositories in the trash, which must be purged or restored first)",
+			)
 			return
 		}
 

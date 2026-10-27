@@ -40,7 +40,13 @@ type metadataBlobs struct {
 // under the per-blob lock, which serializes with reclaim (the lock covers no
 // blob store write; the commit is empty because the rows already exist).
 // attrs builds the Put metadata for one path.
-func (m metadataBlobs) ensure(ctx context.Context, repoID string, blobs map[string][]byte, newSHA map[string]string, attrs func(path, sum string) map[string]string) {
+func (m metadataBlobs) ensure(
+	ctx context.Context,
+	repoID string,
+	blobs map[string][]byte,
+	newSHA map[string]string,
+	attrs func(path, sum string) map[string]string,
+) {
 	for path, data := range blobs {
 		sum := newSHA[path]
 
@@ -69,7 +75,9 @@ func (m metadataBlobs) reclaimOne(ctx context.Context, sum string) error {
 
 	return storage.WithBlobLock(ctx, m.db, sum, func(ctx context.Context) error {
 		var refs int
-		if err := m.db.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, sum).Scan(&refs); err != nil {
+		if err := m.db.GetDB().
+			QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, sum).
+			Scan(&refs); err != nil {
 			return fmt.Errorf("count metadata references: %w", err)
 		}
 

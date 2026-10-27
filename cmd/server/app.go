@@ -221,7 +221,11 @@ func (a *app) drainTasks() {
 			return
 		}
 
-		a.log.Warnw("Background tasks still running after the drain timeout, continuing shutdown", "timeout", backgroundDrainTimeout.String())
+		a.log.Warnw(
+			"Background tasks still running after the drain timeout, continuing shutdown",
+			"timeout",
+			backgroundDrainTimeout.String(),
+		)
 	})
 }
 

@@ -30,7 +30,14 @@ func setupOIDCCallbackRouter(t *testing.T, db *MockDatabase, oidcSrv *mockOIDCSe
 	return router
 }
 
-func seedOIDCProviderWithGroupMapping(t *testing.T, db *MockDatabase, slug, issuerURL string, autoProvision bool, groupMapping map[string]string, linkByEmail bool) *models.SSOProvider {
+func seedOIDCProviderWithGroupMapping(
+	t *testing.T,
+	db *MockDatabase,
+	slug, issuerURL string,
+	autoProvision bool,
+	groupMapping map[string]string,
+	linkByEmail bool,
+) *models.SSOProvider {
 	t.Helper()
 
 	cfg, err := json.Marshal(models.OIDCConfig{

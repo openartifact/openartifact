@@ -43,8 +43,14 @@ func TestContractTrash(t *testing.T) {
 			name:    "list one repo filtered by kind",
 			args:    []string{"trash", "list", "--repo", "r", "--kind", "maven_artifact"},
 			replies: map[string]reply{"GET /api/v1/repositories/{name}/trash": ok(list)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/trash", query: map[string]string{"kind": "maven_artifact", "limit": "100"}}},
-			out:     "g:a",
+			calls: []call{
+				{
+					method:  "GET",
+					pattern: "/api/v1/repositories/{name}/trash",
+					query:   map[string]string{"kind": "maven_artifact", "limit": "100"},
+				},
+			},
+			out: "g:a",
 		},
 		{
 			name:    "list json",
@@ -85,7 +91,9 @@ func TestContractTrash(t *testing.T) {
 			out:     "Purged 3 trashed items of r",
 		},
 		{
-			name: "empty trash without yes fails non-interactively", args: []string{"trash", "purge", "--repo", "r", "--all"}, fail: "--yes",
+			name: "empty trash without yes fails non-interactively",
+			args: []string{"trash", "purge", "--repo", "r", "--all"},
+			fail: "--yes",
 		},
 		{
 			name: "all requires repo", args: []string{"trash", "purge", "--all", "--yes"}, fail: "--all requires --repo",

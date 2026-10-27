@@ -165,7 +165,11 @@ func (f *fakeDB) queued(sha, backendID string) bool {
 	return slices.Contains(f.deletions, sha+"@"+backendID)
 }
 
-func (f *fakeDB) FlipBlobPlacement(ctx context.Context, sha, from, to string, verify func(ctx context.Context) error) (models.FlipOutcome, error) {
+func (f *fakeDB) FlipBlobPlacement(
+	ctx context.Context,
+	sha, from, to string,
+	verify func(ctx context.Context) error,
+) (models.FlipOutcome, error) {
 	l := f.blobLock(sha)
 	l.Lock()
 	defer l.Unlock()
@@ -233,7 +237,12 @@ func (f *fakeDB) BeginStorageTierMove(_ context.Context, m *models.StorageTierMo
 	return &c, true, nil
 }
 
-func (f *fakeDB) ListRecoverableStorageTierMoves(_ context.Context, maxAttempts int, _ time.Duration, limit int) ([]*models.StorageTierMove, error) {
+func (f *fakeDB) ListRecoverableStorageTierMoves(
+	_ context.Context,
+	maxAttempts int,
+	_ time.Duration,
+	limit int,
+) ([]*models.StorageTierMove, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -313,7 +322,12 @@ func (f *fakeDB) sortedShas() []string {
 	return shas
 }
 
-func (f *fakeDB) ScanTierCandidates(_ context.Context, after string, window int, clauses []models.TierScanClause) ([]models.BlobFacts, string, int, error) {
+func (f *fakeDB) ScanTierCandidates(
+	_ context.Context,
+	after string,
+	window int,
+	clauses []models.TierScanClause,
+) ([]models.BlobFacts, string, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 

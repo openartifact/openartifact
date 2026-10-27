@@ -35,8 +35,18 @@ func seedDockerIndexImage(h *harness, repoID string) dockerIndexImage {
 	armBlob, _ := h.blob("manifest arm64")
 	idxBlob, _ := h.blob("manifest index")
 
-	amd := seedDockerManifest(h, repoID, amdBlob, dockerSpec{image: dockerTestImage, blobs: []string{"cfg amd64", "layer shared", "layer amd64"}, tags: []string{"amd64-only"}})
-	arm := seedDockerManifest(h, repoID, armBlob, dockerSpec{image: dockerTestImage, blobs: []string{"cfg arm64", "layer shared", "layer arm64"}})
+	amd := seedDockerManifest(
+		h,
+		repoID,
+		amdBlob,
+		dockerSpec{image: dockerTestImage, blobs: []string{"cfg amd64", "layer shared", "layer amd64"}, tags: []string{"amd64-only"}},
+	)
+	arm := seedDockerManifest(
+		h,
+		repoID,
+		armBlob,
+		dockerSpec{image: dockerTestImage, blobs: []string{"cfg arm64", "layer shared", "layer arm64"}},
+	)
 	idx := seedDockerManifest(h, repoID, idxBlob, dockerSpec{
 		image: dockerTestImage, mediaType: dockerIndexMedia, children: []string{amd.digest, arm.digest}, tags: []string{"latest", "1.0"},
 	})
@@ -52,7 +62,8 @@ func seedDockerIndexImage(h *harness, repoID string) dockerIndexImage {
 func dockerTags(h *harness, repoID string) []string {
 	h.t.Helper()
 
-	rows, err := h.pg.GetDB().QueryContext(context.Background(), `SELECT image || ':' || name FROM docker_tags WHERE repository_id = $1 AND deleted_at IS NULL ORDER BY 1`, repoID)
+	rows, err := h.pg.GetDB().
+		QueryContext(context.Background(), `SELECT image || ':' || name FROM docker_tags WHERE repository_id = $1 AND deleted_at IS NULL ORDER BY 1`, repoID)
 	if err != nil {
 		h.t.Fatalf("list tags: %v", err)
 	}
@@ -133,7 +144,11 @@ func TestDockerIndexPromotion(t *testing.T) {
 			t.Errorf("dst has %d docker_blobs rows, want %d", n, img.distinctBlobs)
 		}
 
-		if n := h.count(`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = $2`, dst.ID, dockerTestImage); n != img.distinctBlobs {
+		if n := h.count(
+			`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = $2`,
+			dst.ID,
+			dockerTestImage,
+		); n != img.distinctBlobs {
 			t.Errorf("dst links %d blobs to the image, want %d", n, img.distinctBlobs)
 		}
 	})
@@ -178,7 +193,11 @@ func assertDockerIndexCopied(t *testing.T, h *harness, res *Result, img dockerIn
 		t.Errorf("dst has %d docker_blobs rows, want %d", n, img.distinctBlobs)
 	}
 
-	if n := h.count(`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = $2`, dst.ID, dockerTestImage); n != img.distinctBlobs {
+	if n := h.count(
+		`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = $2`,
+		dst.ID,
+		dockerTestImage,
+	); n != img.distinctBlobs {
 		t.Errorf("dst links %d blobs to the image, want %d", n, img.distinctBlobs)
 	}
 
@@ -230,11 +249,20 @@ func TestDockerBlobsAlreadyInTargetAreNotCharged(t *testing.T) {
 
 	// The image of the promoted manifest may now serve the layer, and the
 	// layer counts as just used so registry GC keeps it.
-	if n := h.count(`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = $2 AND digest = $3`, dst.ID, dockerTestImage, sharedDigest); n != 1 {
+	if n := h.count(
+		`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = $2 AND digest = $3`,
+		dst.ID,
+		dockerTestImage,
+		sharedDigest,
+	); n != 1 {
 		t.Errorf("the shared layer is not linked to the promoted image")
 	}
 
-	if n := h.count(`SELECT COUNT(*) FROM docker_blobs WHERE repository_id = $1 AND digest = $2 AND last_used_at > now() - interval '1 hour'`, dst.ID, sharedDigest); n != 1 {
+	if n := h.count(
+		`SELECT COUNT(*) FROM docker_blobs WHERE repository_id = $1 AND digest = $2 AND last_used_at > now() - interval '1 hour'`,
+		dst.ID,
+		sharedDigest,
+	); n != 1 {
 		t.Errorf("the shared layer's last_used_at was not refreshed")
 	}
 }
@@ -250,7 +278,12 @@ func TestDockerTagConflict(t *testing.T) {
 
 		// The target's tag 1.0 points at another manifest.
 		otherBlob, _ := h.blob("a different manifest")
-		other := seedDockerManifest(h, dst.ID, otherBlob, dockerSpec{image: dockerTestImage, blobs: []string{"other layer"}, tags: []string{"1.0"}})
+		other := seedDockerManifest(
+			h,
+			dst.ID,
+			otherBlob,
+			dockerSpec{image: dockerTestImage, blobs: []string{"other layer"}, tags: []string{"1.0"}},
+		)
 
 		manifestsBefore := h.count(`SELECT COUNT(*) FROM docker_manifests WHERE repository_id = $1`, dst.ID)
 		blobsBefore := h.count(`SELECT COUNT(*) FROM docker_blobs WHERE repository_id = $1`, dst.ID)
@@ -262,7 +295,8 @@ func TestDockerTagConflict(t *testing.T) {
 			t.Fatalf("immutable=%v: err = %v, want a ConflictError", immutable, err)
 		}
 
-		if conflict.Format != "docker" || conflict.Version != "1.0" || !strings.HasSuffix(conflict.Name, dockerTestImage+":1.0") || conflict.Immutable != immutable {
+		if conflict.Format != "docker" || conflict.Version != "1.0" || !strings.HasSuffix(conflict.Name, dockerTestImage+":1.0") ||
+			conflict.Immutable != immutable {
 			t.Errorf("immutable=%v: conflict = %+v", immutable, conflict)
 		}
 
@@ -325,7 +359,12 @@ func TestDockerUnindexedSourceIsRefused(t *testing.T) {
 	src, dst := h.repo("docker", false), h.repo("docker", false)
 
 	blob, sha := h.blob("restored manifest")
-	seedDockerManifest(h, src.ID, blob, dockerSpec{image: dockerTestImage, blobs: []string{"restored layer"}, tags: []string{"1.0"}, unindexed: true})
+	seedDockerManifest(
+		h,
+		src.ID,
+		blob,
+		dockerSpec{image: dockerTestImage, blobs: []string{"restored layer"}, tags: []string{"1.0"}, unindexed: true},
+	)
 
 	_, err := h.promoteOnce(p, Request{Src: src, Dst: dst, SHA256: sha})
 	if !errors.Is(err, ErrDockerNotIndexed) {

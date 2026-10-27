@@ -39,7 +39,13 @@ type mavenKey struct {
 
 func (k mavenKey) String() string { return k.repoID + ":" + k.groupID + ":" + k.artifactID }
 
-func NewMavenMetadataWorker(db database.Database, blobStore storage.BlobStore, sqlDB *sql.DB, log *logger.Logger, reg *metrics.Registry) *MavenMetadataWorker {
+func NewMavenMetadataWorker(
+	db database.Database,
+	blobStore storage.BlobStore,
+	sqlDB *sql.DB,
+	log *logger.Logger,
+	reg *metrics.Registry,
+) *MavenMetadataWorker {
 	w := &MavenMetadataWorker{db: db, blobStore: blobStore, log: log, sqlDB: sqlDB}
 	w.q = newRegenQueue("maven", log, func(ctx context.Context, k mavenKey) error {
 		return w.regenerate(ctx, k.repoID, k.groupID, k.artifactID)
@@ -213,7 +219,11 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 // identical content (another repository, or a previous generation) cannot
 // delete the object between them. The blob the row pointed to before is
 // reclaimed afterwards, since nothing else would ever free the old object.
-func (w *MavenMetadataWorker) storeMetadata(ctx context.Context, repoID, path, pathType string, render func(lastUpdated time.Time) ([]byte, error)) error {
+func (w *MavenMetadataWorker) storeMetadata(
+	ctx context.Context,
+	repoID, path, pathType string,
+	render func(lastUpdated time.Time) ([]byte, error),
+) error {
 	prev, err := w.db.GetRepoMetadataByPath(ctx, repoID, path)
 	if err != nil {
 		return fmt.Errorf("looking up current metadata: %w", err)

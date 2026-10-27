@@ -126,8 +126,15 @@ func TestNPMPublish_QuotaExceeded_507_NoStateNoEvent(t *testing.T) {
 		t.Errorf("blobs stored = %d, want 0", len(bs.blobs))
 	}
 
-	if bytesNet, artifacts, reserveCalls, releaseCalls := db.quotaState(); bytesNet != 0 || artifacts != 0 || reserveCalls != 0 || releaseCalls != 0 {
-		t.Errorf("quota = (%d, %d, %d reserve, %d release), want all zero (nothing reserved on refusal)", bytesNet, artifacts, reserveCalls, releaseCalls)
+	if bytesNet, artifacts, reserveCalls, releaseCalls := db.quotaState(); bytesNet != 0 || artifacts != 0 || reserveCalls != 0 ||
+		releaseCalls != 0 {
+		t.Errorf(
+			"quota = (%d, %d, %d reserve, %d release), want all zero (nothing reserved on refusal)",
+			bytesNet,
+			artifacts,
+			reserveCalls,
+			releaseCalls,
+		)
 	}
 
 	if n := len(pub.snapshot()); n != 0 {
@@ -154,7 +161,13 @@ func TestNPMPublish_Republish409_NoQuotaNoEvent(t *testing.T) {
 
 	bytesNet, artifacts, reserveCalls, releaseCalls := db.quotaState()
 	if artifacts != 1 || bytesNet <= 0 || reserveCalls != 1 || releaseCalls != 0 {
-		t.Errorf("quota = (%d bytes, %d artifacts, %d reserve, %d release), want one stored artifact and no extra reservation", bytesNet, artifacts, reserveCalls, releaseCalls)
+		t.Errorf(
+			"quota = (%d bytes, %d artifacts, %d reserve, %d release), want one stored artifact and no extra reservation",
+			bytesNet,
+			artifacts,
+			reserveCalls,
+			releaseCalls,
+		)
 	}
 
 	if n := len(pub.snapshot()); n != 1 {
@@ -194,7 +207,12 @@ func TestNPMUnpublish_ReleasesQuotaAndEmitsDeleted(t *testing.T) {
 	router := setupUploadRouterWithPublisher(db, bs, pub)
 
 	// Single version: DELETE of that version's tarball.
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/repos/myrepo/lodash/-/lodash-1.0.0.tgz/-rev/1-abc", nil)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodDelete,
+		"/repos/myrepo/lodash/-/lodash-1.0.0.tgz/-rev/1-abc",
+		nil,
+	)
 	req.Header.Set("Authorization", "Bearer token")
 
 	w := httptest.NewRecorder()

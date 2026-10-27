@@ -58,7 +58,10 @@ func TestServe_MavenMetadataChecksumSuffixes(t *testing.T) {
 			w := f.get(http.MethodGet, metaPath+suffix)
 			want, _ := checksumOf([]byte(merged), suffix)
 
-			if got := strings.Fields(w.Body.String()); w.Code != http.StatusOK || len(got) != 2 || got[0] != want || got[1] != "maven-metadata.xml" {
+			if got := strings.Fields(
+				w.Body.String(),
+			); w.Code != http.StatusOK || len(got) != 2 || got[0] != want ||
+				got[1] != "maven-metadata.xml" {
 				t.Errorf("%s = %d %q, want %s of the merged bytes", suffix, w.Code, w.Body.String(), want)
 			}
 

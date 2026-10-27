@@ -201,7 +201,13 @@ func (n *fedNode) call(t *testing.T, method, path string, in any, want ...int) [
 func (n *fedNode) putRaw(t *testing.T, path, content string) {
 	t.Helper()
 
-	if code, data := n.do(t, http.MethodPut, "/repos/raw/"+fedRawRepo+"/"+path, "application/octet-stream", []byte(content)); code != http.StatusCreated {
+	if code, data := n.do(
+		t,
+		http.MethodPut,
+		"/repos/raw/"+fedRawRepo+"/"+path,
+		"application/octet-stream",
+		[]byte(content),
+	); code != http.StatusCreated {
 		t.Fatalf("%s put %s: HTTP %d: %s", n.name, path, code, data)
 	}
 }
@@ -450,7 +456,11 @@ func (n *fedNode) issueToken(t *testing.T, repo, name string) string {
 		Token string `json:"token"`
 	}
 
-	if err := json.Unmarshal(n.call(t, http.MethodPost, fedAPI(repo)+"/tokens", map[string]string{"name": name}, http.StatusCreated), &tok); err != nil || tok.Token == "" {
+	if err := json.Unmarshal(
+		n.call(t, http.MethodPost, fedAPI(repo)+"/tokens", map[string]string{"name": name}, http.StatusCreated),
+		&tok,
+	); err != nil ||
+		tok.Token == "" {
 		t.Fatalf("token for %s: %v", repo, err)
 	}
 
@@ -751,7 +761,15 @@ func fedSubDeletePropagates(t *testing.T, p *fedPair) {
 	})
 
 	for _, n := range []*fedNode{p.a, p.b} {
-		n.call(t, http.MethodPost, fedAPI(fedRawRepo)+"/peers/"+n.peer(t, fedRawRepo).ID+"/resync", nil, http.StatusAccepted, http.StatusOK, http.StatusNoContent)
+		n.call(
+			t,
+			http.MethodPost,
+			fedAPI(fedRawRepo)+"/peers/"+n.peer(t, fedRawRepo).ID+"/resync",
+			nil,
+			http.StatusAccepted,
+			http.StatusOK,
+			http.StatusNoContent,
+		)
 	}
 
 	poll(t, "resync done", fedWait, func() bool {

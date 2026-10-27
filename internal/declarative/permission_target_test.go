@@ -43,8 +43,11 @@ func TestPermissionTargetKindList(t *testing.T) {
 			{"id": "t-anon", "name": "anonymous-read", "repository_filter": ".*", "path_pattern": ".*", "actions": []string{"read"}},
 			{"id": "t-ci", "name": "ci", "repository_filter": "ci-.*", "path_pattern": "*", "actions": []string{"write", "read"}},
 		}}),
-		"GET /api/v1/permission-targets/t-admin/assignments": identJSON(http.StatusOK, identAssignments([3]string{"user", "u-alice", "alice"})),
-		"GET /api/v1/permission-targets/t-anon/assignments":  identJSON(http.StatusOK, identAssignments()),
+		"GET /api/v1/permission-targets/t-admin/assignments": identJSON(
+			http.StatusOK,
+			identAssignments([3]string{"user", "u-alice", "alice"}),
+		),
+		"GET /api/v1/permission-targets/t-anon/assignments": identJSON(http.StatusOK, identAssignments()),
 		"GET /api/v1/permission-targets/t-ci/assignments": identJSON(http.StatusOK, identAssignments(
 			[3]string{"group", "g-ops", "ops"}, [3]string{"user", "u-bob", "bob"}, [3]string{"group", "g-dev", "dev"},
 		)),
@@ -94,9 +97,21 @@ func TestPermissionTargetKindCreate(t *testing.T) {
 				{Method: http.MethodPost, URI: "/api/v1/permission-targets", Body: map[string]any{
 					"name": "ci", "repository_filter": "ci-.*", "path_pattern": "*", "actions": []any{"read", "write"},
 				}},
-				{Method: http.MethodPost, URI: "/api/v1/permission-targets/t-new/assignments", Body: map[string]any{"principal_type": "user", "principal_id": "u-alice"}},
-				{Method: http.MethodPost, URI: "/api/v1/permission-targets/t-new/assignments", Body: map[string]any{"principal_type": "user", "principal_id": "u-bob"}},
-				{Method: http.MethodPost, URI: "/api/v1/permission-targets/t-new/assignments", Body: map[string]any{"principal_type": "group", "principal_id": "g-dev"}},
+				{
+					Method: http.MethodPost,
+					URI:    "/api/v1/permission-targets/t-new/assignments",
+					Body:   map[string]any{"principal_type": "user", "principal_id": "u-alice"},
+				},
+				{
+					Method: http.MethodPost,
+					URI:    "/api/v1/permission-targets/t-new/assignments",
+					Body:   map[string]any{"principal_type": "user", "principal_id": "u-bob"},
+				},
+				{
+					Method: http.MethodPost,
+					URI:    "/api/v1/permission-targets/t-new/assignments",
+					Body:   map[string]any{"principal_type": "group", "principal_id": "g-dev"},
+				},
 			},
 		},
 		{
@@ -149,7 +164,10 @@ func TestPermissionTargetKindUpdate(t *testing.T) {
 		{
 			name:    "field changes patch only the changed fields",
 			desired: map[string]any{},
-			changes: []Change{{Path: "path_pattern", Old: ".*", New: "dist/.*"}, {Path: "actions", Old: []any{"read"}, New: []any{"read", "write"}}},
+			changes: []Change{
+				{Path: "path_pattern", Old: ".*", New: "dist/.*"},
+				{Path: "actions", Old: []any{"read"}, New: []any{"read", "write"}},
+			},
 			want: []identCall{{Method: http.MethodPatch, URI: "/api/v1/permission-targets/t-ci", Body: map[string]any{
 				"path_pattern": "dist/.*", "actions": []any{"read", "write"},
 			}}},
@@ -165,7 +183,11 @@ func TestPermissionTargetKindUpdate(t *testing.T) {
 			},
 			want: []identCall{
 				{Method: http.MethodDelete, URI: "/api/v1/permission-targets/t-ci/assignments?principal_id=u-bob&principal_type=user"},
-				{Method: http.MethodPost, URI: "/api/v1/permission-targets/t-ci/assignments", Body: map[string]any{"principal_type": "group", "principal_id": "g-dev"}},
+				{
+					Method: http.MethodPost,
+					URI:    "/api/v1/permission-targets/t-ci/assignments",
+					Body:   map[string]any{"principal_type": "group", "principal_id": "g-dev"},
+				},
 			},
 		},
 		{

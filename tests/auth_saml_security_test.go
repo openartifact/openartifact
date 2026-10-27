@@ -601,7 +601,9 @@ func TestSAML_MultiCertMetadata(t *testing.T) {
 		second = newTestSAMLIdP(t)
 
 		md := idp.Metadata()
-		md.IDPSSODescriptors[0].KeyDescriptors = append(md.IDPSSODescriptors[0].KeyDescriptors, second.Metadata().IDPSSODescriptors[0].KeyDescriptors...)
+		md.IDPSSODescriptors[0].KeyDescriptors = append(
+			md.IDPSSODescriptors[0].KeyDescriptors,
+			second.Metadata().IDPSSODescriptors[0].KeyDescriptors...)
 
 		b, err := xml.Marshal(md)
 		if err != nil {

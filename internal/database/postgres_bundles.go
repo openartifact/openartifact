@@ -223,7 +223,11 @@ func (p *PostgresDB) DeleteReleaseBundle(ctx context.Context, id string) error {
 	return err
 }
 
-func (p *PostgresDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error) {
+func (p *PostgresDB) ListReleaseBundles(
+	ctx context.Context,
+	nameFilter, stateFilter string,
+	page, limit int,
+) ([]*models.ReleaseBundle, int, error) {
 	args := []any{}
 	where := "WHERE 1=1"
 

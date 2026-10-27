@@ -137,7 +137,18 @@ func TestUploadAndDeleteEmitEvents(t *testing.T) {
 
 func TestDownloadQuarantine(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
-	db.seed(&models.IvyArtifact{ID: "a", Organisation: "org.example", Module: "mod", Revision: "1.0", ArtifactName: "mod-1.0.jar", BlobKey: "abc", SHA256: "abc", SizeBytes: 3})
+	db.seed(
+		&models.IvyArtifact{
+			ID:           "a",
+			Organisation: "org.example",
+			Module:       "mod",
+			Revision:     "1.0",
+			ArtifactName: "mod-1.0.jar",
+			BlobKey:      "abc",
+			SHA256:       "abc",
+			SizeBytes:    3,
+		},
+	)
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {
@@ -305,7 +316,18 @@ func TestIvyLayoutKeepsSubdirectoryInFileName(t *testing.T) {
 func TestLegacyRowsStayReachable(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
 
-	db.seed(&models.IvyArtifact{ID: "old", Organisation: "com", Module: "example", Revision: "lib", ArtifactName: "1.0/lib-1.0.jar", BlobKey: "abc", SHA256: "abc", SizeBytes: 3})
+	db.seed(
+		&models.IvyArtifact{
+			ID:           "old",
+			Organisation: "com",
+			Module:       "example",
+			Revision:     "lib",
+			ArtifactName: "1.0/lib-1.0.jar",
+			BlobKey:      "abc",
+			SHA256:       "abc",
+			SizeBytes:    3,
+		},
+	)
 	bs.Blobs["abc"] = []byte("xyz")
 
 	u := "/repos/myrepo/com/example/lib/1.0/lib-1.0.jar"
@@ -342,7 +364,18 @@ func TestTooShortOrEmptySegmentsAreRejected(t *testing.T) {
 func TestImmutableGuardSeesLegacyRow(t *testing.T) {
 	h, db, _, _ := newTestHandler(t)
 	db.Repo.ImmutableReleases = true
-	db.seed(&models.IvyArtifact{ID: "legacy", Organisation: "com", Module: "example", Revision: "lib", ArtifactName: "1.0/lib-1.0.jar", ArtifactExt: "jar", SHA256: "old", BlobKey: "old"})
+	db.seed(
+		&models.IvyArtifact{
+			ID:           "legacy",
+			Organisation: "com",
+			Module:       "example",
+			Revision:     "lib",
+			ArtifactName: "1.0/lib-1.0.jar",
+			ArtifactExt:  "jar",
+			SHA256:       "old",
+			BlobKey:      "old",
+		},
+	)
 
 	u := "/repos/myrepo/com/example/lib/1.0/lib-1.0.jar"
 	if w := send(t, h, http.MethodPut, u, "tampered"); w.Code != http.StatusConflict {

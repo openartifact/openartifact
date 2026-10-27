@@ -128,7 +128,9 @@ func FuzzParseNupkg(f *testing.F) {
 func FuzzParseNuspec(f *testing.F) {
 	f.Add(fuzzNuspec)
 	f.Add(`<package><metadata><id>a</id><version>1</version></metadata></package>`)
-	f.Add(`<package><metadata><id>a</id><version>1.0.0</version><dependencies><dependency id="x"/><group><dependency/></group></dependencies></metadata></package>`)
+	f.Add(
+		`<package><metadata><id>a</id><version>1.0.0</version><dependencies><dependency id="x"/><group><dependency/></group></dependencies></metadata></package>`,
+	)
 	f.Add(`<package><metadata><license type="EXPRESSION"> MIT </license></metadata></package>`)
 	f.Add(`<!DOCTYPE x [<!ENTITY e "&e;">]><package>&e;</package>`)
 	f.Add(`<package><metadata><id>a</id>`)
@@ -325,7 +327,8 @@ func fuzzCheckRegistration(t *testing.T, id string, pkgs []*models.NuGetPackage)
 
 	var versions []string
 
-	if wantPages := (len(pkgs) + registrationPageSize - 1) / registrationPageSize; index.Count != len(index.Items) || len(index.Items) != wantPages {
+	if wantPages := (len(pkgs) + registrationPageSize - 1) / registrationPageSize; index.Count != len(index.Items) ||
+		len(index.Items) != wantPages {
 		t.Fatalf("%d versions rendered as %d pages (count %d), want %d", len(pkgs), len(index.Items), index.Count, wantPages)
 	}
 

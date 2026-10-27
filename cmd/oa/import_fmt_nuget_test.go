@@ -195,8 +195,12 @@ func nugetNexusFiles(t *testing.T) []fakeFile {
 			compName: "Acme.Core", compVersion: "1.2.3",
 		},
 		{
-			path: "Acme.Utils/2.0.0-Beta", data: nugetPackage(t, "Acme.Utils", "2.0-Beta+abc"), created: nexusStamp, contentType: "application/zip",
-			compName: "Acme.Utils", compVersion: "2.0.0-Beta",
+			path:        "Acme.Utils/2.0.0-Beta",
+			data:        nugetPackage(t, "Acme.Utils", "2.0-Beta+abc"),
+			created:     nexusStamp,
+			contentType: "application/zip",
+			compName:    "Acme.Utils",
+			compVersion: "2.0.0-Beta",
 		},
 		{
 			path: "Legacy/1.0.0.0", data: bom, created: nexusStamp, contentType: "application/zip",
@@ -487,7 +491,11 @@ func TestNuGetIdentityRejects(t *testing.T) {
 		{"not a zip", []byte("plain text"), "not a valid NuGet package"},
 		{"no nuspec", nugetZip(t, [2]string{"lib/a.dll", "x"}), "no root .nuspec"},
 		{"nested nuspec only", nugetZip(t, [2]string{"tools/a.nuspec", nugetNuspec("a", "1.0.0")}), "no root .nuspec"},
-		{"two root nuspecs", nugetZip(t, [2]string{"a.nuspec", nugetNuspec("a", "1.0.0")}, [2]string{"b.nuspec", nugetNuspec("b", "1.0.0")}), "several root .nuspec"},
+		{
+			"two root nuspecs",
+			nugetZip(t, [2]string{"a.nuspec", nugetNuspec("a", "1.0.0")}, [2]string{"b.nuspec", nugetNuspec("b", "1.0.0")}),
+			"several root .nuspec",
+		},
 		{"bad version", nugetZip(t, [2]string{"a.nuspec", nugetNuspec("a", "one")}), `version "one"`},
 		{"empty id", nugetZip(t, [2]string{"a.nuspec", nugetNuspec("", "1.0.0")}), `id ""`},
 		{"broken xml", nugetZip(t, [2]string{"a.nuspec", "<package><metadata>"}), "reading .nuspec"},

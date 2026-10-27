@@ -81,7 +81,14 @@ func vulnItems() []scanexport.VulnItem {
 			ID: "s1", ArtifactID: "lodash@4.17.20", PackageName: "lodash", PackageVersion: "4.17.20", Ecosystem: "npm",
 			Scanner: "osv", ScanStatus: "completed",
 			Vulnerabilities: []models.Vulnerability{
-				{ID: "CVE-2021-23337", Summary: "Command injection", Severity: "HIGH", CVSS: 7.2, FixedIn: "4.17.21", References: []string{"https://x.test/a"}},
+				{
+					ID:         "CVE-2021-23337",
+					Summary:    "Command injection",
+					Severity:   "HIGH",
+					CVSS:       7.2,
+					FixedIn:    "4.17.21",
+					References: []string{"https://x.test/a"},
+				},
 				{ID: "GHSA-35jh-r3h4-6jhm", Summary: "=HYPERLINK(\"http://evil\")", Severity: "CRITICAL"},
 			},
 		}},
@@ -187,7 +194,14 @@ func TestVulnSARIF_TruncatesToGitHubLimitKeepingWorst(t *testing.T) {
 	vulns = append(vulns, models.Vulnerability{ID: "CVE-CRIT", Severity: "CRITICAL"})
 
 	doc, truncated := scanexport.VulnSARIF([]scanexport.VulnItem{{Repo: "r", Scan: &models.VulnScanResult{
-		ID: "s", ArtifactID: "a", PackageName: "a", PackageVersion: "1", Ecosystem: "npm", Scanner: "osv", ScanStatus: "completed", Vulnerabilities: vulns,
+		ID:              "s",
+		ArtifactID:      "a",
+		PackageName:     "a",
+		PackageVersion:  "1",
+		Ecosystem:       "npm",
+		Scanner:         "osv",
+		ScanStatus:      "completed",
+		Vulnerabilities: vulns,
 	}}})
 	if !truncated {
 		t.Fatal("not truncated")
@@ -231,8 +245,20 @@ func secretItems() []scanexport.SecretItem {
 	return []scanexport.SecretItem{{Repo: "raw", Scan: &models.SecretScanResult{
 		ID: "x1", ArtifactID: "dir/.env", ScanStatus: "flagged", FindingCount: 3,
 		Findings: []models.SecretFinding{
-			{Type: "aws_access_key", Description: "AWS Access Key ID", Severity: "critical", RedactedValue: "AKIA****LEAK", LineHint: "key=AKIAIOSFODNN7EXAMPLE"},
-			{Type: "aws_access_key", Description: "AWS Access Key ID", Severity: "critical", RedactedValue: "AKIA****LEAK", LineHint: "again"},
+			{
+				Type:          "aws_access_key",
+				Description:   "AWS Access Key ID",
+				Severity:      "critical",
+				RedactedValue: "AKIA****LEAK",
+				LineHint:      "key=AKIAIOSFODNN7EXAMPLE",
+			},
+			{
+				Type:          "aws_access_key",
+				Description:   "AWS Access Key ID",
+				Severity:      "critical",
+				RedactedValue: "AKIA****LEAK",
+				LineHint:      "again",
+			},
 			{Type: "jwt", Description: "JWT Token", Severity: "medium", RedactedValue: "eyJ****SIG"},
 		},
 	}}}

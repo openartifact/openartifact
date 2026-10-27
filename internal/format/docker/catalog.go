@@ -112,7 +112,13 @@ func (h *HTTPHandler) handleCatalog(w http.ResponseWriter, r *http.Request) {
 
 // collectCatalog returns the first n readable names after last, and whether a
 // further readable one exists.
-func collectCatalog(ctx context.Context, catalog database.DockerCatalog, canRead func(*models.Repository, string) (bool, error), last string, n int) ([]string, bool, error) {
+func collectCatalog(
+	ctx context.Context,
+	catalog database.DockerCatalog,
+	canRead func(*models.Repository, string) (bool, error),
+	last string,
+	n int,
+) ([]string, bool, error) {
 	n = min(n, maxTagPage)
 
 	// Capacity is a constant, not the requested page size.

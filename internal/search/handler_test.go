@@ -36,17 +36,33 @@ type mockSearcher struct {
 	gotAlgorithm    string
 }
 
-func (m *mockSearcher) SearchChecksum(_ context.Context, digest, algorithm string, _, _ int, _ map[uuid.UUID]struct{}) ([]ChecksumResult, int, error) {
+func (m *mockSearcher) SearchChecksum(
+	_ context.Context,
+	digest, algorithm string,
+	_, _ int,
+	_ map[uuid.UUID]struct{},
+) ([]ChecksumResult, int, error) {
 	m.gotDigest, m.gotAlgorithm = digest, algorithm
 
 	return m.checksumResults, len(m.checksumResults), m.checksumErr
 }
 
-func (m *mockSearcher) SearchRepositories(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]RepositoryResult, error) {
+func (m *mockSearcher) SearchRepositories(
+	_ context.Context,
+	_ SearchFilter,
+	_, _ int,
+	_ map[uuid.UUID]struct{},
+) ([]RepositoryResult, error) {
 	return m.repos, m.repoErr
 }
 
-func (m *mockSearcher) SearchPage(_ context.Context, filter SearchFilter, opts PageOptions, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, int64, error) {
+func (m *mockSearcher) SearchPage(
+	_ context.Context,
+	filter SearchFilter,
+	opts PageOptions,
+	_, _ int,
+	_ map[uuid.UUID]struct{},
+) ([]SearchResult, int64, error) {
 	m.gotOpts = opts
 	m.gotFilter = filter
 
@@ -258,7 +274,8 @@ func TestHandlerSeparatesRepositoriesFromPackages(t *testing.T) {
 		t.Errorf("version-less package row must stay in packages, got %+v", resp.Packages)
 	}
 
-	if len(resp.Repositories) != 1 || resp.Repositories[0] != (RepositoryResult{Name: "ui-kit", Format: "npm", Description: "shared components"}) {
+	if len(resp.Repositories) != 1 ||
+		resp.Repositories[0] != (RepositoryResult{Name: "ui-kit", Format: "npm", Description: "shared components"}) {
 		t.Errorf("want the ui-kit repository hit, got %+v", resp.Repositories)
 	}
 }

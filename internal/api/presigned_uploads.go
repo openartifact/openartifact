@@ -319,7 +319,12 @@ func (h *PresignedUploadHandler) createUpload(w http.ResponseWriter, r *http.Req
 		h.forgetUpload(up.ID)
 
 		if errors.Is(err, storage.ErrSingleUploadTooLarge) {
-			writeError(w, http.StatusBadRequest, "invalid_size", "size is too large for a single upload on this storage backend; set multipart")
+			writeError(
+				w,
+				http.StatusBadRequest,
+				"invalid_size",
+				"size is too large for a single upload on this storage backend; set multipart",
+			)
 			return
 		}
 
@@ -562,7 +567,12 @@ func (h *PresignedUploadHandler) release(ctx context.Context, id string) {
 }
 
 // reject discards an upload that cannot be completed (the lease dies with the row).
-func (h *PresignedUploadHandler) reject(repo *models.Repository, up *models.PresignedUpload, err error, f *completeFailure) *completeFailure {
+func (h *PresignedUploadHandler) reject(
+	repo *models.Repository,
+	up *models.PresignedUpload,
+	err error,
+	f *completeFailure,
+) *completeFailure {
 	h.Log.Warnw("presigned upload rejected", "repo", repo.Name, "path", up.Path, "upload_id", up.ID, "reason", err.Error())
 	h.forgetUpload(up.ID)
 
@@ -574,11 +584,19 @@ func failInternal() *completeFailure {
 }
 
 func failMismatch() *completeFailure {
-	return &completeFailure{http.StatusUnprocessableEntity, "upload_mismatch", "uploaded object does not match the declared size and sha256"}
+	return &completeFailure{
+		http.StatusUnprocessableEntity,
+		"upload_mismatch",
+		"uploaded object does not match the declared size and sha256",
+	}
 }
 
 func failChanged() *completeFailure {
-	return &completeFailure{http.StatusConflict, "upload_changed", "the uploaded object changed while it was being verified; start a new upload"}
+	return &completeFailure{
+		http.StatusConflict,
+		"upload_changed",
+		"the uploaded object changed while it was being verified; start a new upload",
+	}
 }
 
 func failImmutable(path string) *completeFailure {
@@ -595,7 +613,11 @@ func failMissing() *completeFailure {
 
 // complete verifies and commits a claimed upload. req carries the caller's
 // principal and query but a context detached from the HTTP request.
-func (h *PresignedUploadHandler) complete(req *http.Request, repo *models.Repository, up *models.PresignedUpload) (CompletePresignedUploadResponse, *completeFailure) {
+func (h *PresignedUploadHandler) complete(
+	req *http.Request,
+	repo *models.Repository,
+	up *models.PresignedUpload,
+) (CompletePresignedUploadResponse, *completeFailure) {
 	ctx := req.Context()
 
 	if fail := h.assembleParts(ctx, up); fail != nil {

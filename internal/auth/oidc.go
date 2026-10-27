@@ -118,7 +118,11 @@ func LoadOIDCProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 	slug := row.Slug
 
 	if row.Kind != "oidc" {
-		return nil, fmt.Errorf("provider %q is not an oidc provider (kind=%s)", slug, row.Kind) //nolint:err113 // dynamic error with runtime context
+		return nil, fmt.Errorf(
+			"provider %q is not an oidc provider (kind=%s)",
+			slug,
+			row.Kind,
+		) //nolint:err113 // dynamic error with runtime context
 	}
 
 	var cfg models.OIDCConfig

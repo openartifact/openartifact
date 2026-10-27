@@ -93,7 +93,12 @@ func (f *projectFakeDB) GetProjectQuota(_ context.Context, projectID string) (*m
 	return &models.ProjectQuota{ProjectID: projectID, WarnThresholdPercent: 80}, nil
 }
 
-func (f *projectFakeDB) SetProjectQuota(_ context.Context, projectID string, maxSize, maxCount int64, warn int) (*models.ProjectQuota, error) {
+func (f *projectFakeDB) SetProjectQuota(
+	_ context.Context,
+	projectID string,
+	maxSize, maxCount int64,
+	warn int,
+) (*models.ProjectQuota, error) {
 	if f.quotas == nil {
 		f.quotas = map[string]*models.ProjectQuota{}
 	}
@@ -220,7 +225,10 @@ func seedProjectsSource(t *testing.T, src *projectFakeDB) projectsSeed {
 	}
 
 	keep := 3
-	_ = src.CreateCleanupPolicy(ctx, &models.CleanupPolicy{ProjectID: acme.ID, Name: "default", Enabled: true, KeepLastN: &keep, ScheduleCron: "0 3 * * *"})
+	_ = src.CreateCleanupPolicy(
+		ctx,
+		&models.CleanupPolicy{ProjectID: acme.ID, Name: "default", Enabled: true, KeepLastN: &keep, ScheduleCron: "0 3 * * *"},
+	)
 
 	sys := models.SystemProjectID
 	_ = src.CreateRepository(ctx, &models.Repository{Name: "acme-libs", Format: "rpm", RepoType: "hosted", ProjectID: &acme.ID})

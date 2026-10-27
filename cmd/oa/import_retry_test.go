@@ -332,11 +332,41 @@ func TestImportDoesNotRetryClientErrors(t *testing.T) {
 		dst    func(code int) flakySide
 		hits   func(o outcome) int
 	}{
-		{"download", "maven", func(c int) flakySide { return flakySide{isDownload, always, failStatus(c)} }, nil, func(o outcome) int { return o.src.hits() }},
-		{"listing", "maven", func(c int) flakySide { return flakySide{isListing, always, failStatus(c)} }, nil, func(o outcome) int { return o.src.hits() }},
-		{"maven PUT", "maven", nil, func(c int) flakySide { return flakySide{isMavenPut, always, failStatus(c)} }, func(o outcome) int { return o.dst.hits() }},
-		{"raw PUT", "raw", nil, func(c int) flakySide { return flakySide{isMavenPut, always, failStatus(c)} }, func(o outcome) int { return o.dst.hits() }},
-		{"deb POST", "deb", nil, func(c int) flakySide { return flakySide{isDebPost, always, failStatus(c)} }, func(o outcome) int { return o.dst.hits() }},
+		{
+			"download",
+			"maven",
+			func(c int) flakySide { return flakySide{isDownload, always, failStatus(c)} },
+			nil,
+			func(o outcome) int { return o.src.hits() },
+		},
+		{
+			"listing",
+			"maven",
+			func(c int) flakySide { return flakySide{isListing, always, failStatus(c)} },
+			nil,
+			func(o outcome) int { return o.src.hits() },
+		},
+		{
+			"maven PUT",
+			"maven",
+			nil,
+			func(c int) flakySide { return flakySide{isMavenPut, always, failStatus(c)} },
+			func(o outcome) int { return o.dst.hits() },
+		},
+		{
+			"raw PUT",
+			"raw",
+			nil,
+			func(c int) flakySide { return flakySide{isMavenPut, always, failStatus(c)} },
+			func(o outcome) int { return o.dst.hits() },
+		},
+		{
+			"deb POST",
+			"deb",
+			nil,
+			func(c int) flakySide { return flakySide{isDebPost, always, failStatus(c)} },
+			func(o outcome) int { return o.dst.hits() },
+		},
 	}
 
 	for _, side := range sides {
@@ -410,22 +440,62 @@ func TestImportHonorsRetryAfter(t *testing.T) {
 		wantWaits []time.Duration
 		wantFail  bool
 	}{
-		{"429 seconds", scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(429, "Retry-After", "7")}}, []time.Duration{7 * time.Second}, false},
-		{"503 HTTP date", scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(503, "Retry-After", date)}}, []time.Duration{10 * time.Second}, false},
-		{"429 on upload", scenario{format: "raw", dst: flakySide{isMavenPut, 1, failStatus(429, "Retry-After", "3")}}, []time.Duration{3 * time.Second}, false},
-		{"zero means now", scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(503, "Retry-After", "0")}}, []time.Duration{0}, false},
+		{
+			"429 seconds",
+			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(429, "Retry-After", "7")}},
+			[]time.Duration{7 * time.Second},
+			false,
+		},
+		{
+			"503 HTTP date",
+			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(503, "Retry-After", date)}},
+			[]time.Duration{10 * time.Second},
+			false,
+		},
+		{
+			"429 on upload",
+			scenario{format: "raw", dst: flakySide{isMavenPut, 1, failStatus(429, "Retry-After", "3")}},
+			[]time.Duration{3 * time.Second},
+			false,
+		},
+		{
+			"zero means now",
+			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(503, "Retry-After", "0")}},
+			[]time.Duration{0},
+			false,
+		},
 		{"ignored on 500", scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(500, "Retry-After", "7")}}, ms(500), false},
-		{"garbage falls back to backoff", scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(429, "Retry-After", "soon")}}, ms(500), false},
-		{"beyond max wait fails fast", scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(503, "Retry-After", "120")}}, nil, true},
+		{
+			"garbage falls back to backoff",
+			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(429, "Retry-After", "soon")}},
+			ms(500),
+			false,
+		},
+		{
+			"beyond max wait fails fast",
+			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(503, "Retry-After", "120")}},
+			nil,
+			true,
+		},
 		{
 			"beyond custom max wait fails fast",
-			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(429, "Retry-After", "60")}, args: []string{"--retry-max-wait", "5s"}},
-			nil, true,
+			scenario{
+				format: "maven",
+				src:    flakySide{isDownload, 1, failStatus(429, "Retry-After", "60")},
+				args:   []string{"--retry-max-wait", "5s"},
+			},
+			nil,
+			true,
 		},
 		{
 			"within custom max wait",
-			scenario{format: "maven", src: flakySide{isDownload, 1, failStatus(429, "Retry-After", "5")}, args: []string{"--retry-max-wait", "5s"}},
-			[]time.Duration{5 * time.Second}, false,
+			scenario{
+				format: "maven",
+				src:    flakySide{isDownload, 1, failStatus(429, "Retry-After", "5")},
+				args:   []string{"--retry-max-wait", "5s"},
+			},
+			[]time.Duration{5 * time.Second},
+			false,
 		},
 	}
 
@@ -485,7 +555,11 @@ func TestUploadWithoutSourceSHA256IsNotRepeatedForDebRPM(t *testing.T) {
 			(&fakeSleeper{}).apply(rt)
 
 			src := &stubSource{body: "payload"}
-			im := &importer{src: src, retry: rt, tgt: &importTarget{c: &Client{baseURL: dst.URL, token: oa.token, httpClient: dst.Client()}}}
+			im := &importer{
+				src:   src,
+				retry: rt,
+				tgt:   &importTarget{c: &Client{baseURL: dst.URL, token: oa.token, httpClient: dst.Client()}},
+			}
 			job := importJob{repo: sourceRepo{Name: "src", Format: tc.format}, dst: "dst"}
 			asset := sourceAsset{Path: "pkg/file.bin", Size: int64(len(src.body))} // no SHA256
 

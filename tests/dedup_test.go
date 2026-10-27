@@ -584,7 +584,13 @@ type fakePackageDeleter struct {
 	err   error
 }
 
-func (f *fakePackageDeleter) DeletePackage(_ context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error, actor string) (*worker.DeletedPackage, error) {
+func (f *fakePackageDeleter) DeletePackage(
+	_ context.Context,
+	repo *models.Repository,
+	id string,
+	guard func(worker.DeletedPackage) error,
+	actor string,
+) (*worker.DeletedPackage, error) {
 	f.repo, f.id, f.actor = repo, id, actor
 
 	if f.err != nil {
@@ -605,7 +611,13 @@ func TestPackageDelete_GenericFormats(t *testing.T) {
 	mock := newMockDatabase()
 	db := rpmLookupDB{mock}
 	mock.repositories["repo-npm"] = &models.Repository{ID: "repo-npm", Name: "npm-repo", Format: "npm", RepoType: "hosted"}
-	mock.repositories["repo-imm"] = &models.Repository{ID: "repo-imm", Name: "imm-repo", Format: "npm", RepoType: "hosted", ImmutableReleases: true}
+	mock.repositories["repo-imm"] = &models.Repository{
+		ID:                "repo-imm",
+		Name:              "imm-repo",
+		Format:            "npm",
+		RepoType:          "hosted",
+		ImmutableReleases: true,
+	}
 
 	del := func(h *api.RPMUploadHandler, repo string) *httptest.ResponseRecorder {
 		router := chi.NewRouter()

@@ -247,7 +247,11 @@ func (d *apiDoc) validateSchemaNames() error {
 
 	for _, name := range apiSortedKeys(d.spec.Components.Schemas) {
 		if !apiSchemaName.MatchString(name) {
-			return fmt.Errorf("%w: schema name %q: use letters and digits only so the heading anchor is the same on GitHub and VitePress", errAPISpec, name)
+			return fmt.Errorf(
+				"%w: schema name %q: use letters and digits only so the heading anchor is the same on GitHub and VitePress",
+				errAPISpec,
+				name,
+			)
 		}
 
 		slug := strings.ToLower(name)
@@ -873,7 +877,13 @@ func (r *apiRenderer) tagPage(p *apiTagPage) []byte {
 		noun = "endpoint"
 	}
 
-	fmt.Fprintf(&b, "%d %s. Request and response schemas are described on the [schemas page](%s); the other tags are listed in the [API index](README.md).\n\n", len(p.ops), noun, apiSchemasPage)
+	fmt.Fprintf(
+		&b,
+		"%d %s. Request and response schemas are described on the [schemas page](%s); the other tags are listed in the [API index](README.md).\n\n",
+		len(p.ops),
+		noun,
+		apiSchemasPage,
+	)
 	b.WriteString("## Endpoints\n\n")
 
 	for _, op := range p.ops {
@@ -1105,7 +1115,9 @@ func (r *apiRenderer) schemasPage() []byte {
 	var b strings.Builder
 
 	b.Write(header("API schemas", apiSpecFile))
-	b.WriteString("Named request and response objects of the [REST API](README.md), sorted by name. Field names of nested inline objects are dotted; `[]` marks array elements and `*` map values.\n\n")
+	b.WriteString(
+		"Named request and response objects of the [REST API](README.md), sorted by name. Field names of nested inline objects are dotted; `[]` marks array elements and `*` map values.\n\n",
+	)
 	b.WriteString("## Schemas\n\n")
 
 	names := apiSortedKeys(r.schemas())
@@ -1169,7 +1181,13 @@ func (r *apiRenderer) indexPage(pages []apiTagPage) []byte {
 		b.WriteString(t + "\n\n")
 	}
 
-	fmt.Fprintf(&b, "This reference is generated from the embedded OpenAPI document `%s` and lists %d endpoints in %d tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).\n\n", apiSpecFile, len(r.doc.ops), len(pages))
+	fmt.Fprintf(
+		&b,
+		"This reference is generated from the embedded OpenAPI document `%s` and lists %d endpoints in %d tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).\n\n",
+		apiSpecFile,
+		len(r.doc.ops),
+		len(pages),
+	)
 
 	r.writeSecurity(&b)
 	r.writeServers(&b)

@@ -66,7 +66,9 @@ var configLooseEnv = map[string]struct {
 }{
 	// applyTelemetryEnv percent-decodes the pairs into the headers map.
 	"OTEL_EXPORTER_OTLP_HEADERS": {key: "telemetry.otlp.headers"},
-	"OTEL_SDK_DISABLED":          {note: "`true` forces telemetry off, overriding `telemetry.otlp.enabled` and `OPENARTIFACT_OTLP_ENABLED`."},
+	"OTEL_SDK_DISABLED": {
+		note: "`true` forces telemetry off, overriding `telemetry.otlp.enabled` and `OPENARTIFACT_OTLP_ENABLED`.",
+	},
 }
 
 // configReplicaIgnored are the storage.* keys that storage.replica inherits
@@ -230,7 +232,12 @@ func configSchema(c *config.Config) ([]configKey, []configGroup, error) {
 	})
 
 	if ignored != len(configReplicaIgnored) {
-		return nil, nil, fmt.Errorf("%w: configReplicaIgnored lists keys that no longer exist (matched %d of %d)", errConfigSchema, ignored, len(configReplicaIgnored))
+		return nil, nil, fmt.Errorf(
+			"%w: configReplicaIgnored lists keys that no longer exist (matched %d of %d)",
+			errConfigSchema,
+			ignored,
+			len(configReplicaIgnored),
+		)
 	}
 
 	return keys, groups, nil
@@ -761,12 +768,22 @@ func configBindEnv(keys []configKey, sc *configEnvScan) []string {
 		}
 
 		if len(k.envs) == 0 {
-			problems = append(problems, fmt.Sprintf("yaml key %s has no environment override (add one to %s in %s)", k.dotted(), configEnvEntry, configPkgDir))
+			problems = append(
+				problems,
+				fmt.Sprintf("yaml key %s has no environment override (add one to %s in %s)", k.dotted(), configEnvEntry, configPkgDir),
+			)
 		}
 
 		for _, name := range sc.byPath[k.goPath][min(1, len(sc.byPath[k.goPath])):] {
 			if !sc.chained[name] {
-				problems = append(problems, fmt.Sprintf("yaml key %s is set by several variables (%s) that are not an if/else-if chain, so the first listed would not win", k.dotted(), strings.Join(sc.byPath[k.goPath], ", ")))
+				problems = append(
+					problems,
+					fmt.Sprintf(
+						"yaml key %s is set by several variables (%s) that are not an if/else-if chain, so the first listed would not win",
+						k.dotted(),
+						strings.Join(sc.byPath[k.goPath], ", "),
+					),
+				)
 
 				break
 			}
@@ -775,7 +792,14 @@ func configBindEnv(keys []configKey, sc *configEnvScan) []string {
 
 	for _, goPath := range slices.Sorted(maps.Keys(sc.byPath)) {
 		if !known[goPath] {
-			problems = append(problems, fmt.Sprintf("environment override %s sets config field %s, which is not a yaml key", strings.Join(sc.byPath[goPath], ", "), goPath))
+			problems = append(
+				problems,
+				fmt.Sprintf(
+					"environment override %s sets config field %s, which is not a yaml key",
+					strings.Join(sc.byPath[goPath], ", "),
+					goPath,
+				),
+			)
 		}
 	}
 
@@ -788,7 +812,10 @@ func configCheckLoose(keys []configKey, sc *configEnvScan) []string {
 
 	for _, name := range sc.loose {
 		if _, ok := configLooseEnv[name]; !ok {
-			problems = append(problems, fmt.Sprintf("environment override %s does not set a config field; list it in configLooseEnv in cmd/docgen/config.go", name))
+			problems = append(
+				problems,
+				fmt.Sprintf("environment override %s does not set a config field; list it in configLooseEnv in cmd/docgen/config.go", name),
+			)
 		}
 	}
 
@@ -981,7 +1008,13 @@ func (d *configDocs) groupText(g configGroup) (string, error) {
 	}
 
 	if text == "" {
-		return "", fmt.Errorf("section %s has no description (document %s.%s or type %s)", g.dotted(), g.owner.Name(), g.field, g.typ.Name())
+		return "", fmt.Errorf(
+			"section %s has no description (document %s.%s or type %s)",
+			g.dotted(),
+			g.owner.Name(),
+			g.field,
+			g.typ.Name(),
+		)
 	}
 
 	md, err := configMarkdown(d.root, configSubject(text, name, g.dotted()))
@@ -1064,7 +1097,10 @@ func configCheckExamples(root string, keys []configKey, groups []configGroup, sc
 
 	for _, name := range configAllEnv(keys, sc) {
 		if !have[name] {
-			problems = append(problems, fmt.Sprintf("%s does not mention %s (expected a line starting with `%s=` or `# %s=`)", configEnvExample, name, name, name))
+			problems = append(
+				problems,
+				fmt.Sprintf("%s does not mention %s (expected a line starting with `%s=` or `# %s=`)", configEnvExample, name, name, name),
+			)
 		}
 	}
 
@@ -1222,7 +1258,10 @@ func renderConfig(keys []configKey, groups []configGroup, intros map[string]stri
 				continue
 			}
 
-			rows := configSection(keys, func(k configKey) bool { return len(k.path) > 2 && k.path[0] == sub.path[0] && k.path[1] == sub.path[1] })
+			rows := configSection(
+				keys,
+				func(k configKey) bool { return len(k.path) > 2 && k.path[0] == sub.path[0] && k.path[1] == sub.path[1] },
+			)
 			if len(rows) == 0 {
 				continue
 			}
@@ -1298,7 +1337,9 @@ func writeConfigEnvOnly(b *bytes.Buffer, sc *configEnvScan) {
 	sort.Strings(names)
 
 	if len(names) > 0 {
-		b.WriteString("These variables are read by the configuration loader but have no YAML key.\n\n| Variable | Description |\n|---|---|\n")
+		b.WriteString(
+			"These variables are read by the configuration loader but have no YAML key.\n\n| Variable | Description |\n|---|---|\n",
+		)
 
 		for _, name := range names {
 			fmt.Fprintf(b, "| `%s` | %s |\n", name, configLooseEnv[name].note)
@@ -1307,6 +1348,8 @@ func writeConfigEnvOnly(b *bytes.Buffer, sc *configEnvScan) {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("Variables read outside the configuration loader, such as the secret-encryption key, the metrics scrape token and the migration switch, " +
-		"are described in [Environment-only variables](../getting-started/configuration.md#environment-only-variables).\n")
+	b.WriteString(
+		"Variables read outside the configuration loader, such as the secret-encryption key, the metrics scrape token and the migration switch, " +
+			"are described in [Environment-only variables](../getting-started/configuration.md#environment-only-variables).\n",
+	)
 }

@@ -40,7 +40,12 @@ type ReadFilterFunc func(ctx context.Context) (func(repo *models.Repository) (bo
 // ArtifactSearcher runs the cross-repository artifact search restricted to the
 // given readable repositories.
 type ArtifactSearcher interface {
-	Search(ctx context.Context, filter search.SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]search.SearchResult, error)
+	Search(
+		ctx context.Context,
+		filter search.SearchFilter,
+		limit, offset int,
+		readableRepos map[uuid.UUID]struct{},
+	) ([]search.SearchResult, error)
 }
 
 const (

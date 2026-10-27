@@ -69,7 +69,9 @@ func hostedPage(files ...string) memberPage {
 	b.WriteString("<!DOCTYPE html>\n<html><body>\n")
 
 	for i := 0; i+1 < len(files); i += 2 {
-		b.WriteString(`<a href="/repos/hosted/files/` + files[i] + `#sha256=` + files[i+1] + `" data-requires-python="&gt;=3.9">` + files[i] + "</a>\n")
+		b.WriteString(
+			`<a href="/repos/hosted/files/` + files[i] + `#sha256=` + files[i+1] + `" data-requires-python="&gt;=3.9">` + files[i] + "</a>\n",
+		)
 	}
 
 	b.WriteString("</body></html>\n")
@@ -240,7 +242,9 @@ func TestPyPIGroup_NormalizesProjectName(t *testing.T) {
 func TestPyPIGroup_Index(t *testing.T) {
 	g := newPypiGroup(t)
 	g.members.pages["hosted"]["simple/"] = memberPage{
-		body:        []byte(`<html><body><a href="/repos/hosted/simple/zeta/">zeta</a><a href="/repos/hosted/simple/foo/">foo</a></body></html>`),
+		body: []byte(
+			`<html><body><a href="/repos/hosted/simple/zeta/">zeta</a><a href="/repos/hosted/simple/foo/">foo</a></body></html>`,
+		),
 		contentType: "text/html",
 	}
 	g.members.pages["upstream"]["simple/"] = memberPage{

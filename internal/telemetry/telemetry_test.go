@@ -448,7 +448,11 @@ func TestDBTracer(t *testing.T) {
 	tr.TraceQueryEnd(ctx, nil, pgx.TraceQueryEndData{Err: pgx.ErrNoRows})
 
 	ctx = tr.TraceQueryStart(parentCtx, nil, pgx.TraceQueryStartData{SQL: sql, Args: args})
-	tr.TraceQueryEnd(ctx, nil, pgx.TraceQueryEndData{Err: &pgconn.PgError{Code: "23505", Message: `duplicate key value (alice@example.com)`}})
+	tr.TraceQueryEnd(
+		ctx,
+		nil,
+		pgx.TraceQueryEndData{Err: &pgconn.PgError{Code: "23505", Message: `duplicate key value (alice@example.com)`}},
+	)
 
 	bctx := tr.TraceBatchStart(parentCtx, nil, pgx.TraceBatchStartData{})
 	tr.TraceBatchQuery(bctx, nil, pgx.TraceBatchQueryData{SQL: sql, Args: args})

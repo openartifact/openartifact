@@ -423,7 +423,10 @@ func (e *Engine) applyLive(ctx context.Context, pc *pullCtx, ur *UnitResponse, d
 	entry, content := ur.Entry, ur.Content
 
 	if content.Kind != entry.Kind {
-		return outcomeDeferred, deferred("invalid_unit", fmt.Errorf("%w: unit %s: content kind %q, log kind %q", errUnitKindMismatch, entry.UnitKey, content.Kind, entry.Kind))
+		return outcomeDeferred, deferred(
+			"invalid_unit",
+			fmt.Errorf("%w: unit %s: content kind %q, log kind %q", errUnitKindMismatch, entry.UnitKey, content.Kind, entry.Kind),
+		)
 	}
 
 	if err := e.ensureDeps(ctx, pc, content, depth); err != nil {

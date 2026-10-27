@@ -202,7 +202,12 @@ func realmMayReceiveCredentials(up ociUpstream, realm *url.URL) bool {
 // credentials) or Basic challenge is answered and the request repeated once.
 // The caller owns the returned response body. errUpstreamDown is returned for
 // transport failures, errUpstream when authentication cannot be completed.
-func (s *Service) ociDo(ctx context.Context, repo *models.Repository, up ociUpstream, method, target, accept string) (*http.Response, error) {
+func (s *Service) ociDo(
+	ctx context.Context,
+	repo *models.Repository,
+	up ociUpstream,
+	method, target, accept string,
+) (*http.Response, error) {
 	key := tokenKey(repo, up)
 	authz := s.tokens.get(key)
 

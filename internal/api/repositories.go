@@ -239,7 +239,11 @@ func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 }
 
 // repositoryPermissions evaluates the write, delete, manage and admin actions of p on repoName.
-func (h *RepositoriesHandler) repositoryPermissions(ctx context.Context, p auth.Principal, repoName string) (*responses.RepositoryPermissions, error) {
+func (h *RepositoriesHandler) repositoryPermissions(
+	ctx context.Context,
+	p auth.Principal,
+	repoName string,
+) (*responses.RepositoryPermissions, error) {
 	var perms responses.RepositoryPermissions
 
 	for action, dst := range map[string]*bool{"write": &perms.Write, "delete": &perms.Delete, "manage": &perms.Manage} {
@@ -287,7 +291,11 @@ func (h *RepositoriesHandler) projectName(ctx context.Context, projectID *string
 }
 
 // repositoryResponse is RepositoryToResponse plus the owning project's name.
-func (h *RepositoriesHandler) repositoryResponse(ctx context.Context, repo *models.Repository, projectNames map[string]string) responses.RepositoryResponse {
+func (h *RepositoriesHandler) repositoryResponse(
+	ctx context.Context,
+	repo *models.Repository,
+	projectNames map[string]string,
+) responses.RepositoryResponse {
 	resp := RepositoryToResponse(repo)
 	resp.Project = h.projectName(ctx, repo.ProjectID, projectNames)
 
@@ -424,7 +432,12 @@ func normalizeMaxStale(v *int) (int, error) {
 // returns the member repository IDs in priority order.
 // A non-nil reader must be able to read every member (403 otherwise): a group
 // serves its members' content to whoever reads the group.
-func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, reader *auth.Principal, groupName, groupFormat string, names []string) ([]string, int, string, string) {
+func (h *RepositoriesHandler) resolveGroupMembers(
+	ctx context.Context,
+	reader *auth.Principal,
+	groupName, groupFormat string,
+	names []string,
+) ([]string, int, string, string) {
 	if len(names) > maxGroupMembers {
 		return nil, http.StatusBadRequest, "validation_failed", fmt.Sprintf("a group may have at most %d members", maxGroupMembers)
 	}
@@ -581,7 +594,13 @@ func (h *RepositoriesHandler) checkFederated(body *createRepositoryBody, repoTyp
 }
 
 //nolint:gocyclo,cyclop // validation-heavy request handler
-func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Request, bodyPtr *createRepositoryBody, project *models.Project, actor *auth.Principal) {
+func (h *RepositoriesHandler) createRepository(
+	w http.ResponseWriter,
+	r *http.Request,
+	bodyPtr *createRepositoryBody,
+	project *models.Project,
+	actor *auth.Principal,
+) {
 	body := *bodyPtr
 
 	if err := validateTrashRetention(body.TrashRetentionDays); err != nil {
@@ -683,7 +702,12 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		negTTL, err := normalizeTTL("negative_cache_ttl_seconds", body.NegativeCacheTTLSeconds, defaultNegativeCacheTTLSeconds, maxNegativeCacheTTLSeconds)
+		negTTL, err := normalizeTTL(
+			"negative_cache_ttl_seconds",
+			body.NegativeCacheTTLSeconds,
+			defaultNegativeCacheTTLSeconds,
+			maxNegativeCacheTTLSeconds,
+		)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
@@ -795,7 +819,13 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
 	if project != nil {
-		h.emitProjectRepoEvent(r, audit.ActionProjectRepositoryCreated, project.ID, &repo.ID, "repository "+repo.Name+" created in project "+project.Name)
+		h.emitProjectRepoEvent(
+			r,
+			audit.ActionProjectRepositoryCreated,
+			project.ID,
+			&repo.ID,
+			"repository "+repo.Name+" created in project "+project.Name,
+		)
 	}
 
 	writeJSON(w, http.StatusCreated, h.repositoryResponse(r.Context(), repo, map[string]string{}))
@@ -887,7 +917,14 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if actor != nil {
-		if msg := h.delegatedUpdateViolation(ctx, repo, body.Blocked != nil, body.PresignDownloads != nil, body.Project != nil, body.Public); msg != "" {
+		if msg := h.delegatedUpdateViolation(
+			ctx,
+			repo,
+			body.Blocked != nil,
+			body.PresignDownloads != nil,
+			body.Project != nil,
+			body.Public,
+		); msg != "" {
 			writeError(w, http.StatusForbidden, "forbidden", msg)
 			return
 		}
@@ -990,7 +1027,12 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.NegativeCacheTTLSeconds != nil {
-		ttl, err := normalizeTTL("negative_cache_ttl_seconds", *body.NegativeCacheTTLSeconds, defaultNegativeCacheTTLSeconds, maxNegativeCacheTTLSeconds)
+		ttl, err := normalizeTTL(
+			"negative_cache_ttl_seconds",
+			*body.NegativeCacheTTLSeconds,
+			defaultNegativeCacheTTLSeconds,
+			maxNegativeCacheTTLSeconds,
+		)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
@@ -1082,7 +1124,12 @@ func (h *RepositoriesHandler) moveToProject(ctx context.Context, w http.Response
 	if err := h.db.MoveRepositoryToProject(ctx, repo.ID, projectID, 0); err != nil {
 		switch {
 		case errors.Is(err, database.ErrProjectQuotaExceeded):
-			writeError(w, http.StatusConflict, "project_quota_exceeded", "the target project's storage quota cannot take this repository's usage")
+			writeError(
+				w,
+				http.StatusConflict,
+				"project_quota_exceeded",
+				"the target project's storage quota cannot take this repository's usage",
+			)
 		case errors.Is(err, database.ErrRepositoryNotFound):
 			writeError(w, http.StatusNotFound, "not_found", "repository not found")
 		default:
@@ -1258,7 +1305,14 @@ func (h *RepositoriesHandler) hardDeleteRepository(ctx context.Context, w http.R
 // reclaimMetadataBlobs frees generated-metadata blobs (no blobs row, so the
 // orphan collector cannot find them) of a repository that was just deleted.
 // Best effort: a failure only leaves unreferenced space behind.
-func reclaimMetadataBlobs(ctx context.Context, db database.Database, store storage.BlobStore, log *logger.Logger, repo string, shas []string) {
+func reclaimMetadataBlobs(
+	ctx context.Context,
+	db database.Database,
+	store storage.BlobStore,
+	log *logger.Logger,
+	repo string,
+	shas []string,
+) {
 	if store == nil {
 		return
 	}
@@ -1334,7 +1388,11 @@ var errListFilterUnsupported = errors.New("package_name, q and sort are not supp
 // listComponents lists a repository's packages with the filters and ordering
 // of opts. The plain newest-first listing needs only the base store; any
 // filter or other order needs a database.ComponentSearcher.
-func (h *RepositoriesHandler) listComponents(ctx context.Context, repoID string, opts database.ComponentListOptions) ([]*models.Component, int, error) {
+func (h *RepositoriesHandler) listComponents(
+	ctx context.Context,
+	repoID string,
+	opts database.ComponentListOptions,
+) ([]*models.Component, int, error) {
 	if opts.Name == "" && opts.Query == "" && !opts.SortByName {
 		return h.db.ListComponentsByRepo(ctx, repoID, opts.Format, opts.Page, opts.Limit)
 	}

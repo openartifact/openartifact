@@ -400,8 +400,16 @@ func (h *TrashHandler) emitRestored(ctx context.Context, item *models.TrashItem)
 		return
 	}
 
-	webhook.Emit(ctx, h.publisher, item.RepositoryID, webhook.EventArtifactRestored,
-		webhook.ArtifactPayload(webhook.EventArtifactRestored, itemArtifact(item.RepositoryName, item.Format, item.Name, item.Version, item.SizeBytes)))
+	webhook.Emit(
+		ctx,
+		h.publisher,
+		item.RepositoryID,
+		webhook.EventArtifactRestored,
+		webhook.ArtifactPayload(
+			webhook.EventArtifactRestored,
+			itemArtifact(item.RepositoryName, item.Format, item.Name, item.Version, item.SizeBytes),
+		),
+	)
 }
 
 func itemArtifact(repo, format, name, version string, size int64) webhook.Artifact {

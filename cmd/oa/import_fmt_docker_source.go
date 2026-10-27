@@ -47,7 +47,12 @@ var (
 
 // ociManifestTypes are the manifest media types the importer can copy; they
 // are what it asks the source registry for.
-var ociManifestTypes = []string{ociMediaDockerManifest, ociMediaDockerList, ociMediaOCIManifest, ociMediaOCIIndex} //nolint:gochecknoglobals // constant list
+var ociManifestTypes = []string{
+	ociMediaDockerManifest,
+	ociMediaDockerList,
+	ociMediaOCIManifest,
+	ociMediaOCIIndex,
+} //nolint:gochecknoglobals // constant list
 
 // ociSource is implemented by the sources whose docker repositories can be
 // read through a registry API.

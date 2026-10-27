@@ -41,9 +41,10 @@ func TestSanitizeSVG_Strips(t *testing.T) {
 			absent: []string{"onload", "alert"}, present: []string{"<path"},
 		},
 		{
-			name:   "foreignObject with html",
-			in:     svgHead + `<foreignObject width="10" height="10"><body xmlns="http://www.w3.org/1999/xhtml"><iframe src="javascript:alert(1)"/></body></foreignObject><path d="M1 1"/></svg>`,
-			absent: []string{"foreignObject", "iframe", "javascript", "xhtml"}, present: []string{`<path d="M1 1"`},
+			name:    "foreignObject with html",
+			in:      svgHead + `<foreignObject width="10" height="10"><body xmlns="http://www.w3.org/1999/xhtml"><iframe src="javascript:alert(1)"/></body></foreignObject><path d="M1 1"/></svg>`,
+			absent:  []string{"foreignObject", "iframe", "javascript", "xhtml"},
+			present: []string{`<path d="M1 1"`},
 		},
 		{
 			name:   "external image",
@@ -61,14 +62,16 @@ func TestSanitizeSVG_Strips(t *testing.T) {
 			absent: []string{"evil.example"}, present: []string{`href="#local"`},
 		},
 		{
-			name:   "animate set javascript",
-			in:     svgHead + `<a><animate attributeName="href" values="javascript:alert(1)"/></a><set attributeName="onmouseover" to="alert(1)"/><path d="M1 1"/></svg>`,
-			absent: []string{"animate", "<set", "javascript", "alert"}, present: []string{"<path"},
+			name:    "animate set javascript",
+			in:      svgHead + `<a><animate attributeName="href" values="javascript:alert(1)"/></a><set attributeName="onmouseover" to="alert(1)"/><path d="M1 1"/></svg>`,
+			absent:  []string{"animate", "<set", "javascript", "alert"},
+			present: []string{"<path"},
 		},
 		{
-			name:   "unknown attribute and namespace are dropped",
-			in:     svgHead + `<path d="M1 1" data-x="1" xlink:title="t" inkscape:label="x" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"/></svg>`,
-			absent: []string{"data-x", "inkscape", "xlink:title"}, present: []string{`d="M1 1"`},
+			name:    "unknown attribute and namespace are dropped",
+			in:      svgHead + `<path d="M1 1" data-x="1" xlink:title="t" inkscape:label="x" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"/></svg>`,
+			absent:  []string{"data-x", "inkscape", "xlink:title"},
+			present: []string{`d="M1 1"`},
 		},
 		{
 			name:   "foreign namespace element",
@@ -81,9 +84,10 @@ func TestSanitizeSVG_Strips(t *testing.T) {
 			absent: []string{"<!--", "alert"},
 		},
 		{
-			name:   "style with local url is kept",
-			in:     svgHead + `<defs><linearGradient id="g"><stop offset="0" stop-color="#fff"/></linearGradient></defs><style>.a{fill:url(#g);stroke:#000}</style><path class="a" d="M1 1"/></svg>`,
-			absent: nil, present: []string{"fill:url(#g)", `class="a"`, "<linearGradient"},
+			name:    "style with local url is kept",
+			in:      svgHead + `<defs><linearGradient id="g"><stop offset="0" stop-color="#fff"/></linearGradient></defs><style>.a{fill:url(#g);stroke:#000}</style><path class="a" d="M1 1"/></svg>`,
+			absent:  nil,
+			present: []string{"fill:url(#g)", `class="a"`, "<linearGradient"},
 		},
 		{
 			name:   "xml declaration and bom are accepted",
@@ -144,7 +148,10 @@ func TestSanitizeSVG_Rejects(t *testing.T) {
 		{"svg without namespace", `<svg><path d="M1 1"/></svg>`},
 		{"wrong namespace", `<svg xmlns="urn:other"><path/></svg>`},
 		{"truncated", svgHead + `<path d="M1 1"/>`},
-		{"doctype with entity bomb", `<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]>` + svgHead + `<text>&b;</text></svg>`},
+		{
+			"doctype with entity bomb",
+			`<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]>` + svgHead + `<text>&b;</text></svg>`,
+		},
 		{"external doctype", `<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://evil.example/x.dtd">` + svgHead + `</svg>`},
 		{"undefined entity", svgHead + `<text>&xxe;</text></svg>`},
 		{"stylesheet processing instruction", `<?xml-stylesheet href="http://evil.example/a.css"?>` + svgHead + `</svg>`},

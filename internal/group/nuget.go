@@ -44,7 +44,14 @@ const nugetMetaMaxAge = 60
 // proxy versions) members is narrowed to the hosted ones by applyHostedWins
 // before any of this runs, so registrations and version lists of that id carry
 // no proxy versions and its package files are never fetched from a proxy.
-func (h *Handler) serveNuGet(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
+func (h *Handler) serveNuGet(
+	w http.ResponseWriter,
+	r *http.Request,
+	grp *models.Repository,
+	relPath string,
+	members []*models.Repository,
+	be Backend,
+) bool {
 	segs := strings.Split(strings.Trim(relPath, "/"), "/")
 	if len(segs) < 2 || segs[0] != "v3" {
 		return false
@@ -221,7 +228,17 @@ func (n *nugetRequest) serveVersions(w http.ResponseWriter, r *http.Request, rel
 		// registration cannot be, instead of failing the others' versions.
 		list, err := pkgnuget.ParseVersionList(d.body)
 		if err != nil {
-			n.h.log.Warnw("unreadable nuget version list from group member", "group", n.grp.Name, "member", m.Name, "path", relPath, "error", err)
+			n.h.log.Warnw(
+				"unreadable nuget version list from group member",
+				"group",
+				n.grp.Name,
+				"member",
+				m.Name,
+				"path",
+				relPath,
+				"error",
+				err,
+			)
 
 			failed = true
 
@@ -314,7 +331,17 @@ func (n *nugetRequest) memberItems(m *models.Repository, id string) ([]json.RawM
 
 		pageItems, perr := pkgnuget.ParsePageItems(pd.body)
 		if perr != nil {
-			n.h.log.Warnw("unreadable nuget registration page from group member", "group", n.grp.Name, "member", m.Name, "package", id, "error", perr)
+			n.h.log.Warnw(
+				"unreadable nuget registration page from group member",
+				"group",
+				n.grp.Name,
+				"member",
+				m.Name,
+				"package",
+				id,
+				"error",
+				perr,
+			)
 			return nil, false, true
 		}
 

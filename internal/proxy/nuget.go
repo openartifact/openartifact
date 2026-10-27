@@ -499,7 +499,12 @@ func nugetDocURL(idx *pkgnuget.ServiceIndex, p nugetPath) string {
 
 // resolveNuGetDoc returns the cache entry of the metadata document p names,
 // fetching it from the upstream resource idx names when absent or expired.
-func (s *Service) resolveNuGetDoc(ctx context.Context, repo *models.Repository, idx *pkgnuget.ServiceIndex, p nugetPath) (*resolution, error) {
+func (s *Service) resolveNuGetDoc(
+	ctx context.Context,
+	repo *models.Repository,
+	idx *pkgnuget.ServiceIndex,
+	p nugetPath,
+) (*resolution, error) {
 	key := p.key()
 
 	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
@@ -614,7 +619,10 @@ func (s *Service) serveNuGetDoc(w http.ResponseWriter, r *http.Request, repo *mo
 func renderNuGetDoc(doc []byte, p nugetPath, idx *pkgnuget.ServiceIndex, repoURL string) ([]byte, error) {
 	switch p.kind {
 	case nugetRegIndex:
-		return pkgnuget.RewriteRegistrationIndex(doc, repoURL+"/v3/registration/"+p.id+"/page/", nugetRewrites(idx, repoURL)...) //nolint:wrapcheck // logged by caller
+		return pkgnuget.RewriteRegistrationIndex(
+			doc,
+			repoURL+"/v3/registration/"+p.id+"/page/",
+			nugetRewrites(idx, repoURL)...) //nolint:wrapcheck // logged by caller
 	case nugetRegPage, nugetRegLeaf:
 		return pkgnuget.RewriteURLs(doc, nugetRewrites(idx, repoURL)...) //nolint:wrapcheck // logged by caller
 	default:
@@ -642,7 +650,12 @@ func (s *Service) serveNuGetPackageFile(w http.ResponseWriter, r *http.Request, 
 
 // fetchNuGetPackageFile downloads the .nupkg or .nuspec p names from the
 // flat container the service index advertises.
-func (s *Service) fetchNuGetPackageFile(ctx context.Context, repo *models.Repository, p nugetPath, key string) (*models.ProxyCacheEntry, error) {
+func (s *Service) fetchNuGetPackageFile(
+	ctx context.Context,
+	repo *models.Repository,
+	p nugetPath,
+	key string,
+) (*models.ProxyCacheEntry, error) {
 	_, idx, err := s.resolveNuGetIndex(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -675,7 +688,12 @@ func (s *Service) fetchNuGetPackageFile(ctx context.Context, repo *models.Reposi
 // packageSize. An upstream without a leaf or catalog (or whose catalog entry
 // has neither) yields the zero Digest; any other failure is returned, so a
 // package is never accepted unverified because the check could not run.
-func (s *Service) nugetDigest(ctx context.Context, repo *models.Repository, idx *pkgnuget.ServiceIndex, p nugetPath) (pkgnuget.Digest, error) {
+func (s *Service) nugetDigest(
+	ctx context.Context,
+	repo *models.Repository,
+	idx *pkgnuget.ServiceIndex,
+	p nugetPath,
+) (pkgnuget.Digest, error) {
 	leafPath := nugetPath{kind: nugetRegLeaf, id: p.id, version: p.version}
 
 	res, err := s.resolveNuGetDoc(ctx, repo, idx, leafPath)

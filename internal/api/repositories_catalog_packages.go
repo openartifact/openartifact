@@ -150,7 +150,11 @@ func (h *RepositoriesHandler) readableRepository(w http.ResponseWriter, r *http.
 }
 
 // packageVersions is the listing of one row per file with the scan state of each.
-func (h *RepositoriesHandler) packageVersions(ctx context.Context, repo *models.Repository, params packageListParams) (*responses.PackageListResponse, error) {
+func (h *RepositoriesHandler) packageVersions(
+	ctx context.Context,
+	repo *models.Repository,
+	params packageListParams,
+) (*responses.PackageListResponse, error) {
 	components, total, err := h.listComponents(ctx, repo.ID, database.ComponentListOptions{
 		Format:     params.format,
 		Name:       params.name,
@@ -199,7 +203,11 @@ func (h *RepositoriesHandler) packageVersions(ctx context.Context, repo *models.
 
 // packageGroups is the listing of one row per package, with the scan state of
 // the package's latest version.
-func (h *RepositoriesHandler) packageGroups(ctx context.Context, repo *models.Repository, params packageListParams) (*responses.PackageGroupListResponse, error) {
+func (h *RepositoriesHandler) packageGroups(
+	ctx context.Context,
+	repo *models.Repository,
+	params packageListParams,
+) (*responses.PackageGroupListResponse, error) {
 	rollup, total, err := h.db.ListRepoPackageRollup(ctx, models.PackageRollupOptions{
 		RepoID:     repo.ID,
 		RepoFormat: repo.Format,
@@ -335,7 +343,11 @@ func (h *RepositoriesHandler) handleRecentPackages(w http.ResponseWriter, r *htt
 
 // writableRepositories keeps the repositories the principal may write to. The
 // server records no publisher, so this is what "my packages" means.
-func (h *RepositoriesHandler) writableRepositories(ctx context.Context, p *auth.Principal, repos []*models.Repository) ([]*models.Repository, error) {
+func (h *RepositoriesHandler) writableRepositories(
+	ctx context.Context,
+	p *auth.Principal,
+	repos []*models.Repository,
+) ([]*models.Repository, error) {
 	if p == nil || p.IsAnonymous {
 		return nil, nil
 	}

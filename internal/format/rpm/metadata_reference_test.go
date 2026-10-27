@@ -127,7 +127,9 @@ func refGeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, erro
 			URL:         pkg.URL,
 			Time:        refPrimaryTimeXML{File: pkg.BuildTime, Build: pkg.BuildTime},
 			Size:        refPrimarySizeXML{Package: pkg.PackageSize, Installed: pkg.InstalledSize, Archive: pkg.ArchiveSize},
-			Location:    locationXML{Href: "Packages/" + url.PathEscape(fmt.Sprintf("%s-%s-%s.%s.rpm", pkg.Name, pkg.Version, pkg.Release, pkg.Arch))},
+			Location: locationXML{
+				Href: "Packages/" + url.PathEscape(fmt.Sprintf("%s-%s-%s.%s.rpm", pkg.Name, pkg.Version, pkg.Release, pkg.Arch)),
+			},
 			Format: refPrimaryFormatXML{
 				Xmlns:       "http://linux.duke.edu/metadata/rpm",
 				License:     pkg.License,

@@ -59,7 +59,13 @@ func TestTrashEmpty_PurgesItemsFreesUnsharedBlobsAndQuota(t *testing.T) {
 	target := strings.Replace(temRepoTrash, "%s", repoA, 1)
 
 	// Deleting is not enough: emptying needs `manage`.
-	tpoExpectError(t, tpoSend(t, env, tpoWriter, http.MethodDelete, target, nil), http.StatusForbidden, "forbidden", "empty trash as writer")
+	tpoExpectError(
+		t,
+		tpoSend(t, env, tpoWriter, http.MethodDelete, target, nil),
+		http.StatusForbidden,
+		"forbidden",
+		"empty trash as writer",
+	)
 	tpoExpectError(t, tpoSend(t, env, "", http.MethodDelete, target, nil), http.StatusForbidden, "forbidden", "empty trash as anonymous")
 
 	if got := tpoRepoTrash(t, env, repoA).Total; got != 3 {
@@ -145,6 +151,11 @@ func TestTrashEmpty_QuotaErrorHintsAtTrash(t *testing.T) {
 	}
 
 	// Emptying the trash makes room again.
-	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, strings.Replace(temRepoTrash, "%s", repo, 1), nil), http.StatusOK, "empty trash")
+	tpoExpect(
+		t,
+		tpoSend(t, env, tpoAdmin, http.MethodDelete, strings.Replace(temRepoTrash, "%s", repo, 1), nil),
+		http.StatusOK,
+		"empty trash",
+	)
 	tpoPut(t, env, tpoMavenURL(repo, secondPath), second, http.StatusCreated)
 }

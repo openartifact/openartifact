@@ -330,7 +330,10 @@ func (j *groupJob) buildDebDist(ctx context.Context, dist string, hosted map[str
 		for ext, data := range map[string][]byte{".gz": idx.gz, ".xz": idx.xz} {
 			j.blobs["dists/"+dist+"/"+idx.base+ext] = data
 			md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(data)
-			files = append(files, formatdeb.FileInfo{Filename: idx.base + ext, Size: int64(len(data)), MD5sum: md5sum, SHA1: sha1sum, SHA256: sha256sum})
+			files = append(
+				files,
+				formatdeb.FileInfo{Filename: idx.base + ext, Size: int64(len(data)), MD5sum: md5sum, SHA1: sha1sum, SHA256: sha256sum},
+			)
 		}
 	}
 
@@ -578,7 +581,12 @@ type debFetchError struct {
 // order, because which member owns a file name and which duplicate is dropped
 // must not depend on scheduling. The compression of the merged indexes runs
 // concurrently again.
-func (j *groupJob) buildDebIndexes(ctx context.Context, dist string, comps, archs []string, contribs []debContribution) ([]*debIndex, error) {
+func (j *groupJob) buildDebIndexes(
+	ctx context.Context,
+	dist string,
+	comps, archs []string,
+	contribs []debContribution,
+) ([]*debIndex, error) {
 	indexes := make([]*debIndex, 0, len(comps)*len(archs))
 	for _, comp := range comps {
 		for _, arch := range archs {

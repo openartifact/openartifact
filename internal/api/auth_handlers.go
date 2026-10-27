@@ -264,7 +264,12 @@ type AuthHandler struct {
 	proxyWarnOnce sync.Once
 }
 
-func NewAuthHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, trustedProxies *middleware.TrustedProxies) *AuthHandler {
+func NewAuthHandler(
+	db database.Database,
+	log *logger.Logger,
+	evaluator *auth.Evaluator,
+	trustedProxies *middleware.TrustedProxies,
+) *AuthHandler {
 	return &AuthHandler{
 		db:                db,
 		log:               log,

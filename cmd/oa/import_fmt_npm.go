@@ -470,7 +470,14 @@ func npmPrepare(sp *spooled, assetPath string) (npmPrepared, error) {
 	}
 
 	if name != pathName || version != pathVersion {
-		return npmPrepared{}, fmt.Errorf("%w: package.json declares %s@%s, the path says %s@%s", errNPMIdentity, name, version, pathName, pathVersion)
+		return npmPrepared{}, fmt.Errorf(
+			"%w: package.json declares %s@%s, the path says %s@%s",
+			errNPMIdentity,
+			name,
+			version,
+			pathName,
+			pathVersion,
+		)
 	}
 
 	// dist belongs to the registry that serves the version; a stray one in
@@ -511,7 +518,12 @@ func npmUpload(ctx context.Context, t *importTarget, r uploadRequest) (uploadRes
 	}
 
 	if doc.length() > npmMaxPublishBody {
-		return uploadResult{}, fmt.Errorf("%w: %d bytes (the limit is a %d byte publish request, base64 encoded)", errNPMTooLarge, sp.Size, npmMaxPublishBody)
+		return uploadResult{}, fmt.Errorf(
+			"%w: %d bytes (the limit is a %d byte publish request, base64 encoded)",
+			errNPMTooLarge,
+			sp.Size,
+			npmMaxPublishBody,
+		)
 	}
 
 	body := doc.open()
@@ -568,5 +580,8 @@ func npmExisting(ctx context.Context, t *importTarget, dst string, pkg npmPrepar
 func npmRemove(ctx context.Context, t *importTarget, dst string, a sourceAsset, _ uploadResult) error {
 	name, version, _ := npmCoordinates(a.Path)
 
-	return t.deletePath(ctx, "/repos/"+url.PathEscape(dst)+"/"+npmEscapedName(name)+"/-/"+url.PathEscape(npmTarballName(name, version))+"/-rev/1")
+	return t.deletePath(
+		ctx,
+		"/repos/"+url.PathEscape(dst)+"/"+npmEscapedName(name)+"/-/"+url.PathEscape(npmTarballName(name, version))+"/-rev/1",
+	)
 }

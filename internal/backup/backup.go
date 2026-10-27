@@ -114,7 +114,8 @@ func redactedStorageConfig(raw []byte) []byte {
 
 	for k := range m {
 		lk := strings.ToLower(k)
-		if strings.Contains(lk, "secret") || strings.Contains(lk, "key") || strings.Contains(lk, "password") || strings.Contains(lk, "token") {
+		if strings.Contains(lk, "secret") || strings.Contains(lk, "key") || strings.Contains(lk, "password") ||
+			strings.Contains(lk, "token") {
 			delete(m, k)
 		}
 	}
@@ -1647,12 +1648,26 @@ func (e *Engine) restoreGroupMembers(ctx context.Context, r io.Reader, st *resto
 		memberID, mok := st.repoIDMap[rec.MemberRepoID]
 
 		if !gok || !mok {
-			e.restoreWarn("skipping group member: repository not restored", "group_repo_id", rec.GroupRepoID, "member_repo_id", rec.MemberRepoID)
+			e.restoreWarn(
+				"skipping group member: repository not restored",
+				"group_repo_id",
+				rec.GroupRepoID,
+				"member_repo_id",
+				rec.MemberRepoID,
+			)
 			continue
 		}
 
 		if err := e.db.AddGroupMember(ctx, groupID, memberID, rec.Priority); err != nil {
-			e.restoreWarn("failed to restore group member", "group_repo_id", rec.GroupRepoID, "member_repo_id", rec.MemberRepoID, "error", err)
+			e.restoreWarn(
+				"failed to restore group member",
+				"group_repo_id",
+				rec.GroupRepoID,
+				"member_repo_id",
+				rec.MemberRepoID,
+				"error",
+				err,
+			)
 		}
 	}
 
@@ -1794,7 +1809,13 @@ func (e *Engine) restoreDebianArchitectures(ctx context.Context, r io.Reader, st
 	for _, arch := range archs {
 		newDistID, ok := st.distIDMap[arch.DistributionID]
 		if !ok {
-			e.restoreWarn("skipping debian architecture: source distribution not restored", "dist_id", arch.DistributionID, "name", arch.Name)
+			e.restoreWarn(
+				"skipping debian architecture: source distribution not restored",
+				"dist_id",
+				arch.DistributionID,
+				"name",
+				arch.Name,
+			)
 			continue
 		}
 
@@ -1828,7 +1849,13 @@ func (e *Engine) restoreDebPackages(ctx context.Context, r io.Reader, st *restor
 
 		newDistID, ok := st.distByRepoName[comp.RepositoryID+"|"+rec.Distribution]
 		if !ok {
-			e.restoreWarn("skipping deb package: source distribution not restored", "distribution", rec.Distribution, "filename", comp.Filename)
+			e.restoreWarn(
+				"skipping deb package: source distribution not restored",
+				"distribution",
+				rec.Distribution,
+				"filename",
+				comp.Filename,
+			)
 			continue
 		}
 

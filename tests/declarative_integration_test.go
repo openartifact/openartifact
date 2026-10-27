@@ -306,7 +306,14 @@ func (s *declServer) mintToken(t *testing.T) string {
 		Token string `json:"token"`
 	}
 
-	data = sess.do(t, http.MethodPost, "/api/v1/auth/tokens", map[string]string{"name": "decl-test", "kind": "access"}, http.StatusOK, http.StatusCreated)
+	data = sess.do(
+		t,
+		http.MethodPost,
+		"/api/v1/auth/tokens",
+		map[string]string{"name": "decl-test", "kind": "access"},
+		http.StatusOK,
+		http.StatusCreated,
+	)
 	_ = json.Unmarshal(data, &tok)
 
 	if tok.Token == "" {
@@ -473,7 +480,12 @@ func TestDeclarativeApplyEndToEnd(t *testing.T) {
 	})
 
 	t.Run("field change is shown then applied", func(t *testing.T) {
-		replaceInFile(t, filepath.Join(work, "repositories.yaml"), "description: Internal npm packages", "description: Internal npm packages (edited)")
+		replaceInFile(
+			t,
+			filepath.Join(work, "repositories.yaml"),
+			"description: Internal npm packages",
+			"description: Internal npm packages (edited)",
+		)
 
 		out := s.expect(t, 2, "description", "diff", "-f", work)
 		if !strings.Contains(out, `+   description: "Internal npm packages (edited)"`) {
@@ -502,7 +514,11 @@ func TestDeclarativeApplyEndToEnd(t *testing.T) {
 
 	t.Run("invalid manifest fails with file and line", func(t *testing.T) {
 		bad := filepath.Join(t.TempDir(), "bad.yaml")
-		if err := os.WriteFile(bad, []byte("apiVersion: openartifact.io/v1\nkind: Repository\nmetadata:\n  name: x\nspec:\n  format: nope\n"), 0o600); err != nil {
+		if err := os.WriteFile(
+			bad,
+			[]byte("apiVersion: openartifact.io/v1\nkind: Repository\nmetadata:\n  name: x\nspec:\n  format: nope\n"),
+			0o600,
+		); err != nil {
 			t.Fatal(err)
 		}
 
@@ -510,9 +526,19 @@ func TestDeclarativeApplyEndToEnd(t *testing.T) {
 	})
 
 	t.Run("immutable change is refused", func(t *testing.T) {
-		replaceInFile(t, filepath.Join(work, "repositories.yaml"), "name: platform-libs\n  project: platform\nspec:\n  format: maven", "name: platform-libs\n  project: platform\nspec:\n  format: npm")
+		replaceInFile(
+			t,
+			filepath.Join(work, "repositories.yaml"),
+			"name: platform-libs\n  project: platform\nspec:\n  format: maven",
+			"name: platform-libs\n  project: platform\nspec:\n  format: npm",
+		)
 		s.expect(t, 1, "immutable field(s) format", "apply", "-f", work)
-		replaceInFile(t, filepath.Join(work, "repositories.yaml"), "name: platform-libs\n  project: platform\nspec:\n  format: npm", "name: platform-libs\n  project: platform\nspec:\n  format: maven")
+		replaceInFile(
+			t,
+			filepath.Join(work, "repositories.yaml"),
+			"name: platform-libs\n  project: platform\nspec:\n  format: npm",
+			"name: platform-libs\n  project: platform\nspec:\n  format: maven",
+		)
 	})
 
 	t.Run("export round trips to no changes", func(t *testing.T) {

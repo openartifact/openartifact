@@ -60,5 +60,9 @@ func (s *ProjectSettings) SelfCreate(ctx context.Context) (bool, error) {
 
 // SetSelfCreate stores the setting; it overrides the config default from now on.
 func (s *ProjectSettings) SetSelfCreate(ctx context.Context, on bool) error {
-	return s.store.SetSystemSetting(ctx, SettingProjectsSelfCreate, strconv.FormatBool(on)) //nolint:wrapcheck // database error, logged by callers
+	return s.store.SetSystemSetting(
+		ctx,
+		SettingProjectsSelfCreate,
+		strconv.FormatBool(on),
+	) //nolint:wrapcheck // database error, logged by callers
 }

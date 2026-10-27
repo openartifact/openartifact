@@ -161,7 +161,13 @@ func TestRelayCompleteWaitsForInFlightPutAndRefusesNewOnes(t *testing.T) {
 
 	// Nothing can reach the published inode any more.
 	meta := relayMeta{Size: f.size, PartSize: f.partSize, PartCount: raceParts}
-	if _, status := f.relay.putPart(relayTestID, 1, meta, f.partSize, bytes.NewReader(bytes.Repeat([]byte{'X'}, int(f.partSize)))); status != http.StatusConflict {
+	if _, status := f.relay.putPart(
+		relayTestID,
+		1,
+		meta,
+		f.partSize,
+		bytes.NewReader(bytes.Repeat([]byte{'X'}, int(f.partSize))),
+	); status != http.StatusConflict {
 		t.Fatalf("PUT after complete status = %d, want 409", status)
 	}
 

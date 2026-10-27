@@ -163,7 +163,13 @@ func (s *Service) serveOCIReferrers(w http.ResponseWriter, r *http.Request, repo
 // the bounded in-memory document slots until the returned release is called (idempotent; release is
 // non-nil whenever ok). It writes the error response and returns ok=false when there is no usable
 // listing.
-func (s *Service) fetchList(w http.ResponseWriter, r *http.Request, repo *models.Repository, up ociUpstream, target string) (http.Header, []byte, func(), bool) {
+func (s *Service) fetchList(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	up ociUpstream,
+	target string,
+) (http.Header, []byte, func(), bool) {
 	resp, err := s.ociDo(r.Context(), repo, up, http.MethodGet, target, "application/json")
 	if err != nil {
 		s.writeListError(w, err)

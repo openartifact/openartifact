@@ -115,7 +115,12 @@ func TestNPMUnpublish_SingleVersion(t *testing.T) {
 	router := setupUploadRouter(db, bs)
 
 	// `npm unpublish lodash@1.0.0` ends with a DELETE of that version's tarball.
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/repos/myrepo/lodash/-/lodash-1.0.0.tgz/-rev/1-abc", nil)
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodDelete,
+		"/repos/myrepo/lodash/-/lodash-1.0.0.tgz/-rev/1-abc",
+		nil,
+	)
 	req.Header.Set("Authorization", "Bearer token")
 
 	w := httptest.NewRecorder()

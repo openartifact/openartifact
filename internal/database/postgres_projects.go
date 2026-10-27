@@ -150,9 +150,21 @@ func writeMemberRole(ctx context.Context, tx *sql.Tx, projectID, userID, current
 	case newRole == "":
 		_, err = tx.ExecContext(ctx, `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`, projectID, userID)
 	case current == "":
-		_, err = tx.ExecContext(ctx, `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, $3)`, projectID, userID, newRole)
+		_, err = tx.ExecContext(
+			ctx,
+			`INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, $3)`,
+			projectID,
+			userID,
+			newRole,
+		)
 	default:
-		_, err = tx.ExecContext(ctx, `UPDATE project_members SET role = $3 WHERE project_id = $1 AND user_id = $2`, projectID, userID, newRole)
+		_, err = tx.ExecContext(
+			ctx,
+			`UPDATE project_members SET role = $3 WHERE project_id = $1 AND user_id = $2`,
+			projectID,
+			userID,
+			newRole,
+		)
 	}
 
 	if err != nil {
@@ -165,7 +177,12 @@ func writeMemberRole(ctx context.Context, tx *sql.Tx, projectID, userID, current
 // ChangeProjectGroup attaches a group with newRole, changes its role, or
 // detaches it (newRole == ""), in one transaction that holds the project row
 // lock; the guard sees the group's current role ("" when not attached).
-func (p *PostgresDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error {
+func (p *PostgresDB) ChangeProjectGroup(
+	ctx context.Context,
+	projectID, groupID, newRole string,
+	createdBy *string,
+	guard ProjectRoleGuard,
+) error {
 	defer p.authCache.invalidate()
 
 	tx, err := p.db.BeginTx(ctx, nil)
@@ -230,9 +247,13 @@ func (p *PostgresDB) ListProjectRepositories(ctx context.Context, projectID stri
 		return nil, 0, fmt.Errorf("count project repositories: %w", err)
 	}
 
-	rows, err := p.db.QueryContext(ctx,
+	rows, err := p.db.QueryContext(
+		ctx,
 		`SELECT `+repoColumns+` FROM repositories WHERE project_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
-		projectID, limit, (page-1)*limit)
+		projectID,
+		limit,
+		(page-1)*limit,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list project repositories: %w", err)
 	}

@@ -163,7 +163,12 @@ func cacheCases() []cacheCase {
 				t.Helper()
 
 				digest := putBlob(t, bs, "jar-bytes")
-				db.mavenArtifacts["a1"] = &models.MavenArtifact{ID: "a1", RepositoryID: repoID, SHA256: digest, RepoPath: "com/example/app/1.0/app-1.0.jar"}
+				db.mavenArtifacts["a1"] = &models.MavenArtifact{
+					ID:           "a1",
+					RepositoryID: repoID,
+					SHA256:       digest,
+					RepoPath:     "com/example/app/1.0/app-1.0.jar",
+				}
 			},
 			register: func(t *testing.T, r chi.Router, db *cacheDB, bs storage.BlobStore) {
 				t.Helper()
@@ -244,7 +249,16 @@ func cacheCases() []cacheCase {
 			seed: func(t *testing.T, db *cacheDB, _ storage.BlobStore, repoID string) {
 				t.Helper()
 
-				db.charts = []*models.HelmChart{{ID: "h1", RepositoryID: repoID, Name: "web", Version: "1.0.0", Digest: strings.Repeat("b", 64), UpdatedAt: time.Unix(1700000000, 0)}}
+				db.charts = []*models.HelmChart{
+					{
+						ID:           "h1",
+						RepositoryID: repoID,
+						Name:         "web",
+						Version:      "1.0.0",
+						Digest:       strings.Repeat("b", 64),
+						UpdatedAt:    time.Unix(1700000000, 0),
+					},
+				}
 			},
 			register: func(t *testing.T, r chi.Router, db *cacheDB, bs storage.BlobStore) {
 				t.Helper()
@@ -273,7 +287,13 @@ func cacheCases() []cacheCase {
 		{
 			name: "npm packument", path: "/repos/r/demo", accept: "application/json",
 			seed: func(_ *testing.T, db *cacheDB, _ storage.BlobStore, repoID string) {
-				db.npmPackages["p1"] = &models.NPMPackage{ID: "p1", RepositoryID: repoID, Name: "demo", FullName: "demo", UpdatedAt: time.Unix(1700000000, 5)}
+				db.npmPackages["p1"] = &models.NPMPackage{
+					ID:           "p1",
+					RepositoryID: repoID,
+					Name:         "demo",
+					FullName:     "demo",
+					UpdatedAt:    time.Unix(1700000000, 5),
+				}
 			},
 			register: func(t *testing.T, r chi.Router, db *cacheDB, bs storage.BlobStore) {
 				t.Helper()
@@ -284,7 +304,13 @@ func cacheCases() []cacheCase {
 		{
 			name: "npm abbreviated packument", path: "/repos/r/demo", accept: "application/vnd.npm.install-v1+json",
 			seed: func(_ *testing.T, db *cacheDB, _ storage.BlobStore, repoID string) {
-				db.npmPackages["p1"] = &models.NPMPackage{ID: "p1", RepositoryID: repoID, Name: "demo", FullName: "demo", UpdatedAt: time.Unix(1700000000, 5)}
+				db.npmPackages["p1"] = &models.NPMPackage{
+					ID:           "p1",
+					RepositoryID: repoID,
+					Name:         "demo",
+					FullName:     "demo",
+					UpdatedAt:    time.Unix(1700000000, 5),
+				}
 			},
 			register: func(t *testing.T, r chi.Router, db *cacheDB, bs storage.BlobStore) {
 				t.Helper()

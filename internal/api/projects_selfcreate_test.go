@@ -31,7 +31,14 @@ func TestProjectsSelfCreate(t *testing.T) {
 		{"malformed stored value fails closed", "banana", true, nil, `{"name":"Mine"}`, http.StatusForbidden},
 		{"on: stored true", "true", false, nil, `{"name":"Mine"}`, http.StatusCreated},
 		{"on: env default", "", true, nil, `{"name":"Mine"}`, http.StatusCreated},
-		{"on: display name and description allowed", "true", false, nil, `{"name":"Mine","display_name":"Mine","description":"d"}`, http.StatusCreated},
+		{
+			"on: display name and description allowed",
+			"true",
+			false,
+			nil,
+			`{"name":"Mine","display_name":"Mine","description":"d"}`,
+			http.StatusCreated,
+		},
 		{"on: scoped token denied", "true", false, scoped, `{"name":"Mine"}`, http.StatusForbidden},
 		{"on: deploy token denied", "true", false, deploy, `{"name":"Mine"}`, http.StatusForbidden},
 		{"on: owner field 403", "true", false, nil, `{"name":"Mine","owner":"newbie"}`, http.StatusForbidden},
@@ -108,7 +115,15 @@ func TestProjectsSelfCreateOwnerAndDefaults(t *testing.T) {
 	}
 
 	// The new owner can use the project right away.
-	if code, body := projectJSON(t, router, uPlain1, http.MethodGet, "/api/v1/projects/Mine_Proj", ""); code != http.StatusOK || body["my_role"] != "owner" {
+	if code, body := projectJSON(
+		t,
+		router,
+		uPlain1,
+		http.MethodGet,
+		"/api/v1/projects/Mine_Proj",
+		"",
+	); code != http.StatusOK ||
+		body["my_role"] != "owner" {
 		t.Errorf("GET new project = %d %v, want 200 owner", code, body)
 	}
 }
@@ -275,7 +290,14 @@ func TestProjectsAdminSettingsPut(t *testing.T) {
 		db := newProjectsMock()
 		router := newProjectsRouter(t, db)
 
-		if code, _ := projectJSON(t, router, uPlain1, http.MethodPost, "/api/v1/projects", `{"name":"Mine"}`); code != http.StatusForbidden {
+		if code, _ := projectJSON(
+			t,
+			router,
+			uPlain1,
+			http.MethodPost,
+			"/api/v1/projects",
+			`{"name":"Mine"}`,
+		); code != http.StatusForbidden {
 			t.Fatalf("create before = %d, want 403", code)
 		}
 
@@ -288,7 +310,14 @@ func TestProjectsAdminSettingsPut(t *testing.T) {
 			t.Errorf("stored value = %q, want true", got)
 		}
 
-		if code, body := projectJSON(t, router, uPlain1, http.MethodPost, "/api/v1/projects", `{"name":"Mine"}`); code != http.StatusCreated {
+		if code, body := projectJSON(
+			t,
+			router,
+			uPlain1,
+			http.MethodPost,
+			"/api/v1/projects",
+			`{"name":"Mine"}`,
+		); code != http.StatusCreated {
 			t.Fatalf("create after = %d %v, want 201", code, body)
 		}
 
@@ -300,7 +329,14 @@ func TestProjectsAdminSettingsPut(t *testing.T) {
 			t.Errorf("stored value = %q, want false", got)
 		}
 
-		if code, _ := projectJSON(t, router, uPlain1, http.MethodPost, "/api/v1/projects", `{"name":"Other"}`); code != http.StatusForbidden {
+		if code, _ := projectJSON(
+			t,
+			router,
+			uPlain1,
+			http.MethodPost,
+			"/api/v1/projects",
+			`{"name":"Other"}`,
+		); code != http.StatusForbidden {
 			t.Errorf("create after off = %d, want 403", code)
 		}
 	})

@@ -24,7 +24,14 @@ type destCollisions struct {
 // replace settles the differing rows of a forced promotion: without
 // req.Force they are a conflict, with it they are moved to the trash and
 // reported as replaced in res. kind is the trash kind of the table.
-func (c *destCollisions) replace(ctx context.Context, tx Tx, req Request, kind models.TrashKind, format, name, version string, res *Result) error {
+func (c *destCollisions) replace(
+	ctx context.Context,
+	tx Tx,
+	req Request,
+	kind models.TrashKind,
+	format, name, version string,
+	res *Result,
+) error {
 	if len(c.differing) == 0 {
 		return nil
 	}

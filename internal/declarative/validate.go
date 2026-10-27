@@ -199,7 +199,13 @@ func (d *docLoader) metadata(root *yaml.Node, vals map[string]*yaml.Node, kind K
 
 	for k, kn := range mk {
 		if !allowed[k] {
-			d.errorf(kn, "metadata."+k, "unknown metadata field for kind %s (allowed: %s)", kind.Name(), strings.Join(sortedKeys(allowed), ", "))
+			d.errorf(
+				kn,
+				"metadata."+k,
+				"unknown metadata field for kind %s (allowed: %s)",
+				kind.Name(),
+				strings.Join(sortedKeys(allowed), ", "),
+			)
 		}
 	}
 

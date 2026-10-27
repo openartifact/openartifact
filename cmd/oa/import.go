@@ -113,7 +113,11 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 		sourceURL = fs.String("source-url", getenv(envSourceURL), "base URL of the source system")
 		user      = fs.String("source-user", getenv(envSourceUser), "source user name (or "+envSourceUser+")")
 		tokenFile = fs.String("source-token-file", "", "file holding the source token/password, '-' for stdin (or "+envSourceToken+")")
-		props     = fs.String("properties", defaultPropertyPatterns, "properties to copy: comma-separated keys or prefix* patterns, 'none' to disable")
+		props     = fs.String(
+			"properties",
+			defaultPropertyPatterns,
+			"properties to copy: comma-separated keys or prefix* patterns, 'none' to disable",
+		)
 	)
 
 	fs.Var(&repos, "repo", "repository to import as SRC or SRC:DST (repeatable)")
@@ -126,8 +130,18 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 	fs.StringVar(&cfg.Listing, "artifactory-listing", listingAQL, "Artifactory listing mode: aql or storage")
 	fs.StringVar(&cfg.PathPrefix, "path-prefix", "", "only import assets whose repository path starts with this prefix (e.g. com/acme/)")
 	fs.BoolVar(&cfg.Quiet, "quiet", false, "only print the summary")
-	fs.IntVar(&cfg.Retries, "retries", defaultImportRetries, "retries after a transient failure of a source request or an upload (0 disables)")
-	fs.DurationVar(&cfg.RetryMaxWait, "retry-max-wait", defaultImportRetryMaxWait, "longest wait between retries; a Retry-After above it is not waited out")
+	fs.IntVar(
+		&cfg.Retries,
+		"retries",
+		defaultImportRetries,
+		"retries after a transient failure of a source request or an upload (0 disables)",
+	)
+	fs.DurationVar(
+		&cfg.RetryMaxWait,
+		"retry-max-wait",
+		defaultImportRetryMaxWait,
+		"longest wait between retries; a Retry-After above it is not waited out",
+	)
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return importConfig{}, err

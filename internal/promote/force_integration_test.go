@@ -71,7 +71,13 @@ func TestForcePromotesOverDifferentContent(t *testing.T) {
 
 			// A recipe's files that hold the same content in both repositories stay Existing.
 			if len(res.Copied) == 0 || len(res.Copied)+len(res.Existing) != fx.wantCopies() {
-				t.Fatalf("copied %d existing %d, want %d in all and some copied: %+v", len(res.Copied), len(res.Existing), fx.wantCopies(), res)
+				t.Fatalf(
+					"copied %d existing %d, want %d in all and some copied: %+v",
+					len(res.Copied),
+					len(res.Existing),
+					fx.wantCopies(),
+					res,
+				)
 			}
 
 			if res.Usage.Artifacts == 0 {
@@ -123,7 +129,10 @@ func assertForced(t *testing.T, h *harness, fx fixture, dstID, blobA, blobB stri
 	}
 
 	for _, table := range fx.tables {
-		if n := h.count(`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'admin'`, dstID); n == 0 {
+		if n := h.count(
+			`SELECT COUNT(*) FROM `+table+` WHERE repository_id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'admin'`,
+			dstID,
+		); n == 0 {
 			t.Errorf("%s: no row was trashed by the actor", table)
 		}
 	}

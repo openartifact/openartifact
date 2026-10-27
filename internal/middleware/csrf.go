@@ -90,13 +90,16 @@ func csrfHandler(next http.Handler, httpsBase bool) http.Handler {
 		default:
 			if cookie, err := r.Cookie(CSRFTokenCookieName); err != nil || cookie.Value == "" {
 				if token, err := NewCSRFToken(); err == nil {
-					http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
-						Name:     CSRFTokenCookieName,
-						Value:    token,
-						Path:     "/",
-						Secure:   httpsBase || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-						SameSite: http.SameSiteLaxMode,
-					})
+					http.SetCookie(
+						w,
+						&http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
+							Name:     CSRFTokenCookieName,
+							Value:    token,
+							Path:     "/",
+							Secure:   httpsBase || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+							SameSite: http.SameSiteLaxMode,
+						},
+					)
 				}
 			}
 

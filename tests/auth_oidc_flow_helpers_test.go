@@ -138,7 +138,13 @@ func flowRouter(t *testing.T, db *oidcFlowDB) (chi.Router, *observer.ObservedLog
 }
 
 // seedFlowProvider stores an enabled auto-provisioning oidc provider.
-func seedFlowProvider(t *testing.T, db *oidcFlowDB, slug string, cfg models.OIDCConfig, groupMapping map[string]string) *models.SSOProvider {
+func seedFlowProvider(
+	t *testing.T,
+	db *oidcFlowDB,
+	slug string,
+	cfg models.OIDCConfig,
+	groupMapping map[string]string,
+) *models.SSOProvider {
 	t.Helper()
 
 	if cfg.ClientID == "" {

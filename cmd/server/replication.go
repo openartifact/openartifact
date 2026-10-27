@@ -19,7 +19,13 @@ import (
 // newReplication builds the blob replication service when storage.replica is
 // configured (docs/operations/replication.md): it wraps the tiered primary
 // store. It returns nil, nil when no replica is configured.
-func newReplication(cfg *config.Config, db *database.PostgresDB, primary storage.BlobStore, reg *metrics.Registry, log *logger.Logger) (*replication.Service, error) {
+func newReplication(
+	cfg *config.Config,
+	db *database.PostgresDB,
+	primary storage.BlobStore,
+	reg *metrics.Registry,
+	log *logger.Logger,
+) (*replication.Service, error) {
 	rc := cfg.StorageReplica
 	if !rc.Enabled() {
 		return nil, nil //nolint:nilnil // replication is optional

@@ -90,7 +90,12 @@ func TestEntraTenancyVerify(t *testing.T) {
 		claims map[string]any
 		deny   bool
 	}{
-		{"allowed tenant, case-insensitive", "https://login.microsoftonline.com/" + tenantA + "/v2.0", map[string]any{"tid": tenantA}, false},
+		{
+			"allowed tenant, case-insensitive",
+			"https://login.microsoftonline.com/" + tenantA + "/v2.0",
+			map[string]any{"tid": tenantA},
+			false,
+		},
 		{"tid not allowed", "https://login.microsoftonline.com/" + tenantB + "/v2.0", map[string]any{"tid": tenantB}, true},
 		{"iss tenant differs from tid", "https://login.microsoftonline.com/" + tenantB + "/v2.0", map[string]any{"tid": tenantA}, true},
 		{"missing tid", "https://login.microsoftonline.com/" + tenantA + "/v2.0", map[string]any{}, true},
@@ -111,7 +116,13 @@ func TestEntraTenancyVerify(t *testing.T) {
 
 	t.Run("empty allow-list denies everyone", func(t *testing.T) {
 		none := &entraTenancy{issuerTemplate: tmpl}
-		if err := none.verify("https://login.microsoftonline.com/"+tenantA+"/v2.0", map[string]any{"tid": tenantA}); !errors.Is(err, ErrSSOLoginDenied) {
+		if err := none.verify(
+			"https://login.microsoftonline.com/"+tenantA+"/v2.0",
+			map[string]any{"tid": tenantA},
+		); !errors.Is(
+			err,
+			ErrSSOLoginDenied,
+		) {
 			t.Errorf("verify() = %v, want ErrSSOLoginDenied", err)
 		}
 	})
@@ -245,13 +256,38 @@ func TestGoogleLoginPolicy(t *testing.T) {
 		deny   bool
 	}{
 		{"verified email", models.OIDCConfig{}, map[string]any{"email": "a@example.com", "email_verified": true}, false},
-		{"email_verified false is always rejected for Google", models.OIDCConfig{}, map[string]any{"email": "a@example.com", "email_verified": false}, true},
+		{
+			"email_verified false is always rejected for Google",
+			models.OIDCConfig{},
+			map[string]any{"email": "a@example.com", "email_verified": false},
+			true,
+		},
 		{"email_verified absent is rejected for Google", models.OIDCConfig{}, map[string]any{"email": "a@example.com"}, true},
 		{"email_verified \"false\" (string) is rejected", models.OIDCConfig{}, map[string]any{"email_verified": "false"}, true},
-		{"email_verified \"true\" (string, Cognito style) is accepted", models.OIDCConfig{}, map[string]any{"email_verified": "true"}, false},
-		{"hosted domain matches", models.OIDCConfig{HostedDomain: "Example.com"}, map[string]any{"email_verified": true, "hd": "EXAMPLE.com"}, false},
-		{"hosted domain mismatch", models.OIDCConfig{HostedDomain: "example.com"}, map[string]any{"email_verified": true, "hd": "other.example"}, true},
-		{"hosted domain claim missing (consumer account)", models.OIDCConfig{HostedDomain: "example.com"}, map[string]any{"email_verified": true}, true},
+		{
+			"email_verified \"true\" (string, Cognito style) is accepted",
+			models.OIDCConfig{},
+			map[string]any{"email_verified": "true"},
+			false,
+		},
+		{
+			"hosted domain matches",
+			models.OIDCConfig{HostedDomain: "Example.com"},
+			map[string]any{"email_verified": true, "hd": "EXAMPLE.com"},
+			false,
+		},
+		{
+			"hosted domain mismatch",
+			models.OIDCConfig{HostedDomain: "example.com"},
+			map[string]any{"email_verified": true, "hd": "other.example"},
+			true,
+		},
+		{
+			"hosted domain claim missing (consumer account)",
+			models.OIDCConfig{HostedDomain: "example.com"},
+			map[string]any{"email_verified": true},
+			true,
+		},
 	}
 
 	for i, tc := range tests {
@@ -294,11 +330,41 @@ func TestEntraMultiTenantLoginOnMicrosoftHost(t *testing.T) {
 		wantErr error
 		wantID  string
 	}{
-		{"allowed tenant", map[string]any{"tid": tenantA, "iss": "https://login.microsoftonline.com/" + tenantA + "/v2.0"}, []string{tenantA}, nil, tenantA + ":subject"},
-		{"tenant not allowed", map[string]any{"tid": tenantB, "iss": "https://login.microsoftonline.com/" + tenantB + "/v2.0"}, []string{tenantA}, ErrSSOLoginDenied, ""},
-		{"iss/tid mismatch", map[string]any{"tid": tenantA, "iss": "https://login.microsoftonline.com/" + tenantB + "/v2.0"}, []string{tenantA, tenantB}, ErrSSOLoginDenied, ""},
-		{"missing tid", map[string]any{"iss": "https://login.microsoftonline.com/" + tenantA + "/v2.0"}, []string{tenantA}, ErrSSOLoginDenied, ""},
-		{"no allowed_tenants configured", map[string]any{"tid": tenantA, "iss": "https://login.microsoftonline.com/" + tenantA + "/v2.0"}, nil, ErrOIDCConfigInvalid, ""},
+		{
+			"allowed tenant",
+			map[string]any{"tid": tenantA, "iss": "https://login.microsoftonline.com/" + tenantA + "/v2.0"},
+			[]string{tenantA},
+			nil,
+			tenantA + ":subject",
+		},
+		{
+			"tenant not allowed",
+			map[string]any{"tid": tenantB, "iss": "https://login.microsoftonline.com/" + tenantB + "/v2.0"},
+			[]string{tenantA},
+			ErrSSOLoginDenied,
+			"",
+		},
+		{
+			"iss/tid mismatch",
+			map[string]any{"tid": tenantA, "iss": "https://login.microsoftonline.com/" + tenantB + "/v2.0"},
+			[]string{tenantA, tenantB},
+			ErrSSOLoginDenied,
+			"",
+		},
+		{
+			"missing tid",
+			map[string]any{"iss": "https://login.microsoftonline.com/" + tenantA + "/v2.0"},
+			[]string{tenantA},
+			ErrSSOLoginDenied,
+			"",
+		},
+		{
+			"no allowed_tenants configured",
+			map[string]any{"tid": tenantA, "iss": "https://login.microsoftonline.com/" + tenantA + "/v2.0"},
+			nil,
+			ErrOIDCConfigInvalid,
+			"",
+		},
 	}
 
 	for i, tc := range tests {
@@ -376,7 +442,8 @@ func TestGraphMemberObjects(t *testing.T) {
 			token: "tok",
 			handler: func(self string, page int, w http.ResponseWriter) {
 				if page == 1 {
-					_ = json.NewEncoder(w).Encode(map[string]any{"value": []string{"a"}, "@odata.nextLink": self + "/v1.0/me/getMemberObjects?p=2"})
+					_ = json.NewEncoder(w).
+						Encode(map[string]any{"value": []string{"a"}, "@odata.nextLink": self + "/v1.0/me/getMemberObjects?p=2"})
 					return
 				}
 

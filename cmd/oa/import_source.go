@@ -54,7 +54,9 @@ var (
 	errHTTP               = errors.New("unexpected response")
 	errSourceRepoNotFound = errors.New("source repository not found")
 	errSourceNotHosted    = errors.New("only hosted (local) repositories can be imported")
-	errSourceFormat       = errors.New("unsupported source repository format (see docs/migration/nexus-artifactory.md for the supported formats)")
+	errSourceFormat       = errors.New(
+		"unsupported source repository format (see docs/migration/nexus-artifactory.md for the supported formats)",
+	)
 )
 
 // sourceRepo describes a repository on the source system.
@@ -516,7 +518,11 @@ func aqlQuery(repo string, offset int, sorted bool) string {
 
 	return fmt.Sprintf(
 		`items.find({"repo":%s,"type":"file"}).include("repo","path","name","size","created","modified","sha256","actual_sha1","property.*")%s.offset(%d).limit(%d)`,
-		strconv.Quote(repo), order, offset, aqlPageSize)
+		strconv.Quote(repo),
+		order,
+		offset,
+		aqlPageSize,
+	)
 }
 
 // errAQLUnsorted is Artifactory OSS refusing the sort clause.

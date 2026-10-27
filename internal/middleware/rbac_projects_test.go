@@ -80,7 +80,9 @@ func projectStatus(t *testing.T, caller projectCaller, selfCreate, method, path 
 	}
 
 	if caller.admin {
-		targets = []*models.PermissionTarget{{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}}}
+		targets = []*models.PermissionTarget{
+			{ID: "t-admin", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage", "read", "write", "delete"}},
+		}
 	}
 
 	db := &projectRBACDB{
@@ -195,7 +197,11 @@ func TestRBACProjectRouteMatrix(t *testing.T) {
 		{"owner", projectCaller{role: models.ProjectRoleOwner}, func(e expect) int { return e.owner }},
 		{"admin", projectCaller{admin: true}, func(e expect) int { return e.admin }},
 		{"admin access token", projectCaller{admin: true, kind: auth.TokenKindAccess}, func(e expect) int { return e.admin }},
-		{"owner access token", projectCaller{role: models.ProjectRoleOwner, kind: auth.TokenKindAccess}, func(e expect) int { return e.owner }},
+		{
+			"owner access token",
+			projectCaller{role: models.ProjectRoleOwner, kind: auth.TokenKindAccess},
+			func(e expect) int { return e.owner },
+		},
 	}
 
 	for _, c := range callers {
@@ -314,7 +320,14 @@ func TestRBACProjectSettingsLookupFailure(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: value})
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	handler := RBACMiddleware(RBACConfig{ProjectSettings: auth.NewProjectSettings(db, true)}, db, auth.NewEvaluator(db, log, false), log)(next)
+	handler := RBACMiddleware(
+		RBACConfig{ProjectSettings: auth.NewProjectSettings(db, true)},
+		db,
+		auth.NewEvaluator(db, log, false),
+		log,
+	)(
+		next,
+	)
 
 	rw := httptest.NewRecorder()
 	handler.ServeHTTP(rw, req)
@@ -380,7 +393,12 @@ func TestRBACBundleAndPropertyRoutes(t *testing.T) {
 		{deploy, http.MethodPost, "/api/v1/bundles/shop/1/seal", http.StatusOK},
 		{deploy, http.MethodGet, "/api/v1/bundles", http.StatusForbidden},
 		{projectCaller{kind: auth.TokenKindAccess, admin: true}, http.MethodGet, "/api/v1/bundles", http.StatusOK},
-		{projectCaller{kind: auth.TokenKindAccess, admin: true}, http.MethodPatch, "/api/v1/repositories/app/artifacts/a1/properties", http.StatusOK},
+		{
+			projectCaller{kind: auth.TokenKindAccess, admin: true},
+			http.MethodPatch,
+			"/api/v1/repositories/app/artifacts/a1/properties",
+			http.StatusOK,
+		},
 	}
 
 	for _, tc := range tests {

@@ -343,7 +343,8 @@ func TestSpecsSeparatePrereleases(t *testing.T) {
 	}
 
 	specs := fetch("specs.4.8.gz")
-	if !bytes.Contains(specs, []byte("1.0.0")) || !bytes.Contains(specs, []byte("0.9.0")) || bytes.Contains(specs, []byte("beta1")) || bytes.Contains(specs, []byte("gone")) {
+	if !bytes.Contains(specs, []byte("1.0.0")) || !bytes.Contains(specs, []byte("0.9.0")) || bytes.Contains(specs, []byte("beta1")) ||
+		bytes.Contains(specs, []byte("gone")) {
 		t.Errorf("specs.4.8 must list released, non-yanked versions only: %q", specs)
 	}
 
@@ -368,7 +369,13 @@ func TestIsPrerelease(t *testing.T) {
 	}
 }
 
-func pushWithLicenses(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, licenses []string) *httptest.ResponseRecorder {
+func pushWithLicenses(
+	t *testing.T,
+	db database.Database,
+	bs *formattest.BlobStore,
+	pub *formattest.Publisher,
+	licenses []string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -389,7 +396,13 @@ func assertGemStored(t *testing.T, c policytest.Case, status int, db *gemsDB, bs
 
 	if c.Stopped() {
 		if len(db.gems) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.used != 0 {
-			t.Fatalf("rejected upload stored something: gems=%d blobs=%d events=%d used=%d", len(db.gems), len(bs.Blobs), len(pub.Events()), db.used)
+			t.Fatalf(
+				"rejected upload stored something: gems=%d blobs=%d events=%d used=%d",
+				len(db.gems),
+				len(bs.Blobs),
+				len(pub.Events()),
+				db.used,
+			)
 		}
 
 		return
@@ -553,8 +566,21 @@ func TestDownloadContentDispositionIsEscaped(t *testing.T) {
 func TestInfoAndSearchHideYankedAndInternalFields(t *testing.T) {
 	h, db, _, _ := newTestHandler(t)
 	db.gems = []*models.RubyGem{
-		{ID: "secret-id", RepositoryID: "secret-repo", Name: "demo", Version: "1.0.0", Platform: "ruby", Summary: "s", Authors: []string{"me"},
-			BlobKey: "secret-blob-key", MetadataJSON: []byte(`{"internal":1}`), Dependencies: []byte(`[]`), ChecksumSHA256: "abc", DownloadCount: 3, Size: 7},
+		{
+			ID:             "secret-id",
+			RepositoryID:   "secret-repo",
+			Name:           "demo",
+			Version:        "1.0.0",
+			Platform:       "ruby",
+			Summary:        "s",
+			Authors:        []string{"me"},
+			BlobKey:        "secret-blob-key",
+			MetadataJSON:   []byte(`{"internal":1}`),
+			Dependencies:   []byte(`[]`),
+			ChecksumSHA256: "abc",
+			DownloadCount:  3,
+			Size:           7,
+		},
 		{ID: "id-2", Name: "demo", Version: "0.9.0", Platform: "ruby", Yanked: true, BlobKey: "yanked-blob"},
 	}
 

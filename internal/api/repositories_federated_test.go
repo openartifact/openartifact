@@ -137,7 +137,11 @@ func TestCreateRepositoryFederatedRefused(t *testing.T) {
 		feature bool
 		body    string
 	}{
-		{"proxy repository", true, `{"name":"x","format":"raw","repo_type":"proxy","upstream_url":"https://93.184.216.34","federated":true}`},
+		{
+			"proxy repository",
+			true,
+			`{"name":"x","format":"raw","repo_type":"proxy","upstream_url":"https://93.184.216.34","federated":true}`,
+		},
 		{"group repository", true, `{"name":"x","format":"raw","repo_type":"group","member_repos":[],"federated":true}`},
 		{"unsupported format deb", true, `{"name":"x","format":"deb","federated":true}`},
 		{"unsupported format rpm", true, `{"name":"x","format":"rpm","federated":true}`},

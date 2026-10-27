@@ -362,7 +362,14 @@ func fedcCheckExport(t *testing.T, tc *tableCodec, f fedcFormat, c *Content, sha
 	t.Helper()
 
 	if c.Kind != KindArtifact || c.ContentRef != shas[0] || len(c.Blobs) != len(shas) {
-		t.Fatalf("content = kind %q ref %q blobs %d, want artifact %q with %d blobs", c.Kind, c.ContentRef, len(c.Blobs), shas[0], len(shas))
+		t.Fatalf(
+			"content = kind %q ref %q blobs %d, want artifact %q with %d blobs",
+			c.Kind,
+			c.ContentRef,
+			len(c.Blobs),
+			shas[0],
+			len(shas),
+		)
 	}
 
 	for i, b := range c.Blobs {
@@ -553,7 +560,8 @@ func TestApplyUnitIsTheOnlyWriterOfTheLog(t *testing.T) {
 	ids := fedcEnsureBlobs(t, dst, content)
 
 	var origin string
-	if err := src.db.QueryRowContext(ctx, `SELECT origin::text FROM federation_units WHERE repo_id = $1 AND unit_key = $2`, src.repoID, f.key).Scan(&origin); err != nil {
+	if err := src.db.QueryRowContext(ctx, `SELECT origin::text FROM federation_units WHERE repo_id = $1 AND unit_key = $2`, src.repoID, f.key).
+		Scan(&origin); err != nil {
 		t.Fatalf("origin: %v", err)
 	}
 
@@ -563,7 +571,9 @@ func TestApplyUnitIsTheOnlyWriterOfTheLog(t *testing.T) {
 		}
 
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM federation_units WHERE repo_id = $1`, dst.repoID).Scan(&n); err != nil || n != 0 {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM federation_units WHERE repo_id = $1`, dst.repoID).
+			Scan(&n); err != nil ||
+			n != 0 {
 			t.Fatalf("log rows after Import = %d, %v, want 0", n, err)
 		}
 
@@ -583,12 +593,18 @@ func TestApplyUnitIsTheOnlyWriterOfTheLog(t *testing.T) {
 
 	// Without the guard a local write is captured, proving the guard is what
 	// kept the import out of the log.
-	if _, err := dst.db.ExecContext(ctx, `UPDATE raw_artifacts SET content_type = 'text/html' WHERE repository_id = $1`, dst.repoID); err != nil {
+	if _, err := dst.db.ExecContext(
+		ctx,
+		`UPDATE raw_artifacts SET content_type = 'text/html' WHERE repository_id = $1`,
+		dst.repoID,
+	); err != nil {
 		t.Fatalf("local update: %v", err)
 	}
 
 	var seq int64
-	if err := dst.db.QueryRowContext(ctx, `SELECT seq FROM federation_units WHERE repo_id = $1 AND unit_key = $2`, dst.repoID, f.key).Scan(&seq); err != nil || seq != 2 {
+	if err := dst.db.QueryRowContext(ctx, `SELECT seq FROM federation_units WHERE repo_id = $1 AND unit_key = $2`, dst.repoID, f.key).
+		Scan(&seq); err != nil ||
+		seq != 2 {
 		t.Fatalf("seq after local update = %d, %v, want 2", seq, err)
 	}
 }
@@ -698,7 +714,11 @@ func fedcCheckColumnDrift(ctx context.Context, t *testing.T, db *sql.DB, table s
 	known := slices.Concat(golden.replicated, golden.local)
 	for _, col := range all {
 		if !slices.Contains(known, col) {
-			t.Errorf("table %s has a new column %q: decide whether it replicates (add it to fedcGolden replicated) or stays local (add it to tableSpec.exclude and fedcGolden local)", table, col)
+			t.Errorf(
+				"table %s has a new column %q: decide whether it replicates (add it to fedcGolden replicated) or stays local (add it to tableSpec.exclude and fedcGolden local)",
+				table,
+				col,
+			)
 		}
 	}
 
@@ -729,7 +749,13 @@ func fedcCheckColumnDrift(ctx context.Context, t *testing.T, db *sql.DB, table s
 	}
 
 	if !slices.Equal(fedcSorted(got), fedcSorted(want)) || !slices.Equal(fedcSorted(got), fedcSorted(golden.replicated)) {
-		t.Errorf("table %s: replicated columns = %v\n want (columns minus local) = %v\n golden = %v", table, fedcSorted(got), fedcSorted(want), fedcSorted(golden.replicated))
+		t.Errorf(
+			"table %s: replicated columns = %v\n want (columns minus local) = %v\n golden = %v",
+			table,
+			fedcSorted(got),
+			fedcSorted(want),
+			fedcSorted(golden.replicated),
+		)
 	}
 
 	for _, col := range tc.spec.blobCols {

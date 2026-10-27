@@ -143,7 +143,8 @@ func writeRPCError(w http.ResponseWriter, status, code int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	if encErr := json.NewEncoder(w).Encode(rpcErrorBody{JSONRPC: "2.0", Error: rpcErrorPayload{Code: code, Message: message}}); encErr != nil {
+	if encErr := json.NewEncoder(w).
+		Encode(rpcErrorBody{JSONRPC: "2.0", Error: rpcErrorPayload{Code: code, Message: message}}); encErr != nil {
 		_ = encErr // response header already written
 	}
 }

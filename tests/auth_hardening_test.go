@@ -223,10 +223,16 @@ func TestRBAC_BasicAuthWithTokenPassword(t *testing.T) {
 
 	var seen *auth.Principal
 
-	handler := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = middleware.PrincipalFromContext(r.Context())
-		w.WriteHeader(http.StatusOK)
-	}))
+	handler := newRBACMiddleware(
+		db,
+		middleware.RBACConfig{},
+		newMWLogger(t),
+	)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = middleware.PrincipalFromContext(r.Context())
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 
 	basic := func(user, pass string) func(*http.Request) {
 		return func(r *http.Request) {
@@ -239,7 +245,8 @@ func TestRBAC_BasicAuthWithTokenPassword(t *testing.T) {
 		t.Fatalf("Basic auth with a token password = %d, want 200", rw.Code)
 	}
 
-	if seen == nil || seen.Username != user.Username || seen.Credential != auth.CredentialBasicToken || seen.TokenKind != auth.TokenKindAccess {
+	if seen == nil || seen.Username != user.Username || seen.Credential != auth.CredentialBasicToken ||
+		seen.TokenKind != auth.TokenKindAccess {
 		t.Errorf("unexpected principal %+v", seen)
 	}
 

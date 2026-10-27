@@ -116,7 +116,8 @@ func TestSearchCargoCrateSummariesGroupsByCrate(t *testing.T) {
 		t.Errorf("alpha = %+v; want 13 summed downloads and the newest description", alpha)
 	}
 
-	if !slices.Equal(alpha.Versions, []string{"0.9.0", "0.10.0", "1.0.0-rc.1"}) || !slices.Equal(alpha.LiveVersions, []string{"0.9.0", "0.10.0"}) {
+	if !slices.Equal(alpha.Versions, []string{"0.9.0", "0.10.0", "1.0.0-rc.1"}) ||
+		!slices.Equal(alpha.LiveVersions, []string{"0.9.0", "0.10.0"}) {
 		t.Errorf("alpha versions = %v, live = %v; want all three and the two not yanked, oldest first", alpha.Versions, alpha.LiveVersions)
 	}
 

@@ -140,7 +140,11 @@ func TestOCIList_PrivateUpstreamIsRefused(t *testing.T) {
 
 // challenge answers every /v2/ request with a 401 carrying wwwAuth; the token
 // endpoint, when it exists, is counted in tokens.
-func challengeUpstream(t *testing.T, wwwAuth func(base string) string, tokenHandler http.HandlerFunc) (*ociFixture, *atomic.Int32, *atomic.Int32) {
+func challengeUpstream(
+	t *testing.T,
+	wwwAuth func(base string) string,
+	tokenHandler http.HandlerFunc,
+) (*ociFixture, *atomic.Int32, *atomic.Int32) {
 	t.Helper()
 
 	var tokens atomic.Int32
@@ -388,9 +392,15 @@ func TestOCIStore_UpstreamBodiesAreVerifiedBeforeCaching(t *testing.T) {
 		{"manifest with a matching sha512 header", "hub/img/manifests/t", "img/manifests/t", func(w http.ResponseWriter, _ *http.Request) {
 			manifest(w, alpineManifest, map[string]string{"Docker-Content-Digest": digest512(alpineManifest)})
 		}, http.StatusOK},
-		{"manifest with a mismatching sha512 header", "hub/img/manifests/t", "img/manifests/t", func(w http.ResponseWriter, _ *http.Request) {
-			manifest(w, alpineManifest, map[string]string{"Docker-Content-Digest": digest512("other")})
-		}, http.StatusBadGateway},
+		{
+			"manifest with a mismatching sha512 header",
+			"hub/img/manifests/t",
+			"img/manifests/t",
+			func(w http.ResponseWriter, _ *http.Request) {
+				manifest(w, alpineManifest, map[string]string{"Docker-Content-Digest": digest512("other")})
+			},
+			http.StatusBadGateway,
+		},
 		{"manifest that is not json", "hub/img/manifests/t", "img/manifests/t", func(w http.ResponseWriter, _ *http.Request) {
 			manifest(w, "<html>"+leakMarker+"</html>", nil)
 		}, http.StatusBadGateway},
@@ -413,16 +423,34 @@ func TestOCIStore_UpstreamBodiesAreVerifiedBeforeCaching(t *testing.T) {
 		{"manifest 400", "hub/img/manifests/t", "img/manifests/t", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, leakMarker, http.StatusBadRequest)
 		}, http.StatusBadGateway},
-		{"blob with a mismatching sha512 digest", "hub/img/blobs/" + digest512("wanted"), "img/blobs/" + digest512("wanted"), func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, "tampered")
-		}, http.StatusBadGateway},
-		{"blob with a matching sha512 digest", "hub/img/blobs/" + digest512("wanted"), "img/blobs/" + digest512("wanted"), func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, "wanted")
-		}, http.StatusOK},
-		{"truncated blob", "hub/img/blobs/" + digestOf("wanted"), "img/blobs/" + digestOf("wanted"), func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Length", "100")
-			_, _ = io.WriteString(w, "wanted")
-		}, http.StatusBadGateway},
+		{
+			"blob with a mismatching sha512 digest",
+			"hub/img/blobs/" + digest512("wanted"),
+			"img/blobs/" + digest512("wanted"),
+			func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, "tampered")
+			},
+			http.StatusBadGateway,
+		},
+		{
+			"blob with a matching sha512 digest",
+			"hub/img/blobs/" + digest512("wanted"),
+			"img/blobs/" + digest512("wanted"),
+			func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, "wanted")
+			},
+			http.StatusOK,
+		},
+		{
+			"truncated blob",
+			"hub/img/blobs/" + digestOf("wanted"),
+			"img/blobs/" + digestOf("wanted"),
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Length", "100")
+				_, _ = io.WriteString(w, "wanted")
+			},
+			http.StatusBadGateway,
+		},
 	}
 
 	for _, tt := range tests {

@@ -448,7 +448,11 @@ func TestConfigScanEnvErrors(t *testing.T) {
 		{"nothing set", "func applyEnvOverrides(cfg *Config) {}", "sets no config field"},
 		{"dynamic name", "func applyEnvOverrides(cfg *Config) { overrideString(&cfg.A, name) }", "not a constant string"},
 		{"dynamic lookup", "func applyEnvOverrides(cfg *Config) { if v, ok := os.LookupEnv(name); ok { cfg.A = v } }", "non-constant name"},
-		{"runaway recursion", "func applyEnvOverrides(cfg *Config) { overrideString(&cfg.A, \"X\"); applyEnvOverrides(cfg) }", "deeper than"},
+		{
+			"runaway recursion",
+			"func applyEnvOverrides(cfg *Config) { overrideString(&cfg.A, \"X\"); applyEnvOverrides(cfg) }",
+			"deeper than",
+		},
 	}
 
 	for _, tc := range tests {

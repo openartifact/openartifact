@@ -361,7 +361,12 @@ func TestAdminSSO_Test_OIDC_DiscoveryFails(t *testing.T) {
 		CreatedAt: now, UpdatedAt: now,
 	})
 
-	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/admin/sso-providers/badissuer/test", bytes.NewReader([]byte("{}")))
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		"POST",
+		"/api/v1/admin/sso-providers/badissuer/test",
+		bytes.NewReader([]byte("{}")),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	req = withAdminPrincipal(req, principal)
 	rw := httptest.NewRecorder()

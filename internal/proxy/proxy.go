@@ -237,7 +237,14 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 // serveResolved streams the cached file of res to the client after the
 // quarantine check. refetch resolves key again; it is used once when the cache
 // row outlived its blob.
-func (s *Service) serveResolved(w http.ResponseWriter, r *http.Request, repo *models.Repository, key string, res *resolution, refetch func() (*resolution, error)) {
+func (s *Service) serveResolved(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	key string,
+	res *resolution,
+	refetch func() (*resolution, error),
+) {
 	entry, fromCache := res.entry, res.fromCache
 
 	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
@@ -436,7 +443,11 @@ func (s *Service) resolveWith(ctx context.Context, repo *models.Repository, key 
 // fresh; an expired positive entry (a candidate for serving stale) as stale;
 // a fresh negative entry yields errNotFound. Both are nil when the caller has
 // to fetch with nothing to fall back on.
-func (s *Service) lookup(ctx context.Context, repo *models.Repository, key string) (*models.ProxyCacheEntry, *models.ProxyCacheEntry, error) {
+func (s *Service) lookup(
+	ctx context.Context,
+	repo *models.Repository,
+	key string,
+) (*models.ProxyCacheEntry, *models.ProxyCacheEntry, error) {
 	entry, err := s.db.GetProxyCacheEntry(ctx, repo.ID, key)
 	if err != nil {
 		s.log.Errorw("failed to read proxy cache entry", "repo", repo.Name, "path", key, "error", err)
@@ -613,7 +624,13 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 
 // store spools the response, enforcing the size limit, then writes the blob
 // and cache entry under the blob lock.
-func (s *Service) store(ctx context.Context, repo *models.Repository, key string, resp *http.Response, o fetchOpts) (*models.ProxyCacheEntry, error) {
+func (s *Service) store(
+	ctx context.Context,
+	repo *models.Repository,
+	key string,
+	resp *http.Response,
+	o fetchOpts,
+) (*models.ProxyCacheEntry, error) {
 	limit := s.maxBody
 	if isMetadataKey(repo.Format, key) {
 		limit = min(limit, s.maxMeta)

@@ -317,7 +317,13 @@ func TestContractRepo(t *testing.T) {
 			name:    "create",
 			args:    []string{"repo", "create", "r", "--format", "npm", "--description", "d", "--public"},
 			replies: map[string]reply{"POST /api/v1/repositories": {status: 201, body: one}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories", body: m{"name": "r", "format": "npm", "description": "d", "public": true}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories",
+					body:    m{"name": "r", "format": "npm", "description": "d", "public": true},
+				},
+			},
 		},
 		{
 			name:    "show uses singular path",
@@ -345,21 +351,34 @@ func TestContractRepo(t *testing.T) {
 			name: "delete without confirm fails non-interactively", args: []string{"repo", "delete", "r"}, fail: "--confirm r",
 		},
 		{
-			name: "delete with wrong confirm fails locally", args: []string{"repo", "delete", "r", "--confirm", "x"}, fail: "does not match",
+			name: "delete with wrong confirm fails locally",
+			args: []string{"repo", "delete", "r", "--confirm", "x"},
+			fail: "does not match",
 		},
 		{
 			name:    "create with trash settings",
 			args:    []string{"repo", "create", "r", "--format", "npm", "--trash-retention-days", "0", "--immutable-releases"},
 			replies: map[string]reply{"POST /api/v1/repositories": {status: 201, body: one}},
 			calls: []call{{method: "POST", pattern: "/api/v1/repositories", body: m{
-				"name": "r", "format": "npm", "description": "", "public": false, "trash_retention_days": float64(0), "immutable_releases": true,
+				"name":                 "r",
+				"format":               "npm",
+				"description":          "",
+				"public":               false,
+				"trash_retention_days": float64(0),
+				"immutable_releases":   true,
 			}}},
 		},
 		{
 			name:    "update trash settings",
 			args:    []string{"repo", "update", "r", "--trash-retention-days", "14", "--immutable-releases=false"},
 			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
-			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"trash_retention_days": float64(14), "immutable_releases": false}}},
+			calls: []call{
+				{
+					method:  "PATCH",
+					pattern: "/api/v1/repository/{name}",
+					body:    m{"trash_retention_days": float64(14), "immutable_releases": false},
+				},
+			},
 		},
 		{
 			name:    "update merge proxy versions",
@@ -374,21 +393,29 @@ func TestContractRepo(t *testing.T) {
 			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"trash_retention_days": nil}}},
 		},
 		{
-			name: "update with bad retention fails", args: []string{"repo", "update", "r", "--trash-retention-days", "-1"}, fail: "non-negative",
+			name: "update with bad retention fails",
+			args: []string{"repo", "update", "r", "--trash-retention-days", "-1"},
+			fail: "non-negative",
 		},
 		{
-			name:    "packages",
-			args:    []string{"repo", "packages", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/packages": ok(`{"packages":[{"id":"p1","name":"left-pad","version":"1.0.0"}],"total":1}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/packages"}},
-			out:     "left-pad",
+			name: "packages",
+			args: []string{"repo", "packages", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/packages": ok(`{"packages":[{"id":"p1","name":"left-pad","version":"1.0.0"}],"total":1}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/packages"}},
+			out:   "left-pad",
 		},
 		{
-			name:    "members",
-			args:    []string{"repo", "members", "g"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/members": ok(`{"members":[{"id":"1","name":"a","format":"npm","repo_type":"hosted","priority":1}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/members"}},
-			out:     "hosted",
+			name: "members",
+			args: []string{"repo", "members", "g"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/members": ok(
+					`{"members":[{"id":"1","name":"a","format":"npm","repo_type":"hosted","priority":1}]}`,
+				),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/members"}},
+			out:   "hosted",
 		},
 	})
 }
@@ -424,7 +451,10 @@ func TestContractArtifact(t *testing.T) {
 				"GET /api/v1/repository/{name}":                    ok(`{"format":"rpm"}`),
 				"DELETE /api/v1/repositories/{name}/packages/{id}": {status: 204},
 			},
-			calls: []call{{method: "GET", pattern: "/api/v1/repository/{name}"}, {method: "DELETE", pattern: "/api/v1/repositories/{name}/packages/{id}"}},
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/repository/{name}"},
+				{method: "DELETE", pattern: "/api/v1/repositories/{name}/packages/{id}"},
+			},
 		},
 		{
 			name: "delete deb",
@@ -433,7 +463,10 @@ func TestContractArtifact(t *testing.T) {
 				"GET /api/v1/repository/{name}":                ok(`{"format":"deb"}`),
 				"DELETE /api/v1/repositories/{name}/debs/{id}": {status: 204},
 			},
-			calls: []call{{method: "GET", pattern: "/api/v1/repository/{name}"}, {method: "DELETE", pattern: "/api/v1/repositories/{name}/debs/{id}"}},
+			calls: []call{
+				{method: "GET", pattern: "/api/v1/repository/{name}"},
+				{method: "DELETE", pattern: "/api/v1/repositories/{name}/debs/{id}"},
+			},
 		},
 		{
 			name:    "search",
@@ -494,7 +527,11 @@ func TestContractAuthSession(t *testing.T) {
 			calls: []call{
 				{method: "GET", pattern: "/api/v1/auth/me"},
 				{method: "POST", pattern: "/api/v1/auth/login", body: m{"username": "admin", "password": "old"}},
-				{method: "POST", pattern: "/api/v1/auth/change-password", body: m{"current_password": "old", "new_password": "new-password-123"}},
+				{
+					method:  "POST",
+					pattern: "/api/v1/auth/change-password",
+					body:    m{"current_password": "old", "new_password": "new-password-123"},
+				},
 			},
 		},
 	})
@@ -514,7 +551,13 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			args:    []string{"user", "create", "--username", "bob", "--email", "b@x", "--full-name", "Bob", "--password-stdin"},
 			stdin:   "secret-pass-1\n",
 			replies: map[string]reply{"POST /api/v1/users": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/users", body: m{"username": "bob", "email": "b@x", "full_name": "Bob", "password": "secret-pass-1"}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/users",
+					body:    m{"username": "bob", "email": "b@x", "full_name": "Bob", "password": "secret-pass-1"},
+				},
+			},
 		},
 		{
 			name:    "user update",
@@ -555,11 +598,15 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			calls:   []call{{method: "POST", pattern: "/api/v1/groups/{id}/members/{userId}"}},
 		},
 		{
-			name:    "project list",
-			args:    []string{"project", "list"},
-			replies: map[string]reply{"GET /api/v1/projects": ok(`{"projects":[{"name":"acme","display_name":"Acme","my_role":"maintainer","repository_count":3}],"can_create":true}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/projects"}},
-			out:     "maintainer",
+			name: "project list",
+			args: []string{"project", "list"},
+			replies: map[string]reply{
+				"GET /api/v1/projects": ok(
+					`{"projects":[{"name":"acme","display_name":"Acme","my_role":"maintainer","repository_count":3}],"can_create":true}`,
+				),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/projects"}},
+			out:   "maintainer",
 		},
 		{
 			name:    "project show prints my_role",
@@ -575,8 +622,17 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			calls:   []call{{method: "PATCH", pattern: "/api/v1/projects/{project}", body: m{"display_name": "Acme Corp"}}},
 		},
 		{
-			name:    "project update policy flags",
-			args:    []string{"project", "update", "acme", "--allowed-formats", "npm,deb", "--allow-public-repos=false", "--max-repositories", "10"},
+			name: "project update policy flags",
+			args: []string{
+				"project",
+				"update",
+				"acme",
+				"--allowed-formats",
+				"npm,deb",
+				"--allow-public-repos=false",
+				"--max-repositories",
+				"10",
+			},
 			replies: map[string]reply{"PATCH /api/v1/projects/{project}": ok(`{}`)},
 			calls: []call{{method: "PATCH", pattern: "/api/v1/projects/{project}",
 				body: m{"allowed_formats": []any{"npm", "deb"}, "allow_public_repos": false, "max_repositories": float64(10)}}},
@@ -588,13 +644,21 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			name:    "project create with owner",
 			args:    []string{"project", "create", "acme", "--owner", "bob"},
 			replies: map[string]reply{"POST /api/v1/projects": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/projects", body: m{"name": "acme", "display_name": "", "description": "", "owner": "bob"}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/projects",
+					body:    m{"name": "acme", "display_name": "", "description": "", "owner": "bob"},
+				},
+			},
 		},
 		{
 			name:    "project create",
 			args:    []string{"project", "create", "acme", "--display-name", "Acme"},
 			replies: map[string]reply{"POST /api/v1/projects": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/projects", body: m{"name": "acme", "display_name": "Acme", "description": ""}}},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/projects", body: m{"name": "acme", "display_name": "Acme", "description": ""}},
+			},
 		},
 		{
 			name:    "project members",
@@ -613,7 +677,9 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			name:    "project add-member by username",
 			args:    []string{"project", "add-member", "acme", "--username", "bob", "--role", "developer"},
 			replies: map[string]reply{"POST /api/v1/projects/{project}/members": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/projects/{project}/members", body: m{"username": "bob", "role": "developer"}}},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/projects/{project}/members", body: m{"username": "bob", "role": "developer"}},
+			},
 		},
 		{
 			name: "project add-member needs an id or a username", args: []string{"project", "add-member", "acme"}, fail: "Usage",
@@ -625,11 +691,13 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			calls:   []call{{method: "PATCH", pattern: "/api/v1/projects/{project}/members/{user_id}", body: m{"role": "maintainer"}}},
 		},
 		{
-			name:    "project groups",
-			args:    []string{"project", "groups", "acme"},
-			replies: map[string]reply{"GET /api/v1/projects/{project}/groups": ok(`{"groups":[{"group_id":"g1","group_name":"devs","role":"developer"}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/projects/{project}/groups"}},
-			out:     "devs",
+			name: "project groups",
+			args: []string{"project", "groups", "acme"},
+			replies: map[string]reply{
+				"GET /api/v1/projects/{project}/groups": ok(`{"groups":[{"group_id":"g1","group_name":"devs","role":"developer"}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/projects/{project}/groups"}},
+			out:   "devs",
 		},
 		{
 			name:    "project add-group",
@@ -673,11 +741,13 @@ func TestContractStorage(t *testing.T) {
 
 	runCases(t, []contractCase{
 		{
-			name:    "list",
-			args:    []string{"storage", "list"},
-			replies: map[string]reply{"GET /api/v1/admin/storage": ok(`{"items":[{"name":"s","kind":"s3","is_default":true,"status":"ok"}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/admin/storage"}},
-			out:     "s3",
+			name: "list",
+			args: []string{"storage", "list"},
+			replies: map[string]reply{
+				"GET /api/v1/admin/storage": ok(`{"items":[{"name":"s","kind":"s3","is_default":true,"status":"ok"}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/admin/storage"}},
+			out:   "s3",
 		},
 		{
 			name:    "create with non-secret inline config",
@@ -698,8 +768,18 @@ func TestContractStorage(t *testing.T) {
 			args:    []string{"storage", "create", "--name", "s", "--type", "s3", "--config-file", "-"},
 			stdin:   `{"bucket":"b","access_key":"AK","secret_key":"SK"}`,
 			replies: map[string]reply{"POST /api/v1/admin/storage": {status: 201, body: `{}`}},
-			calls: []call{{method: "POST", pattern: "/api/v1/admin/storage",
-				body: m{"name": "s", "kind": "s3", "config": m{"bucket": "b", "access_key": "AK", "secret_key": "SK"}, "is_default": false}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/admin/storage",
+					body: m{
+						"name":       "s",
+						"kind":       "s3",
+						"config":     m{"bucket": "b", "access_key": "AK", "secret_key": "SK"},
+						"is_default": false,
+					},
+				},
+			},
 		},
 		{
 			name: "inline secret rejected before any request",
@@ -747,11 +827,13 @@ func TestContractBackupAuditSystem(t *testing.T) {
 
 	runCases(t, []contractCase{
 		{
-			name:    "backup list",
-			args:    []string{"backup", "list"},
-			replies: map[string]reply{"GET /api/v1/admin/backup": ok(`{"backups":[{"id":"b1","type":"full","status":"done","size_bytes":10}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/admin/backup"}},
-			out:     "b1",
+			name: "backup list",
+			args: []string{"backup", "list"},
+			replies: map[string]reply{
+				"GET /api/v1/admin/backup": ok(`{"backups":[{"id":"b1","type":"full","status":"done","size_bytes":10}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/admin/backup"}},
+			out:   "b1",
 		},
 		{
 			name:    "backup create",
@@ -768,16 +850,45 @@ func TestContractBackupAuditSystem(t *testing.T) {
 			out:     "Restore initiated",
 		},
 		{
-			name:    "audit list uses actor and per_page",
-			args:    []string{"audit", "list", "--limit", "5", "--actor", "admin", "--action", "repo.create"},
-			replies: map[string]reply{"GET /api/v1/admin/audit": ok(`{"data":[{"timestamp":"2026-01-01T00:00:00Z","actor":"admin","action":"repo.create","target":"r"}],"has_more":false}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/admin/audit", query: map[string]string{"per_page": "5", "page": "1", "actor": "admin", "action": "repo.create"}}},
-			out:     "repo.create",
+			name: "audit list uses actor and per_page",
+			args: []string{"audit", "list", "--limit", "5", "--actor", "admin", "--action", "repo.create"},
+			replies: map[string]reply{
+				"GET /api/v1/admin/audit": ok(
+					`{"data":[{"timestamp":"2026-01-01T00:00:00Z","actor":"admin","action":"repo.create","target":"r"}],"has_more":false}`,
+				),
+			},
+			calls: []call{
+				{
+					method:  "GET",
+					pattern: "/api/v1/admin/audit",
+					query:   map[string]string{"per_page": "5", "page": "1", "actor": "admin", "action": "repo.create"},
+				},
+			},
+			out: "repo.create",
 		},
 		{
-			name:    "audit export streams to stdout with filters",
-			args:    []string{"audit", "export", "--format", "csv", "--since", "2026-01-01", "--until", "2026-02-01T00:00:00Z", "--actor", "admin", "--action", "auth"},
-			replies: map[string]reply{"GET /api/v1/admin/audit/export": {status: 200, body: "id,timestamp\nx,y\n", headers: map[string]string{"Content-Type": "text/csv"}}},
+			name: "audit export streams to stdout with filters",
+			args: []string{
+				"audit",
+				"export",
+				"--format",
+				"csv",
+				"--since",
+				"2026-01-01",
+				"--until",
+				"2026-02-01T00:00:00Z",
+				"--actor",
+				"admin",
+				"--action",
+				"auth",
+			},
+			replies: map[string]reply{
+				"GET /api/v1/admin/audit/export": {
+					status:  200,
+					body:    "id,timestamp\nx,y\n",
+					headers: map[string]string{"Content-Type": "text/csv"},
+				},
+			},
 			calls: []call{{method: "GET", pattern: "/api/v1/admin/audit/export", query: map[string]string{
 				"format": "csv", "since": "2026-01-01", "until": "2026-02-01T00:00:00Z", "actor": "admin", "action": "auth",
 			}}},
@@ -839,7 +950,13 @@ func TestContractWebhook(t *testing.T) {
 			name:    "create sends enabled",
 			args:    []string{"webhook", "create", "--name", "n", "--url", "https://h", "--events", "a,b", "--active=false"},
 			replies: map[string]reply{"POST /api/v1/webhooks": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/webhooks", body: m{"name": "n", "url": "https://h", "events": []any{"a", "b"}, "enabled": false}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/webhooks",
+					body:    m{"name": "n", "url": "https://h", "events": []any{"a", "b"}, "enabled": false},
+				},
+			},
 		},
 		{
 			name:    "update sends only set flags as enabled",
@@ -854,17 +971,25 @@ func TestContractWebhook(t *testing.T) {
 			calls:   []call{{method: "POST", pattern: "/api/v1/webhooks/{id}/test"}},
 		},
 		{
-			name:    "deliveries",
-			args:    []string{"webhook", "deliveries", "w1"},
-			replies: map[string]reply{"GET /api/v1/webhooks/{id}/deliveries": ok(`{"deliveries":[{"id":"d1","event_type":"x","status":"ok"}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/webhooks/{id}/deliveries"}},
-			out:     "d1",
+			name: "deliveries",
+			args: []string{"webhook", "deliveries", "w1"},
+			replies: map[string]reply{
+				"GET /api/v1/webhooks/{id}/deliveries": ok(`{"deliveries":[{"id":"d1","event_type":"x","status":"ok"}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/webhooks/{id}/deliveries"}},
+			out:   "d1",
 		},
 		{
 			name:    "repo webhook create",
 			args:    []string{"webhook", "repo", "create", "r", "--name", "n", "--url", "https://h", "--events", "artifact.uploaded"},
 			replies: map[string]reply{"POST /api/v1/repositories/{name}/webhooks": {status: 201, body: `{}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/webhooks", body: m{"name": "n", "url": "https://h", "events": []any{"artifact.uploaded"}, "enabled": true}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories/{name}/webhooks",
+					body:    m{"name": "n", "url": "https://h", "events": []any{"artifact.uploaded"}, "enabled": true},
+				},
+			},
 		},
 	})
 }
@@ -877,33 +1002,75 @@ func TestContractScans(t *testing.T) {
 
 	runCases(t, []contractCase{
 		{
-			name:    "sbom generate",
-			args:    []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "spdx"},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s1","component_count":3}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/sbom/generate", body: m{"artifact_id": "a1", "format": "spdx", "spec_version": "2.3"}}},
-			out:     "s1",
+			name: "sbom generate",
+			args: []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "spdx"},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s1","component_count":3}`},
+			},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories/{name}/sbom/generate",
+					body:    m{"artifact_id": "a1", "format": "spdx", "spec_version": "2.3"},
+				},
+			},
+			out: "s1",
 		},
 		{
-			name:    "sbom generate spdx-json with spec version",
-			args:    []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "cyclonedx", "--spec-version", "1.6"},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s2","component_count":0}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/sbom/generate", body: m{"artifact_id": "a1", "format": "cyclonedx", "spec_version": "1.6"}}},
-			out:     "s2",
+			name: "sbom generate spdx-json with spec version",
+			args: []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "cyclonedx", "--spec-version", "1.6"},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s2","component_count":0}`},
+			},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories/{name}/sbom/generate",
+					body:    m{"artifact_id": "a1", "format": "cyclonedx", "spec_version": "1.6"},
+				},
+			},
+			out: "s2",
 		},
 		{
-			name:    "vex set",
-			args:    []string{"vex", "set", "r", "--artifact-id", "a1", "--vuln", "CVE-1", "--status", "not_affected", "--justification", "component_not_present"},
+			name: "vex set",
+			args: []string{
+				"vex",
+				"set",
+				"r",
+				"--artifact-id",
+				"a1",
+				"--vuln",
+				"CVE-1",
+				"--status",
+				"not_affected",
+				"--justification",
+				"component_not_present",
+			},
 			replies: map[string]reply{"PUT /api/v1/repositories/{name}/vex/statements": ok(`{"id":"x1","status":"not_affected"}`)},
-			calls: []call{{method: "PUT", pattern: "/api/v1/repositories/{name}/vex/statements",
-				body: m{"artifact_id": "a1", "vuln_id": "CVE-1", "status": "not_affected", "justification": "component_not_present", "impact_statement": "", "action_statement": ""}}},
+			calls: []call{
+				{
+					method:  "PUT",
+					pattern: "/api/v1/repositories/{name}/vex/statements",
+					body: m{
+						"artifact_id":      "a1",
+						"vuln_id":          "CVE-1",
+						"status":           "not_affected",
+						"justification":    "component_not_present",
+						"impact_statement": "",
+						"action_statement": "",
+					},
+				},
+			},
 			out: "x1",
 		},
 		{
-			name:    "vex list",
-			args:    []string{"vex", "list", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/vex/statements": ok(`{"statements":[{"id":"x1","vuln_id":"CVE-1","status":"affected"}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vex/statements"}},
-			out:     "CVE-1",
+			name: "vex list",
+			args: []string{"vex", "list", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/vex/statements": ok(`{"statements":[{"id":"x1","vuln_id":"CVE-1","status":"affected"}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vex/statements"}},
+			out:   "CVE-1",
 		},
 		{
 			name:    "vex get",
@@ -920,61 +1087,115 @@ func TestContractScans(t *testing.T) {
 			out:     "deleted",
 		},
 		{
-			name:    "sbom list",
-			args:    []string{"sbom", "list", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/sbom": ok(`{"reports":[{"id":"s1","artifact_id":"a1","format":"spdx"}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/sbom"}},
-			out:     "s1",
+			name: "sbom list",
+			args: []string{"sbom", "list", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/sbom": ok(`{"reports":[{"id":"s1","artifact_id":"a1","format":"spdx"}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/sbom"}},
+			out:   "s1",
 		},
 		{
-			name:    "sbom generate spdx3-json defaults to 3.0.1",
-			args:    []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "spdx3-json"},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s3","component_count":1}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/sbom/generate", body: m{"artifact_id": "a1", "format": "spdx3-json", "spec_version": "3.0.1"}}},
-			out:     "s3",
+			name: "sbom generate spdx3-json defaults to 3.0.1",
+			args: []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "spdx3-json"},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s3","component_count":1}`},
+			},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories/{name}/sbom/generate",
+					body:    m{"artifact_id": "a1", "format": "spdx3-json", "spec_version": "3.0.1"},
+				},
+			},
+			out: "s3",
 		},
 		{
-			name:    "dtrack show",
-			args:    []string{"dtrack", "show", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/dependency-track": ok(`{"override":null,"effective":{"enabled":true,"ready":true,"source":"global"}}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/dependency-track"}},
-			out:     "global",
+			name: "dtrack show",
+			args: []string{"dtrack", "show", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/dependency-track": ok(
+					`{"override":null,"effective":{"enabled":true,"ready":true,"source":"global"}}`,
+				),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/dependency-track"}},
+			out:   "global",
 		},
 		{
-			name:    "dtrack push",
-			args:    []string{"dtrack", "push", "r", "--artifact-id", "lib@1.0.0"},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/dependency-track/push": {status: 202, body: `{"artifact_id":"lib@1.0.0","state":"queued"}`}},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/dependency-track/push", body: m{"artifact_id": "lib@1.0.0"}}},
-			out:     "queued",
+			name: "dtrack push",
+			args: []string{"dtrack", "push", "r", "--artifact-id", "lib@1.0.0"},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/dependency-track/push": {
+					status: 202,
+					body:   `{"artifact_id":"lib@1.0.0","state":"queued"}`,
+				},
+			},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/repositories/{name}/dependency-track/push", body: m{"artifact_id": "lib@1.0.0"}},
+			},
+			out: "queued",
 		},
 		{
-			name:    "dtrack pushes",
-			args:    []string{"dtrack", "pushes", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/dependency-track/pushes": ok(`{"pushes":[{"artifact_id":"lib@1.0.0","state":"done"}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/dependency-track/pushes"}},
-			out:     "done",
+			name: "dtrack pushes",
+			args: []string{"dtrack", "pushes", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/dependency-track/pushes": ok(`{"pushes":[{"artifact_id":"lib@1.0.0","state":"done"}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/dependency-track/pushes"}},
+			out:   "done",
 		},
 		{
-			name:    "dtrack test",
-			args:    []string{"dtrack", "test", "r"},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/dependency-track/test": ok(`{"version":"4.14.2","permissions":[],"missing_permissions":[]}`)},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/dependency-track/test"}},
-			out:     "4.14.2",
+			name: "dtrack test",
+			args: []string{"dtrack", "test", "r"},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/dependency-track/test": ok(
+					`{"version":"4.14.2","permissions":[],"missing_permissions":[]}`,
+				),
+			},
+			calls: []call{{method: "POST", pattern: "/api/v1/repositories/{name}/dependency-track/test"}},
+			out:   "4.14.2",
 		},
 		{
-			name:    "vuln scan",
-			args:    []string{"vuln", "scan", "r", "--artifact-id", "a1", "--package", "left-pad", "--version", "1.0.0", "--ecosystem", "npm"},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/vuln/scan": ok(`{"id":"v1","scan_status":"completed","vuln_count":2}`)},
-			calls: []call{{method: "POST", pattern: "/api/v1/repositories/{name}/vuln/scan",
-				body: m{"artifact_id": "a1", "package_name": "left-pad", "package_version": "1.0.0", "ecosystem": "npm", "scanner": "osv"}}},
+			name: "vuln scan",
+			args: []string{
+				"vuln",
+				"scan",
+				"r",
+				"--artifact-id",
+				"a1",
+				"--package",
+				"left-pad",
+				"--version",
+				"1.0.0",
+				"--ecosystem",
+				"npm",
+			},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/vuln/scan": ok(`{"id":"v1","scan_status":"completed","vuln_count":2}`),
+			},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories/{name}/vuln/scan",
+					body: m{
+						"artifact_id":     "a1",
+						"package_name":    "left-pad",
+						"package_version": "1.0.0",
+						"ecosystem":       "npm",
+						"scanner":         "osv",
+					},
+				},
+			},
 			out: "completed",
 		},
 		{
-			name:    "vuln list reads scans",
-			args:    []string{"vuln", "list", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/vuln/scans": ok(`{"scans":[{"id":"v1","scan_status":"completed","critical_count":1}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vuln/scans"}},
-			out:     "completed",
+			name: "vuln list reads scans",
+			args: []string{"vuln", "list", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/vuln/scans": ok(`{"scans":[{"id":"v1","scan_status":"completed","critical_count":1}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vuln/scans"}},
+			out:   "completed",
 		},
 		{
 			name:    "license scan",
@@ -983,17 +1204,23 @@ func TestContractScans(t *testing.T) {
 			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/license/scan", body: m{"artifact_id": "a1"}}},
 		},
 		{
-			name:    "secret scan with content file",
-			args:    []string{"secret", "scan", "r", "--artifact-id", "a1", "--content-file", contentFile},
-			replies: map[string]reply{"POST /api/v1/repositories/{name}/secrets/scan": ok(`{"id":"x1","scan_status":"completed","finding_count":1}`)},
-			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/secrets/scan", body: m{"artifact_id": "a1", "content": "AKIA..."}}},
+			name: "secret scan with content file",
+			args: []string{"secret", "scan", "r", "--artifact-id", "a1", "--content-file", contentFile},
+			replies: map[string]reply{
+				"POST /api/v1/repositories/{name}/secrets/scan": ok(`{"id":"x1","scan_status":"completed","finding_count":1}`),
+			},
+			calls: []call{
+				{method: "POST", pattern: "/api/v1/repositories/{name}/secrets/scan", body: m{"artifact_id": "a1", "content": "AKIA..."}},
+			},
 		},
 		{
-			name:    "secret list reads scans",
-			args:    []string{"secret", "list", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/secrets/scans": ok(`{"scans":[{"id":"x1","scan_status":"completed","finding_count":1}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/secrets/scans"}},
-			out:     "x1",
+			name: "secret list reads scans",
+			args: []string{"secret", "list", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/secrets/scans": ok(`{"scans":[{"id":"x1","scan_status":"completed","finding_count":1}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/secrets/scans"}},
+			out:   "x1",
 		},
 		{
 			name: "license delete is gone", args: []string{"license", "delete", "r", "l1"}, fail: "Unknown license subcommand",
@@ -1004,27 +1231,62 @@ func TestContractScans(t *testing.T) {
 func TestContractRepoFeatures(t *testing.T) {
 	runCases(t, []contractCase{
 		{
-			name:    "cleanup create maps flags to server fields",
-			args:    []string{"cleanup", "create", "r", "--name", "p", "--keep-count", "3", "--keep-days", "30", "--name-pattern", "^a", "--schedule", "0 3 * * *"},
+			name: "cleanup create maps flags to server fields",
+			args: []string{
+				"cleanup",
+				"create",
+				"r",
+				"--name",
+				"p",
+				"--keep-count",
+				"3",
+				"--keep-days",
+				"30",
+				"--name-pattern",
+				"^a",
+				"--schedule",
+				"0 3 * * *",
+			},
 			replies: map[string]reply{"POST /api/v1/repositories/{name}/cleanup-policies": {status: 201, body: `{}`}},
-			calls: []call{{method: "POST", pattern: "/api/v1/repositories/{name}/cleanup-policies",
-				body: m{"name": "p", "keep_last_n": float64(3), "keep_since_days": float64(30), "name_pattern": "^a", "schedule_cron": "0 3 * * *"}}},
+			calls: []call{
+				{
+					method:  "POST",
+					pattern: "/api/v1/repositories/{name}/cleanup-policies",
+					body: m{
+						"name":            "p",
+						"keep_last_n":     float64(3),
+						"keep_since_days": float64(30),
+						"name_pattern":    "^a",
+						"schedule_cron":   "0 3 * * *",
+					},
+				},
+			},
 		},
 		{
-			name: "cleanup create without criterion fails client-side", args: []string{"cleanup", "create", "r", "--name", "p"}, fail: "--keep-count or --keep-days",
+			name: "cleanup create without criterion fails client-side",
+			args: []string{"cleanup", "create", "r", "--name", "p"},
+			fail: "--keep-count or --keep-days",
 		},
 		{
 			name:    "cleanup update sends only set flags",
 			args:    []string{"cleanup", "update", "r", "p1", "--keep-count", "5", "--enabled=false"},
 			replies: map[string]reply{"PUT /api/v1/repositories/{name}/cleanup-policies/{id}": ok(`{}`)},
-			calls:   []call{{method: "PUT", pattern: "/api/v1/repositories/{name}/cleanup-policies/{id}", body: m{"keep_last_n": float64(5), "enabled": false}}},
+			calls: []call{
+				{
+					method:  "PUT",
+					pattern: "/api/v1/repositories/{name}/cleanup-policies/{id}",
+					body:    m{"keep_last_n": float64(5), "enabled": false},
+				},
+			},
 		},
 		{
-			name:    "cleanup list reads policies",
-			args:    []string{"cleanup", "list", "r"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/cleanup-policies": ok(`{"policies":[{"id":"p1","name":"p","enabled":true}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/cleanup-policies"}},
-			out:     "p1",
+			name: "cleanup list reads policies",
+			args: []string{"cleanup", "list", "r"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/cleanup-policies": ok(`{"policies":[{"id":"p1","name":"p","enabled":true}]}`),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/cleanup-policies"}},
+			out:   "p1",
 		},
 		{
 			name:    "cleanup run is accepted",
@@ -1053,7 +1315,9 @@ func TestContractRepoFeatures(t *testing.T) {
 			name:    "props set patches a flat map",
 			args:    []string{"props", "set", "r", "a1", "env", "prod"},
 			replies: map[string]reply{"PATCH /api/v1/repositories/{name}/artifacts/{artifact_id}/properties": ok(`{}`)},
-			calls:   []call{{method: "PATCH", pattern: "/api/v1/repositories/{name}/artifacts/{artifact_id}/properties", body: m{"env": "prod"}}},
+			calls: []call{
+				{method: "PATCH", pattern: "/api/v1/repositories/{name}/artifacts/{artifact_id}/properties", body: m{"env": "prod"}},
+			},
 		},
 		{
 			name:    "props list",
@@ -1066,15 +1330,25 @@ func TestContractRepoFeatures(t *testing.T) {
 			name:    "props search prints artifact ids",
 			args:    []string{"props", "search", "r", "env", "prod"},
 			replies: map[string]reply{"GET /api/v1/repositories/{name}/artifacts/search": ok(`{"artifact_ids":["a1","a2"]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/artifacts/search", query: map[string]string{"key": "env", "value": "prod"}}},
-			out:     "a2",
+			calls: []call{
+				{
+					method:  "GET",
+					pattern: "/api/v1/repositories/{name}/artifacts/search",
+					query:   map[string]string{"key": "env", "value": "prod"},
+				},
+			},
+			out: "a2",
 		},
 		{
-			name:    "delta list reads data",
-			args:    []string{"delta", "list", "r", "p1"},
-			replies: map[string]reply{"GET /api/v1/repositories/{name}/packages/{id}/deltas": ok(`{"success":true,"data":[{"from_sha256":"aa","to_sha256":"bb","delta_size":4}]}`)},
-			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/packages/{id}/deltas"}},
-			out:     "aa",
+			name: "delta list reads data",
+			args: []string{"delta", "list", "r", "p1"},
+			replies: map[string]reply{
+				"GET /api/v1/repositories/{name}/packages/{id}/deltas": ok(
+					`{"success":true,"data":[{"from_sha256":"aa","to_sha256":"bb","delta_size":4}]}`,
+				),
+			},
+			calls: []call{{method: "GET", pattern: "/api/v1/repositories/{name}/packages/{id}/deltas"}},
+			out:   "aa",
 		},
 	})
 }

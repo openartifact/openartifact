@@ -117,7 +117,14 @@ func TestS3Integration_PutVerifiesDigest(t *testing.T) {
 
 	t.Cleanup(func() { _ = store.Delete(context.Background(), sha) })
 
-	if _, err := store.Put(ctx, bytes.NewReader([]byte("other bytes")), map[string]string{"sha256": sha}); !errors.Is(err, storage.ErrDigestMismatch) {
+	if _, err := store.Put(
+		ctx,
+		bytes.NewReader([]byte("other bytes")),
+		map[string]string{"sha256": sha},
+	); !errors.Is(
+		err,
+		storage.ErrDigestMismatch,
+	) {
 		t.Fatalf("Put of mismatching bytes = %v, want ErrDigestMismatch", err)
 	}
 
@@ -131,7 +138,14 @@ func TestS3Integration_PutVerifiesDigest(t *testing.T) {
 
 	// A second Put of different bytes under the same key is rejected, and the
 	// verified object is untouched.
-	if _, err := store.Put(ctx, bytes.NewReader([]byte("poison")), map[string]string{"sha256": sha}); !errors.Is(err, storage.ErrDigestMismatch) {
+	if _, err := store.Put(
+		ctx,
+		bytes.NewReader([]byte("poison")),
+		map[string]string{"sha256": sha},
+	); !errors.Is(
+		err,
+		storage.ErrDigestMismatch,
+	) {
 		t.Fatalf("Put over existing = %v, want ErrDigestMismatch", err)
 	}
 

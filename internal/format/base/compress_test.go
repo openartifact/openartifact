@@ -47,9 +47,15 @@ func writes(contentType string, status int, body []byte, extra map[string]string
 func TestCompressEncodesTextMetadata(t *testing.T) {
 	body := []byte(strings.Repeat("name: chart\nversion: 1.0.0\n", 400))
 
-	w := serveCompressed(t, writes("application/x-yaml", http.StatusOK, body, map[string]string{"ETag": `"v1"`}), http.MethodGet, map[string]string{"Accept-Encoding": "gzip"})
+	w := serveCompressed(
+		t,
+		writes("application/x-yaml", http.StatusOK, body, map[string]string{"ETag": `"v1"`}),
+		http.MethodGet,
+		map[string]string{"Accept-Encoding": "gzip"},
+	)
 
-	if w.Header().Get("Content-Encoding") != "gzip" || w.Header().Get("ETag") != `W/"v1"` || !strings.Contains(w.Header().Get("Vary"), "Accept-Encoding") {
+	if w.Header().Get("Content-Encoding") != "gzip" || w.Header().Get("ETag") != `W/"v1"` ||
+		!strings.Contains(w.Header().Get("Vary"), "Accept-Encoding") {
 		t.Fatalf("headers: %v", w.Header())
 	}
 
@@ -79,13 +85,33 @@ func TestCompressLeavesOtherResponsesAlone(t *testing.T) {
 		header map[string]string
 	}{
 		{"blob", writes("application/octet-stream", http.StatusOK, big, nil), http.MethodGet, gzipHdr},
-		{"already encoded", writes("application/json", http.StatusOK, big, map[string]string{"Content-Encoding": "gzip"}), http.MethodGet, gzipHdr},
+		{
+			"already encoded",
+			writes("application/json", http.StatusOK, big, map[string]string{"Content-Encoding": "gzip"}),
+			http.MethodGet,
+			gzipHdr,
+		},
 		{"error status", writes("application/json", http.StatusInternalServerError, big, nil), http.MethodGet, gzipHdr},
 		{"not modified", writes("application/json", http.StatusNotModified, nil, nil), http.MethodGet, gzipHdr},
-		{"tiny declared length", writes("application/json", http.StatusOK, big[:10], map[string]string{"Content-Length": "10"}), http.MethodGet, gzipHdr},
-		{"client refuses gzip", writes("application/json", http.StatusOK, big, nil), http.MethodGet, map[string]string{"Accept-Encoding": "gzip;q=0"}},
+		{
+			"tiny declared length",
+			writes("application/json", http.StatusOK, big[:10], map[string]string{"Content-Length": "10"}),
+			http.MethodGet,
+			gzipHdr,
+		},
+		{
+			"client refuses gzip",
+			writes("application/json", http.StatusOK, big, nil),
+			http.MethodGet,
+			map[string]string{"Accept-Encoding": "gzip;q=0"},
+		},
 		{"no Accept-Encoding", writes("application/json", http.StatusOK, big, nil), http.MethodGet, nil},
-		{"range request", writes("application/json", http.StatusOK, big, nil), http.MethodGet, map[string]string{"Accept-Encoding": "gzip", "Range": "bytes=0-9"}},
+		{
+			"range request",
+			writes("application/json", http.StatusOK, big, nil),
+			http.MethodGet,
+			map[string]string{"Accept-Encoding": "gzip", "Range": "bytes=0-9"},
+		},
 		{"HEAD", writes("application/json", http.StatusOK, big, nil), http.MethodHead, gzipHdr},
 	}
 
@@ -106,7 +132,8 @@ func TestCompressLeavesOtherResponsesAlone(t *testing.T) {
 				t.Errorf("Content-Encoding = %q, want none", enc)
 			}
 
-			if tc.method != http.MethodHead && w.Header().Get("Content-Length") != "" && w.Header().Get("Content-Length") != strconv.Itoa(w.Body.Len()) {
+			if tc.method != http.MethodHead && w.Header().Get("Content-Length") != "" &&
+				w.Header().Get("Content-Length") != strconv.Itoa(w.Body.Len()) {
 				t.Errorf("Content-Length %q != body %d", w.Header().Get("Content-Length"), w.Body.Len())
 			}
 		})
@@ -116,7 +143,12 @@ func TestCompressLeavesOtherResponsesAlone(t *testing.T) {
 func TestCompressSniffsUntypedBodies(t *testing.T) {
 	// An untyped binary body must not be compressed just because no
 	// Content-Type was declared.
-	w := serveCompressed(t, writes("", http.StatusOK, append([]byte{0x1f, 0x00, 0x01, 0x02}, make([]byte, 4096)...), nil), http.MethodGet, map[string]string{"Accept-Encoding": "gzip"})
+	w := serveCompressed(
+		t,
+		writes("", http.StatusOK, append([]byte{0x1f, 0x00, 0x01, 0x02}, make([]byte, 4096)...), nil),
+		http.MethodGet,
+		map[string]string{"Accept-Encoding": "gzip"},
+	)
 	if w.Header().Get("Content-Encoding") != "" {
 		t.Error("compressed an untyped binary body")
 	}

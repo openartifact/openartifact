@@ -158,7 +158,9 @@ func withPrincipal(next http.Handler) http.Handler {
 type fakeSearcher struct{}
 
 func (fakeSearcher) Search(context.Context, search.SearchFilter, int, int, map[uuid.UUID]struct{}) ([]search.SearchResult, error) {
-	return []search.SearchResult{{Repository: "web-npm", Format: "npm", Name: "left-pad", Version: "1.0.0", Path: "left-pad-1.0.0.tgz", SHA256: "aa", Size: 10}}, nil
+	return []search.SearchResult{
+		{Repository: "web-npm", Format: "npm", Name: "left-pad", Version: "1.0.0", Path: "left-pad-1.0.0.tgz", SHA256: "aa", Size: 10},
+	}, nil
 }
 
 func newHarness(t *testing.T, db *mockDB, denied ...string) *harness {
@@ -294,9 +296,39 @@ func fixtureDB() *mockDB {
 			{ID: "r-secret", Name: "hidden", Format: "npm", RepoType: "hosted", CreatedAt: created, UpdatedAt: created},
 		},
 		components: []*models.Component{
-			{ID: "c1", RepositoryID: "r-npm", Name: "left-pad", Version: "1.0.0", Format: "npm", SHA256: "aa", PackageSize: 10, Filename: "left-pad-1.0.0.tgz", CreatedAt: created},
-			{ID: "c2", RepositoryID: "r-npm", Name: "left-pad", Version: "1.1.0", Format: "npm", SHA256: "bb", PackageSize: 11, Filename: "left-pad-1.1.0.tgz", CreatedAt: created},
-			{ID: "c3", RepositoryID: "r-npm", Name: "right-pad", Version: "2.0.0", Format: "npm", SHA256: "cc", PackageSize: 12, Filename: "right-pad-2.0.0.tgz", CreatedAt: created},
+			{
+				ID:           "c1",
+				RepositoryID: "r-npm",
+				Name:         "left-pad",
+				Version:      "1.0.0",
+				Format:       "npm",
+				SHA256:       "aa",
+				PackageSize:  10,
+				Filename:     "left-pad-1.0.0.tgz",
+				CreatedAt:    created,
+			},
+			{
+				ID:           "c2",
+				RepositoryID: "r-npm",
+				Name:         "left-pad",
+				Version:      "1.1.0",
+				Format:       "npm",
+				SHA256:       "bb",
+				PackageSize:  11,
+				Filename:     "left-pad-1.1.0.tgz",
+				CreatedAt:    created,
+			},
+			{
+				ID:           "c3",
+				RepositoryID: "r-npm",
+				Name:         "right-pad",
+				Version:      "2.0.0",
+				Format:       "npm",
+				SHA256:       "cc",
+				PackageSize:  12,
+				Filename:     "right-pad-2.0.0.tgz",
+				CreatedAt:    created,
+			},
 		},
 		scans: []*models.VulnScanResult{{
 			ID: "s1", RepositoryID: "r-npm", PackageName: "left-pad", PackageVersion: "1.0.0", Scanner: "osv",

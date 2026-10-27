@@ -49,9 +49,23 @@ func TestAdminRecoveryStatus(t *testing.T) {
 		wantBody string
 		wantCall bool
 	}{
-		{"admin gets the status", false, &fakeRecoverySource{st: recovery.Status{Enabled: true, Backlog: 3}}, http.StatusOK, `"backlog":3`, true},
+		{
+			"admin gets the status",
+			false,
+			&fakeRecoverySource{st: recovery.Status{Enabled: true, Backlog: 3}},
+			http.StatusOK,
+			`"backlog":3`,
+			true,
+		},
 		{"anonymous is refused", true, &fakeRecoverySource{}, http.StatusForbidden, "", false},
-		{"failure does not leak", false, &fakeRecoverySource{err: errors.New("pq: password authentication failed for user oa")}, http.StatusInternalServerError, "failed to read recovery journal status", true},
+		{
+			"failure does not leak",
+			false,
+			&fakeRecoverySource{err: errors.New("pq: password authentication failed for user oa")},
+			http.StatusInternalServerError,
+			"failed to read recovery journal status",
+			true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -72,7 +86,10 @@ func TestAdminRecoveryStatus(t *testing.T) {
 			NewAdminRecoveryHandler(tc.src, log, nil).Register(r)
 
 			rec := httptest.NewRecorder()
-			r.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/recovery/status", http.NoBody))
+			r.ServeHTTP(
+				rec,
+				httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/recovery/status", http.NoBody),
+			)
 
 			if rec.Code != tc.wantCode || !strings.Contains(rec.Body.String(), tc.wantBody) || (tc.src.calls > 0) != tc.wantCall {
 				t.Fatalf("code=%d body=%s calls=%d", rec.Code, rec.Body, tc.src.calls)

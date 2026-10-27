@@ -63,7 +63,9 @@ func RenderIndex(f Format, names []string, href func(name string) string) ([]byt
 
 	var b bytes.Buffer
 
-	b.WriteString("<!DOCTYPE html>\n<html><head><meta name=\"pypi:repository-version\" content=\"" + apiVersion + "\"><title>Simple index</title></head><body>\n")
+	b.WriteString(
+		"<!DOCTYPE html>\n<html><head><meta name=\"pypi:repository-version\" content=\"" + apiVersion + "\"><title>Simple index</title></head><body>\n",
+	)
 
 	for _, n := range names {
 		fmt.Fprintf(&b, "<a href=\"%s\">%s</a><br/>\n", html.EscapeString(href(n)), html.EscapeString(n))
@@ -85,7 +87,9 @@ func RenderProject(f Format, name string, files []File, href func(*File) string)
 
 	title := html.EscapeString(name)
 
-	b.WriteString("<!DOCTYPE html>\n<html><head><meta name=\"pypi:repository-version\" content=\"" + apiVersion + "\"><title>Links for " + title + "</title></head><body>\n")
+	b.WriteString(
+		"<!DOCTYPE html>\n<html><head><meta name=\"pypi:repository-version\" content=\"" + apiVersion + "\"><title>Links for " + title + "</title></head><body>\n",
+	)
 	b.WriteString("<h1>Links for " + title + "</h1>\n")
 
 	for i := range files {

@@ -175,6 +175,12 @@ func TestPresignedMultipartPlanAndExpiry(t *testing.T) {
 	}
 
 	if got.PartSize != 64<<20 || got.MultipartID != "upload-handle" || !got.ExpiresAt.Equal(later) {
-		t.Errorf("row = part size %d, handle %q, expires %v; want 64 MiB, upload-handle, %v", got.PartSize, got.MultipartID, got.ExpiresAt, later)
+		t.Errorf(
+			"row = part size %d, handle %q, expires %v; want 64 MiB, upload-handle, %v",
+			got.PartSize,
+			got.MultipartID,
+			got.ExpiresAt,
+			later,
+		)
 	}
 }

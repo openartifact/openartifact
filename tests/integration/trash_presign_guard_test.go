@@ -193,7 +193,11 @@ func TestTrashPresignGuard_CompleteOverImmutableRaw(t *testing.T) {
 
 	// The refused upload is not completed: a retry is refused again instead of
 	// replaying a result, and a non-admin's ?force=true changes nothing.
-	if n := tpoCount(t, `SELECT count(*) FROM presigned_uploads WHERE id = $1 AND completed_at IS NULL AND completing_since IS NULL`, id); n != 1 {
+	if n := tpoCount(
+		t,
+		`SELECT count(*) FROM presigned_uploads WHERE id = $1 AND completed_at IS NULL AND completing_since IS NULL`,
+		id,
+	); n != 1 {
 		t.Fatalf("pending unclaimed upload rows = %d, want 1 (the upload must stay retryable)", n)
 	}
 

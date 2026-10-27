@@ -31,7 +31,14 @@ func TestBlobUpsertsRejectInvalidSHA256(t *testing.T) {
 
 	for name, sha := range bad {
 		t.Run(name, func(t *testing.T) {
-			if id, err := p.upsertBlobWithMediaType(ctx, sha, sha, "application/zip", 1); !errors.Is(err, ErrInvalidBlobSHA256) || id != "" {
+			if id, err := p.upsertBlobWithMediaType(
+				ctx,
+				sha,
+				sha,
+				"application/zip",
+				1,
+			); !errors.Is(err, ErrInvalidBlobSHA256) ||
+				id != "" {
 				t.Errorf("upsertBlobWithMediaType(%q) = %q, %v; want ErrInvalidBlobSHA256", sha, id, err)
 			}
 

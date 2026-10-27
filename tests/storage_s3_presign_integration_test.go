@@ -147,7 +147,12 @@ func TestS3Integration_PresignedUploadPromotesToBlob(t *testing.T) {
 		t.Fatalf("staging object survived deletion: %v", err)
 	}
 
-	url, err := store.PresignGet(ctx, sha, time.Minute, storage.PresignGetOptions{ContentDisposition: `attachment; filename="app.bin"`, ContentType: "application/x-test"})
+	url, err := store.PresignGet(
+		ctx,
+		sha,
+		time.Minute,
+		storage.PresignGetOptions{ContentDisposition: `attachment; filename="app.bin"`, ContentType: "application/x-test"},
+	)
 	if err != nil {
 		t.Fatalf("PresignGet: %v", err)
 	}

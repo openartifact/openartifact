@@ -701,7 +701,12 @@ func validateBundleItemFields(itemData *bundleItemInput, seenSHA map[string]stru
 // request is all-or-nothing, and verifies each source repository once. canRead,
 // when set, limits the source repositories to the ones the caller may read: any
 // other answers as an unknown repository.
-func (h *BundlesHandler) buildBundleItems(ctx context.Context, bundleID, username string, in []bundleItemInput, canRead func(*models.Repository) (bool, error)) ([]*models.ReleaseBundleItem, *apiFailure) {
+func (h *BundlesHandler) buildBundleItems(
+	ctx context.Context,
+	bundleID, username string,
+	in []bundleItemInput,
+	canRead func(*models.Repository) (bool, error),
+) ([]*models.ReleaseBundleItem, *apiFailure) {
 	knownRepos := make(map[string]*models.Repository, len(in))
 	items := make([]*models.ReleaseBundleItem, 0, len(in))
 	seenSHA := make(map[string]struct{}, len(in))
@@ -980,7 +985,12 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 
 // validatePromotionStage validates the requested stage against the bundle's
 // pipeline and the target repository.
-func (h *BundlesHandler) validatePromotionStage(ctx context.Context, bundle *models.ReleaseBundle, targetRepo *models.Repository, toStage string) *apiFailure {
+func (h *BundlesHandler) validatePromotionStage(
+	ctx context.Context,
+	bundle *models.ReleaseBundle,
+	targetRepo *models.Repository,
+	toStage string,
+) *apiFailure {
 	if bundle.PipelineID == nil {
 		return validationFailure("bundle has no pipeline; cannot promote")
 	}
@@ -1024,7 +1034,11 @@ func (h *BundlesHandler) validatePromotionStage(ctx context.Context, bundle *mod
 
 // resolvePromotionTarget finds the repository a promotion writes to: the named
 // one, or, when the name is empty, the repository the pipeline fixes for toStage.
-func (h *BundlesHandler) resolvePromotionTarget(ctx context.Context, bundle *models.ReleaseBundle, toStage, name string) (*models.Repository, *apiFailure) {
+func (h *BundlesHandler) resolvePromotionTarget(
+	ctx context.Context,
+	bundle *models.ReleaseBundle,
+	toStage, name string,
+) (*models.Repository, *apiFailure) {
 	var (
 		repo *models.Repository
 		err  error

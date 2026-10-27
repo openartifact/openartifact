@@ -120,7 +120,10 @@ func FuzzReadPyPIDeps(f *testing.F) {
 	f.Add(pypiFuzzWheel("demo-1.0.dist-info/METADATA", pypiFuzzMetadata), "demo-1.0-py3-none-any.whl")
 	f.Add(pypiFuzzWheel("demo-1.0/PKG-INFO", pypiFuzzMetadata), "demo-1.0.zip")
 	f.Add(pypiFuzzSdist("demo-1.0/PKG-INFO", pypiFuzzMetadata), "demo-1.0.tar.gz")
-	f.Add(pypiFuzzSdist("demo-1.0/PKG-INFO", "Requires-Dist: a\nRequires-Dist: a==1\nRequires-Dist: "+strings.Repeat("b", 600)+"\n"), "demo-1.0.tgz")
+	f.Add(
+		pypiFuzzSdist("demo-1.0/PKG-INFO", "Requires-Dist: a\nRequires-Dist: a==1\nRequires-Dist: "+strings.Repeat("b", 600)+"\n"),
+		"demo-1.0.tgz",
+	)
 	f.Add([]byte("BZh9"), "demo-1.0.tar.bz2")
 	f.Add([]byte{0x1f, 0x8b}, "demo-1.0.tar.gz")
 	f.Add([]byte{}, "")

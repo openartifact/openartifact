@@ -46,10 +46,30 @@ var (
 	pypiEggName    = regexp.MustCompile(`^(.+)-([^-]+)-py\d+\.\d+(?:-.+)?$`)
 
 	// pypiExtensions are the distribution file types that are imported.
-	pypiExtensions = []string{".whl", ".tar.gz", ".zip", ".egg", ".tar.bz2", ".tar.xz", ".tar"} //nolint:gochecknoglobals // immutable lookup table
+	pypiExtensions = []string{
+		".whl",
+		".tar.gz",
+		".zip",
+		".egg",
+		".tar.bz2",
+		".tar.xz",
+		".tar",
+	} //nolint:gochecknoglobals // immutable lookup table
 	// pypiServerExtensions are the endings the server strips from a file name
 	// before splitting it into project and version.
-	pypiServerExtensions = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.Z", ".zip", ".egg", ".tar", ".exe", ".msi", ".rpm", ".dmg"} //nolint:gochecknoglobals // immutable lookup table
+	pypiServerExtensions = []string{
+		".tar.gz",
+		".tar.bz2",
+		".tar.xz",
+		".tar.Z",
+		".zip",
+		".egg",
+		".tar",
+		".exe",
+		".msi",
+		".rpm",
+		".dmg",
+	} //nolint:gochecknoglobals // immutable lookup table
 )
 
 func init() { //nolint:gochecknoinits // every format registers itself with the importer
@@ -398,7 +418,11 @@ func pypiIdentity(a sourceAsset, filename string, md pypiMetadata) (string, stri
 		}
 	}
 
-	return "", "", fmt.Errorf("%w of %s: none of the source's record, the archive metadata or the file name gives a pair the server accepts for this file name (it must read <project>-<version>.<ext>)", errPyPIIdentity, filename)
+	return "", "", fmt.Errorf(
+		"%w of %s: none of the source's record, the archive metadata or the file name gives a pair the server accepts for this file name (it must read <project>-<version>.<ext>)",
+		errPyPIIdentity,
+		filename,
+	)
 }
 
 func pypiFields(name, version, filename, sha string, md pypiMetadata) [][2]string {
@@ -449,7 +473,12 @@ func pypiUpload(ctx context.Context, t *importTarget, r uploadRequest) (uploadRe
 		return uploadResult{}, err
 	}
 
-	form, contentType := multipartStreamFields(pypiFields(name, version, filename, hex.EncodeToString(digest.Sum(nil)), md), sp.Reader(), "content", filename)
+	form, contentType := multipartStreamFields(
+		pypiFields(name, version, filename, hex.EncodeToString(digest.Sum(nil)), md),
+		sp.Reader(),
+		"content",
+		filename,
+	)
 
 	defer func() { _ = form.Close() }()
 

@@ -112,7 +112,12 @@ func azuriteBlobs(t *testing.T, s *AzureBlobStore) {
 		t.Fatalf("List = %v, %v", ids, err)
 	}
 
-	raw, err := s.PresignGet(ctx, sha, time.Minute, PresignGetOptions{ContentDisposition: `attachment; filename="a.txt"`, ContentType: "text/plain"})
+	raw, err := s.PresignGet(
+		ctx,
+		sha,
+		time.Minute,
+		PresignGetOptions{ContentDisposition: `attachment; filename="a.txt"`, ContentType: "text/plain"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

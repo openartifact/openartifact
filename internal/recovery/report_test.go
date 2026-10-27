@@ -32,11 +32,26 @@ func TestReportKeepsExactCountersBeyondTheListCap(t *testing.T) {
 	wg.Wait()
 
 	if rep.UnrecoverableCount != total || rep.FailureCount != total || rep.MissingBlobCount != total || rep.SidecarsInvalid != total {
-		t.Errorf("counters = %d/%d/%d/%d, want %d each", rep.UnrecoverableCount, rep.FailureCount, rep.MissingBlobCount, rep.SidecarsInvalid, total)
+		t.Errorf(
+			"counters = %d/%d/%d/%d, want %d each",
+			rep.UnrecoverableCount,
+			rep.FailureCount,
+			rep.MissingBlobCount,
+			rep.SidecarsInvalid,
+			total,
+		)
 	}
 
-	if len(rep.Unrecoverable) != maxListed || len(rep.Failures) != maxListed || len(rep.MissingBlobs) != maxListed || len(rep.Invalid) != maxListed {
-		t.Errorf("lists = %d/%d/%d/%d, want %d each", len(rep.Unrecoverable), len(rep.Failures), len(rep.MissingBlobs), len(rep.Invalid), maxListed)
+	if len(rep.Unrecoverable) != maxListed || len(rep.Failures) != maxListed || len(rep.MissingBlobs) != maxListed ||
+		len(rep.Invalid) != maxListed {
+		t.Errorf(
+			"lists = %d/%d/%d/%d, want %d each",
+			len(rep.Unrecoverable),
+			len(rep.Failures),
+			len(rep.MissingBlobs),
+			len(rep.Invalid),
+			maxListed,
+		)
 	}
 
 	if len(rep.Tables) != 1 || rep.Tables[0].Unrecoverable != total || rep.Tables[0].Failed != total {
@@ -55,6 +70,11 @@ func TestUnsupportedSidecarsAreNotInvalid(t *testing.T) {
 	r.classifyBad(rep, "c", ErrSidecarDigest)
 
 	if rep.SidecarsUnsupported != 2 || rep.SidecarsInvalid != 1 || rep.ExitCode() != ExitFailed {
-		t.Errorf("unsupported=%d invalid=%d exit=%d, want 2, 1 and a failed run", rep.SidecarsUnsupported, rep.SidecarsInvalid, rep.ExitCode())
+		t.Errorf(
+			"unsupported=%d invalid=%d exit=%d, want 2, 1 and a failed run",
+			rep.SidecarsUnsupported,
+			rep.SidecarsInvalid,
+			rep.ExitCode(),
+		)
 	}
 }
