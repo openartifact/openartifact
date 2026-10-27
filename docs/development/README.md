@@ -207,6 +207,15 @@ The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often ma
 
 The report is reduced to `file  symbol` lines (sorted, line numbers dropped), so the output is deterministic.
 
+## Duplication gates
+
+Duplication can only go down. Both gates run in CI (`dupl` in the `go` job, `jscpd` in the `web` job).
+
+- Go: `make dup` (`scripts/dup-check.sh`) runs [`dupl`](https://github.com/mibk/dupl) (pinned in `tools/go.mod`) with `-t 100` over non-test, non-generated Go (`internal/database/dbsqlc`, `*_test.go` and files with a `Code generated` header are excluded). It compares the clone group count and the duplicated line count (union of the reported ranges) with `go_groups` and `go_lines` in `.github/dup-baseline.json` and fails if either grows.
+- Web: `cd web && bun run dup` runs [`jscpd`](https://github.com/kucherenko/jscpd) (pinned in `web/package.json`) with `web/.jscpd.json` (50 tokens, 5 lines, generated API client, i18n and tests excluded) and fails above the 0.5 % threshold.
+
+When a change removes duplication, run `make dup-baseline` and commit the rewritten `.github/dup-baseline.json` so the lower number becomes the new limit. Never raise the baseline to make a PR pass: remove the duplicate code instead.
+
 ### Test support packages
 
 Helpers shared by tests of several packages cannot live in a `_test.go` file. Put them in a package whose directory name ends in `test`, following the standard library (`httptest`, `iotest`): `internal/database/databasetest`, `internal/format/formattest`, `internal/gpgkeys/gpgkeystest`, `internal/licensemeta/archivetest`, `internal/licensepolicy/policytest`. That naming is the only exclusion: the script skips a package of this module whose directory name ends in `test` and that production code does not import (`internal/attest` ends in `test` too, but production imports it, so it is checked). Production code must never import a `*test` package.

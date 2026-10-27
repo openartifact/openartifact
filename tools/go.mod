@@ -7,6 +7,7 @@ module github.com/openartifact/openartifact/tools
 go 1.27.0
 
 tool (
+	github.com/mibk/dupl
 	github.com/rhysd/actionlint/cmd/actionlint
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 	golang.org/x/tools/cmd/deadcode
@@ -36,6 +37,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect
+	github.com/mibk/dupl v1.1.0 // indirect
 	github.com/ncruces/go-sqlite3 v0.32.0 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/pganalyze/pg_query_go/v6 v6.2.2 // indirect
