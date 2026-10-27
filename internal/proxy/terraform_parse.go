@@ -27,7 +27,9 @@ import (
 // Terraform's own getter unpacks from a plain HTTP URL) and the extension of a
 // provider zip, which together are the files of a Terraform proxy that are not
 // small documents.
-var tfArchiveExts = []string{".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar"} //nolint:gochecknoglobals // read-only table
+//
+//nolint:gochecknoglobals // read-only table
+var tfArchiveExts = []string{".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar"}
 
 // tfArchiveKey reports whether key is a module archive or provider zip.
 func tfArchiveKey(key string) bool {
@@ -96,24 +98,7 @@ func parseTerraformPath(rel string) (tfPath, bool) {
 			return tfPath{kind: tfModuleLatest, name: segs[0], system: segs[1]}, true
 		}
 	case 3:
-		if !validTFModule(segs[0], segs[1]) {
-			return tfPath{}, false
-		}
-
-		p := tfPath{name: segs[0], system: segs[1]}
-
-		switch {
-		case segs[2] == "versions":
-			p.kind = tfModuleVersions
-		case segs[2] == "download":
-			p.kind = tfModuleLatestDownload
-		case terraform.ValidVersion(segs[2]):
-			p.kind, p.version = tfModuleVersion, segs[2]
-		default:
-			return tfPath{}, false
-		}
-
-		return p, true
+		return parseTerraformModulePath(segs)
 	case 4:
 		if validTFModule(segs[0], segs[1]) && terraform.ValidVersion(segs[2]) && segs[3] == "download" {
 			return tfPath{kind: tfModuleDownload, name: segs[0], system: segs[1], version: segs[2]}, true
@@ -126,6 +111,28 @@ func parseTerraformPath(rel string) (tfPath, bool) {
 	}
 
 	return tfPath{}, false
+}
+
+// parseTerraformModulePath classifies NAME/SYSTEM/{versions,download,VERSION}.
+func parseTerraformModulePath(segs []string) (tfPath, bool) {
+	if !validTFModule(segs[0], segs[1]) {
+		return tfPath{}, false
+	}
+
+	p := tfPath{name: segs[0], system: segs[1]}
+
+	switch {
+	case segs[2] == "versions":
+		p.kind = tfModuleVersions
+	case segs[2] == "download":
+		p.kind = tfModuleLatestDownload
+	case terraform.ValidVersion(segs[2]):
+		p.kind, p.version = tfModuleVersion, segs[2]
+	default:
+		return tfPath{}, false
+	}
+
+	return p, true
 }
 
 // validTFModule reports whether name/system is a module the registry routes
@@ -168,7 +175,7 @@ func parseTerraformDiscovery(body []byte, docURL *url.URL) (tfEndpoints, error) 
 
 		u := docURL.ResolveReference(ref)
 		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return nil, fmt.Errorf("discovery %s: %q is not an http(s) service URL", key, s)
+			return nil, fmt.Errorf("discovery %s: %w: %q is not an http(s) service URL", key, errTFBadDocument, s)
 		}
 
 		if !strings.HasSuffix(u.EscapedPath(), "/") {
@@ -193,7 +200,7 @@ func parseTerraformDiscovery(body []byte, docURL *url.URL) (tfEndpoints, error) 
 	}
 
 	if ep.modules == nil && ep.providers == nil {
-		return tfEndpoints{}, errors.New("discovery document announces neither modules.v1 nor providers.v1")
+		return tfEndpoints{}, fmt.Errorf("%w: discovery document announces neither modules.v1 nor providers.v1", errTFBadDocument)
 	}
 
 	return ep, nil
@@ -247,11 +254,11 @@ func (s tfModuleSource) repack() bool { return s.strip || s.subdir != "" }
 const tfCodeloadBase = "https://codeload.github.com"
 
 var (
-	tfGitHubOwnerRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`) //nolint:gochecknoglobals // compiled once
-	tfGitHubRepoRE  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)             //nolint:gochecknoglobals // compiled once
-	tfRefSegmentRE  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]*$`)      //nolint:gochecknoglobals // compiled once
-	tfSubdirSegRE   = regexp.MustCompile(`^[A-Za-z0-9._+@~-]{1,100}$`)          //nolint:gochecknoglobals // compiled once
-	tfDepthRE       = regexp.MustCompile(`^[0-9]{1,4}$`)                        //nolint:gochecknoglobals // compiled once
+	tfGitHubOwnerRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
+	tfGitHubRepoRE  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+	tfRefSegmentRE  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]*$`)
+	tfSubdirSegRE   = regexp.MustCompile(`^[A-Za-z0-9._+@~-]{1,100}$`)
+	tfDepthRE       = regexp.MustCompile(`^[0-9]{1,4}$`)
 )
 
 // validTFGitRef reports whether ref is a branch, tag or commit name that is
@@ -294,7 +301,7 @@ func cleanTFSubdir(sub string) (string, bool) {
 // in "https://github.com/o/r.git//modules/x?ref=v1". Only the path can carry
 // the selector: a "//" after a "?" or "#" belongs to a query value or a
 // fragment.
-func splitModuleSubdir(raw string) (head, subdir string, err error) {
+func splitModuleSubdir(raw string) (string, string, error) {
 	pathEnd := len(raw)
 	if i := strings.IndexAny(raw, "?#"); i >= 0 {
 		pathEnd = i
@@ -323,7 +330,11 @@ func splitModuleSubdir(raw string) (head, subdir string, err error) {
 
 	clean, ok := cleanTFSubdir(sub)
 	if !ok {
-		return "", "", fmt.Errorf("%w: %q selects a subdirectory that is not a clean relative path", errTFUnsupportedSource, truncate(raw, 80))
+		return "", "", fmt.Errorf(
+			"%w: %q selects a subdirectory that is not a clean relative path",
+			errTFUnsupportedSource,
+			truncate(raw, 80),
+		)
 	}
 
 	return head, clean, nil
@@ -333,17 +344,9 @@ func splitModuleSubdir(raw string) (head, subdir string, err error) {
 // "https://github.com/o/r", "github.com/o/r") to the codeload tarball of its
 // ref. ok is false for a source that is not a GitHub repository address, which
 // the caller then reads as a plain archive URL (unless a git getter was forced).
-func parseGitHubSource(head, forced, codeload string) (src tfModuleSource, ok bool, err error) {
-	if _, bare := strings.CutPrefix(head, "github.com/"); bare {
-		head = "https://" + head
-	}
-
-	u, perr := url.Parse(head)
-	if perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return tfModuleSource{}, false, nil
-	}
-
-	if !strings.EqualFold(u.Host, "github.com") {
+func parseGitHubSource(head, forced, codeload string) (tfModuleSource, bool, error) {
+	u := gitHubURL(head)
+	if u == nil {
 		return tfModuleSource{}, false, nil
 	}
 
@@ -353,51 +356,90 @@ func parseGitHubSource(head, forced, codeload string) (src tfModuleSource, ok bo
 		return tfModuleSource{}, false, nil
 	}
 
-	unsupported := func(format string, args ...any) (tfModuleSource, bool, error) {
-		return tfModuleSource{}, true, fmt.Errorf("%w: "+format, append([]any{errTFUnsupportedSource}, args...)...)
+	repo, err := gitHubRepo(u, segs, head)
+	if err != nil {
+		return tfModuleSource{}, true, err
 	}
 
-	repo := ""
-	if len(segs) == 2 {
-		repo = strings.TrimSuffix(segs[1], ".git")
+	ref, err := gitHubRef(u.RawQuery, head)
+	if err != nil {
+		return tfModuleSource{}, true, err
 	}
 
-	switch {
-	case u.User != nil || u.Fragment != "" || u.RawPath != "" || u.Port() != "":
-		return unsupported("%q is not a plain GitHub repository address", truncate(head, 80))
-	case len(segs) != 2 || !tfGitHubOwnerRE.MatchString(segs[0]) || !tfGitHubRepoRE.MatchString(repo) || repo == "." || repo == "..":
-		return unsupported("%q is not a GitHub repository address (owner/repository)", truncate(head, 80))
+	return tfModuleSource{url: codeload + "/" + segs[0] + "/" + repo + "/tar.gz/" + ref, ext: "tar.gz", strip: true}, true, nil
+}
+
+// gitHubURL parses an http(s) address on github.com, with the bare
+// "github.com/o/r" detector made absolute. It is nil for anything else.
+func gitHubURL(head string) *url.URL {
+	if _, bare := strings.CutPrefix(head, "github.com/"); bare {
+		head = "https://" + head
 	}
 
-	query, qerr := url.ParseQuery(u.RawQuery)
-	if qerr != nil {
-		return unsupported("%q has a malformed query", truncate(head, 80))
+	u, err := url.Parse(head)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || !strings.EqualFold(u.Host, "github.com") {
+		return nil
+	}
+
+	return u
+}
+
+// gitHubRepo validates the owner and repository of a github.com address and
+// returns the repository name without its ".git" suffix.
+func gitHubRepo(u *url.URL, segs []string, head string) (string, error) {
+	if u.User != nil || u.Fragment != "" || u.RawPath != "" || u.Port() != "" {
+		return "", fmt.Errorf("%w: %q is not a plain GitHub repository address", errTFUnsupportedSource, truncate(head, 80))
+	}
+
+	if len(segs) != 2 {
+		return "", fmt.Errorf("%w: %q is not a GitHub repository address (owner/repository)", errTFUnsupportedSource, truncate(head, 80))
+	}
+
+	repo := strings.TrimSuffix(segs[1], ".git")
+	if !tfGitHubOwnerRE.MatchString(segs[0]) || !tfGitHubRepoRE.MatchString(repo) || repo == "." || repo == ".." {
+		return "", fmt.Errorf("%w: %q is not a GitHub repository address (owner/repository)", errTFUnsupportedSource, truncate(head, 80))
+	}
+
+	return repo, nil
+}
+
+// gitHubRef reads the ref of a git source query ("HEAD" without one). Only
+// ref and depth (ignored: codeload serves whole tarballs) are accepted, each
+// once.
+func gitHubRef(rawQuery, head string) (string, error) {
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "", fmt.Errorf("%w: %q has a malformed query", errTFUnsupportedSource, truncate(head, 80))
 	}
 
 	ref := "HEAD"
 
 	for name, values := range query {
 		if len(values) != 1 {
-			return unsupported("the parameter %q is given more than once", truncate(name, 40))
+			return "", fmt.Errorf("%w: the parameter %q is given more than once", errTFUnsupportedSource, truncate(name, 40))
 		}
 
 		switch name {
 		case "ref":
 			if !validTFGitRef(values[0]) {
-				return unsupported("the git ref %q is not a plain branch, tag or commit name", truncate(values[0], 80))
+				return "", fmt.Errorf(
+					"%w: the git ref %q is not a plain branch, tag or commit name",
+					errTFUnsupportedSource,
+					truncate(values[0], 80),
+				)
 			}
 
 			ref = values[0]
 		case "depth":
 			if !tfDepthRE.MatchString(values[0]) {
-				return unsupported("the depth %q is not a number", truncate(values[0], 20))
+				return "", fmt.Errorf("%w: the depth %q is not a number", errTFUnsupportedSource, truncate(values[0], 20))
 			}
 		default:
-			return unsupported("the git parameter %q is not supported", truncate(name, 40))
+			return "", fmt.Errorf("%w: the git parameter %q is not supported", errTFUnsupportedSource, truncate(name, 40))
 		}
 	}
 
-	return tfModuleSource{url: codeload + "/" + segs[0] + "/" + repo + "/tar.gz/" + ref, ext: "tar.gz", strip: true}, true, nil
+	return ref, nil
 }
 
 // tfGetterParams are go-getter query parameters that change what is fetched or
@@ -419,7 +461,7 @@ var tfGetterParams = []string{"checksum", "ref", "depth", "sshkey", "filename"} 
 func parseModuleGet(raw string, base *url.URL, codeload string) (tfModuleSource, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > tfMaxGet {
-		return tfModuleSource{}, fmt.Errorf("module source of %d bytes", len(raw))
+		return tfModuleSource{}, fmt.Errorf("%w: module source of %d bytes", errTFBadDocument, len(raw))
 	}
 
 	forced := ""
@@ -443,7 +485,12 @@ func parseModuleGet(raw string, base *url.URL, codeload string) (tfModuleSource,
 	}
 
 	if src.subdir != "" && !slices.Contains([]string{"zip", "tar.gz", "tgz"}, src.ext) {
-		return tfModuleSource{}, fmt.Errorf("%w: %q selects a subdirectory of a %s archive (zip and tar.gz only)", errTFUnsupportedSource, truncate(raw, 80), src.ext)
+		return tfModuleSource{}, fmt.Errorf(
+			"%w: %q selects a subdirectory of a %s archive (zip and tar.gz only)",
+			errTFUnsupportedSource,
+			truncate(raw, 80),
+			src.ext,
+		)
 	}
 
 	return src, nil
@@ -476,7 +523,8 @@ func parsePlainOrGitHub(raw, forced, subdir string, base *url.URL, codeload stri
 	// A path-only source is relative to the download answer; a bare "host/path"
 	// (a getter detector such as github.com/org/repo) has no scheme and no
 	// leading slash and falls through to the scheme check.
-	if ref.Scheme == "" && ref.Host == "" && (strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "../")) {
+	if ref.Scheme == "" && ref.Host == "" &&
+		(strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "../")) {
 		ref = base.ResolveReference(ref)
 	}
 
@@ -516,12 +564,16 @@ func parsePlainOrGitHub(raw, forced, subdir string, base *url.URL, codeload stri
 // splitArchiveHint removes the go-getter "archive" parameter from a raw query,
 // leaving the other pairs exactly as they were (a signed URL must not be
 // re-encoded). It returns the hint, the remaining query and the parameter names.
-func splitArchiveHint(rawQuery string) (hint, query string, names []string) {
+func splitArchiveHint(rawQuery string) (string, string, []string) {
 	if rawQuery == "" {
 		return "", "", nil
 	}
 
-	var kept []string
+	var (
+		hint  string
+		kept  []string
+		names []string
+	)
 
 	for pair := range strings.SplitSeq(rawQuery, "&") {
 		if pair == "" {
@@ -564,7 +616,7 @@ func archiveExtOf(p string) string {
 
 // tfFileNameRE is the shape of a file name taken from an upstream document and
 // used in cache keys and download URLs.
-var tfFileNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$`) //nolint:gochecknoglobals // compiled once
+var tfFileNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$`)
 
 // validTFFileName reports whether s is a safe file name.
 func validTFFileName(s string) bool { return tfFileNameRE.MatchString(s) }
@@ -575,7 +627,7 @@ func validTFFileName(s string) bool { return tfFileNameRE.MatchString(s) }
 // error: it vouches for nothing.
 func parseSHA256SUMS(data []byte) (map[string]string, error) {
 	if len(data) > tfMaxSums {
-		return nil, errors.New("checksum file too large")
+		return nil, fmt.Errorf("%w: file too large", errTFBadChecksums)
 	}
 
 	sums := make(map[string]string)
@@ -588,28 +640,28 @@ func parseSHA256SUMS(data []byte) (map[string]string, error) {
 
 		digest, name, ok := strings.Cut(line, " ")
 		if !ok || len(digest) != sha256HexLen {
-			return nil, fmt.Errorf("malformed checksum line %q", truncate(line, 80))
+			return nil, fmt.Errorf("%w: malformed line %q", errTFBadChecksums, truncate(line, 80))
 		}
 
 		if _, err := hex.DecodeString(digest); err != nil {
-			return nil, fmt.Errorf("malformed checksum %q", truncate(digest, 80))
+			return nil, fmt.Errorf("%w: malformed digest %q", errTFBadChecksums, truncate(digest, 80))
 		}
 
 		name = strings.TrimPrefix(strings.TrimPrefix(name, " "), "*")
 		if name == "" || strings.ContainsAny(name, "/\\\x00") {
-			return nil, fmt.Errorf("malformed checksum file name %q", truncate(name, 80))
+			return nil, fmt.Errorf("%w: malformed file name %q", errTFBadChecksums, truncate(name, 80))
 		}
 
 		digest = strings.ToLower(digest)
 		if prev, dup := sums[name]; dup && prev != digest {
-			return nil, fmt.Errorf("checksum file lists %q twice with different digests", name)
+			return nil, fmt.Errorf("%w: %q is listed twice with different digests", errTFBadChecksums, name)
 		}
 
 		sums[name] = digest
 	}
 
 	if len(sums) == 0 {
-		return nil, errors.New("checksum file is empty")
+		return nil, fmt.Errorf("%w: file is empty", errTFBadChecksums)
 	}
 
 	return sums, nil
@@ -628,6 +680,16 @@ func truncate(s string, n int) string {
 // errTFNoVersions is a versions document that lists nothing the registry could
 // serve; the module or provider does not exist as far as clients can tell.
 var errTFNoVersions = errors.New("no usable versions")
+
+var (
+	// errTFBadDocument marks a discovery, package or module answer that is
+	// well-formed JSON but not something the proxy can serve.
+	errTFBadDocument = errors.New("unusable upstream document")
+	// errTFBadChecksums marks a SHA256SUMS file that vouches for nothing.
+	errTFBadChecksums = errors.New("unusable checksum file")
+	// errTFNotArchive marks a body that is not an archive of the expected kind.
+	errTFNotArchive = errors.New("not an archive")
+)
 
 // tfVersionList is the canonical form a module's version list is cached in:
 // the valid versions of the upstream document, ascending, without anything else.
@@ -787,19 +849,19 @@ func parseProviderPackage(data []byte, docURL *url.URL, osName, arch string) (*t
 	}
 
 	if doc.OS != osName || doc.Arch != arch {
-		return nil, fmt.Errorf("provider package document is for %s_%s, want %s_%s", doc.OS, doc.Arch, osName, arch)
+		return nil, fmt.Errorf("%w: provider package document is for %s_%s, want %s_%s", errTFBadDocument, doc.OS, doc.Arch, osName, arch)
 	}
 
 	if !validTFFileName(doc.Filename) || !strings.HasSuffix(doc.Filename, ".zip") {
-		return nil, fmt.Errorf("provider package file name %q", truncate(doc.Filename, 80))
+		return nil, fmt.Errorf("%w: provider package file name %q", errTFBadDocument, truncate(doc.Filename, 80))
 	}
 
 	if len(doc.Shasum) != sha256HexLen {
-		return nil, errors.New("provider package document has no sha256 shasum")
+		return nil, fmt.Errorf("%w: provider package document has no sha256 shasum", errTFBadDocument)
 	}
 
 	if _, err := hex.DecodeString(doc.Shasum); err != nil {
-		return nil, errors.New("provider package shasum is not hex")
+		return nil, fmt.Errorf("%w: provider package shasum is not hex", errTFBadDocument)
 	}
 
 	doc.Shasum = strings.ToLower(doc.Shasum)
@@ -822,13 +884,13 @@ func parseProviderPackage(data []byte, docURL *url.URL, osName, arch string) (*t
 	// tell them apart.
 	sums, sig := urlBase(doc.ShasumsURL), urlBase(doc.ShasumsSignatureURL)
 	if !validTFFileName(sums) || !validTFFileName(sig) || sums == sig || sums == doc.Filename || sig == doc.Filename {
-		return nil, errors.New("provider package file names are unusable")
+		return nil, fmt.Errorf("%w: provider package file names are unusable", errTFBadDocument)
 	}
 
 	if len(doc.SigningKeys) > 0 {
 		var obj map[string]json.RawMessage
 		if json.Unmarshal(doc.SigningKeys, &obj) != nil {
-			return nil, errors.New("signing_keys is not an object")
+			return nil, fmt.Errorf("%w: signing_keys is not an object", errTFBadDocument)
 		}
 	}
 
@@ -843,12 +905,12 @@ func parseProviderPackage(data []byte, docURL *url.URL, osName, arch string) (*t
 func absoluteHTTPURL(ref string, base *url.URL) (string, error) {
 	u, err := url.Parse(ref)
 	if err != nil || ref == "" {
-		return "", errors.New("not a URL")
+		return "", fmt.Errorf("%w: not a URL", errTFBadDocument)
 	}
 
 	u = base.ResolveReference(u)
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" {
-		return "", errors.New("not an http(s) URL")
+		return "", fmt.Errorf("%w: not an http(s) URL", errTFBadDocument)
 	}
 
 	return u.String(), nil
@@ -901,7 +963,7 @@ func verifyTFArchive(ext string, spool io.Reader) error {
 		}
 	}
 
-	return fmt.Errorf("body is not a %s archive", ext)
+	return fmt.Errorf("%w: body is not a %s archive", errTFNotArchive, ext)
 }
 
 // archiveContentType is the media type a cached module archive is served as.

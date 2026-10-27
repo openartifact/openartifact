@@ -45,8 +45,8 @@ type repackPlan struct {
 // rel maps the cleaned name of an entry to its name in the output. keep is
 // false for entries that are dropped: the wrapper directory itself, the
 // directory selected by subdir, and everything outside it.
-func (p *repackPlan) rel(clean string, isDir bool) (rel string, keep bool, err error) {
-	rel = clean
+func (p *repackPlan) rel(clean string, isDir bool) (string, bool, error) {
+	rel := clean
 
 	if p.strip {
 		first, rest, nested := strings.Cut(clean, "/")
@@ -185,29 +185,7 @@ func repackTarGz(out *errWriter, src io.Reader, compressed int64, plan *repackPl
 			return malformed("not a readable tar archive: %v", err)
 		}
 
-		if hdr.Typeflag == tar.TypeXGlobalHeader {
-			continue
-		}
-
-		isDir := hdr.Typeflag == tar.TypeDir
-		if !isDir && hdr.Typeflag != tar.TypeReg {
-			return malformed("entry %q is a link or special file", hdr.Name)
-		}
-
-		if !isDir && hdr.Size < 0 {
-			return malformed("entry %q has a negative size", hdr.Name)
-		}
-
-		clean, err := set.add(hdr.Name, isDir, hdr.Size)
-		if err != nil {
-			return err
-		}
-
-		if clean == "" {
-			continue
-		}
-
-		name, keep, err := plan.rel(clean, isDir)
+		name, keep, err := planTarEntry(set, plan, hdr)
 		if err != nil {
 			return err
 		}
@@ -215,6 +193,8 @@ func repackTarGz(out *errWriter, src io.Reader, compressed int64, plan *repackPl
 		if !keep {
 			continue
 		}
+
+		isDir := hdr.Typeflag == tar.TypeDir
 
 		th := &tar.Header{
 			Typeflag: hdr.Typeflag,
@@ -238,7 +218,7 @@ func repackTarGz(out *errWriter, src io.Reader, compressed int64, plan *repackPl
 			continue
 		}
 
-		if _, err := io.Copy(tw, tr); err != nil {
+		if _, err := io.Copy(tw, io.LimitReader(tr, hdr.Size)); err != nil {
 			return repackFailure(out, "an entry is corrupt: %v", err)
 		}
 	}
@@ -259,6 +239,34 @@ func repackTarGz(out *errWriter, src io.Reader, compressed int64, plan *repackPl
 	}
 
 	return gw.Close()
+}
+
+// planTarEntry validates and counts one tar entry and says where it goes in the
+// output; keep is false for entries that are dropped.
+func planTarEntry(set *entrySet, plan *repackPlan, hdr *tar.Header) (string, bool, error) {
+	if hdr.Typeflag == tar.TypeXGlobalHeader {
+		return "", false, nil
+	}
+
+	isDir := hdr.Typeflag == tar.TypeDir
+	if !isDir && hdr.Typeflag != tar.TypeReg {
+		return "", false, malformed("entry %q is a link or special file", hdr.Name)
+	}
+
+	if !isDir && hdr.Size < 0 {
+		return "", false, malformed("entry %q has a negative size", hdr.Name)
+	}
+
+	clean, err := set.add(hdr.Name, isDir, hdr.Size)
+	if err != nil {
+		return "", false, err
+	}
+
+	if clean == "" {
+		return "", false, nil
+	}
+
+	return plan.rel(clean, isDir)
 }
 
 // repackZip is RepackModuleArchive for a zip.
@@ -348,7 +356,7 @@ func copyZipEntry(w io.Writer, f *zip.File) error {
 	}
 
 	if n != want {
-		return fmt.Errorf("entry %q does not match its declared size", f.Name)
+		return malformed("entry %q does not match its declared size", f.Name)
 	}
 
 	return nil

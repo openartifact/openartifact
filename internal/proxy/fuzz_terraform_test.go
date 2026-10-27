@@ -18,10 +18,13 @@ import (
 	"github.com/openartifact/openartifact/internal/format/terraform"
 )
 
-var (
-	tfFuzzDocURL  = &url.URL{Scheme: "https", Host: "registry.example", Path: "/.well-known/terraform.json"}
-	tfFuzzGetBase = &url.URL{Scheme: "https", Host: "registry.example", Path: "/v1/modules/ns/demo/aws/1.0.0/download"}
-)
+func tfFuzzDocURL() *url.URL {
+	return &url.URL{Scheme: "https", Host: "registry.example", Path: "/.well-known/terraform.json"}
+}
+
+func tfFuzzGetBase() *url.URL {
+	return &url.URL{Scheme: "https", Host: "registry.example", Path: "/v1/modules/ns/demo/aws/1.0.0/download"}
+}
 
 // FuzzTerraformParsePath checks that an accepted request path names only
 // validated segments: they end up in upstream URLs and cache keys.
@@ -66,7 +69,7 @@ func FuzzTerraformDiscovery(f *testing.F) {
 	f.Add([]byte(`{"login.v1":{"client":"x"}}`))
 
 	f.Fuzz(func(t *testing.T, body []byte) {
-		ep, err := parseTerraformDiscovery(body, tfFuzzDocURL)
+		ep, err := parseTerraformDiscovery(body, tfFuzzDocURL())
 		if err != nil {
 			return
 		}
@@ -80,7 +83,8 @@ func FuzzTerraformDiscovery(f *testing.F) {
 				continue
 			}
 
-			if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !strings.HasSuffix(u.EscapedPath(), "/") {
+			if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+				!strings.HasSuffix(u.EscapedPath(), "/") {
 				t.Fatalf("service URL %q from %q", u, body)
 			}
 		}
@@ -104,43 +108,62 @@ func FuzzTerraformModuleGet(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, raw string) {
-		src, err := parseModuleGet(raw, tfFuzzGetBase, tfCodeloadBase)
+		src, err := parseModuleGet(raw, tfFuzzGetBase(), tfCodeloadBase)
 		if err != nil {
 			return
 		}
 
-		u, perr := url.Parse(src.url)
-		if perr != nil {
-			t.Fatalf("accepted %q as an unparsable URL %q", raw, src.url)
-		}
-
-		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" || strings.Contains(u.Path, "//") {
-			t.Fatalf("accepted %q as %q", raw, src.url)
-		}
-
-		if !slices.Contains(tfArchiveExts, "."+src.ext) {
-			t.Fatalf("accepted %q with extension %q", raw, src.ext)
-		}
-
-		if _, q, _ := splitArchiveHint(u.RawQuery); q != u.RawQuery {
-			t.Fatalf("accepted %q with a getter archive hint left in %q", raw, src.url)
-		}
-
-		if src.subdir != "" {
-			if clean, ok := cleanTFSubdir(src.subdir); !ok || clean != src.subdir || !slices.Contains([]string{"zip", "tar.gz", "tgz"}, src.ext) {
-				t.Fatalf("accepted %q with subdirectory %q of a %s archive", raw, src.subdir, src.ext)
-			}
-		}
-
-		if src.strip {
-			rest, ok := strings.CutPrefix(src.url, tfCodeloadBase+"/")
-			segs := strings.Split(rest, "/")
-
-			if !ok || u.RawQuery != "" || len(segs) < 4 || segs[2] != "tar.gz" || src.ext != "tar.gz" || !validTFGitRef(strings.Join(segs[3:], "/")) {
-				t.Fatalf("accepted %q as the codeload URL %q", raw, src.url)
-			}
-		}
+		checkTFModuleSource(t, raw, src)
 	})
+}
+
+// checkTFModuleSource asserts the invariants of an accepted module source.
+func checkTFModuleSource(t *testing.T, raw string, src tfModuleSource) {
+	t.Helper()
+
+	u, err := url.Parse(src.url)
+	if err != nil {
+		t.Fatalf("accepted %q as an unparsable URL %q", raw, src.url)
+	}
+
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" || strings.Contains(u.Path, "//") {
+		t.Fatalf("accepted %q as %q", raw, src.url)
+	}
+
+	if !slices.Contains(tfArchiveExts, "."+src.ext) {
+		t.Fatalf("accepted %q with extension %q", raw, src.ext)
+	}
+
+	if _, q, _ := splitArchiveHint(u.RawQuery); q != u.RawQuery {
+		t.Fatalf("accepted %q with a getter archive hint left in %q", raw, src.url)
+	}
+
+	if src.subdir != "" {
+		if clean, ok := cleanTFSubdir(
+			src.subdir,
+		); !ok || clean != src.subdir ||
+			!slices.Contains([]string{"zip", "tar.gz", "tgz"}, src.ext) {
+			t.Fatalf("accepted %q with subdirectory %q of a %s archive", raw, src.subdir, src.ext)
+		}
+	}
+
+	if src.strip {
+		checkTFCodeloadSource(t, raw, src, u)
+	}
+}
+
+// checkTFCodeloadSource asserts that a GitHub source is a codeload tarball URL
+// of a validated owner, repository and ref.
+func checkTFCodeloadSource(t *testing.T, raw string, src tfModuleSource, u *url.URL) {
+	t.Helper()
+
+	rest, ok := strings.CutPrefix(src.url, tfCodeloadBase+"/")
+	segs := strings.Split(rest, "/")
+
+	if !ok || u.RawQuery != "" || len(segs) < 4 || segs[2] != "tar.gz" || src.ext != "tar.gz" ||
+		!validTFGitRef(strings.Join(segs[3:], "/")) {
+		t.Fatalf("accepted %q as the codeload URL %q", raw, src.url)
+	}
 }
 
 // FuzzTerraformSHA256SUMS checks that an accepted checksum file maps safe file
@@ -228,7 +251,7 @@ func FuzzTerraformProviderPackage(f *testing.F) {
 	f.Add([]byte(strings.Replace(good, `"signing_keys":{"gpg_public_keys":[]}`, `"signing_keys":[1]`, 1)), "linux", "amd64")
 
 	f.Fuzz(func(t *testing.T, data []byte, osName, arch string) {
-		doc, err := parseProviderPackage(data, tfFuzzDocURL, osName, arch)
+		doc, err := parseProviderPackage(data, tfFuzzDocURL(), osName, arch)
 		if err != nil {
 			return
 		}
@@ -244,8 +267,13 @@ func FuzzTerraformProviderPackage(f *testing.F) {
 			}
 		}
 
-		if names := []string{doc.Filename, urlBase(doc.ShasumsURL), urlBase(doc.ShasumsSignatureURL)}; !validTFFileName(names[1]) || !validTFFileName(names[2]) ||
-			names[0] == names[1] || names[0] == names[2] || names[1] == names[2] {
+		if names := []string{
+			doc.Filename,
+			urlBase(doc.ShasumsURL),
+			urlBase(doc.ShasumsSignatureURL),
+		}; !validTFFileName(names[1]) || !validTFFileName(names[2]) ||
+			names[0] == names[1] || names[0] == names[2] ||
+			names[1] == names[2] {
 			t.Fatalf("file names %v accepted", names)
 		}
 	})
@@ -272,8 +300,19 @@ func FuzzTerraformVerifyArchive(f *testing.F) {
 // well-formed JSON document or an error status.
 func FuzzTerraformUpstreamDocs(f *testing.F) {
 	f.Add([]byte(`{"modules.v1":"/v1/modules/","providers.v1":"/v1/providers/"}`))
-	f.Add([]byte(`{"modules":[{"versions":[{"version":"1.0.0"}]}],"versions":[{"version":"1.0.0","platforms":[{"os":"linux","arch":"amd64"}]}],"location":"git::https://x/y"}`))
-	f.Add([]byte(`{"os":"linux","arch":"amd64","filename":"p.zip","shasum":"` + strings.Repeat("a", 64) + `","download_url":"/p.zip","shasums_url":"/s","shasums_signature_url":"/s.sig"}`))
+	f.Add(
+		[]byte(
+			`{"modules":[{"versions":[{"version":"1.0.0"}]}],"versions":[{"version":"1.0.0","platforms":[{"os":"linux","arch":"amd64"}]}],"location":"git::https://x/y"}`,
+		),
+	)
+	f.Add(
+		[]byte(
+			`{"os":"linux","arch":"amd64","filename":"p.zip","shasum":"` + strings.Repeat(
+				"a",
+				64,
+			) + `","download_url":"/p.zip","shasums_url":"/s","shasums_signature_url":"/s.sig"}`,
+		),
+	)
 	f.Add([]byte(`<html></html>`))
 
 	f.Fuzz(func(t *testing.T, data []byte) {

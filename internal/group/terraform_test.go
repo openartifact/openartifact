@@ -112,7 +112,8 @@ func TestTerraformGroup_ProviderVersionsUnionPlatformsAndProtocols(t *testing.T)
 	}
 
 	v3 := doc.Versions[1]
-	if doc.Versions[0].Version != "2.0.0" || v3.Version != "3.0.0" || len(v3.Platforms) != 2 || !slices.Equal(v3.Protocols, []string{"5.0", "6.0"}) {
+	if doc.Versions[0].Version != "2.0.0" || v3.Version != "3.0.0" || len(v3.Platforms) != 2 ||
+		!slices.Equal(v3.Protocols, []string{"5.0", "6.0"}) {
 		t.Errorf("merged = %+v", doc.Versions)
 	}
 }
@@ -183,7 +184,8 @@ func TestTerraformGroup_UnreadableMemberDocumentFailsThatMember(t *testing.T) {
 	f.set("mirror", tfModVersions, 200, `{"modules":[{"versions":[{"nope":1}]}]}`)
 
 	w := f.get(http.MethodGet, tfModVersions)
-	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || !slices.Equal(tfModuleVersionsOf(t, w.Body.String()), []string{"1.0.0"}) {
+	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" ||
+		!slices.Equal(tfModuleVersionsOf(t, w.Body.String()), []string{"1.0.0"}) {
 		t.Errorf("= %d %s cc=%q", w.Code, w.Body.String(), w.Header().Get("Cache-Control"))
 	}
 }
@@ -195,7 +197,8 @@ func TestTerraformGroup_LatestIsOfTheMergedListAndNamesTheGroup(t *testing.T) {
 	f.set("mirror", "net/vpc/1.5.0", 200, `{"id":"mirror/net/vpc/1.5.0","namespace":"mirror","name":"vpc","version":"1.5.0"}`)
 
 	w := f.get(http.MethodGet, "net/vpc")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"namespace":"all"`) || !strings.Contains(w.Body.String(), `"id":"all/net/vpc/1.5.0"`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"namespace":"all"`) ||
+		!strings.Contains(w.Body.String(), `"id":"all/net/vpc/1.5.0"`) {
 		t.Errorf("latest details = %d %s", w.Code, w.Body.String())
 	}
 
@@ -353,7 +356,10 @@ func FuzzParseTerraformPath(f *testing.F) {
 }
 
 func FuzzMergeTerraformVersions(f *testing.F) {
-	f.Add(tfModuleDoc("x", "1.0.0", "2.0.0-rc.1"), `{"versions":[{"version":"1.0.0","protocols":["5.0"],"platforms":[{"os":"linux","arch":"amd64"}]}]}`)
+	f.Add(
+		tfModuleDoc("x", "1.0.0", "2.0.0-rc.1"),
+		`{"versions":[{"version":"1.0.0","protocols":["5.0"],"platforms":[{"os":"linux","arch":"amd64"}]}]}`,
+	)
 	f.Add(`{"modules":[]}`, `{"versions":null}`)
 	f.Add(`{"modules":[{"versions":[{"version":""}]}]}`, `{"versions":[{"version":"v1"}]}`)
 	f.Add(`[`, `{"versions":[{"version":"1.0.0","platforms":null}]}`)
@@ -365,8 +371,8 @@ func FuzzMergeTerraformVersions(f *testing.F) {
 				t.Fatalf("merge of a list with itself grew: %d > %d", len(out), len(l))
 			}
 
-			if !json.Valid(renderModuleVersions("g/n/s", out)) {
-				t.Fatalf("rendered module list is not JSON for %q", modDoc)
+			if body, err := renderModuleVersions("g/n/s", out); err != nil || !json.Valid(body) {
+				t.Fatalf("rendered module list is not JSON for %q: %v", modDoc, err)
 			}
 		}
 
@@ -376,8 +382,8 @@ func FuzzMergeTerraformVersions(f *testing.F) {
 				t.Fatalf("merge of a list with itself grew: %d > %d", len(out), len(l))
 			}
 
-			if !json.Valid(renderProviderVersions(out)) {
-				t.Fatalf("rendered provider list is not JSON for %q", provDoc)
+			if body, err := renderProviderVersions(out); err != nil || !json.Valid(body) {
+				t.Fatalf("rendered provider list is not JSON for %q: %v", provDoc, err)
 			}
 		}
 

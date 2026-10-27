@@ -7,6 +7,7 @@ package group
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -46,8 +47,8 @@ const (
 // terraformPath is a parsed registry request. name is the module name or the
 // provider type.
 type terraformPath struct {
-	kind                       terraformKind
-	name, system, version, dir string
+	kind                  terraformKind
+	name, system, version string
 }
 
 // terraformSegment reports whether s can be a coordinate of a registry
@@ -277,7 +278,7 @@ func mergeModuleVersions(lists ...[]moduleVersion) []moduleVersion {
 }
 
 // renderModuleVersions is the version list document of module source.
-func renderModuleVersions(source string, versions []moduleVersion) []byte {
+func renderModuleVersions(source string, versions []moduleVersion) ([]byte, error) {
 	raws := make([]json.RawMessage, 0, len(versions))
 	for _, v := range versions {
 		raws = append(raws, v.raw)
@@ -288,9 +289,12 @@ func renderModuleVersions(source string, versions []moduleVersion) []byte {
 		Versions []json.RawMessage `json:"versions"`
 	}
 
-	body, _ := json.Marshal(map[string][]entry{"modules": {{Source: source, Versions: raws}}})
+	body, err := json.Marshal(map[string][]entry{"modules": {{Source: source, Versions: raws}}})
+	if err != nil {
+		return nil, fmt.Errorf("render module versions: %w", err)
+	}
 
-	return append(body, '\n')
+	return append(body, '\n'), nil
 }
 
 // providerPlatform is one platform of a provider version.
@@ -363,10 +367,16 @@ func mergeProviderVersions(lists ...[]providerVersion) []providerVersion {
 }
 
 // renderProviderVersions is the version list document of a provider.
-func renderProviderVersions(versions []providerVersion) []byte {
-	body, _ := json.Marshal(map[string]any{"versions": versions, "warnings": nil})
+func renderProviderVersions(versions []providerVersion) ([]byte, error) {
+	body, err := json.Marshal(struct {
+		Versions []providerVersion `json:"versions"`
+		Warnings []string          `json:"warnings"`
+	}{Versions: versions})
+	if err != nil {
+		return nil, fmt.Errorf("render provider versions: %w", err)
+	}
 
-	return append(body, '\n')
+	return append(body, '\n'), nil
 }
 
 // rewriteModuleDetails makes the description of a module version name the
@@ -378,14 +388,20 @@ func rewriteModuleDetails(doc []byte, group string) ([]byte, error) {
 		return nil, err //nolint:wrapcheck // logged by the caller
 	}
 
+	var err error
+
 	if _, ok := fields["namespace"]; ok {
-		fields["namespace"], _ = json.Marshal(group)
+		if fields["namespace"], err = json.Marshal(group); err != nil {
+			return nil, fmt.Errorf("render namespace: %w", err)
+		}
 	}
 
 	var id string
 	if raw, ok := fields["id"]; ok && json.Unmarshal(raw, &id) == nil {
 		if _, rest, cut := strings.Cut(id, "/"); cut {
-			fields["id"], _ = json.Marshal(group + "/" + rest)
+			if fields["id"], err = json.Marshal(group + "/" + rest); err != nil {
+				return nil, fmt.Errorf("render id: %w", err)
+			}
 		}
 	}
 
@@ -444,7 +460,15 @@ func (h *Handler) serveTerraformModuleVersions(
 		return
 	}
 
-	h.writeMergedJSON(w, r, grp, renderModuleVersions(grp.Name+"/"+p.name+"/"+p.system, merged), failed)
+	body, err := renderModuleVersions(grp.Name+"/"+p.name+"/"+p.system, merged)
+	if err != nil {
+		h.log.Warnw("terraform module versions cannot be rendered", "group", grp.Name, "error", err)
+		h.writeMergedJSON(w, r, grp, nil, true)
+
+		return
+	}
+
+	h.writeMergedJSON(w, r, grp, body, failed)
 }
 
 func (h *Handler) serveTerraformProviderVersions(
@@ -477,7 +501,15 @@ func (h *Handler) serveTerraformProviderVersions(
 		return
 	}
 
-	h.writeMergedJSON(w, r, grp, renderProviderVersions(merged), failed)
+	body, err := renderProviderVersions(merged)
+	if err != nil {
+		h.log.Warnw("terraform provider versions cannot be rendered", "group", grp.Name, "error", err)
+		h.writeMergedJSON(w, r, grp, nil, true)
+
+		return
+	}
+
+	h.writeMergedJSON(w, r, grp, body, failed)
 }
 
 // serveTerraformModuleDetails answers the description of one module version

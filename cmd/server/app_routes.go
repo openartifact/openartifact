@@ -274,7 +274,8 @@ func (a *app) hostedRouters() map[string]http.Handler {
 
 	routers := map[string]*chi.Mux{}
 	for _, name := range []string{
-		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda", "terraform",
+		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "rubygems", "conda",
+		"terraform",
 	} {
 		routers[name] = chi.NewRouter()
 	}

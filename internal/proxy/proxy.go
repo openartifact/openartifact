@@ -615,7 +615,7 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 	upstreamBody := resp.Body
 	defer func() { base.CloseLog(upstreamBody, s.log) }()
 
-	if !(o.transform != nil && resp.StatusCode == http.StatusNoContent) {
+	if o.transform == nil || resp.StatusCode != http.StatusNoContent {
 		if err := s.upstreamStatusError(repo, key, resp.StatusCode); err != nil {
 			if errors.Is(err, errNotFound) {
 				s.recordNegative(ctx, repo, key)
@@ -940,10 +940,8 @@ func Immutable(format, key string) bool {
 	switch format {
 	case "maven":
 		return mavenImmutable(key)
-	case "deb":
-		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
-	case "rpm":
-		return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
+	case "deb", "rpm":
+		return debRPMImmutable(format, key, name)
 	case "pypi":
 		// Distribution files (and their PEP 658 metadata), not the index pages.
 		return strings.HasPrefix(key, "files/")
@@ -981,6 +979,16 @@ func Immutable(format, key string) bool {
 	}
 
 	return false
+}
+
+// debRPMImmutable is Immutable for deb (.deb/.udeb below pool/) and rpm (.rpm
+// below Packages/).
+func debRPMImmutable(format, key, name string) bool {
+	if format == "deb" {
+		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
+	}
+
+	return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
 }
 
 // packageFileImmutable is Immutable for the formats whose package files live

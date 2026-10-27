@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -134,7 +135,12 @@ func (f *tfFake) serveReleases(w http.ResponseWriter, r *http.Request) {
 	case "/releases/" + tfSumsFile:
 		line := cfg.sumsLine
 		if line == "" {
-			line = hexOf(cfg.zipBody) + "  " + tfZipFile + "\n" + strings.Repeat("a", 64) + "  terraform-provider-random_3.5.1_darwin_arm64.zip\n"
+			line = hexOf(
+				cfg.zipBody,
+			) + "  " + tfZipFile + "\n" + strings.Repeat(
+				"a",
+				64,
+			) + "  terraform-provider-random_3.5.1_darwin_arm64.zip\n"
 		}
 
 		_, _ = fmt.Fprint(w, line)
@@ -164,7 +170,10 @@ func (f *tfFake) serveRegistry(w http.ResponseWriter, r *http.Request) {
 	case "/.well-known/terraform.json":
 		_, _ = fmt.Fprint(w, `{"modules.v1":"/v1/modules/","providers.v1":"/v1/providers"}`)
 	case "/v1/modules/ns/demo/aws/versions":
-		_, _ = fmt.Fprint(w, `{"modules":[{"source":"ns/demo/aws","versions":[{"version":"1.1.0"},{"version":"1.0.0"},{"version":"1.0.0-rc.1"},{"version":"../evil"},{"version":"1.0.0"}]}]}`)
+		_, _ = fmt.Fprint(
+			w,
+			`{"modules":[{"source":"ns/demo/aws","versions":[{"version":"1.1.0"},{"version":"1.0.0"},{"version":"1.0.0-rc.1"},{"version":"../evil"},{"version":"1.0.0"}]}]}`,
+		)
 	case "/v1/modules/ns/demo/aws/1.0.0/download":
 		get := cfg.moduleGet
 		if get == "" {
@@ -179,15 +188,26 @@ func (f *tfFake) serveRegistry(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Terraform-Get", get)
 		w.WriteHeader(http.StatusNoContent)
 	case "/v1/providers/ns/random/versions":
-		_, _ = fmt.Fprint(w, `{"versions":[{"version":"3.5.1","protocols":["5.0"],"platforms":[{"os":"linux","arch":"amd64"},{"os":"darwin","arch":"arm64"}]},{"version":"3.4.0","protocols":["5.0"],"platforms":[{"os":"linux","arch":"amd64"}]},{"version":"bad version","platforms":[{"os":"linux","arch":"amd64"}]}]}`)
+		_, _ = fmt.Fprint(
+			w,
+			`{"versions":[{"version":"3.5.1","protocols":["5.0"],"platforms":[{"os":"linux","arch":"amd64"},{"os":"darwin","arch":"arm64"}]},{"version":"3.4.0","protocols":["5.0"],"platforms":[{"os":"linux","arch":"amd64"}]},{"version":"bad version","platforms":[{"os":"linux","arch":"amd64"}]}]}`,
+		)
 	case "/v1/providers/ns/random/3.5.1/download/linux/amd64":
 		shasum := cfg.shasum
 		if shasum == "" {
 			shasum = hexOf(cfg.zipBody)
 		}
 
-		_, _ = fmt.Fprintf(w, `{"protocols":["5.0"],"os":"linux","arch":"amd64","filename":%q,"download_url":%q,"shasums_url":%q,"shasums_signature_url":%q,"shasum":%q,"signing_keys":%s}`,
-			tfZipFile, f.release.URL+cfg.zipPath, f.release.URL+"/releases/"+tfSumsFile, f.release.URL+"/releases/"+tfSigFile, shasum, cfg.keys)
+		_, _ = fmt.Fprintf(
+			w,
+			`{"protocols":["5.0"],"os":"linux","arch":"amd64","filename":%q,"download_url":%q,"shasums_url":%q,"shasums_signature_url":%q,"shasum":%q,"signing_keys":%s}`,
+			tfZipFile,
+			f.release.URL+cfg.zipPath,
+			f.release.URL+"/releases/"+tfSumsFile,
+			f.release.URL+"/releases/"+tfSigFile,
+			shasum,
+			cfg.keys,
+		)
 	default:
 		http.NotFound(w, r)
 	}
@@ -268,7 +288,8 @@ func TestTerraformProviderVersionsAreCachedAndCleaned(t *testing.T) {
 	}
 
 	doc := decodeJSON[tfProviderVersionList](t, w)
-	if len(doc.Versions) != 2 || doc.Versions[0].Version != "3.4.0" || doc.Versions[1].Version != "3.5.1" || len(doc.Versions[1].Platforms) != 2 {
+	if len(doc.Versions) != 2 || doc.Versions[0].Version != "3.4.0" || doc.Versions[1].Version != "3.5.1" ||
+		len(doc.Versions[1].Platforms) != 2 {
 		t.Fatalf("versions %+v", doc.Versions)
 	}
 
@@ -316,7 +337,10 @@ func TestTerraformModuleVersionsDetailsAndLatest(t *testing.T) {
 		t.Fatalf("latest %d: %s", w.Code, w.Body)
 	}
 
-	if w := f.get("demo/aws/download"); w.Code != http.StatusFound || !strings.HasSuffix(w.Header().Get("Location"), "/demo/aws/1.1.0/download") {
+	if w := f.get(
+		"demo/aws/download",
+	); w.Code != http.StatusFound ||
+		!strings.HasSuffix(w.Header().Get("Location"), "/demo/aws/1.1.0/download") {
 		t.Fatalf("latest download %d, Location %q", w.Code, w.Header().Get("Location"))
 	}
 
@@ -447,7 +471,8 @@ func TestTerraformModuleDownloadThroughTicket(t *testing.T) {
 
 	for i := range 2 {
 		got := f.redeem(tfModuleRedeem(file))
-		if got.Code != http.StatusOK || got.Body.String() != f.config().moduleBody || got.Header().Get("Content-Type") != "application/zip" {
+		if got.Code != http.StatusOK || got.Body.String() != f.config().moduleBody ||
+			got.Header().Get("Content-Type") != "application/zip" {
 			t.Fatalf("redeem %d: status %d type %q body %q", i, got.Code, got.Header().Get("Content-Type"), got.Body)
 		}
 	}
@@ -500,7 +525,8 @@ func TestTerraformModuleGetterSourcesAreRefused(t *testing.T) {
 		f.set(func(c *tfCfg) { c.moduleGet = get })
 
 		w := f.get("demo/aws/1.0.0/download")
-		if w.Code != http.StatusNotImplemented || !strings.Contains(w.Body.String(), "plain archive URLs") || !strings.Contains(w.Body.String(), "documentation") {
+		if w.Code != http.StatusNotImplemented || !strings.Contains(w.Body.String(), "plain archive URLs") ||
+			!strings.Contains(w.Body.String(), "documentation") {
 			t.Errorf("%q: status %d, body %s; want 501 with a docs pointer", get, w.Code, w.Body)
 		}
 
@@ -592,7 +618,8 @@ func TestTerraformProviderPackageRewritesURLsAndKeepsKeys(t *testing.T) {
 		}
 	}
 
-	if ticketFile(t, doc.DownloadURL) != tfZipFile || ticketFile(t, doc.ShasumsURL) != tfSumsFile || ticketFile(t, doc.ShasumsSignatureURL) != tfSigFile {
+	if ticketFile(t, doc.DownloadURL) != tfZipFile || ticketFile(t, doc.ShasumsURL) != tfSumsFile ||
+		ticketFile(t, doc.ShasumsSignatureURL) != tfSigFile {
 		t.Errorf("ticket files: %q %q %q", doc.DownloadURL, doc.ShasumsURL, doc.ShasumsSignatureURL)
 	}
 
@@ -655,7 +682,10 @@ func TestTerraformProviderDownloadFollowsRedirects(t *testing.T) {
 		t.Fatal("package document failed")
 	}
 
-	if got := f.redeem(tfProviderDownload(terraform.DownloadProviderZip, tfZipFile)); got.Code != http.StatusOK || got.Body.String() != f.config().zipBody {
+	if got := f.redeem(
+		tfProviderDownload(terraform.DownloadProviderZip, tfZipFile),
+	); got.Code != http.StatusOK ||
+		got.Body.String() != f.config().zipBody {
 		t.Fatalf("status %d body %q", got.Code, got.Body)
 	}
 }
@@ -741,7 +771,10 @@ func TestTerraformRepublishedProviderDropsTheCachedZip(t *testing.T) {
 		t.Fatal("the zip of the old shasum is still cached")
 	}
 
-	if got := f.redeem(tfProviderDownload(terraform.DownloadProviderZip, tfZipFile)); got.Code != http.StatusOK || got.Body.String() != "PK\x03\x04 republished" {
+	if got := f.redeem(
+		tfProviderDownload(terraform.DownloadProviderZip, tfZipFile),
+	); got.Code != http.StatusOK ||
+		got.Body.String() != "PK\x03\x04 republished" {
 		t.Fatalf("status %d body %q", got.Code, got.Body)
 	}
 }
@@ -813,7 +846,11 @@ func TestParseTerraformDiscovery(t *testing.T) {
 		t.Fatalf("endpoints %v %v", ep.modules, ep.providers)
 	}
 
-	if ep, err := parseTerraformDiscovery([]byte(`{"providers.v1":"v1/providers/"}`), doc); err != nil || ep.modules != nil || ep.providers.String() != "https://registry.example/.well-known/v1/providers/" {
+	if ep, err := parseTerraformDiscovery(
+		[]byte(`{"providers.v1":"v1/providers/"}`),
+		doc,
+	); err != nil || ep.modules != nil ||
+		ep.providers.String() != "https://registry.example/.well-known/v1/providers/" {
 		t.Fatalf("providers only: %+v %v", ep, err)
 	}
 
@@ -885,7 +922,9 @@ func TestParseSHA256SUMS(t *testing.T) {
 }
 
 func TestCanonVersions(t *testing.T) {
-	out, err := canonModuleVersions(strings.NewReader(`{"modules":[{"versions":[{"version":"2.0.0"},{"version":"1.0.0"},{"version":"1.0.0"},{"version":"x y"}]}]}`))
+	out, err := canonModuleVersions(
+		strings.NewReader(`{"modules":[{"versions":[{"version":"2.0.0"},{"version":"1.0.0"},{"version":"1.0.0"},{"version":"x y"}]}]}`),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +940,9 @@ func TestCanonVersions(t *testing.T) {
 		}
 	}
 
-	if _, err := canonProviderVersions(strings.NewReader(`{"versions":[{"version":"1.0.0","platforms":[{"os":"Linux","arch":"amd64"}]}]}`)); err == nil {
+	if _, err := canonProviderVersions(
+		strings.NewReader(`{"versions":[{"version":"1.0.0","platforms":[{"os":"Linux","arch":"amd64"}]}]}`),
+	); err == nil {
 		t.Error("a provider version without a valid platform was kept")
 	}
 
@@ -913,15 +954,17 @@ func TestCanonVersions(t *testing.T) {
 func TestParseProviderPackageRefusals(t *testing.T) {
 	docURL := mustURL(t, "https://registry.example/v1/providers/ns/random/1.0.0/download/linux/amd64")
 	good := map[string]any{
-		"os": "linux", "arch": "amd64", "filename": "p_1.0.0_linux_amd64.zip", "shasum": strings.Repeat("a", 64),
-		"download_url": "https://rel.example/p_1.0.0_linux_amd64.zip", "shasums_url": "/sums/p_1.0.0_SHA256SUMS", "shasums_signature_url": "https://rel.example/p_1.0.0_SHA256SUMS.sig",
+		"os":                    "linux",
+		"arch":                  "amd64",
+		"filename":              "p_1.0.0_linux_amd64.zip",
+		"shasum":                strings.Repeat("a", 64),
+		"download_url":          "https://rel.example/p_1.0.0_linux_amd64.zip",
+		"shasums_url":           "/sums/p_1.0.0_SHA256SUMS",
+		"shasums_signature_url": "https://rel.example/p_1.0.0_SHA256SUMS.sig",
 	}
 
 	encode := func(mod func(map[string]any)) []byte {
-		m := map[string]any{}
-		for k, v := range good {
-			m[k] = v
-		}
+		m := maps.Clone(good)
 
 		mod(m)
 
@@ -996,7 +1039,8 @@ func TestTerraformCacheKeyClassification(t *testing.T) {
 		t.Error("only provider zips are pinned immutable")
 	}
 
-	if isMetadataKey("terraform", zipKey) || isMetadataKey("terraform", modKey) || !isMetadataKey("terraform", tfModuleVersionsKey("demo", "aws")) {
+	if isMetadataKey("terraform", zipKey) || isMetadataKey("terraform", modKey) ||
+		!isMetadataKey("terraform", tfModuleVersionsKey("demo", "aws")) {
 		t.Error("metadata classification")
 	}
 }
