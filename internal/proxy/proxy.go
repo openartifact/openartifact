@@ -11,6 +11,7 @@
 package proxy
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
@@ -32,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -130,6 +132,10 @@ type Service struct {
 	nuget nugetIndexCache // parsed NuGet upstream service indexes
 
 	gemMD5 md5Memo // MD5 ETags of cached RubyGems compact index files
+
+	tfSecret    []byte            // server HMAC secret the Terraform download tickets derive from
+	tfTickets   *terraform.Minter // mints the download URLs of Terraform proxy documents
+	tfEndpoints tfEndpointMemo    // registry endpoints resolved from cached discovery documents
 
 	// packuments bounds every upstream document held in memory at once (npm
 	// packuments, PyPI pages, Helm indexes, NuGet/OCI documents, cargo
@@ -253,6 +259,8 @@ func (s *Service) formatServer(format string) func(http.ResponseWriter, *http.Re
 		return s.serveNuGet
 	case "rubygems":
 		return s.serveRubyGems
+	case "terraform":
+		return s.serveTerraform
 	}
 
 	return nil
@@ -560,6 +568,11 @@ type fetchOpts struct {
 	// error refuses the body. The spool may be read freely: it is rewound
 	// afterwards.
 	verify func(spool io.ReadSeeker) error
+	// transform, when set, turns the upstream answer into the document that is
+	// cached: it replaces resp.Body and resp.ContentLength (replaceBody). It
+	// also accepts a 204, whose meaning lives in the headers. The original
+	// body is still closed by the caller.
+	transform func(resp *http.Response) error
 }
 
 // outboundError classifies a failed outbound URL check. A host that does not
@@ -596,17 +609,34 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 		s.log.Warnw("proxy upstream request failed", "repo", repo.Name, "path", key, "error", err)
 		return nil, errUpstreamDown
 	}
-	defer func() { base.CloseLog(resp.Body, s.log) }()
+	// The body a transform substitutes is memory; the upstream's is closed here.
+	upstreamBody := resp.Body
+	defer func() { base.CloseLog(upstreamBody, s.log) }()
 
-	if err := s.upstreamStatusError(repo, key, resp.StatusCode); err != nil {
-		if errors.Is(err, errNotFound) {
-			s.recordNegative(ctx, repo, key)
+	if !(o.transform != nil && resp.StatusCode == http.StatusNoContent) {
+		if err := s.upstreamStatusError(repo, key, resp.StatusCode); err != nil {
+			if errors.Is(err, errNotFound) {
+				s.recordNegative(ctx, repo, key)
+			}
+
+			return nil, err
 		}
+	}
 
-		return nil, err
+	if o.transform != nil {
+		if terr := o.transform(resp); terr != nil {
+			return nil, terr
+		}
 	}
 
 	return s.store(ctx, repo, key, resp, o)
+}
+
+// replaceBody makes body the response a transform hands to store.
+func replaceBody(resp *http.Response, body []byte) {
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.TransferEncoding = nil
 }
 
 // upstreamStatusError classifies an upstream answer that did not deliver the
@@ -937,6 +967,10 @@ func Immutable(format, key string) bool {
 		// File lists and files below a revision, which a digest of its
 		// content names; revision lists and latest move.
 		return conanRevisionFile(key)
+	case "terraform":
+		// Provider zips, checked against the SHA256SUMS and package document
+		// checksums; module archives have no checksum upstream (see terraform.go).
+		return tfProviderZipKey(key)
 	}
 
 	return false
@@ -1004,6 +1038,8 @@ func isMetadataKey(format, key string) bool {
 		return !strings.HasPrefix(key, "gems/")
 	case "conan":
 		return !strings.Contains(key, "/files/")
+	case "terraform":
+		return !tfArchiveKey(key)
 	}
 
 	return false
@@ -1044,6 +1080,8 @@ var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only ta
 	"ivy":   ivyPackageExts,
 	"sbt":   ivyPackageExts,
 	"conda": {conda.ExtConda, conda.ExtTarBz2},
+	// Module archives and provider zips; also the keys that are not metadata.
+	"terraform": tfArchiveExts,
 }
 
 // isHTMLForPackage reports whether the upstream answered a package file's path

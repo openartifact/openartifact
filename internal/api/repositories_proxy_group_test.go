@@ -62,15 +62,6 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 		}
 
 		for format := range validFormats {
-			// The Terraform registry is hosted-only until its proxy and group land.
-			if format == "terraform" {
-				if msg := unsupportedRepoTypeMessage(repoType, format); !strings.Contains(msg, "not supported for format") {
-					t.Errorf("%s of terraform: message %q", repoType, msg)
-				}
-
-				continue
-			}
-
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
 				t.Errorf("%s of %s: unexpected message %q", repoType, format, msg)
 			}
@@ -104,7 +95,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems", "conda"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems", "conda", "terraform"} {
 		db := newProxyGroupDB()
 		rw := createRepo(
 			t,
@@ -137,6 +128,8 @@ func TestCreateProxyDefaultUpstream(t *testing.T) {
 		"nuget":    "https://api.nuget.org/v3/index.json",
 		"rubygems": "https://rubygems.org",
 		"conan":    "https://center2.conan.io",
+
+		"terraform": "https://registry.terraform.io",
 	} {
 		db := newProxyGroupDB()
 		if rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||

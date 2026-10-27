@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("{\"protocols\":[\"5.0\"],\"os\":\"linux\",\"arch\":\"amd64\",\"filename\":\"p_1.0.0_linux_amd64.zip\",\"shasum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"download_url\":\"https://rel.example/p_1.0.0_linux_amd64.zip\",\"shasums_url\":\"/s/p_1.0.0_SHA256SUMS\",\"shasums_signature_url\":\"https://rel.example/p_1.0.0_SHA256SUMS.sig\",\"signing_keys\":{\"gpg_public_keys\":[]}}")
+string("darwin")
+string("arm64")

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"login.v1\":{\"client\":\"x\"}}")

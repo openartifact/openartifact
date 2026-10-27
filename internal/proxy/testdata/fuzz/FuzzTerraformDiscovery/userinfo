@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"modules.v1\":\"https://u:p@x/\"}")

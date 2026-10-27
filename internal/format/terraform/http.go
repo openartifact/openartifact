@@ -53,6 +53,7 @@ type HTTPHandler struct {
 	*base.Handler
 
 	signers   gpg.Resolver
+	proxy     ProxyServer
 	ticketKey []byte
 	now       func() time.Time
 }

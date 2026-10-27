@@ -20,14 +20,14 @@ import (
 )
 
 const (
-	// maxConanDocBytes bounds one member's search or revision document held in
+	// maxMemberDocBytes bounds one member's search or revision document held in
 	// memory.
-	maxConanDocBytes = 32 << 20
+	maxMemberDocBytes = 32 << 20
 
-	// conanDocMaxAge is how long shared caches may reuse a public group's merged
+	// mergedDocMaxAge is how long shared caches may reuse a public group's merged
 	// documents before revalidating; revision lists move whenever a member is
 	// published to.
-	conanDocMaxAge = 60
+	mergedDocMaxAge = 60
 
 	// maxConanProbeBytes bounds the search answer a hosted-wins probe reads.
 	maxConanProbeBytes = 8 << 20
@@ -103,35 +103,35 @@ func (h *Handler) serveConanV2(
 	return true
 }
 
-// conanDoc is the answer of one member.
-type conanDoc struct {
+// jsonDoc is the answer of one member.
+type jsonDoc struct {
 	member *models.Repository
 	body   []byte
 }
 
-// collectConan asks every member for relPath (a GET without the client's
+// collectJSON asks every member for relPath (a GET without the client's
 // conditional headers) and returns the documents of those that answered 200.
 // failed reports that a member failed (a 5xx, an oversized answer), so the
 // merged answer may lack what that member holds.
-func (h *Handler) collectConan(
+func (h *Handler) collectJSON(
 	r *http.Request,
 	members []*models.Repository,
 	relPath, rawQuery string,
 	be Backend,
-) ([]conanDoc, bool) {
-	return h.collectConanN(r, members, relPath, rawQuery, 0, be)
+) ([]jsonDoc, bool) {
+	return h.collectJSONN(r, members, relPath, rawQuery, 0, be)
 }
 
-// collectConanN is collectConan stopping at the first limit documents (all when
+// collectJSONN is collectJSON stopping at the first limit documents (all when
 // limit is 0).
-func (h *Handler) collectConanN(
+func (h *Handler) collectJSONN(
 	r *http.Request,
 	members []*models.Repository,
 	relPath, rawQuery string,
 	limit int,
 	be Backend,
-) ([]conanDoc, bool) {
-	var docs []conanDoc
+) ([]jsonDoc, bool) {
+	var docs []jsonDoc
 
 	failed := false
 
@@ -152,13 +152,13 @@ func (h *Handler) collectConanN(
 			break
 		}
 
-		cw := sess.capture(maxConanDocBytes)
+		cw := sess.capture(maxMemberDocBytes)
 		be.ServeMember(cw, mr, m, relPath)
 
 		switch {
 		case cw.status == http.StatusNotFound:
 		case cw.status == http.StatusOK && !cw.overflow:
-			docs = append(docs, conanDoc{member: m, body: slices.Clone(cw.body.Bytes())})
+			docs = append(docs, jsonDoc{member: m, body: slices.Clone(cw.body.Bytes())})
 		default:
 			failed = true
 		}
@@ -167,9 +167,9 @@ func (h *Handler) collectConanN(
 	return docs, failed
 }
 
-// writeConanMerged answers a merged document, or the status of an empty merge:
+// writeMergedJSON answers a merged document, or the status of an empty merge:
 // 404 when no member has it, 502 when one failed on the way.
-func (h *Handler) writeConanMerged(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, failed bool) {
+func (h *Handler) writeMergedJSON(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, failed bool) {
 	if body == nil {
 		if failed {
 			http.Error(w, "member repository error", http.StatusBadGateway)
@@ -181,7 +181,7 @@ func (h *Handler) writeConanMerged(w http.ResponseWriter, r *http.Request, grp *
 	}
 
 	sum := sha256.Sum256(body)
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, conanDocMaxAge, failed) {
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, mergedDocMaxAge, failed) {
 		return
 	}
 
@@ -205,7 +205,7 @@ func (h *Handler) serveConanRevisions(
 	members []*models.Repository,
 	be Backend,
 ) {
-	docs, failed := h.collectConan(r, members, relPath, "", be)
+	docs, failed := h.collectJSON(r, members, relPath, "", be)
 
 	var lists [][]pkgconan.Revision
 
@@ -237,16 +237,16 @@ func (h *Handler) serveConanRevisions(
 
 	merged := pkgconan.MergeRevisions(lists...)
 	if len(merged) == 0 {
-		h.writeConanMerged(w, r, grp, nil, failed)
+		h.writeMergedJSON(w, r, grp, nil, failed)
 		return
 	}
 
 	if p.Kind == pkgconan.KindRecipeLatest || p.Kind == pkgconan.KindPackageLatest {
-		h.writeConanMerged(w, r, grp, pkgconan.RenderRevision(merged[0]), failed)
+		h.writeMergedJSON(w, r, grp, pkgconan.RenderRevision(merged[0]), failed)
 		return
 	}
 
-	h.writeConanMerged(w, r, grp, pkgconan.RenderRevisions(merged), failed)
+	h.writeMergedJSON(w, r, grp, pkgconan.RenderRevisions(merged), failed)
 }
 
 // serveConanPackages merges the package searches of a recipe (revision): the
@@ -259,7 +259,7 @@ func (h *Handler) serveConanPackages(
 	members []*models.Repository,
 	be Backend,
 ) {
-	docs, failed := h.collectConan(r, members, relPath, r.URL.RawQuery, be)
+	docs, failed := h.collectJSON(r, members, relPath, r.URL.RawQuery, be)
 
 	parsed := make([]map[string]json.RawMessage, 0, len(docs))
 
@@ -277,11 +277,11 @@ func (h *Handler) serveConanPackages(
 	}
 
 	if len(parsed) == 0 {
-		h.writeConanMerged(w, r, grp, nil, failed)
+		h.writeMergedJSON(w, r, grp, nil, failed)
 		return
 	}
 
-	h.writeConanMerged(w, r, grp, pkgconan.MergePackageSearch(parsed...), failed)
+	h.writeMergedJSON(w, r, grp, pkgconan.MergePackageSearch(parsed...), failed)
 }
 
 // serveConanFirstMap answers a Conan 1 map document (snapshot, download URLs,
@@ -297,16 +297,16 @@ func (h *Handler) serveConanFirstMap(
 	be Backend,
 	rewriteURLs bool,
 ) {
-	docs, failed := h.collectConanN(r, members, relPath, "", 1, be)
+	docs, failed := h.collectJSONN(r, members, relPath, "", 1, be)
 	if len(docs) == 0 {
-		h.writeConanMerged(w, r, grp, nil, failed)
+		h.writeMergedJSON(w, r, grp, nil, failed)
 		return
 	}
 
 	m, err := pkgconan.ParseFileMap(docs[0].body)
 	if err != nil {
 		h.log.Warnw("member conan document unreadable", "group", grp.Name, "member", docs[0].member.Name, "error", err)
-		h.writeConanMerged(w, r, grp, nil, true)
+		h.writeMergedJSON(w, r, grp, nil, true)
 
 		return
 	}
@@ -322,7 +322,7 @@ func (h *Handler) serveConanFirstMap(
 		}
 	}
 
-	h.writeConanMerged(w, r, grp, pkgconan.RenderFileMap(m), false)
+	h.writeMergedJSON(w, r, grp, pkgconan.RenderFileMap(m), false)
 }
 
 // serveConanSearch merges the recipe searches of the members.
@@ -334,7 +334,7 @@ func (h *Handler) serveConanSearch(
 	members []*models.Repository,
 	be Backend,
 ) {
-	docs, failed := h.collectConan(r, members, relPath, r.URL.RawQuery, be)
+	docs, failed := h.collectJSON(r, members, relPath, r.URL.RawQuery, be)
 
 	var results []string
 
@@ -377,7 +377,7 @@ func (h *Handler) serveConanSearch(
 		}
 	}
 
-	h.writeConanMerged(w, r, grp, pkgconan.RenderSearch(results), failed)
+	h.writeMergedJSON(w, r, grp, pkgconan.RenderSearch(results), failed)
 }
 
 // conanHiddenNames applies hosted wins to a search: for every proxy member that
@@ -388,7 +388,7 @@ func (h *Handler) serveConanSearch(
 func (h *Handler) conanHiddenNames(
 	r *http.Request,
 	grp *models.Repository,
-	docs []conanDoc,
+	docs []jsonDoc,
 	members []*models.Repository,
 	relPath string,
 	be Backend,
@@ -402,7 +402,7 @@ func (h *Handler) conanHiddenNames(
 
 	// Every recipe of the hosted members, not just those the query matched: a
 	// proxy's result of a name they hold under another version is hidden too.
-	all, failed := h.collectConan(r, hosted, relPath, "", be)
+	all, failed := h.collectJSON(r, hosted, relPath, "", be)
 	if failed {
 		return nil, false
 	}

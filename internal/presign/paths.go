@@ -37,6 +37,10 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return isPackageArchive(format, relPath, base)
 	case "conan", "conda":
 		return isConanCondaBlob(format, relPath, base)
+	case "terraform":
+		// Module archives and provider zips; documents, the SHA256SUMS file
+		// and its signature are streamed.
+		return isTerraformArchive(relPath, base)
 	case "raw":
 		return true
 	case "pypi":
@@ -67,6 +71,23 @@ func isPackageArchive(format, relPath, base string) bool {
 	}
 
 	return strings.HasPrefix(relPath, "gems/") && strings.HasSuffix(base, ".gem")
+}
+
+// isTerraformArchive reports whether relPath is a module archive
+// (modules/<name>/<system>/<version>/<file>) or a provider zip
+// (providers/<type>/<version>/<os>_<arch>/<file>) of a Terraform proxy.
+func isTerraformArchive(relPath, base string) bool {
+	if !strings.HasPrefix(relPath, "modules/") && !strings.HasPrefix(relPath, "providers/") {
+		return false
+	}
+
+	for _, ext := range []string{".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar"} {
+		if strings.HasSuffix(base, ext) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isConanArchive(base string) bool {

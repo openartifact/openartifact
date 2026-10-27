@@ -113,9 +113,9 @@
   },
   {
     "format": "terraform",
-    "proxy": false,
-    "group": false,
+    "proxy": true,
+    "group": true,
     "federation": false,
-    "default_upstream": ""
+    "default_upstream": "https://registry.terraform.io"
   }
 ]

@@ -12,7 +12,7 @@ Hosted private registry for Terraform and OpenTofu: modules (module registry pro
 |---|---|
 | Registry host | the OpenArtifact host, `HOST` below (no `https://`, no path) |
 | Namespace | the repository name: module source `HOST/REPO/MODULE/SYSTEM`, provider source `HOST/REPO/TYPE` |
-| Repository types | hosted only. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Repository types | hosted, [proxy](#proxy-repositories) (`registry.terraform.io`, `registry.opentofu.org`) and [group](#group-repositories). See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
 
 Terraform and OpenTofu talk to a registry through [service discovery](#service-discovery) and a fixed API; there is no upload protocol in either client, so publishing uses a small [publish API](#publish-api) of its own (plain `PUT` with `curl`).
 
@@ -20,7 +20,7 @@ Terraform and OpenTofu talk to a registry through [service discovery](#service-d
 
 - The **namespace is the repository**. Create a repository of format `terraform` named `acme` and the namespace `acme` exists on the registry host: `HOST/acme/vpc/aws` is the module `vpc` for system `aws`, `HOST/acme/random` is the provider `random`.
 - Modules and providers share the repository. Permissions, quota, [trash](../operations/trash.md), webhooks and [cleanup](../repositories/cleanup-and-quotas.md) apply to the repository as for any other format.
-- Hosted only. A proxy of the public registries (`registry.terraform.io`, `registry.opentofu.org`) is a possible follow-up and is not part of this format today; creating a proxy or group repository of this format is rejected with `400 validation_failed`.
+- A repository is hosted (it stores what you publish), a [proxy](#proxy-repositories) of a public registry, or a [group](#group-repositories) that merges hosted and proxy repositories. Publishing and deleting need a hosted repository; proxy and group repositories are read-only.
 - The names `raw`, `maven`, `sbt` and `ivy` cannot be a namespace: those repository names are served under their own isolated prefix (`/repos/raw/REPO`, ...), not under `/repos/REPO`, so the registry API would never reach them. See [URL conventions](README.md#url-conventions).
 
 ## Requirements
@@ -174,6 +174,43 @@ Instead the authenticated registry call (which already passed RBAC, quarantine a
 - Replicas must share the same `AUTH_HMAC_KEY` (the [secrets to preserve](../getting-started/upgrading.md#secrets-to-preserve)), otherwise a ticket minted by one replica is refused by another.
 - Because the URL is absolute and built from `BASE_URL`, a wrong `BASE_URL` shows up here first: the registry call works and the download fails.
 
+## Proxy repositories
+
+A proxy repository serves a public registry through OpenArtifact: `registry.terraform.io` (the default, so `upstream_url` may be left out) or `registry.opentofu.org` (`upstream_url: https://registry.opentofu.org`). Any other registry that implements the same protocol works too. Clients use it exactly like a hosted repository, with the same host, credentials and [client setup](#client-setup); only the namespace has a special meaning:
+
+- **The repository name is the upstream namespace.** A proxy repository named `hashicorp` serves `registry.terraform.io/hashicorp/*`: the provider source `HOST/hashicorp/random` and the module source `HOST/hashicorp/consul/aws`. Providers need the real namespace (their type and the checksums of their releases belong to it), so create one proxy repository per upstream namespace you use and merge them with a [group](#group-repositories) if you want a single name. The repository name must be a valid namespace (see [names](#behavior-and-limits)).
+- **Service discovery of the upstream.** The upstream's `/.well-known/terraform.json` is read when needed and cached like the other documents; `modules.v1` and `providers.v1` may be relative or absolute URLs and are resolved against the discovery document. A registry that announces neither is answered with `502`.
+- **Cached documents.** The module version lists, provider version lists, provider package documents and the discovery document are cached for the repository's cache TTL, and served stale (with a `Warning` header) when the upstream fails, up to the maximum stale age; a package that does not exist is cached negatively. See [cache TTLs](../repositories/hosted-proxy-group.md#cache-ttls). Version lists are cleaned: versions that are not valid semver and platforms that are not valid `os_arch` names are dropped.
+- **Archives are fetched through OpenArtifact.** Module archives and provider zips usually live on other hosts (GitHub releases, a vendor release site, `releases.hashicorp.com`). The proxy rewrites `X-Terraform-Get`, `download_url`, `shasums_url` and `shasums_signature_url` to [download tickets](#download-tickets) of this server, so clients never contact those hosts: the file is fetched on the first download through the SSRF-safe client (every redirect hop is validated again), stored, and served from the cache afterwards. The upstream credentials of the repository are sent to the registry host only, never to the archive hosts.
+- **Provider integrity.** The zip is checked against the `shasum` of the package document and against the line of the upstream `SHA256SUMS` file before it is stored; a mismatch or a body that is not a zip is `502` and nothing is stored. A cached zip is pinned: when the upstream later announces another `shasum` for the same version, the cached copy (and its `SHA256SUMS` and signature) is dropped and the new file is verified and fetched. The `SHA256SUMS`, its signature and the `signing_keys` of the upstream are served untouched: **the provider's own signing keys stay in place**, no key of OpenArtifact is involved, and clients verify the signature exactly as against the public registry.
+- **Module integrity.** The registries publish no checksum of a module archive. The proxy stores the SHA-256 of the first copy it fetched and refuses a later copy of the same version that differs (`502`, logged, never stored), so a version cannot change under you silently while it is cached. The comparison needs the cached entry: it lives for the cache TTL, is kept for `max_stale_seconds` after that and is evicted by the proxy cache worker an hour later (see [upstream failures](../repositories/hosted-proxy-group.md#upstream-failures-and-serve-stale)); a changed archive is `502` until then, after which the next download pins what the upstream serves. An archive that was not cached is not compared with anything, so for modules that must never change, publish them to a hosted repository.
+- **Module sources.** Only plain archive URLs are fetched: `https://...` (or `http://...`) ending in `.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`, `.tar.xz`, `.txz` or `.tar`, or with an `?archive=zip` (or `tar.gz`, ...) hint, which the proxy strips before fetching. Every other go-getter source is refused with **`501`** and a message pointing here: forced getters (`git::`, `hg::`, `s3::`, `gcs::`, ...), bare detectors (`github.com/org/repo`), scp-style git addresses, subdirectory selectors (`//subdir`), URLs with credentials, and the getter parameters `ref`, `depth`, `sshkey`, `checksum` and `filename`.
+
+  **Limitation:** the public registries answer most module downloads with a `git::https://github.com/...?ref=...` source, which is exactly what is refused. The module side of a proxy is useful for registries that publish archive URLs; against `registry.terraform.io` and `registry.opentofu.org` plan on proxying providers, and keep modules in a hosted repository (publish them with the [publish API](#publish-api)) or use them with a `git::` source directly.
+- **Module details** (`GET /MODULE/SYSTEM/VERSION`) are generated from the version list: `published_at` is absent and `downloads` is `0`.
+- **Quarantine, blocking and RBAC** apply as for other proxies: a blocked repository answers `403`, a quarantined package answers `403` with code `ARTIFACT_QUARANTINED` and no ticket is issued. Proxy caches are not counted against the storage quota.
+- **Downloads need `BASE_URL`** and the same `AUTH_HMAC_KEY` on every replica, as for hosted repositories; without a ticket key the download calls answer `503`.
+
+Create one with the API or the web UI:
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $OA_TOKEN" -H "Content-Type: application/json" \
+  "$OA_URL/api/v1/repositories" \
+  -d '{"name":"hashicorp","format":"terraform","repo_type":"proxy"}'
+```
+
+A provider block then reads `source = "HOST/hashicorp/random"`.
+
+## Group repositories
+
+A group merges hosted and proxy repositories of format `terraform` behind one namespace (the group's name) and is read-only. The merge works by module name and provider type, not by upstream namespace, so `random` from a proxy of `hashicorp` and an in-house `random` in a hosted repository are the same provider as far as the group is concerned:
+
+- **Hosted wins per name.** A module name (`MODULE/SYSTEM`) or provider type that a hosted member the caller may read holds is served only by the hosted members; proxy members never fill in versions of it. A name no readable hosted member holds is served by the proxies in member order. This prevents a public module or provider from shadowing an internal one (dependency confusion); [`merge_proxy_versions`](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name) set to `true` turns the rule off.
+- **Version lists are merged** across the members that serve the name, sorted ascending; a version offered twice is served by the first member in order. Provider platforms are merged per version. The unversioned module call (`MODULE/SYSTEM` and `MODULE/SYSTEM/download`) means the newest stable version of the merged list.
+- **Downloads come from the owning member.** The package document and the module download are answered by the member that serves the version; the ticket URLs they carry belong to that member's repository. A provider keeps the **signing key of its member**: a hosted member signs with its own repository key, a proxy member serves the upstream's key and checksums. A group therefore has no key of its own.
+- **Details and ids are rewritten** to the group's namespace (`id`, `namespace`), because clients address the group.
+- RBAC: reading the group needs read access to the group; a member the caller cannot read is skipped, and the hosted-wins rule fails closed (a name held by a hosted member the caller cannot read is hidden from the proxies too).
+
 ## Service discovery
 
 `GET /.well-known/terraform.json` on the server root, public:
@@ -242,6 +279,8 @@ The `versions` endpoints answer ETag/304 like the other index documents; they ar
 | `no GPG signing key is configured for this repository` (`503`) | No active key for the repository and no global active key. `oa gpg generate --activate` (global) or `oa gpg activate KEY --repository REPO`. |
 | `Failed to install provider` ... `the current package for ... doesn't match any of the checksums` | The version was changed after the lock file was written (platform added, version deleted and published again). Run `terraform init -upgrade` or `terraform providers lock` for the platforms you use. |
 | `provider ... does not support the platform linux_arm64` / `no available releases match` | No zip was uploaded for that OS and architecture, or the version constraint matches nothing. `GET /repos/REPO/TYPE/versions` lists the platforms per version. |
+| `501` with `unsupported module source` on a proxy repository | The registry points the module at a `git::`, `s3::` or other getter source, or at a subdirectory, which the proxy does not fetch (see [proxy repositories](#proxy-repositories)). Use a hosted repository for the module, or the source address directly. |
+| `502` on a proxy repository when downloading a provider or module | The upstream or the release host is down, redirects to a blocked address, or served a file that fails its checksum or is not an archive; the file is not stored. The server log names the repository, the path and the digests. A changed module archive is refused the same way, see [module integrity](#proxy-repositories). |
 | `409` on publish | The version (or provider platform) already exists, or the `protocols` of a new platform differ from the stored ones. Delete it first, or pass the same `?protocols=`. |
 | `400` with `checksum` in the message on provider publish | `X-Checksum-Sha256` did not match the received bytes: retry the upload. |
 | `422` or `400` on publish | The archive was refused, see [archive safety](#behavior-and-limits): the provider binary is named wrongly or the module has no `.tf` files. |

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"os\":\"linux\",\"arch\":\"amd64\",\"filename\":\"p.zip\",\"shasum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"download_url\":\"/p.zip\",\"shasums_url\":\"/s\",\"shasums_signature_url\":\"/s.sig\"}")

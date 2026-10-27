@@ -44,7 +44,7 @@ const (
 
 // ticket is the decoded payload. a, b, c are the coordinates of the file:
 // module name, system, version; or provider type, version, "os_arch" (zip) or
-// "" (checksum file and its signature).
+// "" (checksum file and its signature; "os_arch" for a proxy repository).
 type ticket struct {
 	repoID  string
 	kind    ticketKind
@@ -142,12 +142,19 @@ func (t ticket) valid() bool {
 	case kindModule:
 		return validName(t.a) && validName(t.b) && validVersion(t.c)
 	case kindProviderZip:
-		osName, arch, ok := strings.Cut(t.c, "_")
-
-		return validName(t.a) && validVersion(t.b) && ok && validPlatformPart(osName) && validPlatformPart(arch)
+		return validName(t.a) && validVersion(t.b) && validPlatform(t.c)
 	case kindProviderSums, kindProviderSumSig:
-		return validName(t.a) && validVersion(t.b) && t.c == ""
+		// A hosted ticket names no platform; a proxy ticket carries the one
+		// whose package document tells where the checksum file lives.
+		return validName(t.a) && validVersion(t.b) && (t.c == "" || validPlatform(t.c))
 	}
 
 	return false
+}
+
+// validPlatform reports whether s is the "os_arch" spelling of a platform.
+func validPlatform(s string) bool {
+	osName, arch, ok := strings.Cut(s, "_")
+
+	return ok && validPlatformPart(osName) && validPlatformPart(arch)
 }
