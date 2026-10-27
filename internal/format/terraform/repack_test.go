@@ -95,7 +95,7 @@ func keysOf(m map[string]string) []string {
 	return keys
 }
 
-func repoTarball(tb testing.TB, wrapper string) []byte {
+func repoTarball(tb fataler, wrapper string) []byte {
 	tb.Helper()
 
 	return tarGzOf(tb,
