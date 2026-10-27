@@ -7,6 +7,7 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -146,4 +147,18 @@ func scanRepository(row rowScanner) (*models.Repository, error) {
 	}
 
 	return r, nil
+}
+
+// mapRow turns the result of a sqlc single-row query into a model: sql.ErrNoRows
+// yields (nil, nil), any other error is wrapped with "failed to get what".
+func mapRow[R, T any](row R, err error, what string, mapf func(R) *T) (*T, error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get %s: %w", what, err)
+	}
+
+	return mapf(row), nil
 }
