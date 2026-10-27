@@ -351,6 +351,12 @@ func (d *fuzzGemsDB) ListRubyGemSpecs(_ context.Context, _ string) ([]*models.Ru
 	return out, nil
 }
 
+// ListRubyGems returns every stored gem, yanked ones included, as the
+// database does: the compact index filters them itself.
+func (d *fuzzGemsDB) ListRubyGems(_ context.Context, _ string) ([]*models.RubyGem, error) {
+	return append([]*models.RubyGem(nil), d.gems...), nil
+}
+
 func (d *fuzzGemsDB) RubyGemsSpecsStamp(_ context.Context, _ string) (string, error) {
 	var b strings.Builder
 
@@ -982,6 +988,7 @@ func FuzzServeGemGet(f *testing.F) {
 
 	for _, p := range []string{
 		"specs.4.8.gz", "latest_specs.4.8.gz", "prerelease_specs.4.8.gz", "api/v1/search.json?query=demo",
+		"versions", "names", "info/demo", "info/a-1", "info/", "info/..", "info/nope",
 		"gems/.gem", "gems/-1.gem", "gems/demo-.gem", "gems/demo-1.0.0-.gem", "gems/demo-1.0.0.gem.gem", "gems/../gems/demo-1.0.0.gem",
 		"quick/Marshal.4.8/.gemspec.rz", "api/v1/gems/.json", "api/v1/gems/demo.json.json",
 	} {
