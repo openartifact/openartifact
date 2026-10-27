@@ -423,7 +423,28 @@ OPENARTIFACT_SECRET_KEY="$(openssl rand -base64 32)"
 
 ### Storage backend records
 
-`GET/POST /api/v1/admin/storage`, `GET/PATCH/DELETE /api/v1/admin/storage/{name}` and `POST /api/v1/admin/storage/{name}/test` (admin only, also **Settings > Storage backends**, `/settings/backends`) keep named backend definitions. Credential keys in `config` (`access_key`, `secret_key`, `password`, `account_key`, `hmac_key`, `hmac_secret` and similar) are encrypted at rest, never returned (a `has_<key>` flag is returned instead) and kept when an update omits them. `test` checks connectivity for every kind (`filesystem`, `s3`, `garage`, `seaweedfs`, `gcs`, `azure` and `oci`; object stores get a bucket or container check with the stored credentials), and records the status as `healthy` or `unreachable`. The records do not route traffic: blobs are always read and written through the single backend configured with `STORAGE_*`.
+`GET/POST /api/v1/admin/storage`, `GET/PATCH/DELETE /api/v1/admin/storage/{name}` and `POST /api/v1/admin/storage/{name}/test` (admin only, also **Settings > Storage backends**, `/settings/backends`) keep named backend definitions. Credential keys in `config` (`access_key`, `secret_key`, `password`, `account_key`, `hmac_key`, `hmac_secret` and similar) are encrypted at rest, never returned (a `has_<key>` flag is returned instead) and kept when an update omits them. `test` checks connectivity for every kind (`filesystem`, `s3`, `garage`, `seaweedfs`, `gcs`, `azure` and `oci`; object stores get a bucket or container check with the stored credentials), and records the status as `healthy` or `unreachable`. The records do not route traffic: blobs are always read and written through the single backend configured with `STORAGE_*`, plus the [tiers](storage-tiering.md) that map a record to a placement target. A record has no "default" flag: the default store is the one configured here.
+
+### The primary store in the admin API
+
+The store configured with `STORAGE_*` is not a record, but it is shown. `GET /api/v1/admin/storage` returns it as a `primary` object next to `items` (it is not part of `items` or `total`), and `GET /api/v1/admin/storage/primary` returns the same object:
+
+```json
+{
+  "name": "primary", "kind": "s3", "source": "config",
+  "location": {"endpoint": "https://s3.example.com", "bucket": "artifacts", "region": "eu-west-1"},
+  "status": "healthy", "status_message": null, "last_checked_at": "2026-10-27T09:00:00Z",
+  "usage": {"blob_count": 1204, "size_bytes": 3407872}
+}
+```
+
+- `location` is where the blobs live (`path`; `endpoint`, `bucket`, `region`; `account`, `container`; `repository`, depending on the kind). It never holds a credential: access and secret keys, HMAC and account keys and the OCI password are not part of it, and an endpoint URL loses its user info, query and fragment.
+- `status` is a live health check through the store that serves every request (a write probe of the directory for `filesystem`, a bucket or container check for the object stores, `GET /v2/` for `oci`): `healthy`, `unreachable` (with a fixed `status_message`; the raw error is only logged) or `unknown`. Reads reuse the last probe for 10 seconds.
+- `usage` counts the blobs placed on the primary store, that is those not moved to a [tier](storage-tiering.md).
+- `POST /api/v1/admin/storage/primary/test` probes now, refreshes the status and answers like the test of a record (`{"ok": true}`, or `{"ok": false, "error": "connection_failed", "message": ...}`).
+- It is read-only: `PATCH` and `DELETE` on `/api/v1/admin/storage/primary` answer `405 read_only`; change `STORAGE_*` and restart instead. The name `primary` is reserved: a record cannot be created or renamed to it.
+
+**Settings > Storage backends** lists it first, with a *configuration* badge.
 
 ## Health
 

@@ -188,7 +188,7 @@ All endpoints are under `/api/v1/admin/tiering`, admin only (`manage`). JSON is 
 | `POST /run` | Ask the mover to start a pass now: `202 {"started": true}`. `409` when the mover is disabled in the configuration. A pass that cannot take the cluster lock because another replica is running one is skipped. |
 | `GET /status` | `enabled`, `running`, `interval_seconds`, the last pass (`moved`, `promoted`, `recovered`, `failed`, `skipped`, `bytes`, `scanned`, `aborted`) and the pending journal rows. |
 
-Deleting a storage backend that is a tier, or is the source or target of an in-flight move, is refused by `DELETE /api/v1/admin/storage/{name}` with `409 conflict`. `blobs.storage_backend_id` is a `RESTRICT` foreign key, so the database refuses to delete a backend that still holds blobs. `PATCH /api/v1/admin/storage/{name}` likewise answers `409 conflict` when it would change the `kind` or `config` of a backend that holds blobs, serves a tier or is named by a move; renaming and `is_default` stay allowed.
+Deleting a storage backend that is a tier, or is the source or target of an in-flight move, is refused by `DELETE /api/v1/admin/storage/{name}` with `409 conflict`. `blobs.storage_backend_id` is a `RESTRICT` foreign key, so the database refuses to delete a backend that still holds blobs. `PATCH /api/v1/admin/storage/{name}` likewise answers `409 conflict` when it would change the `kind` or `config` of a backend that holds blobs, serves a tier or is named by a move; renaming stays allowed.
 
 Example, end to end:
 

@@ -11,7 +11,6 @@ type StorageBackend struct {
 	ID            string
 	Name          string
 	Kind          string // filesystem, s3, gcs, azure
-	IsDefault     bool
 	Config        []byte // JSON: type-specific configuration
 	Status        string // ok, degraded, error, unknown
 	StatusMessage *string

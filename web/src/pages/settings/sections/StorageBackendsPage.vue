@@ -72,8 +72,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </span>
       </div>
 
+      <p v-if="primary" class="px-5 py-3 text-xs text-muted border-b border-border">
+        {{ t('adm.storage.primaryHint') }}
+      </p>
+
       <!-- Empty state -->
-      <div v-if="items.length === 0" class="py-16 text-center">
+      <div v-if="items.length === 0 && !primary" class="py-16 text-center">
         <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
           <ServerIcon class="w-6 h-6 text-muted" />
         </div>
@@ -87,11 +91,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <StorageBackendsTable
         v-else
+        :primary="primary"
         :items="items"
         :testing-one="testingOne"
+        :testing-primary="testingPrimary"
         @test="testOne"
+        @test-primary="testPrimary"
         @edit="openEdit"
-        @set-default="setDefault"
         @delete="openDelete"
       />
     </div>
@@ -129,16 +135,18 @@ import type { StorageBackend } from '../../../lib/storageBackends'
 
 const {
   items,
+  primary,
   loading,
   testingOne,
+  testingPrimary,
   testingAll,
   deleteTarget,
   deleteConfirmName,
   deleting,
   load,
   testOne,
+  testPrimary,
   testAll,
-  setDefault,
   openDelete,
   cancelDelete,
   confirmDelete,

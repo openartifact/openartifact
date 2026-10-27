@@ -647,3 +647,39 @@ func copyIntoBlob(src io.ReadSeeker, dir, blobPath string) error {
 
 	return nil
 }
+
+// HealthCheck verifies that the blob root is an existing directory the server
+// can write to, by creating and removing a temporary file in it.
+func (fs *FilesystemStore) HealthCheck(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("filesystem: health check: %w", err)
+	}
+
+	info, err := os.Stat(fs.basePath)
+	if err != nil {
+		return fmt.Errorf("filesystem: health check: %w", err)
+	}
+
+	if !info.IsDir() {
+		//nolint:err113 // dynamic error with runtime context
+		return fmt.Errorf("filesystem: health check: %s is not a directory", fs.basePath)
+	}
+
+	f, err := os.CreateTemp(fs.basePath, "health-*.tmp")
+	if err != nil {
+		return fmt.Errorf("filesystem: health check: %w", err)
+	}
+
+	name := f.Name()
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("filesystem: health check: %w", err)
+	}
+
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("filesystem: health check: %w", err)
+	}
+
+	return nil
+}

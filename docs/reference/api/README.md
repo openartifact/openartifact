@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 REST API of the OpenArtifact artifact repository manager.
 
-This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 280 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
+This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 284 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
 ## Security
 
@@ -29,7 +29,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 | Tag | Endpoints | Description |
 |---|---|---|
-| [Admin](admin.md) | 46 | - |
+| [Admin](admin.md) | 50 | - |
 | [AI](ai.md) | 7 | - |
 | [Audit](audit.md) | 2 | - |
 | [Authentication](authentication.md) | 8 | - |
@@ -51,7 +51,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Scanning](scanning.md) | 32 | - |
 | [Search](search.md) | 1 | - |
 | [SSO](sso.md) | 13 | - |
-| [Storage](storage.md) | 21 | - |
+| [Storage](storage.md) | 25 | - |
 | [System](system.md) | 5 | - |
 | [Tokens](tokens.md) | 9 | - |
 | [Trash](trash.md) | 6 | - |
@@ -60,4 +60,4 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 ## Schemas
 
-All 147 named request and response objects are on the [schemas page](schemas.md).
+All 148 named request and response objects are on the [schemas page](schemas.md).

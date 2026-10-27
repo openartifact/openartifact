@@ -7,18 +7,21 @@ import {
   deleteStorageBackend,
   listStorageBackends,
   testStorageBackend,
-  updateStorageBackend,
+  testStoragePrimary,
+  type StoragePrimary,
 } from '../api/storage'
 import { t, tp } from '../i18n'
 import type { StorageBackend } from '../lib/storageBackends'
 import { useToastStore } from '../stores/toast'
 
-/** List state plus the test / set-default / delete actions of the storage backends page. */
+/** List state plus the test / delete actions of the storage backends page. */
 export function useStorageBackends() {
   const toasts = useToastStore()
   const items = ref<StorageBackend[]>([])
+  const primary = ref<StoragePrimary | null>(null)
   const loading = ref(true)
   const testingOne = ref<string | null>(null)
+  const testingPrimary = ref(false)
   const testingAll = ref(false)
 
   const deleteTarget = ref<StorageBackend | null>(null)
@@ -30,6 +33,7 @@ export function useStorageBackends() {
     try {
       const res = await listStorageBackends()
       items.value = (res.items ?? []) as StorageBackend[]
+      primary.value = res.primary ?? null
     } catch (err) {
       toasts.error(err instanceof Error ? err.message : t('adm.storage.loadFailed'))
     } finally {
@@ -51,6 +55,21 @@ export function useStorageBackends() {
     }
   }
 
+  async function testPrimary(): Promise<void> {
+    testingPrimary.value = true
+    try {
+      const res = await testStoragePrimary()
+      const name = primary.value?.name ?? 'primary'
+      if (res.ok) toasts.success(tp('adm.storage.pair', { label: name, value: t('adm.storage.status.healthy') }))
+      else toasts.error(tp('adm.storage.pair', { label: name, value: res.message ?? t('adm.storage.testFailed') }))
+      await load()
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : t('adm.storage.testFailed'))
+    } finally {
+      testingPrimary.value = false
+    }
+  }
+
   // testStorageBackend resolves with {ok:false} for failed checks, so failures
   // are counted from the results rather than from rejections.
   async function testAll(): Promise<void> {
@@ -63,16 +82,6 @@ export function useStorageBackends() {
       await load()
     } finally {
       testingAll.value = false
-    }
-  }
-
-  async function setDefault(backend: StorageBackend): Promise<void> {
-    try {
-      await updateStorageBackend(backend.name, { is_default: true })
-      toasts.success(tp('adm.storage.pair', { label: t('adm.storage.nowDefault'), value: backend.name }))
-      await load()
-    } catch (err) {
-      toasts.error(err instanceof Error ? err.message : t('adm.storage.saveFailed'))
     }
   }
 
@@ -104,16 +113,18 @@ export function useStorageBackends() {
 
   return {
     items,
+    primary,
     loading,
     testingOne,
+    testingPrimary,
     testingAll,
     deleteTarget,
     deleteConfirmName,
     deleting,
     load,
     testOne,
+    testPrimary,
     testAll,
-    setDefault,
     openDelete,
     cancelDelete,
     confirmDelete,

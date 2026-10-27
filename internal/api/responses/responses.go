@@ -169,7 +169,6 @@ type StorageBackendResponse struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
 	Kind          string         `json:"kind"`
-	IsDefault     bool           `json:"is_default"`
 	Config        map[string]any `json:"config"`
 	Status        string         `json:"status"`
 	StatusMessage *string        `json:"status_message"`
@@ -177,6 +176,23 @@ type StorageBackendResponse struct {
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at"`
 	// Usage is what the backend holds. Present on the list and get endpoints.
+	Usage *StorageBackendUsage `json:"usage,omitempty"`
+}
+
+// StoragePrimaryResponse is the primary blob store the server is configured
+// with (storage.* settings). It is read-only and holds no credentials.
+type StoragePrimaryResponse struct {
+	// Name is the reserved name "primary", usable in the /admin/storage/{name} paths.
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// Source is always "config": the store is set by the server configuration.
+	Source string `json:"source"`
+	// Location is where the blobs live (path, endpoint, bucket, region, ...); never a credential.
+	Location      map[string]string `json:"location"`
+	Status        string            `json:"status"`
+	StatusMessage *string           `json:"status_message"`
+	LastCheckedAt *string           `json:"last_checked_at"`
+	// Usage is the blobs placed on the primary store (those not moved to a tier).
 	Usage *StorageBackendUsage `json:"usage,omitempty"`
 }
 

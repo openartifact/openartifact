@@ -209,7 +209,5 @@
   "quota.maxSize": "Maximale Größe",
   "quota.removeTitle": "Kontingentlimit entfernen?",
   "quota.removeBody": "Das Repository hat dann kein Speicherlimit mehr. Dies kann jederzeit erneut konfiguriert werden.",
-  "storage.configuration": "Konfiguration",
-  "storage.setDefault": "Als Standard-Backend festlegen",
-  "storage.setDefaultHint": "Neue Repositories ohne explizites Backend verwenden das Standard-Backend."
+  "storage.configuration": "Konfiguration"
 }

@@ -162,7 +162,7 @@ func (a *app) registerAdminRoutes() {
 	api.NewAdminTokensHandler(db, log, evaluator).Register(authedAPI)
 	api.NewSelfTokensHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)
-	api.NewAdminStorageHandler(db, log, evaluator).Register(authedAPI)
+	api.NewAdminStorageHandler(db, log, evaluator).WithPrimary(cfg.Storage, a.store.raw).Register(authedAPI)
 	api.NewAdminTieringHandler(db, a.store.tiers, a.workers.tierEngine, a.workers.tierWorker, log, evaluator).Register(authedAPI)
 	api.NewAdminReplicationHandler(a.store.replAdmin, log, evaluator).Register(authedAPI)
 	api.NewAdminRecoveryHandler(a.workers.journal, log, evaluator).Register(authedAPI)

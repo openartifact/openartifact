@@ -92,18 +92,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
 
-      <!-- Set as default toggle -->
-      <div class="flex items-start gap-3 p-3.5 rounded-lg border border-border bg-surface-hover/30">
-        <AppToggle v-model="form.is_default" size="sm" :label="t('storage.setDefault')" class="mt-0.5" />
-        <div>
-          <p class="text-xs font-semibold text-foreground">{{ t('storage.setDefault') }}</p>
-          <p class="text-caption text-muted mt-0.5 leading-relaxed">
-            {{ t('storage.setDefaultHint') }}
-            {{ t('adm.storage.onlyOneDefault') }}
-          </p>
-        </div>
-      </div>
-
       <!-- Test result alert -->
       <div
         v-if="testResult !== null"
@@ -150,7 +138,6 @@ import { watch } from 'vue'
 import { BoltIcon, CheckIcon, ExclamationCircleIcon } from '@heroicons/vue/24/outline'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
-import AppToggle from './AppToggle.vue'
 import StorageBackendField from './StorageBackendField.vue'
 import { useStorageBackendForm, type DrawerMode } from '../composables/useStorageBackendForm'
 import { t, tp } from '../i18n'

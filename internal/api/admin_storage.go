@@ -38,6 +38,9 @@ type AdminStorageHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+
+	// primary is the configured primary store; nil when none is wired (tests).
+	primary *primaryStore
 }
 
 func NewAdminStorageHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminStorageHandler {
@@ -65,6 +68,20 @@ var storageSecretFields = []string{
 	"connStr", "conn_str", "creds", "credentials_json", "sas_token", "hmac_key", "hmac_secret",
 }
 
+// validStorageBackendName writes the 400 for a malformed or reserved name.
+func validStorageBackendName(w http.ResponseWriter, name string) bool {
+	switch {
+	case !storageBackendNameRe.MatchString(name):
+		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
+	case name == primaryStorageName:
+		writeError(w, http.StatusBadRequest, "validation_failed", "name '"+name+"' is reserved")
+	default:
+		return true
+	}
+
+	return false
+}
+
 func storageKindList() string {
 	return "filesystem, s3, gcs, azure, garage, seaweedfs, oci"
 }
@@ -72,6 +89,12 @@ func storageKindList() string {
 func (h *AdminStorageHandler) Register(r chi.Router) {
 	r.Get("/api/v1/admin/storage", h.handleList)
 	r.Post("/api/v1/admin/storage", h.handleCreate)
+	// The primary store is the server configuration, not a row: these static
+	// paths take precedence over /{name}, so the name is reserved.
+	r.Get("/api/v1/admin/storage/"+primaryStorageName, h.handleGetPrimary)
+	r.Patch("/api/v1/admin/storage/"+primaryStorageName, h.handlePrimaryReadOnly)
+	r.Delete("/api/v1/admin/storage/"+primaryStorageName, h.handlePrimaryReadOnly)
+	r.Post("/api/v1/admin/storage/"+primaryStorageName+"/test", h.handleTestPrimary)
 	r.Get("/api/v1/admin/storage/{name}", h.handleGet)
 	r.Patch("/api/v1/admin/storage/{name}", h.handleUpdate)
 	r.Delete("/api/v1/admin/storage/{name}", h.handleDelete)
@@ -97,13 +120,8 @@ func (h *AdminStorageHandler) requireAdmin(w http.ResponseWriter, r *http.Reques
 
 // writeStorageWriteError maps persistence errors to 409 on unique violations.
 func (h *AdminStorageHandler) writeStorageWriteError(w http.ResponseWriter, err error, action string) {
-	if constraint := database.UniqueViolationConstraint(err); constraint != "" {
-		msg := "a storage backend with this name already exists"
-		if constraint == "idx_storage_backends_default" {
-			msg = "another storage backend is already the default"
-		}
-
-		writeError(w, http.StatusConflict, "conflict", msg)
+	if database.UniqueViolationConstraint(err) != "" {
+		writeError(w, http.StatusConflict, "conflict", "a storage backend with this name already exists")
 
 		return
 	}
@@ -293,10 +311,16 @@ func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request)
 		data[i].Usage = usage.of(b.ID)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"total": len(data),
 		"items": data,
-	})
+	}
+
+	if h.primary != nil {
+		resp["primary"] = h.primary.response(r.Context(), usage.of(""), false)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -305,10 +329,9 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	}
 
 	var body struct {
-		Name      string          `json:"name"`
-		Kind      string          `json:"kind"`
-		IsDefault bool            `json:"is_default"`
-		Config    json.RawMessage `json:"config"`
+		Name   string          `json:"name"`
+		Kind   string          `json:"kind"`
+		Config json.RawMessage `json:"config"`
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
@@ -316,8 +339,7 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !storageBackendNameRe.MatchString(body.Name) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
+	if !validStorageBackendName(w, body.Name) {
 		return
 	}
 
@@ -337,7 +359,6 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		ID:        uuid.New().String(),
 		Name:      body.Name,
 		Kind:      body.Kind,
-		IsDefault: body.IsDefault,
 		Config:    config,
 		Status:    "unknown",
 		CreatedAt: now,
@@ -432,10 +453,9 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	origKind, origConfig := backend.Kind, backend.Config
 
 	var patch struct {
-		Name      *string          `json:"name"`
-		Kind      *string          `json:"kind"`
-		IsDefault *bool            `json:"is_default"`
-		Config    *json.RawMessage `json:"config"`
+		Name   *string          `json:"name"`
+		Kind   *string          `json:"kind"`
+		Config *json.RawMessage `json:"config"`
 	}
 
 	if err := decodeJSON(r, &patch); err != nil {
@@ -444,8 +464,7 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if patch.Name != nil {
-		if !storageBackendNameRe.MatchString(*patch.Name) {
-			writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
+		if !validStorageBackendName(w, *patch.Name) {
 			return
 		}
 
@@ -459,10 +478,6 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		}
 
 		backend.Kind = *patch.Kind
-	}
-
-	if patch.IsDefault != nil {
-		backend.IsDefault = *patch.IsDefault
 	}
 
 	// Always re-validate the effective config: the kind may have changed even
@@ -560,11 +575,6 @@ func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 
 	if backend == nil {
 		writeError(w, http.StatusNotFound, "not_found", "storage backend not found")
-		return
-	}
-
-	if backend.IsDefault {
-		writeError(w, http.StatusBadRequest, "cannot_delete_default", "cannot delete the default storage backend")
 		return
 	}
 
@@ -891,7 +901,6 @@ func storageBackendToResponse(b *models.StorageBackend) responses.StorageBackend
 		ID:            b.ID,
 		Name:          b.Name,
 		Kind:          b.Kind,
-		IsDefault:     b.IsDefault,
 		Config:        config,
 		Status:        b.Status,
 		StatusMessage: b.StatusMessage,

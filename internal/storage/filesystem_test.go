@@ -615,3 +615,46 @@ func (a *aliasIndex) add(digest, id string) {
 		a.byDig[digest] = id
 	}
 }
+
+func TestFilesystemHealthCheck(t *testing.T) {
+	store := newTestFilesystemStore(t)
+
+	if err := store.HealthCheck(t.Context()); err != nil {
+		t.Fatalf("HealthCheck of a writable root: %v", err)
+	}
+
+	entries, err := os.ReadDir(store.basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "health-") {
+			t.Errorf("HealthCheck left %s behind", e.Name())
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err := store.HealthCheck(ctx); err == nil {
+		t.Error("HealthCheck with a canceled context succeeded")
+	}
+
+	if err := os.RemoveAll(store.basePath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.HealthCheck(t.Context()); err == nil {
+		t.Error("HealthCheck of a missing root succeeded")
+	}
+
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&FilesystemStore{basePath: file}).HealthCheck(t.Context()); err == nil {
+		t.Error("HealthCheck of a regular file succeeded")
+	}
+}

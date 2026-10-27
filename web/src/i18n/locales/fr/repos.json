@@ -209,7 +209,5 @@
   "quota.maxSize": "Taille maximale",
   "quota.removeTitle": "Supprimer la limite de quota ?",
   "quota.removeBody": "Le dépôt n'aura plus de limite de stockage. Vous pourrez la reconfigurer à tout moment.",
-  "storage.configuration": "Configuration",
-  "storage.setDefault": "Définir comme backend par défaut",
-  "storage.setDefaultHint": "Les nouveaux dépôts sans backend explicite utiliseront celui par défaut."
+  "storage.configuration": "Configuration"
 }

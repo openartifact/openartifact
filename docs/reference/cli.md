@@ -294,10 +294,10 @@ gpg export <key> [--output FILE]   Export the public key
 
 ```text
 storage list                       List storage backends
-storage create --name N [--type T] [--config-file F|-] [--default]
+storage create --name N [--type T] [--config-file F|-]
                                    Create storage backend (credentials via --config-file, - = stdin)
 storage show <name>                Show storage backend
-storage update <name> [--config-file F|-] [--default[=false]]  Update storage backend
+storage update <name> [--config-file F|-]  Update storage backend
 storage delete <name>              Delete storage backend
 storage test <name>                Test storage backend
 ```
@@ -308,7 +308,6 @@ storage test <name>                Test storage backend
 |---|---|---|
 | `-config` | `string` | Inline JSON config (non-secret settings only) |
 | `-config-file` | `string` | File with the JSON config, or - for stdin (use this for credentials) |
-| `-default` | none | Set as default |
 | `-name` | `string` | Backend name |
 | `-type` | `string` | Backend type: filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci (default "filesystem") |
 

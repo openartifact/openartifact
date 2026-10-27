@@ -561,14 +561,13 @@ func handleStorage(args []string, client *Client, outFmt string) {
 	switch args[0] {
 	case "list":
 		listGeneric(client, "/api/v1/admin/storage", "items",
-			[]string{"NAME", "KIND", "DEFAULT", "STATUS"}, []string{"name", "kind", "is_default", "status"}, outFmt)
+			[]string{"NAME", "KIND", "STATUS"}, []string{"name", "kind", "status"}, outFmt)
 	case "create":
 		fs := flag.NewFlagSet("storage create", flag.ExitOnError)
 		name := fs.String("name", "", "Backend name")
 		sType := fs.String("type", "filesystem", "Backend type: filesystem|s3|gcs|azure|garage|seaweedfs|oci")
 		config := fs.String("config", "", "Inline JSON config (non-secret settings only)")
 		configFile := fs.String("config-file", "", "File with the JSON config, or - for stdin (use this for credentials)")
-		isDefault := fs.Bool("default", false, "Set as default")
 		_ = fs.Parse(args[1:])
 
 		if *name == "" {
@@ -581,10 +580,9 @@ func handleStorage(args []string, client *Client, outFmt string) {
 		}
 
 		sendJSON(client, "POST", "/api/v1/admin/storage", map[string]any{
-			"name":       *name,
-			"kind":       *sType,
-			"config":     cfg,
-			"is_default": *isDefault,
+			"name":   *name,
+			"kind":   *sType,
+			"config": cfg,
 		}, http.StatusCreated)
 		fmt.Printf("Storage backend '%s' created.\n", *name)
 	case "show":
@@ -595,7 +593,7 @@ func handleStorage(args []string, client *Client, outFmt string) {
 		showGeneric(client, "/api/v1/admin/storage/"+escape(args[1]), outFmt)
 	case "update":
 		if len(args) < 2 {
-			dief("Usage: oa storage update <name> [--config JSON | --config-file F] [--default[=false]]")
+			dief("Usage: oa storage update <name> [--config JSON | --config-file F]")
 		}
 
 		storageUpdate(client, args[1], args[2:])
@@ -620,22 +618,16 @@ func storageUpdate(client *Client, name string, args []string) {
 	fs := flag.NewFlagSet("storage update", flag.ExitOnError)
 	config := fs.String("config", "", "Inline JSON config (non-secret settings only)")
 	configFile := fs.String("config-file", "", "File with the JSON config, or - for stdin (use this for credentials)")
-	isDefault := fs.Bool("default", false, "Set as default (--default=false to unset)")
 	_ = fs.Parse(args)
 
-	set := setFlags(fs)
 	body := map[string]any{}
-
-	if set["default"] {
-		body["is_default"] = *isDefault
-	}
 
 	if cfg := storageConfig(*config, *configFile); cfg != nil {
 		body["config"] = cfg
 	}
 
 	if len(body) == 0 {
-		dief("nothing to update: pass --config, --config-file and/or --default[=false]")
+		dief("nothing to update: pass --config or --config-file")
 	}
 
 	sendJSON(client, "PATCH", "/api/v1/admin/storage/"+escape(name), body, http.StatusOK)

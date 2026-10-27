@@ -949,11 +949,44 @@ export type TierMoverStatus = {
     }>;
 };
 
+/**
+ * The primary blob store the server is configured with (storage.* settings). Read-only; holds no credentials.
+ */
+export type StoragePrimary = {
+    /**
+     * The reserved name "primary", usable in /api/v1/admin/storage/{name}.
+     */
+    name: string;
+    kind: 'filesystem' | 's3' | 'garage' | 'seaweedfs' | 'gcs' | 'azure' | 'oci';
+    /**
+     * Always config: the store is set by the server configuration.
+     */
+    source: 'config';
+    /**
+     * Where the blobs live (path, endpoint, bucket, region, account, container, repository). Never a credential.
+     */
+    location: {
+        [key: string]: string;
+    };
+    /**
+     * Result of a live health check through the process's own store, cached for 10 seconds.
+     */
+    status: 'healthy' | 'unreachable' | 'unknown';
+    status_message?: string | null;
+    last_checked_at?: string | null;
+    /**
+     * The blobs placed on the primary store, that is those not moved to a tier.
+     */
+    usage?: {
+        blob_count: number;
+        size_bytes: number;
+    };
+};
+
 export type StorageBackend = {
     id?: string;
     name?: string;
     kind?: 'filesystem' | 's3' | 'gcs' | 'azure';
-    is_default?: boolean;
     config?: {
         [key: string]: unknown;
     };
@@ -7537,6 +7570,7 @@ export type GetApiV1AdminStorageResponses = {
     200: {
         total?: number;
         items?: Array<StorageBackend>;
+        primary?: StoragePrimary;
     };
 };
 
@@ -7546,7 +7580,6 @@ export type PostApiV1AdminStorageData = {
     body: {
         name: string;
         kind: 'filesystem' | 's3' | 'gcs' | 'azure';
-        is_default?: boolean;
         config?: {
             [key: string]: unknown;
         };
@@ -7578,6 +7611,104 @@ export type PostApiV1AdminStorageResponses = {
 
 export type PostApiV1AdminStorageResponse = PostApiV1AdminStorageResponses[keyof PostApiV1AdminStorageResponses];
 
+export type DeleteApiV1AdminStoragePrimaryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/storage/primary';
+};
+
+export type DeleteApiV1AdminStoragePrimaryErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * read_only
+     */
+    405: Error;
+};
+
+export type DeleteApiV1AdminStoragePrimaryError = DeleteApiV1AdminStoragePrimaryErrors[keyof DeleteApiV1AdminStoragePrimaryErrors];
+
+export type GetApiV1AdminStoragePrimaryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/storage/primary';
+};
+
+export type GetApiV1AdminStoragePrimaryErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * No primary storage is wired
+     */
+    404: unknown;
+};
+
+export type GetApiV1AdminStoragePrimaryResponses = {
+    /**
+     * The primary storage
+     */
+    200: StoragePrimary;
+};
+
+export type GetApiV1AdminStoragePrimaryResponse = GetApiV1AdminStoragePrimaryResponses[keyof GetApiV1AdminStoragePrimaryResponses];
+
+export type PatchApiV1AdminStoragePrimaryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/storage/primary';
+};
+
+export type PatchApiV1AdminStoragePrimaryErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * read_only
+     */
+    405: Error;
+};
+
+export type PatchApiV1AdminStoragePrimaryError = PatchApiV1AdminStoragePrimaryErrors[keyof PatchApiV1AdminStoragePrimaryErrors];
+
+export type PostApiV1AdminStoragePrimaryTestData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/storage/primary/test';
+};
+
+export type PostApiV1AdminStoragePrimaryTestErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * No primary storage is wired
+     */
+    404: unknown;
+};
+
+export type PostApiV1AdminStoragePrimaryTestResponses = {
+    /**
+     * Test result
+     */
+    200: {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+    };
+};
+
+export type PostApiV1AdminStoragePrimaryTestResponse = PostApiV1AdminStoragePrimaryTestResponses[keyof PostApiV1AdminStoragePrimaryTestResponses];
+
 export type DeleteApiV1AdminStorageByNameData = {
     body?: never;
     path: {
@@ -7600,6 +7731,10 @@ export type DeleteApiV1AdminStorageByNameErrors = {
      * Storage backend not found
      */
     404: unknown;
+    /**
+     * The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only)
+     */
+    405: Error;
 };
 
 export type DeleteApiV1AdminStorageByNameError = DeleteApiV1AdminStorageByNameErrors[keyof DeleteApiV1AdminStorageByNameErrors];
@@ -7650,7 +7785,6 @@ export type GetApiV1AdminStorageByNameResponse = GetApiV1AdminStorageByNameRespo
 
 export type PatchApiV1AdminStorageByNameData = {
     body: {
-        is_default?: boolean;
         config?: {
             [key: string]: unknown;
         };
@@ -7675,6 +7809,10 @@ export type PatchApiV1AdminStorageByNameErrors = {
      * Storage backend not found
      */
     404: unknown;
+    /**
+     * The name is the reserved primary storage, which is set by the server configuration and read-only (error code read_only)
+     */
+    405: Error;
     /**
      * The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move
      */

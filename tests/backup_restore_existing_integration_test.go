@@ -21,10 +21,9 @@ import (
 )
 
 // A restore into a freshly started instance meets the records the server
-// creates by itself: the bootstrap admin user (and its admin-all grant) and the
-// migrations' default storage backend. Those exist on both sides, so they are
-// skipped on purpose; the restore must not report them as failures, and
-// whatever depends on the skipped admin (its grant, its tokens) is skipped with
+// creates by itself: the bootstrap admin user (and its admin-all grant). That
+// exists on both sides, so it is skipped on purpose; the restore must not
+// report it as a failure, and whatever depends on the skipped admin (its grant, its tokens) is skipped with
 // it. A genuine failure still fails the restore.
 func TestRestoreIntoBootstrappedInstanceSkipsExistingRecordsWithoutFailing(t *testing.T) {
 	ctx := context.Background()

@@ -206,7 +206,5 @@
   "quota.maxSize": "最大サイズ",
   "quota.removeTitle": "クォータの上限を解除しますか?",
   "quota.removeBody": "このリポジトリのストレージ上限がなくなります。いつでも再設定できます。",
-  "storage.configuration": "設定",
-  "storage.setDefault": "デフォルトのバックエンドに設定",
-  "storage.setDefaultHint": "バックエンドを明示していない新規リポジトリは、デフォルトのバックエンドを使用します。"
+  "storage.configuration": "設定"
 }

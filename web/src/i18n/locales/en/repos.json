@@ -209,7 +209,5 @@
   "quota.maxSize": "Maximum size",
   "quota.removeTitle": "Remove quota limit?",
   "quota.removeBody": "The repository will have no storage limit. This can be configured again at any time.",
-  "storage.configuration": "Configuration",
-  "storage.setDefault": "Set as default backend",
-  "storage.setDefaultHint": "New repositories without an explicit backend will use the default."
+  "storage.configuration": "Configuration"
 }
