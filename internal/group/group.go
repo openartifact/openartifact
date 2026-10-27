@@ -113,7 +113,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget, conda, deb, rpm) merges over its members; false
+// (maven, pypi, npm, helm, cargo, go, nuget, conan, conda, deb, rpm) merges over its members; false
 // means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
@@ -143,6 +143,8 @@ func (h *Handler) serveMerged(
 		return h.serveGo(w, r, grp, relPath, readable, be)
 	case "nuget":
 		return h.serveNuGet(w, r, grp, relPath, readable, be)
+	case "conan":
+		return h.serveConan(w, r, grp, relPath, readable, be)
 	case "conda":
 		return h.serveConda(w, r, grp, readable, relPath, be)
 	case "deb", "rpm":

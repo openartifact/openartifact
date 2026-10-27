@@ -46,13 +46,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <template #cell-name="{ row }">
         <div class="min-w-0">
-          <span class="font-medium text-foreground">{{ (row as LicensePolicy).name }}</span>
-          <p v-if="(row as LicensePolicy).description" class="text-xs text-muted">{{ (row as LicensePolicy).description }}</p>
+          <span class="block truncate font-medium text-foreground" :title="(row as LicensePolicy).name">{{ (row as LicensePolicy).name }}</span>
+          <p v-if="(row as LicensePolicy).description" class="truncate text-xs text-muted" :title="(row as LicensePolicy).description ?? undefined">{{ (row as LicensePolicy).description }}</p>
         </div>
       </template>
 
       <template #cell-condition="{ row }">
-        <div class="space-y-0.5 text-xs">
+        <div class="max-w-xs space-y-0.5 text-xs">
           <p v-if="(row as LicensePolicy).denied_licenses?.length" class="break-words font-mono text-foreground">
             {{ tp('sx.policies.cond.denied', { licenses: (row as LicensePolicy).denied_licenses!.join(', ') }) }}
           </p>
@@ -134,11 +134,11 @@ const { list, refresh } = useLocalList({
 const actionOptions = computed(() => FILTERS.map((a) => ({ value: a, label: a === 'all' ? t('sx.policies.action.all') : t(`sx.policies.act.${a}`) })))
 
 const columns: ListColumn[] = [
-  { key: 'name', label: t('sx.policies.col.name'), sortable: true },
+  { key: 'name', label: t('sx.policies.col.name'), sortable: true, grow: true },
   { key: 'condition', label: t('sx.policies.col.condition') },
   { key: 'action', label: t('sx.policies.col.action') },
-  { key: 'status', label: t('sx.policies.col.status') },
-  { key: 'updated', label: t('sx.policies.col.updated'), sortable: true },
+  { key: 'status', label: t('sx.policies.col.status'), dropOrder: 2 },
+  { key: 'updated', label: t('sx.policies.col.updated'), sortable: true, dropOrder: 1 },
 ]
 
 async function onCreated(policy: LicensePolicy): Promise<void> {

@@ -60,8 +60,8 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 
 	r.Get("/v1/ping", h.handlePing)
 	r.Get("/v2/ping", h.handlePing)
-	r.Get("/v2/users/authenticate", h.handleAuthenticate)
-	r.Get("/v2/users/check_credentials", h.handleCheckCredentials)
+	r.Get("/v2/users/authenticate", authenticate)
+	r.Get("/v2/users/check_credentials", checkCredentials)
 	r.Get("/v2/conans/search", h.handleSearch)
 
 	const recipe = "/v2/conans/{pkg}/{version}/{user}/{channel}"

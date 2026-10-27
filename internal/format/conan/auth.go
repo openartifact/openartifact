@@ -18,6 +18,10 @@ import (
 // implemented, so they are not advertised.
 const serverCapabilities = "revisions,checksum_deploy"
 
+// readOnlyCapabilities is what the proxy and group repositories, which take no
+// uploads, advertise.
+const readOnlyCapabilities = "revisions"
+
 // handlePing answers the conan client's capability probe. The client pings
 // {remote}/v1/ping even when it then speaks v2.
 func (h *HTTPHandler) handlePing(w http.ResponseWriter, _ *http.Request) {
@@ -25,13 +29,34 @@ func (h *HTTPHandler) handlePing(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleAuthenticate exchanges the user:token Basic credentials of
+// ServeReadOnlySession answers the requests of a conan client that are about
+// the session, not about packages, for a proxy or group repository: ping and
+// the login endpoints, v1 and v2. They authenticate the client to this server.
+// relPath is the path below the repository root; false means the request is
+// not one of them.
+func ServeReadOnlySession(w http.ResponseWriter, r *http.Request, relPath string) bool {
+	switch relPath {
+	case "v1/ping", "v2/ping":
+		w.Header().Set("X-Conan-Server-Capabilities", readOnlyCapabilities)
+		w.WriteHeader(http.StatusOK)
+	case "v1/users/authenticate", "v2/users/authenticate":
+		authenticate(w, r)
+	case "v1/users/check_credentials", "v2/users/check_credentials":
+		checkCredentials(w, r)
+	default:
+		return false
+	}
+
+	return true
+}
+
+// authenticate exchanges the user:token Basic credentials of
 // `conan remote login` for the token conan then sends as `Authorization:
 // Bearer`. The token is the API token itself, which the RBAC middleware accepts
 // in that position; nothing is minted. Anything but a valid token (a wrong
 // password, a session cookie, the legacy API key) is a 401, so the client asks
 // for the credentials again.
-func (h *HTTPHandler) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
+func authenticate(w http.ResponseWriter, r *http.Request) {
 	p := middleware.PrincipalFromContext(r.Context())
 	if p == nil || p.IsAnonymous || p.Credential != auth.CredentialBasicToken {
 		unauthorized(w)
@@ -47,9 +72,9 @@ func (h *HTTPHandler) handleAuthenticate(w http.ResponseWriter, r *http.Request)
 	writeText(w, token)
 }
 
-// handleCheckCredentials returns the name of the authenticated user; 401 when
-// the request carries no valid credentials, which makes the client log in.
-func (h *HTTPHandler) handleCheckCredentials(w http.ResponseWriter, r *http.Request) {
+// checkCredentials returns the name of the authenticated user; 401 when the
+// request carries no valid credentials, which makes the client log in.
+func checkCredentials(w http.ResponseWriter, r *http.Request) {
 	p := middleware.PrincipalFromContext(r.Context())
 	if p == nil || p.IsAnonymous {
 		unauthorized(w)

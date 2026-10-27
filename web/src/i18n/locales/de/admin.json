@@ -419,7 +419,6 @@
   "adm.gpg.deleteAnyway": "Trotzdem löschen",
   "adm.gpg.deleted": "GPG-Schlüssel gelöscht",
   "adm.gpg.deleteFailed": "GPG-Schlüssel konnte nicht gelöscht werden",
-  "adm.gpg.actionsFor": "Aktionen für",
   "adm.dt.loadFailed": "Dependency-Track-Einstellungen konnten nicht geladen werden",
   "adm.dt.saved": "Dependency-Track-Einstellungen gespeichert",
   "adm.dt.saveFailed": "Dependency-Track-Einstellungen konnten nicht gespeichert werden",

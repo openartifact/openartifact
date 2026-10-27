@@ -419,7 +419,6 @@
   "adm.gpg.deleteAnyway": "それでも削除",
   "adm.gpg.deleted": "GPG キーを削除しました",
   "adm.gpg.deleteFailed": "GPG キーを削除できませんでした",
-  "adm.gpg.actionsFor": "操作対象:",
   "adm.dt.loadFailed": "Dependency-Track の設定を読み込めませんでした",
   "adm.dt.saved": "Dependency-Track の設定を保存しました",
   "adm.dt.saveFailed": "Dependency-Track の設定を保存できませんでした",

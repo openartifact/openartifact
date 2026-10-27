@@ -419,7 +419,6 @@
   "adm.gpg.deleteAnyway": "Elimina comunque",
   "adm.gpg.deleted": "Chiave GPG eliminata",
   "adm.gpg.deleteFailed": "Impossibile eliminare la chiave GPG",
-  "adm.gpg.actionsFor": "Azioni per",
   "adm.dt.loadFailed": "Impossibile caricare le impostazioni di Dependency-Track",
   "adm.dt.saved": "Impostazioni di Dependency-Track salvate",
   "adm.dt.saveFailed": "Impossibile salvare le impostazioni di Dependency-Track",

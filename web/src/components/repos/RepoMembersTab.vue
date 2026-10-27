@@ -29,7 +29,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <template #cell-position="{ index }"><span class="font-mono text-xs text-muted">{{ index + 1 }}</span></template>
       <template #cell-name="{ row }">
-        <router-link :to="`/repos/${encodeURIComponent(row.name)}`" class="font-mono text-sm font-semibold text-foreground hover:text-primary">{{ row.name }}</router-link>
+        <router-link :to="`/repos/${encodeURIComponent(row.name)}`" class="block truncate font-mono text-sm font-semibold text-foreground hover:text-primary" :title="row.name">{{ row.name }}</router-link>
       </template>
       <template #cell-type="{ row }">{{ row.repo_type === 'proxy' ? t('repos.new.type.proxy') : t('repos.new.type.hosted') }}</template>
     </ListTable>
@@ -50,7 +50,7 @@ const error = ref('')
 
 const columns = computed<ListColumn[]>(() => [
   { key: 'position', label: t('repoDetail.group.position') },
-  { key: 'name', label: t('repos.column.name') },
+  { key: 'name', label: t('repos.column.name'), grow: true },
   { key: 'type', label: t('repos.column.type') },
 ])
 

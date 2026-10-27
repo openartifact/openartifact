@@ -36,7 +36,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/urlparams` | `Vars(r)`: chi URL parameters as a map |
 | `internal/{backup,webhook,search,vuln,sbom,license,secrets,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM encryption of stored secrets (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers and helpers: `deb`, `rpm`, `npm`, `nuget`, `maven`, `helm`, `rubymarshal`, `gpg`, `delta`, `errors`, `logger` |
+| `pkg/*` | Format parsers and helpers: `deb`, `rpm`, `npm`, `nuget`, `conan`, `maven`, `helm`, `rubymarshal`, `gpg`, `delta`, `errors`, `logger` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TypeScript + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go handler tests (many need `-tags=integration`); `tests/integration/` uses testcontainers |
@@ -75,8 +75,8 @@ RBAC is the authorization gate: `/api/v1/*` maps to the `manage` action, `/repos
 Every repo-scoped format handler registers **relative** routes on the single `/repos/{name}` subrouter in `cmd/server/main.go` (`RegisterRepoRoutes(r)`). Never register an absolute `/repos/{name}/...` route on `authedAPI`: the subrouter mount shadows it (404) or the route hijacks the subrouter.
 
 - Routes that need the same pattern are dispatched explicitly. `PUT /*` is shared by npm publish and GOPROXY upload: the catch-all calls `gomodHTTP.HandlePut` when `formatgomod.IsUploadPath` matches the tail, `npmUpload.HandlePublish` otherwise.
-- Formats whose wildcard paths would shadow others are mounted on isolated prefixes: `/repos/raw/{name}`, `/repos/maven/{name}`, `/repos/sbt/{name}`, `/repos/ivy/{name}`. All `/repos/...` mounts sit behind `repodispatch`. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, docker, npm, pypi, cargo, go, helm, nuget, conda and raw; groups for maven, sbt, ivy, docker, npm, pypi, cargo, go, helm, nuget, conda and raw (`internal/repotype`). Docker proxies and groups are not served under `/repos/{name}`: `repodispatch.OCIMiddleware` sits in front of the `/v2` routes and hands them to `proxy.ServeOCI` / `group.ServeOCI` (bearer-token handling in `internal/proxy/oci_auth.go`).
-- Group repositories read hosted members through in-memory routers of the same Maven, npm, PyPI, cargo, Go, Helm, NuGet and raw handlers.
+- Formats whose wildcard paths would shadow others are mounted on isolated prefixes: `/repos/raw/{name}`, `/repos/maven/{name}`, `/repos/sbt/{name}`, `/repos/ivy/{name}`. All `/repos/...` mounts sit behind `repodispatch`. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, docker, npm, pypi, cargo, go, helm, nuget, conan, conda and raw; groups for maven, sbt, ivy, docker, npm, pypi, cargo, go, helm, nuget, conan, conda and raw (`internal/repotype`). Docker proxies and groups are not served under `/repos/{name}`: `repodispatch.OCIMiddleware` sits in front of the `/v2` routes and hands them to `proxy.ServeOCI` / `group.ServeOCI` (bearer-token handling in `internal/proxy/oci_auth.go`).
+- Group repositories read hosted members through in-memory routers of the same Maven, npm, PyPI, cargo, Go, Helm, NuGet, Conan, conda and raw handlers.
 - `cmd/server/routes_test.go` guards the registration order against chi `Mount()` panics.
 
 ## Storage and database

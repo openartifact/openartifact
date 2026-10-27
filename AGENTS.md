@@ -18,7 +18,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,rpm,npm,maven}.go`), `openapi.json` |
 | `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{repo}/...`, `/v2/...`); the Go module format lives in `gomod` |
 | `internal/repodispatch` | chi middleware in front of the per-format routes: hosted repos pass through, proxy and group repos are served by `internal/proxy` / `internal/group` |
-| `internal/{group,repotype}` | Group member resolution + Maven metadata / npm packument / cargo index / Helm `index.yaml` / go `@v/list` / NuGet registration merge (`pkg/helm/index.go` parses, rewrites and merges indexes); `repotype` is the single policy of which formats may be proxy (maven, sbt, ivy, deb, rpm, docker, npm, pypi, cargo, go, helm, nuget, conda, raw) or group (maven, sbt, ivy, deb, rpm, docker, npm, pypi, cargo, go, helm, nuget, conda, raw; deb/rpm groups serve generated merged metadata, `internal/worker/group_metadata*.go`); `internal/pypisimple` is the PEP 503/691 parser/renderer behind the pypi proxy and group |
+| `internal/{group,repotype}` | Group member resolution + Maven metadata / npm packument / cargo index / Helm `index.yaml` / go `@v/list` / NuGet registration / Conan revision + search merge (`pkg/helm/index.go` parses, rewrites and merges indexes); `repotype` is the single policy of which formats may be proxy (maven, sbt, ivy, deb, rpm, docker, npm, pypi, cargo, go, helm, nuget, conan, conda, raw) or group (maven, sbt, ivy, deb, rpm, docker, npm, pypi, cargo, go, helm, nuget, conan, raw; deb/rpm groups serve generated merged metadata, `internal/worker/group_metadata*.go`); `internal/pypisimple` is the PEP 503/691 parser/renderer behind the pypi proxy and group |
 | `internal/ocipath` | Parses `/v2/<name>/...` into OpenArtifact repo + image; shared by RBAC and the docker handler |
 | `internal/clientsetup` | Go port of `web/src/lib/installCommands.ts` (client snippets, used by MCP `client_setup`); keep both in sync (`testdata/web_parity.json` is checked by a Go test and `web/src/lib/__tests__/installCommands.parity.test.ts`; regenerate with `UPDATE_PARITY=1 go test ./internal/clientsetup -run Parity`; `internal/repotype` has the same guard for `web/src/lib/repoTypes.ts`) |
 | `internal/importmeta` | `X-OA-Import-Created-At` handling for `oa import` (honored only for `manage` principals) |
@@ -31,7 +31,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, AI analysis |
 | `internal/{backup,webhook,proxy,search,vuln,sbom,license,secrets,quarantine,quota,cron,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM secret encryption at rest (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers/libraries (deb, rpm, npm, nuget, maven, helm, rubymarshal, gpg, delta) plus shared `errors`/`logger` |
+| `pkg/*` | Format parsers/libraries (deb, rpm, npm, nuget, conan, maven, helm, rubymarshal, gpg, delta) plus shared `errors`/`logger` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TS + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go integration/handler tests; `tests/integration/` uses testcontainers |

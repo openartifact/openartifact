@@ -35,9 +35,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
 	case "nuget":
 		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
-	case "conda":
-		// Package files only; repodata and channeldata are streamed.
-		return strings.HasSuffix(base, ".conda") || strings.HasSuffix(base, ".tar.bz2")
+	case "conan", "conda":
+		return isConanCondaBlob(format, relPath, base)
 	case "raw":
 		return true
 	case "pypi":
@@ -47,6 +46,27 @@ func IsProxyBlobPath(format, relPath string) bool {
 	default:
 		return false
 	}
+}
+
+// isConanCondaBlob reports whether relPath is a package archive of a Conan
+// revision (conan_package.tgz, conan_sources.tgz; lists, manifests and recipes
+// are streamed) or a conda package file (repodata and channeldata are streamed).
+func isConanCondaBlob(format, relPath, base string) bool {
+	if format == "conda" {
+		return strings.HasSuffix(base, ".conda") || strings.HasSuffix(base, ".tar.bz2")
+	}
+
+	return strings.Contains(relPath, "/files/") && isConanArchive(base)
+}
+
+func isConanArchive(base string) bool {
+	for _, ext := range []string{".tgz", ".tar.gz", ".txz", ".tar.xz", ".tzst", ".tar.zst"} {
+		if strings.HasSuffix(base, ext) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isRPMBlob(relPath, base string) bool {

@@ -17,8 +17,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     />
     <ListTable :columns="columns" :query="list" row-key="version" :caption="tp('artifact.versions.caption', { name: ctx.pkgName.value })" :empty-title="t('artifact.versions.empty')">
       <template #cell-version="{ row }">
-        <div class="flex flex-wrap items-center gap-1.5">
-          <router-link :to="versionTo(row)" class="break-all font-mono text-primary hover:underline">{{ row.version }}</router-link>
+        <div class="flex min-w-0 items-center gap-1.5">
+          <router-link :to="versionTo(row)" class="truncate font-mono text-primary hover:underline" :title="row.version">{{ row.version }}</router-link>
           <span v-if="row.version === ctx.entry.value?.version" class="rounded-full border border-border px-2 py-0.5 text-micro text-muted">{{ t('artifact.badge.current') }}</span>
           <span v-if="row.latest" class="rounded-full border border-info/30 bg-info-soft px-2 py-0.5 text-micro text-info">{{ t('artifact.badge.latest') }}</span>
           <span v-if="row.prerelease" class="rounded-full border border-border px-2 py-0.5 text-micro text-muted">{{ t('artifact.badge.prerelease') }}</span>
@@ -54,10 +54,10 @@ import { t, tp } from '../../i18n'
 const ctx = useArtifactContext()
 
 const columns: ListColumn[] = [
-  { key: 'version', label: t('artifact.versions.column.version'), sortable: true },
+  { key: 'version', label: t('artifact.versions.column.version'), sortable: true, grow: true },
   { key: 'created', label: t('artifact.versions.column.published'), sortable: true },
-  { key: 'size', label: t('artifact.versions.column.size'), sortable: true },
-  { key: 'files', label: t('artifact.versions.column.files') },
+  { key: 'size', label: t('artifact.versions.column.size'), sortable: true, dropOrder: 2 },
+  { key: 'files', label: t('artifact.versions.column.files'), dropOrder: 1 },
   { key: 'security', label: t('artifact.versions.column.security') },
 ]
 

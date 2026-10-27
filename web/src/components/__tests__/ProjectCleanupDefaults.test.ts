@@ -42,7 +42,7 @@ describe('ProjectCleanupDefaults', () => {
     expect(wrapper.find('[data-testid="cleanup-add"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="cleanup-readonly"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="cleanup-override-note"]').text()).toContain('its own enabled cleanup policy')
-    expect(wrapper.find('button[aria-label="Delete policy"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="action-delete"]').exists()).toBe(false)
   })
 
   it('lets an owner create a default policy', async () => {
@@ -77,7 +77,7 @@ describe('ProjectCleanupDefaults', () => {
           })
         : json({ policies: POLICIES }),
     )
-    await wrapper.find('[data-testid="cleanup-dry-run"]').trigger('click')
+    await wrapper.find('[data-testid="action-dry-run"]').trigger('click')
     await flushPromises()
     const call = spy.mock.calls.find((c) => String(c[0]).endsWith('/cleanup-policies/c1/dry-run'))
     expect(call?.[1]?.method).toBe('POST')

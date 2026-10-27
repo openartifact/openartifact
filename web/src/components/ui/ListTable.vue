@@ -48,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="selectable && selected.length > 0" class="border-b border-border bg-primary-soft px-4 py-2 text-sm text-primary" role="status">
         {{ tp('ui.table.selected', { count: String(selected.length) }) }}
       </div>
-      <div class="overflow-x-auto">
+      <TableScroller :fit-from="768">
         <table class="min-w-full divide-y divide-border max-md:block">
           <caption class="sr-only">{{ caption }}</caption>
           <thead class="bg-surface-hover max-md:sr-only">
@@ -68,7 +68,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 :key="col.key"
                 scope="col"
                 class="px-4 py-3 text-xs font-medium text-muted"
-                :class="col.align === 'end' ? 'text-right' : 'text-left'"
+                :class="[col.align === 'end' ? 'text-right' : 'text-left', col.actions ? ACTIONS_HEAD_MD : '']"
+                :data-drop-order="col.dropOrder"
                 :aria-sort="col.sortable ? ariaSort(col.key) : undefined"
               >
                 <span v-if="col.actions" class="sr-only">{{ t('ui.table.actions') }}</span>
@@ -89,7 +90,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <tr
               v-for="(row, index) in rows"
               :key="keyOf(row)"
-              class="hover:bg-surface-hover max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:px-4 max-md:py-3 max-md:after:order-2 max-md:after:basis-full max-md:after:content-['']"
+              class="group/row hover:bg-surface-hover max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:px-4 max-md:py-3 max-md:after:order-2 max-md:after:basis-full max-md:after:content-['']"
             >
               <td v-if="selectable" class="w-10 px-4 py-3 max-md:order-first max-md:w-auto max-md:px-0 max-md:py-0">
                 <input
@@ -108,6 +109,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 :class="[
                   col.align === 'end' ? 'text-right max-md:text-left' : '',
                   cellPlacement(col, ci),
+                  col.actions ? ACTIONS_CELL_MD : '',
+                  col.grow ? GROW_CELL_MD : '',
                 ]"
               >
                 <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]" :index="index">
@@ -117,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </tr>
           </tbody>
         </table>
-      </div>
+      </TableScroller>
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted">
         <span data-testid="list-summary">{{ summary }}</span>
@@ -144,6 +147,8 @@ import { computed, ref, watchEffect } from 'vue'
 import { ChevronDownIcon, ChevronUpDownIcon, ChevronUpIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import StateBlock from './StateBlock.vue'
+import TableScroller from './TableScroller.vue'
+import { ACTIONS_CELL_MD, ACTIONS_HEAD_MD, GROW_CELL_MD } from './tableStyles'
 import type { ListQuery } from '../../composables/useListQuery'
 import type { Schema } from '../../composables/useUrlState'
 import { t, tp } from '../../i18n'
@@ -157,6 +162,10 @@ export interface ListColumn {
   actions?: boolean
   /** Self-explanatory cell (a title, a package link): below 768px it flows without its column label. */
   hideLabel?: boolean
+  /** Low-value column: when the table does not fit, columns with a `dropOrder` are hidden, 1 first, until it does. Never set on the identifier or the actions. The mobile card shows every cell. */
+  dropOrder?: number
+  /** The identifier column: takes the leftover width and truncates (put `truncate` on the content) instead of stretching the table. */
+  grow?: boolean
 }
 
 const props = withDefaults(

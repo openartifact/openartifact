@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </FilterBar>
 
     <ListTable :columns="columns" :caption="t('adm.groups.listTitle')" :query="list" :empty-title="t('adm.groups.empty')" :empty-hint="t('settings.groups.emptyHint')">
-      <template #cell-name="{ row }"><span class="font-semibold text-foreground">{{ row.name }}</span></template>
+      <template #cell-name="{ row }"><span class="block truncate font-semibold text-foreground" :title="row.name">{{ row.name }}</span></template>
       <template #cell-members="{ row }">
         <button
           type="button"
@@ -40,14 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
       <template #cell-created_at="{ row }"><RelativeTime :value="row.created_at" /></template>
       <template #cell-actions="{ row }">
-        <div class="flex items-center gap-1">
-          <button type="button" :class="iconButton" :title="t('admin.groups.manageMembers')" :aria-label="`${t('admin.groups.manageMembers')}: ${row.name}`" @click="openMembers(row)">
-            <UsersIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button type="button" :class="[iconButton, 'hover:!text-danger']" :title="t('common.delete')" :aria-label="`${t('common.delete')}: ${row.name}`" @click="deleteTarget = row">
-            <TrashIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
+        <RowActions :actions="rowActions" :subject="row.name" @action="(key) => onAction(key, row)" />
       </template>
     </ListTable>
 
@@ -188,11 +181,11 @@ import { useToastStore } from '../../../stores/toast'
 import { t, tp } from '../../../i18n'
 import {
   PlusIcon,
-  UsersIcon,
-  TrashIcon,
   XMarkIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/vue/24/outline'
+import { TrashIcon, UsersIcon } from '@heroicons/vue/20/solid'
+import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
 import { compareText } from '../../../lib/intl'
 
 const toasts = useToastStore()
@@ -208,11 +201,19 @@ const newGroupName = ref('')
 const memberSearch = ref('')
 const currentMembers = ref<UserItem[]>([])
 
-const iconButton = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground max-md:h-11 max-md:w-11'
+const rowActions = computed<RowAction[]>(() => [
+  { key: 'members', label: t('admin.groups.manageMembers'), icon: UsersIcon },
+  { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger' },
+])
+
+function onAction(key: string, row: GroupItem): void {
+  if (key === 'members') openMembers(row)
+  else if (key === 'delete') deleteTarget.value = row
+}
 const columns: ListColumn[] = [
-  { key: 'name', label: t('admin.groups.column.name'), sortable: true },
+  { key: 'name', label: t('admin.groups.column.name'), sortable: true, grow: true },
   { key: 'members', label: t('admin.groups.column.members') },
-  { key: 'created_at', label: t('admin.groups.column.created'), sortable: true },
+  { key: 'created_at', label: t('admin.groups.column.created'), sortable: true, dropOrder: 1 },
   { key: 'actions', label: t('common.actions'), actions: true },
 ]
 

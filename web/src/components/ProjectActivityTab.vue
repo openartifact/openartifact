@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <p v-else-if="entries.length === 0" class="px-4 py-6 text-sm text-muted" data-testid="activity-empty">{{ t('projects.activity.empty') }}</p>
 
     <template v-else>
-      <div class="overflow-x-auto">
+      <TableScroller>
         <table class="w-full">
           <thead>
             <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="e in entries" :key="e.id" class="hover:bg-surface-hover/40 transition-colors" data-testid="activity-row">
+            <tr v-for="e in entries" :key="e.id" class="group/row hover:bg-surface-hover/40 transition-colors" data-testid="activity-row">
               <td class="px-4 py-3 text-xs text-muted whitespace-nowrap">{{ formatDateTime(e.timestamp) }}</td>
               <td class="px-4 py-3 text-sm font-mono text-foreground">{{ e.actor || '—' }}</td>
               <td class="px-4 py-3 text-sm font-mono text-foreground">{{ e.action }}</td>
@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </tr>
           </tbody>
         </table>
-      </div>
+      </TableScroller>
       <div v-if="failed" class="px-4 py-3 border-t border-border text-sm text-danger" role="alert">{{ t('projects.activity.loadFailed') }}</div>
       <div v-if="nextCursor" class="px-4 py-3 border-t border-border flex justify-center">
         <AppButton variant="secondary" size="sm" :disabled="loadingMore" data-testid="activity-more" @click="loadMore">
@@ -61,6 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import AuditExportButtons from './AuditExportButtons.vue'
+import TableScroller from './ui/TableScroller.vue'
 import { downloadProjectActivityExport, listProjectActivity, type ProjectActivityEntry } from '../api/projects'
 import type { ExportFormat } from '../api/audit'
 import { formatDateTime } from '../lib/datetime'

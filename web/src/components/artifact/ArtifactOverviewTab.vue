@@ -39,7 +39,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <h2 id="artifact-metadata" class="mb-2 text-base font-semibold text-foreground">{{ t('artifact.overview.metadata') }}</h2>
       <ListTable :columns="KV_COLUMNS" :rows="metadata" row-key="key" :caption="t('artifact.overview.metadata')" :limit="metadata.length">
         <template #cell-key="{ row }"><span class="font-mono text-xs">{{ row.key }}</span></template>
-        <template #cell-value="{ row }"><span class="break-all font-mono text-xs">{{ row.value }}</span></template>
+        <template #cell-value="{ row }"><span class="break-all font-mono text-xs line-clamp-3" :title="row.value">{{ row.value }}</span></template>
       </ListTable>
     </section>
 
@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         @retry="loadProperties"
       >
         <template #cell-key="{ row }"><span class="font-mono text-xs">{{ row.key }}</span></template>
-        <template #cell-value="{ row }"><span class="break-all font-mono text-xs">{{ row.value }}</span></template>
+        <template #cell-value="{ row }"><span class="break-all font-mono text-xs line-clamp-3" :title="row.value">{{ row.value }}</span></template>
       </ListTable>
       <p v-if="!ctx.caps.value.write" class="mt-2 text-xs text-muted">{{ t('artifact.props.readOnly') }}</p>
     </section>
@@ -100,7 +100,7 @@ const toasts = useToastStore()
 
 const KV_COLUMNS: ListColumn[] = [
   { key: 'key', label: t('artifact.props.name') },
-  { key: 'value', label: t('artifact.props.value') },
+  { key: 'value', label: t('artifact.props.value'), grow: true },
 ]
 
 const entry = computed(() => ctx.entry.value)

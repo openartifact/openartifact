@@ -255,8 +255,9 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f := &a.web.formats
 
 	routers := map[string]*chi.Mux{}
-	names := []string{"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conda"}
-	for _, name := range names {
+	for _, name := range []string{
+		"maven", "deb", "rpm", "pypi", "raw", "npm", "cargo", "go", "nuget", "docker", "helm", "ivy", "sbt", "conan", "conda",
+	} {
 		routers[name] = chi.NewRouter()
 	}
 
@@ -269,6 +270,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.cargo.RegisterRepoRoutes(routers["cargo"])
 	f.pypi.RegisterRepoRoutes(routers["pypi"])
 	f.helm.RegisterRepoRoutes(routers["helm"])
+	f.conan.RegisterRepoRoutes(routers["conan"])
 	// Read-only view of the GOPROXY handler: group members are only ever read.
 	f.gomod.RegisterRepoRoutes(routers["go"])
 	f.docker.RegisterRoutes(routers["docker"])

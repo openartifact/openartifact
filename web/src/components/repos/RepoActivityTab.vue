@@ -18,8 +18,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template #cell-actor="{ row }"><span class="text-sm">{{ row.actor_name || row.actor || '—' }}</span></template>
     <template #cell-action="{ row }"><span class="text-sm">{{ actionLabel(row.action) }}</span></template>
     <template #cell-subject="{ row }">
-      <router-link v-if="subjectLink(row)" :to="subjectLink(row)!" class="font-mono text-xs text-foreground hover:text-primary">{{ subjectText(row) }}</router-link>
-      <span v-else class="text-sm text-muted">{{ subjectText(row) || row.message || '—' }}</span>
+      <router-link v-if="subjectLink(row)" :to="subjectLink(row)!" class="block truncate font-mono text-xs text-foreground hover:text-primary" :title="subjectText(row)">{{ subjectText(row) }}</router-link>
+      <span v-else class="block truncate text-sm text-muted" :title="subjectText(row) || row.message">{{ subjectText(row) || row.message || '—' }}</span>
     </template>
   </ListTable>
 </template>
@@ -48,9 +48,9 @@ const list = useListQuery({
 
 const columns = computed<ListColumn[]>(() => [
   { key: 'when', label: t('rl.activity.when') },
-  { key: 'actor', label: t('rl.activity.actor') },
+  { key: 'actor', label: t('rl.activity.actor'), dropOrder: 1 },
   { key: 'action', label: t('rl.activity.action') },
-  { key: 'subject', label: t('rl.activity.subject') },
+  { key: 'subject', label: t('rl.activity.subject'), grow: true },
 ])
 
 function subjectText(e: RepoActivityEntry): string {

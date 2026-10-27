@@ -95,6 +95,11 @@ var (
 	// or format): the upstream answered, wrongly, so no stale copy is served
 	// in its place.
 	errVerify = fmt.Errorf("%w: integrity check failed", errUpstream)
+
+	// errUnauthorized is an upstream that answered 401: the credentials (or
+	// the token obtained with them) were refused. It is a plain errUpstream
+	// for every caller; formats that log in to the upstream renew their token.
+	errUnauthorized = fmt.Errorf("%w: unauthorized", errUpstream)
 )
 
 // staleWarning marks a response served from an expired cache entry
@@ -228,6 +233,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if repo.Format == "conda" {
 		s.serveConda(w, r, repo, relPath)
+		return
+	}
+
+	if repo.Format == "conan" {
+		s.serveConan(w, r, repo, relPath)
 		return
 	}
 
@@ -524,6 +534,12 @@ type fetchOpts struct {
 	// noAuth withholds the repository's upstream credentials, for targets
 	// outside the configured upstream host.
 	noAuth bool
+	// authorization, when set, is sent as the Authorization header instead of
+	// the repository's Basic credentials (formats that log in to the upstream).
+	authorization string
+	// contentType, when set, is recorded and served instead of the upstream's
+	// Content-Type, for documents whose clients insist on an exact type.
+	contentType string
 	// wantSHA256, when set, is the lowercase hex digest the body must have;
 	// a different body is refused and not cached.
 	wantSHA256 string
@@ -577,19 +593,37 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 	}
 	defer func() { base.CloseLog(resp.Body, s.log) }()
 
-	switch {
-	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
-		s.recordNegative(ctx, repo, key)
-		return nil, errNotFound
-	case resp.StatusCode >= http.StatusInternalServerError:
-		s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "path", key, "status", resp.StatusCode)
-		return nil, errUpstreamDown
-	case resp.StatusCode != http.StatusOK:
-		s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "path", key, "status", resp.StatusCode)
-		return nil, errUpstream
+	if err := s.upstreamStatusError(repo, key, resp.StatusCode); err != nil {
+		if errors.Is(err, errNotFound) {
+			s.recordNegative(ctx, repo, key)
+		}
+
+		return nil, err
 	}
 
 	return s.store(ctx, repo, key, resp, o)
+}
+
+// upstreamStatusError classifies an upstream answer that did not deliver the
+// file: errNotFound for 404/410, errUpstreamDown for a 5xx, errUnauthorized for
+// 401 and errUpstream for the rest; nil for 200.
+func (s *Service) upstreamStatusError(repo *models.Repository, key string, status int) error {
+	switch {
+	case status == http.StatusOK:
+		return nil
+	case status == http.StatusNotFound || status == http.StatusGone:
+		return errNotFound
+	case status >= http.StatusInternalServerError:
+		s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "path", key, "status", status)
+		return errUpstreamDown
+	case status == http.StatusUnauthorized:
+		s.log.Warnw("proxy upstream refused the credentials", "repo", repo.Name, "path", key, "status", status)
+		return errUnauthorized
+	}
+
+	s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "path", key, "status", status)
+
+	return errUpstream
 }
 
 // acquireFetch takes a slot of the upstream-download gate; the caller releases
@@ -624,7 +658,9 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 	// Mirror bytes exactly: never let the transport transparently decompress.
 	req.Header.Set("Accept-Encoding", "identity")
 
-	if repo.UpstreamUsername != "" && !o.noAuth {
+	if o.authorization != "" {
+		req.Header.Set("Authorization", o.authorization)
+	} else if repo.UpstreamUsername != "" && !o.noAuth {
 		password := ""
 
 		if repo.UpstreamPasswordEnc != "" {
@@ -729,7 +765,7 @@ func (s *Service) store(
 		return nil, errInternal
 	}
 
-	contentType := resp.Header.Get("Content-Type")
+	contentType := cmp.Or(o.contentType, resp.Header.Get("Content-Type"))
 	now := time.Now()
 
 	entry := &models.ProxyCacheEntry{
@@ -883,7 +919,7 @@ func Immutable(format, key string) bool {
 		return goImmutable(key)
 	case "nuget":
 		// Flat container package files, not version lists or registrations.
-		return nugetImmutable(key, name)
+		return nugetImmutable(key)
 	case "conda":
 		// Package files, verified against the repodata digest; repodata moves.
 		return condaImmutable(name)
@@ -893,15 +929,27 @@ func Immutable(format, key string) bool {
 	case "ivy", "sbt":
 		// Released files that matched the upstream's checksum; see ivyFetchOpts.
 		return ivyImmutable(key)
+	case "conan":
+		// File lists and files below a revision, which a digest of its
+		// content names; revision lists and latest move.
+		return conanRevisionFile(key)
 	}
 
 	return false
 }
 
-func nugetImmutable(key, name string) bool {
-	return strings.HasPrefix(key, "v3/package/") && (strings.HasSuffix(name, ".nupkg") || strings.HasSuffix(name, ".nuspec"))
+// nugetImmutable reports whether key is a package file of the flat container.
+func nugetImmutable(key string) bool {
+	return strings.HasPrefix(key, "v3/package/") && (strings.HasSuffix(key, ".nupkg") || strings.HasSuffix(key, ".nuspec"))
 }
 
+// conanRevisionFile reports whether key is the file list or a file of a
+// recipe or package revision.
+func conanRevisionFile(key string) bool {
+	return strings.Contains(key, "/revisions/") && (strings.HasSuffix(key, "/files") || strings.Contains(key, "/files/"))
+}
+
+// condaImmutable reports whether name is a conda package file.
 func condaImmutable(name string) bool {
 	return strings.HasSuffix(name, conda.ExtConda) || strings.HasSuffix(name, conda.ExtTarBz2)
 }
@@ -935,6 +983,8 @@ func isMetadataKey(format, key string) bool {
 	case "conda":
 		// Repodata is capped by maxCondaIndex instead; this covers channeldata.json.
 		return !strings.HasSuffix(name, conda.ExtConda) && !strings.HasSuffix(name, conda.ExtTarBz2)
+	case "conan":
+		return !strings.Contains(key, "/files/")
 	}
 
 	return false

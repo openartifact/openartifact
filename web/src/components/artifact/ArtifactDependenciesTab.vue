@@ -36,7 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         :empty-title="t('artifact.deps.empty')"
         :empty-hint="t('artifact.deps.emptyHint')"
       >
-        <template #cell-name="{ row }"><span class="break-all font-mono text-xs">{{ row.name }}</span></template>
+        <template #cell-name="{ row }"><span class="block truncate font-mono text-xs" :title="row.name">{{ row.name }}</span></template>
         <template #cell-version="{ row }"><span class="break-all font-mono text-xs">{{ row.version || '—' }}</span></template>
         <template #cell-kind="{ row }"><span class="text-xs text-muted">{{ row.kind || '—' }}</span></template>
       </ListTable>
@@ -57,9 +57,9 @@ import { compareText } from '../../lib/intl'
 const ctx = useArtifactContext()
 
 const columns: ListColumn[] = [
-  { key: 'name', label: t('artifact.deps.column.name'), sortable: true },
+  { key: 'name', label: t('artifact.deps.column.name'), sortable: true, grow: true },
   { key: 'version', label: t('artifact.deps.column.range') },
-  { key: 'kind', label: t('artifact.deps.column.kind') },
+  { key: 'kind', label: t('artifact.deps.column.kind'), dropOrder: 1 },
 ]
 
 // A dependency can be listed once per kind: the row key joins both.
