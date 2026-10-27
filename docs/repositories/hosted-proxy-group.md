@@ -27,7 +27,8 @@ Every proxy format can be grouped except deb and rpm; see the [format matrix](..
 | helm | yes | yes | yes |
 | ivy | yes | yes | yes |
 | sbt | yes | yes | yes |
-| rubygems, conda, conan | yes | no | no |
+| conda | yes | yes | yes |
+| rubygems, conan | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -188,6 +189,10 @@ A nuget proxy is a v3 feed, not a path mirror. `upstream_url` is the upstream **
 
 A go proxy mirrors a GOPROXY (`upstream_url`, default `https://proxy.golang.org`); clients use `GOPROXY=HOST/repos/REPO`. Module paths and versions are forwarded in the case-encoded form the go command uses (`!x`). `@v/list` and `@latest` use the repository TTL with serve-stale on upstream failure; `.info`, `.mod` and `.zip` of a canonical version are immutable. Fetched `.mod` and `.zip` files are verified against the Go checksum database, and bodies that are not what their path claims are refused (`502`, not cached). `GET /sumdb/...` is not proxied (`404`): the go command then asks `sum.golang.org` directly. Details and limits: [Go modules](../formats/go.md#proxy-and-group-repositories).
 
+### Conda proxies and groups
+
+A conda proxy takes a channel URL as `upstream_url` (required, for example `https://conda.anaconda.org/conda-forge`). It serves repodata (`repodata.json`, `.zst`, `.bz2`, `current_repodata.json`) and `channeldata.json` unchanged, and only the packages the upstream repodata lists, verified against the listed digest. jlap and sharded repodata are not served. A group merges repodata across its members. The details, limits and measurements are on the [conda](../formats/conda.md#proxy-and-group-repositories) page.
+
 ### Ivy and sbt proxies
 
 An Ivy or sbt proxy is a path mirror (`upstream_url` has no default; `https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases` is the sbt plugin repository). A release file is checked against the `.sha256`, `.sha1` or `.md5` the upstream publishes next to it before it is cached, and is then immutable; directory listings and dynamic revisions are not served. Details, client setup and group behavior: [Ivy and sbt](../formats/ivy-sbt.md#proxy-and-group).
@@ -220,7 +225,8 @@ A group is an ordered list of hosted and proxy members of the same format. Group
   - maven: `maven-metadata.xml` of the artifact is built from hosted members only, and files under that group/artifact path are served only from hosted members;
   - helm: `index.yaml` lists only hosted versions of a chart name, and chart/`.prov` downloads of that name come only from hosted members;
   - docker: `tags/list`, manifests and blobs of a repository path held by a hosted member come only from hosted members;
-  - ivy and sbt: files of an organisation/group and module held by a hosted member come only from hosted members.
+  - ivy and sbt: files of an organisation/group and module held by a hosted member come only from hosted members;
+  - conda: a proxy member's entries are left out of the merged `repodata.json`/`current_repodata.json` for a package name any hosted member holds (in any platform), and its files of that name are `404`.
   
   raw groups (and any other format whose group answers first-hit) do not merge versions: the first member by order that has the file wins, unchanged by this setting.
 - Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/sbt/GROUP` and `HOST/repos/ivy/GROUP` for sbt and Ivy, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `GOPROXY=HOST/repos/GROUP` for Go, `HOST/repos/GROUP` for Helm, `HOST/repos/GROUP/v3/index.json` for NuGet, `HOSTPORT/GROUP/<image>:<tag>` for docker, `HOST/repos/GROUP` for Debian (`deb [signed-by=…] HOST/repos/GROUP <dist> <component>`) and RPM (`baseurl=HOST/repos/GROUP`).

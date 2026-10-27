@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to cargo, conda, deb, docker, go, helm, conda, ivy, maven, npm, nuget, pypi, raw, rpm and sbt in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'ivy', 'sbt', 'conda'])
+  it('restricts proxy to cargo, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm and sbt in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'ivy', 'sbt'])
   })
-  it('restricts group to cargo, conda, deb, docker, go, helm, conda, ivy, maven, npm, nuget, pypi, raw, rpm and sbt', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'ivy', 'sbt', 'conda'])
+  it('restricts group to cargo, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm and sbt', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'ivy', 'sbt'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)

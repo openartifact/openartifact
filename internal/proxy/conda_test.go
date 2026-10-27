@@ -62,7 +62,7 @@ func (c *fakeConda) set(path string, body []byte) {
 	c.files[path] = body
 }
 
-func md5Hex(b []byte) string {
+func condaMD5Hex(b []byte) string {
 	h := md5.Sum(b)
 	return hex.EncodeToString(h[:])
 }
@@ -140,8 +140,8 @@ func condaFixture(t *testing.T) (*fixture, *fakeConda) {
 	f.repo.UpstreamURL = f.upstream.URL + "/main"
 
 	repodata := condaRepodata(`{"subdir":"linux-64"}`,
-		map[string]string{condaOldPkg: condaEntryJSON("old", "", md5Hex(condaOldPkgBody), int64(len(condaOldPkgBody)))},
-		map[string]string{condaPkg: condaEntryJSON("demo", sum(string(condaPkgBody)), md5Hex(condaPkgBody), int64(len(condaPkgBody)))})
+		map[string]string{condaOldPkg: condaEntryJSON("old", "", condaMD5Hex(condaOldPkgBody), int64(len(condaOldPkgBody)))},
+		map[string]string{condaPkg: condaEntryJSON("demo", sum(string(condaPkgBody)), condaMD5Hex(condaPkgBody), int64(len(condaPkgBody)))})
 
 	up.set("linux-64/repodata.json", repodata)
 	up.set("linux-64/repodata.json.zst", zstdOf(t, repodata))
@@ -292,7 +292,7 @@ func TestConda_SizeMismatchIsRefusedWhenOnlyAMD5IsListed(t *testing.T) {
 
 	body := []byte("package body")
 	up.set("noarch/repodata.json", condaRepodata(`{}`, nil,
-		map[string]string{"sized-1.0-0.conda": condaEntryJSON("sized", "", md5Hex(body), int64(len(body))+1)}))
+		map[string]string{"sized-1.0-0.conda": condaEntryJSON("sized", "", condaMD5Hex(body), int64(len(body))+1)}))
 	up.set("noarch/sized-1.0-0.conda", body)
 
 	if w := f.do(http.MethodGet, "noarch/sized-1.0-0.conda"); w.Code != http.StatusBadGateway {
