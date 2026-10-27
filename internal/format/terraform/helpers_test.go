@@ -478,7 +478,15 @@ func (s signerResolver) SignerForRepo(context.Context, string) (gpg.Signer, erro
 	return s.signer, nil
 }
 
-func newSigner(tb testing.TB) *gpg.LocalSigner {
+// fataler is the part of testing.TB newSigner needs. Fuzz targets pass their
+// *testing.F, and the OSS-Fuzz Go build substitutes its own testing.F, which
+// does not implement the full testing.TB of newer toolchains.
+type fataler interface {
+	Helper()
+	Fatal(args ...any)
+}
+
+func newSigner(tb fataler) *gpg.LocalSigner {
 	tb.Helper()
 
 	entity, err := gpg.GenerateEntity("registry", "", "registry@example.com", gpg.AlgorithmED25519)
