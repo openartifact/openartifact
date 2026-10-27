@@ -12,7 +12,7 @@ Hosted pacman repository: upload `.pkg.tar.zst` packages and pacman reads the ge
 |---|---|
 | Format id | `pacman` |
 | Repo URL | `HOST/repos/REPO/os/<arch>` (databases and packages live in the same directory) |
-| Repository types | hosted, proxy ([Proxy](#proxy)); group is planned and not available yet |
+| Repository types | hosted, proxy ([Proxy](#proxy)), group ([Group](#group)) |
 
 ## Create a repository
 
@@ -136,9 +136,29 @@ For a private proxy use `Server = https://USER:TOKEN@HOST/repos/NAME/$repo/os/$a
 - **No resumed downloads.** The proxy does not support `Range`: a resumed or partial request receives the full file.
 - Proxy repositories are read-only: `PUT` and `DELETE` answer `405`. Negative caching and serve-stale behave as for other proxies.
 
+## Group
+
+A pacman group serves several repositories as one: hosted repositories of your own and proxies of Arch mirror sections. It is read-only and has the layout of a hosted repository, so the client setup is that of [a hosted repository](#client-setup) without publishing:
+
+```
+[GROUP]
+SigLevel = Required
+Server = https://HOST/repos/GROUP/os/$arch
+```
+
+The group's name is the database name (`GROUP.db`); import the group's key from `HOST/repos/GROUP/public.key` as shown above.
+
+- **Members.** Hosted pacman repositories, and pacman proxies whose `upstream_url` names a **section** of a mirror (`https://geo.mirror.pkgbuild.com/extra`), because the group reads `os/<arch>/<section>.db` below it. A proxy of a mirror root (the default `https://geo.mirror.pkgbuild.com`) has no section: it works as a standalone proxy but contributes nothing to a group (a log line says so). To mix several Arch sections add one proxy per section.
+- **Databases.** For each architecture the group publishes `os/<arch>/GROUP.db` and `GROUP.files` with their `.sig`, merged from the members' databases of that architecture and signed with the group's key (the server-wide key, as for hosted repositories; unsigned without one). An architecture is generated when it is first requested, if some member has packages for it (`404` otherwise), and regenerated in the background when a hosted member changes, the members change, or a proxy member's cache expires. `any` packages of a hosted member are listed in every architecture the group serves.
+- **One version per name.** A pacman database lists a single version of a name. Hosted wins: a name held by a hosted member is never taken from a proxy member, whatever the member order; among the others the first member in order that has the name wins. With `merge_proxy_versions` the newest version (pacman's `vercmp`; a tie goes to the earlier member) wins instead.
+- **Packages and `.sig` files** are served from the member that owns the file listed in the merged database; a file the database does not list is `404`.
+- **Files database.** For hosted members it lists their files. For proxy members it is read best-effort from the upstream's `<section>.files` (at most 256 MiB of file lists in total are kept); packages for which none was read are listed without files.
+- **Trust.** The group does not re-sign packages: each database entry carries the signature of its package (`%PGPSIG%`), so with `SigLevel = Required` the client must trust the signing key of every member whose packages it takes. Hosted repositories sign with the server-wide key unless they have their own ([signing](../security/signing.md)); the server-wide key is also the group's key, so one `pacman-key --add` covers them. A hosted member with its own key needs that key imported too (`HOST/repos/MEMBER/public.key`), and packages of an Arch mirror section are signed by Arch packagers: the client needs `archlinux-keyring`, as for the mirror itself.
+- Access control, regeneration and partial runs work as for [deb and RPM groups](../repositories/hosted-proxy-group.md#deb-rpm-and-pacman-groups).
+
 ## Not supported
 
-Building packages, the AUR, running `repo-add` against the server (upload packages instead), the `any` architecture directory, delta packages and `.db.tar.zst` databases. Group repositories of Arch mirrors are planned.
+Building packages, the AUR, running `repo-add` against the server (upload packages instead), the `any` architecture directory, delta packages and `.db.tar.zst` databases.
 
 ## Troubleshooting
 

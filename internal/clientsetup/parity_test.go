@@ -40,6 +40,15 @@ func TestWebParityFixture(t *testing.T) {
 		Snippets: Snippets("pacman", "proxy", "https://artifacts.example.com:8443", "my repo"),
 	})
 
+	cases = append(cases, parityCase{
+		Format:   "pacman",
+		RepoType: "group",
+		Origin:   "https://artifacts.example.com:8443",
+		Repo:     "my repo",
+		BaseURL:  RepoBaseURL("pacman", "https://artifacts.example.com:8443", "my repo"),
+		Snippets: Snippets("pacman", "group", "https://artifacts.example.com:8443", "my repo"),
+	})
+
 	for _, format := range allFormats() {
 		for _, repo := range []string{"repo1", "my repo"} {
 			cases = append(cases, parityCase{

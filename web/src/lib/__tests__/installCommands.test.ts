@@ -142,6 +142,17 @@ describe('pacman proxy', () => {
   })
 })
 
+describe('pacman group', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('is read-only and trusts the group key', () => {
+    const [setup] = clientSetup('pacman', origin, 'all', 'group')
+    expect(setup!.configure).toContain('[all]\nSigLevel = Required\nServer = https://oa.example:8443/repos/all/os/$arch')
+    expect(setup!.configure).toContain('https://oa.example:8443/repos/<member>/public.key')
+    expect(setup!.publish).toBeUndefined()
+  })
+})
+
 describe('clientSetup', () => {
   const origin = 'http://oa.example:8080'
 

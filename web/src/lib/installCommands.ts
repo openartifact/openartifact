@@ -256,14 +256,27 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
       const key = `${base}/public.key`
       const put = (file: string) => `curl -fsS -H "Authorization: Bearer $OA_TOKEN" -T ${file} ${base}/os/x86_64/${file}`
       const pkg = 'my-package-1.0-1-x86_64.pkg.tar.zst'
+      const configure =
+        `# /etc/pacman.conf\n[${repo}]\nSigLevel = Required\nServer = ${base}/os/$arch` +
+        `\n\n# private repository: Server = https://<USER>:<TOKEN>@${host}/repos/${encodeURIComponent(repo)}/os/$arch` +
+        `\n\n# trust the repository key\ncurl -fsSL ${key} | sudo pacman-key --add -` +
+        `\nsudo pacman-key --lsign-key $(curl -fsSL ${key} | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')`
+      if (repoType === 'group') {
+        // A group is read-only; its packages keep the signatures of the members that hold them.
+        return [
+          {
+            client: 'pacman',
+            configure:
+              `${configure}\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key` +
+              ` too (it is the group's when they share the active key), for example\n# curl -fsSL ${origin}/repos/<member>/public.key` +
+              ` | sudo pacman-key --add -`,
+          },
+        ]
+      }
       return [
         {
           client: 'pacman',
-          configure:
-            `# /etc/pacman.conf\n[${repo}]\nSigLevel = Required\nServer = ${base}/os/$arch` +
-            `\n\n# private repository: Server = https://<USER>:<TOKEN>@${host}/repos/${encodeURIComponent(repo)}/os/$arch` +
-            `\n\n# trust the repository key\ncurl -fsSL ${key} | sudo pacman-key --add -` +
-            `\nsudo pacman-key --lsign-key $(curl -fsSL ${key} | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')`,
+          configure,
           publish: `${put(pkg)}\n\n# optional detached signature\n${put(`${pkg}.sig`)}`,
         },
       ]

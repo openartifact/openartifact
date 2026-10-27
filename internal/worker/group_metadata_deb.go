@@ -74,11 +74,7 @@ type debContribution struct {
 
 // checkDist returns group.ErrDistNotFound unless some member has dist (a
 // proxy member is asked, its answer cached by the proxy).
-func (w *GroupMetadataWorker) checkDist(ctx context.Context, grp *models.Repository, dist string, members []*models.Repository) error {
-	if grp.Format != "deb" {
-		return nil
-	}
-
+func (w *GroupMetadataWorker) checkDist(ctx context.Context, dist string, members []*models.Repository) error {
 	if !ValidDistName(dist) {
 		return group.ErrDistNotFound
 	}

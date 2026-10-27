@@ -34,6 +34,7 @@ type PacmanMetadataWorker struct {
 	signers   gpg.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
+	onStale   func(repoID string)
 }
 
 // NewPacmanMetadataWorker creates the worker.
@@ -68,8 +69,21 @@ func (w *PacmanMetadataWorker) WithRegenLimiter(l *RegenLimiter) *PacmanMetadata
 	return w
 }
 
+// WithStaleHook calls fn with the repository id on every NotifyStale: the group
+// repositories that list it as a member regenerate their merged databases.
+func (w *PacmanMetadataWorker) WithStaleHook(fn func(repoID string)) *PacmanMetadataWorker {
+	w.onStale = fn
+	return w
+}
+
 // NotifyStale schedules a coalesced regeneration of the repository's databases.
-func (w *PacmanMetadataWorker) NotifyStale(repoID string) { w.q.Notify(repoID) }
+func (w *PacmanMetadataWorker) NotifyStale(repoID string) {
+	w.q.Notify(repoID)
+
+	if w.onStale != nil {
+		w.onStale(repoID)
+	}
+}
 
 // Stop drains pending regenerations and waits for running ones (bounded).
 func (w *PacmanMetadataWorker) Stop() { w.q.Stop() }
@@ -118,7 +132,8 @@ func (w *PacmanMetadataWorker) regenerate(ctx context.Context, repoID string) er
 		return fmt.Errorf("pacman worker: listing packages: %w", err)
 	}
 
-	if err := w.signPackages(ctx, repoID, signer, pkgs); err != nil {
+	resigned, err := w.signPackages(ctx, repoID, signer, pkgs)
+	if err != nil {
 		return err
 	}
 
@@ -143,7 +158,18 @@ func (w *PacmanMetadataWorker) regenerate(ctx context.Context, repoID string) er
 		blobs["public.key"] = publicKey
 	}
 
-	return w.publish(ctx, repoID, blobs)
+	if err := w.publish(ctx, repoID, blobs); err != nil {
+		return err
+	}
+
+	// The groups listing this repository carry the package signatures in their
+	// databases: tell them about the ones this run made, which their regeneration
+	// for the upload itself may have run before.
+	if resigned && w.onStale != nil {
+		w.onStale(repoID)
+	}
+
+	return nil
 }
 
 // fillFileLists reads the file list of every package that has none from its
@@ -189,12 +215,20 @@ func (w *PacmanMetadataWorker) readFileList(ctx context.Context, blobKey string)
 // signPackages makes the package signatures consistent with the repository
 // key: a package without an uploader signature is signed with the key when it
 // has none or was signed by another key, and loses a server signature when the
-// repository has no key any more. The signatures are updated in pkgs too.
-func (w *PacmanMetadataWorker) signPackages(ctx context.Context, repoID string, signer gpg.Signer, pkgs []*models.PacmanPackage) error {
+// repository has no key any more. The signatures are updated in pkgs too, and
+// changed reports whether any was.
+func (w *PacmanMetadataWorker) signPackages(
+	ctx context.Context,
+	repoID string,
+	signer gpg.Signer,
+	pkgs []*models.PacmanPackage,
+) (bool, error) {
 	fingerprint := ""
 	if signer != nil {
 		fingerprint = signer.KeyFingerprint()
 	}
+
+	changed := false
 
 	for _, pkg := range pkgs {
 		if pkg.SignatureSource == models.PacmanSigUploader {
@@ -207,8 +241,10 @@ func (w *PacmanMetadataWorker) signPackages(ctx context.Context, repoID string, 
 			}
 
 			if err := w.setSignature(ctx, repoID, pkg, "", "", ""); err != nil {
-				return err
+				return changed, err
 			}
+
+			changed = true
 
 			continue
 		}
@@ -219,7 +255,7 @@ func (w *PacmanMetadataWorker) signPackages(ctx context.Context, repoID string, 
 
 		sig, err := w.signBlob(ctx, signer, pkg.BlobKey)
 		if err != nil {
-			return fmt.Errorf("pacman worker: signing %s: %w", pkg.Filename, err)
+			return changed, fmt.Errorf("pacman worker: signing %s: %w", pkg.Filename, err)
 		}
 
 		if err := w.setSignature(
@@ -230,11 +266,13 @@ func (w *PacmanMetadataWorker) signPackages(ctx context.Context, repoID string, 
 			models.PacmanSigServer,
 			fingerprint,
 		); err != nil {
-			return err
+			return changed, err
 		}
+
+		changed = true
 	}
 
-	return nil
+	return changed, nil
 }
 
 func (w *PacmanMetadataWorker) setSignature(ctx context.Context, repoID string, pkg *models.PacmanPackage, sig, source, key string) error {
@@ -269,34 +307,46 @@ func renderPacmanDatabases(pkgs []*models.PacmanPackage, lists map[string]string
 	blobs := make(map[string][]byte, len(arches)*4)
 
 	for arch := range arches {
-		entries := pacmanEntries(pkgs, lists, arch)
-
-		for _, doc := range []struct {
-			name      string
-			withFiles bool
-		}{{"db.tar.gz", false}, {"files.tar.gz", true}} {
-			var buf bytes.Buffer
-			if err := pacman.WriteDB(&buf, entries, doc.withFiles); err != nil {
-				return nil, fmt.Errorf("pacman worker: writing %s of %s: %w", doc.name, arch, err)
-			}
-
-			path := "os/" + arch + "/" + doc.name
-			blobs[path] = buf.Bytes()
-
-			if signer == nil {
-				continue
-			}
-
-			sig, err := pacman.SignDetached(signer, bytes.NewReader(buf.Bytes()))
-			if err != nil {
-				return nil, fmt.Errorf("pacman worker: signing %s: %w", path, err)
-			}
-
-			blobs[path+".sig"] = sig
+		if err := renderArchDatabases(blobs, arch, pacmanEntries(pkgs, lists, arch), signer); err != nil {
+			return nil, err
 		}
 	}
 
 	return blobs, nil
+}
+
+// pacmanArchPath is where the generated document doc ("db.tar.gz",
+// "files.tar.gz", with or without ".sig") of an architecture is stored.
+func pacmanArchPath(arch, doc string) string { return "os/" + arch + "/" + doc }
+
+// renderArchDatabases adds the db and files databases of one architecture
+// directory, and with a signer their signatures, to blobs.
+func renderArchDatabases(blobs map[string][]byte, arch string, entries []pacman.DBEntry, signer gpg.Signer) error {
+	for _, doc := range []struct {
+		name      string
+		withFiles bool
+	}{{"db.tar.gz", false}, {"files.tar.gz", true}} {
+		var buf bytes.Buffer
+		if err := pacman.WriteDB(&buf, entries, doc.withFiles); err != nil {
+			return fmt.Errorf("pacman worker: writing %s of %s: %w", doc.name, arch, err)
+		}
+
+		path := pacmanArchPath(arch, doc.name)
+		blobs[path] = buf.Bytes()
+
+		if signer == nil {
+			continue
+		}
+
+		sig, err := pacman.SignDetached(signer, bytes.NewReader(buf.Bytes()))
+		if err != nil {
+			return fmt.Errorf("pacman worker: signing %s: %w", path, err)
+		}
+
+		blobs[path+".sig"] = sig
+	}
+
+	return nil
 }
 
 // pacmanEntries returns the database entries of one architecture: the newest

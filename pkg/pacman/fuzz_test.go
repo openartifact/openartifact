@@ -65,3 +65,33 @@ func FuzzNormalizeSignature(f *testing.F) {
 		_, _ = NormalizeSignature(data)
 	})
 }
+
+// FuzzReadDB feeds arbitrary bytes to the database reader and checks that what
+// it keeps has a usable identity.
+func FuzzReadDB(f *testing.F) {
+	var plain bytes.Buffer
+
+	e := DBEntry{
+		Filename: "a-1-1-any.pkg.tar.zst", Name: "a", Version: "1-1", Arch: "any",
+		Depends: []string{"glibc"}, Files: []string{"usr/bin/a"},
+	}
+	_ = WriteDB(&plain, []DBEntry{e}, true)
+
+	f.Add(plain.Bytes())
+	f.Add([]byte{})
+	f.Add([]byte{0x1f, 0x8b, 0x08, 0x00})
+	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd, 0x00})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		entries, err := ReadDB(bytes.NewReader(data))
+		if err != nil {
+			return
+		}
+
+		for _, e := range entries {
+			if !e.usable() {
+				t.Fatalf("kept an unusable entry: %+v", e)
+			}
+		}
+	})
+}

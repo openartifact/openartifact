@@ -35,12 +35,24 @@ func ProxySupported(format string) bool {
 // NuGet registrations, PyPI project pages, Go version lists, Conan revision
 // lists and searches and the RubyGems compact index; ivy, sbt and raw groups answer from the first member that
 // has the file), for docker by
-// OCI manifest/blob, and for deb and rpm by generating the Release/Packages
-// indexes or repodata of the group from all members (internal/worker's
+// OCI manifest/blob, and for deb, rpm and pacman by generating the Release/Packages
+// indexes, repodata or databases of the group from all members (internal/worker's
 // GroupMetadataWorker) and serving each package from the member that owns it.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm", "ivy", "sbt", "conan", "rubygems":
+	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm", "ivy", "sbt", "conan", "rubygems", "pacman":
+		return true
+	}
+
+	return false
+}
+
+// GeneratedGroupMetadata reports whether the groups of format serve metadata
+// the group worker generates from their members (deb, rpm and pacman) rather
+// than resolving requests member by member.
+func GeneratedGroupMetadata(format string) bool {
+	switch format {
+	case "deb", "rpm", "pacman":
 		return true
 	}
 
@@ -79,7 +91,7 @@ func ProxyFormats() string {
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string {
-	return "cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt"
+	return "cargo, conan, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt"
 }
 
 // FederationSupported reports whether hosted repositories of format can be

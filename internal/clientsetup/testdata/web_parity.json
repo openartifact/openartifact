@@ -13,6 +13,19 @@
     ]
   },
   {
+    "format": "pacman",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pacman",
+        "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key too (it is the group's when they share the active key), for example\n# curl -fsSL https://artifacts.example.com:8443/repos/\u003cmember\u003e/public.key | sudo pacman-key --add -"
+      }
+    ]
+  },
+  {
     "format": "npm",
     "repo_type": "hosted",
     "origin": "https://artifacts.example.com:8443",

@@ -63,18 +63,33 @@ type Package struct {
 // ReadPackage reads a .pkg.tar.{zst,xz,gz} from r: its .PKGINFO and its file
 // list. Compression is detected from the content, not the name.
 func ReadPackage(r io.Reader) (*Package, error) {
+	dec, compression, closeDec, err := openCompressed(r)
+	if err != nil {
+		return nil, err
+	}
+
+	defer closeDec()
+
+	pkg, err := readTar(&limitedStream{r: dec, left: MaxUncompressedBytes})
+	if err != nil {
+		return nil, err
+	}
+
+	pkg.Compression = compression
+
+	return pkg, nil
+}
+
+// openCompressed detects the compression of r (zstd, xz or gzip) from its first
+// bytes and returns the decompressed stream, the compression's extension and
+// the function that releases the decoder. Anything else is ErrNotPackage.
+func openCompressed(r io.Reader) (io.Reader, string, func(), error) {
 	br := bufio.NewReaderSize(r, 64<<10)
 
 	head, err := br.Peek(6)
 	if err != nil && len(head) < 4 {
-		return nil, ErrNotPackage
+		return nil, "", nil, ErrNotPackage
 	}
-
-	var (
-		dec         io.Reader
-		compression string
-		closeDec    func()
-	)
 
 	switch {
 	case bytes.HasPrefix(head, []byte{0x28, 0xb5, 0x2f, 0xfd}):
@@ -85,40 +100,27 @@ func ReadPackage(r io.Reader) (*Package, error) {
 			zstd.WithDecoderLowmem(true),
 		)
 		if zerr != nil {
-			return nil, fmt.Errorf("%w: %w", ErrNotPackage, zerr)
+			return nil, "", nil, fmt.Errorf("%w: %w", ErrNotPackage, zerr)
 		}
 
-		dec, compression, closeDec = zr, CompressionZstd, zr.Close
+		return zr, CompressionZstd, zr.Close, nil
 	case bytes.HasPrefix(head, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}):
 		xr, xerr := xz.NewReader(br)
 		if xerr != nil {
-			return nil, fmt.Errorf("%w: %w", ErrNotPackage, xerr)
+			return nil, "", nil, fmt.Errorf("%w: %w", ErrNotPackage, xerr)
 		}
 
-		dec, compression = xr, CompressionXZ
+		return xr, CompressionXZ, func() {}, nil
 	case bytes.HasPrefix(head, []byte{0x1f, 0x8b}):
 		gr, gerr := gzip.NewReader(br)
 		if gerr != nil {
-			return nil, fmt.Errorf("%w: %w", ErrNotPackage, gerr)
+			return nil, "", nil, fmt.Errorf("%w: %w", ErrNotPackage, gerr)
 		}
 
-		dec, compression, closeDec = gr, CompressionGzip, func() { _ = gr.Close() }
-	default:
-		return nil, ErrNotPackage
+		return gr, CompressionGzip, func() { _ = gr.Close() }, nil
 	}
 
-	if closeDec != nil {
-		defer closeDec()
-	}
-
-	pkg, err := readTar(&limitedStream{r: dec, left: MaxUncompressedBytes})
-	if err != nil {
-		return nil, err
-	}
-
-	pkg.Compression = compression
-
-	return pkg, nil
+	return nil, "", nil, ErrNotPackage
 }
 
 // limitedStream fails with ErrPackageTooLarge once more than left bytes are read.
@@ -281,4 +283,88 @@ func SplitPackageFileName(filename string) (string, string, bool) {
 func FileNameMatches(filename string, info *PkgInfo, ext string) bool {
 	return filename == PackageFileName(info.Name, info.Version, info.Arch, ext) ||
 		filename == PackageFileName(info.Name, strings.ReplaceAll(info.Version, ":", "-"), info.Arch, ext)
+}
+
+// ValidFileName reports whether s is acceptable as the name of a package file
+// in a repository: a name ending in ".pkg.tar.{zst,xz,gz}" made of the
+// characters makepkg produces, never a path separator, a control byte or a
+// leading dot.
+func ValidFileName(s string) bool {
+	if _, _, ok := SplitPackageFileName(s); !ok {
+		return false
+	}
+
+	return ValidFileNameChars(s)
+}
+
+// ValidFileNameChars accepts the characters of package and database file names.
+func ValidFileNameChars(s string) bool {
+	if s == "" || len(s) > MaxNameLen*3 {
+		return false
+	}
+
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '.', c == '_', c == '+', c == '-', c == '@', c == '~', c == ':':
+		default:
+			return false
+		}
+	}
+
+	return s[0] != '.'
+}
+
+// FileKind says what a path under os/{arch}/ of a repository names.
+type FileKind int
+
+// The kinds of file a repository directory holds.
+const (
+	FileInvalid FileKind = iota
+	FilePackage
+	FilePackageSig
+	FileDatabase
+	FileDatabaseSig
+)
+
+// dbSuffixes are the database file names a client may ask for, with the
+// generated document (path component below os/{arch}/) each one is.
+var dbSuffixes = []struct { //nolint:gochecknoglobals // constant table
+	suffix string
+	doc    string
+}{
+	{".db.tar.gz", "db.tar.gz"},
+	{".db", "db.tar.gz"},
+	{".files.tar.gz", "files.tar.gz"},
+	{".files", "files.tar.gz"},
+}
+
+// ClassifyFile names the kind of file a URL file name is. For databases it also
+// returns the generated document it maps to ("db.tar.gz" or "files.tar.gz").
+func ClassifyFile(filename string) (FileKind, string) {
+	if !ValidFileNameChars(filename) {
+		return FileInvalid, ""
+	}
+
+	name, sig := strings.CutSuffix(filename, ".sig")
+
+	if _, _, ok := SplitPackageFileName(name); ok {
+		if sig {
+			return FilePackageSig, ""
+		}
+
+		return FilePackage, ""
+	}
+
+	for _, s := range dbSuffixes {
+		if strings.HasSuffix(name, s.suffix) && len(name) > len(s.suffix) {
+			if sig {
+				return FileDatabaseSig, s.doc
+			}
+
+			return FileDatabase, s.doc
+		}
+	}
+
+	return FileInvalid, ""
 }

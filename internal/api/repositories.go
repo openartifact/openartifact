@@ -144,8 +144,8 @@ func (h *RepositoriesHandler) WithPublisher(p webhook.Publisher) *RepositoriesHa
 	return h
 }
 
-// GroupMetadataNotifier invalidates the generated metadata of deb and rpm group
-// repositories (worker.GroupMetadataWorker).
+// GroupMetadataNotifier invalidates the generated metadata of deb, rpm and
+// pacman group repositories (worker.GroupMetadataWorker).
 type GroupMetadataNotifier interface {
 	// NotifyStale marks a group's metadata stale and schedules its regeneration.
 	NotifyStale(groupID string)
@@ -168,7 +168,7 @@ func (h *RepositoriesHandler) metadataChanged(repo *models.Repository) {
 }
 
 func notifyGroupMetadata(n GroupMetadataNotifier, repo *models.Repository) {
-	if n == nil || (repo.Format != "deb" && repo.Format != "rpm") {
+	if n == nil || !repotype.GeneratedGroupMetadata(repo.Format) {
 		return
 	}
 
@@ -1242,7 +1242,7 @@ func deleteConfirmation(r *http.Request) string {
 
 // metadataGroupsOf returns the deb/rpm groups whose merged metadata lists repo.
 func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models.Repository) []string {
-	if h.groupMeta == nil || repo.RepoType == repotype.Group || (repo.Format != "deb" && repo.Format != "rpm") {
+	if h.groupMeta == nil || repo.RepoType == repotype.Group || !repotype.GeneratedGroupMetadata(repo.Format) {
 		return nil
 	}
 

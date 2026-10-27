@@ -30,6 +30,7 @@ type target struct {
 	esc    string // URL-path-escaped repository name
 	base   string // native repository base URL
 	proxy  bool   // repository type is proxy
+	group  bool   // repository type is group
 }
 
 // isolatedPrefix reports whether a format is served under /repos/{format}/{repo}.
@@ -59,8 +60,8 @@ func RepoBaseURL(format, origin, repo string) string {
 }
 
 // Snippets returns the configure/publish snippets for a repository of the
-// given format and type ("hosted", "proxy" or "group"; only a pacman proxy
-// differs from the hosted snippets). Unknown formats return a single bare-URL entry.
+// given format and type ("hosted", "proxy" or "group"; only pacman proxies and
+// groups differ from the hosted snippets). Unknown formats return a single bare-URL entry.
 func Snippets(format, repoType, origin, repo string) []Snippet {
 	origin = strings.TrimRight(origin, "/")
 	c := target{
@@ -71,6 +72,7 @@ func Snippets(format, repoType, origin, repo string) []Snippet {
 		esc:    url.PathEscape(repo),
 		base:   RepoBaseURL(format, origin, repo),
 		proxy:  repoType == "proxy",
+		group:  repoType == "group",
 	}
 
 	if build := builderFor(format); build != nil {
@@ -261,6 +263,8 @@ func rpmSnippets(c target) []Snippet {
 
 // pacmanSnippets configures /etc/pacman.conf, trusts the repository key and
 // publishes a package (and optionally its detached signature) with a token PUT.
+// A group is read-only: it has nothing to publish, and its packages keep the
+// signatures of the members that hold them.
 func pacmanSnippets(c target) []Snippet {
 	if c.proxy {
 		return pacmanProxySnippets(c)
@@ -272,14 +276,25 @@ func pacmanSnippets(c target) []Snippet {
 		return fmt.Sprintf("curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T %[1]s %[2]s/os/x86_64/%[1]s", file, c.base)
 	}
 
+	configure := fmt.Sprintf("# /etc/pacman.conf\n[%s]\nSigLevel = Required\nServer = %s/os/$arch", c.repo, c.base) +
+		"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/os/$arch" +
+		"\n\n# trust the repository key\ncurl -fsSL " + key + " | sudo pacman-key --add -" +
+		"\nsudo pacman-key --lsign-key $(curl -fsSL " + key +
+		" | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+
+	if c.group {
+		return []Snippet{{
+			Client: "pacman",
+			Configure: configure + "\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key" +
+				" too (it is the group's when they share the active key), for example\n# curl -fsSL " + c.origin + "/repos/<member>/public.key" +
+				" | sudo pacman-key --add -",
+		}}
+	}
+
 	return []Snippet{{
-		Client: "pacman",
-		Configure: fmt.Sprintf("# /etc/pacman.conf\n[%s]\nSigLevel = Required\nServer = %s/os/$arch", c.repo, c.base) +
-			"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/os/$arch" +
-			"\n\n# trust the repository key\ncurl -fsSL " + key + " | sudo pacman-key --add -" +
-			"\nsudo pacman-key --lsign-key $(curl -fsSL " + key +
-			" | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
-		Publish: put(pkg) + "\n\n# optional detached signature\n" + put(pkg+".sig"),
+		Client:    "pacman",
+		Configure: configure,
+		Publish:   put(pkg) + "\n\n# optional detached signature\n" + put(pkg+".sig"),
 	}}
 }
 
