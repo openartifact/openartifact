@@ -792,7 +792,7 @@ func TestRepositoryValidate(t *testing.T) {
 		{name: "sign_packages on hosted rpm", obj: &Object{Name: "r", Spec: map[string]any{"format": "rpm", "sign_packages": true}}},
 		{
 			name:    "proxy of an unsupported format",
-			obj:     &Object{Name: "r", Spec: map[string]any{"format": "conan", "repo_type": "proxy"}},
+			obj:     &Object{Name: "r", Spec: map[string]any{"format": "conda", "repo_type": "proxy"}},
 			wantErr: "proxy repositories are not supported",
 		},
 		{

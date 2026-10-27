@@ -72,7 +72,7 @@ describe('UsersPage', () => {
     const wrapper = await mountPage()
     await flushPromises()
 
-    await wrapper.find('button[aria-label="Disable alice"]').trigger('click')
+    await wrapper.find('button[aria-label="Disable: alice"]').trigger('click')
     await flushPromises()
 
     expect(calls).toEqual([{ method: 'PATCH', url: '/api/v1/users/u1', body: { disabled: true } }])
@@ -84,7 +84,7 @@ describe('UsersPage', () => {
     const wrapper = await mountPage()
     await flushPromises()
 
-    await wrapper.find('button[aria-label="Enable bob"]').trigger('click')
+    await wrapper.find('button[aria-label="Enable: bob"]').trigger('click')
     await flushPromises()
 
     expect(calls).toEqual([{ method: 'PATCH', url: '/api/v1/users/u2', body: { disabled: false } }])
@@ -96,9 +96,11 @@ describe('UsersPage', () => {
     const wrapper = await mountPage()
     await flushPromises()
 
-    const del = wrapper.find('button[aria-label="Delete user: bob"]')
-    expect(del.attributes('disabled')).toBeUndefined()
-    await del.trigger('click')
+    await wrapper.find('button[aria-label="More actions: bob"]').trigger('click')
+    await flushPromises()
+    const del = document.body.querySelector<HTMLButtonElement>('[data-testid="row-actions-menu"] [data-testid="action-delete"]')!
+    expect(del.disabled).toBe(false)
+    del.click()
     await flushPromises()
 
     expect(calls).toHaveLength(0)

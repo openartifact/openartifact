@@ -138,24 +138,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="space-y-2">
         <h4 class="text-xs font-semibold text-foreground">{{ t('adm.dt.pushes') }}</h4>
         <p v-if="pushes.length === 0" class="text-sm text-muted">{{ t('adm.dt.noPushes') }}</p>
-        <div v-else class="overflow-x-auto rounded-lg border border-border">
+        <TableScroller v-else class="rounded-lg border border-border">
           <table class="w-full text-xs" data-testid="dt-pushes">
             <thead class="bg-surface-hover/50 text-muted text-left">
               <tr>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.artifact') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.state') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.detail') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.project') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.components') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.vex') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.bomPushed') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.vexPushed') }}</th>
-                <th class="px-3 py-2 font-medium">{{ t('adm.dt.col.updated') }}</th>
+                <th scope="col" class="px-3 py-2 font-medium">{{ t('adm.dt.col.artifact') }}</th>
+                <th scope="col" class="px-3 py-2 font-medium">{{ t('adm.dt.col.state') }}</th>
+                <th scope="col" class="px-3 py-2 font-medium">{{ t('adm.dt.col.detail') }}</th>
+                <th scope="col" data-drop-order="6" class="px-3 py-2 font-medium">{{ t('adm.dt.col.project') }}</th>
+                <th scope="col" data-drop-order="5" class="px-3 py-2 font-medium">{{ t('adm.dt.col.components') }}</th>
+                <th scope="col" data-drop-order="4" class="px-3 py-2 font-medium">{{ t('adm.dt.col.vex') }}</th>
+                <th scope="col" data-drop-order="3" class="px-3 py-2 font-medium">{{ t('adm.dt.col.bomPushed') }}</th>
+                <th scope="col" data-drop-order="2" class="px-3 py-2 font-medium">{{ t('adm.dt.col.vexPushed') }}</th>
+                <th scope="col" data-drop-order="1" class="px-3 py-2 font-medium">{{ t('adm.dt.col.updated') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="p in pushes" :key="p.artifact_id">
-                <td class="px-3 py-2 font-mono text-foreground">{{ p.artifact_id }}</td>
+              <tr v-for="p in pushes" :key="p.artifact_id" class="group/row">
+                <td class="truncate px-3 py-2 font-mono text-foreground" :class="GROW_CELL" :title="p.artifact_id">{{ p.artifact_id }}</td>
                 <td class="px-3 py-2"><StatusBadge :label="stateLabel(p.state)" :variant="stateVariant(p.state)" /></td>
                 <td class="px-3 py-2 text-foreground break-words max-w-xs">{{ p.detail || '—' }}</td>
                 <td class="px-3 py-2 font-mono text-foreground">
@@ -169,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </tr>
             </tbody>
           </table>
-        </div>
+        </TableScroller>
       </div>
     </template>
   </section>
@@ -180,6 +180,8 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
+import TableScroller from '../../../components/ui/TableScroller.vue'
+import { GROW_CELL } from '../../../components/ui/tableStyles'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'
 import { useToastStore } from '../../../stores/toast'
 import { listAllRepositories } from '../../../api/repositories'

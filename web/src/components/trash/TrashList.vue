@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :empty-hint="t('trash.emptyHint')"
     >
       <template #cell-name="{ row }">
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <FormatBadge v-if="row.format && row.kind !== 'repository'" :format="row.format" size="sm" />
           <span class="truncate font-mono text-ui font-medium" :title="row.name">{{ row.name }}</span>
           <span class="text-xs text-muted">{{ kindLabel(row.kind) }}</span>
@@ -67,32 +67,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span class="text-xs text-muted" :title="tp('rl.trash.expiresTitle', { date: formatDateTime(row.expires_at) })">{{ purgeInText(row.expires_at) }}</span>
       </template>
       <template #cell-actions="{ row }">
-        <div class="flex items-center gap-2">
-          <AppButton
-            v-if="restoreAllowed(row)"
-            variant="secondary"
-            size="xs"
-            class="max-md:h-11"
-            :disabled="busyKey === keyOf(row)"
-            :aria-label="`${t('trash.restore')}: ${row.name}`"
-            @click="restore(row)"
-          >
-            <ArrowUturnLeftIcon class="h-3.5 w-3.5" aria-hidden="true" />
-            {{ t('trash.restore') }}
-          </AppButton>
-          <AppButton
-            v-if="caps.purge"
-            variant="danger-outline"
-            size="xs"
-            class="max-md:h-11"
-            :disabled="busyKey === keyOf(row)"
-            :aria-label="`${t('trash.purge')}: ${row.name}`"
-            @click="purgeTarget = row"
-          >
-            <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
-            {{ t('trash.purge') }}
-          </AppButton>
-        </div>
+        <RowActions
+          :actions="[
+            { key: 'restore', label: t('trash.restore'), icon: ArrowUturnLeftIcon, hidden: !restoreAllowed(row), disabled: busyKey === keyOf(row) },
+            { key: 'purge', label: t('trash.purge'), icon: TrashIcon, tone: 'danger', hidden: !caps.purge, disabled: busyKey === keyOf(row) },
+          ]"
+          :subject="row.name"
+          @action="(key) => (key === 'restore' ? restore(row) : (purgeTarget = row))"
+        />
       </template>
     </ListTable>
 
@@ -119,11 +101,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ArrowUturnLeftIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowUturnLeftIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from '../AppButton.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import FormatBadge from '../FormatBadge.vue'
 import FilterBar from '../ui/FilterBar.vue'
+import RowActions from '../ui/RowActions.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import RelativeTime from '../ui/RelativeTime.vue'
 import { ApiError } from '../../api/client'
@@ -172,12 +155,12 @@ const purgeDescription = computed(() => {
 })
 
 const columns = computed<ListColumn[]>(() => [
-  { key: 'name', label: t('rl.trash.item') },
-  { key: 'version', label: t('trash.column.version') },
+  { key: 'name', label: t('rl.trash.item'), grow: true },
+  { key: 'version', label: t('trash.column.version'), dropOrder: 3 },
   ...(props.repo ? [] : [{ key: 'repository', label: t('trash.column.repository') }]),
-  { key: 'size', label: t('trash.column.size') },
+  { key: 'size', label: t('trash.column.size'), dropOrder: 1 },
   { key: 'deleted', label: t('trash.column.deleted') },
-  { key: 'expires', label: t('rl.trash.expires') },
+  { key: 'expires', label: t('rl.trash.expires'), dropOrder: 2 },
   { key: 'actions', label: t('common.actions'), actions: true },
 ])
 

@@ -57,6 +57,10 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"rubygems", "versions", false},
 		{"rubygems", "info/rake", false},
 		{"rubygems", "quick/Marshal.4.8/rake-13.0.0.gemspec.rz", false},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files/conan_export.tgz", true},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files/conanfile.py", false},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/revisions/cac0f6daea041b0ccf42934163defb20/files", false},
+		{"conan", "v2/conans/zlib/1.3.1/_/_/latest", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

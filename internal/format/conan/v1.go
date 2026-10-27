@@ -38,8 +38,8 @@ const maxV1RequestBytes = 1 << 20
 
 // registerV1Routes adds the Conan 1 routes.
 func (h *HTTPHandler) registerV1Routes(r chi.Router) {
-	r.Get("/v1/users/authenticate", h.handleAuthenticate)
-	r.Get("/v1/users/check_credentials", h.handleCheckCredentials)
+	r.Get("/v1/users/authenticate", authenticate)
+	r.Get("/v1/users/check_credentials", checkCredentials)
 	r.Get("/v1/conans/search", h.handleSearch)
 
 	const recipe = "/v1/conans/{pkg}/{version}/{user}/{channel}"

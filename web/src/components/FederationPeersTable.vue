@@ -6,30 +6,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <!-- Health table of the federation peers of one repository. Presentational: every action is an event. -->
 <template>
-  <div class="overflow-x-auto">
+  <TableScroller>
     <table class="w-full" :aria-label="t('federation.peers.table')" data-testid="federation-peers">
       <thead>
         <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
-          <th class="text-left px-4 py-2.5">{{ t('federation.peers.column.name') }}</th>
+          <th scope="col" class="text-left px-4 py-2.5">{{ t('federation.peers.column.name') }}</th>
           <th class="text-left px-4 py-2.5">{{ t('federation.peers.column.state') }}</th>
           <th class="text-left px-4 py-2.5">{{ t('federation.peers.column.lag') }}</th>
-          <th class="text-left px-4 py-2.5">{{ t('federation.peers.column.lastSuccess') }}</th>
-          <th class="text-left px-4 py-2.5">{{ t('federation.peers.column.lastError') }}</th>
-          <th class="text-right px-4 py-2.5">{{ t('federation.peers.column.counts') }}</th>
+          <th data-drop-order="1" class="text-left px-4 py-2.5">{{ t('federation.peers.column.lastSuccess') }}</th>
+          <th data-drop-order="3" class="text-left px-4 py-2.5">{{ t('federation.peers.column.lastError') }}</th>
+          <th data-drop-order="2" class="text-right px-4 py-2.5">{{ t('federation.peers.column.counts') }}</th>
           <th class="text-right px-4 py-2.5">{{ t('federation.peers.column.deferred') }}</th>
-          <th class="text-right px-4 py-2.5"><span class="sr-only">{{ t('common.actions') }}</span></th>
+          <th class="text-right px-4 py-2.5" :class="ACTIONS_HEAD"><span class="sr-only">{{ t('common.actions') }}</span></th>
         </tr>
       </thead>
       <tbody>
         <tr
           v-for="peer in peers"
           :key="peer.id"
-          class="border-t border-border align-top hover:bg-surface-hover transition-colors"
+          class="group/row border-t border-border align-top hover:bg-surface-hover transition-colors"
           :data-testid="`federation-peer-${peer.name}`"
         >
-          <td class="px-4 py-3 min-w-48">
-            <p class="text-sm font-medium text-foreground">{{ peer.name }}</p>
-            <p class="text-xs font-mono text-muted break-all">{{ peer.base_url }}</p>
+          <td class="px-4 py-3" :class="GROW_CELL">
+            <p class="truncate text-sm font-medium text-foreground" :title="peer.name">{{ peer.name }}</p>
+            <p class="truncate text-xs font-mono text-muted" :title="peer.base_url">{{ peer.base_url }}</p>
           </td>
           <td class="px-4 py-3">
             <StatusBadge :label="peerStateLabel(peer.state)" :variant="peerStateVariant(peer.state)" />
@@ -60,10 +60,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </template>
             <span v-else class="text-muted">{{ t('federation.peers.noError') }}</span>
           </td>
-          <td class="px-4 py-3 text-xs font-mono tabular-nums text-muted text-right whitespace-nowrap">
+          <td class="px-4 py-3 text-xs font-mono tabular-nums text-muted text-right">
             {{ fill(t('federation.peers.appliedConflicts'), { applied: peer.applied_total, conflicts: peer.conflicts_total }) }}
           </td>
-          <td class="px-4 py-3 text-xs text-right whitespace-nowrap">
+          <td class="px-4 py-3 text-xs text-right">
             <button
               v-if="peer.deferred_units > 0"
               type="button"
@@ -74,63 +74,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </button>
             <span v-else class="text-muted tabular-nums">{{ t('federation.peers.deferredNone') }}</span>
           </td>
-          <td class="px-4 py-3">
-            <div class="flex items-center justify-end gap-2">
+          <td class="px-4 py-3" :class="ACTIONS_CELL">
+            <RowActions :actions="actionsOf(peer)" @action="(key) => onAction(key, peer)">
               <AppToggle
                 :model-value="peer.enabled"
                 :label="fill(t('federation.peers.toggle'), { name: peer.name })"
                 :disabled="busy.has(peer.id)"
                 @update:model-value="(v: boolean) => emit('toggle', peer, v)"
               />
-              <AppButton
-                variant="secondary"
-                size="xs"
-                :loading="resyncPending(peer, busy.has(peer.id))"
-                :disabled="resyncPending(peer, busy.has(peer.id))"
-                :aria-label="fill(t('federation.peers.resyncAria'), { name: peer.name })"
-                @click="emit('resync', peer)"
-              >
-                <ArrowPathIcon class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
-                {{ t('federation.peers.resync') }}
-              </AppButton>
-              <button
-                type="button"
-                class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                :title="fill(t('federation.peers.edit'), { name: peer.name })"
-                :aria-label="fill(t('federation.peers.edit'), { name: peer.name })"
-                @click="emit('edit', peer)"
-              >
-                <PencilSquareIcon class="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="w-7 h-7 flex items-center justify-center rounded border border-border text-danger hover:bg-surface-hover transition-colors"
-                :title="fill(t('federation.peers.delete'), { name: peer.name })"
-                :aria-label="fill(t('federation.peers.delete'), { name: peer.name })"
-                @click="emit('delete', peer)"
-              >
-                <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </div>
+            </RowActions>
           </td>
         </tr>
       </tbody>
     </table>
-  </div>
+  </TableScroller>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import AppButton from './AppButton.vue'
+import { ArrowPathIcon, PencilSquareIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppToggle from './AppToggle.vue'
 import StatusBadge from './StatusBadge.vue'
+import RowActions, { type RowAction } from './ui/RowActions.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import type { FederationPeer } from '../api/federation'
 import { formatDateTime } from '../lib/datetime'
 import { fill, formatLag, peerStateLabel, peerStateVariant, previewError, resyncPending } from '../lib/federation'
 import { t } from '../i18n'
 
-defineProps<{
+const props = defineProps<{
   peers: readonly FederationPeer[]
   /** Peer ids with a request in flight. */
   busy: ReadonlySet<string>
@@ -150,5 +123,20 @@ function toggleExpanded(id: string): void {
   const next = new Set(expanded.value)
   if (!next.delete(id)) next.add(id)
   expanded.value = next
+}
+
+function actionsOf(peer: FederationPeer): RowAction[] {
+  const pending = resyncPending(peer, props.busy.has(peer.id))
+  return [
+    { key: 'resync', label: fill(t('federation.peers.resyncAria'), { name: peer.name }), icon: ArrowPathIcon, loading: pending, disabled: pending },
+    { key: 'edit', label: fill(t('federation.peers.edit'), { name: peer.name }), icon: PencilSquareIcon },
+    { key: 'delete', label: fill(t('federation.peers.delete'), { name: peer.name }), icon: TrashIcon, tone: 'danger' },
+  ]
+}
+
+function onAction(key: string, peer: FederationPeer): void {
+  if (key === 'resync') emit('resync', peer)
+  else if (key === 'edit') emit('edit', peer)
+  else if (key === 'delete') emit('delete', peer)
 }
 </script>

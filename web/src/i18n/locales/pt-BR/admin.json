@@ -419,7 +419,6 @@
   "adm.gpg.deleteAnyway": "Excluir mesmo assim",
   "adm.gpg.deleted": "Chave GPG excluída",
   "adm.gpg.deleteFailed": "Falha ao excluir a chave GPG",
-  "adm.gpg.actionsFor": "Ações para",
   "adm.dt.loadFailed": "Falha ao carregar as configurações do Dependency-Track",
   "adm.dt.saved": "Configurações do Dependency-Track salvas",
   "adm.dt.saveFailed": "Falha ao salvar as configurações do Dependency-Track",

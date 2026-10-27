@@ -6,49 +6,44 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <p v-if="!findings.length" class="text-sm text-muted">{{ t('security.vuln.noFindings') }}</p>
-  <div v-else class="overflow-x-auto">
+  <TableScroller v-else>
     <table class="w-full text-sm">
       <thead class="border-b border-border">
         <tr>
           <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.id') }}</th>
           <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.severity') }}</th>
-          <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.cvss') }}</th>
-          <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.fixedIn') }}</th>
+          <th scope="col" data-drop-order="2" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.cvss') }}</th>
+          <th scope="col" data-drop-order="1" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.fixedIn') }}</th>
           <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vuln.finding.summary') }}</th>
-          <th scope="col" class="text-left py-2 text-muted font-medium">{{ t('security.vex.eyebrow') }}</th>
+          <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('security.vex.eyebrow') }}</th>
+          <th v-if="canDecide" scope="col" class="py-2 pl-3" :class="ACTIONS_HEAD"><span class="sr-only">{{ t('common.actions') }}</span></th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="f in findings" :key="f.id" class="border-b border-border last:border-0 align-top" data-testid="finding-row">
+        <tr v-for="f in findings" :key="f.id" class="group/row border-b border-border last:border-0 align-top" data-testid="finding-row">
           <td class="py-2 pr-3 font-mono text-xs">{{ f.id }}</td>
           <td class="py-2 pr-3 text-xs">{{ f.severity }}</td>
           <td class="py-2 pr-3 text-xs font-mono">{{ f.cvss > 0 ? f.cvss : '—' }}</td>
           <td class="py-2 pr-3 text-xs font-mono">{{ f.fixed_in || '—' }}</td>
-          <td class="py-2 pr-3 text-xs text-muted">{{ f.summary }}</td>
-          <td class="py-2">
-            <div class="flex flex-col items-start gap-1.5">
-              <VexStatusBadge v-if="vexByVuln.get(f.id)" :status="vexByVuln.get(f.id)!.status" data-testid="finding-vex-status" />
-              <AppButton
-                v-if="canDecide"
-                variant="secondary"
-                size="xs"
-                :aria-label="tp('security.vuln.rowAction', { action: t('security.vex.decision'), name: f.id })"
-                data-testid="vex-decision-open"
-                @click="emit('decide', f.id)"
-              >
-                {{ t('security.vex.decision') }}
-              </AppButton>
-            </div>
+          <td class="truncate py-2 pr-3 text-xs text-muted" :class="GROW_CELL" :title="f.summary">{{ f.summary }}</td>
+          <td class="py-2 pr-3">
+            <VexStatusBadge v-if="vexByVuln.get(f.id)" :status="vexByVuln.get(f.id)!.status" data-testid="finding-vex-status" />
+          </td>
+          <td v-if="canDecide" class="py-2 pl-3" :class="ACTIONS_CELL">
+            <RowActions :actions="decisionActions(f.id)" @action="emit('decide', f.id)" />
           </td>
         </tr>
       </tbody>
     </table>
-  </div>
+  </TableScroller>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import AppButton from './AppButton.vue'
+import { CheckBadgeIcon } from '@heroicons/vue/20/solid'
+import RowActions, { type RowAction } from './ui/RowActions.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import VexStatusBadge from './VexStatusBadge.vue'
 import { vulnFindings, type VulnScan } from '../api/security'
 import type { VexRecord } from '../api/vex'
@@ -63,6 +58,10 @@ const props = withDefaults(defineProps<{
 }>(), { canDecide: true })
 
 const emit = defineEmits<{ decide: [vulnId: string] }>()
+
+function decisionActions(vulnId: string): RowAction[] {
+  return [{ key: 'decide', label: tp('security.vuln.rowAction', { action: t('security.vex.decision'), name: vulnId }), icon: CheckBadgeIcon }]
+}
 
 const findings = computed(() => vulnFindings(props.scan))
 </script>

@@ -109,8 +109,8 @@ async function mountTab(): Promise<VueWrapper> {
 }
 
 const rows = (w: VueWrapper) => w.findAll('tbody tr')
-const dlLabel = (file: string, format: string): string => tp('artifact.sbom.download', { file, format })
-const delLabel = (file: string, format: string): string => tp('artifact.sbom.delete', { file, format })
+const dlLabel = (file: string, format: string): string => `Download: ${file} (${format})`
+const delLabel = (file: string, format: string): string => `Delete: ${file} (${format})`
 const stats = (w: VueWrapper): string => w.get('[data-testid=graph-stats]').text()
 const lastToast = () => useToastStore().queue.at(-1)
 
@@ -250,7 +250,7 @@ describe('ArtifactSbomTab', () => {
     expect(w.text()).toContain(t('common.loading'))
     expect(w.find('svg[role=img]').exists()).toBe(false)
 
-    const graphButtons = w.findAll('button').filter((b) => b.text() === t('artifact.sbom.graph'))
+    const graphButtons = w.findAll('[data-testid="action-graph"]')
     await graphButtons[1]!.trigger('click')
     await flushPromises()
     expect(stats(w)).toContain('2 ')

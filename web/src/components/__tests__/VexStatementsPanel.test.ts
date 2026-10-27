@@ -81,7 +81,7 @@ describe('VexStatementsPanel', () => {
 
   it('deletes a decision after the confirmation and tells the page', async () => {
     await mountPanel('main')
-    await wrapper!.findAll('[data-testid="vex-statement-delete"]')[0]!.trigger('click')
+    await wrapper!.findAll('[data-testid="action-delete"]')[0]!.trigger('click')
     await flushPromises()
     expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
 

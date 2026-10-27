@@ -22,22 +22,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p class="text-xs text-muted mt-1">{{ t('tiering.policy.emptyHint') }}</p>
     </div>
 
-    <div v-else class="overflow-x-auto">
+    <TableScroller v-else>
       <table class="w-full" data-testid="policy-table">
         <thead>
           <tr class="bg-surface-hover/30 text-left text-caption font-semibold text-muted">
-            <th scope="col" class="px-5 py-2.5 text-right w-16">{{ t('tiering.policy.column.position') }}</th>
+            <th scope="col" data-drop-order="1" class="px-5 py-2.5 text-right">{{ t('tiering.policy.column.position') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.policy.column.name') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.policy.column.enabled') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.policy.column.conditions') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.policy.column.route') }}</th>
-            <th scope="col" class="px-5 py-2.5 text-right">{{ t('common.actions') }}</th>
+            <th scope="col" class="px-5 py-2.5 text-right" :class="ACTIONS_HEAD">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-          <tr v-for="p in policies" :key="p.id" data-testid="policy-row">
+          <tr v-for="p in policies" :key="p.id" class="group/row" data-testid="policy-row">
             <td class="px-5 py-3 text-right tabular-nums text-sm text-muted">{{ p.position }}</td>
-            <td class="px-3 py-3 text-sm font-medium text-foreground">{{ p.name }}</td>
+            <td class="truncate px-3 py-3 text-sm font-medium text-foreground" :class="GROW_CELL" :title="p.name">{{ p.name }}</td>
             <td class="px-3 py-3">
               <AppToggle
                 :model-value="!!p.enabled"
@@ -52,21 +52,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <FormatBadge v-for="f in p.formats ?? []" :key="f" :format="f" size="sm" />
               </div>
             </td>
-            <td class="px-3 py-3 font-mono text-xs whitespace-nowrap">
+            <td class="px-3 py-3 font-mono text-xs">
               {{ p.from_tier ?? t('tiering.policy.anyTier') }} → {{ p.target_tier }}
             </td>
-            <td class="px-5 py-3 text-right whitespace-nowrap">
-              <AppButton variant="ghost" size="xs" :aria-label="`${t('common.edit')} ${p.name}`" @click="openEditor(p)">
-                <PencilIcon class="w-4 h-4" aria-hidden="true" />
-              </AppButton>
-              <AppButton variant="ghost" size="xs" :aria-label="`${t('common.delete')} ${p.name}`" @click="deleteTarget = p">
-                <TrashIcon class="w-4 h-4" aria-hidden="true" />
-              </AppButton>
+            <td class="px-5 py-3" :class="ACTIONS_CELL">
+              <RowActions :actions="policyActions" :subject="p.name" @action="(key) => onAction(key, p)" />
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
+    </TableScroller>
 
     <TierPolicyDialog :open="editorOpen" :policy="editing" :tiers="tiers" @close="editorOpen = false" @saved="onSaved" />
 
@@ -84,13 +79,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { PencilIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { computed, reactive, ref } from 'vue'
+import { PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import FormatBadge from './FormatBadge.vue'
 import TierPolicyDialog from './TierPolicyDialog.vue'
+import RowActions, { type RowAction } from './ui/RowActions.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import { deletePolicy, updatePolicy, type StoragePolicy, type StorageTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
 import { t, tp } from '../i18n'
@@ -106,6 +104,16 @@ const editing = ref<StoragePolicy | null>(null)
 const deleteTarget = ref<StoragePolicy | null>(null)
 const deleting = ref(false)
 const busy = reactive(new Set<string>())
+
+const policyActions = computed<RowAction[]>(() => [
+  { key: 'edit', label: t('common.edit'), icon: PencilSquareIcon },
+  { key: 'delete', label: t('common.delete'), icon: TrashIcon, tone: 'danger' },
+])
+
+function onAction(key: string, policy: StoragePolicy): void {
+  if (key === 'edit') openEditor(policy)
+  else if (key === 'delete') deleteTarget.value = policy
+}
 
 function openEditor(policy: StoragePolicy | null): void {
   editing.value = policy

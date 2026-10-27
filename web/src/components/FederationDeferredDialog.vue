@@ -19,7 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
     <p v-else-if="error" role="alert" class="text-sm text-danger">{{ error }}</p>
     <p v-else-if="items.length === 0" class="text-sm text-muted">{{ t('federation.deferred.empty') }}</p>
-    <div v-else class="overflow-x-auto">
+    <TableScroller v-else>
       <table class="w-full" data-testid="federation-deferred">
         <thead>
           <tr class="border-b border-border text-xs font-semibold text-muted">
@@ -39,11 +39,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ u.reason }}
               <p v-if="u.last_error" class="mt-0.5 text-danger break-words">{{ u.last_error }}</p>
             </td>
-            <td class="px-3 py-2 text-xs text-muted whitespace-nowrap">{{ formatDateTime(u.next_attempt_at) }}</td>
+            <td class="px-3 py-2 text-xs text-muted">{{ formatDateTime(u.next_attempt_at) }}</td>
           </tr>
         </tbody>
       </table>
-    </div>
+    </TableScroller>
     <template #footer>
       <AppButton variant="primary" @click="emit('close')">{{ t('common.close') }}</AppButton>
     </template>
@@ -54,6 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref, watch } from 'vue'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
+import TableScroller from './ui/TableScroller.vue'
 import { listFederationDeferred, type FederationDeferredUnit, type FederationPeer } from '../api/federation'
 import { formatDateTime } from '../lib/datetime'
 import { fill } from '../lib/federation'

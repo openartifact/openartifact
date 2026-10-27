@@ -107,7 +107,7 @@ describe('CleanupSection', () => {
   it('previews what a run would delete without running anything', async () => {
     serve()
     const w = await mountPage()
-    await w.find('button[aria-label="Preview keep five"]').trigger('click')
+    await w.find('button[aria-label="Preview (dry run): keep five"]').trigger('click')
     await flushPromises()
     expect(calls.at(-1)).toEqual({ method: 'POST', path: '/api/v1/repositories/npm-a/cleanup-policies/p1/dry-run' })
     expect(document.body.querySelector('[data-testid="dryrun-total"]')!.textContent).toContain('2')
@@ -118,7 +118,7 @@ describe('CleanupSection', () => {
   it('runs a policy now and reports it', async () => {
     serve()
     const w = await mountPage()
-    await w.find('button[aria-label="Run keep five now"]').trigger('click')
+    await w.find('button[aria-label="Run now: keep five"]').trigger('click')
     await flushPromises()
     expect(calls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual(['/api/v1/repositories/npm-a/cleanup-policies/p1/run'])
     expect(useToastStore().queue.some((x) => x.level === 'success' && x.title.includes('keep five'))).toBe(true)
@@ -128,7 +128,7 @@ describe('CleanupSection', () => {
   it('links edit to the repository Cleanup tab', async () => {
     serve()
     const w = await mountPage()
-    expect(w.find('a[aria-label="Edit debs in repository deb-b"]').attributes('href')).toBe('/repos/deb-b?tab=cleanup')
+    expect(w.find('a[aria-label="Edit: debs"]').attributes('href')).toBe('/repos/deb-b?tab=cleanup')
     w.unmount()
   })
 })

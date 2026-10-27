@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :caption="tp('artifact.files.caption', { name: ctx.pkgName.value, version: ctx.entry.value?.version ?? '' })"
       :empty-title="t('artifact.files.empty')"
     >
-      <template #cell-filename="{ row }"><span class="break-all font-mono text-xs">{{ row.filename }}</span></template>
+      <template #cell-filename="{ row }"><span class="block truncate font-mono text-xs" :title="row.filename">{{ row.filename }}</span></template>
       <template #cell-arch="{ row }"><span class="text-xs text-muted">{{ row.arch || '—' }}</span></template>
       <template #cell-size="{ row }"><span class="font-mono text-xs tabular-nums">{{ formatBytes(row.size) }}</span></template>
       <template #cell-sha256="{ row }">
@@ -26,10 +26,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </span>
       </template>
       <template #cell-actions="{ row }">
-        <AppButton variant="ghost" size="sm" class="max-md:h-11" :loading="downloading === row.id" :aria-label="tp('artifact.files.download', { file: row.filename })" @click="download(row)">
-          <ArrowDownTrayIcon class="h-4 w-4" aria-hidden="true" />
-          <span class="md:sr-only">{{ t('artifact.action.download') }}</span>
-        </AppButton>
+        <RowActions
+          :actions="[{ key: 'download', label: t('artifact.action.download'), icon: ArrowDownTrayIcon, loading: downloading === row.id }]"
+          :subject="row.filename"
+          @action="download(row)"
+        />
       </template>
     </ListTable>
 
@@ -47,9 +48,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDownTrayIcon } from '@heroicons/vue/24/outline'
-import AppButton from '../AppButton.vue'
+import { ArrowDownTrayIcon } from '@heroicons/vue/20/solid'
 import CopyButton from '../ui/CopyButton.vue'
+import RowActions from '../ui/RowActions.vue'
 import ListTable, { type ListColumn } from '../ui/ListTable.vue'
 import type { PackageFile } from '../../api/artifact'
 import { downloadPackage } from '../../api/repositories'
@@ -63,9 +64,9 @@ const ctx = useArtifactContext()
 const toasts = useToastStore()
 
 const columns: ListColumn[] = [
-  { key: 'filename', label: t('artifact.files.column.name') },
-  { key: 'arch', label: t('artifact.files.column.arch') },
-  { key: 'size', label: t('artifact.files.column.size'), align: 'end' },
+  { key: 'filename', label: t('artifact.files.column.name'), grow: true },
+  { key: 'arch', label: t('artifact.files.column.arch'), dropOrder: 1 },
+  { key: 'size', label: t('artifact.files.column.size'), align: 'end', dropOrder: 2 },
   { key: 'sha256', label: t('artifact.files.column.sha256') },
   { key: 'actions', label: t('artifact.files.column.download'), actions: true },
 ]

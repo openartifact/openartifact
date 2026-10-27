@@ -24,12 +24,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <ListTable :columns="columns" :caption="t('adm.permissions.listTitle')" :query="list" :empty-title="t('adm.permissions.empty')" :empty-hint="t('adm.permissions.emptyHint')">
       <template #empty-action><DocsLink :url="docsUrl">{{ t('docs.rbac') }}</DocsLink></template>
-      <template #cell-name="{ row }"><span class="font-mono text-ui font-medium">{{ row.name || '—' }}</span></template>
+      <template #cell-name="{ row }"><span class="block truncate font-mono text-ui font-medium" :title="row.name">{{ row.name || '—' }}</span></template>
       <template #cell-repository_filter="{ row }">
-        <span class="rounded bg-surface-hover px-2 py-0.5 font-mono text-xs text-foreground/80">{{ row.repository_filter || '—' }}</span>
+        <span class="inline-block max-w-40 truncate rounded bg-surface-hover px-2 py-0.5 align-bottom font-mono text-xs text-foreground/80" :title="row.repository_filter">{{ row.repository_filter || '—' }}</span>
       </template>
       <template #cell-path_pattern="{ row }">
-        <span class="rounded bg-surface-hover px-2 py-0.5 font-mono text-xs text-foreground/80">{{ row.path_pattern || '—' }}</span>
+        <span class="inline-block max-w-40 truncate rounded bg-surface-hover px-2 py-0.5 align-bottom font-mono text-xs text-foreground/80" :title="row.path_pattern">{{ row.path_pattern || '—' }}</span>
       </template>
       <template #cell-actions_list="{ row }">
         <div class="flex flex-wrap gap-1.5">
@@ -37,15 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </template>
       <template #cell-actions="{ row }">
-        <button
-          type="button"
-          :title="t('admin.permissions.revoke')"
-          :aria-label="`${t('admin.permissions.revoke')}: ${row.name}`"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-danger/10 hover:text-danger max-md:h-11 max-md:w-11"
-          @click="revokeTarget = row"
-        >
-          <TrashIcon class="h-4 w-4" aria-hidden="true" />
-        </button>
+        <RowActions :actions="rowActions" :subject="row.name" @action="revokeTarget = row" />
       </template>
     </ListTable>
 
@@ -173,7 +165,9 @@ import { strParam } from '../../../composables/useUrlState'
 import { useDocsLink } from '../../../composables/useDocsLink'
 import { useToastStore } from '../../../stores/toast'
 import { t } from '../../../i18n'
-import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { PlusIcon } from '@heroicons/vue/24/outline'
+import { NoSymbolIcon } from '@heroicons/vue/20/solid'
+import RowActions, { type RowAction } from '../../../components/ui/RowActions.vue'
 import { compareText } from '../../../lib/intl'
 
 const toasts = useToastStore()
@@ -183,10 +177,12 @@ const users = ref<UserItem[]>([])
 const groups = ref<GroupItem[]>([])
 const saving = ref(false)
 
+const rowActions = computed<RowAction[]>(() => [{ key: 'revoke', label: t('admin.permissions.revoke'), icon: NoSymbolIcon, tone: 'danger' }])
+
 const columns: ListColumn[] = [
-  { key: 'name', label: t('adm.permissions.column.name'), sortable: true },
-  { key: 'repository_filter', label: t('adm.permissions.column.repositories') },
-  { key: 'path_pattern', label: t('adm.permissions.column.paths') },
+  { key: 'name', label: t('adm.permissions.column.name'), sortable: true, grow: true },
+  { key: 'repository_filter', label: t('adm.permissions.column.repositories'), dropOrder: 2 },
+  { key: 'path_pattern', label: t('adm.permissions.column.paths'), dropOrder: 1 },
   { key: 'actions_list', label: t('adm.permissions.column.actions') },
   { key: 'actions', label: t('common.actions'), actions: true },
 ]

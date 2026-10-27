@@ -29,19 +29,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p v-if="canEdit" class="text-xs text-muted mt-1">{{ t('projects.cleanup.emptyHint') }}</p>
     </div>
 
-    <div v-else class="mt-4 overflow-x-auto rounded-lg border border-border">
+    <TableScroller v-else class="mt-4 rounded-lg border border-border">
       <table class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
             <th scope="col" class="text-left text-caption font-semibold text-muted px-4 py-2.5">{{ t('cleanup.col.name') }}</th>
             <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('cleanup.col.rule') }}</th>
             <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('cleanup.col.enabled') }}</th>
-            <th v-if="canEdit" scope="col" class="text-right text-caption font-semibold text-muted px-4 py-2.5">{{ t('cleanup.col.actions') }}</th>
+            <th v-if="canEdit" scope="col" class="text-right text-caption font-semibold text-muted px-4 py-2.5" :class="ACTIONS_HEAD">{{ t('cleanup.col.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-          <tr v-for="p in items" :key="p.id" data-testid="cleanup-row">
-            <td class="px-4 py-3 text-sm font-medium text-foreground">{{ p.name }}</td>
+          <tr v-for="p in items" :key="p.id" class="group/row" data-testid="cleanup-row">
+            <td class="truncate px-4 py-3 text-sm font-medium text-foreground" :class="GROW_CELL" :title="p.name">{{ p.name }}</td>
             <td class="px-3 py-3 text-sm text-muted">
               <span v-if="p.keep_count != null">{{ t('cleanup.keepLast') }} <span class="font-mono font-semibold text-foreground">{{ p.keep_count }}</span></span>
               <span v-else-if="p.keep_days != null">{{ t('cleanup.keepFor') }} <span class="font-mono font-semibold text-foreground">{{ p.keep_days }}</span> {{ t('cleanup.days') }}</span>
@@ -58,43 +58,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               />
               <span v-else class="text-sm text-muted">{{ p.enabled ? t('projects.cleanup.enabled') : t('projects.cleanup.disabled') }}</span>
             </td>
-            <td v-if="canEdit" class="px-4 py-3">
-              <div class="flex items-center gap-0.5 justify-end">
-                <button
-                  type="button"
-                  :title="t('cleanup.dryRun')"
-                  :aria-label="t('cleanup.dryRun')"
-                  :disabled="previewingId === p.id"
-                  class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
-                  data-testid="cleanup-dry-run"
-                  @click="previewPolicy(p)"
-                >
-                  <EyeIcon class="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  :title="t('cleanup.editTitle')"
-                  :aria-label="t('cleanup.editTitle')"
-                  class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                  @click="openDrawer(p)"
-                >
-                  <PencilIcon class="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  :title="t('cleanup.deleteTitle')"
-                  :aria-label="t('cleanup.deleteTitle')"
-                  class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                  @click="deleteTarget = p"
-                >
-                  <TrashIcon class="w-4 h-4" />
-                </button>
-              </div>
+            <td v-if="canEdit" class="px-4 py-3" :class="ACTIONS_CELL">
+              <RowActions :actions="policyActions(p)" :subject="p.name" @action="(key) => onPolicyAction(key, p)" />
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
+    </TableScroller>
 
     <p v-if="!canEdit" class="mt-3 text-xs text-muted" data-testid="cleanup-readonly">{{ t('projects.cleanup.readOnly') }}</p>
 
@@ -140,13 +110,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { EyeIcon, PencilIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { EyeIcon, PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
 import CleanupPolicyForm from './CleanupPolicyForm.vue'
 import CleanupDryRunDialog from './CleanupDryRunDialog.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import RowActions, { type RowAction } from './ui/RowActions.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import type { CleanupPreview } from '../api/generated'
 import {
   createProjectCleanupPolicy,
@@ -280,4 +253,18 @@ async function confirmDelete(): Promise<void> {
 }
 
 watch(() => props.project, load, { immediate: true })
+
+function policyActions(p: { id: string }): RowAction[] {
+  return [
+    { key: 'dry-run', label: t('cleanup.dryRun'), icon: EyeIcon, loading: previewingId.value === p.id },
+    { key: 'edit', label: t('cleanup.editTitle'), icon: PencilSquareIcon },
+    { key: 'delete', label: t('cleanup.deleteTitle'), icon: TrashIcon, tone: 'danger' },
+  ]
+}
+
+function onPolicyAction(key: string, p: CleanupPolicyView): void {
+  if (key === 'dry-run') void previewPolicy(p)
+  else if (key === 'edit') openDrawer(p)
+  else if (key === 'delete') deleteTarget.value = p
+}
 </script>

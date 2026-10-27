@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-timestamp="{ row }"><RelativeTime :value="row.timestamp" /></template>
       <template #cell-actor="{ row }"><span class="text-sm">{{ row.actor_name || '—' }}</span></template>
       <template #cell-action="{ row }"><span class="text-sm">{{ actionLabel(row.action) }}</span></template>
-      <template #cell-message="{ row }"><span class="text-sm text-muted">{{ row.message || '—' }}</span></template>
+      <template #cell-message="{ row }"><span class="block truncate text-sm text-muted" :title="row.message">{{ row.message || '—' }}</span></template>
     </ListTable>
   </section>
 </template>
@@ -47,9 +47,9 @@ const ctx = useArtifactContext()
 
 const columns: ListColumn[] = [
   { key: 'timestamp', label: t('artifact.activity.column.when') },
-  { key: 'actor', label: t('artifact.activity.column.actor') },
+  { key: 'actor', label: t('artifact.activity.column.actor'), dropOrder: 1 },
   { key: 'action', label: t('artifact.activity.column.action') },
-  { key: 'message', label: t('artifact.activity.column.details') },
+  { key: 'message', label: t('artifact.activity.column.details'), grow: true },
 ]
 
 const list = useListQuery({

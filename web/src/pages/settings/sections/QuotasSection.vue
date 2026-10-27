@@ -50,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <template #cell-name="{ row }">
         <div class="min-w-0">
-          <span class="font-mono font-medium text-foreground">{{ (row as QuotaOverviewItem).name }}</span>
+          <span class="block truncate font-mono font-medium text-foreground" :title="(row as QuotaOverviewItem).name">{{ (row as QuotaOverviewItem).name }}</span>
           <p class="text-xs text-muted">
             {{ t(`sx.quotas.type.${(row as QuotaOverviewItem).scope}`) }}
             <template v-if="(row as QuotaOverviewItem).project"> · {{ (row as QuotaOverviewItem).project }}</template>
@@ -74,9 +74,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
 
       <template #cell-usage="{ row }">
-        <div class="flex min-w-40 items-center gap-2" :data-state="quotaState(row as QuotaOverviewItem)">
+        <div class="flex items-center gap-2" :data-state="quotaState(row as QuotaOverviewItem)">
           <div
-            class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-surface-hover"
+            class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-hover"
             role="progressbar"
             :aria-label="t('sx.quotas.col.usage')"
             aria-valuemin="0"
@@ -95,13 +95,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
 
       <template #cell-actions="{ row }">
-        <AppButton
-          variant="ghost"
-          size="sm"
-          class="max-md:min-h-11"
-          :to="openTarget(row as QuotaOverviewItem)"
-          :aria-label="openLabel(row as QuotaOverviewItem)"
-        >{{ t('sx.open') }}</AppButton>
+        <RowActions
+          :actions="[{ key: 'open', label: t('sx.open'), icon: ArrowTopRightOnSquareIcon, to: openTarget(row as QuotaOverviewItem) }]"
+          :subject="(row as QuotaOverviewItem).name"
+        />
       </template>
     </ListTable>
   </div>
@@ -109,11 +106,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/vue/20/solid'
-import AppButton from '../../../components/AppButton.vue'
+import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/vue/20/solid'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import FilterBar from '../../../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RowActions from '../../../components/ui/RowActions.vue'
 import SegmentedControl from '../../../components/ui/SegmentedControl.vue'
 import { listQuotas, type QuotaOverviewItem } from '../../../api/quota'
 import { useLocalList } from '../../../composables/useLocalList'
@@ -161,9 +158,9 @@ const summary = computed(() =>
 const scopeOptions = computed(() => SCOPES.map((s) => ({ value: s, label: t(`sx.quotas.scope.${s}`) })))
 
 const columns: ListColumn[] = [
-  { key: 'name', label: t('sx.quotas.col.name'), sortable: true },
-  { key: 'used', label: t('sx.quotas.col.used'), sortable: true },
-  { key: 'limit', label: t('sx.quotas.col.limit') },
+  { key: 'name', label: t('sx.quotas.col.name'), sortable: true, grow: true },
+  { key: 'used', label: t('sx.quotas.col.used'), sortable: true, dropOrder: 2 },
+  { key: 'limit', label: t('sx.quotas.col.limit'), dropOrder: 1 },
   { key: 'usage', label: t('sx.quotas.col.usage'), sortable: true },
   { key: 'actions', label: t('sx.quotas.col.actions'), actions: true },
 ]
@@ -172,9 +169,5 @@ const columns: ListColumn[] = [
 function openTarget(q: QuotaOverviewItem): string {
   const name = encodeURIComponent(q.name)
   return q.scope === 'project' ? `/projects/${name}?tab=usage` : `/repos/${name}?tab=configuration`
-}
-
-function openLabel(q: QuotaOverviewItem): string {
-  return tp(q.scope === 'project' ? 'sx.quotas.openProject' : 'sx.quotas.openRepo', { name: q.name })
 }
 </script>

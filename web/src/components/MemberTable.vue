@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         :empty-title="t('projects.members.empty')"
       >
         <template #cell-user="{ row }">
-          <span class="font-mono text-sm text-foreground" data-testid="member-row">{{ memberName(row) }}</span>
+          <span class="block truncate font-mono text-sm text-foreground" data-testid="member-row" :title="memberName(row)">{{ memberName(row) }}</span>
         </template>
         <template #cell-role="{ row }">
           <RoleSelect
@@ -56,16 +56,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <time :datetime="row.created_at" :title="formatDateTime(row.created_at)" class="text-xs text-muted">{{ timeAgo(row.created_at) }}</time>
         </template>
         <template #cell-actions="{ row }">
-          <button
-            type="button"
-            :title="t('projects.members.remove')"
-            :aria-label="`${t('projects.members.remove')}: ${memberName(row)}`"
-            :disabled="!memberEditable(row)"
-            class="rounded-md p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:pointer-events-none disabled:opacity-40 max-md:h-11 max-md:w-11"
-            @click="removeMemberTarget = row"
-          >
-            <TrashIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
+          <RowActions
+            :actions="[{ key: 'remove', label: t('projects.members.remove'), icon: TrashIcon, tone: 'danger', disabled: !memberEditable(row) }]"
+            :subject="memberName(row)"
+            @action="removeMemberTarget = row"
+          />
         </template>
       </ListTable>
     </section>
@@ -91,7 +86,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         :empty-title="t('projects.groups.empty')"
       >
         <template #cell-group="{ row }">
-          <span class="font-mono text-sm text-foreground" data-testid="group-row">{{ groupName(row) }}</span>
+          <span class="block truncate font-mono text-sm text-foreground" data-testid="group-row" :title="groupName(row)">{{ groupName(row) }}</span>
         </template>
         <template #cell-role="{ row }">
           <RoleSelect
@@ -109,16 +104,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <time :datetime="row.created_at" :title="formatDateTime(row.created_at)" class="text-xs text-muted">{{ timeAgo(row.created_at) }}</time>
         </template>
         <template #cell-actions="{ row }">
-          <button
-            type="button"
-            :title="t('projects.groups.remove')"
-            :aria-label="`${t('projects.groups.remove')}: ${groupName(row)}`"
-            :disabled="!canModifyEntry(myRole, row.role)"
-            class="rounded-md p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:pointer-events-none disabled:opacity-40 max-md:h-11 max-md:w-11"
-            @click="removeGroupTarget = row"
-          >
-            <TrashIcon class="h-4 w-4" aria-hidden="true" />
-          </button>
+          <RowActions
+            :actions="[{ key: 'remove', label: t('projects.groups.remove'), icon: TrashIcon, tone: 'danger', disabled: !canModifyEntry(myRole, row.role) }]"
+            :subject="groupName(row)"
+            @action="removeGroupTarget = row"
+          />
         </template>
       </ListTable>
     </section>
@@ -207,13 +197,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { TrashIcon } from '@heroicons/vue/24/outline'
+import { TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import FormField from './FormField.vue'
 import ProjectRoleBadge from './ProjectRoleBadge.vue'
 import RoleSelect from './RoleSelect.vue'
 import Drawer from './ui/Drawer.vue'
+import RowActions from './ui/RowActions.vue'
 import ListTable, { type ListColumn } from './ui/ListTable.vue'
 import {
   addProjectMember,
@@ -259,15 +250,15 @@ const memberGrantable = computed(() => grantableRoles(myRole.value, 'member'))
 const groupGrantable = computed(() => grantableRoles(myRole.value, 'group'))
 
 const memberColumns = computed<ListColumn[]>(() => [
-  { key: 'user', label: t('projects.members.column.user') },
+  { key: 'user', label: t('projects.members.column.user'), grow: true },
   { key: 'role', label: t('projects.members.column.role') },
-  { key: 'joined', label: t('projects.members.column.joined') },
+  { key: 'joined', label: t('projects.members.column.joined'), dropOrder: 1 },
   ...(canManage.value ? [{ key: 'actions', label: t('common.actions'), actions: true }] : []),
 ])
 const groupColumns = computed<ListColumn[]>(() => [
-  { key: 'group', label: t('projects.groups.column.group') },
+  { key: 'group', label: t('projects.groups.column.group'), grow: true },
   { key: 'role', label: t('projects.groups.column.role') },
-  { key: 'attached', label: t('projects.groups.column.attached') },
+  { key: 'attached', label: t('projects.groups.column.attached'), dropOrder: 1 },
   ...(canManage.value ? [{ key: 'actions', label: t('common.actions'), actions: true }] : []),
 ])
 

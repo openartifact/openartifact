@@ -22,25 +22,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <p class="text-xs text-muted mt-1">{{ t('tiering.placement.emptyHint') }}</p>
     </div>
 
-    <div v-else class="overflow-x-auto">
+    <TableScroller v-else>
       <table class="w-full" data-testid="tier-table">
         <thead>
           <tr class="bg-surface-hover/30 text-left text-caption font-semibold text-muted">
             <th scope="col" class="px-5 py-2.5">{{ t('tiering.tier.column.name') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.tier.column.backend') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.tier.column.status') }}</th>
-            <th scope="col" class="px-3 py-2.5 text-right">{{ t('tiering.tier.column.rank') }}</th>
+            <th scope="col" data-drop-order="1" class="px-3 py-2.5 text-right">{{ t('tiering.tier.column.rank') }}</th>
             <th scope="col" class="px-3 py-2.5">{{ t('tiering.tier.column.promote') }}</th>
-            <th scope="col" class="px-3 py-2.5 text-right">{{ t('tiering.tier.column.blobs') }}</th>
-            <th scope="col" class="px-3 py-2.5 w-56">{{ t('tiering.tier.column.size') }}</th>
-            <th scope="col" class="px-5 py-2.5 text-right">{{ t('common.actions') }}</th>
+            <th scope="col" data-drop-order="2" class="px-3 py-2.5 text-right">{{ t('tiering.tier.column.blobs') }}</th>
+            <th scope="col" data-drop-order="3" class="px-3 py-2.5 min-w-40">{{ t('tiering.tier.column.size') }}</th>
+            <th scope="col" class="px-5 py-2.5 text-right" :class="ACTIONS_HEAD">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-          <tr v-for="tier in tiers" :key="tier.id ?? tier.name" data-testid="tier-row">
-            <td class="px-5 py-3">
-              <span class="font-mono text-sm font-medium text-foreground">{{ tier.name }}</span>
-              <StatusBadge v-if="tier.primary" class="ml-2" :label="t('tiering.tier.primary')" variant="neutral" />
+          <tr v-for="tier in tiers" :key="tier.id ?? tier.name" class="group/row" data-testid="tier-row">
+            <td class="px-5 py-3" :class="GROW_CELL">
+              <div class="flex items-center gap-2">
+                <span class="truncate font-mono text-sm font-medium text-foreground" :title="tier.name">{{ tier.name }}</span>
+                <StatusBadge v-if="tier.primary" class="shrink-0" :label="t('tiering.tier.primary')" variant="neutral" />
+              </div>
             </td>
             <td class="px-3 py-3 text-sm">
               <span class="font-mono text-xs text-foreground">{{ tier.backend ?? t('tiering.tier.primaryBackend') }}</span>
@@ -67,22 +69,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span class="w-20 text-right text-xs tabular-nums text-muted">{{ formatBytes(tier.total_bytes ?? 0) }}</span>
               </div>
             </td>
-            <td class="px-5 py-3 text-right">
-              <AppButton
-                variant="ghost"
-                size="xs"
-                :disabled="tier.primary"
-                :title="tier.primary ? t('tiering.tier.primaryNoDelete') : undefined"
-                :aria-label="`${t('common.delete')} ${tier.name}`"
-                @click="deleteTarget = tier"
-              >
-                <TrashIcon class="w-4 h-4" aria-hidden="true" />
-              </AppButton>
+            <td class="px-5 py-3" :class="ACTIONS_CELL">
+              <RowActions :actions="tierActions(tier)" :subject="tier.name" @action="deleteTarget = tier" />
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
+    </TableScroller>
 
     <TierAddDialog
       :open="addOpen"
@@ -106,12 +99,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import StatusBadge from './StatusBadge.vue'
 import TierAddDialog from './TierAddDialog.vue'
+import RowActions, { type RowAction } from './ui/RowActions.vue'
+import TableScroller from './ui/TableScroller.vue'
+import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
 import { deleteTier, updateTier, type StorageTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
 import { t, tp } from '../i18n'
@@ -143,6 +139,18 @@ function statusLabel(tier: StorageTier): string {
 function statusVariant(tier: StorageTier): 'success' | 'danger' | 'neutral' {
   if (!tier.available || tier.backend_status === 'unreachable') return 'danger'
   return tier.backend_status === 'healthy' || tier.primary ? 'success' : 'neutral'
+}
+
+function tierActions(tier: StorageTier): RowAction[] {
+  return [
+    {
+      key: 'delete',
+      label: tier.primary ? t('tiering.tier.primaryNoDelete') : t('common.delete'),
+      icon: TrashIcon,
+      tone: 'danger',
+      disabled: tier.primary,
+    },
+  ]
 }
 
 function onCreated(): void {
