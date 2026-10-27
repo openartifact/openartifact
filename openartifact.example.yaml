@@ -130,9 +130,10 @@ log:
   format: "json"   # json | text
   output: "stdout"
 
-# OpenTelemetry traces over OTLP, off by default. Every key has an environment
-# override, the standard OTEL_* variables where one exists (see .env.example);
-# /metrics is unaffected.
+# OpenTelemetry over OTLP, off by default. enabled is the master switch; the
+# endpoint, protocol, headers and TLS settings are shared by the per-signal
+# switches below it. Every key has an environment override, the standard
+# OTEL_* variables where one exists (see .env.example); /metrics is unaffected.
 telemetry:
   otlp:
     enabled: false
@@ -143,7 +144,10 @@ telemetry:
     # insecure: false                   # plaintext to the collector (implied by an http:// endpoint)
     # serviceName: "openartifact"
     # sampleRatio: 1.0                  # fraction of new traces recorded; sampled incoming traces always are
+    # traces: true                      # distributed traces (on by default once enabled)
     # metrics: false                    # also export the Prometheus registry over OTLP
+    # logs: false                       # application log records over OTLP (reserved: none written yet, #192)
+    # audit: false                      # audit events over OTLP (scope openartifact.audit), works without traces (reserved: none written yet, #193)
 
 auth:
   # Anonymous read of private repos (via the "anonymous-read" permission target).

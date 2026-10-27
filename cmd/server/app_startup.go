@@ -88,7 +88,10 @@ func (a *app) setupTelemetry() error {
 			"protocol", otlp.Protocol,
 			"service_name", otlp.ServiceName,
 			"sample_ratio", otlp.SampleRatio,
+			"traces", otlp.Traces,
 			"metrics", otlp.Metrics,
+			"logs", otlp.Logs,
+			"audit", otlp.Audit,
 		)
 	}
 

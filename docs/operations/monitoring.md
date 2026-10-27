@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Monitoring and logging
 
-Health and readiness endpoints, Prometheus metrics, OpenTelemetry tracing, the audit log and server logs.
+Health and readiness endpoints, Prometheus metrics, OpenTelemetry (traces, metrics and log records over OTLP), the audit log and server logs.
 
 The REST API, OpenAPI spec and interactive API reference are covered in [API](../integrations/api.md).
 
@@ -173,9 +173,11 @@ increase(openartifact_scanner_db_update_attempts_total{result="failure"}[6h]) > 
 
 For allocation and CPU profiling see [performance](performance.md).
 
-## OpenTelemetry tracing
+## OpenTelemetry
 
-OpenArtifact can export distributed traces over OTLP to any collector (OpenTelemetry Collector, Jaeger, Tempo, Honeycomb, ...). It is **off by default**: while disabled no provider is installed, no span is created and no `traceparent` header is sent.
+OpenArtifact can export distributed traces, metrics and log records over OTLP to any collector (OpenTelemetry Collector, Jaeger, Tempo, Honeycomb, ...). It is **off by default**: while disabled no provider is installed, no span is created and no `traceparent` header is sent.
+
+`enabled` is the master switch and the block owns the endpoint, protocol, headers and TLS settings shared by every signal. Each signal has its own switch under it: `traces` (on by default, so `enabled: true` alone means tracing), `metrics`, `logs` and `audit`. Every provider is created only for a signal that is on.
 
 ```yaml
 telemetry:
@@ -187,21 +189,27 @@ telemetry:
     insecure: false                   # plaintext to the collector
     serviceName: openartifact
     sampleRatio: 1.0
+    traces: true
     metrics: false
+    logs: false
+    audit: false
 ```
 
 | Key | Environment | Default | Notes |
 |---|---|---|---|
-| `enabled` | `OPENARTIFACT_OTLP_ENABLED` | `false` | the only switch; `OTEL_SDK_DISABLED=true` forces it off |
-| `endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | `host:port` or `http(s)://host:port[/prefix]`; empty uses the SDK default (`localhost:4317` for gRPC, `localhost:4318` for HTTP). For `http` the `/v1/traces` (`/v1/metrics`) suffix is appended to the prefix |
+| `enabled` | `OPENARTIFACT_OTLP_ENABLED` | `false` | master switch: nothing is exported without it; `OTEL_SDK_DISABLED=true` forces it off. With every signal below off nothing is installed and the server logs one warning at startup |
+| `endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | `host:port` or `http(s)://host:port[/prefix]`; empty uses the SDK default (`localhost:4317` for gRPC, `localhost:4318` for HTTP). For `http` the `/v1/traces` (`/v1/metrics`, `/v1/logs`) suffix is appended to the prefix |
 | `protocol` | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | `grpc`, or `http` (alias `http/protobuf`) |
 | `headers` | `OTEL_EXPORTER_OTLP_HEADERS` | none | `k=v,k2=v2`, values percent-decoded; merged over the YAML map. Treated as secrets and never logged |
 | `insecure` | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | no TLS to the collector; an `http://` endpoint implies it |
 | `serviceName` | `OTEL_SERVICE_NAME` | `openartifact` | `service.name` resource attribute |
 | `sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | `1` | fraction of **new** traces recorded (0 to 1). Parent based: a request arriving with a sampled `traceparent` is always recorded, an unsampled one never |
+| `traces` | `OTEL_TRACES_EXPORTER=otlp` (`none` turns it off) | `true` | distributed traces; the HTTP server middleware, the client and database spans and the log correlation fields exist only with it |
 | `metrics` | `OTEL_METRICS_EXPORTER=otlp` (`none` turns it off) | `false` | also export metrics over OTLP, see below |
+| `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP; reserved, no records yet (#192), see [log records](#log-records-over-otlp) |
+| `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | audit events over OTLP (scope `openartifact.audit`), independent of `traces`; reserved, no events yet (#193), see [log records](#log-records-over-otlp) |
 
-Environment variables win over the YAML file. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable tracing: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
+Environment variables win over the YAML file. An `OTEL_*_EXPORTER` variable is a comma-separated list: one containing `otlp` turns the signal on, otherwise `none` turns it off, and any other value (`zipkin`) is ignored. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable telemetry: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_METRICS_*` and `OTEL_EXPORTER_OTLP_LOGS_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
 
 ### What is traced
 
@@ -234,6 +242,10 @@ The fields are absent while tracing is disabled.
 
 Prometheus stays the primary interface and `/metrics` is unchanged. With `metrics: true` (or `OTEL_METRICS_EXPORTER=otlp`) the same registry (`openartifact_*`, `go_*`, `process_*`) is also pushed to the collector through the OpenTelemetry Prometheus bridge, with the same endpoint, protocol and headers: no second set of instruments exists, so the two views cannot disagree.
 
+### Log records over OTLP
+
+With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit`; either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail. This release only starts the provider: no records are written to it yet.
+
 ### Overhead and binary size
 
 The OpenTelemetry SDK and the OTLP exporters are always compiled in, enabled or not (about 5 MB of the 44 MB stripped `linux/amd64` server binary: OpenTelemetry 1.7 MB, gRPC 1.1 MB, protobuf 1.6 MB and the `telemetry` package 0.3 MB, measured with go-size-analyzer; `go list -m all` grew from 159 to 221 modules). The release builds use the `grpcnotrace` build tag, which drops gRPC's `net/trace` debug pages (`EnableTracing` is never set, so nothing changes at runtime); without it the same dependencies cost about 14 MB, because `net/trace` pulls in `html/template` and the linker then keeps every exported method of every reachable type. With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
@@ -247,6 +259,28 @@ docker run --rm -d --name jaeger -p 16686:16686 -p 4317:4317 -p 4318:4318 docker
 OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 ./bin/openartifact
 # browse http://localhost:16686, service "openartifact"
 ```
+
+### Local Collector
+
+The server only speaks OTLP. Batching, retries, queueing, redaction and routing to one or more backends belong in an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (the `otelcol-contrib` distribution) running next to it, so only the Collector needs egress.
+
+[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`; `OTELCOL_LISTEN_HOST` changes the bind address), the `memory_limiter` and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
+
+The compose file runs it as the opt-in `otel-collector` profile: a separate service on the compose network, listening on `0.0.0.0` there with no published ports, so the server's default endpoint `http://otel-collector:4317` reaches it and either container can restart on its own. In `docker/.env`:
+
+```sh
+OPENARTIFACT_OTLP_ENABLED=true
+OTELCOL_EXPORT_ENDPOINT=https://otlp.example.com
+OTELCOL_EXPORT_AUTHORIZATION=Bearer <token>
+```
+
+```sh
+docker compose -f docker/docker-compose.yml --env-file docker/.env --profile otel-collector up -d
+```
+
+`OTELCOL_EXPORT_ENDPOINT` is required: without it the Collector exits with `exporters::otlp_http: at least one endpoint must be specified` and compose keeps restarting it (`docker compose logs otel-collector`). An empty `OTELCOL_EXPORT_AUTHORIZATION` is still sent as an empty `Authorization` header; for a backend without authentication, remove the `headers` block from the configuration.
+
+The per-signal variables (`OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OPENARTIFACT_OTLP_AUDIT`) and `OTEL_EXPORTER_OTLP_ENDPOINT` are passed through from `docker/.env` as well; the per-signal ones and `OPENARTIFACT_OTLP_ENABLED` only when set there, so they never override a mounted config file. Outside compose, run the same configuration with `otelcol-contrib --config docker/otel-collector.yaml` on the host or as a sidecar.
 
 ## Audit log
 

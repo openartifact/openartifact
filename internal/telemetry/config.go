@@ -2,13 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package telemetry wires OpenTelemetry: the OTLP exporters (traces, plus an
-// optional bridge that ships the Prometheus registry as OTLP metrics), the
-// HTTP server middleware, an instrumented client transport and a pgx tracer.
+// Package telemetry wires OpenTelemetry: the OTLP exporters (traces, a bridge
+// that ships the Prometheus registry as OTLP metrics, and a log provider for
+// application and audit records), the HTTP server middleware, an instrumented
+// client transport and a pgx tracer.
 //
-// Everything is off unless Config.OTLP.Enabled is set: no provider is
-// installed, no middleware is added and the transport and pgx tracer reduce to
-// an atomic load, so a disabled build behaves as it did before.
+// Everything is off unless Config.OTLP.Enabled is set, and each signal has its
+// own switch under it. Without traces no tracer provider is installed, no
+// middleware is added and the transport and pgx tracer reduce to an atomic
+// load, so a build without tracing behaves as it did before.
 //
 // Attributes never carry credentials or user data: spans are named after the
 // route template (never the raw path), URLs are reduced to host and scheme
@@ -45,12 +47,15 @@ type Config struct {
 	OTLP OTLPConfig `yaml:"otlp"`
 }
 
-// OTLPConfig configures the OTLP exporters. The standard OTEL_* environment
-// variables override the file; signal specific OTEL_EXPORTER_OTLP_TRACES_*
-// variables only apply while endpoint is empty.
+// OTLPConfig configures the OTLP exporters. The endpoint, protocol, headers
+// and TLS settings are shared by every signal. The standard OTEL_* environment
+// variables override the file; the signal specific OTEL_EXPORTER_OTLP_TRACES_*,
+// OTEL_EXPORTER_OTLP_METRICS_* and OTEL_EXPORTER_OTLP_LOGS_* variables only
+// apply while endpoint is empty.
 type OTLPConfig struct {
-	// Enabled turns tracing on. Off by default; OTEL_SDK_DISABLED=true forces
-	// it off.
+	// Enabled is the master switch: nothing is exported without it, whatever
+	// the per-signal switches say. Off by default; OTEL_SDK_DISABLED=true
+	// forces it off.
 	Enabled bool `yaml:"enabled"`
 	// Endpoint is host:port or an http(s) URL of the collector. Empty uses the
 	// SDK default (localhost:4317 for grpc, localhost:4318 for http).
@@ -68,16 +73,36 @@ type OTLPConfig struct {
 	// SampleRatio is the fraction of new traces recorded, in [0,1]. Requests
 	// carrying a sampled traceparent are always recorded (parent based).
 	SampleRatio float64 `yaml:"sampleRatio"`
-	// Metrics additionally exports the Prometheus registry (Go runtime and
-	// openartifact_* families) over OTLP to the same endpoint. /metrics is
-	// unaffected. The environment form is OTEL_METRICS_EXPORTER: otlp turns it
-	// on, none turns it off.
+	// Traces exports distributed traces and installs the HTTP server
+	// middleware. On by default, so enabled alone keeps tracing. The
+	// environment form is OTEL_TRACES_EXPORTER: otlp turns it on, none turns
+	// it off.
+	Traces bool `yaml:"traces"`
+	// Metrics exports the Prometheus registry (Go runtime and openartifact_*
+	// families) over OTLP to the same endpoint. /metrics is unaffected. The
+	// environment form is OTEL_METRICS_EXPORTER: otlp turns it on, none turns
+	// it off.
 	Metrics bool `yaml:"metrics"`
+	// Logs is the switch for application log records over OTLP; with it (or
+	// audit) on, an OTLP log provider is started on the same endpoint.
+	// Reserved: no records are written to it yet (#192). The environment form
+	// is OTEL_LOGS_EXPORTER: otlp turns it on, none turns it off.
+	Logs bool `yaml:"logs"`
+	// Audit is the switch for audit events over OTLP (scope
+	// openartifact.audit), independent of traces. It shares the log provider
+	// with logs. Reserved: no events are written to it yet (#193). The
+	// audit_logs table stays the source of truth.
+	Audit bool `yaml:"audit"`
 }
 
-// DefaultConfig returns the defaults: disabled, grpc, every trace sampled.
+// anySignal reports whether at least one signal is switched on.
+func (c OTLPConfig) anySignal() bool { return c.Traces || c.Metrics || c.Logs || c.Audit }
+
+// DefaultConfig returns the defaults: disabled, grpc, traces only, every trace
+// sampled.
 func DefaultConfig() Config {
 	return Config{OTLP: OTLPConfig{
+		Traces:      true,
 		Protocol:    ProtocolGRPC,
 		ServiceName: DefaultServiceName,
 		SampleRatio: 1,

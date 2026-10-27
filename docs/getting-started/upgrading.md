@@ -85,6 +85,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- OpenTelemetry has per-signal switches under `telemetry.otlp`: `traces` (`OTEL_TRACES_EXPORTER`), `metrics` (`OTEL_METRICS_EXPORTER`, unchanged), `logs` (`OTEL_LOGS_EXPORTER`) and `audit` (`OPENARTIFACT_OTLP_AUDIT`). `enabled` stays the master switch and `traces` defaults to `true`, so an existing `enabled: true` (or `OPENARTIFACT_OTLP_ENABLED=true`) keeps tracing exactly as before; set `OTEL_TRACES_EXPORTER=none` to export metrics, logs or audit without traces, which also removes the HTTP tracing middleware. `enabled: true` with every signal off is accepted and logs one warning at startup. `logs` and `audit` start an OTLP log provider on the same endpoint (no records yet). The compose file has an opt-in `otel-collector` profile with a baseline `otelcol-contrib` configuration and passes the OpenTelemetry variables from `docker/.env` to the server. See [monitoring](../operations/monitoring.md#opentelemetry).
+
 ### 0.12.0
 
 Migration `086`. It drops the stored `search_tsv` columns (`deb_packages`, `rpm_packages`, `maven_artifacts`, `npm_versions`) and `rpm_repos.signing_key_id` / `signing_key_fingerprint`, with their indexes, in a transaction with a 10 s `lock_timeout`. **A rolling upgrade requires coming from 0.11.x**: 0.10.x pods still select these columns. Upgrading directly from 0.10.x must stop all pods first, or go through 0.11.
