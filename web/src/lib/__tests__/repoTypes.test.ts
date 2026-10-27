@@ -14,10 +14,10 @@ import {
 } from '../repoTypes'
 
 describe('allowedFormats', () => {
-  it('offers pacman for hosted and proxy repositories, not yet groups', () => {
+  it('offers pacman for hosted, proxy and group repositories', () => {
     expect(allowedFormats('hosted')).toContain('pacman')
     expect(allowedFormats('proxy')).toContain('pacman')
-    expect(allowedFormats('group')).not.toContain('pacman')
+    expect(allowedFormats('group')).toContain('pacman')
   })
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
@@ -25,8 +25,8 @@ describe('allowedFormats', () => {
   it('restricts proxy to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
     expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman'])
   })
-  it('restricts group to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pypi, raw, rpm, rubygems, sbt and terraform', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk'])
+  it('restricts group to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)

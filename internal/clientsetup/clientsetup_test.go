@@ -136,6 +136,23 @@ func TestPacmanProxySnippet(t *testing.T) {
 	}
 }
 
+func TestPacmanGroupSnippet(t *testing.T) {
+	got := Snippets("pacman", "https://oa.example", "all", "group")
+	if len(got) != 1 || got[0].Publish != "" {
+		t.Fatalf("want one read-only snippet, got %+v", got)
+	}
+
+	for _, want := range []string{
+		"[all]\nSigLevel = Required\nServer = https://oa.example/repos/all/os/$arch",
+		"curl -fsSL https://oa.example/repos/all/public.key | sudo pacman-key --add -",
+		"https://oa.example/repos/<member>/public.key",
+	} {
+		if !strings.Contains(got[0].Configure, want) {
+			t.Errorf("configure missing %q:\n%s", want, got[0].Configure)
+		}
+	}
+}
+
 func TestApkGroupSnippetFetchesTheGroupKeyAndPublishesNothing(t *testing.T) {
 	snips := Snippets("apk", origin, "all", "group")
 	if len(snips) != 1 {

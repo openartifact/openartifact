@@ -80,78 +80,6 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Delete("/os/{arch}/{filename}", h.handleDelete)
 }
 
-// fileKind says what a path under os/{arch}/ names.
-type fileKind int
-
-const (
-	kindInvalid fileKind = iota
-	kindPackage
-	kindPackageSig
-	kindDatabase
-	kindDatabaseSig
-)
-
-// dbSuffixes are the database file names a client may ask for, with the
-// generated document (path component below os/{arch}/) each one is.
-var dbSuffixes = []struct { //nolint:gochecknoglobals // constant table
-	suffix string
-	doc    string
-}{
-	{".db.tar.gz", "db.tar.gz"},
-	{".db", "db.tar.gz"},
-	{".files.tar.gz", "files.tar.gz"},
-	{".files", "files.tar.gz"},
-}
-
-// classify names the kind of file a URL file name is. For databases it also
-// returns the generated document it maps to ("db.tar.gz" or "files.tar.gz").
-func classify(filename string) (fileKind, string) {
-	if !validFilenameChars(filename) {
-		return kindInvalid, ""
-	}
-
-	name, sig := strings.CutSuffix(filename, ".sig")
-
-	if _, _, ok := pacman.SplitPackageFileName(name); ok {
-		if sig {
-			return kindPackageSig, ""
-		}
-
-		return kindPackage, ""
-	}
-
-	for _, s := range dbSuffixes {
-		if strings.HasSuffix(name, s.suffix) && len(name) > len(s.suffix) {
-			if sig {
-				return kindDatabaseSig, s.doc
-			}
-
-			return kindDatabase, s.doc
-		}
-	}
-
-	return kindInvalid, ""
-}
-
-// validFilenameChars accepts the characters of package and database names:
-// anything pacman's makepkg produces, never a path separator or control byte.
-func validFilenameChars(s string) bool {
-	if s == "" || len(s) > pacman.MaxNameLen*3 {
-		return false
-	}
-
-	for _, c := range s {
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		case c == '.', c == '_', c == '+', c == '-', c == '@', c == '~', c == ':':
-		default:
-			return false
-		}
-	}
-
-	return s[0] != '.'
-}
-
 // resolveRepo returns the pacman repository named in the URL. When there is
 // none it writes the response and returns nil.
 func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) *models.Repository {
@@ -175,7 +103,7 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) *model
 
 // fileParam returns the file name of the URL. The router hands out the raw
 // path, in which pacman writes the colon of an epoch as %3A; a name that does
-// not decode is returned as is and fails classify.
+// not decode is returned as is and fails pacman.ClassifyFile.
 func fileParam(r *http.Request) string {
 	raw := urlparams.Vars(r)["filename"]
 
@@ -201,8 +129,8 @@ func archOf(w http.ResponseWriter, r *http.Request) (string, bool) {
 func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	filename := fileParam(r)
 
-	kind, doc := classify(filename)
-	if kind == kindInvalid {
+	kind, doc := pacman.ClassifyFile(filename)
+	if kind == pacman.FileInvalid {
 		http.NotFound(w, r)
 		return
 	}
@@ -218,13 +146,13 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch kind {
-	case kindDatabase:
+	case pacman.FileDatabase:
 		h.serveDatabase(w, r, repo, arch, doc, false)
-	case kindDatabaseSig:
+	case pacman.FileDatabaseSig:
 		h.serveDatabase(w, r, repo, arch, doc, true)
-	case kindPackageSig:
+	case pacman.FilePackageSig:
 		h.servePackageSig(w, r, repo, arch, strings.TrimSuffix(filename, ".sig"))
-	case kindPackage, kindInvalid:
+	case pacman.FilePackage, pacman.FileInvalid:
 		h.servePackage(w, r, repo, arch, filename)
 	}
 }

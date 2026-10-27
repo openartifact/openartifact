@@ -167,5 +167,8 @@ watch(
 const publicAllowed = computed(() => policyAllowsPublic(props.policy))
 const signable = computed(() => form.value.type === 'hosted' && form.value.format === 'rpm')
 const canFederate = computed(() => federationAvailable(form.value.type, form.value.format))
-const upstreamHint = computed(() => (upstreamUrlRequired(form.value.format) ? t('rl.upstream.required') : t('rl.upstream.optional')))
+const upstreamHint = computed(() => {
+  if (form.value.format === 'pacman') return t('rl.upstream.pacman')
+  return upstreamUrlRequired(form.value.format) ? t('rl.upstream.required') : t('rl.upstream.optional')
+})
 </script>

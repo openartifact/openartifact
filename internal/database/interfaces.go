@@ -226,9 +226,9 @@ type Database interface {
 	MarkGroupMetadataStale(ctx context.Context, groupID string) error
 	// GetGroupMetadataState returns a group's regeneration state, nil when it has none.
 	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
-	// ListMetadataGroupsOfMember returns the deb/rpm/apk groups that list the repository as a member.
+	// ListMetadataGroupsOfMember returns the deb, rpm/apk and pacman groups that list the repository as a member.
 	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
-	// ListStaleMetadataGroups returns the deb/rpm/apk groups that are stale or were never generated.
+	// ListStaleMetadataGroups returns the deb, rpm/apk and pacman groups that are stale or were never generated.
 	ListStaleMetadataGroups(ctx context.Context) ([]string, error)
 	// GetGroupPackageOwner returns the member owning a file the group's merged index lists.
 	GetGroupPackageOwner(ctx context.Context, groupID, path string) (string, bool, error)

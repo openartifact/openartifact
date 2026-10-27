@@ -33,8 +33,8 @@ const maxPackageBytes = 8 << 30
 func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	filename := fileParam(r)
 
-	kind, _ := classify(filename)
-	if kind != kindPackage && kind != kindPackageSig {
+	kind, _ := pacman.ClassifyFile(filename)
+	if kind != pacman.FilePackage && kind != pacman.FilePackageSig {
 		http.Error(
 			w,
 			"only package files (.pkg.tar.zst, .xz, .gz) and their .sig can be uploaded; the databases are generated",
@@ -62,7 +62,7 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if kind == kindPackageSig {
+	if kind == pacman.FilePackageSig {
 		h.putSignature(w, r, repo, arch, strings.TrimSuffix(filename, ".sig"))
 		return
 	}
@@ -305,8 +305,8 @@ func (h *HTTPHandler) putSignature(w http.ResponseWriter, r *http.Request, repo 
 func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	filename := fileParam(r)
 
-	kind, _ := classify(filename)
-	if kind != kindPackage && kind != kindPackageSig {
+	kind, _ := pacman.ClassifyFile(filename)
+	if kind != pacman.FilePackage && kind != pacman.FilePackageSig {
 		http.NotFound(w, r)
 		return
 	}
@@ -321,7 +321,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if kind == kindPackageSig {
+	if kind == pacman.FilePackageSig {
 		h.deleteSignature(w, r, repo, arch, strings.TrimSuffix(filename, ".sig"))
 		return
 	}

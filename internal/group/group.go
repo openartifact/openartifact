@@ -46,7 +46,7 @@ type Handler struct {
 	// condaMerges bounds concurrent conda repodata merges, which spool to disk.
 	condaMerges base.Gate
 
-	// blobs and metadata serve deb and rpm groups (WithMetadata).
+	// blobs and metadata serve deb, rpm and pacman groups (WithMetadata).
 	blobs    storage.BlobStore
 	metadata MetadataGenerator
 	// apkKeys serves the public key of an apk group (WithApkKeys).
@@ -116,7 +116,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget, rubygems, conan, conda, terraform, deb, rpm, apk) merges over its members; false
+// (maven, pypi, npm, helm, cargo, go, nuget, rubygems, conan, conda, terraform, deb, rpm, apk, pacman) merges over its members; false
 // means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
@@ -154,7 +154,7 @@ func (h *Handler) serveMerged(
 		return h.serveTerraform(w, r, grp, relPath, readable, be)
 	case "conda":
 		return h.serveConda(w, r, grp, readable, relPath, be)
-	case "deb", "rpm":
+	case "deb", "rpm", "pacman":
 		h.serveDebRPM(w, r, grp, readable, relPath, be)
 
 		return true

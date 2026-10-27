@@ -432,29 +432,6 @@ func TestServeDatabases(t *testing.T) {
 	}
 }
 
-func TestClassify(t *testing.T) {
-	for name, want := range map[string]fileKind{
-		"a-1-1-x86_64.pkg.tar.zst":      kindPackage,
-		"a-1:1-1-any.pkg.tar.xz":        kindPackage,
-		"a-1-1-x86_64.pkg.tar.gz.sig":   kindPackageSig,
-		"core.db":                       kindDatabase,
-		"core.db.tar.gz":                kindDatabase,
-		"core.files":                    kindDatabase,
-		"core.files.tar.gz.sig":         kindDatabaseSig,
-		"core.db.sig":                   kindDatabaseSig,
-		".db":                           kindInvalid,
-		"a-1-1-x86_64.pkg.tar.bz2":      kindInvalid,
-		"../a-1-1-x86_64.pkg.tar.zst":   kindInvalid,
-		"a b-1-1-x86_64.pkg.tar.zst":    kindInvalid,
-		".hidden-1-1-any.pkg.tar.zst":   kindInvalid,
-		"a-1-1-x86_64.pkg.tar.zst.sig2": kindInvalid,
-	} {
-		if got, _ := classify(name); got != want {
-			t.Errorf("classify(%q) = %v, want %v", name, got, want)
-		}
-	}
-}
-
 func TestParseRange(t *testing.T) {
 	for _, tc := range []struct {
 		header            string

@@ -11,7 +11,7 @@ import { ALL_FORMATS, type FormatId } from './formats'
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
 const PROXY_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
-const GROUP_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+const GROUP_FORMATS: readonly FormatId[] = ['apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 // Formats a hosted repository can federate. Mirrors FederationSupported in
 // internal/repotype; the server stays authoritative.

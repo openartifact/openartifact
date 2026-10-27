@@ -128,7 +128,7 @@
   {
     "format": "pacman",
     "proxy": true,
-    "group": false,
+    "group": true,
     "federation": false,
     "default_upstream": "https://geo.mirror.pkgbuild.com"
   }

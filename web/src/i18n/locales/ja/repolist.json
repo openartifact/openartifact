@@ -62,6 +62,7 @@
   "rl.upstream.needed": "必須です。続行するには設定してください",
   "rl.upstream.required": "このフォーマットでは必須です。",
   "rl.upstream.optional": "空欄の場合はフォーマットの既定値を使用します。",
+  "rl.upstream.pacman": "このプロキシをグループのメンバーにするには、URL を https://geo.mirror.pkgbuild.com/extra のようにセクションで終えてください。",
   "rl.upstream.passwordKeep": "現在のパスワードを維持する場合は空欄のままにしてください。",
   "rl.members.none": "メンバーなし",
   "rl.members.count_other": "メンバー {n} 件",

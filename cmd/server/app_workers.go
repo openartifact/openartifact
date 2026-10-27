@@ -107,15 +107,15 @@ func (a *app) startMetadataWorkers() {
 		a.tasks.Go(func(ctx context.Context) { autoGenerateGPGKey(ctx, w.gpgKeys, log) })
 	}
 
-	// Deb and rpm group repositories: their merged metadata is regenerated when
+	// Deb, rpm and pacman group repositories: their merged metadata is regenerated when
 	// a member changes (the hosted workers' stale hook) and read from the
 	// proxy members' caches.
-	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL).
-		WithUpstreamStallTimeout(a.cfg.Workers.ProxyUpstreamStallTimeout)
+	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL)
 	w.groupMeta = worker.NewGroupMetadataWorker(db, blobStore, w.proxySvc, w.rpm, w.gpgKeys, log).
 		WithApkSigners(w.apkKeys).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 	w.rpm.WithStaleHook(w.groupMeta.NotifyMemberChanged)
 	w.deb.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+	w.pacman.WithStaleHook(w.groupMeta.NotifyMemberChanged)
 	w.apk.WithStaleHook(w.groupMeta.NotifyMemberChanged)
 
 	// An apk key change re-signs a group through the group worker too.
@@ -125,7 +125,7 @@ func (a *app) startMetadataWorkers() {
 	w.gpgKeys.SetRefreshers(
 		groupRefresher{db: db, hosted: w.rpm, group: w.groupMeta},
 		groupRefresher{db: db, hosted: w.deb, group: w.groupMeta},
-		w.pacman,
+		groupRefresher{db: db, hosted: w.pacman, group: w.groupMeta},
 	)
 
 	a.tasks.Go(w.groupMeta.RegenerateStale)

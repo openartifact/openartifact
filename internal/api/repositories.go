@@ -155,12 +155,6 @@ type GroupMetadataNotifier interface {
 	NotifyMemberChanged(repoID string)
 }
 
-// hasGeneratedGroupMetadata reports whether groups of format serve metadata
-// generated from their members (deb, rpm, apk).
-func hasGeneratedGroupMetadata(format string) bool {
-	return format == "deb" || format == "rpm" || format == "apk"
-}
-
 // WithGroupMetadata makes changes to deb and rpm repositories regenerate the
 // metadata of the groups they belong to.
 func (h *RepositoriesHandler) WithGroupMetadata(n GroupMetadataNotifier) *RepositoriesHandler {
@@ -176,7 +170,7 @@ func (h *RepositoriesHandler) metadataChanged(repo *models.Repository) {
 }
 
 func notifyGroupMetadata(n GroupMetadataNotifier, repo *models.Repository) {
-	if n == nil || !hasGeneratedGroupMetadata(repo.Format) {
+	if n == nil || !repotype.GeneratedGroupMetadata(repo.Format) {
 		return
 	}
 
@@ -1250,7 +1244,7 @@ func deleteConfirmation(r *http.Request) string {
 
 // metadataGroupsOf returns the deb/rpm/apk groups whose merged metadata lists repo.
 func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models.Repository) []string {
-	if h.groupMeta == nil || repo.RepoType == repotype.Group || !hasGeneratedGroupMetadata(repo.Format) {
+	if h.groupMeta == nil || repo.RepoType == repotype.Group || !repotype.GeneratedGroupMetadata(repo.Format) {
 		return nil
 	}
 

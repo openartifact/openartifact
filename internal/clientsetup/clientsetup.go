@@ -267,6 +267,8 @@ func rpmSnippets(c target) []Snippet {
 
 // pacmanSnippets configures /etc/pacman.conf, trusts the repository key and
 // publishes a package (and optionally its detached signature) with a token PUT.
+// A group is read-only: it has nothing to publish, and its packages keep the
+// signatures of the members that hold them.
 func pacmanSnippets(c target) []Snippet {
 	if c.repoType == "proxy" {
 		return pacmanProxySnippets(c)
@@ -278,14 +280,25 @@ func pacmanSnippets(c target) []Snippet {
 		return fmt.Sprintf("curl -fsS -H \"Authorization: Bearer $OA_TOKEN\" -T %[1]s %[2]s/os/x86_64/%[1]s", file, c.base)
 	}
 
+	configure := fmt.Sprintf("# /etc/pacman.conf\n[%s]\nSigLevel = Required\nServer = %s/os/$arch", c.repo, c.base) +
+		"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/os/$arch" +
+		"\n\n# trust the repository key\ncurl -fsSL " + key + " | sudo pacman-key --add -" +
+		"\nsudo pacman-key --lsign-key $(curl -fsSL " + key +
+		" | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+
+	if c.repoType == "group" {
+		return []Snippet{{
+			Client: "pacman",
+			Configure: configure + "\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key" +
+				" too (it is the group's when they share the active key), for example\n# curl -fsSL " + c.origin + "/repos/<member>/public.key" +
+				" | sudo pacman-key --add -",
+		}}
+	}
+
 	return []Snippet{{
-		Client: "pacman",
-		Configure: fmt.Sprintf("# /etc/pacman.conf\n[%s]\nSigLevel = Required\nServer = %s/os/$arch", c.repo, c.base) +
-			"\n\n# private repository: Server = https://<USER>:<TOKEN>@" + c.host + "/repos/" + c.esc + "/os/$arch" +
-			"\n\n# trust the repository key\ncurl -fsSL " + key + " | sudo pacman-key --add -" +
-			"\nsudo pacman-key --lsign-key $(curl -fsSL " + key +
-			" | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')",
-		Publish: put(pkg) + "\n\n# optional detached signature\n" + put(pkg+".sig"),
+		Client:    "pacman",
+		Configure: configure,
+		Publish:   put(pkg) + "\n\n# optional detached signature\n" + put(pkg+".sig"),
 	}}
 }
 

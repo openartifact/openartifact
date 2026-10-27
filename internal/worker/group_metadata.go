@@ -46,12 +46,6 @@ const (
 	groupOwnerChunk = 5000
 )
 
-// generatesGroupMetadata reports whether groups of format serve metadata this
-// worker generates.
-func generatesGroupMetadata(format string) bool {
-	return format == "deb" || format == "rpm" || format == "apk"
-}
-
 // MemberOpener reads files of a proxy member as the proxy serves them
 // (proxy.Service).
 type MemberOpener interface {
@@ -64,8 +58,8 @@ type RPMPackageLoader interface {
 	PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 }
 
-// GroupMetadataWorker generates the metadata of deb, rpm and apk group
-// repositories: the Release/Packages indexes, repodata or APKINDEX a client needs, merged
+// GroupMetadataWorker generates the metadata of deb, rpm, apk and pacman group
+// repositories: the Release/Packages indexes, repodata, APKINDEX or databases a client needs, merged
 // across the group's hosted and proxy members in member order, plus the table
 // of which member owns which file so downloads are served from the member
 // whose checksum the index lists.
@@ -151,7 +145,7 @@ func (w *GroupMetadataWorker) NotifyStale(groupID string) {
 	w.q.Notify(groupID)
 }
 
-// NotifyMemberChanged marks every deb/rpm group that lists repoID as a member
+// NotifyMemberChanged marks every deb, rpm or pacman group that lists repoID as a member
 // stale. It is the hook of the hosted workers' NotifyStale: uploads, deletes,
 // trash and restores of a member all end up there.
 func (w *GroupMetadataWorker) NotifyMemberChanged(repoID string) {
@@ -185,20 +179,20 @@ func (w *GroupMetadataWorker) RegenerateStale(ctx context.Context) {
 }
 
 // Generate synchronously generates the metadata of the group, waiting for a
-// generation another process runs. dist is a Debian distribution a client asked
-// for: group.ErrDistNotFound is returned when no member has one the group does
-// not serve yet.
+// generation another process runs. hint is what a client asked for that the
+// group may not serve yet: a Debian distribution, or a pacman architecture.
+// group.ErrDistNotFound is returned when no member has it.
 //
 // readable are the IDs of the members the caller may read. The metadata a caller
 // is served lists only those members' packages: when they are not all of the
 // group's members, it is generated (and signed) as a variant of its own, stored
 // under Scope(readable), and dropped whenever the group is regenerated.
-func (w *GroupMetadataWorker) Generate(ctx context.Context, groupID, dist string, readable []string) error {
-	return w.generate(ctx, groupID, dist, true, readable)
+func (w *GroupMetadataWorker) Generate(ctx context.Context, groupID, hint string, readable []string) error {
+	return w.generate(ctx, groupID, hint, true, readable)
 }
 
 // variantPrefix prefixes the paths of the metadata variants of a group; no path
-// of a deb or rpm repository starts with it.
+// of a deb, rpm or pacman repository starts with it.
 const variantPrefix = ".oa-variant/"
 
 // Scope returns the path prefix under which the metadata for a caller who can
@@ -272,10 +266,12 @@ type groupJob struct {
 	// not having a file): the result is published but refreshed soon.
 	partial bool
 	// hostedNames are the package names of the hosted members, hidden from
-	// proxy members unless the group merges proxy versions.
+	// proxy members unless the group merges proxy versions (deb and rpm; a
+	// pacman generation applies the same rule in mergePacman).
 	hostedNames map[string]struct{}
-	// dists are the Debian distributions (for apk: the branch/repo/arch
-	// directories) the generation produced.
+	// dists are the Debian distributions, or (for apk: the branch/repo/arch
+	// directories) the pacman architectures, the
+	// generation produced.
 	dists []string
 }
 
@@ -306,7 +302,7 @@ func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string
 		return fmt.Errorf("group worker: loading group %s: %w", groupID, err)
 	}
 
-	if grp == nil || grp.DeletedAt != nil || grp.RepoType != repotype.Group || !generatesGroupMetadata(grp.Format) {
+	if grp == nil || grp.DeletedAt != nil || grp.RepoType != repotype.Group || !repotype.GeneratedGroupMetadata(grp.Format) {
 		return nil
 	}
 
@@ -321,7 +317,7 @@ func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string
 	}
 
 	if hint != "" {
-		if err := w.checkDist(ctx, grp, hint, members); err != nil {
+		if err := w.checkHint(ctx, grp, hint, members); err != nil {
 			return err
 		}
 	}
@@ -411,8 +407,22 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 	return err == nil && meta != nil
 }
 
+// checkHint returns group.ErrDistNotFound unless some member has what the
+// client asked for: a Debian distribution, an apk directory, a pacman architecture. Rpm groups
+// have no such request.
+func (w *GroupMetadataWorker) checkHint(ctx context.Context, grp *models.Repository, hint string, members []*models.Repository) error {
+	switch grp.Format {
+	case "deb", "apk":
+		return w.checkDist(ctx, grp, hint, members)
+	case "pacman":
+		return w.checkArch(ctx, hint, members)
+	}
+
+	return nil
+}
+
 // groupAnchor is the generated path a request for hint (a Debian distribution,
-// an apk directory) waits for; "" when there is none to name.
+// an apk directory or pacman arch) waits for; "" when there is none to name.
 func groupAnchor(format, hint string) string {
 	switch format {
 	case "deb":
@@ -423,6 +433,12 @@ func groupAnchor(format, hint string) string {
 		}
 
 		return hint + "/" + formatapk.IndexName
+	case "pacman":
+		if hint == "" {
+			return ""
+		}
+
+		return pacmanArchPath(hint, "db.tar.gz")
 	default:
 		return "repodata/repomd.xml"
 	}
@@ -466,6 +482,8 @@ func (w *GroupMetadataWorker) run(
 		err = j.buildDeb(ctx, dists)
 	case "rpm":
 		err = j.buildRPM(ctx)
+	case "pacman":
+		err = j.buildPacman(ctx, st.Dists, hint)
 	case "apk":
 		err = j.buildApk(ctx, dists)
 	}
