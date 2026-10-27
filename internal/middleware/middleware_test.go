@@ -5,6 +5,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -27,7 +28,7 @@ func TestRequestIDMiddleware(t *testing.T) {
 	var got []string
 
 	for range 2 {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 		// A client-supplied ID must not be trusted.
 		req.Header.Set("X-Request-ID", "client-chosen")
 
@@ -64,7 +65,7 @@ func TestRecoveryMiddlewarePassesThrough(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
 
 	if rec.Code != http.StatusTeapot {
 		t.Errorf("status = %d, want 418", rec.Code)

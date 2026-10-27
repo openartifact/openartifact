@@ -14,7 +14,7 @@ import (
 )
 
 func rlRequest(h http.Handler, peer, xff string) int {
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
 	req.RemoteAddr = peer
 
 	if xff != "" {
@@ -49,7 +49,7 @@ func TestRateLimitPerIPBuckets(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
 	req.RemoteAddr = "198.51.100.1:2000" // new source port, same IP
 
 	rec := httptest.NewRecorder()

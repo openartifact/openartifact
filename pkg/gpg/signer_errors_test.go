@@ -28,7 +28,6 @@ func newEntity(t *testing.T) *openpgp.Entity {
 }
 
 func TestNewLocalSignerKeyHandling(t *testing.T) {
-
 	protected := armoredPrivate(t, newEntity(t), "s3cret")
 	plain := armoredPrivate(t, newEntity(t), "")
 	public := mustPublic(t, mustSigner(t, newEntity(t)))
@@ -52,7 +51,6 @@ func TestNewLocalSignerKeyHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			s, err := NewLocalSigner(strings.NewReader(tt.key), []byte(tt.passphrase))
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
@@ -94,7 +92,6 @@ func mustSigner(t *testing.T, e *openpgp.Entity) *LocalSigner {
 }
 
 func TestNewLocalSignerFromFile(t *testing.T) {
-
 	dir := t.TempDir()
 	good := filepath.Join(dir, "key.asc")
 
@@ -123,7 +120,6 @@ func TestNewLocalSignerFromFile(t *testing.T) {
 }
 
 func TestParsePrivateKeyInputs(t *testing.T) {
-
 	tests := []struct {
 		name string
 		in   string
@@ -136,7 +132,6 @@ func TestParsePrivateKeyInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			_, err := ParsePrivateKey(strings.NewReader(tt.in), nil)
 			if !errors.Is(err, tt.want) {
 				t.Errorf("err = %v, want %v", err, tt.want)
@@ -146,7 +141,6 @@ func TestParsePrivateKeyInputs(t *testing.T) {
 }
 
 func TestSignerWithoutEntity(t *testing.T) {
-
 	s := &LocalSigner{}
 
 	if s.KeyFingerprint() != "" || s.KeyID() != "" {
@@ -159,7 +153,6 @@ func TestSignerWithoutEntity(t *testing.T) {
 }
 
 func TestNewLocalSignerFromEntityRejects(t *testing.T) {
-
 	cannotSign := newEntity(t)
 	cannotSign.PrimaryKey.PubKeyAlgo = packet.PubKeyAlgoElGamal
 
@@ -184,7 +177,6 @@ func TestNewLocalSignerFromEntityRejects(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			if _, err := NewLocalSignerFromEntity(tt.entity); !errors.Is(err, tt.want) {
 				t.Errorf("err = %v, want %v", err, tt.want)
 			}
@@ -193,7 +185,6 @@ func TestNewLocalSignerFromEntityRejects(t *testing.T) {
 }
 
 func TestExportedPrivateKeysReload(t *testing.T) {
-
 	orig := mustSigner(t, newEntity(t))
 
 	exports := map[string]func() ([]byte, error){
@@ -203,7 +194,6 @@ func TestExportedPrivateKeysReload(t *testing.T) {
 
 	for name, export := range exports {
 		t.Run(name, func(t *testing.T) {
-
 			armored, err := export()
 			if err != nil {
 				t.Fatal(err)
@@ -226,7 +216,6 @@ func TestExportedPrivateKeysReload(t *testing.T) {
 }
 
 func TestCleartextSignReadFailure(t *testing.T) {
-
 	s := mustSigner(t, newEntity(t))
 
 	if _, err := s.CleartextSign(failingReader{}); err == nil {
@@ -243,7 +232,6 @@ type failingReader struct{}
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
 
 func TestAlgorithmNames(t *testing.T) {
-
 	ecdsa, err := openpgp.NewEntity("e", "", "e@example.com", &packet.Config{Algorithm: packet.PubKeyAlgoECDSA, Curve: packet.CurveNistP256})
 	if err != nil {
 		t.Fatal(err)
