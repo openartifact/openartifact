@@ -222,32 +222,45 @@ func (h *AdminStorageHandler) handleTestPrimary(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, response)
 }
 
-// primaryWrite serves PATCH and DELETE of /primary. The store itself is read-only,
-// but a record that already carries the name (created before it was reserved)
-// must stay renamable and deletable: its writes go to record, which acts on it
-// as it would on /{name}. Without such a record the answer is the 405.
-func (h *AdminStorageHandler) primaryWrite(record http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !h.requireAdmin(w, r) {
-			return
-		}
+// legacyPrimaryRecord serves PATCH and DELETE of /primary. The store itself is
+// read-only, but a record that already carries the name (created before it was
+// reserved) must stay renamable and deletable: while one exists, the write is
+// for it, as it would be on /{name}, and legacyPrimaryRecord returns true after
+// pointing the request at it. Without such a record it answers the 405 (or
+// the error) itself and returns false.
+func (h *AdminStorageHandler) legacyPrimaryRecord(w http.ResponseWriter, r *http.Request) bool {
+	if !h.requireAdmin(w, r) {
+		return false
+	}
 
-		legacy, err := h.db.GetStorageBackend(r.Context(), primaryStorageName)
-		if err != nil {
-			h.log.Errorw("failed to get storage backend", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
+	legacy, err := h.db.GetStorageBackend(r.Context(), primaryStorageName)
+	if err != nil {
+		h.log.Errorw("failed to get storage backend", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
 
-			return
-		}
+		return false
+	}
 
-		rctx := chi.RouteContext(r.Context())
-		if legacy == nil || rctx == nil {
-			h.handlePrimaryReadOnly(w, r)
-			return
-		}
+	rctx := chi.RouteContext(r.Context())
+	if legacy == nil || rctx == nil {
+		h.handlePrimaryReadOnly(w, r)
+		return false
+	}
 
-		rctx.URLParams.Add("name", primaryStorageName)
-		record(w, r)
+	rctx.URLParams.Add("name", primaryStorageName)
+
+	return true
+}
+
+func (h *AdminStorageHandler) handlePrimaryUpdate(w http.ResponseWriter, r *http.Request) {
+	if h.legacyPrimaryRecord(w, r) {
+		h.handleUpdate(w, r)
+	}
+}
+
+func (h *AdminStorageHandler) handlePrimaryDelete(w http.ResponseWriter, r *http.Request) {
+	if h.legacyPrimaryRecord(w, r) {
+		h.handleDelete(w, r)
 	}
 }
 

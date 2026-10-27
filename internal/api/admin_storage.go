@@ -77,7 +77,7 @@ var storageSecretFields = []string{
 // A record that already has such a name (the check came later than the name)
 // stays in the list and keeps working where the static routes do not take the
 // method: PATCH and DELETE reach it, so it can be renamed or deleted by name
-// (for "primary" through primaryWrite). GET, and the test action of "primary",
+// (for "primary" through handlePrimaryUpdate and handlePrimaryDelete). GET, and the test action of "primary",
 // answer with the static route's response; the test action of a record named
 // "replication" still reaches it.
 func reservedStorageBackendName(name string) bool {
@@ -108,8 +108,8 @@ func (h *AdminStorageHandler) Register(r chi.Router) {
 	// The primary store is the server configuration, not a row: these static
 	// paths take precedence over /{name}, so the name is reserved.
 	r.Get("/api/v1/admin/storage/"+primaryStorageName, h.handleGetPrimary)
-	r.Patch("/api/v1/admin/storage/"+primaryStorageName, h.primaryWrite(h.handleUpdate))
-	r.Delete("/api/v1/admin/storage/"+primaryStorageName, h.primaryWrite(h.handleDelete))
+	r.Patch("/api/v1/admin/storage/"+primaryStorageName, h.handlePrimaryUpdate)
+	r.Delete("/api/v1/admin/storage/"+primaryStorageName, h.handlePrimaryDelete)
 	r.Post("/api/v1/admin/storage/"+primaryStorageName+"/test", h.handleTestPrimary)
 	r.Get("/api/v1/admin/storage/{name}", h.handleGet)
 	r.Patch("/api/v1/admin/storage/{name}", h.handleUpdate)
