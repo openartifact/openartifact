@@ -106,24 +106,12 @@ func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
 	// Revalidation is answered from the stamp alone: no chart is loaded and
 	// nothing is rendered.
 	etag := indexETag(repo.ID, repoName, h.BaseURL, stamp)
-	if base.Revalidate(w, r, repo.Public, etag, indexMaxAge) {
-		return
-	}
-
 	// The rendered index is cached under the stamp-derived ETag, so a changed
 	// chart set can never be served from an old rendering, and the charts are
 	// loaded and marshalled once per change instead of once per request.
-	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+	h.ServeRendered(w, r, repo.Public, etag, etag, indexMaxAge, func(ctx context.Context) (*base.Rendered, error) {
 		return h.renderIndex(ctx, repo.ID, repoName)
-	})
-	if err != nil {
-		h.Log.Errorw("failed to render index.yaml", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	rendered.Serve(w, r)
+	}, "failed to render index.yaml", "repo", repoName)
 }
 
 // renderIndex loads the live charts of a repository and renders index.yaml.

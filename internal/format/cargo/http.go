@@ -149,21 +149,10 @@ func (h *HTTPHandler) handleSparseIndex(w http.ResponseWriter, r *http.Request) 
 	sum := sha256.Sum256([]byte(repo.ID + "\x00" + strings.ToLower(crateName) + "\x00" + stamp))
 
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
-	if base.Revalidate(w, r, repo.Public, etag, indexMaxAge) {
-		return
-	}
 
-	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+	h.ServeRendered(w, r, repo.Public, etag, etag, indexMaxAge, func(ctx context.Context) (*base.Rendered, error) {
 		return h.renderSparseIndex(ctx, repo.ID, crateName)
-	})
-	if err != nil {
-		h.Log.Errorw("failed to render cargo index", "name", crateName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	rendered.Serve(w, r)
+	}, "failed to render cargo index", "name", crateName)
 }
 
 // indexMetadata is the part of the publish metadata a sparse index entry

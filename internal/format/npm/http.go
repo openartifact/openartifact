@@ -104,12 +104,7 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", "Accept")
 
 	// The ETag derives from the package row alone, so a revalidation is
-	// answered before loading and rendering every version.
-	if base.Revalidate(w, r, repo.Public, etag, packumentMaxAge) {
-		return
-	}
-
-	// The rendering is cached under the validator, qualified by what else shapes
+	// answered before loading and rendering every version. The rendering is cached under the validator, qualified by what else shapes
 	// the document (package, repository name and base URL for the tarball URLs).
 	// Everything that changes a packument marks the package row stale, which
 	// changes the ETag, so a cached document is never served past a change; the
@@ -117,17 +112,9 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 	// its key.
 	key := pkg.ID + "\x00" + etag + "\x00" + repoName + "\x00" + h.BaseURL
 
-	rendered, err := h.Rendered(r.Context(), key, func(ctx context.Context) (*base.Rendered, error) {
+	h.ServeRendered(w, r, repo.Public, etag, key, packumentMaxAge, func(ctx context.Context) (*base.Rendered, error) {
 		return h.renderPackument(ctx, repoName, pkgName, pkg.ID, abbreviated)
-	})
-	if err != nil {
-		h.Log.Errorw("failed to render packument", "pkg", pkgName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	rendered.Serve(w, r)
+	}, "failed to render packument", "pkg", pkgName)
 }
 
 // renderPackument loads a package's versions and dist-tags and builds its

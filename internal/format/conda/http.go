@@ -171,21 +171,10 @@ func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256([]byte(repo.ID + "\x00" + platform + "\x00" + stamp))
 
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
-	if base.Revalidate(w, r, repo.Public, etag, repodataMaxAge) {
-		return
-	}
 
-	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+	h.ServeRendered(w, r, repo.Public, etag, etag, repodataMaxAge, func(ctx context.Context) (*base.Rendered, error) {
 		return h.renderRepodata(ctx, repo.ID, platform)
-	})
-	if err != nil {
-		h.Log.Errorw("failed to render conda repodata", "repo", repoName, "platform", platform, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	rendered.Serve(w, r)
+	}, "failed to render conda repodata", "repo", repoName, "platform", platform)
 }
 
 // renderRepodata lists the live packages of one platform and encodes

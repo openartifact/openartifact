@@ -188,38 +188,10 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) serveIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository, dir dirKey) {
-	meta, err := h.DB.GetRepoMetadataByPath(r.Context(), repo.ID, dir.path()+"/"+IndexName)
-	if err != nil {
-		h.Log.Errorw("failed to load apk index metadata", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if meta == nil {
+	served := base.ServeRepoMetadata(w, r, h.Log, h.DB, h.BlobStore, repo, dir.path()+"/"+IndexName,
+		base.BlobOptions{ContentType: "application/gzip", MaxAge: indexMaxAgeSeconds, ContentLength: true})
+	if !served {
 		http.NotFound(w, r)
-		return
-	}
-
-	if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, indexMaxAgeSeconds) {
-		return
-	}
-
-	blob, err := h.BlobStore.Get(r.Context(), meta.BlobSHA256)
-	if err != nil {
-		h.Log.Errorw("failed to read apk index blob", "sha256", meta.BlobSHA256, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-	defer base.CloseLog(blob, h.Log)
-
-	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Length", strconv.FormatInt(meta.BlobSize, 10))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = iocopy.Copy(w, blob)
 	}
 }
 
