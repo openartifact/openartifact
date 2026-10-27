@@ -14,7 +14,6 @@ import (
 // Only the former may be redirected; metadata is always streamed so the server
 // keeps control of it (and clients re-validate it with plain conditional GETs).
 //
-//nolint:cyclop // one case per format
 func IsProxyBlobPath(format, relPath string) bool {
 	relPath = strings.TrimPrefix(relPath, "/")
 	base := path.Base(relPath)

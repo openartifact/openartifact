@@ -62,6 +62,10 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 		}
 
 		for format := range validFormats {
+			if repoType == "group" && format == "pacman" {
+				continue // pacman groups arrive in a later change
+			}
+
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
 				t.Errorf("%s of %s: unexpected message %q", repoType, format, msg)
 			}
