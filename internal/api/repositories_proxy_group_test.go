@@ -126,44 +126,23 @@ func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
 func TestCreateProxyDefaultUpstream(t *testing.T) {
 	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "")
 
-	db := newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"p","format":"pypi","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
-		db.created == nil || db.created.UpstreamURL != "https://pypi.org/simple" {
-		t.Errorf("pypi proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
-	}
-
-	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"p","format":"cargo","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
-		db.created == nil || db.created.UpstreamURL != "https://index.crates.io" {
-		t.Errorf("cargo proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
-	}
-
-	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"p","format":"go","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
-		db.created == nil || db.created.UpstreamURL != "https://proxy.golang.org" {
-		t.Errorf("go proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
-	}
-
-	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"p","format":"nuget","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
-		db.created == nil || db.created.UpstreamURL != "https://api.nuget.org/v3/index.json" {
-		t.Errorf("nuget proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
-	}
-
-	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"p","format":"rubygems","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
-		db.created == nil || db.created.UpstreamURL != "https://rubygems.org" {
-		t.Errorf("rubygems proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
-	}
-
-	db = newProxyGroupDB()
-	if rw := createRepo(t, db, `{"name":"p","format":"conan","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
-		db.created == nil || db.created.UpstreamURL != "https://center2.conan.io" {
-		t.Errorf("conan proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
+	for format, want := range map[string]string{
+		"pypi":     "https://pypi.org/simple",
+		"cargo":    "https://index.crates.io",
+		"go":       "https://proxy.golang.org",
+		"nuget":    "https://api.nuget.org/v3/index.json",
+		"rubygems": "https://rubygems.org",
+		"conan":    "https://center2.conan.io",
+	} {
+		db := newProxyGroupDB()
+		if rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
+			db.created == nil || db.created.UpstreamURL != want {
+			t.Errorf("%s proxy without upstream_url: status %d created %+v body %s", format, rw.Code, db.created, rw.Body.String())
+		}
 	}
 
 	// Formats without a well-known public upstream still require one.
-	db = newProxyGroupDB()
+	db := newProxyGroupDB()
 	if rw := createRepo(t, db, `{"name":"p","format":"maven","repo_type":"proxy"}`); rw.Code != http.StatusBadRequest || db.created != nil {
 		t.Errorf("maven proxy without upstream_url: status %d body %s", rw.Code, rw.Body.String())
 	}
