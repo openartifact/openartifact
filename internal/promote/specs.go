@@ -128,7 +128,7 @@ func rowSpecs() []rowSpec {
 			cols: []string{
 				"name", "base", "version", "arch", "repo_arch", "filename", "md5", "description", "url", "packager",
 				"build_date", "installed_size", "licenses", "package_groups", "replaces", "conflicts", "provides",
-				"depends", "optdepends", "makedepends", "checkdepends", "signature", "signature_source", "signature_key",
+				"depends", "optdepends", "makedepends", "checkdepends", "file_list", "signature", "signature_source", "signature_key",
 			},
 		},
 		{

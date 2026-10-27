@@ -9,7 +9,7 @@
 -- pair (a superset of the old list, added NOT VALID, so replicas of the previous
 -- version keep working and no table scan runs under the lock; the existing rows
 -- are validated in 089_pacman_validate.no_tx.sql), and the package table is
--- new, so no existing table is rewritten. Its live-row unique indexes are
+-- new, so no existing table is rewritten. Its live-row indexes are
 -- created together with the empty table.
 
 SET LOCAL lock_timeout = '10s';
@@ -63,8 +63,10 @@ CREATE TABLE pacman_packages (
     CONSTRAINT pacman_packages_signature_source_check CHECK (signature_source IN ('', 'uploader', 'server'))
 );
 
-CREATE UNIQUE INDEX pacman_packages_live_filename_key ON pacman_packages (repository_id, filename) WHERE deleted_at IS NULL;
+-- The coordinates fix the file name up to its compression, so one unique index
+-- also keeps a name, version and architecture from existing as .zst and .xz.
 CREATE UNIQUE INDEX pacman_packages_live_coords_key ON pacman_packages (repository_id, name, version, arch) WHERE deleted_at IS NULL;
+CREATE INDEX idx_pacman_packages_filename ON pacman_packages (repository_id, filename) WHERE deleted_at IS NULL;
 CREATE INDEX idx_pacman_packages_repo_created ON pacman_packages (repository_id, created_at DESC, id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_pacman_packages_blob_id ON pacman_packages (blob_id);
 CREATE INDEX idx_pacman_packages_deleted ON pacman_packages (deleted_at) WHERE deleted_at IS NOT NULL;
