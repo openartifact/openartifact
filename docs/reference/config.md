@@ -415,6 +415,18 @@ This page lists every configuration key with its type, built-in default and the 
 | `scanners.grype.install` | `OPENARTIFACT_GRYPE_INSTALL` | string | `none` | `install` is "none" (default) or "auto": download the pinned grype release into the cache directory when path is empty and grype is not on PATH. |
 | `scanners.grype.dbUrl` | `OPENARTIFACT_GRYPE_DB_URL` | string | `empty` | `dbUrl` is the database listing URL of a mirror (`GRYPE_DB_UPDATE_URL`). Empty is the upstream default. |
 
+## exploit
+
+`exploit` configures the KEV and EPSS feeds behind the exploitation signals of vulnerability findings.
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `exploit.enabled` | `OPENARTIFACT_EXPLOIT_ENABLED` | bool | `true` | `enabled` turns the daily import on. Off, findings carry no KEV or EPSS data and their priority is their severity. |
+| `exploit.kevUrl` | `OPENARTIFACT_EXPLOIT_KEV_URL` | string | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | `kevUrl` is the KEV catalog JSON (known_exploited_vulnerabilities.json); point it at a mirror in an air-gapped network. |
+| `exploit.epssUrl` | `OPENARTIFACT_EXPLOIT_EPSS_URL` | string | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` | `epssUrl` is the EPSS score file (epss_scores-current.csv.gz); a mirror serves the same gzip CSV. |
+| `exploit.interval` | `OPENARTIFACT_EXPLOIT_INTERVAL` | duration | `24h` | `interval` is the pause between imports, at least 1h. |
+| `exploit.epssThreshold` | `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | float | `0.1` | `epssThreshold` is the EPSS score (0..1) from which a finding that is not in KEV is prioritised above its severity. |
+
 ## osvMirror
 
 `osvMirror` configures the local OSV vulnerability mirror (see [security/scanning.md](../security/scanning.md)).

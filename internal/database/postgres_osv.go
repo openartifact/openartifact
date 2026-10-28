@@ -53,6 +53,11 @@ type OSVStore interface {
 	// of the normalized package names, keyed by that name.
 	ListOSVAdvisoriesForPackages(ctx context.Context, ecosystem string, namesNorm []string) (map[string][]models.OSVAdvisoryMatch, error)
 
+	// OSVCVEAliases returns, for each of the given advisory ids (or aliases)
+	// the mirror holds, the CVE ids among the aliases of its record; ids the
+	// mirror does not hold are absent, so an empty mirror yields an empty map.
+	OSVCVEAliases(ctx context.Context, ids []string) (map[string][]string, error)
+
 	// ListStoredPackages pages the package versions hosted repositories hold
 	// for a format (one row per repository, name and version), in (repository,
 	// name, version) order after the given position (nil: from the start).
@@ -477,6 +482,40 @@ func (p *PostgresDB) CountOSVAdvisories(ctx context.Context, ecosystem string) (
 	}
 
 	return n, nil
+}
+
+// OSVCVEAliases implements OSVStore.
+func (p *PostgresDB) OSVCVEAliases(ctx context.Context, ids []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+
+	rows, err := p.db.QueryContext(ctx, `
+		SELECT DISTINCT a.alias, c.alias
+		FROM osv_advisory_aliases a
+		JOIN osv_advisory_aliases c ON c.advisory_id = a.advisory_id AND c.alias LIKE 'CVE-%'
+		WHERE a.alias = ANY($1)
+		ORDER BY a.alias, c.alias`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("osv cve aliases: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id, cve string
+		if err := rows.Scan(&id, &cve); err != nil {
+			return nil, fmt.Errorf("scan osv cve alias: %w", err)
+		}
+
+		out[id] = append(out[id], cve)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("osv cve aliases: %w", err)
+	}
+
+	return out, nil
 }
 
 // ListOSVAdvisoriesForPackages implements OSVStore.

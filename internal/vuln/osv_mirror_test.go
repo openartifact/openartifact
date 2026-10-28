@@ -95,6 +95,10 @@ func TestMirrorMatch(t *testing.T) {
 		t.Fatalf("a fixed version and an unrelated package must have no findings: %v %v", res[2], res[3])
 	}
 
+	if got := res[0][0].Aliases; len(got) != 1 || got[0] != "CVE-2024-1" {
+		t.Fatalf("aliases = %v, want the mirror record's CVE alias", got)
+	}
+
 	if res[0][0].PublishedAt != "2024-01-02T03:04:05Z" {
 		t.Fatalf("published = %q", res[0][0].PublishedAt)
 	}

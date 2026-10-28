@@ -129,6 +129,7 @@ func findingFromAdvisory(adv *models.OSVAdvisory, fixed string) models.Vulnerabi
 		FixedIn:    fixed,
 		References: adv.Refs,
 		CWEs:       adv.CWEIDs,
+		Aliases:    cleanAliases(adv.ID, adv.Aliases),
 	}
 
 	if adv.Published != nil {

@@ -126,7 +126,7 @@ By default the `osv` scanner asks `api.osv.dev` about each package when you scan
 - The result is stored like a manual `osv` scan (scanner `osv`), so the [security inbox](findings.md), [VEX decisions](sbom.md#vex), [exports](#exporting-findings-sarif-csv-json) and [quarantine policies](#quarantine) work unchanged. The mirror never changes the quarantine flag of a package. When no advisory affects a version any more, the result shows 0 vulnerabilities (closed).
 - The first import of an ecosystem is a silent baseline: findings are created, but no per-finding webhook or audit entry is produced; one summary line is logged. From then on each package version with new advisories gets one [`vulnerability.new` webhook](../operations/webhooks.md) (up to 50 advisories listed) and a `scan.vuln_detected` audit entry; advisories that were withdrawn or stop affecting a version are recorded as `scan.vuln_resolved` (audit only, no webhook). See [audit log](../operations/monitoring.md#audit-log).
 - The `osv` scanner uses the mirror for an ecosystem once that ecosystem has completed an import; before that, and while the mirror is disabled, it queries `api.osv.dev`.
-- Finding ids are OSV ids. CVE aliases are kept in the `osv_advisory_aliases` table.
+- Finding ids are OSV ids. CVE aliases are kept in the `osv_advisory_aliases` table; findings carry them as `aliases`, and the [KEV and EPSS signals](exploit-signals.md) use the table to find the CVE of a finding that stored only a GHSA id.
 
 Side effect: the mirror writes its result as the newest `osv` scan of the package, and the inbox shows the newest job per artifact, so a mirror result can supersede an older manual scan of the same package there.
 

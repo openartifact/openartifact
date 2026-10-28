@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Scanning API
 
-33 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+35 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -557,7 +557,7 @@ Delete a vulnerability scan
 
 Export a vulnerability scan
 
-Findings of one scan as SARIF, CSV or JSON (admin only).
+Findings of one scan as SARIF, CSV or JSON (admin only). Every finding carries its exploitation signals: JSON as the fields of ExploitAnnotation, CSV as the last columns (`kev`, `kev_date_added`, `kev_due_date`, `epss`, `epss_percentile`, `priority`), SARIF in the result `properties` (`kev`, `kevDateAdded`, `kevDueDate`, `epss`, `epssPercentile`, `priority`, `cve`).
 
 **Parameters**
 
@@ -573,6 +573,31 @@ Findings of one scan as SARIF, CSV or JSON (admin only).
 |---|---|---|
 | `200` | The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans). | `application/json`: object; `application/sarif+json`: object; `text/csv`: string |
 | `400` | Unknown `format` or filter (`validation_failed`) | - |
+| `403` | Admin access required | - |
+| `404` | Scan not found | - |
+
+### `GET /api/v1/repositories/{name}/vuln/scans/{id}/gate`
+
+Check a vulnerability scan against exploitation criteria
+
+Quality gate on the exploitation signals of one scan's findings (admin only). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | - |
+| `id` | path | string (uuid) | yes | - |
+| `kev` | query | boolean | no | `true`: a finding in the KEV catalog fails the gate. `false` or absent: no condition. |
+| `epss_min` | query | number | no | A finding whose EPSS score is at least this value (0 to 1) fails the gate. Minimum: 0. Maximum: 1. |
+| `min_priority` | query | string | no | A finding whose priority is at least this one fails the gate (the order is `kev`, `epss`, `critical`, `high`, `medium`, `low`). One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The verdict, `pass` true or false (a failing gate is still HTTP 200). | `application/json`: [VulnGateResponse](schemas.md#vulngateresponse) |
+| `400` | No condition given, or an invalid value (`validation_failed`) | - |
 | `403` | Admin access required | - |
 | `404` | Scan not found | - |
 
@@ -606,11 +631,24 @@ Quarantine (`quarantined: true`) or release (`quarantined: false`) the artifact 
 | `403` | Admin access required | - |
 | `404` | Repository or scan not found | - |
 
+### `GET /api/v1/security/exploit-feeds`
+
+State of the exploitation-signal feeds
+
+Admin only. What is loaded from the CISA KEV catalog and the FIRST EPSS scores, when they were last imported and checked, and the last error. Both feeds are always listed; a feed that was never loaded has an empty `version` and `source_url`, 0 entries and null dates.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The feeds | `application/json`: [ExploitFeedsResponse](schemas.md#exploitfeedsresponse) |
+| `403` | Admin access required | - |
+
 ### `GET /api/v1/security/findings`
 
 List security findings of all repositories
 
-Vulnerability, license, secret and AI findings across repositories, worst first: highest severity, then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
+Vulnerability, license, secret and AI findings across repositories, worst first: highest severity (or, with `sort=priority`, exploit priority), then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
 
 **Parameters**
 
@@ -622,6 +660,10 @@ Vulnerability, license, secret and AI findings across repositories, worst first:
 | `severity` | query | string | no | Only findings whose highest severity is exactly this one (the summary strip counts the same way). One of: `critical`, `high`, `medium`, `low`. |
 | `status` | query | string | no | Only findings in this state. One of: `open`, `quarantined`, `suppressed`. |
 | `q` | query | string | no | Case-insensitive substring of the repository name or of `name@version`. |
+| `sort` | query | string | no | Order: `severity` (default: highest severity, newest scan, id) or `priority` (exploit rank first: findings with a vulnerability in the CISA KEV catalog, then those whose highest EPSS score reaches the configured threshold, then by severity; same tie-breakers). A cursor only works under the sort it was issued for (400 otherwise). One of: `severity`, `priority`. Default: `severity`. |
+| `kev` | query | boolean | no | `true`: only findings with at least one vulnerability in the CISA KEV catalog; `false`: only those without. Only vulnerability findings can be in KEV: the other types have `kev_count` 0, so `kev=true` drops them. |
+| `epss_min` | query | number | no | Only findings whose highest EPSS score (`max_epss`) is at least this value. Findings without a score, including every non-vulnerability finding, are dropped. Minimum: 0. Maximum: 1. |
+| `priority` | query | string | no | Only findings whose `priority` is exactly this one. `kev` and `epss` can only match vulnerability findings; the severity priorities match the findings of every type whose highest severity it is and that are neither in KEV nor at the EPSS threshold. One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`. |
 | `limit` | query | integer | no | Page size, default 50. Minimum: 1. Maximum: 200. |
 | `cursor` | query | string | no | Opaque `next_cursor` of the previous page. |
 
@@ -645,7 +687,7 @@ Fields of the `200` response (`application/json`):
 
 Export security findings
 
-Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
+Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. The CSV ends with the columns `kev_count`, `max_epss` and `priority` (the same fields as the list; the JSON findings carry them too); `sort`, `kev`, `epss_min` and `priority` select and order like the list. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.
 
 **Parameters**
 
@@ -657,6 +699,10 @@ Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX
 | `severity` | query | string | no | Only findings whose highest severity is exactly this one (the summary strip counts the same way). One of: `critical`, `high`, `medium`, `low`. |
 | `status` | query | string | no | Only findings in this state. One of: `open`, `quarantined`, `suppressed`. |
 | `q` | query | string | no | Case-insensitive substring of the repository name or of `name@version`. |
+| `sort` | query | string | no | Order: `severity` (default: highest severity, newest scan, id) or `priority` (exploit rank first: findings with a vulnerability in the CISA KEV catalog, then those whose highest EPSS score reaches the configured threshold, then by severity; same tie-breakers). A cursor only works under the sort it was issued for (400 otherwise). One of: `severity`, `priority`. Default: `severity`. |
+| `kev` | query | boolean | no | `true`: only findings with at least one vulnerability in the CISA KEV catalog; `false`: only those without. Only vulnerability findings can be in KEV: the other types have `kev_count` 0, so `kev=true` drops them. |
+| `epss_min` | query | number | no | Only findings whose highest EPSS score (`max_epss`) is at least this value. Findings without a score, including every non-vulnerability finding, are dropped. Minimum: 0. Maximum: 1. |
+| `priority` | query | string | no | Only findings whose `priority` is exactly this one. `kev` and `epss` can only match vulnerability findings; the severity priorities match the findings of every type whose highest severity it is and that are neither in KEV nor at the EPSS threshold. One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`. |
 | `format` | query | string | no | `csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings). One of: `csv`, `json`, `vex`. Default: `json`. |
 
 **Responses**
@@ -718,7 +764,7 @@ Import state of the local OSV advisory mirror (admin only): the export location,
 
 List vulnerability scans of all repositories
 
-Overview of the vulnerability scans of every repository (admin only), worst first: most critical findings, then high, medium and low, then newest, then id. Keyset paging: follow `next_cursor` while `has_more` is true; no row is counted. Rows carry no findings. The cursor is bound to the order, not to the filters: send the same filters with it.
+Overview of the vulnerability scans of every repository (admin only), worst first: most critical findings, then high, medium and low, then newest, then id; with `sort=priority` the priority rank (KEV, then EPSS, then the severity) leads. Keyset paging: follow `next_cursor` while `has_more` is true; no row is counted. Rows carry no findings but their `kev_count`, `max_epss` and `priority`. The cursor is bound to the sort, not to the filters: send the same sort and filters with it.
 
 **Parameters**
 
@@ -729,6 +775,10 @@ Overview of the vulnerability scans of every repository (admin only), worst firs
 | `status` | query | string | no | Only scans in this state; `scanning` is pending or running. One of: `completed`, `partial`, `failed`, `scanning`. |
 | `scanner` | query | string | no | Only scans run by this scanner (a scan run by several matches each). One of: `osv`, `trivy`, `grype`. |
 | `quarantined` | query | boolean | no | Only quarantined (`true`) or not quarantined (`false`) scans. |
+| `sort` | query | string | no | `severity` (default): most critical findings first, then high, medium and low. `priority`: priority rank first (`kev`, then `epss`, then the severity), then the severity order. A cursor is bound to its sort: it is rejected (`validation_failed`) under the other one. One of: `severity`, `priority`. Default: `severity`. |
+| `kev` | query | boolean | no | `true`: only scans with a finding in the CISA KEV catalog; `false`: only scans without one. |
+| `epss_min` | query | number | no | Only scans whose highest EPSS score is at least this value (0 to 1); unscored scans never match. Minimum: 0. Maximum: 1. |
+| `priority` | query | string | no | Only scans whose priority equals this one (an exact match, not a minimum): `kev` (a finding is in KEV), `epss` (no KEV finding, EPSS at or above the server threshold) or the worst severity. One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`. |
 | `limit` | query | integer | no | Page size, default 25. Minimum: 1. Maximum: 100. |
 | `cursor` | query | string | no | Opaque `next_cursor` of the previous page. |
 
@@ -752,7 +802,7 @@ Fields of the `200` response (`application/json`):
 
 Export vulnerability scans of all repositories
 
-Findings of every scan the overview filters select (admin only), as SARIF, CSV or JSON. No paging: at most 2000 scans are read.
+Findings of every scan the overview filters select (admin only), as SARIF, CSV or JSON, with the exploitation signals of each finding as in the single-scan export. No paging: at most 2000 scans are read.
 
 **Parameters**
 
@@ -763,6 +813,10 @@ Findings of every scan the overview filters select (admin only), as SARIF, CSV o
 | `status` | query | string | no | One of: `completed`, `partial`, `failed`, `scanning`. |
 | `scanner` | query | string | no | One of: `osv`, `trivy`, `grype`. |
 | `quarantined` | query | boolean | no | - |
+| `sort` | query | string | no | Order of the scans, as in the overview list: `severity` (default) or `priority`. One of: `severity`, `priority`. Default: `severity`. |
+| `kev` | query | boolean | no | `true`: only scans with a finding in the CISA KEV catalog; `false`: only scans without one. |
+| `epss_min` | query | number | no | Only scans whose highest EPSS score is at least this value (0 to 1). Minimum: 0. Maximum: 1. |
+| `priority` | query | string | no | Only scans whose priority equals this one (an exact match). One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`. |
 | `format` | query | string | no | `sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default). One of: `sarif`, `csv`, `json`. Default: `json`. |
 
 **Responses**
