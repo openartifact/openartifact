@@ -26,7 +26,7 @@ type NixKeyHandler struct {
 func NewNixKeyHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, keys *nixkeys.Service) *NixKeyHandler {
 	return &NixKeyHandler{signingKeyAdmin[nixkeys.Info]{
 		db: db, log: log, evaluator: evaluator, keys: keys,
-		format: "nix", route: "nix-key", noun: "nix signing key",
+		format: "nix", route: "nix-key", noun: "nix signing key", groups: true,
 		respond:  func(i *nixkeys.Info) any { return nixKeyResponseOf(i) },
 		describe: func(i *nixkeys.Info) string { return "key " + i.KeyName },
 		mapError: func(w http.ResponseWriter, err error) bool {

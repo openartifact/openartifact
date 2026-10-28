@@ -170,6 +170,16 @@ describe('nix', () => {
     expect(setup!.configure).toContain('--option require-sigs true')
     expect(setup!.publish).toBe("nix copy --to 'https://oa.example:8443/repos/cache' /nix/store/HASH-NAME")
   })
+
+  it('trusts the upstream key for a proxy and the group key for a group, both read-only', () => {
+    const [proxy] = clientSetup('nix', origin, 'cache', 'proxy')
+    expect(proxy!.configure).toContain('extra-trusted-public-keys = cache.nixos.org-1:')
+    expect(proxy!.publish).toBeUndefined()
+    const [group] = clientSetup('nix', origin, 'cache', 'group')
+    expect(group!.configure).toContain('extra-trusted-public-keys = $(curl -fsS https://oa.example:8443/repos/cache/public.key)')
+    expect(group!.configure).toContain('cache.nixos.org-1:')
+    expect(group!.publish).toBeUndefined()
+  })
 })
 
 describe('apk', () => {

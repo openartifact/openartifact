@@ -19,7 +19,6 @@ package nix
 import (
 	"context"
 	"encoding/hex"
-	"hash/fnv"
 	"net/http"
 	"slices"
 	"strconv"
@@ -229,9 +228,9 @@ func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string,
 
 	switch {
 	case rt.kind == routeCacheInfo:
-		serveText(w, r, "StoreDir: "+nix.StoreDir+"\nWantMassQuery: 1\nPriority: "+strconv.Itoa(cachePriority)+"\n")
+		ServeCacheInfo(w, r)
 	case rt.kind == routePublicKey:
-		h.servePublicKey(w, r, repo)
+		ServePublicKey(w, r, h.Log, h.keys, repo)
 	case rt.kind == routeNarInfo && r.Method == http.MethodPut:
 		middleware.CountUploads(h.metrics, metrics.FormatNix, func(w http.ResponseWriter, r *http.Request) {
 			h.putNarInfo(w, r, repo, rt.arg)
@@ -263,34 +262,6 @@ func serveText(w http.ResponseWriter, r *http.Request, body string) {
 	}
 }
 
-// servePublicKey answers the "name:base64" line a client puts into
-// trusted-public-keys.
-func (h *HTTPHandler) servePublicKey(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	key, err := h.signingKey(r.Context(), repo)
-	if err != nil {
-		h.Log.Errorw("failed to load nix signing key", "repo", repo.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if key == nil {
-		http.Error(w, "this repository has no signing key (OPENARTIFACT_SECRET_KEY is not set)", http.StatusNotFound)
-		return
-	}
-
-	serveText(w, r, key.PublicKey()+"\n")
-}
-
-// signingKey returns the repository's key, nil when there is none to sign with.
-func (h *HTTPHandler) signingKey(ctx context.Context, repo *models.Repository) (*nix.SecretKey, error) {
-	if h.keys == nil {
-		return nil, nil //nolint:nilnil // no provider: unsigned
-	}
-
-	return h.keys.SecretKeyForRepo(ctx, repo)
-}
-
 // pathNarInfo builds the narinfo of a stored path, with the repository's
 // signature added to the ones the uploader supplied.
 func (h *HTTPHandler) pathNarInfo(ctx context.Context, repo *models.Repository, p *models.NixPath) (*nix.NarInfo, error) {
@@ -313,26 +284,17 @@ func (h *HTTPHandler) pathNarInfo(ctx context.Context, repo *models.Repository, 
 		CA:          p.CA,
 	}
 
-	key, err := h.signingKey(ctx, repo)
+	key, err := SigningKey(ctx, h.keys, repo)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, sig := range p.Signatures {
-		// The repository signs with its current key: an uploaded signature by a
-		// key of the same name is from an earlier generation of it.
-		if key == nil || !strings.HasPrefix(sig, key.Name()+":") {
-			n.Sigs = append(n.Sigs, sig)
-		}
-	}
+	n.Sigs = slices.Clone(p.Signatures)
 
 	if key != nil {
-		sig, signErr := key.Sign(n)
-		if signErr != nil {
-			return nil, signErr
+		if err = SignNarInfo(n, key); err != nil {
+			return nil, err
 		}
-
-		n.Sigs = append(n.Sigs, sig)
 	}
 
 	return n, nil
@@ -364,22 +326,7 @@ func (h *HTTPHandler) serveNarInfo(w http.ResponseWriter, r *http.Request, repo 
 		return
 	}
 
-	body := n.String()
-	// A validator, not a security digest: the body changes with the signing key.
-	tag := fnv.New128a()
-	_, _ = tag.Write([]byte(body))
-
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(tag.Sum(nil))+`"`, narinfoMaxAge) {
-		return
-	}
-
-	w.Header().Set("Content-Type", contentTypeNarInfo)
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write([]byte(body))
-	}
+	WriteNarInfo(w, r, repo.Public, n.String())
 }
 
 func (h *HTTPHandler) serveNar(w http.ResponseWriter, r *http.Request, repo *models.Repository, file string) {

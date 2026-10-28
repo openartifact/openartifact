@@ -15,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/base"
+	formatnix "github.com/openartifact/openartifact/internal/format/nix"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -51,6 +52,8 @@ type Handler struct {
 	metadata MetadataGenerator
 	// apkKeys serves the public key of an apk group (WithApkKeys).
 	apkKeys formatapk.KeyProvider
+	// nixKeys signs the narinfo a nix group serves (WithNixKeys).
+	nixKeys formatnix.KeyProvider
 }
 
 // NewHandler creates the group handler.
@@ -116,8 +119,8 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget, rubygems, conan, conda, terraform, deb, rpm, apk, pacman) merges over its members; false
-// means the request is a plain first-hit one.
+// (maven, pypi, npm, helm, cargo, go, nuget, rubygems, conan, conda, terraform, deb, rpm, apk, pacman) merges over its members, or
+// answers itself (nix); false means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -160,6 +163,10 @@ func (h *Handler) serveMerged(
 		return true
 	case "apk":
 		h.serveApk(w, r, grp, readable, relPath, be)
+
+		return true
+	case "nix":
+		h.serveNix(w, r, grp, readable, relPath, be)
 
 		return true
 	}

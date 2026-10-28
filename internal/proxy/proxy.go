@@ -564,6 +564,8 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 	switch {
 	case isIvyFormat(repo.Format):
 		o = s.ivyFetchOpts(ctx, repo, key)
+	case repo.Format == "nix":
+		return s.fetchNix(ctx, repo, key, target)
 	case repo.Format == "apk":
 		if o, err = s.apkFetchOpts(ctx, repo, key); err != nil {
 			return nil, err
@@ -870,7 +872,7 @@ func (s *Service) store(
 // persist stores the spooled body (hashing to sum) in the blob store and
 // records the blobs row and cache entry. The upload runs outside the per-blob
 // lock; see storage.CommitBlobs.
-func (s *Service) persist(ctx context.Context, spool *os.File, sum, mediaType string, entry *models.ProxyCacheEntry) error {
+func (s *Service) persist(ctx context.Context, spool io.ReadSeeker, sum, mediaType string, entry *models.ProxyCacheEntry) error {
 	blob := storage.SeekerBlob(sum, spool, map[string]string{"sha256": sum, "content-type": mediaType})
 
 	return storage.CommitBlob(ctx, s.db, s.blobStore, blob, func(ctx context.Context, key string) error {
@@ -965,6 +967,8 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 //     applies.
 //   - pacman: nothing. A mirror may republish a package file name, so package
 //     files use the repository TTL.
+//   - nix: nar/ files, cached only after their body matched the FileHash and
+//     FileSize of their narinfo (nix.go); narinfo and nix-cache-info move.
 //   - apk: `.apk` files of a `<branch>/<repo>/<arch>/<file>` key; they are
 //     only cached once their checksum matched the upstream index (apk.go).
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
@@ -1020,6 +1024,10 @@ func Immutable(format, key string) bool {
 		// Provider zips, checked against the SHA256SUMS and package document
 		// checksums; module archives have no checksum upstream (see terraform.go).
 		return tfProviderZipKey(key)
+	case "nix":
+		// NARs, which are only cached once they matched the FileHash and
+		// FileSize of their narinfo (nix.go); narinfo and cache-info move.
+		return nixNarKey(key)
 	}
 
 	return false
@@ -1099,6 +1107,8 @@ func isMetadataKey(format, key string) bool {
 		return !tfArchiveKey(key)
 	case "pacman":
 		return isPacmanDatabase(key)
+	case "nix":
+		return nixMetadataKey(key)
 	}
 
 	return false
@@ -1149,6 +1159,7 @@ var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only ta
 	"maven":  {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
 	"deb":    {".deb", ".udeb"},
 	"rpm":    {".rpm"},
+	"nix":    {".nar", ".nar.xz", ".nar.zst", ".nar.bz2", ".nar.br", ".nar.gz", ".nar.lz4"},
 	"pacman": {".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar.bz2", ".pkg.tar.lz4", ".pkg.tar"},
 	"ivy":    ivyPackageExts,
 	"sbt":    ivyPackageExts,

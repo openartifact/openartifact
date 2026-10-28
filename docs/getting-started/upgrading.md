@@ -89,6 +89,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 Migrations `091` and `092`, rolling-safe (`092` adds tables and widens the format check without validating in the same transaction).
 
+- **Nix proxy and group repositories.** `repo_type: proxy` (default upstream `https://cache.nixos.org`; narinfo and `nix-cache-info` cached, NARs cached only after they match the narinfo `FileHash`/`FileSize`) and `repo_type: group` are now accepted for the `nix` format. A group asks hosted members first, appends its own signature to narinfo from hosted members and passes proxy members' narinfo through unchanged; the nix-key API now also works for group repositories. See [Nix](../formats/nix.md#proxy). No migration.
 - **The `storage_backends.is_default` column and its `idx_storage_backends_default` index are dropped.** Nothing has read or written them since 0.13.0 (migration `087`), so 0.13.x replicas keep serving during the rollout. 0.12.x pods still referenced the column: **upgrade from 0.12.x through 0.13.x first**, then to this release. No action required otherwise.
 
 - **New format: Nix (`nix`), hosted.** `format: nix` repositories are Nix binary caches served at `HOST/repos/REPO`; publish with `nix copy --to`. `.narinfo` files are signed with a per-repository ed25519 key (`GET`/`POST /api/v1/repositories/{name}/nix-key`, needs `OPENARTIFACT_SECRET_KEY`). Proxy and group repositories follow later. See [Nix](../formats/nix.md).

@@ -128,19 +128,21 @@ func mustFields(t *testing.T, b []byte) map[string]json.RawMessage {
 	return m
 }
 
+func newNixKeyDB() *nixKeyMockDB {
+	return &nixKeyMockDB{
+		repos: map[string]*models.Repository{
+			"hosted": {ID: "h1", Name: "hosted", Format: "nix", RepoType: "hosted"},
+			"group":  {ID: "g1", Name: "group", Format: "nix", RepoType: "group"},
+			"proxy":  {ID: "p1", Name: "proxy", Format: "nix", RepoType: "proxy"},
+			"debs":   {ID: "d1", Name: "debs", Format: "deb", RepoType: "hosted"},
+		},
+		keys: map[string]*models.NixSigningKey{},
+	}
+}
+
 func TestNixKeyAPI(t *testing.T) {
 	admin := &auth.Principal{IsLegacy: true}
-	newDB := func() *nixKeyMockDB {
-		return &nixKeyMockDB{
-			repos: map[string]*models.Repository{
-				"hosted": {ID: "h1", Name: "hosted", Format: "nix", RepoType: "hosted"},
-				"group":  {ID: "g1", Name: "group", Format: "nix", RepoType: "group"},
-				"proxy":  {ID: "p1", Name: "proxy", Format: "nix", RepoType: "proxy"},
-				"debs":   {ID: "d1", Name: "debs", Format: "deb", RepoType: "hosted"},
-			},
-			keys: map[string]*models.NixSigningKey{},
-		}
-	}
+	newDB := newNixKeyDB
 
 	t.Run("without OPENARTIFACT_SECRET_KEY", func(t *testing.T) {
 		rec := nixKeyRequest(t, newDB(), admin, http.MethodGet, "hosted", "")
@@ -163,8 +165,6 @@ func TestNixKeyAPI(t *testing.T) {
 			status             int
 		}{
 			"proxy has no key":           {http.MethodGet, "proxy", "", http.StatusBadRequest},
-			"group has no key yet":       {http.MethodGet, "group", "", http.StatusBadRequest},
-			"group cannot be rotated":    {http.MethodPost, "group", "", http.StatusBadRequest},
 			"other format":               {http.MethodGet, "debs", "", http.StatusBadRequest},
 			"unknown repository":         {http.MethodGet, "nope", "", http.StatusNotFound},
 			"key name without a key":     {http.MethodPost, "hosted", `{"key_name":"x-1"}`, http.StatusBadRequest},
@@ -219,4 +219,31 @@ func TestNixKeyAPI(t *testing.T) {
 			t.Errorf("GET after import = %+v", read)
 		}
 	})
+}
+
+func TestNixKeyAPIGroupHasAKeyOfItsOwn(t *testing.T) {
+	if err := crypto.Init(strings.Repeat("s", 32)); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = crypto.Init("") })
+
+	admin := &auth.Principal{IsLegacy: true}
+	db := newNixKeyDB()
+
+	hosted := decodeNixKey(t, nixKeyRequest(t, db, admin, http.MethodGet, "hosted", ""))
+
+	first := decodeNixKey(t, nixKeyRequest(t, db, admin, http.MethodGet, "group", ""))
+	if first.KeyName != "openartifact-group-1" || first.PublicKey == hosted.PublicKey {
+		t.Errorf("group key = %+v, hosted key = %+v", first, hosted)
+	}
+
+	rotated := decodeNixKey(t, nixKeyRequest(t, db, admin, http.MethodPost, "group", ""))
+	if rotated.KeyName != "openartifact-group-2" || rotated.PublicKey == first.PublicKey {
+		t.Errorf("rotated group key = %+v", rotated)
+	}
+
+	if db.keys["g1"] == nil || db.keys["h1"] == nil {
+		t.Error("the group and the hosted repository must each store a key")
+	}
 }

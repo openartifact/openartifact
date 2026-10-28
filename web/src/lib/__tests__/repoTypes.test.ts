@@ -14,10 +14,10 @@ import {
 } from '../repoTypes'
 
 describe('allowedFormats', () => {
-  it('offers nix for hosted repositories only', () => {
+  it('offers nix for hosted, proxy and group repositories', () => {
     expect(allowedFormats('hosted')).toContain('nix')
-    expect(allowedFormats('proxy')).not.toContain('nix')
-    expect(allowedFormats('group')).not.toContain('nix')
+    expect(allowedFormats('proxy')).toContain('nix')
+    expect(allowedFormats('group')).toContain('nix')
   })
   it('offers pacman for hosted, proxy and group repositories', () => {
     expect(allowedFormats('hosted')).toContain('pacman')
@@ -27,11 +27,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman'])
+  it('restricts proxy to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix'])
   })
-  it('restricts group to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman'])
+  it('restricts group to apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)
@@ -79,6 +79,8 @@ describe('upstream URL', () => {
     expect(upstreamUrlRequired('ivy')).toBe(true)
     expect(upstreamUrlPlaceholder('conan')).toBe('https://center2.conan.io')
     expect(upstreamUrlPlaceholder('rubygems')).toBe('https://rubygems.org')
+    expect(upstreamUrlRequired('nix')).toBe(false)
+    expect(upstreamUrlPlaceholder('nix')).toBe('https://cache.nixos.org')
     expect(upstreamUrlRequired('pacman')).toBe(false)
     expect(upstreamUrlPlaceholder('pacman')).toBe('https://geo.mirror.pkgbuild.com')
     expect(upstreamUrlPlaceholder('apk')).toBe('https://dl-cdn.alpinelinux.org/alpine')
