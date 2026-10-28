@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+Migration `091`, rolling-safe.
+
+- **The `storage_backends.is_default` column and its `idx_storage_backends_default` index are dropped.** Nothing has read or written them since 0.13.0 (migration `087`), so 0.13.x replicas keep serving during the rollout. 0.12.x pods still referenced the column: **upgrade from 0.12.x through 0.13.x first**, then to this release. No action required otherwise.
+
 ### 0.13.2
 
 No migrations.

@@ -1,7 +1,3 @@
--- storage_backends.is_default is no longer read or written: the primary store
--- comes from the server configuration, and the column is dropped by a later
--- contract migration once no 0.12 pod runs.
-
 -- name: CreateStorageBackend :exec
 INSERT INTO storage_backends (id, name, kind, config, status, status_message, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
