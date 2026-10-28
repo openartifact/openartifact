@@ -86,6 +86,22 @@ func New(level, format, outputPath string) (*Logger, error) {
 	return &Logger{sugaredLogger}, nil
 }
 
+// Tee returns a logger that writes every entry to l's output and to core. core
+// receives only the entries l writes (l's level applies to it as well); l is
+// unchanged.
+func (l *Logger) Tee(core zapcore.Core) (*Logger, error) {
+	base := l.Desugar()
+
+	leveled, err := zapcore.NewIncreaseLevelCore(core, zapcore.LevelOf(base.Core()))
+	if err != nil {
+		return nil, fmt.Errorf("tee logger: %w", err)
+	}
+
+	tee := zap.WrapCore(func(c zapcore.Core) zapcore.Core { return zapcore.NewTee(c, leveled) })
+
+	return &Logger{base.WithOptions(tee).Sugar()}, nil
+}
+
 // Sync flushes any buffered log entries.
 func (l *Logger) Sync() error {
 	return l.SugaredLogger.Sync()
