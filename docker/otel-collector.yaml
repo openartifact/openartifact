@@ -35,6 +35,17 @@ processors:
     limit_percentage: 80
     spike_limit_percentage: 20
   batch: {}
+  # Masks what the browser can put into error events and spans: URLs, and
+  # query strings in messages and stack traces (docs/operations/monitoring.md,
+  # "Frontend telemetry"). It applies to the server's own traces and logs too.
+  redaction/frontend:
+    allow_all_keys: true
+    blocked_key_patterns:
+      - '^url\.(full|path|query)$'
+      - '^browser\.document\.url\.'
+    blocked_values:
+      - '[?&][^=&\s]+=[^&\s)]*'
+    summary: silent
 
 exporters:
   otlp_http:
@@ -46,7 +57,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, redaction/frontend, batch]
       exporters: [otlp_http]
     metrics:
       receivers: [otlp]
@@ -54,5 +65,5 @@ service:
       exporters: [otlp_http]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, redaction/frontend, batch]
       exporters: [otlp_http]

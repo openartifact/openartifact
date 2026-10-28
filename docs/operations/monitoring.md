@@ -309,7 +309,7 @@ OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
 The server only speaks OTLP. Batching, retries, queueing, redaction and routing to one or more backends belong in an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (the `otelcol-contrib` distribution) running next to it, so only the Collector needs egress.
 
-[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`; `OTELCOL_LISTEN_HOST` changes the bind address), the `memory_limiter` and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
+[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`; `OTELCOL_LISTEN_HOST` changes the bind address), the `memory_limiter`, `redaction/frontend` (see [Frontend telemetry](#frontend-telemetry-experimental)) and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
 
 The compose file runs it as the opt-in `otel-collector` profile: a separate service on the compose network, listening on `0.0.0.0` there with no published ports, so the server's default endpoint `http://otel-collector:4317` reaches it and either container can restart on its own. In `docker/.env`:
 
@@ -355,7 +355,7 @@ The browser never talks to the Collector. It posts OTLP/HTTP protobuf to a same-
 
 `GET /api/v1/telemetry/frontend` tells a signed-in UI whether to load the SDK: `{"enabled": true, "sample_ratio": ...}`, or `404` while off. `sample_ratio` is `otlp.sampleRatio`: the UI samples its traces with it, so its `traceparent` cannot make the server record more than it would on its own.
 
-The relay does not parse or filter the payload: redaction belongs in the Collector. Add a `redaction` processor to the traces and logs pipelines of [`docker/otel-collector.yaml`](../../docker/otel-collector.yaml); it masks URLs the browser could record and query strings in error messages and stack traces:
+The relay does not parse or filter the payload: redaction belongs in the Collector. [`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) already has a `redaction` processor on its traces and logs pipelines, so the compose profile does not export raw stack traces; it masks URLs the browser could record and query strings in error messages and stack traces. With another Collector, add the same processor:
 
 ```yaml
 processors:
