@@ -85,11 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### Unreleased
+### 0.13.2
 
 No migrations.
 
 - **New optional `server.shutdownDelay`** (`SERVER_SHUTDOWN_DELAY`, seconds, default `0`) fixes the few failed requests during a Kubernetes rolling update. On `SIGTERM`/`SIGINT` the server now flips `/ready` to `503` first (`/health` stays `200`), turns HTTP keep-alives off and keeps serving for the delay so the Service drops the pod from its endpoints before the listener closes; a second signal skips the delay. With the default `0` nothing changes. If you set it, keep `terminationGracePeriodSeconds` at or above `shutdownDelay + shutdownTimeout` plus about 20 s. See [graceful shutdown](../operations/monitoring.md#graceful-shutdown-and-rolling-updates).
+- **A new metric counts OTLP log records dropped on a full export queue**: `openartifact_telemetry_log_records_dropped_total`, by instrumentation scope. When the log export queue is full the newest record is now dropped (and counted) instead of silently overwriting the oldest. Only relevant if you export logs or audit events over OTLP (`telemetry.otlp.logs` / `telemetry.otlp.audit`); no action needed.
 
 ### 0.13.1
 
