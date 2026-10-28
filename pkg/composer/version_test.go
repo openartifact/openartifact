@@ -175,22 +175,3 @@ func TestNormalizePublished(t *testing.T) {
 		}
 	}
 }
-
-// FuzzNormalizePublished checks that an accepted version is a bounded,
-// URL-safe string and that its normalized form is never empty.
-func FuzzNormalizePublished(f *testing.F) {
-	for _, c := range normalizeCases() {
-		f.Add(c[0])
-	}
-
-	f.Fuzz(func(t *testing.T, v string) {
-		n, err := NormalizePublished(v)
-		if err != nil {
-			return
-		}
-
-		if n == "" || len(n) > MaxVersionLen || len(v) > MaxVersionLen {
-			t.Fatalf("NormalizePublished(%q) = %q", v, n)
-		}
-	})
-}

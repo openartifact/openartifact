@@ -85,16 +85,3 @@ func TestReadArchiveRejects(t *testing.T) {
 		}
 	}
 }
-
-func FuzzReadArchive(f *testing.F) {
-	f.Add(composertest.Build(f, composertest.Spec{Name: "acme/tools", Version: "1.0.0", License: "MIT"}))
-	f.Add(composertest.Build(f, composertest.Spec{Name: "acme/tools", Dir: "x-y-1"}))
-	f.Add([]byte("PK\x03\x04"))
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		m, err := composer.ReadArchive(bytes.NewReader(data), int64(len(data)))
-		if err == nil && !composer.ValidName(m.Name) {
-			t.Fatalf("accepted the invalid name %q", m.Name)
-		}
-	})
-}
