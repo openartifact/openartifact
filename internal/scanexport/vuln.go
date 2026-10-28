@@ -6,11 +6,13 @@ package scanexport
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/vuln"
 )
 
@@ -18,6 +20,46 @@ import (
 type VulnItem struct {
 	Repo string
 	Scan *models.VulnScanResult
+	// Annotations are the exploitation signals of Scan.Vulnerabilities, index
+	// for index; empty when the findings were not annotated.
+	Annotations []exploit.Annotation
+}
+
+// annotation returns the annotation of finding i, or false when the item has none.
+func (it VulnItem) annotation(i int) (exploit.Annotation, bool) {
+	if len(it.Annotations) != len(it.Scan.Vulnerabilities) {
+		return exploit.Annotation{}, false
+	}
+
+	return it.Annotations[i], true
+}
+
+// annotationProps are the SARIF result properties of a finding's exploitation
+// signals.
+func annotationProps(a exploit.Annotation) map[string]any {
+	props := map[string]any{"kev": a.KEV, "priority": string(a.Priority)}
+
+	if a.CVE != "" {
+		props["cve"] = a.CVE
+	}
+
+	if a.KEVDateAdded != nil {
+		props["kevDateAdded"] = *a.KEVDateAdded
+	}
+
+	if a.KEVDueDate != nil {
+		props["kevDueDate"] = *a.KEVDueDate
+	}
+
+	if a.EPSS != nil {
+		props["epss"] = *a.EPSS
+	}
+
+	if a.EPSSPercentile != nil {
+		props["epssPercentile"] = *a.EPSSPercentile
+	}
+
+	return props
 }
 
 //nolint:gochecknoglobals // immutable tool metadata
@@ -114,9 +156,22 @@ func VulnSARIF(items []VulnItem) (*Log, bool) {
 		purl := vuln.PackageURL(s.Ecosystem, s.PackageName, s.PackageVersion)
 		uri := artifactURI(it.Repo, s.ArtifactID)
 
-		for _, v := range s.Vulnerabilities {
+		for i, v := range s.Vulnerabilities {
 			id := ruleID(v.ID)
 			level, _ := levelAndScore(v.Severity)
+
+			props := map[string]any{
+				"repository": it.Repo,
+				"purl":       purl,
+				"severity":   strings.ToLower(v.Severity),
+				"cvss":       v.CVSS,
+				"fixedIn":    v.FixedIn,
+				"scanId":     s.ID,
+			}
+
+			if a, ok := it.annotation(i); ok {
+				maps.Copy(props, annotationProps(a))
+			}
 
 			findings = append(findings, finding{
 				tool:    tool,
@@ -141,14 +196,7 @@ func VulnSARIF(items []VulnItem) (*Log, bool) {
 					PartialFingerprints: map[string]string{
 						fingerprintKey: fingerprint(it.Repo, s.ArtifactID, s.PackageName, s.PackageVersion, s.Ecosystem, v.ID),
 					},
-					Properties: map[string]any{
-						"repository": it.Repo,
-						"purl":       purl,
-						"severity":   strings.ToLower(v.Severity),
-						"cvss":       v.CVSS,
-						"fixedIn":    v.FixedIn,
-						"scanId":     s.ID,
-					},
+					Properties: props,
 				},
 			})
 		}
@@ -166,6 +214,7 @@ var VulnCSVHeader = []string{
 	"repository", "artifact_id", "package_name", "package_version", "ecosystem", "scanner",
 	"scan_id", "scan_status", "vulnerability_id", "severity", "cvss", "fixed_in", "summary",
 	"published_at", "references",
+	"kev", "kev_date_added", "kev_due_date", "epss", "epss_percentile", "priority",
 }
 
 // VulnCSVRows returns one row per finding (header excluded), most severe scans
@@ -175,19 +224,50 @@ func VulnCSVRows(items []VulnItem) [][]string {
 
 	for _, it := range items {
 		s := it.Scan
-		for _, v := range s.Vulnerabilities {
+		for i, v := range s.Vulnerabilities {
 			cvss := ""
 			if v.CVSS > 0 {
 				cvss = strconv.FormatFloat(v.CVSS, 'f', -1, 64)
 			}
 
-			rows = append(rows, []string{
+			row := []string{
 				it.Repo, s.ArtifactID, s.PackageName, s.PackageVersion, s.Ecosystem, s.Scanner,
 				s.ID, s.ScanStatus, v.ID, strings.ToLower(v.Severity), cvss, v.FixedIn, v.Summary,
 				v.PublishedAt, strings.Join(v.References, " "),
-			})
+			}
+			row = append(row, annotationCells(it, i)...)
+			rows = append(rows, row)
 		}
 	}
 
 	return rows
+}
+
+// annotationCells are the exploitation columns of finding i: kev, kev dates,
+// EPSS score and percentile and priority; blank when the item is not annotated.
+func annotationCells(it VulnItem, i int) []string {
+	a, ok := it.annotation(i)
+	if !ok {
+		return make([]string, 6)
+	}
+
+	cells := []string{strconv.FormatBool(a.KEV), "", "", "", "", string(a.Priority)}
+
+	if a.KEVDateAdded != nil {
+		cells[1] = *a.KEVDateAdded
+	}
+
+	if a.KEVDueDate != nil {
+		cells[2] = *a.KEVDueDate
+	}
+
+	if a.EPSS != nil {
+		cells[3] = strconv.FormatFloat(*a.EPSS, 'f', -1, 64)
+	}
+
+	if a.EPSSPercentile != nil {
+		cells[4] = strconv.FormatFloat(*a.EPSSPercentile, 'f', -1, 64)
+	}
+
+	return cells
 }

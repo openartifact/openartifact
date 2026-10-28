@@ -49,6 +49,13 @@ Buckets of `openartifact_blob_operation_duration_seconds`: 0.0005, 0.001, 0.0025
 | `openartifact_db_pool_max_connections` | gauge | `pool` | Configured connection limit of the pool. |
 | `openartifact_db_pool_open_connections` | gauge | `pool` | Database connections that exist (in use, idle, and for the pgx pool those being opened). |
 
+## Exploit
+
+| Metric | Type | Labels | Help |
+|---|---|---|---|
+| `openartifact_exploit_feed_last_success_timestamp_seconds` | gauge | `feed` | Unix time of the last successful import (or unchanged check) of the KEV and EPSS feeds, by feed. |
+| `openartifact_exploit_import_attempts_total` | counter | `feed`, `result` | Imports of the CISA KEV and FIRST EPSS feeds, by feed (kev, epss) and result (imported, unchanged, failed). |
+
 ## Federation
 
 | Metric | Type | Labels | Help |

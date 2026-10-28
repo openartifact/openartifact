@@ -7,11 +7,14 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/scanexport"
 	"github.com/openartifact/openartifact/internal/urlparams"
 )
@@ -29,19 +32,21 @@ func (h *VulnHandler) RegisterOverviewRoutes(authedRouter chi.Router) {
 	authedRouter.Get("/api/v1/vuln/scans", h.handleOverview)
 	authedRouter.Get("/api/v1/vuln/scans/summary", h.handleOverviewSummary)
 	authedRouter.Get("/api/v1/vuln/scans/export", h.handleExportOverview)
+	authedRouter.Get("/api/v1/security/exploit-feeds", h.handleExploitFeeds)
 }
 
 // vulnOverviewParams reads and validates the overview's query string. It
 // returns the message of the first invalid value, or "".
-func vulnOverviewParams(r *http.Request) (models.VulnScanListParams, string) {
+func (h *VulnHandler) vulnOverviewParams(r *http.Request) (models.VulnScanListParams, string) {
 	q := r.URL.Query()
 
 	params := models.VulnScanListParams{
-		Repo:     q.Get("repo"),
-		Severity: q.Get("severity"),
-		Status:   q.Get("status"),
-		Scanner:  q.Get("scanner"),
-		Limit:    queryIntParam(r, "limit", vulnOverviewDefaultLimit, 1, vulnOverviewMaxLimit),
+		Repo:          q.Get("repo"),
+		Severity:      q.Get("severity"),
+		Status:        q.Get("status"),
+		Scanner:       q.Get("scanner"),
+		Limit:         queryIntParam(r, "limit", vulnOverviewDefaultLimit, 1, vulnOverviewMaxLimit),
+		EPSSThreshold: h.exploit.Threshold(),
 	}
 
 	if len(params.Repo) > maxNameLen {
@@ -75,8 +80,12 @@ func vulnOverviewParams(r *http.Request) (models.VulnScanListParams, string) {
 		return params, "quarantined must be true or false"
 	}
 
+	if msg := vulnExploitParams(q, &params); msg != "" {
+		return params, msg
+	}
+
 	if raw := q.Get("cursor"); raw != "" {
-		cursor, err := decodeVulnCursor(raw)
+		cursor, err := decodeVulnCursor(raw, params.Sort)
 		if err != nil {
 			return params, "invalid cursor"
 		}
@@ -87,6 +96,48 @@ func vulnOverviewParams(r *http.Request) (models.VulnScanListParams, string) {
 	return params, ""
 }
 
+// vulnExploitParams reads ?sort, ?kev, ?epss_min and ?priority into params. It
+// returns the message of the first invalid value, or "".
+func vulnExploitParams(q url.Values, params *models.VulnScanListParams) string {
+	switch q.Get("sort") {
+	case "", models.VulnSortSeverity:
+		params.Sort = models.VulnSortSeverity
+	case models.VulnSortPriority:
+		params.Sort = models.VulnSortPriority
+	default:
+		return "sort must be one of: severity, priority"
+	}
+
+	switch q.Get("kev") {
+	case "":
+	case "true", "false":
+		v := q.Get("kev") == "true"
+		params.KEV = &v
+	default:
+		return "kev must be true or false"
+	}
+
+	if raw := q.Get("epss_min"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || !(v >= 0 && v <= 1) {
+			return "epss_min must be a number from 0 to 1"
+		}
+
+		params.EPSSMin = &v
+	}
+
+	if raw := q.Get("priority"); raw != "" {
+		p, ok := exploit.ParsePriority(raw)
+		if !ok || p == exploit.PriorityNone {
+			return "priority must be one of: kev, epss, critical, high, medium, low"
+		}
+
+		params.Priority = raw
+	}
+
+	return ""
+}
+
 // handleOverview lists vulnerability scans across all repositories, worst
 // first, one keyset page at a time and without the findings.
 func (h *VulnHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +145,7 @@ func (h *VulnHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, msg := vulnOverviewParams(r)
+	params, msg := h.vulnOverviewParams(r)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
@@ -119,11 +170,11 @@ func (h *VulnHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, s := range page.Scans {
-		resp.Scans = append(resp.Scans, vulnOverviewRowToResponse(s))
+		resp.Scans = append(resp.Scans, vulnOverviewRowToResponse(s, params.EPSSThreshold))
 	}
 
 	if page.Next != nil {
-		next := encodeVulnCursor(page.Next)
+		next := encodeVulnCursor(page.Next, params.Sort)
 		resp.NextCursor = &next
 	}
 
@@ -167,7 +218,7 @@ func (h *VulnHandler) handleOverviewSummary(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func vulnOverviewRowToResponse(s *models.VulnScanOverviewRow) responses.VulnScanOverviewRowResponse {
+func vulnOverviewRowToResponse(s *models.VulnScanOverviewRow, threshold float64) responses.VulnScanOverviewRowResponse {
 	var scanError *string
 	if s.ScanError != "" {
 		scanError = &s.ScanError
@@ -200,6 +251,11 @@ func vulnOverviewRowToResponse(s *models.VulnScanOverviewRow) responses.VulnScan
 		ScannedAt:        formatTimePtr(s.ScannedAt),
 		ScanError:        scanError,
 		FailedScanners:   failedScanners,
+		KEVCount:         s.KEVCount,
+		MaxEPSS:          s.MaxEPSS,
+		Priority: string(
+			vulnRowPriority(s.KEVCount, s.MaxEPSS, s.CriticalCount, s.HighCount, s.MediumCount, s.LowCount, threshold),
+		),
 	}
 }
 
@@ -251,8 +307,25 @@ func (h *VulnHandler) handleExportScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	annotated, err := h.annotateScans(ctx, []*models.VulnScanResult{result})
+	if err != nil {
+		h.dbError(w, "export vuln scan: exploit signals", err)
+		return
+	}
+
 	h.writeVulnExport(w, format, exportFileName(format, "vuln", repo.Name, id),
-		[]scanexport.VulnItem{{Repo: repo.Name, Scan: result}}, false, func() any { return vulnScanResultToMap(result) })
+		[]scanexport.VulnItem{vulnExportItem(repo.Name, result, annotated[0])}, false,
+		func() any { return vulnScanResultToMap(result, annotated[0], h.exploit.Threshold()) })
+}
+
+// vulnExportItem is a scan of repo with the annotations of its findings.
+func vulnExportItem(repo string, scan *models.VulnScanResult, findings []exploit.Vulnerability) scanexport.VulnItem {
+	annotations := make([]exploit.Annotation, len(findings))
+	for i, f := range findings {
+		annotations[i] = f.Annotation
+	}
+
+	return scanexport.VulnItem{Repo: repo, Scan: scan, Annotations: annotations}
 }
 
 // handleExportOverview downloads the findings of every scan the overview's
@@ -268,7 +341,7 @@ func (h *VulnHandler) handleExportOverview(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	params, msg := vulnOverviewParams(r)
+	params, msg := h.vulnOverviewParams(r)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
@@ -329,15 +402,26 @@ func (h *VulnHandler) handleExportOverview(w http.ResponseWriter, r *http.Reques
 		params.After = page.Next
 	}
 
+	scans := make([]*models.VulnScanResult, len(items))
+	for i, it := range items {
+		scans[i] = it.Scan
+	}
+
+	annotated, err := h.annotateScans(ctx, scans)
+	if err != nil {
+		h.dbError(w, "export vuln scans: exploit signals", err)
+		return
+	}
+
+	for i := range items {
+		items[i] = vulnExportItem(items[i].Repo, items[i].Scan, annotated[i])
+	}
+
 	h.writeVulnExport(w, format, exportFileName(format, "vuln-scans"), items, truncated, func() any {
 		out := make([]responses.VulnScanExportResponse, 0, len(items))
 
-		for _, it := range items {
-			resp := vulnScanResultToMap(it.Scan)
-			if it.Scan.Vulnerabilities == nil {
-				resp.Vulnerabilities = []models.Vulnerability{}
-			}
-
+		for i, it := range items {
+			resp := vulnScanResultToMap(it.Scan, annotated[i], h.exploit.Threshold())
 			out = append(out, responses.VulnScanExportResponse{VulnScanResultResponse: resp, RepositoryName: it.Repo})
 		}
 

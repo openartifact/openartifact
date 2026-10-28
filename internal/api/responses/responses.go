@@ -455,6 +455,13 @@ type VulnScanResultResponse struct {
 	// FailedScanners lists the scanners that produced no result (scan_status
 	// "failed" or "partial").
 	FailedScanners []string `json:"failed_scanners"`
+	// KEVCount is the number of findings whose CVE is in the CISA KEV catalog.
+	KEVCount int `json:"kev_count"`
+	// MaxEPSS is the highest EPSS score among the findings; null when none is scored.
+	MaxEPSS *float64 `json:"max_epss"`
+	// Priority is the scan's priority: kev, epss, or its worst severity (critical
+	// ... low, none).
+	Priority string `json:"priority"`
 }
 
 // VulnScannerResponse reports whether one vulnerability scanner can run on the
@@ -756,6 +763,62 @@ type VulnScanOverviewRowResponse struct {
 	// ScanError is a sanitized summary of the failing scanners.
 	ScanError      *string  `json:"scan_error"`
 	FailedScanners []string `json:"failed_scanners"`
+	// KEVCount, MaxEPSS and Priority are as in VulnScanResultResponse.
+	KEVCount int      `json:"kev_count"`
+	MaxEPSS  *float64 `json:"max_epss"`
+	Priority string   `json:"priority"`
+}
+
+// VulnGateCriteria echoes the conditions a gate check applied.
+type VulnGateCriteria struct {
+	KEV         bool     `json:"kev"`
+	EPSSMin     *float64 `json:"epss_min"`
+	MinPriority string   `json:"min_priority"`
+}
+
+// VulnGateFailure is one finding that trips the gate.
+type VulnGateFailure struct {
+	ID string `json:"id"`
+	// CVE is the CVE id the signals were looked up by; empty when the finding has none.
+	CVE      string `json:"cve"`
+	Priority string `json:"priority"`
+	// Reasons names the conditions it meets ("kev", "epss>=0.5", "priority>=high").
+	Reasons []string `json:"reasons"`
+}
+
+// VulnGateResponse is the verdict of a gate check on one scan: Pass is true
+// when no finding meets any condition.
+type VulnGateResponse struct {
+	Pass     bool              `json:"pass"`
+	Criteria VulnGateCriteria  `json:"criteria"`
+	Checked  int               `json:"checked"`
+	Failed   []VulnGateFailure `json:"failed"`
+}
+
+// ExploitFeedResponse is the state of one exploitation-signal feed.
+type ExploitFeedResponse struct {
+	// Name is kev or epss.
+	Name      string `json:"name"`
+	SourceURL string `json:"source_url"`
+	Version   string `json:"version"`
+	// PublishedAt is when the feed says the data was released; null when never loaded.
+	PublishedAt *string `json:"published_at"`
+	EntryCount  int     `json:"entry_count"`
+	// ImportedAt is when the data was last replaced; CheckedAt when the source
+	// was last asked.
+	ImportedAt *string `json:"imported_at"`
+	CheckedAt  *string `json:"checked_at"`
+	// LastError is the sanitized reason the last check failed; empty after a success.
+	LastError string `json:"last_error"`
+}
+
+// ExploitFeedsResponse is GET /api/v1/security/exploit-feeds.
+type ExploitFeedsResponse struct {
+	Feeds []ExploitFeedResponse `json:"feeds"`
+	// EPSSThreshold is the EPSS score from which a finding has priority epss.
+	EPSSThreshold float64 `json:"epss_threshold"`
+	// Enabled is true when the feeds are loaded into this instance's database.
+	Enabled bool `json:"enabled"`
 }
 
 // VulnScanExportResponse is one scan of the cross-repository JSON export: the

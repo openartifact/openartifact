@@ -2,8 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { severityPriority } from '../lib/exploitPriority'
 import { request, downloadAttachment, JSON_HEADERS } from './client'
 import type {
+  ExploitAnnotation,
+  ExploitFeed,
+  ExploitFeedsResponse,
+  ExploitPriority,
   LicensePolicyViolation,
   LicenseScanResult,
   LicenseScanRunResult,
@@ -88,24 +93,48 @@ export function getVulnScan(repo: string, scanId: string): Promise<VulnScan> {
   return request<VulnScan>(`${repoBase(repo)}/vuln/scans/${encodeURIComponent(scanId)}`)
 }
 
-/** One finding of a scan, as stored by the scanners. */
-interface VulnFinding {
+export type { ExploitAnnotation, ExploitFeed, ExploitFeedsResponse, ExploitPriority }
+
+/** One finding of a scan, as stored by the scanners, with what the KEV and EPSS feeds say about it. */
+export interface VulnFinding {
   id: string
   summary: string
   severity: string
   cvss: number
   fixed_in: string
+  /** The CVE id the signals were looked up by; '' when the finding has none. */
+  cve: string
+  kev: boolean
+  kev_date_added: string
+  kev_due_date: string
+  kev_ransomware: boolean
+  epss: number | null
+  epss_percentile: number | null
+  epss_date: string | null
+  priority: ExploitPriority
 }
 
-/** The findings of a full scan, with missing fields normalised. */
+/** The findings of a full scan, with missing fields normalised (a server without exploitation data sends none of the signals). */
 export function vulnFindings(scan: VulnScan): VulnFinding[] {
-  return (scan.vulnerabilities ?? []).map((v) => ({
-    id: String(v.id ?? ''),
-    summary: String(v.summary ?? ''),
-    severity: String(v.severity ?? ''),
-    cvss: Number(v.cvss ?? 0),
-    fixed_in: String(v.fixed_in ?? ''),
-  }))
+  return (scan.vulnerabilities ?? []).map((v) => {
+    const severity = String(v.severity ?? '')
+    return {
+      id: String(v.id ?? ''),
+      summary: String(v.summary ?? ''),
+      severity,
+      cvss: Number(v.cvss ?? 0),
+      fixed_in: String(v.fixed_in ?? ''),
+      cve: String(v.cve ?? ''),
+      kev: v.kev === true,
+      kev_date_added: String(v.kev_date_added ?? ''),
+      kev_due_date: String(v.kev_due_date ?? ''),
+      kev_ransomware: v.kev_ransomware === true,
+      epss: v.epss ?? null,
+      epss_percentile: v.epss_percentile ?? null,
+      epss_date: v.epss_date ?? null,
+      priority: v.priority ?? severityPriority(severity),
+    }
+  })
 }
 
 export function deleteVulnScan(repo: string, scanId: string): Promise<void> {
@@ -231,6 +260,11 @@ export interface SecurityFinding {
   status: FindingStatus
   quarantined: boolean
   vex_status?: 'affected' | 'under_investigation' | 'fixed' | 'not_affected'
+  /** Vulnerabilities of a vuln finding in the CISA KEV catalog; 0 for the other types. */
+  kev_count: number
+  /** Highest EPSS score (0..1) among the vulnerabilities; null when none is scored. */
+  max_epss: number | null
+  priority: ExploitPriority
   scanned_at: string
 }
 
@@ -241,6 +275,14 @@ export interface FindingFilters {
   severity?: Exclude<FindingSeverity, 'none'>
   status?: FindingStatus
   q?: string
+  /** `severity` (the server's default) or `priority`: KEV first, then high EPSS, then the severity. A cursor is only valid under the sort it was issued for. */
+  sort?: 'severity' | 'priority'
+  /** `true`: only findings with a vulnerability in the KEV catalog; `false`: only those without. */
+  kev?: boolean
+  /** Only findings whose highest EPSS score is at least this (0..1). */
+  epss_min?: number
+  /** Only findings with exactly this priority. */
+  priority?: Exclude<ExploitPriority, 'none'>
 }
 
 interface FindingsPage {
@@ -280,6 +322,11 @@ export async function listFindings(params: FindingFilters & { limit?: number; cu
 /** Counts per type and severity; follows the repository filter only. */
 export function getFindingsSummary(repo?: string): Promise<SecuritySummary> {
   return request<SecuritySummary>(`/api/v1/security/findings/summary${queryString({ repo })}`)
+}
+
+/** State of the KEV and EPSS feeds and the EPSS score from which a finding has priority `epss`. */
+export function getExploitFeeds(): Promise<ExploitFeedsResponse> {
+  return request<ExploitFeedsResponse>('/api/v1/security/exploit-feeds')
 }
 
 /** Admin only: scanner readiness and scan backlog. */

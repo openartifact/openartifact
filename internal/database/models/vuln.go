@@ -17,6 +17,9 @@ type Vulnerability struct {
 	PublishedAt string   `json:"published_at"`
 	// CWEs are the weakness ids ("CWE-79") the scanner reported; empty when it gave none.
 	CWEs []string `json:"cwes,omitempty"`
+	// Aliases are the other ids the scanner knows the vulnerability by (a GHSA
+	// id lists its CVE); the exploitation feeds are keyed by CVE id.
+	Aliases []string `json:"aliases,omitempty"`
 }
 
 // VulnScanResult represents a vulnerability scan result for an artifact.
@@ -38,14 +41,22 @@ type VulnScanResult struct {
 	Quarantined     bool
 	ScanError       string // sanitized: never contains raw scanner or upstream error text
 	FailedScanners  []string
-	ScannedAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// KEVCount is the number of findings whose CVE is in the CISA KEV catalog
+	// and MaxEPSS the highest EPSS score among them (nil: none scored), as of
+	// the last scan or feed import.
+	KEVCount  int
+	MaxEPSS   *float64
+	ScannedAt *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // VulnScanCursor is a keyset position in the overview order (critical_count
-// DESC, high_count DESC, medium_count DESC, low_count DESC, SortAt DESC, id ASC).
+// DESC, high_count DESC, medium_count DESC, low_count DESC, SortAt DESC, id ASC),
+// or, for the priority sort, the same keys led by the priority Rank DESC.
 type VulnScanCursor struct {
+	// Rank is the priority rank (6..0) of the scan; only the priority sort uses it.
+	Rank          int
 	CriticalCount int
 	HighCount     int
 	MediumCount   int
@@ -55,6 +66,12 @@ type VulnScanCursor struct {
 	SortAt time.Time
 	ID     string
 }
+
+// Sort orders of the scan overview (VulnScanListParams.Sort).
+const (
+	VulnSortSeverity = "severity"
+	VulnSortPriority = "priority"
+)
 
 // VulnScanListParams selects a page of the cross-repository scan overview.
 // Empty filters match everything.
@@ -70,7 +87,21 @@ type VulnScanListParams struct {
 	Scanner string
 	// Quarantined, when set, keeps scans whose quarantine flag equals it.
 	Quarantined *bool
-	Limit       int
+	// Sort is "" or "severity" (worst severity counts first) or "priority"
+	// (priority rank first, then the severity order).
+	Sort string
+	// KEV, when set, keeps scans with (true) or without (false) a finding in
+	// the CISA KEV catalog.
+	KEV *bool
+	// EPSSMin, when set, keeps scans whose highest EPSS score is at least it.
+	EPSSMin *float64
+	// Priority, when set (kev, epss, critical, high, medium or low), keeps
+	// scans whose priority rank equals that of the named priority.
+	Priority string
+	// EPSSThreshold is the EPSS score from which a scan ranks as "epss"; the
+	// priority sort and filter use it.
+	EPSSThreshold float64
+	Limit         int
 	// After, when set, returns only scans strictly after this position.
 	After *VulnScanCursor
 }

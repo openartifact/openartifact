@@ -1734,8 +1734,22 @@ export type SecurityFinding = {
      * Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies.
      */
     vex_status?: 'affected' | 'under_investigation' | 'fixed' | 'not_affected';
+    /**
+     * Vulnerabilities of a vuln finding that are in the CISA KEV catalog; 0 for the other types.
+     */
+    kev_count: number;
+    /**
+     * Highest FIRST EPSS score among the vulnerabilities of a vuln finding; null when none is scored (and for the other types).
+     */
+    max_epss: number | null;
+    priority: ExploitPriority;
     scanned_at: string;
 };
+
+/**
+ * Remediation priority: `kev` when a vulnerability is in the CISA KEV catalog, `epss` when its EPSS score reaches the configured threshold, otherwise the severity (`none` when there is none).
+ */
+export type ExploitPriority = 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low' | 'none';
 
 export type SecurityFindingCounts = {
     critical: number;
@@ -1890,6 +1904,168 @@ export type RepoSecuritySummary = {
 };
 
 /**
+ * What the CISA KEV catalog and the FIRST EPSS scores say about a vulnerability finding, looked up when the finding is read (never stored with it). The signals are keyed by CVE id: a finding listed under a GHSA, GO or PYSEC id is matched through its aliases.
+ */
+export type ExploitAnnotation = {
+    /**
+     * The CVE id the signals were looked up by: the one in KEV or with the highest EPSS score, else the first CVE id of the finding. Absent when the finding has no CVE id.
+     */
+    cve?: string;
+    /**
+     * True when the CVE is in the CISA Known Exploited Vulnerabilities catalog.
+     */
+    kev: boolean;
+    /**
+     * Day CISA added the CVE to the catalog. Only for a KEV CVE.
+     */
+    kev_date_added?: string;
+    /**
+     * Remediation deadline CISA set. Only for a KEV CVE that has one.
+     */
+    kev_due_date?: string;
+    /**
+     * True when CISA knows the CVE to be used in ransomware campaigns. Absent otherwise.
+     */
+    kev_ransomware?: boolean;
+    /**
+     * EPSS score: the probability of exploitation activity in the next 30 days. Null when no CVE of the finding is scored.
+     */
+    epss: number | null;
+    /**
+     * Share of scored CVEs with the same or a lower EPSS score. Null when unscored.
+     */
+    epss_percentile: number | null;
+    /**
+     * Day of the EPSS score file the score comes from. Null when unscored.
+     */
+    epss_date: string | null;
+    priority: ExploitPriority;
+};
+
+/**
+ * One vulnerability finding of a scan with its ExploitAnnotation.
+ */
+export type AnnotatedVulnerability = {
+    /**
+     * CVE or advisory id (CVE-2021-1234, GHSA-xxxx-xxxx-xxxx).
+     */
+    id: string;
+    summary: string;
+    /**
+     * CRITICAL, HIGH, MEDIUM, LOW or UNKNOWN.
+     */
+    severity: string;
+    cvss: number;
+    /**
+     * Version that fixes the vulnerability; empty when none.
+     */
+    fixed_in: string;
+    references?: Array<string>;
+    published_at: string;
+    /**
+     * Weakness ids (`CWE-79`) the scanner reported. Absent when it gave none.
+     */
+    cwes?: Array<string>;
+    /**
+     * Other ids the scanner knows the vulnerability by. Absent when none.
+     */
+    aliases?: Array<string>;
+} & ExploitAnnotation;
+
+/**
+ * Verdict of an exploitation gate on one scan: it passes when no finding meets any of the conditions.
+ */
+export type VulnGateResponse = {
+    /**
+     * True when `failed` is empty.
+     */
+    pass: boolean;
+    /**
+     * The conditions that were applied.
+     */
+    criteria: {
+        kev: boolean;
+        /**
+         * Null when not set.
+         */
+        epss_min: number | null;
+        /**
+         * Empty when not set.
+         */
+        min_priority: string;
+    };
+    /**
+     * Number of findings of the scan that were checked.
+     */
+    checked: number;
+    /**
+     * The findings that meet a condition, highest priority first, then by id.
+     */
+    failed: Array<{
+        id: string;
+        /**
+         * The CVE id the signals were looked up by; empty when the finding has none.
+         */
+        cve: string;
+        priority: ExploitPriority;
+        /**
+         * The conditions it meets: `kev`, `epss>=<min>`, `priority>=<min_priority>`.
+         */
+        reasons: Array<string>;
+    }>;
+};
+
+/**
+ * State of one exploitation-signal feed.
+ */
+export type ExploitFeed = {
+    name: 'kev' | 'epss';
+    /**
+     * URL the loaded data came from; empty when the feed was never checked.
+     */
+    source_url: string;
+    /**
+     * Catalog version (KEV) or model version (EPSS) of the loaded data.
+     */
+    version: string;
+    /**
+     * When the feed says the data was released. Null when nothing is loaded.
+     */
+    published_at: string | null;
+    /**
+     * Rows loaded from the feed.
+     */
+    entry_count: number;
+    /**
+     * When the data was last replaced. Null when nothing is loaded.
+     */
+    imported_at: string | null;
+    /**
+     * When the source was last asked (an unchanged file only moves this).
+     */
+    checked_at: string | null;
+    /**
+     * Sanitized reason the last check failed; empty after a success.
+     */
+    last_error: string;
+};
+
+export type ExploitFeedsResponse = {
+    /**
+     * The KEV and EPSS feeds, in that order.
+     */
+    feeds: Array<ExploitFeed>;
+    /**
+     * EPSS score from which a finding has priority `epss`.
+     */
+    epss_threshold: number;
+    /**
+     * False when the feeds are switched off (`exploit.enabled`): findings then carry no KEV or EPSS data.
+     */
+    enabled: boolean;
+};
+
+/**
  * A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.
  */
 export type VulnScanOverviewRow = {
@@ -1926,6 +2102,18 @@ export type VulnScanOverviewRow = {
      */
     scan_error?: string | null;
     failed_scanners?: Array<string>;
+    /**
+     * Findings of the scan that are in the CISA KEV catalog (as of the scan or the last feed import).
+     */
+    kev_count: number;
+    /**
+     * Highest EPSS score among the findings; null when none is scored.
+     */
+    max_epss: number | null;
+    /**
+     * `kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity.
+     */
+    priority: ExploitPriority;
 };
 
 /**
@@ -1970,14 +2158,24 @@ export type VulnScanResult = {
      * `completed`: every requested scanner ran. `partial`: several scanners were requested and some failed (findings of the others are kept; see `failed_scanners`). `failed`: every scanner failed - the zero counts then mean `not scanned`, not `no vulnerabilities`.
      */
     scan_status: 'pending' | 'scanning' | 'completed' | 'partial' | 'failed';
-    vulnerabilities?: Array<{
-        [key: string]: unknown;
-    }>;
+    vulnerabilities?: Array<AnnotatedVulnerability>;
     vuln_count: number;
     critical_count: number;
     high_count: number;
     medium_count: number;
     low_count: number;
+    /**
+     * Findings of the scan that are in the CISA KEV catalog (as of the scan or the last feed import).
+     */
+    kev_count: number;
+    /**
+     * Highest EPSS score among the findings; null when none is scored.
+     */
+    max_epss: number | null;
+    /**
+     * `kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity.
+     */
+    priority: ExploitPriority;
     quarantined: boolean;
     created_at: string;
     updated_at: string;
@@ -4908,6 +5106,22 @@ export type GetApiV1VulnScansData = {
          */
         quarantined?: boolean;
         /**
+         * `severity` (default): most critical findings first, then high, medium and low. `priority`: priority rank first (`kev`, then `epss`, then the severity), then the severity order. A cursor is bound to its sort: it is rejected (`validation_failed`) under the other one.
+         */
+        sort?: 'severity' | 'priority';
+        /**
+         * `true`: only scans with a finding in the CISA KEV catalog; `false`: only scans without one.
+         */
+        kev?: boolean;
+        /**
+         * Only scans whose highest EPSS score is at least this value (0 to 1); unscored scans never match.
+         */
+        epss_min?: number;
+        /**
+         * Only scans whose priority equals this one (an exact match, not a minimum): `kev` (a finding is in KEV), `epss` (no KEV finding, EPSS at or above the server threshold) or the worst severity.
+         */
+        priority?: 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low';
+        /**
          * Page size, default 25.
          */
         limit?: number;
@@ -4977,6 +5191,22 @@ export type GetApiV1SecurityFindingsData = {
          * Case-insensitive substring of the repository name or of `name@version`.
          */
         q?: string;
+        /**
+         * Order: `severity` (default: highest severity, newest scan, id) or `priority` (exploit rank first: findings with a vulnerability in the CISA KEV catalog, then those whose highest EPSS score reaches the configured threshold, then by severity; same tie-breakers). A cursor only works under the sort it was issued for (400 otherwise).
+         */
+        sort?: 'severity' | 'priority';
+        /**
+         * `true`: only findings with at least one vulnerability in the CISA KEV catalog; `false`: only those without. Only vulnerability findings can be in KEV: the other types have `kev_count` 0, so `kev=true` drops them.
+         */
+        kev?: boolean;
+        /**
+         * Only findings whose highest EPSS score (`max_epss`) is at least this value. Findings without a score, including every non-vulnerability finding, are dropped.
+         */
+        epss_min?: number;
+        /**
+         * Only findings whose `priority` is exactly this one. `kev` and `epss` can only match vulnerability findings; the severity priorities match the findings of every type whose highest severity it is and that are neither in KEV nor at the EPSS threshold.
+         */
+        priority?: 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low';
         /**
          * Page size, default 50.
          */
@@ -5084,6 +5314,22 @@ export type GetApiV1SecurityFindingsExportData = {
          */
         q?: string;
         /**
+         * Order: `severity` (default: highest severity, newest scan, id) or `priority` (exploit rank first: findings with a vulnerability in the CISA KEV catalog, then those whose highest EPSS score reaches the configured threshold, then by severity; same tie-breakers). A cursor only works under the sort it was issued for (400 otherwise).
+         */
+        sort?: 'severity' | 'priority';
+        /**
+         * `true`: only findings with at least one vulnerability in the CISA KEV catalog; `false`: only those without. Only vulnerability findings can be in KEV: the other types have `kev_count` 0, so `kev=true` drops them.
+         */
+        kev?: boolean;
+        /**
+         * Only findings whose highest EPSS score (`max_epss`) is at least this value. Findings without a score, including every non-vulnerability finding, are dropped.
+         */
+        epss_min?: number;
+        /**
+         * Only findings whose `priority` is exactly this one. `kev` and `epss` can only match vulnerability findings; the severity priorities match the findings of every type whose highest severity it is and that are neither in KEV nor at the EPSS threshold.
+         */
+        priority?: 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low';
+        /**
          * `csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings).
          */
         format?: 'csv' | 'json' | 'vex';
@@ -5112,6 +5358,29 @@ export type GetApiV1SecurityFindingsExportResponses = {
 };
 
 export type GetApiV1SecurityFindingsExportResponse = GetApiV1SecurityFindingsExportResponses[keyof GetApiV1SecurityFindingsExportResponses];
+
+export type GetApiV1SecurityExploitFeedsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/security/exploit-feeds';
+};
+
+export type GetApiV1SecurityExploitFeedsErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityExploitFeedsResponses = {
+    /**
+     * The feeds
+     */
+    200: ExploitFeedsResponse;
+};
+
+export type GetApiV1SecurityExploitFeedsResponse = GetApiV1SecurityExploitFeedsResponses[keyof GetApiV1SecurityExploitFeedsResponses];
 
 export type GetApiV1SecurityHealthData = {
     body?: never;
@@ -5193,6 +5462,22 @@ export type GetApiV1VulnScansExportData = {
         status?: 'completed' | 'partial' | 'failed' | 'scanning';
         scanner?: 'osv' | 'trivy' | 'grype';
         quarantined?: boolean;
+        /**
+         * Order of the scans, as in the overview list: `severity` (default) or `priority`.
+         */
+        sort?: 'severity' | 'priority';
+        /**
+         * `true`: only scans with a finding in the CISA KEV catalog; `false`: only scans without one.
+         */
+        kev?: boolean;
+        /**
+         * Only scans whose highest EPSS score is at least this value (0 to 1).
+         */
+        epss_min?: number;
+        /**
+         * Only scans whose priority equals this one (an exact match).
+         */
+        priority?: 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low';
         /**
          * `sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).
          */
@@ -5357,6 +5642,53 @@ export type GetApiV1RepositoriesByNameVulnScansResponses = {
 };
 
 export type GetApiV1RepositoriesByNameVulnScansResponse = GetApiV1RepositoriesByNameVulnScansResponses[keyof GetApiV1RepositoriesByNameVulnScansResponses];
+
+export type GetApiV1RepositoriesByNameVulnScansByIdGateData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: {
+        /**
+         * `true`: a finding in the KEV catalog fails the gate. `false` or absent: no condition.
+         */
+        kev?: boolean;
+        /**
+         * A finding whose EPSS score is at least this value (0 to 1) fails the gate.
+         */
+        epss_min?: number;
+        /**
+         * A finding whose priority is at least this one fails the gate (the order is `kev`, `epss`, `critical`, `high`, `medium`, `low`).
+         */
+        min_priority?: 'kev' | 'epss' | 'critical' | 'high' | 'medium' | 'low';
+    };
+    url: '/api/v1/repositories/{name}/vuln/scans/{id}/gate';
+};
+
+export type GetApiV1RepositoriesByNameVulnScansByIdGateErrors = {
+    /**
+     * No condition given, or an invalid value (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Scan not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameVulnScansByIdGateResponses = {
+    /**
+     * The verdict, `pass` true or false (a failing gate is still HTTP 200).
+     */
+    200: VulnGateResponse;
+};
+
+export type GetApiV1RepositoriesByNameVulnScansByIdGateResponse = GetApiV1RepositoriesByNameVulnScansByIdGateResponses[keyof GetApiV1RepositoriesByNameVulnScansByIdGateResponses];
 
 export type GetApiV1RepositoriesByNameVulnScansByIdExportData = {
     body?: never;

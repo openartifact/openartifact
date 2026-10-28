@@ -27,7 +27,8 @@ func nonNilStrings(s []string) []string {
 // FROM vuln_results vr JOIN scan_jobs sj JOIN artifact_refs ref.
 const vulnResultColumns = `vr.id, ref.repository_id, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
 	       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
-	       vr.quarantined, sj.error_message, vr.failed_scanners, sj.completed_at, sj.created_at, sj.updated_at`
+	       vr.quarantined, sj.error_message, vr.failed_scanners, sj.completed_at, sj.created_at, sj.updated_at,
+	       vr.kev_count, vr.max_epss`
 
 // rowScanner is satisfied by *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -43,6 +44,7 @@ func scanVulnResult(row rowScanner) (*models.VulnScanResult, error) {
 		errMsg    sql.NullString
 		vulnsRaw  []byte
 		jobStatus string
+		maxEPSS   sql.NullFloat64
 	)
 
 	if err := row.Scan(
@@ -66,8 +68,14 @@ func scanVulnResult(row rowScanner) (*models.VulnScanResult, error) {
 		&scannedAt,
 		&result.CreatedAt,
 		&result.UpdatedAt,
+		&result.KEVCount,
+		&maxEPSS,
 	); err != nil {
 		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
+	}
+
+	if maxEPSS.Valid {
+		result.MaxEPSS = &maxEPSS.Float64
 	}
 
 	result.ScanStatus = vulnScanStatusFromJob(jobStatus)

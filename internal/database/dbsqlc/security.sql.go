@@ -35,7 +35,7 @@ const listSecurityFindings = `-- name: ListSecurityFindings :many
 WITH q_candidates AS MATERIALIZED (
     SELECT array_agg(DISTINCT sr.artifact_id::uuid) AS ids
     FROM security_results sr
-    WHERE $8::text IS NOT NULL
+    WHERE $13::text IS NOT NULL
       AND sr.is_finding
       AND sr.package_name = sr.artifact_id
       AND sr.artifact_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -108,11 +108,11 @@ WITH q_candidates AS MATERIALIZED (
         SELECT t.repository_id, t.id, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text
         FROM docker_tags t JOIN repositories r ON r.id = t.repository_id WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
     ) AS p
-    WHERE (p.name || '@' || p.version) ILIKE $8::text
+    WHERE (p.name || '@' || p.version) ILIKE $13::text
 )
 SELECT p.kind, p.id, p.repository_id, p.repository_name, p.repository_format, p.artifact_id,
        p.package_name, p.package_version, p.scanner, p.scan_status, p.critical, p.high, p.medium, p.low,
-       p.quarantined, p.status, p.vex_rank, p.severity_rank, p.scanned_at,
+       p.quarantined, p.status, p.vex_rank, p.severity_rank, p.kev_count, p.max_epss, p.sort_rank, p.scanned_at,
        COALESCE((CASE p.kind
             WHEN 'vuln' THEN (SELECT v ->> 'id'
                               FROM vuln_results vr, jsonb_array_elements(vr.vulnerabilities) AS v
@@ -133,33 +133,46 @@ SELECT p.kind, p.id, p.repository_id, p.repository_name, p.repository_format, p.
 FROM (
     SELECT sr.kind, sr.id, sr.repository_id, r.name AS repository_name, r.format AS repository_format, sr.artifact_id,
            sr.package_name, sr.package_version, sr.scanner, sr.scan_status, sr.critical, sr.high, sr.medium, sr.low,
-           sr.quarantined, sr.status, COALESCE(sr.vex_rank, 0)::int AS vex_rank, sr.severity_rank, sr.scanned_at
+           sr.quarantined, sr.status, COALESCE(sr.vex_rank, 0)::int AS vex_rank, sr.severity_rank, sr.kev_count, sr.max_epss, k.sort_rank, sr.scanned_at
     FROM security_results sr
     JOIN repositories r ON r.id = sr.repository_id
     JOIN projects pr ON pr.id = r.project_id
+    CROSS JOIN LATERAL (
+        SELECT CASE WHEN sr.kev_count > 0 THEN 6
+                    WHEN sr.max_epss >= $1::float8 THEN 5
+                    ELSE sr.severity_rank END::int AS priority_rank
+    ) pk
+    CROSS JOIN LATERAL (
+        SELECT CASE WHEN $2::boolean THEN pk.priority_rank ELSE sr.severity_rank END::int AS sort_rank
+    ) k
     WHERE sr.is_finding
-      AND sr.kind = ANY($1::text[])
-      AND ($2::boolean OR r.project_id = ANY($3::uuid[]))
-      AND ($4::text IS NULL OR r.name = $4::text)
-      AND ($5::text IS NULL OR pr.name = $5::text)
-      AND ($6::int IS NULL OR sr.severity_rank = $6::int)
-      AND ($7::text IS NULL OR sr.status = $7::text)
-      AND ($8::text IS NULL
-           OR (sr.package_name || '@' || sr.package_version) ILIKE $8::text
-           OR r.name ILIKE $8::text
+      AND sr.kind = ANY($3::text[])
+      AND ($4::boolean OR r.project_id = ANY($5::uuid[]))
+      AND ($6::text IS NULL OR r.name = $6::text)
+      AND ($7::text IS NULL OR pr.name = $7::text)
+      AND ($8::int IS NULL OR sr.severity_rank = $8::int)
+      AND ($9::text IS NULL OR sr.status = $9::text)
+      AND ($10::boolean IS NULL OR (sr.kev_count > 0) = $10::boolean)
+      AND ($11::float8 IS NULL OR sr.max_epss >= $11::float8)
+      AND ($12::int IS NULL OR pk.priority_rank = $12::int)
+      AND ($13::text IS NULL
+           OR (sr.package_name || '@' || sr.package_version) ILIKE $13::text
+           OR r.name ILIKE $13::text
            OR EXISTS (SELECT 1 FROM q_match m WHERE m.repository_id = sr.repository_id AND m.id::text = sr.artifact_id))
-      AND (NOT $9::boolean
-           OR sr.severity_rank < $10::int
-           OR (sr.severity_rank = $10::int
-               AND (sr.scanned_at < $11::timestamptz
-                    OR (sr.scanned_at = $11::timestamptz AND sr.id > $12::uuid))))
-    ORDER BY sr.severity_rank DESC, sr.scanned_at DESC, sr.id
-    LIMIT $13::int
+      AND (NOT $14::boolean
+           OR k.sort_rank < $15::int
+           OR (k.sort_rank = $15::int
+               AND (sr.scanned_at < $16::timestamptz
+                    OR (sr.scanned_at = $16::timestamptz AND sr.id > $17::uuid))))
+    ORDER BY k.sort_rank DESC, sr.scanned_at DESC, sr.id
+    LIMIT $18::int
 ) p
-ORDER BY p.severity_rank DESC, p.scanned_at DESC, p.id
+ORDER BY p.sort_rank DESC, p.scanned_at DESC, p.id
 `
 
 type ListSecurityFindingsParams struct {
+	EpssThreshold float64   `db:"epss_threshold" json:"epss_threshold"`
+	SortPriority  bool      `db:"sort_priority" json:"sort_priority"`
 	Kinds         []string  `db:"kinds" json:"kinds"`
 	ScopeAll      bool      `db:"scope_all" json:"scope_all"`
 	ScopeProjects []string  `db:"scope_projects" json:"scope_projects"`
@@ -167,6 +180,9 @@ type ListSecurityFindingsParams struct {
 	Project       *string   `db:"project" json:"project"`
 	SeverityRank  *int32    `db:"severity_rank" json:"severity_rank"`
 	Status        *string   `db:"status" json:"status"`
+	Kev           *bool     `db:"kev" json:"kev"`
+	EpssMin       *float64  `db:"epss_min" json:"epss_min"`
+	PriorityRank  *int32    `db:"priority_rank" json:"priority_rank"`
 	Q             *string   `db:"q" json:"q"`
 	HasCursor     bool      `db:"has_cursor" json:"has_cursor"`
 	AfterRank     int32     `db:"after_rank" json:"after_rank"`
@@ -194,13 +210,19 @@ type ListSecurityFindingsRow struct {
 	Status           string    `db:"status" json:"status"`
 	VexRank          int32     `db:"vex_rank" json:"vex_rank"`
 	SeverityRank     int32     `db:"severity_rank" json:"severity_rank"`
+	KevCount         int32     `db:"kev_count" json:"kev_count"`
+	MaxEpss          *float64  `db:"max_epss" json:"max_epss"`
+	SortRank         int32     `db:"sort_rank" json:"sort_rank"`
 	ScannedAt        time.Time `db:"scanned_at" json:"scanned_at"`
 	Title            string    `db:"title" json:"title"`
 }
 
 // Cross-type security findings (view security_results, migration 084).
-// One keyset page of findings, worst first: severity rank DESC, scanned_at DESC,
-// id ASC. The caller asks for one row more than the page size. Titles are read
+// One keyset page of findings, worst first: sort_rank DESC, scanned_at DESC,
+// id ASC. sort_rank is the severity rank, or with sort_priority the exploit
+// rank (kev_count > 0: 6, max_epss >= epss_threshold: 5, else the severity
+// rank); priority_rank is always the exploit rank (the priority filter).
+// Non-vuln kinds have kev_count 0 and max_epss NULL. The caller asks for one row more than the page size. Titles are read
 // for the page rows only.
 //
 // A result of a scan started from a package page is
@@ -211,6 +233,8 @@ type ListSecurityFindingsRow struct {
 // ResolveComponentNames; keep them in sync). Both read nothing without a filter.
 func (q *Queries) ListSecurityFindings(ctx context.Context, arg ListSecurityFindingsParams) ([]ListSecurityFindingsRow, error) {
 	rows, err := q.db.Query(ctx, listSecurityFindings,
+		arg.EpssThreshold,
+		arg.SortPriority,
 		arg.Kinds,
 		arg.ScopeAll,
 		arg.ScopeProjects,
@@ -218,6 +242,9 @@ func (q *Queries) ListSecurityFindings(ctx context.Context, arg ListSecurityFind
 		arg.Project,
 		arg.SeverityRank,
 		arg.Status,
+		arg.Kev,
+		arg.EpssMin,
+		arg.PriorityRank,
 		arg.Q,
 		arg.HasCursor,
 		arg.AfterRank,
@@ -251,6 +278,9 @@ func (q *Queries) ListSecurityFindings(ctx context.Context, arg ListSecurityFind
 			&i.Status,
 			&i.VexRank,
 			&i.SeverityRank,
+			&i.KevCount,
+			&i.MaxEpss,
+			&i.SortRank,
 			&i.ScannedAt,
 			&i.Title,
 		); err != nil {

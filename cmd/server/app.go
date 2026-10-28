@@ -285,7 +285,7 @@ func (a *app) stopWorkers() {
 
 		for _, stop := range []func(){
 			w.webhook.Stop, w.cleanup.Stop, w.presignedUpload.Stop, w.dockerGC.Stop, w.dockerUploadSweeper.Stop,
-			w.trashPurge.Stop, w.auditRetention.Stop, w.authPurge.Stop, w.proxyCache.Stop,
+			w.trashPurge.Stop, w.auditRetention.Stop, w.exploitFeeds.Stop, w.authPurge.Stop, w.proxyCache.Stop,
 			w.tierWorker.Stop, w.blobSweeper.Stop, a.store.replStop, a.store.tiers.Stop, a.store.tierAccess.Stop, w.journalWorker.Stop,
 		} {
 			stop()

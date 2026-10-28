@@ -59,6 +59,33 @@ Includes all fields of [Token](#token).
 | `scopes` | array of string | no | - |
 | `user_id` | string (uuid) | no | - |
 
+### AnnotatedVulnerability
+
+One vulnerability finding of a scan with its ExploitAnnotation.
+
+Includes all fields of [ExploitAnnotation](#exploitannotation).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `aliases` | array of string | no | Other ids the scanner knows the vulnerability by. Absent when none. |
+| `cve` | string | no | The CVE id the signals were looked up by: the one in KEV or with the highest EPSS score, else the first CVE id of the finding. Absent when the finding has no CVE id. |
+| `cvss` | number | yes | - |
+| `cwes` | array of string | no | Weakness ids (`CWE-79`) the scanner reported. Absent when it gave none. |
+| `epss` | number | yes | EPSS score: the probability of exploitation activity in the next 30 days. Null when no CVE of the finding is scored. Nullable. Minimum: 0. Maximum: 1. |
+| `epss_date` | string (date) | yes | Day of the EPSS score file the score comes from. Null when unscored. Nullable. |
+| `epss_percentile` | number | yes | Share of scored CVEs with the same or a lower EPSS score. Null when unscored. Nullable. Minimum: 0. Maximum: 1. |
+| `fixed_in` | string | yes | Version that fixes the vulnerability; empty when none. |
+| `id` | string | yes | CVE or advisory id (CVE-2021-1234, GHSA-xxxx-xxxx-xxxx). |
+| `kev` | boolean | yes | True when the CVE is in the CISA Known Exploited Vulnerabilities catalog. |
+| `kev_date_added` | string (date) | no | Day CISA added the CVE to the catalog. Only for a KEV CVE. |
+| `kev_due_date` | string (date) | no | Remediation deadline CISA set. Only for a KEV CVE that has one. |
+| `kev_ransomware` | boolean | no | True when CISA knows the CVE to be used in ransomware campaigns. Absent otherwise. |
+| `priority` | [ExploitPriority](#exploitpriority) | yes | - |
+| `published_at` | string | yes | - |
+| `references` | array of string | no | - |
+| `severity` | string | yes | CRITICAL, HIGH, MEDIUM, LOW or UNKNOWN. |
+| `summary` | string | yes | - |
+
 ### ApkSigningKey
 
 | Field | Type | Required | Description |
@@ -478,6 +505,51 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `code` | string | no | Error code |
 | `details` | string | no | Detailed error message |
 | `error` | string | yes | Error code |
+
+### ExploitAnnotation
+
+What the CISA KEV catalog and the FIRST EPSS scores say about a vulnerability finding, looked up when the finding is read (never stored with it). The signals are keyed by CVE id: a finding listed under a GHSA, GO or PYSEC id is matched through its aliases.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `cve` | string | no | The CVE id the signals were looked up by: the one in KEV or with the highest EPSS score, else the first CVE id of the finding. Absent when the finding has no CVE id. |
+| `epss` | number | yes | EPSS score: the probability of exploitation activity in the next 30 days. Null when no CVE of the finding is scored. Nullable. Minimum: 0. Maximum: 1. |
+| `epss_date` | string (date) | yes | Day of the EPSS score file the score comes from. Null when unscored. Nullable. |
+| `epss_percentile` | number | yes | Share of scored CVEs with the same or a lower EPSS score. Null when unscored. Nullable. Minimum: 0. Maximum: 1. |
+| `kev` | boolean | yes | True when the CVE is in the CISA Known Exploited Vulnerabilities catalog. |
+| `kev_date_added` | string (date) | no | Day CISA added the CVE to the catalog. Only for a KEV CVE. |
+| `kev_due_date` | string (date) | no | Remediation deadline CISA set. Only for a KEV CVE that has one. |
+| `kev_ransomware` | boolean | no | True when CISA knows the CVE to be used in ransomware campaigns. Absent otherwise. |
+| `priority` | [ExploitPriority](#exploitpriority) | yes | - |
+
+### ExploitFeed
+
+State of one exploitation-signal feed.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `checked_at` | string (date-time) | yes | When the source was last asked (an unchanged file only moves this). Nullable. |
+| `entry_count` | integer | yes | Rows loaded from the feed. |
+| `imported_at` | string (date-time) | yes | When the data was last replaced. Null when nothing is loaded. Nullable. |
+| `last_error` | string | yes | Sanitized reason the last check failed; empty after a success. |
+| `name` | string | yes | One of: `kev`, `epss`. |
+| `published_at` | string (date-time) | yes | When the feed says the data was released. Null when nothing is loaded. Nullable. |
+| `source_url` | string | yes | URL the loaded data came from; empty when the feed was never checked. |
+| `version` | string | yes | Catalog version (KEV) or model version (EPSS) of the loaded data. |
+
+### ExploitFeedsResponse
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | yes | False when the feeds are switched off (`exploit.enabled`): findings then carry no KEV or EPSS data. |
+| `epss_threshold` | number | yes | EPSS score from which a finding has priority `epss`. Minimum: 0. Maximum: 1. |
+| `feeds` | array of [ExploitFeed](#exploitfeed) | yes | The KEV and EPSS feeds, in that order. |
+
+### ExploitPriority
+
+Remediation priority: `kev` when a vulnerability is in the CISA KEV catalog, `epss` when its EPSS score reaches the configured threshold, otherwise the severity (`none` when there is none).
+
+Type: string. One of: `kev`, `epss`, `critical`, `high`, `medium`, `low`, `none`.
 
 ### FederationDeferredList
 
@@ -1571,8 +1643,11 @@ One stored scan result (a package version of one type) that reports something.
 | `counts` | [SecurityFindingCounts](#securityfindingcounts) | yes | What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium. |
 | `format` | string | yes | Format of the repository (npm, pypi, maven, ...). |
 | `id` | string (uuid) | yes | - |
+| `kev_count` | integer | yes | Vulnerabilities of a vuln finding that are in the CISA KEV catalog; 0 for the other types. Minimum: 0. |
+| `max_epss` | number | yes | Highest FIRST EPSS score among the vulnerabilities of a vuln finding; null when none is scored (and for the other types). Nullable. Minimum: 0. Maximum: 1. |
 | `package_name` | string | yes | - |
 | `package_version` | string | yes | - |
+| `priority` | [ExploitPriority](#exploitpriority) | yes | - |
 | `quarantined` | boolean | yes | - |
 | `repository` | string | yes | Repository name. |
 | `scanned_at` | string (date-time) | yes | - |
@@ -1964,6 +2039,24 @@ Includes all fields of [User](#user).
 | `updated_at` | string (date-time) | no | - |
 | `vuln_id` | string | no | - |
 
+### VulnGateResponse
+
+Verdict of an exploitation gate on one scan: it passes when no finding meets any of the conditions.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `checked` | integer | yes | Number of findings of the scan that were checked. |
+| `criteria` | object | yes | The conditions that were applied. |
+| `criteria.epss_min` | number | yes | Null when not set. Nullable. |
+| `criteria.kev` | boolean | yes | - |
+| `criteria.min_priority` | string | yes | Empty when not set. |
+| `failed` | array of object | yes | The findings that meet a condition, highest priority first, then by id. |
+| `failed[].cve` | string | yes | The CVE id the signals were looked up by; empty when the finding has none. |
+| `failed[].id` | string | yes | - |
+| `failed[].priority` | [ExploitPriority](#exploitpriority) | yes | - |
+| `failed[].reasons` | array of string | yes | The conditions it meets: `kev`, `epss>=<min>`, `priority>=<min_priority>`. |
+| `pass` | boolean | yes | True when `failed` is empty. |
+
 ### VulnScanOverviewRow
 
 A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.
@@ -1977,10 +2070,13 @@ A vulnerability scan without its findings (`vulnerabilities`), with the name and
 | `failed_scanners` | array of string | no | - |
 | `high_count` | integer | no | - |
 | `id` | string (uuid) | no | - |
+| `kev_count` | integer | yes | Findings of the scan that are in the CISA KEV catalog (as of the scan or the last feed import). Minimum: 0. |
 | `low_count` | integer | no | - |
+| `max_epss` | number | yes | Highest EPSS score among the findings; null when none is scored. Nullable. Minimum: 0. Maximum: 1. |
 | `medium_count` | integer | no | - |
 | `package_name` | string | no | - |
 | `package_version` | string | no | - |
+| `priority` | [ExploitPriority](#exploitpriority) | yes | `kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity. |
 | `quarantined` | boolean | no | - |
 | `repo_id` | string (uuid) | no | - |
 | `repository_format` | string | no | Format of the repository (npm, pypi, maven, ...). |
@@ -2016,10 +2112,13 @@ Result of one vulnerability scan of an artifact.
 | `failed_scanners` | array of string | yes | Scanners that produced no result. Empty unless `scan_status` is `partial` or `failed`. Items: one of: `osv`, `trivy`, `grype`. |
 | `high_count` | integer | yes | - |
 | `id` | string (uuid) | yes | - |
+| `kev_count` | integer | yes | Findings of the scan that are in the CISA KEV catalog (as of the scan or the last feed import). Minimum: 0. |
 | `low_count` | integer | yes | - |
+| `max_epss` | number | yes | Highest EPSS score among the findings; null when none is scored. Nullable. Minimum: 0. Maximum: 1. |
 | `medium_count` | integer | yes | - |
 | `package_name` | string | yes | - |
 | `package_version` | string | yes | - |
+| `priority` | [ExploitPriority](#exploitpriority) | yes | `kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity. |
 | `quarantined` | boolean | yes | - |
 | `repo_id` | string (uuid) | yes | - |
 | `scan_error` | string | yes | Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. A scanner that is not installed or has no vulnerability database names its code (`scanner_unavailable`, `scanner_db_unavailable`) and the setup guide. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`. Nullable. |
@@ -2028,7 +2127,7 @@ Result of one vulnerability scan of an artifact.
 | `scanner` | string | yes | One scanner name (osv, trivy or grype) or a sorted comma-joined list such as `osv,trivy` when several scanners were requested. |
 | `updated_at` | string (date-time) | yes | - |
 | `vuln_count` | integer | yes | - |
-| `vulnerabilities` | array of object | no | - |
+| `vulnerabilities` | array of [AnnotatedVulnerability](#annotatedvulnerability) | no | - |
 
 ### VulnScanSummary
 

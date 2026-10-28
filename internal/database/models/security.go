@@ -68,16 +68,34 @@ type FindingListParams struct {
 	// substring.
 	Q     string
 	Limit int
+	// Sort is FindingSortSeverity (default, also for "") or FindingSortPriority.
+	Sort string
+	// KEV, when set, keeps findings with (true) or without (false) a KEV vulnerability.
+	KEV *bool
+	// EPSSMin, when set, keeps findings whose highest EPSS score is at least this.
+	EPSSMin *float64
+	// PriorityRank, when set, keeps findings whose exploit rank equals it
+	// (6 kev, 5 epss, 4..1 the severity ranks).
+	PriorityRank *int
+	// EPSSThreshold is the EPSS score from which a finding ranks as epss.
+	EPSSThreshold float64
 	// After, when set, returns only findings strictly after this position.
 	After *FindingCursor
 }
 
-// FindingCursor is a keyset position in the findings order (severity rank
-// DESC, ScannedAt DESC, ID ASC).
+// The orders of the findings list.
+const (
+	FindingSortSeverity = "severity"
+	FindingSortPriority = "priority"
+)
+
+// FindingCursor is a keyset position in the findings order (sort rank DESC,
+// ScannedAt DESC, ID ASC). Sort is the order it was minted under.
 type FindingCursor struct {
-	SeverityRank int
-	ScannedAt    time.Time
-	ID           string
+	Sort      string
+	Rank      int
+	ScannedAt time.Time
+	ID        string
 }
 
 // Finding is one stored scan result that reports something.
@@ -104,6 +122,14 @@ type Finding struct {
 	VEXStatus string
 	// SeverityRank is 4 critical, 3 high, 2 medium, 1 low, 0 none.
 	SeverityRank int
+	// KEVCount is the number of vulnerabilities of a vuln finding in the KEV
+	// catalog (0 for the other types).
+	KEVCount int
+	// MaxEPSS is the highest EPSS score of a vuln finding; nil when none is scored.
+	MaxEPSS *float64
+	// SortRank is the rank the list was ordered by: SeverityRank, or the exploit
+	// rank (kev 6, epss 5) under FindingSortPriority.
+	SortRank int
 	// Title is a one-line summary: the worst vulnerability id, the licenses, the
 	// worst secret finding or the AI note.
 	Title     string

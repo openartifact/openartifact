@@ -1,8 +1,11 @@
 -- Cross-type security findings (view security_results, migration 084).
 
 -- name: ListSecurityFindings :many
--- One keyset page of findings, worst first: severity rank DESC, scanned_at DESC,
--- id ASC. The caller asks for one row more than the page size. Titles are read
+-- One keyset page of findings, worst first: sort_rank DESC, scanned_at DESC,
+-- id ASC. sort_rank is the severity rank, or with sort_priority the exploit
+-- rank (kev_count > 0: 6, max_epss >= epss_threshold: 5, else the severity
+-- rank); priority_rank is always the exploit rank (the priority filter).
+-- Non-vuln kinds have kev_count 0 and max_epss NULL. The caller asks for one row more than the page size. Titles are read
 -- for the page rows only.
 --
 -- A result of a scan started from a package page is
@@ -91,7 +94,7 @@ WITH q_candidates AS MATERIALIZED (
 )
 SELECT p.kind, p.id, p.repository_id, p.repository_name, p.repository_format, p.artifact_id,
        p.package_name, p.package_version, p.scanner, p.scan_status, p.critical, p.high, p.medium, p.low,
-       p.quarantined, p.status, p.vex_rank, p.severity_rank, p.scanned_at,
+       p.quarantined, p.status, p.vex_rank, p.severity_rank, p.kev_count, p.max_epss, p.sort_rank, p.scanned_at,
        COALESCE((CASE p.kind
             WHEN 'vuln' THEN (SELECT v ->> 'id'
                               FROM vuln_results vr, jsonb_array_elements(vr.vulnerabilities) AS v
@@ -112,10 +115,18 @@ SELECT p.kind, p.id, p.repository_id, p.repository_name, p.repository_format, p.
 FROM (
     SELECT sr.kind, sr.id, sr.repository_id, r.name AS repository_name, r.format AS repository_format, sr.artifact_id,
            sr.package_name, sr.package_version, sr.scanner, sr.scan_status, sr.critical, sr.high, sr.medium, sr.low,
-           sr.quarantined, sr.status, COALESCE(sr.vex_rank, 0)::int AS vex_rank, sr.severity_rank, sr.scanned_at
+           sr.quarantined, sr.status, COALESCE(sr.vex_rank, 0)::int AS vex_rank, sr.severity_rank, sr.kev_count, sr.max_epss, k.sort_rank, sr.scanned_at
     FROM security_results sr
     JOIN repositories r ON r.id = sr.repository_id
     JOIN projects pr ON pr.id = r.project_id
+    CROSS JOIN LATERAL (
+        SELECT CASE WHEN sr.kev_count > 0 THEN 6
+                    WHEN sr.max_epss >= @epss_threshold::float8 THEN 5
+                    ELSE sr.severity_rank END::int AS priority_rank
+    ) pk
+    CROSS JOIN LATERAL (
+        SELECT CASE WHEN @sort_priority::boolean THEN pk.priority_rank ELSE sr.severity_rank END::int AS sort_rank
+    ) k
     WHERE sr.is_finding
       AND sr.kind = ANY(@kinds::text[])
       AND (@scope_all::boolean OR r.project_id = ANY(@scope_projects::uuid[]))
@@ -123,19 +134,22 @@ FROM (
       AND (sqlc.narg('project')::text IS NULL OR pr.name = sqlc.narg('project')::text)
       AND (sqlc.narg('severity_rank')::int IS NULL OR sr.severity_rank = sqlc.narg('severity_rank')::int)
       AND (sqlc.narg('status')::text IS NULL OR sr.status = sqlc.narg('status')::text)
+      AND (sqlc.narg('kev')::boolean IS NULL OR (sr.kev_count > 0) = sqlc.narg('kev')::boolean)
+      AND (sqlc.narg('epss_min')::float8 IS NULL OR sr.max_epss >= sqlc.narg('epss_min')::float8)
+      AND (sqlc.narg('priority_rank')::int IS NULL OR pk.priority_rank = sqlc.narg('priority_rank')::int)
       AND (sqlc.narg('q')::text IS NULL
            OR (sr.package_name || '@' || sr.package_version) ILIKE sqlc.narg('q')::text
            OR r.name ILIKE sqlc.narg('q')::text
            OR EXISTS (SELECT 1 FROM q_match m WHERE m.repository_id = sr.repository_id AND m.id::text = sr.artifact_id))
       AND (NOT @has_cursor::boolean
-           OR sr.severity_rank < @after_rank::int
-           OR (sr.severity_rank = @after_rank::int
+           OR k.sort_rank < @after_rank::int
+           OR (k.sort_rank = @after_rank::int
                AND (sr.scanned_at < @after_at::timestamptz
                     OR (sr.scanned_at = @after_at::timestamptz AND sr.id > @after_id::uuid))))
-    ORDER BY sr.severity_rank DESC, sr.scanned_at DESC, sr.id
+    ORDER BY k.sort_rank DESC, sr.scanned_at DESC, sr.id
     LIMIT @page_limit::int
 ) p
-ORDER BY p.severity_rank DESC, p.scanned_at DESC, p.id;
+ORDER BY p.sort_rank DESC, p.scanned_at DESC, p.id;
 
 -- name: SecurityFindingsSummary :many
 -- Findings per type: total, by highest severity and quarantined.

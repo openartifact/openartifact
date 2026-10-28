@@ -38,6 +38,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <dt class="text-muted">{{ t('security.detail.scanners') }}</dt>
           <dd>{{ scanners.join(', ') }}</dd>
         </template>
+        <template v-if="finding.type === 'vuln'">
+          <dt class="text-muted">{{ t('security.detail.priority') }}</dt>
+          <dd data-testid="finding-priority"><PriorityBadge :priority="finding.priority" /></dd>
+          <template v-if="finding.kev_count > 0 || finding.max_epss !== null">
+            <dt class="text-muted">{{ t('security.detail.exploit') }}</dt>
+            <dd class="flex flex-wrap items-center gap-1.5" data-testid="finding-exploit">
+              <KevBadge v-if="finding.kev_count > 0" :count="finding.kev_count" />
+              <EpssBadge v-if="finding.max_epss !== null" :score="finding.max_epss" :elevated="finding.priority === 'epss'" />
+            </dd>
+          </template>
+        </template>
         <dt class="text-muted">{{ t('security.detail.found') }}</dt>
         <dd><time :datetime="finding.scanned_at" :title="formatDateTime(finding.scanned_at)">{{ timeAgo(finding.scanned_at) }}</time></dd>
       </dl>
@@ -95,9 +106,12 @@ import StatusBadge from '../StatusBadge.vue'
 import VexStatusBadge from '../VexStatusBadge.vue'
 import Drawer from '../ui/Drawer.vue'
 import SeverityBadge from '../ui/SeverityBadge.vue'
+import EpssBadge from './EpssBadge.vue'
 import FindingAIDetail from './FindingAIDetail.vue'
 import FindingLicenseDetail from './FindingLicenseDetail.vue'
 import FindingSecretDetail from './FindingSecretDetail.vue'
+import KevBadge from './KevBadge.vue'
+import PriorityBadge from './PriorityBadge.vue'
 import {
   deleteSecretScan,
   deleteVulnScan,

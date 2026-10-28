@@ -23,9 +23,12 @@ const FINDING = {
   id: 'f1', type: 'vuln', repository: 'libs', format: 'npm', package_name: 'left-pad', package_version: '1.0.0',
   artifact_id: 'a1', severity: 'critical', counts: { critical: 1, high: 2, medium: 0, low: 0 },
   title: 'CVE-2026-0001', scanner: 'osv', status: 'open', quarantined: false, scanned_at: '2026-01-01T00:00:00Z',
+  kev_count: 0, max_epss: null, priority: 'critical',
 }
 
-interface Api { summary?: unknown; findings?: unknown; findingsStatus?: number; health?: unknown }
+const EXPLOITED = { ...FINDING, id: 'f2', title: 'CVE-2026-0002', kev_count: 2, max_epss: 0.976, priority: 'kev' }
+
+interface Api { summary?: unknown; findings?: unknown; findingsStatus?: number; health?: unknown; feeds?: unknown }
 
 function mockApi(api: Api = {}) {
   return spyOn(globalThis, 'fetch').mockImplementation((async (input: unknown) => {
@@ -35,6 +38,7 @@ function mockApi(api: Api = {}) {
       if (api.findingsStatus) return json({ error: 'forbidden', code: 'forbidden' }, api.findingsStatus)
       return json(api.findings ?? { findings: [FINDING], has_more: false })
     }
+    if (url.pathname === '/api/v1/security/exploit-feeds') return api.feeds ? json(api.feeds) : json({ error: 'nope', code: 'forbidden' }, 403)
     if (url.pathname === '/api/v1/security/health') return json(api.health ?? { scanners: [], ai: { enabled: true }, scans_pending: 0, scans_failed_24h: 0, unscanned_repositories: 0, dependency_track: { enabled: false } })
     if (url.pathname === '/api/v1/repositories') return json({ total: 1, repositories: [{ name: 'libs' }] })
     if (/\/vuln\/scans\/[^/]+$/.test(url.pathname)) return json({ id: 'f1', artifact_id: 'a1', status: 'completed', scanner: 'osv', package_name: 'left-pad', package_version: '1.0.0', results: [] })
@@ -168,5 +172,136 @@ describe('SecurityPage', () => {
     expect(w.text()).toMatch(/CSV/)
     expect(w.text()).toMatch(/VEX/)
     w.unmount()
+  })
+  describe('exploitation signals', () => {
+    const lastQuery = (spy: ReturnType<typeof spyOn>) => Object.fromEntries(calls(spy, '/api/v1/security/findings').at(-1)!.searchParams)
+
+    it('shows KEV and EPSS badges on the finding rows and a dash when there are none', async () => {
+      mockApi({ findings: { findings: [EXPLOITED, { ...FINDING, kev_count: 0, max_epss: null, priority: 'critical' }], has_more: false } })
+      const { w } = await mountPage()
+      const cells = w.findAll('td').filter((td) => td.find('[data-testid="kev-badge"], [data-testid="epss-badge"]').exists())
+      expect(cells).toHaveLength(1)
+      expect(cells[0].get('[data-testid="kev-badge"]').text()).toBe('KEV ×2')
+      expect(cells[0].get('[data-testid="epss-badge"]').text()).toBe('EPSS 97.6%')
+      w.unmount()
+    })
+
+    it('hides the exploitation column for types that cannot be exploited', async () => {
+      mockApi()
+      const { w } = await mountPage('/security?type=license')
+      expect(w.text()).not.toContain('Exploitation')
+      w.unmount()
+    })
+
+    it('sorts by priority from the control and keeps the order in the URL', async () => {
+      const spy = mockApi()
+      const { w, router } = await mountPage()
+      const sort = w.get('[data-testid="sort-by"]')
+      const [severity, priority] = sort.findAll('button')
+      expect(severity.attributes('aria-pressed')).toBe('true')
+      await priority.trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query.sort).toBe('priority')
+      expect(lastQuery(spy).sort).toBe('priority')
+      expect(w.get('[data-testid="sort-by"]').findAll('button')[1].attributes('aria-pressed')).toBe('true')
+      await w.get('[data-testid="sort-by"]').findAll('button')[0].trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query.sort).toBeUndefined()
+      expect(lastQuery(spy).sort).toBeUndefined()
+      w.unmount()
+    })
+
+    it('drops the cursor when the sort changes, so a cursor never meets another order', async () => {
+      const spy = mockApi({ findings: { findings: [FINDING], has_more: true, next_cursor: 'c2' } })
+      const { w } = await mountPage()
+      await w.get('[data-testid="sort-by"]').findAll('button')[1].trigger('click')
+      await flushPromises()
+      const q = calls(spy, '/api/v1/security/findings').at(-1)!.searchParams
+      expect(q.get('sort')).toBe('priority')
+      expect(q.has('cursor')).toBe(false)
+      w.unmount()
+    })
+
+    it('sends the KEV, EPSS and priority filters to the server and the URL', async () => {
+      const spy = mockApi()
+      const { w, router } = await mountPage()
+      const kev = w.get('[data-testid="filter-kev"]')
+      ;(kev.element as HTMLInputElement).checked = true
+      await kev.trigger('change')
+      await flushPromises()
+      expect(lastQuery(spy).kev).toBe('true')
+      expect(router.currentRoute.value.query.kev).toBe('1')
+
+      const epss = w.get('[data-testid="filter-epss"]')
+      ;(epss.element as HTMLSelectElement).value = '0.1'
+      await epss.trigger('change')
+      await flushPromises()
+      expect(lastQuery(spy).epss_min).toBe('0.1')
+      expect(router.currentRoute.value.query.epss_min).toBe('0.1')
+
+      const priority = w.get('[data-testid="filter-priority"]')
+      ;(priority.element as HTMLSelectElement).value = 'epss'
+      await priority.trigger('change')
+      await flushPromises()
+      expect(lastQuery(spy)).toMatchObject({ kev: 'true', epss_min: '0.1', priority: 'epss', limit: '25' })
+      w.unmount()
+    })
+
+    it('offers 1%, 10% and 50% as EPSS thresholds', async () => {
+      mockApi()
+      const { w } = await mountPage()
+      const options = w.get('[data-testid="filter-epss"]').findAll('option').map((o) => [o.attributes('value'), o.text()])
+      expect(options).toEqual([['', 'Any EPSS'], ['0.01', 'EPSS at least 1%'], ['0.1', 'EPSS at least 10%'], ['0.5', 'EPSS at least 50%']])
+      w.unmount()
+    })
+
+    it('restores sort and filters from the URL and clears the filters but keeps the order', async () => {
+      const spy = mockApi()
+      const { w, router } = await mountPage('/security?sort=priority&kev=1&epss_min=0.5&priority=kev')
+      expect(lastQuery(spy)).toEqual({ sort: 'priority', kev: 'true', epss_min: '0.5', priority: 'kev', limit: '25' })
+      expect((w.get('[data-testid="filter-kev"]').element as HTMLInputElement).checked).toBe(true)
+      expect((w.get('[data-testid="filter-epss"]').element as HTMLSelectElement).value).toBe('0.5')
+      await w.get('[role="search"] button').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query).toEqual({ sort: 'priority' })
+      expect(lastQuery(spy)).toEqual({ sort: 'priority', limit: '25' })
+      w.unmount()
+    })
+
+    it('exports with the exploitation filters', async () => {
+      const spy = mockApi()
+      const { w } = await mountPage('/security?type=vuln&sort=priority&kev=1')
+      await w.get('[data-testid="export-csv"]').trigger('click')
+      await flushPromises()
+      expect(Object.fromEntries(calls(spy, '/api/v1/security/findings/export').at(-1)!.searchParams)).toEqual({
+        type: 'vuln', sort: 'priority', kev: 'true', format: 'csv',
+      })
+      w.unmount()
+    })
+
+    it('shows how fresh the exploitation data is, and nothing when the endpoint refuses', async () => {
+      const day = new Date(Date.now() - 86_400_000).toISOString()
+      const f = (name: string) => ({ name, source_url: '', version: '1', published_at: day, entry_count: 1, imported_at: day, checked_at: day, last_error: '' })
+      mockApi({ feeds: { feeds: [f('kev'), f('epss')], epss_threshold: 0.1, enabled: true } })
+      const first = await mountPage()
+      expect(first.w.get('[data-testid="exploit-feeds"]').text()).toContain('Exploitation data: KEV')
+      first.w.unmount()
+      mockApi()
+      const second = await mountPage()
+      expect(second.w.find('[data-testid="exploit-feeds"]').exists()).toBe(false)
+      second.w.unmount()
+    })
+
+    it('shows priority and exploitation signals in the finding drawer', async () => {
+      mockApi({ findings: { findings: [EXPLOITED], has_more: false } })
+      const { w } = await mountPage()
+      await w.get('[data-testid="finding-f2"]').trigger('click')
+      await flushPromises()
+      const drawer = document.body.querySelector('[data-testid="finding-drawer"]')!
+      expect(drawer.querySelector('[data-testid="finding-priority"] [data-priority="kev"]')).not.toBeNull()
+      expect(drawer.querySelector('[data-testid="finding-exploit"] [data-testid="kev-badge"]')).not.toBeNull()
+      expect(drawer.querySelector('[data-testid="finding-exploit"] [data-testid="epss-badge"]')?.textContent?.trim()).toBe('EPSS 97.6%')
+      w.unmount()
+    })
   })
 })

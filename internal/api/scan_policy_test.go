@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/vuln"
@@ -348,7 +349,7 @@ func TestVulnScan_FailureIsRecordedNotClean(t *testing.T) {
 			}
 
 			// What the API returns for a stored result never carries raw error text.
-			out, err := json.Marshal(vulnScanResultToMap(stored))
+			out, err := json.Marshal(vulnScanResultToMap(stored, nil, exploit.DefaultEPSSThreshold))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -132,6 +132,9 @@ type Config struct {
 	// docs/operations/monitoring.md.
 	Telemetry telemetry.Config `yaml:"telemetry"`
 	Scanners  ScannersConfig   `yaml:"scanners"`
+	// Exploit configures the KEV and EPSS feeds behind the exploitation
+	// signals of vulnerability findings.
+	Exploit ExploitConfig `yaml:"exploit"`
 	// BaseURL is the public URL of the server; it is used for generated links
 	// and SSO callbacks, so set it when the server runs behind a reverse proxy.
 	BaseURL string `yaml:"baseUrl"`
@@ -746,6 +749,7 @@ func defaultConfig() *Config {
 			Trivy:           TrivyScanner{Install: InstallNone},
 			Grype:           GrypeScanner{Install: InstallNone},
 		},
+		Exploit: defaultExploitConfig(),
 		BaseURL: "http://localhost:8080",
 	}
 }
@@ -969,6 +973,11 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Scanners.DownloadBaseURL, "OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL")
 	overrideString(&cfg.Scanners.Trivy.Install, "OPENARTIFACT_TRIVY_INSTALL")
 	overrideString(&cfg.Scanners.Grype.Install, "OPENARTIFACT_GRYPE_INSTALL")
+	overrideBool(&cfg.Exploit.Enabled, "OPENARTIFACT_EXPLOIT_ENABLED")
+	overrideString(&cfg.Exploit.KEVURL, "OPENARTIFACT_EXPLOIT_KEV_URL")
+	overrideString(&cfg.Exploit.EPSSURL, "OPENARTIFACT_EXPLOIT_EPSS_URL")
+	overrideDuration(&cfg.Exploit.Interval, "OPENARTIFACT_EXPLOIT_INTERVAL")
+	overrideFloat(&cfg.Exploit.EPSSThreshold, "OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD")
 
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")
@@ -1078,6 +1087,10 @@ func (c *Config) Validate() error {
 // validateFeatures checks the scanner and presign settings.
 func (c *Config) validateFeatures() error {
 	if err := c.Scanners.validate(); err != nil {
+		return err
+	}
+
+	if err := c.Exploit.validate(); err != nil {
 		return err
 	}
 

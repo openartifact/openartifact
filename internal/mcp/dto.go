@@ -11,6 +11,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 )
 
 // Every tool result is built from the explicit snake_case DTOs below. Never
@@ -108,6 +109,10 @@ type severityCounts struct {
 }
 
 type findingDTO struct {
+	// Annotation is what the CISA KEV and FIRST EPSS feeds say about the
+	// vulnerability, plus its derived priority (kev, epss, or the severity).
+	exploit.Annotation
+
 	PackageName    string   `json:"package_name"`
 	PackageVersion string   `json:"package_version"`
 	ID             string   `json:"id"`
@@ -131,6 +136,12 @@ type vulnerabilitiesResult struct {
 	Totals             severityCounts `json:"totals"`
 	Findings           []findingDTO   `json:"findings"`
 	FindingsTruncated  bool           `json:"findings_truncated"`
+	// KEVCount counts the matching vulnerabilities in the CISA KEV catalog,
+	// MaxEPSS is the highest EPSS score among them (null when none is scored)
+	// and Priority the highest priority: kev, epss, or the worst severity.
+	KEVCount int      `json:"kev_count"`
+	MaxEPSS  *float64 `json:"max_epss"`
+	Priority string   `json:"priority"`
 }
 
 type clientSetupResult struct {

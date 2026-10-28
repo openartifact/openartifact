@@ -35,7 +35,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <SecurityHealthNotice v-if="health" :health="health" class="mb-4" />
 
-      <SecuritySummaryStrip class="mb-4" :summary="summary" :filters="filters" :error="summaryError" @select="applyStrip" />
+      <SecuritySummaryStrip class="mb-2" :summary="summary" :filters="filters" :error="summaryError" @select="applyStrip" />
+
+      <ExploitFeedStatus class="mb-4" />
 
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <SecurityTypeSwitch :model-value="filters.type" :summary="summary" @update:model-value="(ty) => list.setFilter('type', ty)" />
@@ -80,6 +82,45 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <option v-if="filters.repo && !repoNames.includes(filters.repo)" :value="filters.repo">{{ filters.repo }}</option>
           <option v-for="name in repoNames" :key="name" :value="name">{{ name }}</option>
         </select>
+        <select
+          :value="filters.priority"
+          :aria-label="t('security.filter.priority')"
+          :class="SELECT"
+          data-testid="filter-priority"
+          @change="list.setFilter('priority', ($event.target as HTMLSelectElement).value as InboxFilters['priority'])"
+        >
+          <option value="">{{ t('security.filter.allPriorities') }}</option>
+          <option v-for="p in PRIORITY_FILTERS" :key="p" :value="p">{{ priorityLabel(p) }}</option>
+        </select>
+        <select
+          :value="filters.epss_min"
+          :aria-label="t('security.filter.epss')"
+          :class="SELECT"
+          data-testid="filter-epss"
+          @change="list.setFilter('epss_min', ($event.target as HTMLSelectElement).value as InboxFilters['epss_min'])"
+        >
+          <option value="">{{ t('security.filter.anyEpss') }}</option>
+          <option v-for="v in EPSS_MIN_OPTIONS" :key="v" :value="v">{{ tp('security.filter.epssAtLeast', { value: formatEpssThreshold(v) }) }}</option>
+        </select>
+        <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-sm text-foreground max-md:h-11">
+          <input
+            type="checkbox"
+            :checked="filters.kev"
+            data-testid="filter-kev"
+            @change="list.setFilter('kev', ($event.target as HTMLInputElement).checked)"
+          />
+          {{ t('security.filter.kev') }}
+        </label>
+        <template #after>
+          <span class="text-sm text-muted" aria-hidden="true">{{ t('security.sort.label') }}</span>
+          <SegmentedControl
+            :model-value="filters.sort"
+            :options="sortOptions"
+            :label="t('security.sort.label')"
+            data-testid="sort-by"
+            @update:model-value="(v) => list.setFilter('sort', v as InboxFilters['sort'])"
+          />
+        </template>
       </FilterBar>
 
       <!-- Distinct non-list states: nothing scanned yet, all clear, AI off. -->
@@ -144,6 +185,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
           </div>
         </template>
+        <template #cell-exploit="{ row }">
+          <div v-if="(row as FindingRow).kevCount > 0 || (row as FindingRow).maxEpss !== null" class="flex flex-wrap items-center gap-1">
+            <KevBadge v-if="(row as FindingRow).kevCount > 0" :count="(row as FindingRow).kevCount" />
+            <EpssBadge v-if="(row as FindingRow).maxEpss !== null" :score="(row as FindingRow).maxEpss!" :elevated="(row as FindingRow).priority === 'epss'" />
+          </div>
+          <span v-else class="text-sm text-muted">—</span>
+        </template>
         <template #cell-scanner="{ row }">
           <span class="text-sm text-muted">{{ (row as FindingRow).scanners.join(', ') || '—' }}</span>
         </template>
@@ -198,16 +246,22 @@ import SecurityHealthNotice from '../../components/security/SecurityHealthNotice
 import SecurityScanDrawer from '../../components/security/SecurityScanDrawer.vue'
 import SecuritySummaryStrip from '../../components/security/SecuritySummaryStrip.vue'
 import SecurityTypeSwitch from '../../components/security/SecurityTypeSwitch.vue'
+import EpssBadge from '../../components/security/EpssBadge.vue'
+import ExploitFeedStatus from '../../components/security/ExploitFeedStatus.vue'
+import KevBadge from '../../components/security/KevBadge.vue'
 import FilterBar from '../../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../../components/ui/ListTable.vue'
+import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 import SeverityBadge from '../../components/ui/SeverityBadge.vue'
 import StateBlock from '../../components/ui/StateBlock.vue'
 import { listAllRepositories } from '../../api/repositories'
 import { FINDINGS_EXPORT_FORMATS, findingsExportUrl, type FindingCounts, type FindingsExportFormat, type SecurityFinding } from '../../api/security'
 import { useSecurityInbox } from '../../composables/useSecurityInbox'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
+import { EPSS_MIN_OPTIONS, PRIORITY_FILTERS, formatEpssThreshold, type PriorityFilter } from '../../lib/exploitPriority'
 import {
   SEVERITY_FILTERS,
+  SORTS,
   STATUS_FILTERS,
   countsLabel,
   findingLink,
@@ -218,7 +272,7 @@ import {
   type InboxFilters,
 } from '../../lib/securityFindings'
 import { useSessionStore } from '../../stores/session'
-import { t, tDynamic } from '../../i18n'
+import { t, tDynamic, tp } from '../../i18n'
 
 const SELECT =
   'h-9 rounded-lg border border-border-strong bg-surface px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary max-md:h-11'
@@ -241,10 +295,16 @@ onMounted(async () => {
   }
 })
 
+const sortOptions = computed(() => SORTS.map((value) => ({ value, label: t(`security.sort.${value}`) })))
+
+/** `kev` and `epss` have their own labels; the severity priorities read like the severity filter. */
+const priorityLabel = (p: PriorityFilter): string => (p === 'kev' || p === 'epss' ? t(`security.exploit.priority.${p}`) : t(`ui.severity.${p}`))
+
 const columns = computed<ListColumn[]>(() => [
   { key: 'severity', label: t('security.col.severity') },
   { key: 'title', label: t('security.col.finding'), hideLabel: true, grow: true },
   { key: 'artifact', label: t('security.col.package'), hideLabel: true },
+  ...(filters.value.type === 'all' || filters.value.type === 'vuln' ? [{ key: 'exploit', label: t('security.col.exploit'), dropOrder: 4 }] : []),
   ...(filters.value.type === 'all' || filters.value.type === 'vuln' ? [{ key: 'scanner', label: t('security.col.scanner'), dropOrder: 2 }] : []),
   { key: 'counts', label: t('security.col.counts'), dropOrder: 3 },
   { key: 'status', label: t('security.col.status') },
@@ -261,7 +321,7 @@ const blockState = computed<'never' | 'ai-off' | 'clear' | null>(() => {
 })
 
 function clearAll(): void {
-  list.setFilters({ severity: '', status: '', repo: '', q: '' })
+  list.setFilters({ severity: '', status: '', repo: '', q: '', kev: false, epss_min: '', priority: '' })
 }
 
 const linkOf = (row: FindingRow): string => findingLink(row.source)

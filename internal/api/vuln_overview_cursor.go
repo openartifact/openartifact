@@ -18,35 +18,49 @@ import (
 var errInvalidVulnCursor = errors.New("invalid vulnerability scan cursor")
 
 // encodeVulnCursor renders a keyset position as an opaque URL-safe token:
-// base64url("<critical>:<high>:<medium>:<low>:<sort time unix microseconds>:<scan id>").
-// Postgres stores timestamptz at microsecond precision, so the round trip is
-// exact.
-func encodeVulnCursor(c *models.VulnScanCursor) string {
-	raw := strconv.Itoa(
-		c.CriticalCount,
-	) + ":" + strconv.Itoa(
-		c.HighCount,
-	) + ":" + strconv.Itoa(
-		c.MediumCount,
-	) + ":" + strconv.Itoa(
-		c.LowCount,
-	) + ":" + strconv.FormatInt(
-		c.SortAt.UnixMicro(),
-		10,
-	) + ":" + c.ID
+// base64url("<critical>:<high>:<medium>:<low>:<sort time unix microseconds>:<scan id>")
+// for the severity sort and base64url("p:<rank>:" + the same) for the priority
+// sort, so a cursor never decodes under the other sort. Postgres stores
+// timestamptz at microsecond precision, so the round trip is exact.
+func encodeVulnCursor(c *models.VulnScanCursor, sort string) string {
+	raw := strconv.Itoa(c.CriticalCount) + ":" + strconv.Itoa(c.HighCount) + ":" + strconv.Itoa(c.MediumCount) + ":" +
+		strconv.Itoa(c.LowCount) + ":" + strconv.FormatInt(c.SortAt.UnixMicro(), 10) + ":" + c.ID
+
+	if sort == models.VulnSortPriority {
+		raw = vulnCursorPriorityTag + ":" + strconv.Itoa(c.Rank) + ":" + raw
+	}
 
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
-// decodeVulnCursor parses a token produced by encodeVulnCursor. A forged
-// value is an error here, never a failing query.
-func decodeVulnCursor(s string) (*models.VulnScanCursor, error) {
+// vulnCursorPriorityTag leads the token of a priority-sort cursor.
+const vulnCursorPriorityTag = "p"
+
+// decodeVulnCursor parses a token produced by encodeVulnCursor for the same
+// sort. A forged value, or a cursor of the other sort, is an error here, never
+// a failing query.
+func decodeVulnCursor(s, sort string) (*models.VulnScanCursor, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
 		return nil, errInvalidVulnCursor
 	}
 
 	parts := strings.Split(string(raw), ":")
+	rank := 0
+
+	if sort == models.VulnSortPriority {
+		if len(parts) != 8 || parts[0] != vulnCursorPriorityTag {
+			return nil, errInvalidVulnCursor
+		}
+
+		r, err := strconv.ParseInt(parts[1], 10, 32)
+		if err != nil || r < 0 || r > maxVulnCursorRank {
+			return nil, errInvalidVulnCursor
+		}
+
+		rank, parts = int(r), parts[2:]
+	}
+
 	if len(parts) != 6 {
 		return nil, errInvalidVulnCursor
 	}
@@ -74,6 +88,7 @@ func decodeVulnCursor(s string) (*models.VulnScanCursor, error) {
 	}
 
 	return &models.VulnScanCursor{
+		Rank:          rank,
 		CriticalCount: counts[0],
 		HighCount:     counts[1],
 		MediumCount:   counts[2],
@@ -82,3 +97,6 @@ func decodeVulnCursor(s string) (*models.VulnScanCursor, error) {
 		ID:            id.String(),
 	}, nil
 }
+
+// maxVulnCursorRank is the highest priority rank (kev).
+const maxVulnCursorRank = 6

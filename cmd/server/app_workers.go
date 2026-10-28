@@ -12,6 +12,7 @@ import (
 	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/exploit"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/nixkeys"
@@ -50,6 +51,9 @@ type workerSet struct {
 	dockerUploadSweeper *worker.DockerUploadSweeper
 	trashPurge          *worker.TrashPurgeWorker
 	auditRetention      *worker.AuditRetentionWorker
+	exploitFeeds        *worker.ExploitFeedsWorker
+	// exploit marks findings with the KEV and EPSS signals; it is never nil.
+	exploit *exploit.Enricher
 
 	tierEngine  *tiering.Engine
 	tierWorker  *worker.TierMoverWorker
@@ -67,6 +71,7 @@ func (a *app) setupWorkers() {
 	a.startMetadataWorkers()
 	a.startHousekeepingWorkers()
 	a.startStorageWorkers()
+	a.startExploitFeeds()
 	a.startJournal()
 
 	// stopWorkers runs in the shutdown sequence; this covers early returns.

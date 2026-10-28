@@ -10,14 +10,15 @@ import {
   hasNarrowingFilters,
   isCellActive,
   stripPatch,
+  toFindingRow,
   summaryTotals,
   toFindingFilters,
   typeTotal,
   type InboxFilters,
 } from '../securityFindings'
-import type { SecuritySummary } from '../../api/security'
+import type { SecurityFinding, SecuritySummary } from '../../api/security'
 
-const base: InboxFilters = { type: 'all', severity: '', status: '', repo: '', q: '' }
+const base: InboxFilters = { type: 'all', severity: '', status: '', repo: '', q: '', sort: 'severity', kev: false, epss_min: '', priority: '' }
 const z = { total: 0, critical: 0, high: 0, medium: 0, low: 0, quarantined: 0 }
 const summary = {
   by_type: { vuln: { ...z, total: 5, critical: 2, high: 3 }, license: { ...z, total: 1, low: 1 }, secret: { ...z, total: 2, high: 2, quarantined: 1 }, ai: { ...z } },
@@ -37,6 +38,31 @@ describe('securityFindings', () => {
     expect(hasNarrowingFilters({ ...base, severity: 'high' })).toBe(true)
     expect(hasNarrowingFilters({ ...base, status: 'open' })).toBe(true)
     expect(hasNarrowingFilters({ ...base, q: '  ' })).toBe(false)
+  })
+
+  it('sends the exploitation filters and the priority order, never the default sort', () => {
+    expect(toFindingFilters({ ...base, sort: 'priority', kev: true, epss_min: '0.1', priority: 'epss' })).toEqual({
+      type: undefined, repo: undefined, severity: undefined, status: undefined, q: undefined,
+      sort: 'priority', kev: true, epss_min: 0.1, priority: 'epss',
+    })
+    const plain = toFindingFilters(base)
+    expect(plain.sort).toBeUndefined()
+    expect(plain.kev).toBeUndefined()
+    expect(plain.epss_min).toBeUndefined()
+    expect(plain.priority).toBeUndefined()
+  })
+
+  it('treats the exploitation filters as narrowing but not the sort order', () => {
+    expect(hasNarrowingFilters({ ...base, sort: 'priority' })).toBe(false)
+    expect(hasNarrowingFilters({ ...base, kev: true })).toBe(true)
+    expect(hasNarrowingFilters({ ...base, epss_min: '0.5' })).toBe(true)
+    expect(hasNarrowingFilters({ ...base, priority: 'kev' })).toBe(true)
+  })
+
+  it('maps the exploitation signals of a finding onto its row', () => {
+    const f = { id: 'f', type: 'vuln', scanner: 'osv', package_name: 'p', package_version: '1', kev_count: 2, max_epss: 0.5, priority: 'kev' } as SecurityFinding
+    expect(toFindingRow(f)).toMatchObject({ kevCount: 2, maxEpss: 0.5, priority: 'kev' })
+    expect(toFindingRow({ ...f, kev_count: undefined, max_epss: undefined } as never)).toMatchObject({ kevCount: 0, maxEpss: null })
   })
 
   it('sums the summary over every type or reads one', () => {

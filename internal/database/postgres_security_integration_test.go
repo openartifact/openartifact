@@ -470,3 +470,139 @@ func TestSecurityFindings_ResolvesPackageRowIDs(t *testing.T) {
 		}
 	}
 }
+
+// seedExploitFindings adds a low-severity result whose vulnerability is in the
+// KEV catalog and a medium one with an EPSS score above the threshold, newer
+// than the fixture's results.
+func seedExploitFindings(t *testing.T, f *securityFixture) {
+	t.Helper()
+
+	job := seedScanJob(t, f.db, f.repoA, "kevpkg@1.0.0", "vuln", "osv", "completed", f.now.Add(-30*time.Minute))
+	f.ids["kev"] = seedVulnResult(t, f.db, job, `[{"id":"CVE-1","severity":"LOW"}]`, 0, 0, 0, 1, false)
+	mustExec(t, f.db, `UPDATE vuln_results SET kev_count = 1, max_epss = 0.02 WHERE id = $1`, f.ids["kev"])
+
+	job = seedScanJob(t, f.db, f.repoA, "epsspkg@1.0.0", "vuln", "osv", "completed", f.now.Add(-20*time.Minute))
+	f.ids["epss"] = seedVulnResult(t, f.db, job, `[{"id":"CVE-2","severity":"MEDIUM"}]`, 0, 0, 1, 0, false)
+	mustExec(t, f.db, `UPDATE vuln_results SET max_epss = 0.3 WHERE id = $1`, f.ids["epss"])
+}
+
+func TestSecurityFindings_PriorityOrder(t *testing.T) {
+	f := newSecurityFixture(t)
+	seedExploitFindings(t, f)
+
+	const threshold = 0.1
+
+	severity := findingIDs(listAll(t, f, models.FindingListParams{Sort: models.FindingSortSeverity, EPSSThreshold: threshold}))
+	if k := slices.Index(severity, f.ids["kev"]); k < slices.Index(severity, f.ids["lodash"]) {
+		t.Fatalf("sort=severity must ignore KEV: %v", severity)
+	}
+
+	byPriority := listAll(t, f, models.FindingListParams{Sort: models.FindingSortPriority, EPSSThreshold: threshold})
+	got := findingIDs(byPriority)
+
+	// KEV first (rank 6, although low), the EPSS row next (rank 5, although
+	// medium), then the critical vulnerability and the rest in severity order.
+	if len(got) < 4 || got[0] != f.ids["kev"] || got[1] != f.ids["epss"] || got[2] != f.ids["lodash"] {
+		t.Fatalf("priority order = %v", got)
+	}
+
+	if byPriority.Findings[0].SortRank != 6 || byPriority.Findings[1].SortRank != 5 || byPriority.Findings[2].SortRank != 4 {
+		t.Fatalf("sort ranks = %d %d %d", byPriority.Findings[0].SortRank, byPriority.Findings[1].SortRank, byPriority.Findings[2].SortRank)
+	}
+
+	if k := byPriority.Findings[0]; k.KEVCount != 1 || k.MaxEPSS == nil || k.SeverityRank != 1 {
+		t.Fatalf("kev finding aggregates = %+v", k)
+	}
+
+	// the same set as the severity order, nothing lost or duplicated
+	if !slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(severity))) {
+		t.Fatalf("priority %v and severity %v list different findings", got, severity)
+	}
+
+	// an EPSS score below the threshold does not lift a row
+	low := findingIDs(listAll(t, f, models.FindingListParams{Sort: models.FindingSortPriority, EPSSThreshold: 0.5}))
+	if low[1] == f.ids["epss"] {
+		t.Fatalf("EPSS 0.3 must not rank above a critical one at threshold 0.5: %v", low)
+	}
+}
+
+func TestSecurityFindings_PriorityKeysetPaging(t *testing.T) {
+	f := newSecurityFixture(t)
+	seedExploitFindings(t, f)
+
+	params := models.FindingListParams{Sort: models.FindingSortPriority, EPSSThreshold: 0.1}
+	all := findingIDs(listAll(t, f, params))
+
+	for _, limit := range []int{1, 2, 3} {
+		var got []string
+
+		p := params
+		p.Limit = limit
+
+		for range 20 {
+			page := listAll(t, f, p)
+			got = append(got, findingIDs(page)...)
+
+			if page.Next == nil {
+				break
+			}
+
+			if page.Next.Sort != models.FindingSortPriority {
+				t.Fatalf("cursor sort = %q", page.Next.Sort)
+			}
+
+			p.After = page.Next
+		}
+
+		if !slices.Equal(got, all) {
+			t.Fatalf("limit %d: paged = %v, all = %v", limit, got, all)
+		}
+	}
+}
+
+func TestSecurityFindings_ExploitFilters(t *testing.T) {
+	f := newSecurityFixture(t)
+	seedExploitFindings(t, f)
+
+	yes, no := true, false
+	epss, big := 0.1, 0.9
+	kevRank, epssRank, criticalRank, lowRank := 6, 5, 4, 1
+
+	cases := []struct {
+		name string
+		p    models.FindingListParams
+		want []string
+	}{
+		{"kev true", models.FindingListParams{KEV: &yes}, []string{"kev"}},
+		{
+			"kev false drops only the KEV row",
+			models.FindingListParams{KEV: &no, Types: []string{"vuln"}},
+			[]string{"lodash", "epss", "requests"},
+		},
+		{"epss_min", models.FindingListParams{EPSSMin: &epss}, []string{"epss"}},
+		{"epss_min above every score", models.FindingListParams{EPSSMin: &big}, nil},
+		{"priority kev", models.FindingListParams{PriorityRank: &kevRank}, []string{"kev"}},
+		{"priority epss", models.FindingListParams{PriorityRank: &epssRank}, []string{"epss"}},
+		{"priority critical is exact", models.FindingListParams{PriorityRank: &criticalRank}, []string{"lodash"}},
+		{"priority low excludes the KEV row", models.FindingListParams{PriorityRank: &lowRank}, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.p.EPSSThreshold = 0.1
+
+			var want []string
+			for _, l := range tc.want {
+				want = append(want, f.ids[l])
+			}
+
+			got := findingIDs(listAll(t, f, tc.p))
+			slices.Sort(got)
+			slices.Sort(want)
+
+			if !slices.Equal(got, want) {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		})
+	}
+}

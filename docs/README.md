@@ -51,6 +51,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [RBAC](security/rbac.md) | Users, groups, permission targets, request-to-action mapping, projects (repository ownership, member and group access) |
 | [Projects](security/projects.md) | Project roles, member and group self-service, who may create projects, audit events, API |
 | [Scanning](security/scanning.md) | Vulnerability, secret and license scans, quarantine |
+| [Exploitation signals](security/exploit-signals.md) | CISA KEV and FIRST EPSS on vulnerability findings: priority, filters, CI gate, feed status, metrics, air-gapped mirrors, data terms |
 | [Security findings](security/findings.md) | The findings of all repositories in one list (vulnerabilities, licenses, secrets, AI), summary, export, scanner health and the per-repository counts |
 | [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX 2.3 and 3.0 SBOMs, OpenVEX / CycloneDX VEX, signed attestations (cosign), Trivy, Grype |
 | [Dependency-Track](security/dependency-track.md) | Pushing the BOM on upload and scan and the VEX after analysis; project naming, permissions, per-repository overrides |
