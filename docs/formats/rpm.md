@@ -88,6 +88,13 @@ Debian repositories need nothing equivalent: apt verifies the signed `Release`/`
 
 `primary.xml` lists each package's installed size (`RPMTAG_LONGSIZE`/`SIZE`) and archive size (rpm 4 signature tag 271/1007, or `PAYLOADSIZEALT` for rpm 6 packages), which dnf uses for its transaction size checks. Packages uploaded by earlier versions are re-read from storage the first time their repository's metadata is regenerated, which happens once at the first start after the upgrade: migration `064` flags every hosted RPM repository for regeneration, and the metadata worker processes the flagged ones at startup. No new upload is needed.
 
+## rpm-ostree and package layering
+
+`rpm-ostree` reads the same `.repo` files as dnf. Checked against a hosted repository with `sign_packages` on, `gpgcheck=1` and `repo_gpgcheck=1`: dnf 5 verifies the signed `repomd.xml` and the package signature and installs the package, and `rpm-ostree compose install` (rpm-ostree 2026.3) reads the metadata, depsolves and downloads and imports the package from the same `.repo` file.
+
+- A **private** repository needs `username=` and `password=` (a token) in the `.repo` file for metadata and packages, but libdnf does not send them when it fetches `gpgkey=`: that URL answers `401`. Download `public.key` with `curl -u USERNAME:TOKEN -O HOST/repos/REPO/public.key` and use `gpgkey=file:///path/public.key`, or make the repository public.
+- The depsolver sees only the enabled repositories: a package whose dependencies are in another repository needs that one enabled too.
+
 ## Proxy
 
 An RPM proxy repository mirrors `repodata/` and `Packages/` from `upstream_url`. `.rpm` files below a `Packages/` directory are immutable once cached; `.rpm` files elsewhere (flat layouts) and `repodata/` are served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. Upstream metadata and signatures pass through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).
