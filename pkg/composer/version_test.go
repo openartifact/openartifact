@@ -2,11 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package composer
+package composer_test
 
 import (
 	"errors"
 	"testing"
+
+	"github.com/openartifact/openartifact/pkg/composer"
 )
 
 // normalizeCases were produced by Composer 2.10's VersionParser::normalize (an
@@ -117,17 +119,17 @@ func TestNormalizeMatchesComposer(t *testing.T) {
 	t.Parallel()
 
 	for _, c := range normalizeCases() {
-		got, err := Normalize(c[0])
+		got, err := composer.Normalize(c[0])
 		if c[1] == "" {
-			if !errors.Is(err, ErrInvalidVersion) {
-				t.Errorf("Normalize(%q) = %q, %v; want ErrInvalidVersion", c[0], got, err)
+			if !errors.Is(err, composer.ErrInvalidVersion) {
+				t.Errorf("composer.Normalize(%q) = %q, %v; want ErrInvalidVersion", c[0], got, err)
 			}
 
 			continue
 		}
 
 		if err != nil || got != c[1] {
-			t.Errorf("Normalize(%q) = %q, %v; want %q", c[0], got, err, c[1])
+			t.Errorf("composer.Normalize(%q) = %q, %v; want %q", c[0], got, err, c[1])
 		}
 	}
 }
@@ -139,8 +141,8 @@ func TestIsDev(t *testing.T) {
 		"dev-main": true, "1.9999999.9999999.9999999-dev": true, "1.0.0.0-dev": true,
 		"1.0.0.0": false, "1.0.0.0-RC1": false, "2.0.0.0-beta3": false,
 	} {
-		if got := IsDev(v); got != want {
-			t.Errorf("IsDev(%q) = %v, want %v", v, got, want)
+		if got := composer.IsDev(v); got != want {
+			t.Errorf("composer.IsDev(%q) = %v, want %v", v, got, want)
 		}
 	}
 }
@@ -169,9 +171,9 @@ func TestNormalizePublished(t *testing.T) {
 		{"nonsense", "", false},
 		{"../1.0.0", "", false},
 	} {
-		got, err := NormalizePublished(c.in)
+		got, err := composer.NormalizePublished(c.in)
 		if (err == nil) != c.ok || got != c.want {
-			t.Errorf("NormalizePublished(%q) = %q, %v; want %q ok=%v", c.in, got, err, c.want, c.ok)
+			t.Errorf("composer.NormalizePublished(%q) = %q, %v; want %q ok=%v", c.in, got, err, c.want, c.ok)
 		}
 	}
 }

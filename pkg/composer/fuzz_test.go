@@ -52,8 +52,8 @@ func FuzzReadArchive(f *testing.F) {
 // FuzzNormalizePublished checks that an accepted version is a bounded,
 // URL-safe string and that its normalized form is never empty.
 func FuzzNormalizePublished(f *testing.F) {
-	for _, c := range normalizeCases() {
-		f.Add(c[0])
+	for _, v := range []string{"1.0.0", "v1.2.3", "1.0.0-RC1", "1.x-dev", "dev-main", "2.0.0+build", "", "dev-", "1.2.3.4.5"} {
+		f.Add(v)
 	}
 
 	f.Fuzz(func(t *testing.T, v string) {
