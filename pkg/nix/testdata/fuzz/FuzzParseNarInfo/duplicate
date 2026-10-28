@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("StorePath: /nix/store/0123456789abcdfghijklmnpqrsvwxyz-a\nStorePath: /nix/store/0123456789abcdfghijklmnpqrsvwxyz-a\n")

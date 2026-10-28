@@ -127,5 +127,6 @@
   "docs.sso": "Configurar o login único",
   "docs.rbac": "Como funcionam os alvos de permissão",
   "docs.projects": "Sobre os projetos",
-  "docs.webhooks": "Eventos e assinaturas de webhook"
+  "docs.webhooks": "Eventos e assinaturas de webhook",
+  "upload.nix.body": "Os caches binários do Nix são publicados com `nix copy --to`, autenticados com um token de API em um arquivo netrc. Nada é enviado pelo navegador:"
 }

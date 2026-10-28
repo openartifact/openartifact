@@ -177,6 +177,17 @@ FROM (
     FROM pacman_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    -- nix: one row per store path; version = store hash
+    SELECT t.id::uuid, 'nix'::text, t.name::text, t.store_hash::text, ''::text,
+           (t.store_hash || '.narinfo')::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, ''::text, ''::text, ''::text, ''::text, ''::text,
+           jsonb_build_object('nar_hash', t.nar_hash, 'nar_size', t.nar_size::text, 'nar_file', t.nar_file,
+                              'compression', t.compression, 'deriver', t.deriver, 'ca', t.ca)::jsonb,
+           to_jsonb(t.refs)::jsonb
+    FROM nix_paths t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     -- conan: the recipe revision row
     SELECT t.id::uuid, 'conan'::text, t.name::text, t.version::text, ''::text,
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text, t.created_at::timestamptz, t.updated_at::timestamptz,

@@ -127,5 +127,6 @@
   "docs.sso": "Single Sign-on einrichten",
   "docs.rbac": "So funktionieren Berechtigungsziele",
   "docs.projects": "Über Projekte",
-  "docs.webhooks": "Webhook-Ereignisse und Signaturen"
+  "docs.webhooks": "Webhook-Ereignisse und Signaturen",
+  "upload.nix.body": "Nix-Binärcaches werden mit `nix copy --to` veröffentlicht, authentifiziert mit einem API-Token in einer netrc-Datei. Im Browser wird nichts hochgeladen:"
 }

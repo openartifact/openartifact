@@ -74,6 +74,8 @@ FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, created_at, updated_at)
 SELECT $1, 'pm' || g, 'pm' || g, '17.' || g || '-1', 'x86_64', 'x86_64', 'pm' || g || '-17.' || g || '-1-x86_64.pkg.tar.zst', b.id, 'abc', now() - (nextval('eq_seq') || ' seconds')::interval, now()
 FROM eq_ts JOIN eq_blob b ON b.n = bn;
+INSERT INTO nix_paths (repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, blob_id, created_at, updated_at)
+SELECT $1, md5('nx' || g), 'nx' || g || '-1.0', 'sha256:abc', 100 + g, 'f' || g || '.nar.xz', 'xz', b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, blob_id, created_at, updated_at)
 SELECT $1, 'v3.20', 'main', CASE WHEN g % 2 = 0 THEN 'x86_64' ELSE 'aarch64' END, 'noarch', 'apkp' || g, '17.' || g, 'Q1x', 'dh', b.id, now() - (nextval('eq_seq') || ' seconds')::interval, now() FROM eq_ts JOIN eq_blob b ON b.n = bn;
 INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at, updated_at)

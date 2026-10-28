@@ -116,13 +116,13 @@ const uploads = ref(0)
 
 // Global admins and maintainers/owners of the repository's project (repo.permissions.admin).
 const repoAdmin = computed(() => session.isAdmin || repo.value?.permissions?.admin === true)
-// Web upload is implemented by the deb, rpm and apk handlers only; other formats are published with their
+// Web upload is implemented by the deb, rpm and apk handlers only (nix shows its `nix copy` instructions); other formats are published with their
 // native client tooling. Proxy and group repositories are read-only.
 const canUpload = computed(
   () =>
     session.isAdmin &&
     (repo.value?.repo_type ?? 'hosted') === 'hosted' &&
-    (repo.value?.format === 'deb' || repo.value?.format === 'rpm' || repo.value?.format === 'apk'),
+    (repo.value?.format === 'deb' || repo.value?.format === 'rpm' || repo.value?.format === 'apk' || repo.value?.format === 'nix'),
 )
 
 const tabs = computed<TabDef[]>(() => {

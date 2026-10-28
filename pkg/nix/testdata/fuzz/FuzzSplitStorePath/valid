@@ -1,0 +1,2 @@
+go test fuzz v1
+string("/nix/store/0123456789abcdfghijklmnpqrsvwxyz-hello-2.12.1")

@@ -185,6 +185,18 @@ func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (strin
 	return "pacman_packages", p.ID
 }
 
+func (e *importEnv) createNix(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	p := &models.NixPath{RepositoryID: repo, StoreHash: e.uniq("h")[:32], Name: "hello-2.12", NarHash: "sha256:abc", NarSize: 1,
+		NarFile: "f.nar.xz", Compression: "xz", SHA256: e.uniq("sha"), BlobKey: e.uniq("k"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreateNixPath(e.ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	return "nix_paths", p.ID
+}
+
 func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
@@ -284,6 +296,7 @@ func TestImportCreatedAt(t *testing.T) {
 		"conda":    e.createConda,
 		"conan":    e.createConan,
 		"pacman":   e.createPacman,
+		"nix":      e.createNix,
 		"ivy":      e.createIvy,
 		"sbt":      e.createSbt,
 		"apk":      e.createApk,

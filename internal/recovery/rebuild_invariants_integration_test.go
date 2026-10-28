@@ -100,6 +100,13 @@ func TestSidecarsNeverCarrySecrets(t *testing.T) {
 	}
 }
 
+// publicHashColumns are journaled columns whose name matches the secret
+// pattern but hold public content hashes of a Nix store path.
+var publicHashColumns = map[string]bool{ //nolint:gochecknoglobals // immutable test allowlist
+	"nix_paths.store_hash": true,
+	"nix_paths.nar_hash":   true,
+}
+
 // TestRegistryExcludesSecretLookingColumns: no journaled table may carry a
 // column that looks like a credential unless the registry excludes it.
 func TestRegistryExcludesSecretLookingColumns(t *testing.T) {
@@ -112,7 +119,7 @@ func TestRegistryExcludesSecretLookingColumns(t *testing.T) {
 			SELECT column_name FROM information_schema.columns
 			 WHERE table_schema = current_schema() AND table_name = $1
 			   AND column_name ~ '(password|passwd|secret|credential|private|_enc$|_hash$|api_key|(^|_)token$)'`, tbl.Name) {
-			if !tbl.isExcluded(col) {
+			if !tbl.isExcluded(col) && !publicHashColumns[tbl.Name+"."+col] {
 				t.Errorf("%s.%s looks like a secret but is journaled", tbl.Name, col)
 			}
 		}

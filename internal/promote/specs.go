@@ -149,6 +149,19 @@ func rowSpecs() []rowSpec {
 			regen:    RegenApk,
 		},
 		{
+			format:   "nix",
+			kind:     models.TrashKindNix,
+			table:    "nix_paths",
+			name:     "s.name",
+			version:  "s.store_hash",
+			idents:   []string{"s.store_hash || '.narinfo'"},
+			key:      []string{"store_hash"},
+			licenses: "'{}'::text[]",
+			cols: []string{
+				"store_hash", "name", "nar_hash", "nar_size", "nar_file", "compression", "refs", "deriver", "ca", "signatures",
+			},
+		},
+		{
 			format:  "helm",
 			kind:    models.TrashKindHelm,
 			table:   "helm_charts",

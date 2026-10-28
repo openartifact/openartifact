@@ -1215,6 +1215,42 @@ func (m *BaseMockDB) DeleteConanPackage(ctx context.Context, id string) error {
 func (m *BaseMockDB) ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error) {
 	return nil, errNotImpl("ListConanPackages")
 }
+func (m *BaseMockDB) PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error {
+	return errNotImpl("PutNixPendingNar")
+}
+func (m *BaseMockDB) GetNixPendingNar(ctx context.Context, repoID, sha256 string) (*models.NixPendingNar, error) {
+	return nil, errNotImpl("GetNixPendingNar")
+}
+func (m *BaseMockDB) GetNixPathByNarFile(ctx context.Context, repoID, narFile string) (*models.NixPath, error) {
+	return nil, errNotImpl("GetNixPathByNarFile")
+}
+func (m *BaseMockDB) GetNixPathByHash(ctx context.Context, repoID, storeHash string) (*models.NixPath, error) {
+	return nil, errNotImpl("GetNixPathByHash")
+}
+func (m *BaseMockDB) CreateNixPath(ctx context.Context, p *models.NixPath) error {
+	return errNotImpl("CreateNixPath")
+}
+func (m *BaseMockDB) DeleteNixPath(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteNixPath")
+}
+func (m *BaseMockDB) IncrementNixDownloadCount(ctx context.Context, id, repoID string) error {
+	return errNotImpl("IncrementNixDownloadCount")
+}
+func (m *BaseMockDB) ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error) {
+	return nil, errNotImpl("ListNixPaths")
+}
+func (m *BaseMockDB) DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error) {
+	return nil, errNotImpl("DeleteStaleNixPendingNars")
+}
+func (m *BaseMockDB) GetNixSigningKey(ctx context.Context, repoID string) (*models.NixSigningKey, error) {
+	return nil, errNotImpl("GetNixSigningKey")
+}
+func (m *BaseMockDB) CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.NixSigningKey) (bool, error) {
+	return false, errNotImpl("CreateNixSigningKeyIfAbsent")
+}
+func (m *BaseMockDB) ReplaceNixSigningKey(ctx context.Context, k *models.NixSigningKey) error {
+	return errNotImpl("ReplaceNixSigningKey")
+}
 func (m *BaseMockDB) CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error {
 	return errNotImpl("CreatePacmanPackage")
 }

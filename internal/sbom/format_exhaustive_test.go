@@ -20,7 +20,7 @@ func TestRootTypeCoversEveryFormat(t *testing.T) {
 		[]string{"docker", "raw"},
 		[]string{
 			"npm", "pypi", "maven", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go", "conda", "conan", "ivy",
-			"sbt", "terraform", "apk", "pacman",
+			"sbt", "terraform", "apk", "pacman", "nix",
 		},
 	)
 
@@ -52,7 +52,7 @@ func TestGeneratePURLNameRulesCoverEveryFormat(t *testing.T) {
 		[]string{"maven", "ivy", "sbt", "pypi", "pacman"},
 		[]string{
 			"docker", "npm", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go", "raw", "conda", "conan",
-			"terraform", "apk",
+			"terraform", "apk", "nix",
 		},
 	)
 

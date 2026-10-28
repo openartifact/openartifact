@@ -35,6 +35,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
 | Arch Linux (pacman) | `pacman` | `HOST/repos/REPO/os/<arch>` (`<name>.db`, packages) | hosted, proxy, group | `PUT /os/<arch>/<pkg>.pkg.tar.zst` (+ `.sig`) | [pacman](pacman.md) |
+| Nix | `nix` | `HOST/repos/REPO` (`/nix-cache-info`, `/<hash>.narinfo`, `/nar/`) | hosted | `nix copy --to 'HOST/repos/REPO' /nix/store/...` (netrc token) | [nix](nix.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted, proxy, group | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |
 | Cargo | `cargo` | `sparse+HOST/repos/REPO/index/` | hosted, proxy, group | `cargo publish` (`PUT /api/v1/crates/new`) | [cargo](cargo.md) |
 | NuGet | `nuget` | `HOST/repos/REPO/v3/index.json` | hosted, proxy, group | `dotnet nuget push` (`PUT /v3/package`) | [nuget](nuget.md) |
@@ -44,6 +45,8 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Conan (1.x and 2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`, `v1/conans/...`) | hosted, proxy, group | `conan upload` | [conan](conan.md) |
 
 Arch Linux (pacman) is uploaded with a `PUT` of the package file to `HOST/repos/REPO/os/<arch>/<file>`; its `.db`/`.files` databases are generated. A pacman proxy mirrors an Arch mirror root ([details](pacman.md#proxy)).
+
+Nix is published with `nix copy --to`, which uploads the NAR and then its `.narinfo`; `.narinfo` files are signed when served with the repository's ed25519 key ([details](nix.md)). Nix is hosted only for now.
 
 Debian and RPM have no upload route under `/repos/REPO/`: they are uploaded through the REST endpoints under `/api/v1/repositories/REPO/`. `POST` or `PUT` to `HOST/repos/REPO/upload` of such a repository answers `404` and names the endpoint to use.
 

@@ -29,6 +29,12 @@
 			NULL::text, CAST(NULL AS text), NULL::text
 		FROM pacman_packages pk LEFT JOIN blobs b ON b.id = pk.blob_id
 	UNION ALL
+	SELECT np.repository_id, 'nix'::text, np.name, np.store_hash, np.created_at,
+			np.store_hash || '.narinfo',
+			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
+			NULL::text, CAST(NULL AS text), NULL::text
+		FROM nix_paths np LEFT JOIN blobs b ON b.id = np.blob_id
+	UNION ALL
 	SELECT ap.repository_id, 'apk'::text, ap.branch || '/' || ap.repo || '/' || ap.name, ap.version, ap.created_at,
 			ap.name || '-' || ap.version || '.apk',
 			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),

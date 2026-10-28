@@ -34,7 +34,7 @@ func TestRepoBaseURL(t *testing.T) {
 func allFormats() []string {
 	return []string{
 		"npm", "docker", "pypi", "maven", "helm", "deb", "rpm", "cargo",
-		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy", "terraform", "apk", "pacman",
+		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy", "terraform", "apk", "pacman", "nix",
 	}
 }
 
@@ -150,6 +150,29 @@ func TestPacmanGroupSnippet(t *testing.T) {
 		if !strings.Contains(got[0].Configure, want) {
 			t.Errorf("configure missing %q:\n%s", want, got[0].Configure)
 		}
+	}
+}
+
+func TestNixSnippet(t *testing.T) {
+	got := Snippets("nix", "https://oa.example:8443", "cache", "hosted")
+	if len(got) != 1 || got[0].Client != "nix" {
+		t.Fatalf("want one nix snippet, got %+v", got)
+	}
+
+	for _, want := range []string{
+		"extra-substituters = https://oa.example:8443/repos/cache\n",
+		"extra-trusted-public-keys = $(curl -fsS https://oa.example:8443/repos/cache/public.key)",
+		"machine oa.example login oa password <TOKEN>",
+		"netrc-file = /etc/nix/netrc",
+		"nix build --substituters https://oa.example:8443/repos/cache --option require-sigs true",
+	} {
+		if !strings.Contains(got[0].Configure, want) {
+			t.Errorf("configure missing %q:\n%s", want, got[0].Configure)
+		}
+	}
+
+	if want := "nix copy --to 'https://oa.example:8443/repos/cache' /nix/store/HASH-NAME"; got[0].Publish != want {
+		t.Errorf("publish = %q, want %q", got[0].Publish, want)
 	}
 }
 

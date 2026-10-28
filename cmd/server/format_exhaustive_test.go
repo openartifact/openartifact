@@ -44,7 +44,22 @@ func TestMountedRoutesPerFormat(t *testing.T) {
 	t.Parallel()
 
 	isolated := []string{"maven", "raw", "ivy", "sbt"}
-	shared := []string{"rpm", "deb", "helm", "pypi", "nuget", "npm", "cargo", "rubygems", "conda", "pacman", "conan", "go", "terraform"}
+	shared := []string{
+		"rpm",
+		"deb",
+		"helm",
+		"pypi",
+		"nuget",
+		"npm",
+		"cargo",
+		"rubygems",
+		"conda",
+		"pacman",
+		"nix",
+		"conan",
+		"go",
+		"terraform",
+	}
 	oci := []string{"docker"}
 	apk := []string{"apk"}
 
@@ -150,6 +165,6 @@ func TestNotifyRepoFormats(t *testing.T) {
 	repotypetest.Classified(t, "cmd/server.notifyRepo",
 		[]string{"rpm", "deb", "pacman", "apk", "maven"},
 		[]string{
-			"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt", "terraform",
+			"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt", "terraform", "nix",
 		})
 }

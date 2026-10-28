@@ -14,6 +14,11 @@ import {
 } from '../repoTypes'
 
 describe('allowedFormats', () => {
+  it('offers nix for hosted repositories only', () => {
+    expect(allowedFormats('hosted')).toContain('nix')
+    expect(allowedFormats('proxy')).not.toContain('nix')
+    expect(allowedFormats('group')).not.toContain('nix')
+  })
   it('offers pacman for hosted, proxy and group repositories', () => {
     expect(allowedFormats('hosted')).toContain('pacman')
     expect(allowedFormats('proxy')).toContain('pacman')

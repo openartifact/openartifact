@@ -147,6 +147,8 @@ func terraformCleanupTables() []formatTable {
 }
 
 // cleanupFormatTable is the single-table part of cleanupFormatTables.
+//
+//nolint:cyclop // one case per format
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":
@@ -241,6 +243,17 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 			blobCols:      []string{"blob_id"},
 			quotaTracked:  true,
 			kind:          models.TrashKindApk,
+		}, true
+	case "nix":
+		return formatTable{
+			table:         "nix_paths",
+			nameCol:       "name",
+			versionCol:    "store_hash",
+			partitionCols: []string{"name"},
+			versionExpr:   "store_hash",
+			blobCols:      []string{"blob_id"},
+			quotaTracked:  true,
+			kind:          models.TrashKindNix,
 		}, true
 	case "raw":
 		// A raw file has no version: files are ranked against the other files

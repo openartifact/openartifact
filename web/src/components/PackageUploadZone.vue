@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div v-if="format === 'terraform'" class="rounded-lg border border-border bg-surface p-4">
-    <p class="text-sm text-foreground">{{ t('upload.terraform.body') }}</p>
-    <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-bg p-3 text-xs text-foreground">{{ terraformPublish }}</pre>
+  <div v-if="format === 'terraform' || format === 'nix'" class="rounded-lg border border-border bg-surface p-4">
+    <p class="text-sm text-foreground">{{ t(format === 'nix' ? 'upload.nix.body' : 'upload.terraform.body') }}</p>
+    <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-bg p-3 text-xs text-foreground">{{ publishCommands }}</pre>
   </div>
   <div
     v-else
@@ -127,10 +127,10 @@ const apkArch = ref('')
 const archError = computed(() => (isApk.value && apkArch.value !== '' && !validApkSegment(apkArch.value) ? t('upload.apk.invalid') : ''))
 const coordinatesValid = computed(() => branchError.value === '' && repoError.value === '' && archError.value === '')
 
-// The terraform publish API is a raw token-authenticated PUT per module version or
-// provider platform (coordinates live in the URL), which the multipart dropzone
-// cannot express, so the zone shows the curl commands instead.
-const terraformPublish = computed(() => clientSetup('terraform', window.location.origin, props.repo)[0]?.publish ?? '')
+// The terraform publish API is a raw token-authenticated PUT per module version or provider platform,
+// and nix is published by `nix copy`; the multipart dropzone cannot express either, so the zone shows
+// the publish commands instead.
+const publishCommands = computed(() => clientSetup(props.format ?? '', window.location.origin, props.repo)[0]?.publish ?? '')
 
 const formatHint = computed(() => {
   switch (props.format) {

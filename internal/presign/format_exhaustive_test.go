@@ -23,7 +23,7 @@ func TestIsProxyBlobPathDecidesEveryFormat(t *testing.T) {
 			"maven", "deb", "rpm", "pacman", "npm", "helm", "cargo", "go", "nuget", "rubygems",
 			"conan", "conda", "terraform", "raw", "pypi",
 		},
-		[]string{"docker", "ivy", "sbt", "apk"})
+		[]string{"docker", "ivy", "sbt", "apk", "nix"})
 
 	blobs := map[string]string{
 		"maven":     "g/a/1.0/a-1.0.jar",

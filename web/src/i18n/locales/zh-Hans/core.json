@@ -127,5 +127,6 @@
   "docs.sso": "设置单点登录",
   "docs.rbac": "权限目标的工作原理",
   "docs.projects": "关于项目",
-  "docs.webhooks": "Webhook 事件与签名"
+  "docs.webhooks": "Webhook 事件与签名",
+  "upload.nix.body": "Nix 二进制缓存通过 `nix copy --to` 发布，使用 netrc 文件中的 API 令牌认证。浏览器不上传任何内容："
 }

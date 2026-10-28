@@ -607,7 +607,8 @@
               "sbt",
               "terraform",
               "apk",
-              "pacman"
+              "pacman",
+              "nix"
             ],
             "description": "Package format"
           },
@@ -5378,6 +5379,7 @@
               "rubygems_gem",
               "conda_package",
               "pacman",
+              "nix_path",
               "conan_package",
               "helm_chart",
               "raw_artifact",
@@ -5895,6 +5897,33 @@
         "required": [
           "key_name",
           "fingerprint",
+          "public_key",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "NixKey": {
+        "type": "object",
+        "properties": {
+          "key_name": {
+            "type": "string",
+            "description": "Key name, the part before the colon of the public key"
+          },
+          "public_key": {
+            "type": "string",
+            "description": "Public key in Nix format, name:base64, to add to trusted-public-keys"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "key_name",
           "public_key",
           "created_at",
           "updated_at"
@@ -7091,7 +7120,8 @@
                 "sbt",
                 "terraform",
                 "apk",
-                "pacman"
+                "pacman",
+                "nix"
               ]
             }
           },
@@ -7271,7 +7301,8 @@
                       "sbt",
                       "terraform",
                       "apk",
-                      "pacman"
+                      "pacman",
+                      "nix"
                     ]
                   },
                   "description": {
@@ -21349,6 +21380,7 @@
                 "rubygems_gem",
                 "conda_package",
                 "pacman",
+                "nix_path",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21444,6 +21476,7 @@
                 "rubygems_gem",
                 "conda_package",
                 "pacman",
+                "nix_path",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21543,6 +21576,7 @@
                 "rubygems_gem",
                 "conda_package",
                 "pacman",
+                "nix_path",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21643,6 +21677,7 @@
                 "rubygems_gem",
                 "conda_package",
                 "pacman",
+                "nix_path",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -21786,6 +21821,7 @@
                 "rubygems_gem",
                 "conda_package",
                 "pacman",
+                "nix_path",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -22665,6 +22701,168 @@
           },
           "400": {
             "description": "Invalid key or the repository is not a hosted or group apk repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/nix-key": {
+      "get": {
+        "summary": "Get the nix signing key",
+        "description": "Returns the public half of the ed25519 key that signs the narinfo files of a hosted nix repository, generating the key on first use. Requires the global manage permission.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The signing key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NixKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The repository is not a hosted nix repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Replace the nix signing key",
+        "description": "Generates a new signing key (empty body) or imports the given ed25519 secret key, and re-signs every narinfo (they are signed when served). Clients must add the new public key to trusted-public-keys. Requires the global manage permission.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "private_key": {
+                    "type": "string",
+                    "description": "Nix secret key as written by nix-store --generate-binary-cache-key (name:base64 of 64 bytes); omit to generate a new key"
+                  },
+                  "key_name": {
+                    "type": "string",
+                    "description": "Name of the key, the part before the colon; only with private_key (default openartifact-<repository>-1)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new signing key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NixKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key or the repository is not a hosted nix repository",
             "content": {
               "application/json": {
                 "schema": {

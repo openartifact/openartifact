@@ -109,6 +109,7 @@ func catalogBranches() []catalogBranch {
 		simpleBranch("pacman", "pacman_packages", "t.name", "t.version", "t.blob_id"),
 		conan,
 		simpleBranch("apk", "apk_packages", "t.branch || '/' || t.repo || '/' || t.name", "t.version", "t.blob_id"),
+		simpleBranch("nix", "nix_paths", "t.name", "t.store_hash", "t.blob_id"),
 		simpleBranch("terraform", "terraform_modules", "'modules/' || t.name || '/' || t.system", "t.version", "t.blob_id"),
 		simpleBranch("terraform", "terraform_providers", "'providers/' || t.type", "t.version", "t.blob_id"),
 		simpleBranch("helm", "helm_charts", "t.name", "t.version", "t.blob_id"),

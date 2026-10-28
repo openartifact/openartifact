@@ -24,6 +24,7 @@ import (
 	formathelm "github.com/openartifact/openartifact/internal/format/helm"
 	formativy "github.com/openartifact/openartifact/internal/format/ivy"
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
+	formatnix "github.com/openartifact/openartifact/internal/format/nix"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
 	formatpacman "github.com/openartifact/openartifact/internal/format/pacman"
@@ -54,6 +55,7 @@ type formatHandlers struct {
 	apk       *formatapk.HTTPHandler
 	deb       *formatdeb.HTTPHandler
 	pacman    *formatpacman.HTTPHandler
+	nix       *formatnix.HTTPHandler
 	helm      *formathelm.HTTPHandler
 	pypi      *formatpypi.HTTPHandler
 	nuget     *formatnuget.HTTPHandler
@@ -177,6 +179,7 @@ func (a *app) registerAdminRoutes() {
 	api.NewAdminRecoveryHandler(a.workers.journal, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator, a.workers.gpgKeys).Register(authedAPI)
 	api.NewApkKeyHandler(db, log, evaluator, a.workers.apkKeys).Register(authedAPI)
+	api.NewNixKeyHandler(db, log, evaluator, a.workers.nixKeys).Register(authedAPI)
 	w.public.sysInfo.RegisterAuthed(authedAPI)
 	w.public.brand.RegisterAuthed(authedAPI)
 
@@ -242,6 +245,7 @@ func (a *app) newFormatHandlers() {
 	f.conda = formatconda.NewHTTPHandler(log, db, served, baseURL)
 	f.pacman = formatpacman.NewHTTPHandler(log, db, served, baseURL)
 	f.pacman.SetRegenerator(a.workers.pacman)
+	f.nix = formatnix.NewHTTPHandler(log, db, served, baseURL).WithKeys(a.workers.nixKeys).WithMetrics(a.reg)
 	f.conan = formatconan.NewHTTPHandler(log, db, served, baseURL)
 	f.ivy = formativy.NewHTTPHandler(log, db, served, baseURL)
 	f.sbt = formatsbt.NewHTTPHandler(log, db, served, baseURL)
@@ -305,6 +309,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.deb.RegisterRepoRoutes(routers["deb"])
 	f.rpm.RegisterRepoRoutes(routers["rpm"])
 	f.pacman.RegisterRepoRoutes(routers["pacman"])
+	f.nix.RegisterRepoRoutes(routers["nix"])
 	f.conda.RegisterRepoRoutes(routers["conda"])
 	f.apk.RegisterRepoRoutes(routers["apk"])
 	f.terraform.RegisterRepoRoutes(routers["terraform"])
@@ -343,6 +348,9 @@ func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 		// cannot hold next to conda's /{platform}/{filename}; the guard serves
 		// it for terraform repositories only.
 		r.Use(f.terraform.LatestGuard)
+		// The binary cache paths (/<hash>.narinfo, /nar/<file>) likewise clash with
+		// the wildcard routes below; the guard serves them for nix repositories only.
+		r.Use(f.nix.Guard)
 		f.rpm.RegisterRepoRoutes(r)
 		f.deb.RegisterRepoRoutes(r)
 		f.helm.RegisterRepoRoutes(r)
@@ -573,7 +581,7 @@ func (a *app) finishRoutes() {
 	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
 		u.rpm, u.deb, u.presigned, u.npm, u.maven,
 		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.rubygems, f.raw,
-		f.conda, f.pacman, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
+		f.conda, f.pacman, f.nix, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
 	} {
 		h.SetPublisher(a.feat.dtPublisher)
 	}

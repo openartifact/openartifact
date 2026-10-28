@@ -24,7 +24,7 @@ func TestWriteManifestCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "vuln.TrivyScanner.writeManifest",
 		[]string{"npm", "pypi", "maven", "cargo", "go", "rubygems", "nuget"},
 		[]string{
-			"docker", "helm", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman",
+			"docker", "helm", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix",
 		},
 	)
 
@@ -63,7 +63,7 @@ func TestBuildPURLCoversEveryFormat(t *testing.T) {
 	repotypetest.Classified(t, "vuln.buildPURL",
 		[]string{"npm", "pypi", "maven", "go", "deb", "rpm"},
 		[]string{
-			"docker", "helm", "cargo", "rubygems", "nuget", "raw", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman",
+			"docker", "helm", "cargo", "rubygems", "nuget", "raw", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix",
 		},
 	)
 

@@ -127,6 +127,8 @@ func unifiedSearchBranches() []string {
 			"ap",
 		) +
 			"\n\t\tFROM apk_packages ap WHERE ap.deleted_at IS NULL",
+		searchBranch("nix", "np.name", "np.store_hash", "np.store_hash || '.narinfo'", null, null, "np.blob_id", null, "np") +
+			"\n\t\tFROM nix_paths np WHERE np.deleted_at IS NULL",
 		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
 			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +

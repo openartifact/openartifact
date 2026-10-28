@@ -74,6 +74,11 @@ linters:
     dupl:
       threshold: 200
 
+    misspell:
+      # "substituters" is the Nix setting for binary caches, not a typo.
+      ignore-rules:
+        - substituters
+
     nestif:
       min-complexity: 10
 

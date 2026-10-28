@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("StorePath: /nix/store/0123456789abcdfghijklmnpqrsvwxyz-a\nURL: nar/x.nar\nNarHash: sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\nNarSize: 0\nReferences:\nDeriver: unknown\n")

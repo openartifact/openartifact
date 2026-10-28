@@ -12,7 +12,7 @@ Deleting an artifact, a version, a Docker tag or a whole repository does not des
 
 Everything a delete can remove, in every format, plus repositories:
 
-- Package rows of the hosted formats: Maven, Ivy, sbt, npm versions, PyPI, NuGet, Go modules, Cargo, RubyGems, Conda, Conan, Alpine packages, Terraform modules and providers, Helm, raw files, Docker manifests and tags, RPM, Arch Linux (pacman) and Debian packages.
+- Package rows of the hosted formats: Maven, Ivy, sbt, npm versions, PyPI, NuGet, Go modules, Cargo, RubyGems, Conda, Conan, Alpine packages, Terraform modules and providers, Helm, raw files, Docker manifests and tags, RPM, Arch Linux (pacman), Nix store paths and Debian packages.
 - Whole repositories.
 - Items removed by a [cleanup policy](../repositories/cleanup-and-quotas.md#cleanup-policies).
 
@@ -92,6 +92,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `docker_tag` | a single Docker tag |
 | `rpm_package` | an RPM package |
 | `pacman` | an Arch Linux (pacman) package |
+| `nix_path` | a Nix store path (its NAR and narinfo) |
 | `deb_package` | a Debian package |
 
 ## API
@@ -229,7 +230,7 @@ What counts as a release:
 | Go | semver without a pre-release part; pseudo-versions (`v0.0.0-2026...-abcdef123456`) count as pre-releases |
 | PyPI | PEP 440 without an `a`, `b`, `rc` or `dev` segment (`1.0`, `1.0.post1` are releases; `1.0rc1`, `1.0.dev3` are not) |
 | RubyGems | the version has no letters (`1.2.3` yes, `1.2.3.pre` no) |
-| Raw, Debian, RPM, Alpine, pacman, Conda, Conan, Docker | every version is a release; there is no snapshot concept |
+| Raw, Debian, RPM, Alpine, pacman, Nix, Conda, Conan, Docker | every version is a release; there is no snapshot concept |
 
 The rule covers both directions:
 

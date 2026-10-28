@@ -80,6 +80,7 @@ var Tables = []Table{
 	{Name: "pacman_packages", Key: idKey(), Exclude: []string{"file_list"}, BlobRefs: []string{"blob_id"}},
 	{Name: "conan_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "apk_packages", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
+	{Name: "nix_paths", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "terraform_modules", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "terraform_providers", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "helm_charts", Key: idKey(), BlobRefs: []string{"blob_id"}},
@@ -100,6 +101,8 @@ var Tables = []Table{
 //nolint:gochecknoglobals // compiled-in allowlist, immutable after init
 var NotJournaled = map[string]string{
 	"apk_signing_keys":  "holds the encrypted private key of the repository index; a secret outside the journal",
+	"nix_pending_nars":  "staging of NAR files that await their narinfo; swept by the cleanup worker",
+	"nix_signing_keys":  "holds the encrypted private key of the narinfo signatures; a secret outside the journal",
 	"audit_logs":        "audit trail; kept by database backups",
 	"bundle_promotions": "release bundle history; operational data covered by database backups",
 	"cleanup_policies": "operator policy configuration; recreated with `oa apply` or restored from a database " +

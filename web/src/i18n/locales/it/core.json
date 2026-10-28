@@ -127,5 +127,6 @@
   "docs.sso": "Configura il single sign-on",
   "docs.rbac": "Come funzionano le destinazioni di permessi",
   "docs.projects": "Informazioni sui progetti",
-  "docs.webhooks": "Eventi e firme dei webhook"
+  "docs.webhooks": "Eventi e firme dei webhook",
+  "upload.nix.body": "Le cache binarie Nix si pubblicano con `nix copy --to`, autenticate con un token API in un file netrc. Dal browser non si carica nulla:"
 }

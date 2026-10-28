@@ -76,6 +76,7 @@ type CleanupWorker struct {
 	dockerGC                                 DockerGCRunner
 
 	lastOrphanGC         time.Time // only touched from the tick goroutine
+	lastNixPendingSweep  time.Time // only touched from the tick goroutine
 	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
 }
 
@@ -150,6 +151,7 @@ func (w *CleanupWorker) runCleanupCycle(ctx context.Context) {
 	now := time.Now()
 
 	w.collectOrphansIfDue(ctx, now)
+	w.sweepNixPendingNarsIfDue(ctx, now)
 	w.reconcileQuotasIfDue(ctx, now)
 }
 

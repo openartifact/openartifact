@@ -127,5 +127,6 @@
   "docs.sso": "Configurar el inicio de sesión único",
   "docs.rbac": "Cómo funcionan los destinos de permisos",
   "docs.projects": "Acerca de los proyectos",
-  "docs.webhooks": "Eventos y firmas de webhooks"
+  "docs.webhooks": "Eventos y firmas de webhooks",
+  "upload.nix.body": "Las cachés binarias de Nix se publican con `nix copy --to`, autenticadas con un token de API en un archivo netrc. No se sube nada desde el navegador:"
 }

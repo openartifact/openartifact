@@ -20,7 +20,7 @@ func TestRestUploadEndpointDecidesEveryFormat(t *testing.T) {
 		[]string{"deb", "rpm"},
 		[]string{
 			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw",
-			"conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman",
+			"conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix",
 		})
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

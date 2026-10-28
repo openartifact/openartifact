@@ -27,7 +27,8 @@ func TestServeMergedCoversEveryFormat(t *testing.T) {
 			"deb", "rpm", "pacman", "apk",
 		},
 		// docker is served by the OCI path before serveMerged; the others answer from the first member that has the file.
-		[]string{"docker", "raw", "ivy", "sbt"},
+		// nix has no group repositories yet.
+		[]string{"docker", "raw", "ivy", "sbt", "nix"},
 	)
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -56,8 +57,8 @@ func TestPackageRefCoversEveryFormat(t *testing.T) {
 			"npm", "pypi", "go", "cargo", "nuget", "maven", "helm", "ivy", "sbt", "rubygems", "conan", "conda", "terraform",
 		},
 		// docker has its own reference (ociRef); raw has no versions to hide; deb, rpm, apk and
-		// pacman serve generated indexes and are resolved member by member.
-		[]string{"docker", "raw", "deb", "rpm", "apk", "pacman"},
+		// pacman serve generated indexes and are resolved member by member; nix has no group yet.
+		[]string{"docker", "raw", "deb", "rpm", "apk", "pacman", "nix"},
 	)
 
 	packageRequests := map[string]string{
@@ -97,7 +98,7 @@ func TestClassifyDebRPMCoversEveryFormat(t *testing.T) {
 		[]string{"deb", "rpm", "pacman"},
 		[]string{
 			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-			"ivy", "sbt", "terraform", "apk",
+			"ivy", "sbt", "terraform", "apk", "nix",
 		},
 	)
 

@@ -136,6 +136,15 @@ FROM (
     FROM pacman_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pacman')
     UNION ALL
+    -- nix: one row per store path; name = store path name, version = store hash, filename = narinfo.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.store_hash::text AS version,
+           'nix'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           (t.store_hash || '.narinfo')::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM nix_paths t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nix')
+    UNION ALL
     -- apk: one row per .apk; name = BRANCH/REPO/NAME, arch = architecture.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, (t.branch || '/' || t.repo || '/' || t.name)::text AS name, t.version::text AS version,
            'apk'::text AS format, t.arch::text AS arch, COALESCE(b.sha256, '')::text AS sha256,

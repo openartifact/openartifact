@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("StorePath: /nix/store/0123456789abcdfghijklmnpqrsvwxyz-hello-2.12.1\nURL: nar/0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73.nar.xz\nCompression: xz\nFileHash: sha256:0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73\nFileSize: 1234\nNarHash: sha256:0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73\nNarSize: 5678\nReferences: 0123456789abcdfghijklmnpqrsvwxyz-hello-2.12.1 11111111111111111111111111111111-bbb\nDeriver: 0123456789abcdfghijklmnpqrsvwxyz-hello-2.12.1.drv\nSig: cache.example.org-1:AAAA\n")

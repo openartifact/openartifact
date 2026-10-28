@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-66 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+68 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -46,7 +46,7 @@ List all repositories with optional filtering
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
+| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`, `nix`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
 | `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
@@ -90,7 +90,7 @@ Create a new repository (admin only)
 | `cache_ttl_seconds` | integer | no | - |
 | `description` | string | no | - |
 | `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true). |
-| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`. |
+| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`, `nix`. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |
@@ -703,6 +703,59 @@ Fields of the `200` response (`application/json`):
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `members` | array of [RepositoryMember](schemas.md#repositorymember) | no | - |
+
+### `GET /api/v1/repositories/{name}/nix-key`
+
+Get the nix signing key
+
+Returns the public half of the ed25519 key that signs the narinfo files of a hosted nix repository, generating the key on first use. Requires the global manage permission.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The signing key | `application/json`: [NixKey](schemas.md#nixkey) |
+| `400` | The repository is not a hosted nix repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `409` | OPENARTIFACT_SECRET_KEY is not set (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
+
+### `POST /api/v1/repositories/{name}/nix-key`
+
+Replace the nix signing key
+
+Generates a new signing key (empty body) or imports the given ed25519 secret key, and re-signs every narinfo (they are signed when served). Clients must add the new public key to trusted-public-keys. Requires the global manage permission.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+
+**Request body**
+
+`application/json`: object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key_name` | string | no | Name of the key, the part before the colon; only with private_key (default openartifact-`<repository>`-1) |
+| `private_key` | string | no | Nix secret key as written by nix-store --generate-binary-cache-key (name:base64 of 64 bytes); omit to generate a new key |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The new signing key | `application/json`: [NixKey](schemas.md#nixkey) |
+| `400` | Invalid key or the repository is not a hosted nix repository | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
+| `404` | Repository not found | `application/json`: [Error](schemas.md#error) |
+| `409` | OPENARTIFACT_SECRET_KEY is not set (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/packages`
 

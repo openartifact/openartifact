@@ -161,6 +161,13 @@ var trashSpecs = []*trashSpec{
 		blobCols: []string{"t.blob_id"},
 	},
 	{
+		kind: models.TrashKindNix, table: "nix_paths", format: "nix", quota: true,
+		repoID:   "t.repository_id",
+		name:     "t.name",
+		version:  "t.store_hash",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
 		kind: models.TrashKindTerraformModule, table: "terraform_modules", format: "terraform", quota: true,
 		repoID:   "t.repository_id",
 		name:     "'modules/' || t.name || '/' || t.system",

@@ -46,6 +46,9 @@ const (
 	// SigningRSA is a format signed with the RSA key of its own admin endpoint
 	// (the APKINDEX key of apk).
 	SigningRSA Signing = "rsa"
+	// SigningEd25519 is a format signed with an ed25519 key of its own admin
+	// endpoint (the narinfo key of nix).
+	SigningEd25519 Signing = "ed25519"
 )
 
 // Versioning is the version scheme of a format; it decides what counts as a
@@ -209,6 +212,9 @@ var specs = [...]Spec{
 		Name: "pacman", PackageTables: []string{"pacman_packages"},
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
 		Signing: SigningGPG, PURLType: "alpm",
+	},
+	{
+		Name: "nix", PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
 	},
 }
 
