@@ -7,6 +7,8 @@ import {
   listFindings,
   getFindingsSummary,
   findingsExportUrl,
+  getExploitFeeds,
+  vulnFindings,
   getVulnScanSummary,
   getVulnScan,
   deleteVulnScan,
@@ -133,6 +135,44 @@ describe('security api', () => {
     expect(lastUrl()).toBe('/api/v1/security/findings')
   })
 
+  it('sends the exploitation sort and filters as the server names them', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ findings: [], has_more: false }))
+    await listFindings({ type: 'vuln', sort: 'priority', kev: true, epss_min: 0.1, priority: 'epss', limit: 25 })
+    const q = new URLSearchParams(lastUrl().split('?')[1])
+    expect(Object.fromEntries(q)).toEqual({ type: 'vuln', sort: 'priority', kev: 'true', epss_min: '0.1', priority: 'epss', limit: '25' })
+
+    await listFindings({ kev: false, epss_min: 0.01 })
+    expect(lastUrl()).toBe('/api/v1/security/findings?kev=false&epss_min=0.01')
+    await listFindings({ sort: 'severity', priority: 'kev' })
+    expect(lastUrl()).toBe('/api/v1/security/findings?sort=severity&priority=kev')
+  })
+
+  it('reads the state of the exploitation feeds', async () => {
+    const body = { feeds: [{ name: 'kev', entry_count: 3 }], epss_threshold: 0.1, enabled: true }
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json(body))
+    expect(await getExploitFeeds()).toEqual(body as never)
+    expect(lastUrl()).toBe('/api/v1/security/exploit-feeds')
+  })
+
+  it('normalises the exploitation signals of a scan\'s vulnerabilities', () => {
+    const scan = {
+      vulnerabilities: [
+        { id: 'CVE-1', summary: 's', severity: 'HIGH', cvss: 8, fixed_in: '1.2', cve: 'CVE-1', kev: true, kev_date_added: '2024-01-02', kev_due_date: '2024-01-23', kev_ransomware: true, epss: 0.97, epss_percentile: 0.999, epss_date: '2026-10-27', priority: 'kev' },
+        { id: 'GHSA-x', severity: 'CRITICAL' },
+      ],
+    }
+    const [kev, plain] = vulnFindings(scan as never)
+    expect(kev).toMatchObject({
+      cve: 'CVE-1', kev: true, kev_date_added: '2024-01-02', kev_due_date: '2024-01-23', kev_ransomware: true,
+      epss: 0.97, epss_percentile: 0.999, epss_date: '2026-10-27', priority: 'kev',
+    })
+    // A server without exploitation data sends none of it: the priority falls back to the severity.
+    expect(plain).toMatchObject({
+      id: 'GHSA-x', cve: '', kev: false, kev_date_added: '', kev_due_date: '', kev_ransomware: false,
+      epss: null, epss_percentile: null, epss_date: null, priority: 'critical',
+    })
+  })
+
   it('reads the findings summary for an optional repository', async () => {
     spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({}))
     await getFindingsSummary('r 1')
@@ -166,6 +206,13 @@ describe('scan exports', () => {
     const u = findingsExportUrl({ type: 'vuln', repo: 'npm main', status: 'open' }, 'vex')
     const q = new URLSearchParams(u.split('?')[1])
     expect(Object.fromEntries(q)).toEqual({ type: 'vuln', repo: 'npm main', status: 'open', format: 'vex' })
+  })
+
+  it('carries the exploitation sort and filters into the export', () => {
+    const u = findingsExportUrl({ type: 'vuln', sort: 'priority', kev: true, epss_min: 0.5, priority: 'kev' }, 'csv')
+    expect(Object.fromEntries(new URLSearchParams(u.split('?')[1]))).toEqual({
+      type: 'vuln', sort: 'priority', kev: 'true', epss_min: '0.5', priority: 'kev', format: 'csv',
+    })
   })
 
   it('downloads through a preflight, then lets the browser stream the file', async () => {

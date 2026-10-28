@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/netip"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // AI analysis payloads. FK to scan_jobs.
@@ -565,6 +567,29 @@ type DockerUpload struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// FIRST EPSS scores (probability and percentile) keyed by upper-case CVE id; generation is the import that last saw the row.
+type EpssScore struct {
+	CveID      string  `db:"cve_id" json:"cve_id"`
+	Score      float64 `db:"score" json:"score"`
+	Percentile float64 `db:"percentile" json:"percentile"`
+	Generation int64   `db:"generation" json:"generation"`
+}
+
+// State of the exploitation-signal feeds: what is loaded (version, publication date, rows), the validators for conditional requests, the last check and its error.
+type ExploitFeed struct {
+	Name         string     `db:"name" json:"name"`
+	SourceUrl    string     `db:"source_url" json:"source_url"`
+	Version      string     `db:"version" json:"version"`
+	PublishedAt  *time.Time `db:"published_at" json:"published_at"`
+	EntryCount   int32      `db:"entry_count" json:"entry_count"`
+	Generation   int64      `db:"generation" json:"generation"`
+	Etag         string     `db:"etag" json:"etag"`
+	LastModified string     `db:"last_modified" json:"last_modified"`
+	ImportedAt   *time.Time `db:"imported_at" json:"imported_at"`
+	CheckedAt    *time.Time `db:"checked_at" json:"checked_at"`
+	LastError    string     `db:"last_error" json:"last_error"`
+}
+
 type FederationDeferred struct {
 	PeerID        string    `db:"peer_id" json:"peer_id"`
 	UnitKey       string    `db:"unit_key" json:"unit_key"`
@@ -733,6 +758,17 @@ type IvyArtifact struct {
 	BlobID       string     `db:"blob_id" json:"blob_id"`
 	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
 	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// CISA Known Exploited Vulnerabilities catalog, keyed by upper-case CVE id (CC0 1.0).
+type KevEntry struct {
+	CveID             string      `db:"cve_id" json:"cve_id"`
+	VendorProject     string      `db:"vendor_project" json:"vendor_project"`
+	Product           string      `db:"product" json:"product"`
+	VulnerabilityName string      `db:"vulnerability_name" json:"vulnerability_name"`
+	DateAdded         pgtype.Date `db:"date_added" json:"date_added"`
+	DueDate           pgtype.Date `db:"due_date" json:"due_date"`
+	KnownRansomware   bool        `db:"known_ransomware" json:"known_ransomware"`
 }
 
 // License compliance policies (repo-specific and global)
@@ -1413,7 +1449,7 @@ type SecretResult struct {
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 }
 
-// Every vuln/license/secret/AI result in one shape (counts, quarantine, VEX state); is_finding marks the ones that report something. Read by the security findings list, summary and per-package summary.
+// Every vuln/license/secret/AI result in one shape (counts, quarantine, VEX state, KEV and EPSS aggregates); is_finding marks the ones that report something. Read by the security findings list, summary and per-package summary.
 type SecurityResult struct {
 	Kind           string    `db:"kind" json:"kind"`
 	ID             string    `db:"id" json:"id"`
@@ -1434,6 +1470,8 @@ type SecurityResult struct {
 	ScannedAt      time.Time `db:"scanned_at" json:"scanned_at"`
 	SeverityRank   int32     `db:"severity_rank" json:"severity_rank"`
 	Status         string    `db:"status" json:"status"`
+	KevCount       int32     `db:"kev_count" json:"kev_count"`
+	MaxEpss        *float64  `db:"max_epss" json:"max_epss"`
 }
 
 // Configured storage backends for artifact persistence
@@ -1579,6 +1617,10 @@ type VulnResult struct {
 	Ecosystem       *string         `db:"ecosystem" json:"ecosystem"`
 	// Scanners that did not produce a result (status failed or partial).
 	FailedScanners []string `db:"failed_scanners" json:"failed_scanners"`
+	// Findings whose CVE is in the KEV catalog; recomputed after every feed import.
+	KevCount int32 `db:"kev_count" json:"kev_count"`
+	// Highest EPSS score among the findings; NULL when none has one.
+	MaxEpss *float64 `db:"max_epss" json:"max_epss"`
 }
 
 // Webhook subscriptions for artifact lifecycle events

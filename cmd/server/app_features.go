@@ -111,5 +111,6 @@ func (a *app) setupMCP() {
 	}
 
 	a.feat.mcpServer = aimcp.NewServer(a.db, a.feat.aiWorker, a.log, opts)
+	a.feat.mcpServer.SetExploit(a.workers.exploit)
 	a.log.Infow("MCP server enabled", "path", cfg.MCP.HTTPPath)
 }

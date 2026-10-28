@@ -79,6 +79,12 @@ func validFindingParams(p models.FindingListParams) (*int32, bool) {
 		return nil, false
 	}
 
+	switch p.Sort {
+	case "", models.FindingSortSeverity, models.FindingSortPriority:
+	default:
+		return nil, false
+	}
+
 	for _, t := range p.Types {
 		switch t {
 		case models.FindingVuln, models.FindingLicense, models.FindingSecret, models.FindingAI:
@@ -105,8 +111,18 @@ func validFindingParams(p models.FindingListParams) (*int32, bool) {
 	return &rank, true
 }
 
+// sortName is the order of a list: severity unless priority was asked for.
+func sortName(s string) string {
+	if s == models.FindingSortPriority {
+		return s
+	}
+
+	return models.FindingSortSeverity
+}
+
 // ListSecurityFindings returns one keyset page of the findings of every
-// requested type, worst severity first, then newest scan, then id.
+// requested type, worst first (by severity, or by exploit priority with
+// Sort priority), then newest scan, then id.
 func (p *PostgresDB) ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error) {
 	rank, ok := validFindingParams(params)
 	if !ok {
@@ -122,9 +138,18 @@ func (p *PostgresDB) ListSecurityFindings(ctx context.Context, params models.Fin
 		SeverityRank:  rank,
 		Status:        optionalText(params.Status),
 		PageLimit:     int32(params.Limit + 1), //nolint:gosec // G115: the page size is bounded by the handler
+		SortPriority:  params.Sort == models.FindingSortPriority,
+		EpssThreshold: params.EPSSThreshold,
+		Kev:           params.KEV,
+		EpssMin:       params.EPSSMin,
 		// The cursor parameters are cast even when unused; a placeholder keeps the uuid cast valid.
 		AfterID: "00000000-0000-0000-0000-000000000000",
 		AfterAt: noScanTime,
+	}
+
+	if params.PriorityRank != nil {
+		pr := int32(*params.PriorityRank) //nolint:gosec // G115: a rank is 0..6
+		arg.PriorityRank = &pr
 	}
 
 	if params.Q != "" {
@@ -134,7 +159,7 @@ func (p *PostgresDB) ListSecurityFindings(ctx context.Context, params models.Fin
 
 	if c := params.After; c != nil {
 		arg.HasCursor = true
-		arg.AfterRank = int32(c.SeverityRank) //nolint:gosec // G115: a rank is 0..4
+		arg.AfterRank = int32(c.Rank) //nolint:gosec // G115: a rank is 0..6
 		arg.AfterAt = c.ScannedAt
 		arg.AfterID = c.ID
 	}
@@ -149,7 +174,9 @@ func (p *PostgresDB) ListSecurityFindings(ctx context.Context, params models.Fin
 	for i, r := range rows {
 		if i == params.Limit {
 			last := page.Findings[len(page.Findings)-1]
-			page.Next = &models.FindingCursor{SeverityRank: last.SeverityRank, ScannedAt: last.ScannedAt, ID: last.ID}
+			page.Next = &models.FindingCursor{
+				Sort: sortName(params.Sort), Rank: last.SortRank, ScannedAt: last.ScannedAt, ID: last.ID,
+			}
 
 			break
 		}
@@ -232,6 +259,9 @@ func findingFromRow(r dbsqlc.ListSecurityFindingsRow) *models.Finding {
 		Status:         r.Status,
 		VEXStatus:      vexStatusByRank[r.VexRank],
 		SeverityRank:   int(r.SeverityRank),
+		KEVCount:       int(r.KevCount),
+		MaxEPSS:        r.MaxEpss,
+		SortRank:       int(r.SortRank),
 		Title:          r.Title,
 		ScannedAt:      r.ScannedAt,
 	}

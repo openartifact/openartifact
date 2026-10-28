@@ -45,6 +45,10 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 - `ecosystem` uses these names: `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, `deb`, `rpm`, `helm` (OSV); the other backends support a subset: Trivy `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, and `deb` and `rpm` for known Debian, Ubuntu, RHEL and Amazon Linux releases; Grype `npm`, `pypi`, `maven`, `cargo`, `rubygems`, `nuget`, `go`, and `deb` and `rpm` once the distribution release is known ([below](#debian-and-rpm-packages)). Both scan the one package you name, not its dependencies: Trivy is given a generated lockfile that pins it (`package-lock.json`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json`, or `requirements.txt`, `go.mod`, `pom.xml`), Grype a Package URL (`pkg:npm/%40angular/core@8.0.0`). Trivy scans `deb` and `rpm` packages from a generated SBOM once the release is known and is Debian, Ubuntu, RHEL or Amazon Linux ([below](#debian-and-rpm-packages)).
 - `osv` needs outbound HTTPS to `api.osv.dev` and nothing else. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
 
+### Exploitation signals
+
+Each vulnerability and each result row also carries CISA KEV and FIRST EPSS signals (`kev`, `epss`, `priority`, and `kev_count`, `max_epss` on rows), and the lists can be sorted and filtered by them. See [Exploitation signals](exploit-signals.md).
+
 ### Debian and RPM packages
 
 A `deb` or `rpm` is only a package of one distribution release. Grype and Trivy match it against that release's advisories and Grype, **without a release, reports no match at all** (it only logs a warning), which would read as a clean package. Measured with Grype 0.121.0 on `openssl 3.0.11-1~deb12u2`: 49 matches with `distro=debian-12`, 0 without it; a codename such as `bookworm` instead of `debian-12` also gives 0. So Grype is given the release as the `distro` qualifier of a Package URL (`pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12`, `pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1`), and the release is worked out on the server; the request needs no extra field. It comes from, in this order:
@@ -71,10 +75,14 @@ A `deb` or `rpm` is only a package of one distribution release. Grype and Trivy 
 | `status` | `completed`, `partial`, `failed` or `scanning` (pending or running) |
 | `scanner` | `osv`, `trivy` or `grype`; a scan run by several matches each |
 | `quarantined` | `true` or `false` |
+| `sort` | `severity` (default) or `priority` ([exploitation priority](exploit-signals.md#priority) first) |
+| `kev` | `true`: scans with a KEV vulnerability; `false`: none |
+| `epss_min` | 0 to 1: scans whose highest EPSS score is at least that |
+| `priority` | `kev`, `epss`, `critical`, `high`, `medium` or `low`: scans whose priority is exactly that |
 | `limit` | page size, default 25, at most 100 |
-| `cursor` | the `next_cursor` of the previous page; send the same filters with it |
+| `cursor` | the `next_cursor` of the previous page; send the same filters (and `sort`) with it |
 
-The response is `{scans, has_more, next_cursor}`: keyset paging, so no row is counted and a deep page costs what the first costs. An unknown filter value or a malformed cursor is `400 validation_failed`. `GET /api/v1/vuln/scans/summary[?repo=NAME]` returns `{total, completed, partial, failed, scanning, quarantined, severity_at_least: {critical, high, medium, low}}` in one query; `severity_at_least.high` is the number of scans with a critical or a high finding, matching the `severity` filter. Failed and partial scans, critical findings, quarantined results and a repository filter are each served from an index (migration `041_scan_jobs_vuln_problems.no_tx.sql` adds the one for failed and partial scans, built concurrently).
+Rows also carry `kev_count`, `max_epss` and `priority`, see [Exploitation signals](exploit-signals.md#fields). The response is `{scans, has_more, next_cursor}`: keyset paging, so no row is counted and a deep page costs what the first costs. An unknown filter value or a malformed cursor is `400 validation_failed`. `GET /api/v1/vuln/scans/summary[?repo=NAME]` returns `{total, completed, partial, failed, scanning, quarantined, severity_at_least: {critical, high, medium, low}}` in one query; `severity_at_least.high` is the number of scans with a critical or a high finding, matching the `severity` filter. Failed and partial scans, critical findings, quarantined results and a repository filter are each served from an index (migration `041_scan_jobs_vuln_problems.no_tx.sql` adds the one for failed and partial scans, built concurrently).
 
 ### Scanner failures
 

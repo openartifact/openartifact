@@ -58,10 +58,16 @@ The row's `severity` is its worst non-zero count (`critical`, `high`, `medium`, 
 | `severity` | `critical`, `high`, `medium` or `low`: findings whose **worst** severity is exactly that, so the numbers match the [summary](#the-summary) |
 | `status` | `open`, `quarantined` or `suppressed` |
 | `q` | text matched against `name@version` and the repository name (at most 255 characters) |
+| `sort` | `severity` (default) or `priority`: [exploitation priority](exploit-signals.md#priority) first, then the usual order |
+| `kev` | `true`: vulnerability findings with a KEV vulnerability; `false`: none |
+| `epss_min` | 0 to 1: findings whose highest EPSS score is at least that |
+| `priority` | `kev`, `epss`, `critical`, `high`, `medium` or `low`: findings whose priority is exactly that |
 | `limit` | page size, default 50, at most 200 |
 | `cursor` | the `next_cursor` of the previous page; send the same filters with it |
 
-The order is fixed: worst severity first, then newest scan, then id. Paging is keyset: no row is counted and a deep page costs what the first costs. An unknown type, severity or status, an over-long value or a malformed cursor is `400 validation_failed`.
+Findings also carry `kev_count`, `max_epss` and `priority` ([Exploitation signals](exploit-signals.md#fields)); they are `0`, `null` and the severity for findings that are not vulnerabilities. `GET /api/v1/security/exploit-feeds` reports the [feed status](exploit-signals.md#feed-status).
+
+By default the order is fixed: worst severity first, then newest scan, then id. Paging is keyset: no row is counted and a deep page costs what the first costs. An unknown type, severity or status, an over-long value or a malformed cursor is `400 validation_failed`.
 
 The `severity` filter is an exact match, unlike the `severity` filter of the [vulnerability overview](scanning.md#the-overview-across-repositories), which means "at least".
 

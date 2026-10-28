@@ -365,3 +365,14 @@ scanners:
     path: ""               # command name or absolute path; default "grype" on PATH
     install: none          # none | auto: as for trivy
     dbUrl: ""              # http(s) URL of a grype database listing.json (a mirror), no credentials in the URL; default grype's built-in
+
+# Exploitation signals of vulnerability findings: the CISA KEV catalog and the
+# FIRST EPSS scores are imported once per interval; findings get kev/epss fields
+# and a priority (KEV first, then EPSS >= epssThreshold, then severity). See
+# docs/security/exploit-signals.md for the data terms.
+exploit:
+  enabled: true            # false: no import, priority is the severity
+  kevUrl: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json  # https; a mirror in an air-gapped network
+  epssUrl: https://epss.empiricalsecurity.com/epss_scores-current.csv.gz                       # https; gzip CSV, a mirror serves the same file
+  interval: 24h            # pause between imports, at least 1h
+  epssThreshold: 0.1       # EPSS score (above 0, at most 1) from which a finding outside KEV ranks above its severity

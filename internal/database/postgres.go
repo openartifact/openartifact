@@ -4885,19 +4885,20 @@ func (p *PostgresDB) CreateVulnScanResult(ctx context.Context, result *models.Vu
 			RETURNING id
 		)
 		INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
-			quarantined, package_name, package_version, ecosystem, failed_scanners)
-		SELECT job.id, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM job
+			quarantined, package_name, package_version, ecosystem, failed_scanners, kev_count, max_epss)
+		SELECT job.id, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
 			critical_count = EXCLUDED.critical_count, high_count = EXCLUDED.high_count,
 			medium_count = EXCLUDED.medium_count, low_count = EXCLUDED.low_count,
 			quarantined = EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
 			package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem,
-			failed_scanners = EXCLUDED.failed_scanners
+			failed_scanners = EXCLUDED.failed_scanners, kev_count = EXCLUDED.kev_count, max_epss = EXCLUDED.max_epss
 		RETURNING id`,
 		result.RepositoryID, result.ArtifactID, result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, scannedAt,
 		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount,
 		result.Quarantined, result.PackageName, result.PackageVersion, result.Ecosystem, nonNilStrings(result.FailedScanners),
+		toInt32(result.KEVCount), result.MaxEPSS,
 	).Scan(&result.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create vuln scan result: %w", err)
@@ -4949,7 +4950,7 @@ func (p *PostgresDB) UpdateVulnScanResult(ctx context.Context, result *models.Vu
 		WITH res AS (
 			UPDATE vuln_results SET vulnerabilities = $1, vuln_count = $2, critical_count = $3,
 			       high_count = $4, medium_count = $5, low_count = $6, quarantined = $7,
-			       failed_scanners = $13
+			       failed_scanners = $13, kev_count = $14, max_epss = $15
 			WHERE id = $11
 			RETURNING scan_job_id
 		)
@@ -4957,7 +4958,7 @@ func (p *PostgresDB) UpdateVulnScanResult(ctx context.Context, result *models.Vu
 		FROM res WHERE sj.id = res.scan_job_id`,
 		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Quarantined,
 		result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, result.ID, scannedAt,
-		nonNilStrings(result.FailedScanners),
+		nonNilStrings(result.FailedScanners), toInt32(result.KEVCount), result.MaxEPSS,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update vuln scan result: %w", err)

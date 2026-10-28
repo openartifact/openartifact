@@ -7,7 +7,9 @@ package api
 import (
 	"encoding/base64"
 	"errors"
+	"math"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/vuln"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -31,6 +34,8 @@ const (
 	securityFindingsMaxLimit     = 200
 	// securityQueryMaxLen bounds the free-text search.
 	securityQueryMaxLen = 255
+	// findingPriorityCursorTag marks a cursor of the priority order.
+	findingPriorityCursorTag = "p"
 )
 
 // SecurityHandler serves the cross-type security findings (vulnerabilities,
@@ -43,6 +48,8 @@ type SecurityHandler struct {
 	evaluator *auth.Evaluator
 	scanners  *vuln.Registry
 	generator *sbom.Generator
+	// exploit supplies the EPSS threshold of the priority rank.
+	exploit *exploit.Enricher
 	// envAI are the AI settings of the process environment, under the stored ones.
 	envAI ai.Settings
 }
@@ -52,7 +59,17 @@ type SecurityHandler struct {
 func NewSecurityHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator,
 	scanners *vuln.Registry, generator *sbom.Generator, envAI ai.Settings,
 ) *SecurityHandler {
-	return &SecurityHandler{db: db, log: log, evaluator: evaluator, scanners: scanners, generator: generator, envAI: envAI}
+	return &SecurityHandler{
+		db: db, log: log, evaluator: evaluator, scanners: scanners, generator: generator, envAI: envAI,
+		exploit: exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),
+	}
+}
+
+// WithExploit sets the enricher whose EPSS threshold derives the finding priority.
+func (h *SecurityHandler) WithExploit(e *exploit.Enricher) *SecurityHandler {
+	h.exploit = e
+
+	return h
 }
 
 // RegisterRoutes registers the security routes on the authenticated router.
@@ -164,9 +181,51 @@ func securityTypes(raw string) ([]string, bool) {
 	return out, true
 }
 
+// securityExploitParams reads ?sort, ?kev, ?epss_min and ?priority into params;
+// it returns the message of the first invalid value, or "".
+func securityExploitParams(q url.Values, params *models.FindingListParams) string {
+	switch params.Sort = q.Get("sort"); params.Sort {
+	case "":
+		params.Sort = models.FindingSortSeverity
+	case models.FindingSortSeverity, models.FindingSortPriority:
+	default:
+		return "sort must be one of: severity, priority"
+	}
+
+	if raw := q.Get("kev"); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil || (raw != "true" && raw != "false") {
+			return "kev must be true or false"
+		}
+
+		params.KEV = &v
+	}
+
+	if raw := q.Get("epss_min"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(v) || v < 0 || v > 1 {
+			return "epss_min must be a number between 0 and 1"
+		}
+
+		params.EPSSMin = &v
+	}
+
+	if raw := q.Get("priority"); raw != "" {
+		p, ok := exploit.ParsePriority(raw)
+		if !ok || p == exploit.PriorityNone {
+			return "priority must be one of: kev, epss, critical, high, medium, low"
+		}
+
+		rank := p.Rank()
+		params.PriorityRank = &rank
+	}
+
+	return ""
+}
+
 // securityListParams reads and validates the findings query string. It returns
 // the message of the first invalid value, or "".
-func securityListParams(r *http.Request, scope models.FindingScope) (models.FindingListParams, string) {
+func (h *SecurityHandler) securityListParams(r *http.Request, scope models.FindingScope) (models.FindingListParams, string) {
 	q := r.URL.Query()
 
 	params := models.FindingListParams{
@@ -174,6 +233,8 @@ func securityListParams(r *http.Request, scope models.FindingScope) (models.Find
 		Status:   q.Get("status"),
 		Q:        strings.TrimSpace(q.Get("q")),
 		Limit:    queryIntParam(r, "limit", securityFindingsDefaultLimit, 1, securityFindingsMaxLimit),
+
+		EPSSThreshold: h.exploit.Threshold(),
 	}
 
 	var msg string
@@ -204,9 +265,13 @@ func securityListParams(r *http.Request, scope models.FindingScope) (models.Find
 		return params, "q is too long"
 	}
 
+	if msg = securityExploitParams(q, &params); msg != "" {
+		return params, msg
+	}
+
 	if raw := q.Get("cursor"); raw != "" {
 		cursor, err := decodeFindingCursor(raw)
-		if err != nil {
+		if err != nil || cursor.Sort != params.Sort {
 			return params, "invalid cursor"
 		}
 
@@ -224,7 +289,7 @@ func (h *SecurityHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, msg := securityListParams(r, scope)
+	params, msg := h.securityListParams(r, scope)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
@@ -249,7 +314,7 @@ func (h *SecurityHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, f := range page.Findings {
-		resp.Findings = append(resp.Findings, securityFindingToResponse(f))
+		resp.Findings = append(resp.Findings, h.findingToResponse(f))
 	}
 
 	if page.Next != nil {
@@ -303,7 +368,9 @@ func (h *SecurityHandler) handleSummary(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func securityFindingToResponse(f *models.Finding) responses.SecurityFindingResponse {
+// findingToResponse renders a finding with its exploit priority, derived from
+// the row aggregates and the finding's severity rank.
+func (h *SecurityHandler) findingToResponse(f *models.Finding) responses.SecurityFindingResponse {
 	return responses.SecurityFindingResponse{
 		ID:             f.ID,
 		Type:           f.Type,
@@ -319,6 +386,9 @@ func securityFindingToResponse(f *models.Finding) responses.SecurityFindingRespo
 		Status:         f.Status,
 		Quarantined:    f.Quarantined,
 		VEXStatus:      f.VEXStatus,
+		KEVCount:       f.KEVCount,
+		MaxEPSS:        f.MaxEPSS,
+		Priority:       string(exploit.RowPriority(f.KEVCount, f.MaxEPSS, f.SeverityRank, h.exploit.Threshold())),
 		ScannedAt:      formatTime(f.ScannedAt),
 	}
 }
@@ -326,10 +396,18 @@ func securityFindingToResponse(f *models.Finding) responses.SecurityFindingRespo
 var errInvalidFindingCursor = errors.New("invalid security finding cursor")
 
 // encodeFindingCursor renders a keyset position as an opaque URL-safe token:
-// base64url("<severity rank>:<scanned at unix microseconds>:<finding id>").
+// base64url("<rank>:<scanned at unix microseconds>:<finding id>") for the
+// severity order (the format before sort existed) and
+// base64url("p:<rank>:<scanned at unix microseconds>:<finding id>") for the
+// priority order, so a cursor only decodes under the order that minted it.
 // Postgres stores timestamptz at microsecond precision, so the round trip is exact.
 func encodeFindingCursor(c *models.FindingCursor) string {
-	raw := strconv.Itoa(c.SeverityRank) + ":" + strconv.FormatInt(c.ScannedAt.UnixMicro(), 10) + ":" + c.ID
+	prefix := ""
+	if c.Sort == models.FindingSortPriority {
+		prefix = findingPriorityCursorTag + ":"
+	}
+
+	raw := prefix + strconv.Itoa(c.Rank) + ":" + strconv.FormatInt(c.ScannedAt.UnixMicro(), 10) + ":" + c.ID
 
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
@@ -343,12 +421,18 @@ func decodeFindingCursor(s string) (*models.FindingCursor, error) {
 	}
 
 	parts := strings.Split(string(raw), ":")
+	sort, maxRank := models.FindingSortSeverity, 4
+
+	if len(parts) == 4 && parts[0] == findingPriorityCursorTag {
+		sort, maxRank, parts = models.FindingSortPriority, 6, parts[1:]
+	}
+
 	if len(parts) != 3 {
 		return nil, errInvalidFindingCursor
 	}
 
 	rank, err := strconv.Atoi(parts[0])
-	if err != nil || rank < 0 || rank > 4 {
+	if err != nil || rank < 0 || rank > maxRank {
 		return nil, errInvalidFindingCursor
 	}
 
@@ -363,5 +447,5 @@ func decodeFindingCursor(s string) (*models.FindingCursor, error) {
 		return nil, errInvalidFindingCursor
 	}
 
-	return &models.FindingCursor{SeverityRank: rank, ScannedAt: time.UnixMicro(us).UTC(), ID: id.String()}, nil
+	return &models.FindingCursor{Sort: sort, Rank: rank, ScannedAt: time.UnixMicro(us).UTC(), ID: id.String()}, nil
 }

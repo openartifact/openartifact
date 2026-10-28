@@ -15,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/sbom"
 )
 
@@ -33,6 +34,7 @@ func securityCSVHeader() []string {
 	return []string{
 		"type", "repository", "format", "package_name", "package_version", "artifact_id", "severity",
 		"critical", "high", "medium", "low", "title", "scanner", "status", "quarantined", "vex_status", "scanned_at", "id",
+		"kev_count", "max_epss", "priority",
 	}
 }
 
@@ -96,7 +98,7 @@ func (h *SecurityHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, msg := securityListParams(r, scope)
+	params, msg := h.securityListParams(r, scope)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
@@ -134,13 +136,13 @@ func (h *SecurityHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 	switch format {
 	case exportFormatCSV:
 		exportHeaders(w, format, exportFileName(format, "security-findings"), truncated)
-		writeExportCSV(w, securityCSVHeader(), securityCSVRows(findings))
+		writeExportCSV(w, securityCSVHeader(), h.securityCSVRows(findings))
 	case exportFormatVEX:
 		h.writeVEXExport(w, r, findings, truncated)
 	default:
 		resp := make([]responses.SecurityFindingResponse, 0, len(findings))
 		for _, f := range findings {
-			resp = append(resp, securityFindingToResponse(f))
+			resp = append(resp, h.findingToResponse(f))
 		}
 
 		exportHeaders(w, format, exportFileName(format, "security-findings"), truncated)
@@ -148,14 +150,21 @@ func (h *SecurityHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func securityCSVRows(findings []*models.Finding) [][]string {
+func (h *SecurityHandler) securityCSVRows(findings []*models.Finding) [][]string {
 	rows := make([][]string, 0, len(findings))
+	threshold := h.exploit.Threshold()
 
 	for _, f := range findings {
+		maxEPSS := ""
+		if f.MaxEPSS != nil {
+			maxEPSS = strconv.FormatFloat(*f.MaxEPSS, 'f', -1, 64)
+		}
+
 		rows = append(rows, []string{
 			f.Type, f.Repository, f.Format, f.PackageName, f.PackageVersion, f.ArtifactID, f.Severity(),
 			strconv.Itoa(f.Critical), strconv.Itoa(f.High), strconv.Itoa(f.Medium), strconv.Itoa(f.Low),
 			f.Title, f.Scanner, f.Status, strconv.FormatBool(f.Quarantined), f.VEXStatus, formatTime(f.ScannedAt), f.ID,
+			strconv.Itoa(f.KEVCount), maxEPSS, string(exploit.RowPriority(f.KEVCount, f.MaxEPSS, f.SeverityRank, threshold)),
 		})
 	}
 

@@ -181,7 +181,7 @@ func TestVulnOverview_CursorRoundTripsAndForgeriesAreRejected(t *testing.T) {
 	t.Run("a cursor the server issued is accepted as given", func(t *testing.T) {
 		db := &vulnOverviewMockDB{page: &models.VulnScanOverviewPage{}}
 
-		rw := serveOverview(t, db, adminPrincipal(), "/api/v1/vuln/scans?cursor="+encodeVulnCursor(cursor))
+		rw := serveOverview(t, db, adminPrincipal(), "/api/v1/vuln/scans?cursor="+encodeVulnCursor(cursor, models.VulnSortSeverity))
 		if rw.Code != http.StatusOK {
 			t.Fatalf("status = %d (%s)", rw.Code, rw.Body.String())
 		}
@@ -261,7 +261,7 @@ func TestVulnOverview_ResponseIsASummaryPageWithACursor(t *testing.T) {
 	}
 
 	next, _ := raw["next_cursor"].(string)
-	if _, err := decodeVulnCursor(next); err != nil {
+	if _, err := decodeVulnCursor(next, models.VulnSortSeverity); err != nil {
 		t.Errorf("next_cursor %q does not decode: %v", next, err)
 	}
 

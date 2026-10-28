@@ -11,8 +11,9 @@ import {
   type SecurityFinding,
   type SecuritySummary,
 } from '../api/security'
-import { enumParam, strParam } from '../composables/useUrlState'
+import { boolParam, enumParam, strParam } from '../composables/useUrlState'
 import { artifactPath } from './artifactPath'
+import { EPSS_MIN_OPTIONS, PRIORITY_FILTERS, type EpssMin, type PriorityFilter } from './exploitPriority'
 import { vulnScannerLabel } from './vulnScanners'
 import type { BadgeVariant } from './scanStatus'
 
@@ -25,13 +26,23 @@ export type SeverityFilter = (typeof SEVERITY_FILTERS)[number]
 export const STATUS_FILTERS = ['open', 'quarantined', 'suppressed'] as const
 export type StatusFilter = (typeof STATUS_FILTERS)[number]
 
-/** The inbox's URL state: `?type=vuln|license|secret|ai&severity=&status=&repo=&q=`. An absent parameter means "no filter". */
+export const SORTS = ['severity', 'priority'] as const
+export type InboxSort = (typeof SORTS)[number]
+
+/**
+ * The inbox's URL state: `?type=vuln|license|secret|ai&severity=&status=&repo=&q=&sort=priority&kev=1&epss_min=0.1&priority=kev`.
+ * An absent parameter means "no filter" (and the severity order).
+ */
 export const INBOX_FILTERS = {
   type: enumParam<TypeFilter>(TYPE_FILTERS, 'all'),
   severity: enumParam<SeverityFilter | ''>(['', ...SEVERITY_FILTERS], ''),
   status: enumParam<StatusFilter | ''>(['', ...STATUS_FILTERS], ''),
   repo: strParam(),
   q: strParam(),
+  sort: enumParam<InboxSort>(SORTS, 'severity'),
+  kev: boolParam(),
+  epss_min: enumParam<EpssMin | ''>(['', ...EPSS_MIN_OPTIONS], ''),
+  priority: enumParam<PriorityFilter | ''>(['', ...PRIORITY_FILTERS], ''),
 }
 
 export interface InboxFilters {
@@ -40,6 +51,10 @@ export interface InboxFilters {
   status: StatusFilter | ''
   repo: string
   q: string
+  sort: InboxSort
+  kev: boolean
+  epss_min: EpssMin | ''
+  priority: PriorityFilter | ''
 }
 
 /** Request parameters of the inbox filters: only the set ones, `all` becoming "every type". */
@@ -50,12 +65,16 @@ export function toFindingFilters(f: InboxFilters): FindingFilters {
     severity: f.severity || undefined,
     status: f.status || undefined,
     q: f.q.trim() || undefined,
+    sort: f.sort === 'severity' ? undefined : f.sort,
+    kev: f.kev || undefined,
+    epss_min: f.epss_min ? Number(f.epss_min) : undefined,
+    priority: f.priority || undefined,
   }
 }
 
-/** A filter beyond the type switch narrows the list: an empty result is then "no matches", not "all clear". */
+/** A filter beyond the type switch narrows the list: an empty result is then "no matches", not "all clear". The sort order does not. */
 export function hasNarrowingFilters(f: InboxFilters): boolean {
-  return f.severity !== '' || f.status !== '' || f.q.trim() !== ''
+  return f.severity !== '' || f.status !== '' || f.q.trim() !== '' || f.kev || f.epss_min !== '' || f.priority !== ''
 }
 
 const EMPTY_COUNTS = { total: 0, critical: 0, high: 0, medium: 0, low: 0, quarantined: 0 }
@@ -128,6 +147,11 @@ export interface FindingRow {
   status: SecurityFinding['status']
   vexStatus?: SecurityFinding['vex_status']
   scannedAt: string
+  /** Vulnerabilities in the CISA KEV catalog. */
+  kevCount: number
+  /** Highest EPSS score (0..1), null when none is scored. */
+  maxEpss: number | null
+  priority: SecurityFinding['priority']
   /** The quarantine toggle exists for this type (AI analyses only recommend). */
   canQuarantine: boolean
   quarantined: boolean
@@ -159,6 +183,9 @@ export function toFindingRow(f: SecurityFinding): FindingRow {
     status: f.status,
     vexStatus: f.vex_status,
     scannedAt: f.scanned_at,
+    kevCount: f.kev_count ?? 0,
+    maxEpss: f.max_epss ?? null,
+    priority: f.priority,
     canQuarantine: f.type !== 'ai',
     quarantined: f.quarantined,
     source: f,

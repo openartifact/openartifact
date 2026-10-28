@@ -58,6 +58,13 @@ type Registry struct {
 	ScannerDBUpdateAttemptsTotal  *prometheus.CounterVec
 	ScannerDBLastSuccessTimestamp *prometheus.GaugeVec
 
+	// ExploitImportAttemptsTotal counts imports of the exploitation-signal feeds
+	// by feed (kev, epss) and result (imported, unchanged, failed);
+	// ExploitFeedLastSuccessTimestamp is when each feed was last imported or
+	// confirmed unchanged, in Unix seconds.
+	ExploitImportAttemptsTotal      *prometheus.CounterVec
+	ExploitFeedLastSuccessTimestamp *prometheus.GaugeVec
+
 	// Recovery holds the disaster-recovery row journal metrics.
 	Recovery RecoveryMetrics
 }
@@ -215,6 +222,16 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 			Name: "openartifact_scanner_db_last_success_timestamp_seconds",
 			Help: "Unix time of the last successful vulnerability database refresh (or the database's age on disk after a restart), by scanner.",
 		}, []string{"scanner"}),
+
+		ExploitImportAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_exploit_import_attempts_total",
+			Help: "Imports of the CISA KEV and FIRST EPSS feeds, by feed (kev, epss) and result (imported, unchanged, failed).",
+		}, []string{"feed", "result"}),
+
+		ExploitFeedLastSuccessTimestamp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "openartifact_exploit_feed_last_success_timestamp_seconds",
+			Help: "Unix time of the last successful import (or unchanged check) of the KEV and EPSS feeds, by feed.",
+		}, []string{"feed"}),
 	}
 
 	reg.MustRegister(
@@ -241,6 +258,8 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		r.ScannerInstallAttemptsTotal,
 		r.ScannerDBUpdateAttemptsTotal,
 		r.ScannerDBLastSuccessTimestamp,
+		r.ExploitImportAttemptsTotal,
+		r.ExploitFeedLastSuccessTimestamp,
 	)
 	reg.MustRegister(r.Replication.Collectors()...)
 

@@ -241,6 +241,20 @@ Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` need
 
 A path must be a bare command name or absolute (no relative paths), a repository must not contain whitespace or start with `-`, and the server refuses to start on an invalid value. The cache directory is created when the first download starts. The startup log reports each resolved binary and its database state.
 
+### Exploitation signals (`exploit`)
+
+The daily import of the CISA KEV catalog and the FIRST EPSS scores that mark vulnerability findings with exploitation evidence and rank them. See [Exploitation signals](../security/exploit-signals.md) for what the data is, its terms of use and how findings are prioritised.
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_EXPLOIT_ENABLED` | `exploit.enabled` | `true` | Import the feeds. Off, findings carry no KEV or EPSS data and their priority is their severity |
+| `OPENARTIFACT_EXPLOIT_KEV_URL` | `exploit.kevUrl` | CISA's `known_exploited_vulnerabilities.json` | `https` URL of the KEV catalog; a mirror in an air-gapped network serves the same JSON |
+| `OPENARTIFACT_EXPLOIT_EPSS_URL` | `exploit.epssUrl` | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` | `https` URL of the gzip EPSS score file; a mirror serves the same file |
+| `OPENARTIFACT_EXPLOIT_INTERVAL` | `exploit.interval` | `24h` | Pause between imports; at least `1h` |
+| `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | `exploit.epssThreshold` | `0.1` | EPSS score, above `0` and at most `1`, from which a finding outside KEV ranks above its severity |
+
+The URLs must be absolute `https` URLs without credentials or fragment; the server refuses to start on an invalid value.
+
 ### Storage (`storage`)
 
 Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `garage` and `seaweedfs` reuse the S3 client with path-style addressing forced on. Details: [storage](../operations/storage.md).

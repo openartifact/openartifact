@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/vuln"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -41,6 +42,17 @@ type VulnHandler struct {
 
 	// tasks runs the background scans; they are cancelled at server shutdown.
 	tasks *bgtask.Runner
+
+	// exploit marks findings with the KEV and EPSS signals; never nil.
+	exploit *exploit.Enricher
+}
+
+// WithExploit sets the enricher that marks findings with the CISA KEV and
+// FIRST EPSS signals (the default has no feeds: findings carry their severity
+// as priority).
+func (h *VulnHandler) WithExploit(e *exploit.Enricher) *VulnHandler {
+	h.exploit = e
+	return h
 }
 
 // WithTasks runs the background scans under the server lifecycle: they are
@@ -118,6 +130,7 @@ func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		scanners:   scanners,
 		newBackend: scanners.Backend,
 		tasks:      bgtask.New(context.Background()),
+		exploit:    exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),
 	}
 }
 
@@ -128,6 +141,7 @@ func (h *VulnHandler) RegisterRoutes(authedRouter chi.Router, pathPrefix string)
 	authedRouter.Get(pathPrefix+"/vuln/scans", h.handleListScans)
 	authedRouter.Get(pathPrefix+"/vuln/scans/{id}", h.handleGetScan)
 	authedRouter.Get(pathPrefix+"/vuln/scans/{id}/export", h.handleExportScan)
+	authedRouter.Get(pathPrefix+"/vuln/scans/{id}/gate", h.handleGateScan)
 	authedRouter.Post(pathPrefix+"/vuln/scans/{id}/quarantine", h.handleQuarantine)
 	authedRouter.Delete(pathPrefix+"/vuln/scans/{id}", h.handleDeleteScan)
 }
@@ -271,7 +285,13 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		h.performScan(ctx, &job, pkg)
 	})
 
-	writeJSON(w, http.StatusOK, vulnScanResultToMap(scanResult))
+	resp, err := h.scanResponse(ctx, scanResult)
+	if err != nil {
+		h.dbError(w, "scan vuln: exploit signals", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // performScan performs the actual vulnerability scan of pkg with the scanners
@@ -323,6 +343,14 @@ func (h *VulnHandler) performScan(ctx context.Context, scanResult *models.VulnSc
 	persistCtx, persistCancel := context.WithTimeout(context.Background(), vulnPersistTimeout)
 	defer persistCancel()
 
+	// The aggregates are as of this scan; a failed read leaves zeros, which the
+	// next feed import corrects.
+	if aggs, err := h.exploit.Aggregates(persistCtx, outcome.Vulnerabilities); err != nil {
+		h.log.Errorw("vuln scan: reading exploit signals", "error", err)
+	} else if len(aggs) == 1 {
+		scanResult.KEVCount, scanResult.MaxEPSS = aggs[0].KEVCount, aggs[0].MaxEPSS
+	}
+
 	if err := h.db.UpdateVulnScanResult(persistCtx, scanResult); err != nil {
 		h.log.Errorw("vuln scan: db error updating scan result", "error", err)
 		return
@@ -342,10 +370,19 @@ func (h *VulnHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 
 	vulnerableOnly := r.URL.Query().Get("vulnerable") == "true"
 
-	writeRepoList(w, r, h.repoAccess, repo, "list vuln scans", "scans",
-		func(ctx context.Context, repoID string) ([]*models.VulnScanResult, error) {
-			return h.db.ListVulnScanResults(ctx, repoID, vulnerableOnly)
-		}, vulnScanResultToMap)
+	results, err := h.db.ListVulnScanResults(r.Context(), repo.ID, vulnerableOnly)
+	if err != nil {
+		h.dbError(w, "list vuln scans: db error", err)
+		return
+	}
+
+	out, err := h.scanResponses(r.Context(), results)
+	if err != nil {
+		h.dbError(w, "list vuln scans: exploit signals", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"scans": out})
 }
 
 // handleGetScan gets a specific vulnerability scan result.
@@ -360,7 +397,13 @@ func (h *VulnHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, vulnScanResultToMap(result))
+	resp, err := h.scanResponse(r.Context(), result)
+	if err != nil {
+		h.dbError(w, "get vuln scan: exploit signals", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleQuarantine updates the quarantine status of a vulnerable artifact.
@@ -413,7 +456,13 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, vulnScanResultToMap(updated))
+	resp, err := h.scanResponse(ctx, updated)
+	if err != nil {
+		h.dbError(w, "quarantine vuln artifact: exploit signals", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleDeleteScan deletes a vulnerability scan result.
@@ -445,8 +494,13 @@ func (h *VulnHandler) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
-// Helper function to convert VulnScanResult to map.
-func vulnScanResultToMap(result *models.VulnScanResult) responses.VulnScanResultResponse {
+// vulnScanResultToMap converts a stored scan result to its response, with the
+// annotated findings (nil: none) and the priority derived at threshold.
+func vulnScanResultToMap(
+	result *models.VulnScanResult,
+	findings []exploit.Vulnerability,
+	threshold float64,
+) responses.VulnScanResultResponse {
 	var scanError *string
 	if result.ScanError != "" {
 		scanError = &result.ScanError
@@ -455,6 +509,10 @@ func vulnScanResultToMap(result *models.VulnScanResult) responses.VulnScanResult
 	failedScanners := result.FailedScanners
 	if failedScanners == nil {
 		failedScanners = []string{}
+	}
+
+	if findings == nil {
+		findings = []exploit.Vulnerability{}
 	}
 
 	return responses.VulnScanResultResponse{
@@ -466,7 +524,7 @@ func vulnScanResultToMap(result *models.VulnScanResult) responses.VulnScanResult
 		Ecosystem:       result.Ecosystem,
 		Scanner:         result.Scanner,
 		ScanStatus:      result.ScanStatus,
-		Vulnerabilities: result.Vulnerabilities,
+		Vulnerabilities: findings,
 		VulnCount:       result.VulnCount,
 		CriticalCount:   result.CriticalCount,
 		HighCount:       result.HighCount,
@@ -478,5 +536,9 @@ func vulnScanResultToMap(result *models.VulnScanResult) responses.VulnScanResult
 		ScannedAt:       formatTimePtr(result.ScannedAt),
 		ScanError:       scanError,
 		FailedScanners:  failedScanners,
+		KEVCount:        result.KEVCount,
+		MaxEPSS:         result.MaxEPSS,
+		Priority: string(vulnRowPriority(
+			result.KEVCount, result.MaxEPSS, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, threshold)),
 	}
 }

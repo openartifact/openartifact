@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -81,8 +82,9 @@ type osvQueryResponse struct {
 
 // osvVulnerability represents a vulnerability from OSV API.
 type osvVulnerability struct {
-	ID       string `json:"id"`
-	Summary  string `json:"summary"`
+	ID       string   `json:"id"`
+	Aliases  []string `json:"aliases"`
+	Summary  string   `json:"summary"`
 	Severity []struct {
 		Type  string `json:"type"`
 		Score string `json:"score"`
@@ -165,6 +167,7 @@ func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerabil
 	for _, osvVuln := range osvResp.Vulns {
 		vuln := models.Vulnerability{
 			ID:          osvVuln.ID,
+			Aliases:     cleanAliases(osvVuln.ID, osvVuln.Aliases),
 			Summary:     osvVuln.Summary,
 			PublishedAt: osvVuln.Published,
 			References:  extractReferencesFromOSV(osvVuln.References),
@@ -492,7 +495,14 @@ type grypeOutput struct {
 
 type grypeMatch struct {
 	Vulnerability grypeVulnerability `json:"vulnerability"`
-	Artifact      grypeArtifact      `json:"artifact"`
+	// RelatedVulnerabilities are the same vulnerability under other ids (a GHSA
+	// match lists its CVE).
+	RelatedVulnerabilities []grypeRelated `json:"relatedVulnerabilities"`
+	Artifact               grypeArtifact  `json:"artifact"`
+}
+
+type grypeRelated struct {
+	ID string `json:"id"`
 }
 
 type grypeVulnerability struct {
@@ -587,8 +597,14 @@ func (s *GrypeScanner) parseGrypeOutput(data []byte) ([]models.Vulnerability, er
 
 		seen[match.Vulnerability.ID] = true
 
+		related := make([]string, len(match.RelatedVulnerabilities))
+		for i, r := range match.RelatedVulnerabilities {
+			related[i] = r.ID
+		}
+
 		vuln := models.Vulnerability{
 			ID:      match.Vulnerability.ID,
+			Aliases: cleanAliases(match.Vulnerability.ID, related),
 			Summary: match.Vulnerability.Description,
 		}
 
@@ -780,4 +796,26 @@ func validPackageToken(s string) bool {
 	}
 
 	return true
+}
+
+// maxAliases caps the aliases kept per finding; real advisories list a few.
+const maxAliases = 16
+
+// cleanAliases returns the aliases other than the finding's own id, trimmed,
+// without duplicates and in the scanner's order; nil when there are none.
+func cleanAliases(id string, aliases []string) []string {
+	var out []string
+
+	for _, a := range aliases {
+		a = strings.TrimSpace(a)
+		if a == "" || a == id || slices.Contains(out, a) {
+			continue
+		}
+
+		if out = append(out, a); len(out) == maxAliases {
+			break
+		}
+	}
+
+	return out
 }

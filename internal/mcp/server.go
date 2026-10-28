@@ -22,6 +22,7 @@ import (
 	oaauth "github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -118,6 +119,8 @@ type Server struct {
 	aiWorker   *worker.AIAnalysisWorker
 	log        *logger.Logger
 	baseURL    string
+	// exploit annotates vulnerabilities with KEV/EPSS signals; never nil.
+	exploit *exploit.Enricher
 
 	resourceMetadataURL string
 	maxBodyBytes        int64
@@ -142,6 +145,7 @@ func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *log
 		aiWorker:            aiWorker,
 		log:                 log,
 		baseURL:             strings.TrimRight(opts.BaseURL, "/"),
+		exploit:             exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),
 		resourceMetadataURL: opts.ResourceMetadataURL,
 		maxBodyBytes:        maxBody,
 		requestLimiter:      newLimiter(opts.RateLimitPerMinute),
@@ -173,6 +177,11 @@ func (s *Server) SetReadFilter(f ReadFilterFunc) { s.readFilter = f }
 
 // SetSearcher installs the SQL search backend for cross-repository search.
 func (s *Server) SetSearcher(a ArtifactSearcher) { s.searcher = a }
+
+// SetExploit installs the enricher that adds the CISA KEV and FIRST EPSS signals
+// to the vulnerabilities the tools return. Without it only the severity
+// priority is reported.
+func (s *Server) SetExploit(e *exploit.Enricher) { s.exploit = e }
 
 // allowed enforces per-repository authorization. Without an authorizer every
 // call is denied.

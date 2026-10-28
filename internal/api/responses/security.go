@@ -39,6 +39,14 @@ type SecurityFindingResponse struct {
 	// VEXStatus is the least resolved VEX decision of a vuln finding (affected,
 	// under_investigation, fixed, not_affected); absent when none applies.
 	VEXStatus string `json:"vex_status,omitempty"`
+	// KEVCount is how many vulnerabilities of a vuln finding are in the CISA KEV
+	// catalog; 0 for the other types.
+	KEVCount int `json:"kev_count"`
+	// MaxEPSS is the highest EPSS score of a vuln finding; null when none is scored.
+	MaxEPSS *float64 `json:"max_epss"`
+	// Priority is the remediation priority: kev, epss, or the severity (critical,
+	// high, medium, low, none).
+	Priority  string `json:"priority"`
 	ScannedAt string `json:"scanned_at"`
 }
 

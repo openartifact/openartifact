@@ -48,7 +48,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Projects](projects.md) | 30 | - |
 | [Repositories](repositories.md) | 68 | - |
 | [SBOM](sbom.md) | 15 | - |
-| [Scanning](scanning.md) | 32 | - |
+| [Scanning](scanning.md) | 34 | - |
 | [Search](search.md) | 1 | - |
 | [SSO](sso.md) | 13 | - |
 | [Storage](storage.md) | 25 | - |
@@ -60,4 +60,4 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 ## Schemas
 
-All 151 named request and response objects are on the [schemas page](schemas.md).
+All 156 named request and response objects are on the [schemas page](schemas.md).

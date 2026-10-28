@@ -3918,6 +3918,23 @@
             ],
             "description": "Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies."
           },
+          "kev_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Vulnerabilities of a vuln finding that are in the CISA KEV catalog; 0 for the other types."
+          },
+          "max_epss": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Highest FIRST EPSS score among the vulnerabilities of a vuln finding; null when none is scored (and for the other types)."
+          },
+          "priority": {
+            "$ref": "#/components/schemas/ExploitPriority"
+          },
           "scanned_at": {
             "type": "string",
             "format": "date-time"
@@ -3937,8 +3954,24 @@
           "scanner",
           "status",
           "quarantined",
+          "kev_count",
+          "max_epss",
+          "priority",
           "scanned_at"
         ]
+      },
+      "ExploitPriority": {
+        "type": "string",
+        "enum": [
+          "kev",
+          "epss",
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "none"
+        ],
+        "description": "Remediation priority: `kev` when a vulnerability is in the CISA KEV catalog, `epss` when its EPSS score reaches the configured threshold, otherwise the severity (`none` when there is none)."
       },
       "SecurityFindingCounts": {
         "type": "object",
@@ -4300,6 +4333,299 @@
           "quarantined"
         ]
       },
+      "ExploitAnnotation": {
+        "type": "object",
+        "description": "What the CISA KEV catalog and the FIRST EPSS scores say about a vulnerability finding, looked up when the finding is read (never stored with it). The signals are keyed by CVE id: a finding listed under a GHSA, GO or PYSEC id is matched through its aliases.",
+        "properties": {
+          "cve": {
+            "type": "string",
+            "description": "The CVE id the signals were looked up by: the one in KEV or with the highest EPSS score, else the first CVE id of the finding. Absent when the finding has no CVE id."
+          },
+          "kev": {
+            "type": "boolean",
+            "description": "True when the CVE is in the CISA Known Exploited Vulnerabilities catalog."
+          },
+          "kev_date_added": {
+            "type": "string",
+            "format": "date",
+            "description": "Day CISA added the CVE to the catalog. Only for a KEV CVE."
+          },
+          "kev_due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Remediation deadline CISA set. Only for a KEV CVE that has one."
+          },
+          "kev_ransomware": {
+            "type": "boolean",
+            "description": "True when CISA knows the CVE to be used in ransomware campaigns. Absent otherwise."
+          },
+          "epss": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "EPSS score: the probability of exploitation activity in the next 30 days. Null when no CVE of the finding is scored."
+          },
+          "epss_percentile": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Share of scored CVEs with the same or a lower EPSS score. Null when unscored."
+          },
+          "epss_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Day of the EPSS score file the score comes from. Null when unscored."
+          },
+          "priority": {
+            "$ref": "#/components/schemas/ExploitPriority"
+          }
+        },
+        "required": [
+          "kev",
+          "epss",
+          "epss_percentile",
+          "epss_date",
+          "priority"
+        ]
+      },
+      "AnnotatedVulnerability": {
+        "description": "One vulnerability finding of a scan with its ExploitAnnotation.",
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "CVE or advisory id (CVE-2021-1234, GHSA-xxxx-xxxx-xxxx)."
+              },
+              "summary": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "description": "CRITICAL, HIGH, MEDIUM, LOW or UNKNOWN."
+              },
+              "cvss": {
+                "type": "number"
+              },
+              "fixed_in": {
+                "type": "string",
+                "description": "Version that fixes the vulnerability; empty when none."
+              },
+              "references": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "published_at": {
+                "type": "string"
+              },
+              "cwes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Weakness ids (`CWE-79`) the scanner reported. Absent when it gave none."
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Other ids the scanner knows the vulnerability by. Absent when none."
+              }
+            },
+            "required": [
+              "id",
+              "summary",
+              "severity",
+              "cvss",
+              "fixed_in",
+              "published_at"
+            ]
+          },
+          {
+            "$ref": "#/components/schemas/ExploitAnnotation"
+          }
+        ]
+      },
+      "VulnGateResponse": {
+        "type": "object",
+        "description": "Verdict of an exploitation gate on one scan: it passes when no finding meets any of the conditions.",
+        "properties": {
+          "pass": {
+            "type": "boolean",
+            "description": "True when `failed` is empty."
+          },
+          "criteria": {
+            "type": "object",
+            "description": "The conditions that were applied.",
+            "properties": {
+              "kev": {
+                "type": "boolean"
+              },
+              "epss_min": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Null when not set."
+              },
+              "min_priority": {
+                "type": "string",
+                "description": "Empty when not set."
+              }
+            },
+            "required": [
+              "kev",
+              "epss_min",
+              "min_priority"
+            ]
+          },
+          "checked": {
+            "type": "integer",
+            "description": "Number of findings of the scan that were checked."
+          },
+          "failed": {
+            "type": "array",
+            "description": "The findings that meet a condition, highest priority first, then by id.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "cve": {
+                  "type": "string",
+                  "description": "The CVE id the signals were looked up by; empty when the finding has none."
+                },
+                "priority": {
+                  "$ref": "#/components/schemas/ExploitPriority"
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "The conditions it meets: `kev`, `epss>=<min>`, `priority>=<min_priority>`."
+                }
+              },
+              "required": [
+                "id",
+                "cve",
+                "priority",
+                "reasons"
+              ]
+            }
+          }
+        },
+        "required": [
+          "pass",
+          "criteria",
+          "checked",
+          "failed"
+        ]
+      },
+      "ExploitFeed": {
+        "type": "object",
+        "description": "State of one exploitation-signal feed.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "kev",
+              "epss"
+            ]
+          },
+          "source_url": {
+            "type": "string",
+            "description": "URL the loaded data came from; empty when the feed was never checked."
+          },
+          "version": {
+            "type": "string",
+            "description": "Catalog version (KEV) or model version (EPSS) of the loaded data."
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the feed says the data was released. Null when nothing is loaded."
+          },
+          "entry_count": {
+            "type": "integer",
+            "description": "Rows loaded from the feed."
+          },
+          "imported_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the data was last replaced. Null when nothing is loaded."
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the source was last asked (an unchanged file only moves this)."
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Sanitized reason the last check failed; empty after a success."
+          }
+        },
+        "required": [
+          "name",
+          "source_url",
+          "version",
+          "published_at",
+          "entry_count",
+          "imported_at",
+          "checked_at",
+          "last_error"
+        ]
+      },
+      "ExploitFeedsResponse": {
+        "type": "object",
+        "properties": {
+          "feeds": {
+            "type": "array",
+            "description": "The KEV and EPSS feeds, in that order.",
+            "items": {
+              "$ref": "#/components/schemas/ExploitFeed"
+            }
+          },
+          "epss_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "EPSS score from which a finding has priority `epss`."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "False when the feeds are switched off (`exploit.enabled`): findings then carry no KEV or EPSS data."
+          }
+        },
+        "required": [
+          "feeds",
+          "epss_threshold",
+          "enabled"
+        ]
+      },
       "VulnScanOverviewRow": {
         "type": "object",
         "description": "A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.",
@@ -4385,8 +4711,31 @@
             "items": {
               "type": "string"
             }
+          },
+          "kev_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Findings of the scan that are in the CISA KEV catalog (as of the scan or the last feed import)."
+          },
+          "max_epss": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Highest EPSS score among the findings; null when none is scored."
+          },
+          "priority": {
+            "$ref": "#/components/schemas/ExploitPriority",
+            "description": "`kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity."
           }
-        }
+        },
+        "required": [
+          "kev_count",
+          "max_epss",
+          "priority"
+        ]
       },
       "VulnScanSummary": {
         "type": "object",
@@ -4473,7 +4822,7 @@
           "vulnerabilities": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/AnnotatedVulnerability"
             }
           },
           "vuln_count": {
@@ -4490,6 +4839,24 @@
           },
           "low_count": {
             "type": "integer"
+          },
+          "kev_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Findings of the scan that are in the CISA KEV catalog (as of the scan or the last feed import)."
+          },
+          "max_epss": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Highest EPSS score among the findings; null when none is scored."
+          },
+          "priority": {
+            "$ref": "#/components/schemas/ExploitPriority",
+            "description": "`kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity."
           },
           "quarantined": {
             "type": "boolean"
@@ -4542,7 +4909,10 @@
           "updated_at",
           "scanned_at",
           "scan_error",
-          "failed_scanners"
+          "failed_scanners",
+          "kev_count",
+          "max_epss",
+          "priority"
         ]
       },
       "VulnScanner": {
@@ -9917,7 +10287,7 @@
     "/api/v1/vuln/scans": {
       "get": {
         "summary": "List vulnerability scans of all repositories",
-        "description": "Overview of the vulnerability scans of every repository (admin only), worst first: most critical findings, then high, medium and low, then newest, then id. Keyset paging: follow `next_cursor` while `has_more` is true; no row is counted. Rows carry no findings. The cursor is bound to the order, not to the filters: send the same filters with it.",
+        "description": "Overview of the vulnerability scans of every repository (admin only), worst first: most critical findings, then high, medium and low, then newest, then id; with `sort=priority` the priority rank (KEV, then EPSS, then the severity) leads. Keyset paging: follow `next_cursor` while `has_more` is true; no row is counted. Rows carry no findings but their `kev_count`, `max_epss` and `priority`. The cursor is bound to the sort, not to the filters: send the same sort and filters with it.",
         "tags": [
           "Scanning"
         ],
@@ -9980,6 +10350,53 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "description": "`severity` (default): most critical findings first, then high, medium and low. `priority`: priority rank first (`kev`, then `epss`, then the severity), then the severity order. A cursor is bound to its sort: it is rejected (`validation_failed`) under the other one.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "severity",
+                "priority"
+              ],
+              "default": "severity"
+            }
+          },
+          {
+            "name": "kev",
+            "in": "query",
+            "description": "`true`: only scans with a finding in the CISA KEV catalog; `false`: only scans without one.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "epss_min",
+            "in": "query",
+            "description": "Only scans whose highest EPSS score is at least this value (0 to 1); unscored scans never match.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Only scans whose priority equals this one (an exact match, not a minimum): `kev` (a finding is in KEV), `epss` (no KEV finding, EPSS at or above the server threshold) or the worst severity.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kev",
+                "epss",
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Page size, default 25.",
@@ -10037,7 +10454,7 @@
     "/api/v1/security/findings": {
       "get": {
         "summary": "List security findings of all repositories",
-        "description": "Vulnerability, license, secret and AI findings across repositories, worst first: highest severity, then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "description": "Vulnerability, license, secret and AI findings across repositories, worst first: highest severity (or, with `sort=priority`, exploit priority), then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
         "tags": [
           "Scanning"
         ],
@@ -10099,6 +10516,53 @@
             "description": "Case-insensitive substring of the repository name or of `name@version`.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order: `severity` (default: highest severity, newest scan, id) or `priority` (exploit rank first: findings with a vulnerability in the CISA KEV catalog, then those whose highest EPSS score reaches the configured threshold, then by severity; same tie-breakers). A cursor only works under the sort it was issued for (400 otherwise).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "severity",
+                "priority"
+              ],
+              "default": "severity"
+            }
+          },
+          {
+            "name": "kev",
+            "in": "query",
+            "description": "`true`: only findings with at least one vulnerability in the CISA KEV catalog; `false`: only those without. Only vulnerability findings can be in KEV: the other types have `kev_count` 0, so `kev=true` drops them.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "epss_min",
+            "in": "query",
+            "description": "Only findings whose highest EPSS score (`max_epss`) is at least this value. Findings without a score, including every non-vulnerability finding, are dropped.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Only findings whose `priority` is exactly this one. `kev` and `epss` can only match vulnerability findings; the severity priorities match the findings of every type whose highest severity it is and that are neither in KEV nor at the EPSS threshold.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kev",
+                "epss",
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
             }
           },
           {
@@ -10208,7 +10672,7 @@
     "/api/v1/security/findings/export": {
       "get": {
         "summary": "Export security findings",
-        "description": "Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "description": "Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. The CSV ends with the columns `kev_count`, `max_epss` and `priority` (the same fields as the list; the JSON findings carry them too); `sort`, `kev`, `epss_min` and `priority` select and order like the list. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
         "tags": [
           "Scanning"
         ],
@@ -10273,6 +10737,53 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "description": "Order: `severity` (default: highest severity, newest scan, id) or `priority` (exploit rank first: findings with a vulnerability in the CISA KEV catalog, then those whose highest EPSS score reaches the configured threshold, then by severity; same tie-breakers). A cursor only works under the sort it was issued for (400 otherwise).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "severity",
+                "priority"
+              ],
+              "default": "severity"
+            }
+          },
+          {
+            "name": "kev",
+            "in": "query",
+            "description": "`true`: only findings with at least one vulnerability in the CISA KEV catalog; `false`: only those without. Only vulnerability findings can be in KEV: the other types have `kev_count` 0, so `kev=true` drops them.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "epss_min",
+            "in": "query",
+            "description": "Only findings whose highest EPSS score (`max_epss`) is at least this value. Findings without a score, including every non-vulnerability finding, are dropped.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Only findings whose `priority` is exactly this one. `kev` and `epss` can only match vulnerability findings; the severity priorities match the findings of every type whose highest severity it is and that are neither in KEV nor at the EPSS threshold.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kev",
+                "epss",
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
             "name": "format",
             "in": "query",
             "description": "`csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings).",
@@ -10313,6 +10824,30 @@
           },
           "403": {
             "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/exploit-feeds": {
+      "get": {
+        "summary": "State of the exploitation-signal feeds",
+        "description": "Admin only. What is loaded from the CISA KEV catalog and the FIRST EPSS scores, when they were last imported and checked, and the last error. Both feeds are always listed; a feed that was never loaded has an empty `version` and `source_url`, 0 entries and null dates.",
+        "tags": [
+          "Scanning"
+        ],
+        "responses": {
+          "200": {
+            "description": "The feeds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExploitFeedsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           }
         }
       }
@@ -10409,7 +10944,7 @@
     "/api/v1/vuln/scans/export": {
       "get": {
         "summary": "Export vulnerability scans of all repositories",
-        "description": "Findings of every scan the overview filters select (admin only), as SARIF, CSV or JSON. No paging: at most 2000 scans are read.",
+        "description": "Findings of every scan the overview filters select (admin only), as SARIF, CSV or JSON, with the exploitation signals of each finding as in the single-scan export. No paging: at most 2000 scans are read.",
         "tags": [
           "Scanning"
         ],
@@ -10466,6 +11001,53 @@
             "in": "query",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order of the scans, as in the overview list: `severity` (default) or `priority`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "severity",
+                "priority"
+              ],
+              "default": "severity"
+            }
+          },
+          {
+            "name": "kev",
+            "in": "query",
+            "description": "`true`: only scans with a finding in the CISA KEV catalog; `false`: only scans without one.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "epss_min",
+            "in": "query",
+            "description": "Only scans whose highest EPSS score is at least this value (0 to 1).",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Only scans whose priority equals this one (an exact match).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kev",
+                "epss",
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
             }
           },
           {
@@ -10727,10 +11309,93 @@
         }
       }
     },
+    "/api/v1/repositories/{name}/vuln/scans/{id}/gate": {
+      "get": {
+        "summary": "Check a vulnerability scan against exploitation criteria",
+        "description": "Quality gate on the exploitation signals of one scan's findings (admin only). The scan passes when no finding meets any of the given conditions (they are ORed): a CVE in the CISA KEV catalog (`kev=true`), an EPSS score of at least `epss_min`, or a priority of at least `min_priority`. At least one condition is required. The signals are read when the request is made, so a feed import changes the verdict of an old scan.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kev",
+            "in": "query",
+            "description": "`true`: a finding in the KEV catalog fails the gate. `false` or absent: no condition.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "epss_min",
+            "in": "query",
+            "description": "A finding whose EPSS score is at least this value (0 to 1) fails the gate.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          {
+            "name": "min_priority",
+            "in": "query",
+            "description": "A finding whose priority is at least this one fails the gate (the order is `kev`, `epss`, `critical`, `high`, `medium`, `low`).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kev",
+                "epss",
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verdict, `pass` true or false (a failing gate is still HTTP 200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnGateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No condition given, or an invalid value (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Scan not found"
+          }
+        }
+      }
+    },
     "/api/v1/repositories/{name}/vuln/scans/{id}/export": {
       "get": {
         "summary": "Export a vulnerability scan",
-        "description": "Findings of one scan as SARIF, CSV or JSON (admin only).",
+        "description": "Findings of one scan as SARIF, CSV or JSON (admin only). Every finding carries its exploitation signals: JSON as the fields of ExploitAnnotation, CSV as the last columns (`kev`, `kev_date_added`, `kev_due_date`, `epss`, `epss_percentile`, `priority`), SARIF in the result `properties` (`kev`, `kevDateAdded`, `kevDueDate`, `epss`, `epssPercentile`, `priority`, `cve`).",
         "tags": [
           "Scanning"
         ],

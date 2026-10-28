@@ -13,6 +13,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 )
 
 const (
@@ -150,16 +151,23 @@ func (s *Server) getVulnerabilities(ctx context.Context, in vulnerabilitiesIn) (
 		return vulnerabilitiesResult{}, s.internalError("list vuln scans", err, "repository", repo.Name)
 	}
 
-	res := summarizeVulns(repo.Name, in.Package, in.Version, scans)
+	res, err := summarizeVulns(ctx, s.exploit, repo.Name, in.Package, in.Version, scans)
+	if err != nil {
+		return vulnerabilitiesResult{}, s.internalError("annotate vulnerabilities", err, "repository", repo.Name)
+	}
+
 	res.provenance = newProvenance()
 
 	return res, nil
 }
 
 // summarizeVulns aggregates scan results matching the optional package and
-// version filters into severity counts and a capped, severity-ordered list of
-// findings. Scanner error text is never included.
-func summarizeVulns(repoName, pkg, version string, scans []*models.VulnScanResult) vulnerabilitiesResult {
+// version filters into severity counts and a capped, priority-then-severity
+// ordered list of findings, each with its KEV/EPSS annotation (one feed read
+// for all of them). Scanner error text is never included.
+func summarizeVulns(
+	ctx context.Context, enricher *exploit.Enricher, repoName, pkg, version string, scans []*models.VulnScanResult,
+) (vulnerabilitiesResult, error) {
 	res := vulnerabilitiesResult{
 		Repository:    repoName,
 		PackageFilter: pkg,
@@ -167,7 +175,10 @@ func summarizeVulns(repoName, pkg, version string, scans []*models.VulnScanResul
 		Findings:      []findingDTO{},
 	}
 
-	var findings []findingDTO
+	var (
+		matched []*models.VulnScanResult
+		lists   [][]models.Vulnerability
+	)
 
 	for _, scan := range scans {
 		if scan == nil || (pkg != "" && scan.PackageName != pkg) || (version != "" && scan.PackageVersion != version) {
@@ -190,19 +201,37 @@ func summarizeVulns(repoName, pkg, version string, scans []*models.VulnScanResul
 			res.VulnerablePackages++
 		}
 
-		for _, v := range scan.Vulnerabilities {
+		matched = append(matched, scan)
+		lists = append(lists, scan.Vulnerabilities)
+	}
+
+	annotated, err := enricher.Annotate(ctx, lists...)
+	if err != nil {
+		return res, err //nolint:wrapcheck // the caller wraps it
+	}
+
+	var findings []findingDTO
+
+	for i, scan := range matched {
+		for _, v := range annotated[i] {
 			res.Totals.add(v.Severity)
 			findings = append(findings, toFindingDTO(scan, v))
 		}
 	}
 
 	slices.SortStableFunc(findings, func(a, b findingDTO) int {
+		if c := cmp.Compare(exploitTier(b), exploitTier(a)); c != 0 {
+			return c
+		}
+
 		if c := cmp.Compare(severityRank(b.Severity), severityRank(a.Severity)); c != 0 {
 			return c
 		}
 
 		return cmp.Compare(b.CVSS, a.CVSS)
 	})
+
+	res.KEVCount, res.MaxEPSS, res.Priority = exploitSummary(findings)
 
 	if len(findings) > maxFindings {
 		findings = findings[:maxFindings]
@@ -213,7 +242,47 @@ func summarizeVulns(repoName, pkg, version string, scans []*models.VulnScanResul
 		res.Findings = findings
 	}
 
-	return res
+	return res, nil
+}
+
+// exploitTier orders findings above their severity: 2 in the KEV catalog, 1
+// with an EPSS score at the threshold, else 0.
+func exploitTier(f findingDTO) int {
+	switch f.Priority {
+	case exploit.PriorityKEV:
+		return 2
+	case exploit.PriorityEPSS:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// exploitSummary aggregates the annotations of findings: how many are in KEV,
+// the highest EPSS score, and the highest priority.
+func exploitSummary(findings []findingDTO) (int, *float64, string) {
+	kev := 0
+
+	var maxEPSS *float64
+
+	top := exploit.PriorityNone
+
+	for i := range findings {
+		f := &findings[i]
+		if f.KEV {
+			kev++
+		}
+
+		if f.EPSS != nil && (maxEPSS == nil || *f.EPSS > *maxEPSS) {
+			maxEPSS = f.EPSS
+		}
+
+		if f.Priority.Rank() > top.Rank() {
+			top = f.Priority
+		}
+	}
+
+	return kev, maxEPSS, string(top)
 }
 
 func (c *severityCounts) add(severity string) {
@@ -246,7 +315,8 @@ func severityRank(severity string) int {
 	}
 }
 
-func toFindingDTO(scan *models.VulnScanResult, v models.Vulnerability) findingDTO {
+func toFindingDTO(scan *models.VulnScanResult, ev exploit.Vulnerability) findingDTO {
+	v := ev.Vulnerability
 	refs := v.References
 	if len(refs) > maxFindingRefs {
 		refs = refs[:maxFindingRefs]
@@ -267,6 +337,7 @@ func toFindingDTO(scan *models.VulnScanResult, v models.Vulnerability) findingDT
 		Summary:        summary,
 		FixedIn:        v.FixedIn,
 		References:     refs,
+		Annotation:     ev.Annotation,
 	}
 }
 

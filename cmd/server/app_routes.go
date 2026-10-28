@@ -553,11 +553,13 @@ func (a *app) registerVulnRoutes() {
 
 	a.extraStops = append(a.extraStops, scannerRegistry.Stop)
 
-	vulnHandler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scannerRegistry).WithTasks(a.tasks).WithScanHook(a.onScanned)
+	vulnHandler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scannerRegistry).WithTasks(a.tasks).WithScanHook(a.onScanned).
+		WithExploit(a.workers.exploit)
 	vulnHandler.RegisterRoutes(a.web.authed, "/api/v1/repositories/{name}")
 	vulnHandler.RegisterOverviewRoutes(a.web.authed)
 
-	api.NewSecurityHandler(a.db, a.log, a.web.evaluator, scannerRegistry, a.feat.sbomGen, a.feat.envAI).RegisterRoutes(a.web.authed)
+	api.NewSecurityHandler(a.db, a.log, a.web.evaluator, scannerRegistry, a.feat.sbomGen, a.feat.envAI).
+		WithExploit(a.workers.exploit).RegisterRoutes(a.web.authed)
 }
 
 // onScanned pushes a stored scan to Dependency-Track and attaches its

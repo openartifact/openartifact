@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -423,12 +424,144 @@ func TestSecurityFindings_FiltersReachTheQuery(t *testing.T) {
 	}
 }
 
+func TestSecurityFindings_ExploitParamsReachTheQuery(t *testing.T) {
+	f, tr := false, true
+	half, kevRank, lowRank := 0.5, 6, 1
+
+	tests := []struct {
+		query string
+		check func(p models.FindingListParams) bool
+	}{
+		{"", func(p models.FindingListParams) bool {
+			return p.Sort == "severity" && p.KEV == nil && p.EPSSMin == nil && p.PriorityRank == nil &&
+				p.EPSSThreshold == exploit.DefaultEPSSThreshold
+		}},
+		{"sort=priority", func(p models.FindingListParams) bool { return p.Sort == "priority" }},
+		{"sort=severity", func(p models.FindingListParams) bool { return p.Sort == "severity" }},
+		{"kev=true", func(p models.FindingListParams) bool { return p.KEV != nil && *p.KEV == tr }},
+		{"kev=false", func(p models.FindingListParams) bool { return p.KEV != nil && *p.KEV == f }},
+		{"epss_min=0.5", func(p models.FindingListParams) bool { return p.EPSSMin != nil && *p.EPSSMin == half }},
+		{"priority=kev", func(p models.FindingListParams) bool { return p.PriorityRank != nil && *p.PriorityRank == kevRank }},
+		{"priority=low", func(p models.FindingListParams) bool { return p.PriorityRank != nil && *p.PriorityRank == lowRank }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.query, func(t *testing.T) {
+			db := newSecurityMockDB()
+
+			if rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings?"+tc.query); rw.Code != http.StatusOK {
+				t.Fatalf("status = %d (%s)", rw.Code, rw.Body.String())
+			}
+
+			if got := db.listCalls[0]; !tc.check(got) {
+				t.Fatalf("params = %+v", got)
+			}
+		})
+	}
+}
+
+func TestSecurityFindings_CursorsAreBoundToTheirSort(t *testing.T) {
+	at := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
+
+	for _, sort := range []string{"severity", "priority"} {
+		other := map[string]string{"severity": "priority", "priority": "severity"}[sort]
+		cursor := encodeFindingCursor(&models.FindingCursor{Sort: sort, Rank: 3, ScannedAt: at, ID: secFindingID})
+
+		db := newSecurityMockDB()
+		own := "/api/v1/security/findings?sort=" + sort + "&cursor=" + cursor
+		if rw := serveSecurity(t, db, adminPrincipal(), own); rw.Code != http.StatusOK {
+			t.Fatalf("%s cursor under its own sort: status = %d (%s)", sort, rw.Code, rw.Body.String())
+		}
+
+		if got := db.listCalls[0].After; got == nil || got.Sort != sort || got.Rank != 3 {
+			t.Fatalf("%s cursor reached the query as %+v", sort, got)
+		}
+
+		for _, path := range []string{"/api/v1/security/findings", "/api/v1/security/findings/export"} {
+			db = newSecurityMockDB()
+
+			rw := serveSecurity(t, db, adminPrincipal(), path+"?sort="+other+"&cursor="+cursor)
+			if rw.Code != http.StatusBadRequest || len(db.listCalls) != 0 {
+				t.Fatalf("%s cursor under sort=%s on %s: status = %d, calls = %d", sort, other, path, rw.Code, len(db.listCalls))
+			}
+		}
+	}
+
+	// A cursor minted before sort existed is a severity cursor; the priority
+	// ranks 5 and 6 only exist under the priority sort.
+	legacy := base64.RawURLEncoding.EncodeToString([]byte("3:1:" + secFindingID))
+
+	db := newSecurityMockDB()
+	if rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings?cursor="+legacy); rw.Code != http.StatusOK {
+		t.Fatalf("legacy cursor: status = %d", rw.Code)
+	}
+
+	for name, raw := range map[string]string{
+		"severity rank 5":    "5:1:" + secFindingID,
+		"priority rank 7":    "p:7:1:" + secFindingID,
+		"priority too short": "p:3:1",
+	} {
+		rw := serveSecurity(t, newSecurityMockDB(), adminPrincipal(),
+			"/api/v1/security/findings?sort=priority&cursor="+base64.RawURLEncoding.EncodeToString([]byte(raw)))
+		if rw.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400", name, rw.Code)
+		}
+	}
+}
+
+func TestSecurityFindings_ExploitFieldsInResponseAndPaging(t *testing.T) {
+	at := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
+	score := 0.42
+
+	db := newSecurityMockDB()
+	db.pages = []*models.FindingPage{{
+		Findings: []*models.Finding{
+			{ID: secFindingID, Type: "vuln", SeverityRank: 2, SortRank: 6, KEVCount: 2, MaxEPSS: &score, ScannedAt: at},
+			{ID: "9a000000-0000-4000-8000-000000000002", Type: "vuln", SeverityRank: 4, SortRank: 5, MaxEPSS: &score, ScannedAt: at},
+			{ID: "9a000000-0000-4000-8000-000000000003", Type: "vuln", SeverityRank: 4, SortRank: 4, ScannedAt: at},
+			{ID: "9a000000-0000-4000-8000-000000000004", Type: "license", ScannedAt: at},
+		},
+		Next: &models.FindingCursor{Sort: "priority", Rank: 6, ScannedAt: at, ID: secFindingID},
+	}}
+
+	rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings?sort=priority")
+
+	var got struct {
+		Findings   []map[string]any `json:"findings"`
+		NextCursor string           `json:"next_cursor"`
+	}
+
+	decodeBody(t, rw, &got)
+
+	wantPriority := []string{"kev", "epss", "critical", "none"}
+	for i, f := range got.Findings {
+		if f["priority"] != wantPriority[i] {
+			t.Errorf("finding %d priority = %v, want %s", i, f["priority"], wantPriority[i])
+		}
+	}
+
+	if got.Findings[0]["kev_count"] != float64(2) || got.Findings[0]["max_epss"] != score {
+		t.Errorf("first = %v", got.Findings[0])
+	}
+
+	if v, ok := got.Findings[2]["max_epss"]; !ok || v != nil || got.Findings[2]["kev_count"] != float64(0) {
+		t.Errorf("unscored finding = %v, want kev_count 0 and a null max_epss", got.Findings[2])
+	}
+
+	raw, err := base64.RawURLEncoding.DecodeString(got.NextCursor)
+	if err != nil || !strings.HasPrefix(string(raw), "p:6:") {
+		t.Fatalf("next cursor = %q (%v)", raw, err)
+	}
+}
+
 func TestSecurityFindings_InvalidParams(t *testing.T) {
 	long := strings.Repeat("x", maxNameLen+1)
 
 	for _, q := range []string{
 		"type=vuln,nope", "type=", "type=,", "severity=urgent", "severity=none", "status=gone", "repo=" + long, "project=" + long,
 		"q=" + strings.Repeat("x", securityQueryMaxLen+1), "cursor=!!!",
+		"sort=newest", "sort=PRIORITY", "kev=maybe", "kev=1", "epss_min=abc", "epss_min=-0.1", "epss_min=1.5", "epss_min=NaN",
+		"priority=none", "priority=urgent", "priority=KEV",
 	} {
 		for _, path := range []string{"/api/v1/security/findings", "/api/v1/security/findings/export"} {
 			t.Run(path+"?"+q[:min(len(q), 24)], func(t *testing.T) {
@@ -486,7 +619,7 @@ func TestSecurityFindings_ForgedCursorsAreRejected(t *testing.T) {
 
 func TestSecurityFindings_CursorRoundTripAndPaging(t *testing.T) {
 	at := time.Date(2026, 5, 6, 7, 8, 9, 123456000, time.UTC)
-	next := &models.FindingCursor{SeverityRank: 3, ScannedAt: at, ID: secFindingID}
+	next := &models.FindingCursor{Sort: "severity", Rank: 3, ScannedAt: at, ID: secFindingID}
 
 	db := newSecurityMockDB()
 	db.pages = []*models.FindingPage{
@@ -522,7 +655,7 @@ func TestSecurityFindings_CursorRoundTripAndPaging(t *testing.T) {
 	}
 
 	got := db.listCalls[1].After
-	if got == nil || got.SeverityRank != 3 || !got.ScannedAt.Equal(at) || got.ID != secFindingID {
+	if got == nil || got.Sort != "severity" || got.Rank != 3 || !got.ScannedAt.Equal(at) || got.ID != secFindingID {
 		t.Fatalf("cursor reached the query as %+v, want %+v", got, next)
 	}
 }
@@ -561,8 +694,8 @@ func TestSecurityFindings_ResponseShape(t *testing.T) {
 	}
 
 	wantKeys := []string{
-		"artifact_id", "counts", "format", "id", "package_name", "package_version", "quarantined", "repository", "scanned_at",
-		"scanner", "severity", "status", "title", "type", "vex_status",
+		"artifact_id", "counts", "format", "id", "kev_count", "max_epss", "package_name", "package_version", "priority",
+		"quarantined", "repository", "scanned_at", "scanner", "severity", "status", "title", "type", "vex_status",
 	}
 
 	keys := func(m map[string]any) []string {
@@ -679,11 +812,13 @@ func TestSecuritySummary_Response(t *testing.T) {
 
 func TestSecurityExport_CSVAndJSON(t *testing.T) {
 	at := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
+	epss := 0.5
 
 	db := newSecurityMockDB()
 	db.pages = []*models.FindingPage{{Findings: []*models.Finding{{
 		ID: secFindingID, Type: "secret", Repository: "r", Format: "npm", ArtifactID: "a@1", PackageName: "a", PackageVersion: "1",
 		High: 1, Status: "open", SeverityRank: 3, Title: "=HYPERLINK(\"http://evil\")", ScannedAt: at,
+		KEVCount: 1, MaxEPSS: &epss,
 	}}}}
 
 	rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings/export?format=csv&type=secret")
@@ -703,6 +838,16 @@ func TestSecurityExport_CSVAndJSON(t *testing.T) {
 
 	if len(rows) != 2 || !slices.Equal(rows[0], securityCSVHeader()) {
 		t.Fatalf("rows = %v", rows)
+	}
+
+	// the exploit columns come last; the earlier ones keep their positions
+	if h := securityCSVHeader(); !slices.Equal(h[len(h)-4:], []string{"id", "kev_count", "max_epss", "priority"}) ||
+		slices.Index(h, "id") != 17 {
+		t.Fatalf("header = %v", h)
+	}
+
+	if got := rows[1][18:]; !slices.Equal(got, []string{"1", "0.5", "kev"}) {
+		t.Fatalf("exploit columns = %v", got)
 	}
 
 	title := rows[1][slices.Index(securityCSVHeader(), "title")]
@@ -729,6 +874,10 @@ func TestSecurityExport_CSVAndJSON(t *testing.T) {
 		t.Fatalf("json export = %s (%v)", rw.Body.String(), rw.Header())
 	}
 
+	if f := body.Findings[0]; f["kev_count"] != float64(0) || f["priority"] != "none" {
+		t.Fatalf("json export exploit fields = %v", f)
+	}
+
 	if rw := serveSecurity(t, db, adminPrincipal(), "/api/v1/security/findings/export?format=pdf"); rw.Code != http.StatusBadRequest {
 		t.Fatalf("unknown format: status = %d, want 400", rw.Code)
 	}
@@ -739,7 +888,7 @@ func TestSecurityExport_CSVAndJSON(t *testing.T) {
 }
 
 func TestSecurityExport_ReadsEveryPageUpToTheCap(t *testing.T) {
-	cursor := &models.FindingCursor{SeverityRank: 1, ScannedAt: time.Now().UTC(), ID: secFindingID}
+	cursor := &models.FindingCursor{Sort: "severity", Rank: 1, ScannedAt: time.Now().UTC(), ID: secFindingID}
 	mk := func(n int) []*models.Finding {
 		out := make([]*models.Finding, n)
 		for i := range out {
