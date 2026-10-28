@@ -96,6 +96,7 @@ scrape_configs:
 | `openartifact_db_pool_connections_closed_total` | counter | `pool`, `reason` | connections the pool closed: `max_lifetime` or `max_idle` (connection churn) |
 | `openartifact_db_pool_acquires_total`, `openartifact_db_pool_acquire_seconds_total`, `openartifact_db_pool_acquire_canceled_total`, `openartifact_db_pool_connections_created_total` | counter | `pool` | `pool="pgx"` only (database/sql keeps no such counters): successful acquisitions, time spent acquiring, acquisitions abandoned by a cancelled caller, connections opened |
 | `openartifact_blob_deletions_swept_total` | counter | `result` | sweeper decisions: `deleted` (bytes removed) or `kept` (the blob was referenced or placed there again, entry dropped) |
+| `openartifact_telemetry_log_records_dropped_total` | counter | `scope` | log records not exported over OTLP because the export queue was full; `scope` is the instrumentation scope (`openartifact.audit` for audit events). See [log records](#log-records-over-otlp) |
 
 #### The `path` label
 
@@ -245,6 +246,8 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 ### Log records over OTLP
 
 With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit`; either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail. This release only starts the provider: no records are written to it yet.
+
+Writing a record never waits for the collector. Records are queued for export (`OTEL_BLRP_MAX_QUEUE_SIZE`, 2048 by default); while the queue is full, because the collector is slow or unreachable, new records are dropped and `openartifact_telemetry_log_records_dropped_total` counts them by instrumentation scope. It should stay 0.
 
 ### Overhead and binary size
 
