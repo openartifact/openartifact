@@ -378,6 +378,18 @@ service:
 
 The data carries `service.name=openartifact-web`: filter on it in the backend to separate the UI from the server.
 
+#### What the UI sends
+
+After sign-in the UI asks `GET /api/v1/telemetry/frontend`. Only a `200` makes it load the OpenTelemetry wrapper, a separate `otel-*` chunk that the service worker does not precache; while the feature is off the default bundle holds no OpenTelemetry code and nothing else is requested. The pinned packages are `@opentelemetry/api`, `sdk-trace`, `sdk-logs`, `resources`, `exporter-trace-otlp-proto`, `exporter-logs-otlp-proto` and `browser-instrumentation` (its `errors` and `web-vitals` instrumentations only).
+
+| Data | Signal | Contents |
+|---|---|---|
+| Errors | log event `exception` | unhandled errors and promise rejections, and errors caught by Vue's error handler: `exception.type`, `exception.message`, `exception.stacktrace`. A script from another origin only reports `Script error.` |
+| Web vitals | log event `browser.web_vital` | CLS, INP, LCP, FCP and TTFB: `browser.web_vital.name`, `.value`, `.delta`, `.rating`, `.id`, `.navigation_type` |
+| API calls | client span `HTTP GET` (`POST`, ...) | one per call through the UI's API client, with `http.request.method`, `http.response.status_code` and `error.type`, never the URL; its `traceparent` makes the server span of the call its child. Sampled with `sample_ratio` |
+
+Every record has `service.name=openartifact-web` and `service.version` of the web build. Nothing else is collected: no console output, clicks, document load, navigation or resource timing, no fetch/XHR instrumentation, and no session id; nothing is kept in cookies, local storage or globals. Records are batched (64 per request) and sent every few seconds and when the page is hidden.
+
 ## Audit log
 
 The server records who changed what. Events are stored in the `audit_logs` table and shown under **Settings > Audit log** (`/settings/audit`) in the UI.
