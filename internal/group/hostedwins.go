@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
+	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	"github.com/openartifact/openartifact/pkg/compactindex"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
@@ -49,6 +50,8 @@ import (
 //	terraform <name>/<system>/versions, <type>/versions
 //	                                             (a module or a provider type; downloads
 //	                                              are files, version details are metadata)
+//	ansible api/v3/collections/<ns>/<name>/      (the collection document; version lists,
+//	                                              version documents and downloads)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
 //	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
 //	                                              member's table; no document to probe)
@@ -138,6 +141,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = condaRef(relPath)
 	case "terraform":
 		ref, ok = terraformRef(relPath)
+	case "ansible":
+		ref, ok = ansibleRef(relPath)
 	}
 
 	if !ok {
@@ -239,6 +244,26 @@ func cargoRef(relPath string) (pkgRef, bool) {
 	case pkgcargo.KindDownload:
 		return pkgRef{probe: "index/" + pkgcargo.IndexPathFor(strings.ToLower(p.Crate)), file: true}, true
 	case pkgcargo.KindConfig:
+	}
+
+	return pkgRef{}, false
+}
+
+func ansibleRef(relPath string) (pkgRef, bool) {
+	p, ok := pkgansible.ParsePath(relPath)
+	if !ok {
+		return pkgRef{}, false
+	}
+
+	ref := pkgRef{probe: "api/v3/collections/" + p.Namespace + "/" + p.Name + "/", accept: "application/json"}
+
+	switch p.Kind {
+	case pkgansible.KindCollection, pkgansible.KindVersions, pkgansible.KindVersion:
+		return ref, true
+	case pkgansible.KindDownload:
+		ref.file = true
+		return ref, true
+	case pkgansible.KindRoot, pkgansible.KindV3, pkgansible.KindIndex:
 	}
 
 	return pkgRef{}, false

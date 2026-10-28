@@ -6,13 +6,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Ansible collections
 
-Hosted private Galaxy server for Ansible collections: `ansible-galaxy` publishes to and installs from an OpenArtifact repository through the Galaxy API v3.
+Private Galaxy server for Ansible collections: `ansible-galaxy` publishes to and installs from an OpenArtifact repository through the Galaxy API v3. Proxy repositories mirror `galaxy.ansible.com` (or any Galaxy NG / automation hub), and group repositories merge hosted and proxy repositories.
 
 | | |
 |---|---|
 | Format id | `ansible` |
 | Server URL | `HOST/repos/REPO/api/` (the trailing `/api/` is part of the URL) |
-| Repository types | hosted (proxy and group repositories are not available yet) |
+| Repository types | hosted, proxy (default upstream `https://galaxy.ansible.com`) and group |
 
 ## Overview
 
@@ -21,8 +21,8 @@ A repository of format `ansible` stores collection tarballs named `NAMESPACE-NAM
 ## Supported scope
 
 - **Galaxy API v3, collections only.** Publishing, listing, version detail, import task state, download and delete.
-- **Out of scope:** roles and the Galaxy v1/v2 APIs, collection signatures (the `signatures` list is always empty), and the Galaxy namespace and content-search APIs.
-- **Proxy and group repositories** (mirroring `galaxy.ansible.com` and merging repositories) are planned as a follow-up; today only hosted repositories exist.
+- **Out of scope:** roles and the Galaxy v1/v2 APIs, collection signature generation (a hosted repository's `signatures` list is always empty), and the Galaxy namespace and content-search APIs.
+- **Proxy and group repositories** are described [below](#proxy-repositories). Roles, Galaxy v1 and the legacy v2 API are not proxied.
 
 ## Client setup
 
@@ -104,3 +104,21 @@ The tarball is checked before it is stored; a rejected collection answers `400` 
 ## Quotas
 
 The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is reserved before a collection is stored and released on every failure. Each collection version is one artifact.
+
+## Proxy repositories
+
+A proxy repository serves the Galaxy API v3 from an upstream (default `https://galaxy.ansible.com`; set `upstreamUrl` for a Galaxy NG or automation hub). Clients use the same `HOST/repos/REPO/api/` URL and `ansible.cfg` as for a hosted repository; a proxy is read-only, so there is no publish.
+
+- **Version lists.** The upstream's paginated version list is fetched completely, normalized and cached as one entry with the repository's TTL (stale entries are served when the upstream is down, as for other proxies). OpenArtifact then paginates it itself with `limit` and `offset`.
+- **Version details.** The upstream detail document is cached with the repository TTL; `signatures` are passed through from it. Every link (`download_url`, `href`, pagination) is regenerated to point at OpenArtifact, never at the upstream.
+- **Tarballs.** The tarball is fetched from the `download_url` of the version detail and cached only when its SHA-256 equals the `artifact.sha256` of that detail; a mismatch is refused and nothing is stored. Cached tarballs are immutable.
+- **Collection index.** `GET /api/v3/collections/` answers `404`: an upstream cannot be enumerated.
+- A version the upstream does not list answers `404`. Quarantine applies to cached tarballs.
+
+## Group repositories
+
+A group merges hosted and proxy repositories of format `ansible`, served at its own `HOST/repos/GROUP/api/` with links to itself.
+
+- **Versions** of a collection are merged across the members in order (an earlier member wins on a duplicate version) and listed newest first; version details and downloads come from the first member that has them.
+- **Hosted wins.** Unless the group enables merging proxy versions, a collection (`NAMESPACE.NAME`) that a readable hosted member holds is served from the hosted members only, so an upstream cannot shadow a private collection (dependency confusion). Other collections come from the proxies. See [proxy and group rules](../repositories/hosted-proxy-group.md).
+- **Collection index** lists the collections of the hosted members only; proxy members do not contribute.

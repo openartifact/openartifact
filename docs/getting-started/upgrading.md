@@ -100,6 +100,8 @@ Migrations `091` to `095`, rolling-safe (`092` (Nix) and `095` (Ansible) add tab
 
 - **New format: Ansible collections (`ansible`), hosted.** `format: ansible` repositories serve the Galaxy API v3 under `HOST/repos/REPO/api/` to `ansible-galaxy`: collections are published with `ansible-galaxy collection publish` (or `oa upload`) and installed with `ansible-galaxy collection install`; API tokens may be sent as `Authorization: Token <TOKEN>`. Migration `095` (`ansible_collections`) widens `chk_repo_format` with `NOT VALID` in a short transaction, validates it in a separate `*_validate.no_tx` file without blocking writes, and creates the new table; no existing table is rewritten. Older instances keep running against the migrated schema but do not know the format, so create the first Ansible repository only after every replica is upgraded. Proxy and group repositories are not available yet. See [Ansible collections](../formats/ansible.md).
 
+- **Ansible proxy and group repositories.** `format: ansible` repositories can now be proxy (default upstream `https://galaxy.ansible.com`) or group repositories. No migration and no schema change, so a rolling upgrade works; existing hosted repositories are unaffected. See [Ansible](../formats/ansible.md#proxy-repositories).
+
 ### 0.13.2
 
 No migrations.

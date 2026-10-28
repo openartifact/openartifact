@@ -42,6 +42,9 @@ func IsProxyBlobPath(format, relPath string) bool {
 	case "nix":
 		// NARs only; narinfo and nix-cache-info are streamed.
 		return strings.HasPrefix(relPath, "nar/")
+	case "ansible":
+		// Collection tarballs only; the version documents are streamed.
+		return strings.HasPrefix(relPath, "api/v3/artifacts/collections/")
 	case "raw":
 		return true
 	case "pypi":

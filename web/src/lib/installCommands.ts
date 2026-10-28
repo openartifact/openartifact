@@ -415,7 +415,10 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
             `# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = ${api}\ntoken = <TOKEN>` +
             `\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact` +
             `\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: ${api}`,
-          publish: 'ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact',
+          publish:
+            repoType === 'proxy' || repoType === 'group'
+              ? undefined
+              : 'ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact',
         },
       ]
     }

@@ -218,7 +218,8 @@ var specs = [...]Spec{
 		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
 	},
 	{
-		Name: "ansible", PackageTables: []string{"ansible_collections"}, Versioning: VersionSemver,
+		Name: "ansible", PackageTables: []string{"ansible_collections"},
+		Proxy: true, Group: true, DefaultUpstream: "https://galaxy.ansible.com", Versioning: VersionSemver,
 	},
 }
 

@@ -11,10 +11,10 @@ export const FORMAT_IDS = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'r
 export type FormatId = (typeof FORMAT_IDS)[number]
 
 /** Formats that can be created as proxy repositories. */
-export const PROXY_FORMATS: readonly FormatId[] = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix']
+export const PROXY_FORMATS: readonly FormatId[] = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible']
 
 /** Formats that can be created as group repositories. */
-export const GROUP_FORMATS: readonly FormatId[] = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix']
+export const GROUP_FORMATS: readonly FormatId[] = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible']
 
 /** Formats whose hosted repositories can be federated. */
 export const FEDERATION_FORMATS: readonly FormatId[] = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'nuget', 'go', 'raw']
@@ -40,4 +40,5 @@ export const DEFAULT_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
   terraform: 'https://registry.terraform.io',
   pacman: 'https://geo.mirror.pkgbuild.com',
   nix: 'https://cache.nixos.org',
+  ansible: 'https://galaxy.ansible.com',
 }

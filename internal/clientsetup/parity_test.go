@@ -34,7 +34,7 @@ func TestWebParityFixture(t *testing.T) {
 	for _, format := range allFormats() {
 		types := []string{"hosted"}
 		switch format {
-		case "apk", "pacman", "nix":
+		case "apk", "pacman", "nix", "ansible":
 			types = append(types, "proxy", "group")
 		}
 
