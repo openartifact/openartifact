@@ -266,7 +266,7 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 
 With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit`; either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail. Audit events are not written to the provider yet (#193).
 
-With `logs` on, every line the server logs (at or above `LOG_LEVEL`) is also exported as a record under the instrumentation scope `github.com/openartifact/openartifact`. The configured [log output](#logging) is unchanged: same lines, same fields. Each record has:
+With `logs` on, every line the server logs once telemetry is set up (at or above `LOG_LEVEL`) is also exported as a record under the instrumentation scope `github.com/openartifact/openartifact`; the startup banner and the unencrypted-secrets warning come earlier and stay on the log output only. The configured [log output](#logging) is unchanged: same lines, same fields. Each record has:
 
 | Record field | Value |
 |---|---|
@@ -275,6 +275,8 @@ With `logs` on, every line the server logs (at or above `LOG_LEVEL`) is also exp
 | attributes | the line's fields (`method`, `path`, `status`, ...), `code.file.path`, `code.line.number` and `code.function.name`; an `error` field becomes `exception.type` and `exception.message`, the same text as on the log line |
 | trace and span ids | those of the request span, for the lines written with the request context (see [log correlation](#log-correlation)) |
 | resource | the same as traces and metrics: `service.name`, `service.version`, `service.instance.id` and `OTEL_RESOURCE_ATTRIBUTES` |
+
+The attributes are the fields of the line as written, not filtered, unlike the [spans](#what-is-traced): the `HTTP request` line carries `path` (without the query string), `remote_addr` and `request_id`, and `exception.message` is the full error text, which can quote upstream or database detail. A Terraform provider download carries its 15-minute download ticket in the `path`. OpenTelemetry leaves scrubbing to the operator ([handling sensitive data](https://opentelemetry.io/docs/security/handling-sensitive-data/)): when the collector forwards to a backend you do not run, drop or rewrite these attributes there with its `redaction`, `attributes` or `transform` processor, or leave `logs` off.
 
 Exporter errors are written to the log output only, never exported, so a collector outage does not feed its own errors into the queue.
 
