@@ -10,8 +10,15 @@ import (
 	"testing"
 )
 
+// fataler is the part of testing.TB that both *testing.F and the OSS-Fuzz
+// shim's F (which lacks the rest of testing.TB) provide.
+type fataler interface {
+	Helper()
+	Fatal(args ...any)
+}
+
 // seedZip is a zip with the given file name and body.
-func seedZip(tb testing.TB, name, body string) []byte {
+func seedZip(tb fataler, name, body string) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
