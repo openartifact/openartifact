@@ -27,6 +27,7 @@ path = [
   "web/src/i18n/glossary/*.csv",
   "internal/clientsetup/testdata/web_parity.json",
   "internal/repotype/testdata/web_parity.json",
+  "pkg/nix/testdata/cache_nixos_org_hello.narinfo",
   "VERSION",
   ".github/dup-baseline.json",
   "web/.jscpd.json",

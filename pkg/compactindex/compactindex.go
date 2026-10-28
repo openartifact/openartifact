@@ -391,6 +391,12 @@ func scanBody(r io.Reader, fn func(line string) error) error {
 	}
 
 	for sc.Scan() {
+		// The scanner drops one CR before the newline: a second one would be
+		// lost on a render and parse round trip, and no server writes it.
+		if strings.HasSuffix(sc.Text(), "\r") {
+			return malformed("line ends in a stray carriage return")
+		}
+
 		if err := fn(sc.Text()); err != nil {
 			return err
 		}

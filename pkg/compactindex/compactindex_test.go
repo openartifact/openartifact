@@ -58,6 +58,7 @@ func TestParseInfoRejects(t *testing.T) {
 		"short sum":     "---\n1.0 |checksum:abcd\n",
 		"uppercase sum": "---\n1.0 |checksum:" + strings.ToUpper(sumA) + "\n",
 		"control":       "---\n1.0\x00 |checksum:" + sumA + "\n",
+		"double CR":     "---\n0 \r\r",
 		"long line":     "---\n1.0 " + strings.Repeat("a", MaxLineBytes) + "\n",
 	} {
 		t.Run(name, func(t *testing.T) {
