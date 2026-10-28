@@ -147,6 +147,8 @@ func terraformCleanupTables() []formatTable {
 }
 
 // cleanupFormatTable is the single-table part of cleanupFormatTables.
+//
+//nolint:cyclop // one case per format
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":

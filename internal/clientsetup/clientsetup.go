@@ -104,7 +104,7 @@ func hostnameOf(origin string) string {
 
 // builderFor returns the snippet builder for a format, or nil when unknown.
 //
-//nolint:cyclop // one case per format
+//nolint:gocyclo,cyclop // one case per format
 func builderFor(format string) func(target) []Snippet {
 	switch format {
 	case "npm":

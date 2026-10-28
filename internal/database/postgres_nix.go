@@ -205,11 +205,11 @@ func (p *PostgresDB) DeleteStaleNixPendingNars(ctx context.Context, before time.
 // GetNixSigningKey returns the repository's signing key, or (nil, nil).
 func (p *PostgresDB) GetNixSigningKey(ctx context.Context, repoID string) (*models.NixSigningKey, error) {
 	row, err := p.q.GetNixSigningKey(ctx, repoID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	case err != nil:
 		return nil, fmt.Errorf("failed to get nix signing key: %w", err)
 	}
 

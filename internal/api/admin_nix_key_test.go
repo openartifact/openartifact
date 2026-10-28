@@ -108,7 +108,7 @@ func decodeNixKey(t *testing.T, rec *httptest.ResponseRecorder) nixKeyResponse {
 		t.Errorf("incomplete response: %s", rec.Body)
 	}
 
-	for field := range map[string]json.RawMessage(mustFields(t, rec.Body.Bytes())) {
+	for field := range mustFields(t, rec.Body.Bytes()) {
 		if strings.Contains(field, "private") {
 			t.Errorf("the response leaks %q", field)
 		}

@@ -157,7 +157,7 @@ type uploadedNarInfo struct {
 
 // readNarInfo reads, decodes and validates the body of a narinfo PUT. A
 // non-zero status is the answer to send, with msg as its text.
-func readNarInfo(r *http.Request, hash string) (up *uploadedNarInfo, status int, msg string) {
+func readNarInfo(r *http.Request, hash string) (*uploadedNarInfo, int, string) {
 	body, err := readEncoded(r)
 	if err != nil {
 		if errors.Is(err, errUnsupportedEncoding) {
@@ -192,7 +192,10 @@ func readNarInfo(r *http.Request, hash string) (up *uploadedNarInfo, status int,
 	return &uploadedNarInfo{info: info, file: file, fileHash: fileHash}, 0, ""
 }
 
-var errFileHash = errors.New("FileHash does not match the hash in URL")
+var (
+	errFileHash         = errors.New("FileHash does not match the hash in URL")
+	errFileHashRequired = errors.New("FileHash is required for a compressed NAR")
+)
 
 // checkFileHash requires the narinfo's FileHash to be the hash in its URL. A
 // narinfo of an uncompressed NAR may omit it: the file is then the NAR itself.
@@ -200,7 +203,7 @@ func checkFileHash(info *nix.NarInfo, fileHash nix.SHA256) error {
 	if info.FileHash == "" {
 		narHash, _ := nix.ParseSHA256(info.NarHash)
 		if info.Compression != "none" || narHash != fileHash {
-			return errors.New("FileHash is required for a compressed NAR")
+			return errFileHashRequired
 		}
 
 		return nil
@@ -216,7 +219,9 @@ func checkFileHash(info *nix.NarInfo, fileHash nix.SHA256) error {
 // readEncoded reads the request body, undoing the Content-Encoding "nix copy"
 // applies to the narinfo with narinfo-compression. The decoded size is bounded.
 func readEncoded(r *http.Request) ([]byte, error) {
-	var rd io.Reader = io.LimitReader(r.Body, nix.MaxNarInfoBytes+1)
+	var rd io.Reader
+
+	rd = io.LimitReader(r.Body, nix.MaxNarInfoBytes+1)
 
 	switch enc := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding"))); enc {
 	case "", "identity":
@@ -487,7 +492,12 @@ func (h *HTTPHandler) deletePath(w http.ResponseWriter, r *http.Request, repo *m
 		return
 	}
 
-	h.Emit(r.Context(), repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhookArtifact(repo, p)))
+	h.Emit(
+		r.Context(),
+		repo.ID,
+		webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhookArtifact(repo, p)),
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -498,13 +508,15 @@ func (h *HTTPHandler) hardDelete(ctx context.Context, repo *models.Repository, p
 		return fmt.Errorf("delete nix path: %w", err)
 	}
 
-	if err := quota.Release(ctx, h.DB, repo.ID, p.SizeBytes); err != nil {
-		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", err)
-	}
-
-	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, p.SHA256); err != nil {
-		h.Log.Warnw("failed to clean up blob after nix delete", "sha256", p.SHA256, "error", err)
-	}
+	h.warn(quota.Release(ctx, h.DB, repo.ID, p.SizeBytes), "failed to release quota")
+	h.warn(storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, p.SHA256), "failed to clean up blob after nix delete")
 
 	return nil
+}
+
+// warn logs a failed cleanup step that must not fail the request.
+func (h *HTTPHandler) warn(err error, what string) {
+	if err != nil {
+		h.Log.Warnw(what, "error", err)
+	}
 }

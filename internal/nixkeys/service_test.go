@@ -71,7 +71,7 @@ func newService(t *testing.T, st *memStore) *Service {
 
 func newStore() *memStore { return &memStore{keys: map[string]*models.NixSigningKey{}} }
 
-var testRepo = &models.Repository{ID: "r1", Name: "cache"}
+func testRepo() *models.Repository { return &models.Repository{ID: "r1", Name: "cache"} }
 
 // verifies reports whether sig, made by key, covers the narinfo under the public key line.
 func verifies(t *testing.T, publicKey string, key *nix.SecretKey) bool {
@@ -120,7 +120,7 @@ func TestWithoutSecretKeyNothingIsSigned(t *testing.T) {
 	svc := newService(t, st)
 	ctx := context.Background()
 
-	if key, err := svc.SecretKeyForRepo(ctx, testRepo); key != nil || err != nil {
+	if key, err := svc.SecretKeyForRepo(ctx, testRepo()); key != nil || err != nil {
 		t.Fatalf("SecretKeyForRepo = %v, %v; want nil, nil", key, err)
 	}
 
@@ -129,9 +129,9 @@ func TestWithoutSecretKeyNothingIsSigned(t *testing.T) {
 	}
 
 	calls := map[string]func() error{
-		"Info":     func() error { _, err := svc.Info(ctx, testRepo); return err },
-		"Generate": func() error { _, err := svc.Generate(ctx, testRepo, "u"); return err },
-		"Import":   func() error { _, err := svc.Import(ctx, testRepo, "x", "", "u"); return err },
+		"Info":     func() error { _, err := svc.Info(ctx, testRepo()); return err },
+		"Generate": func() error { _, err := svc.Generate(ctx, testRepo(), "u"); return err },
+		"Import":   func() error { _, err := svc.Import(ctx, testRepo(), "x", "", "u"); return err },
 	}
 	for name, call := range calls {
 		if err := call(); !errors.Is(err, ErrSecretKeyRequired) {
@@ -147,7 +147,7 @@ func TestFirstUseGeneratesOnceAndSealsTheSecret(t *testing.T) {
 	svc := newService(t, st)
 	ctx := context.Background()
 
-	first, err := svc.SecretKeyForRepo(ctx, testRepo)
+	first, err := svc.SecretKeyForRepo(ctx, testRepo())
 	if err != nil || first == nil {
 		t.Fatalf("SecretKeyForRepo = %v, %v", first, err)
 	}
@@ -162,12 +162,12 @@ func TestFirstUseGeneratesOnceAndSealsTheSecret(t *testing.T) {
 		t.Fatal("the private key must be stored sealed")
 	}
 
-	second, err := svc.SecretKeyForRepo(ctx, testRepo)
+	second, err := svc.SecretKeyForRepo(ctx, testRepo())
 	if err != nil || second.String() != first.String() {
 		t.Fatalf("second call returned another key (%v)", err)
 	}
 
-	info, err := svc.Info(ctx, testRepo)
+	info, err := svc.Info(ctx, testRepo())
 	if err != nil || info.PublicKey != first.PublicKey() || info.KeyName != "openartifact-cache-1" {
 		t.Fatalf("Info = %+v, %v", info, err)
 	}
@@ -184,12 +184,12 @@ func TestGenerateRotatesAndOtherInstancesFollow(t *testing.T) {
 	svc, other := newService(t, st), newService(t, st)
 	ctx := context.Background()
 
-	before, err := other.SecretKeyForRepo(ctx, testRepo)
+	before, err := other.SecretKeyForRepo(ctx, testRepo())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	after, err := svc.Generate(ctx, testRepo, "admin")
+	after, err := svc.Generate(ctx, testRepo(), "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,12 +199,12 @@ func TestGenerateRotatesAndOtherInstancesFollow(t *testing.T) {
 	}
 
 	// The second instance cached the old key; the changed record must evict it.
-	now, err := other.SecretKeyForRepo(ctx, testRepo)
+	now, err := other.SecretKeyForRepo(ctx, testRepo())
 	if err != nil || now.PublicKey() != after.PublicKey || !verifies(t, after.PublicKey, now) {
 		t.Fatalf("after a rotation the other instance signs with %v (%v)", now, err)
 	}
 
-	third, err := svc.Generate(ctx, testRepo, "admin")
+	third, err := svc.Generate(ctx, testRepo(), "admin")
 	if err != nil || third.KeyName != "openartifact-cache-3" {
 		t.Errorf("second rotation = %+v, %v", third, err)
 	}
@@ -226,12 +226,12 @@ func TestImportKeepsOrRenamesTheKey(t *testing.T) {
 		"same name":      {"ci.example.org-1", "ci.example.org-1"},
 		"renames":        {"cache.example.org-7", "cache.example.org-7"},
 	} {
-		info, err := svc.Import(ctx, testRepo, src.String(), tc.keyName, "admin")
+		info, err := svc.Import(ctx, testRepo(), src.String(), tc.keyName, "admin")
 		if err != nil || info.KeyName != tc.want {
 			t.Fatalf("%s: Import = %+v, %v", name, info, err)
 		}
 
-		key, err := svc.SecretKeyForRepo(ctx, testRepo)
+		key, err := svc.SecretKeyForRepo(ctx, testRepo())
 		if err != nil || key.Name() != tc.want || !verifies(t, info.PublicKey, key) {
 			t.Errorf("%s: SecretKeyForRepo = %v, %v", name, key, err)
 		}
@@ -256,7 +256,7 @@ func TestImportRejections(t *testing.T) {
 		"bad name":           {good.String(), "../evil"},
 		"smuggled ciphertex": {"enc:v1:AAAA", ""},
 	} {
-		if _, err := svc.Import(context.Background(), testRepo, tc.secret, tc.keyName, "u"); !errors.Is(err, ErrInvalidKey) {
+		if _, err := svc.Import(context.Background(), testRepo(), tc.secret, tc.keyName, "u"); !errors.Is(err, ErrInvalidKey) {
 			t.Errorf("%s: error = %v, want ErrInvalidKey", name, err)
 		}
 	}

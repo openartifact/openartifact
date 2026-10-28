@@ -44,7 +44,22 @@ func TestMountedRoutesPerFormat(t *testing.T) {
 	t.Parallel()
 
 	isolated := []string{"maven", "raw", "ivy", "sbt"}
-	shared := []string{"rpm", "deb", "helm", "pypi", "nuget", "npm", "cargo", "rubygems", "conda", "pacman", "nix", "conan", "go", "terraform"}
+	shared := []string{
+		"rpm",
+		"deb",
+		"helm",
+		"pypi",
+		"nuget",
+		"npm",
+		"cargo",
+		"rubygems",
+		"conda",
+		"pacman",
+		"nix",
+		"conan",
+		"go",
+		"terraform",
+	}
 	oci := []string{"docker"}
 	apk := []string{"apk"}
 

@@ -71,9 +71,9 @@ func DecodeBase32(s string, size int) ([]byte, error) {
 		bit := n * 5
 		idx, off := bit/8, uint(bit%8)
 
-		out[idx] |= byte(d << off)
+		out[idx] |= byte(d << off) //nolint:gosec // d < 32 and the byte wraps by design
 
-		carry := byte(d >> (8 - off))
+		carry := byte(d >> (8 - off)) //nolint:gosec // d < 32
 		if idx+1 < size {
 			out[idx+1] |= carry
 		} else if carry != 0 {

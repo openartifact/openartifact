@@ -18,8 +18,8 @@ const (
 	testRefB      = "11111111111111111111111111111111-bbb"
 )
 
-// testFileHash is the nixbase32 hash that names the NAR file in fixtures.
-var testFileHash = func() SHA256 {
+// testFileHash() is the nixbase32 hash that names the NAR file in fixtures.
+func testFileHash() SHA256 {
 	b, err := DecodeBase32(emptySHA256Base32, sha256.Size)
 	if err != nil {
 		panic(err)
@@ -30,7 +30,7 @@ var testFileHash = func() SHA256 {
 	copy(s[:], b)
 
 	return s
-}()
+}
 
 func narInfoText(extra ...string) string {
 	lines := []string{
@@ -141,7 +141,7 @@ func TestParseNarInfoIgnoresUnknownAndBlank(t *testing.T) {
 }
 
 func TestParseNarInfoCanonicalizesHashes(t *testing.T) {
-	sum := testFileHash
+	sum := testFileHash()
 	forms := []string{sum.String(), "sha256:" + sum.Hex(), "sha256-" + b64(sum)}
 
 	for _, form := range forms {
@@ -194,7 +194,7 @@ func TestParseNarInfoRejects(t *testing.T) {
 }
 
 func TestParseSHA256(t *testing.T) {
-	sum := testFileHash
+	sum := testFileHash()
 
 	valid := []string{sum.String(), "sha256:" + sum.Hex(), "sha256-" + b64(sum)}
 	for _, in := range valid {
@@ -255,7 +255,7 @@ func TestNarFile(t *testing.T) {
 				return
 			}
 
-			if err != nil || file != strings.TrimPrefix(tc.url, "nar/") || hash != testFileHash {
+			if err != nil || file != strings.TrimPrefix(tc.url, "nar/") || hash != testFileHash() {
 				t.Fatalf("NarFile(%q) = %q, %x, %v", tc.url, file, hash, err)
 			}
 		})

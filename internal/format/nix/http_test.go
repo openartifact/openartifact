@@ -81,7 +81,7 @@ func (d *nixDB) GetNixPathByNarFile(_ context.Context, _, file string) (*models.
 		}
 	}
 
-	return nil, nil //nolint:nilnil // absent
+	return nil, nil
 }
 
 func (d *nixDB) GetNixPathByHash(_ context.Context, _, hash string) (*models.NixPath, error) {
@@ -292,7 +292,13 @@ func TestUploadServeDelete(t *testing.T) {
 		t.Fatalf("HEAD nar before upload = %d", w.Code)
 	}
 
-	if w := f.do(http.MethodPut, "/repos/myrepo/nar/"+s.file, s.nar, "Content-Type", "application/x-nix-nar"); w.Code != http.StatusCreated {
+	if w := f.do(
+		http.MethodPut,
+		"/repos/myrepo/nar/"+s.file,
+		s.nar,
+		"Content-Type",
+		"application/x-nix-nar",
+	); w.Code != http.StatusCreated {
 		t.Fatalf("PUT nar = %d: %s", w.Code, w.Body)
 	}
 
@@ -310,7 +316,13 @@ func TestUploadServeDelete(t *testing.T) {
 		t.Errorf("repeated PUT nar = %d, want 200", w.Code)
 	}
 
-	if w := f.do(http.MethodPut, "/repos/myrepo/"+hashA+".narinfo", s.narinfo(), "Content-Type", "text/x-nix-narinfo"); w.Code != http.StatusCreated {
+	if w := f.do(
+		http.MethodPut,
+		"/repos/myrepo/"+hashA+".narinfo",
+		s.narinfo(),
+		"Content-Type",
+		"text/x-nix-narinfo",
+	); w.Code != http.StatusCreated {
 		t.Fatalf("PUT narinfo = %d: %s", w.Code, w.Body)
 	}
 
@@ -486,7 +498,13 @@ func TestNarInfoUploadValidation(t *testing.T) {
 		t.Error("a refused narinfo created a path")
 	}
 
-	if w := f.do(http.MethodPut, "/repos/myrepo/"+hashA+".narinfo", s.narinfo(), "Content-Encoding", "snappy"); w.Code != http.StatusUnsupportedMediaType {
+	if w := f.do(
+		http.MethodPut,
+		"/repos/myrepo/"+hashA+".narinfo",
+		s.narinfo(),
+		"Content-Encoding",
+		"snappy",
+	); w.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("unsupported Content-Encoding = %d, want 415", w.Code)
 	}
 }

@@ -199,10 +199,12 @@ func (n *NarInfo) set(key, value string) error {
 	return nil
 }
 
+var errNotASize = errors.New("not a size")
+
 func parseSize(s string) (int64, error) {
 	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil || v < 0 {
-		return 0, errors.New("not a size")
+		return 0, errNotASize
 	}
 
 	return v, nil
@@ -271,13 +273,13 @@ func (n *NarInfo) Name() string {
 // NarFile validates URL as the location the server accepts for a NAR file,
 // nar/<nixbase32 of the file's sha256>.nar[.<ext>], and returns the file name
 // below nar/ and the hash it embeds.
-func (n *NarInfo) NarFile() (file string, hash SHA256, err error) {
+func (n *NarInfo) NarFile() (string, SHA256, error) {
 	file, ok := strings.CutPrefix(n.URL, "nar/")
 	if !ok {
-		return "", hash, ErrInvalidNarFile
+		return "", SHA256{}, ErrInvalidNarFile
 	}
 
-	hash, err = ParseNarFile(file)
+	hash, err := ParseNarFile(file)
 
 	return file, hash, err
 }

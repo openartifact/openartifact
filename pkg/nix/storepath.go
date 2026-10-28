@@ -67,7 +67,7 @@ func ValidName(s string) bool {
 }
 
 // SplitBaseName splits "<hash>-<name>" into its parts.
-func SplitBaseName(base string) (hash, name string, err error) {
+func SplitBaseName(base string) (string, string, error) {
 	hash, name, ok := strings.Cut(base, "-")
 	if !ok || !ValidStoreHash(hash) || !ValidName(name) {
 		return "", "", ErrInvalidStorePath
@@ -77,7 +77,7 @@ func SplitBaseName(base string) (hash, name string, err error) {
 }
 
 // SplitStorePath splits "/nix/store/<hash>-<name>" into its parts.
-func SplitStorePath(path string) (hash, name string, err error) {
+func SplitStorePath(path string) (string, string, error) {
 	base, ok := strings.CutPrefix(path, StoreDir+"/")
 	if !ok {
 		return "", "", ErrInvalidStorePath

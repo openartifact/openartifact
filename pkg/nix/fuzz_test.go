@@ -82,8 +82,8 @@ func FuzzParseNarFile(f *testing.F) {
 
 func FuzzParseSHA256(f *testing.F) {
 	f.Add("sha256:" + emptySHA256Base32)
-	f.Add("sha256:" + testFileHash.Hex())
-	f.Add("sha256-" + b64(testFileHash))
+	f.Add("sha256:" + testFileHash().Hex())
+	f.Add("sha256-" + b64(testFileHash()))
 
 	f.Fuzz(func(t *testing.T, s string) {
 		h, err := ParseSHA256(s)

@@ -660,6 +660,8 @@ func (e *exporter) exportPackageTables(ctx context.Context, repos []*models.Repo
 }
 
 // exportFormatTables gathers the format-specific package tables of one repo.
+//
+//nolint:gocyclo,cyclop // one case per format
 func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	id := repo.ID
 
