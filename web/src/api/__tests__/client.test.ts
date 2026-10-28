@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
-import { request, preflight, downloadBlob, isSessionExpired, ApiError, SESSION_EXPIRED } from '../client'
+import { request, preflight, downloadBlob, isSessionExpired, setClientSpanFactory, ApiError, SESSION_EXPIRED } from '../client'
 import router from '../../router'
 import { useSessionStore, type User } from '../../stores/session'
 
@@ -67,6 +67,53 @@ describe('API client', () => {
     const headers = init.headers as Headers
     expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest')
     expect(init.credentials).toBe('include')
+  })
+
+  describe('client spans (frontend telemetry)', () => {
+    const TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'
+
+    function fakeFactory() {
+      const calls: { method: string; ended?: number; failed?: unknown }[] = []
+      setClientSpanFactory((method) => {
+        const call: (typeof calls)[number] = { method }
+        calls.push(call)
+        return {
+          traceparent: TRACEPARENT,
+          end: (status) => (call.ended = status),
+          fail: (err) => (call.failed = err),
+        }
+      })
+      return calls
+    }
+
+    afterEach(() => setClientSpanFactory(undefined))
+
+    it('sends no traceparent while telemetry is off', async () => {
+      const mockFetch = spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+      await request('/api/v1/test')
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit & { headers: Headers }]
+      expect(init.headers.has('traceparent')).toBe(false)
+    })
+
+    it('starts a span per call, sends its traceparent and ends it with the status', async () => {
+      const calls = fakeFactory()
+      const mockFetch = spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
+
+      await request('/api/v1/test', { method: 'DELETE' }).catch(() => undefined)
+
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit & { headers: Headers }]
+      expect(init.headers.get('traceparent')).toBe(TRACEPARENT)
+      expect(calls).toEqual([{ method: 'DELETE', ended: 404 }])
+    })
+
+    it('fails the span when the request gets no response', async () => {
+      const calls = fakeFactory()
+      const offline = new TypeError('Failed to fetch')
+      spyOn(globalThis, 'fetch').mockRejectedValue(offline)
+
+      await expect(request('/api/v1/test')).rejects.toBe(offline)
+      expect(calls).toEqual([{ method: 'GET', failed: offline }])
+    })
   })
 
   it('calls clearSession and router.push on 401', async () => {
