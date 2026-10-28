@@ -23,9 +23,11 @@ const (
 
 // attrPrefix starts every attribute of an audit event. The names after it
 // are the keys of the export (id, action, actor, ...) and of details_json
-// (outcome, username, ...), so the stream and `oa audit export` agree. The set
-// is a documented contract (docs/operations/monitoring.md): attributes may be
-// added, never renamed or removed.
+// (outcome, username, ...), so the stream and `oa audit export` agree. The
+// client address and the HTTP method, route and status also go out under their
+// OpenTelemetry semantic-convention names. The set is a documented contract
+// (docs/operations/monitoring.md): attributes may be added, never renamed or
+// removed.
 const attrPrefix = "openartifact.audit."
 
 // WithOTLP also streams every event as an OpenTelemetry log event on the
@@ -74,12 +76,13 @@ func newRecord(e entry) otellog.Record {
 
 	rec.SetBody(attribute.StringValue(body))
 
-	attrs := make([]attribute.KeyValue, 0, 20) //nolint:mnd // every attribute below set at once
-	add := func(key, v string) {
+	attrs := make([]attribute.KeyValue, 0, 24) //nolint:mnd // every attribute below set at once
+	str := func(key, v string) {
 		if v != "" {
-			attrs = append(attrs, attribute.String(attrPrefix+key, v))
+			attrs = append(attrs, attribute.String(key, v))
 		}
 	}
+	add := func(key, v string) { str(attrPrefix+key, v) }
 
 	add("id", e.id)
 	add("action", e.Action)
@@ -103,8 +106,12 @@ func newRecord(e entry) otellog.Record {
 	add("version", e.Version)
 	add("subject", e.Subject)
 
+	str("client.address", deref(e.IPAddress))
+	str("http.request.method", e.Method)
+	str("http.route", e.Route)
+
 	if e.Status != 0 {
-		attrs = append(attrs, attribute.Int(attrPrefix+"status", e.Status))
+		attrs = append(attrs, attribute.Int(attrPrefix+"status", e.Status), attribute.Int("http.response.status_code", e.Status))
 	}
 
 	rec.AddAttributes(attrs...)

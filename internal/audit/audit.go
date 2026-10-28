@@ -73,6 +73,12 @@ type AuditEvent struct {
 	// The five fields above are stored in details_json as "outcome",
 	// "username", "token_id", "request_id" and "status", omitted when empty.
 	Status int
+	// Method and Route are the HTTP method and route pattern of the request,
+	// set by the audit middleware on its own events. They are only streamed
+	// (http.request.method, http.route): the middleware's message already
+	// carries them in details_json.
+	Method string
+	Route  string
 }
 
 // Request identifies the HTTP request events are recorded under. The audit

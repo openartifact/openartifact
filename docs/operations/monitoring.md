@@ -450,7 +450,7 @@ Each event is one log record:
 | severity | `INFO` (`9`), `WARN` (`13`) when the outcome is `failure` |
 | body | the details `message`, or the action when there is none |
 
-Attributes, each present only when the event has a value. They are named after the [export](#export) fields and the `details` keys, so the stream and `oa audit export` describe an entry the same way. The set is a contract: attributes may be added, never renamed or removed.
+Attributes, each present only when the event has a value. They are named after the [export](#export) fields and the `details` keys, so the stream and `oa audit export` describe an entry the same way; the client address and the HTTP method, route and status are also sent under their [semantic-convention](https://opentelemetry.io/docs/specs/semconv/http/http-spans/) names, which Collector processors and backends understand. The set is a contract: attributes may be added, never renamed or removed.
 
 | Attribute | Type | Meaning |
 |---|---|---|
@@ -468,6 +468,9 @@ Attributes, each present only when the event has a value. They are named after t
 | `openartifact.audit.ip` | string | client address |
 | `openartifact.audit.request_id` | string | `X-Request-ID` of the request, also in the `HTTP request` log line |
 | `openartifact.audit.status` | int | HTTP status of the request, for events recorded by the HTTP middleware |
+| `client.address` | string | same as `openartifact.audit.ip` |
+| `http.response.status_code` | int | same as `openartifact.audit.status` |
+| `http.request.method`, `http.route` | string | method and route pattern (such as `/api/v1/repositories/{name}`, never the concrete URL) of the request, for events recorded by the HTTP middleware; the export has them in the `message` of those events |
 
 `auth.login_failed` events carry neither `actor` nor `username`: the attempted username is whatever the client typed, often a password. Correlate failed logins by `ip`; the `audit_logs` entry still names the attempted user for admins. A hash would not help: an unkeyed hash of a typed password is reversed by a dictionary.
 

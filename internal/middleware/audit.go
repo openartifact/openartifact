@@ -69,13 +69,19 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 				details = fmt.Sprintf(`{"method":"%s","path":"%s","status":%d,"error":true}`, r.Method, routeTemplate, wrapped.statusCode)
 			}
 
-			auditLogger.Log(r.Context(), audit.AuditEvent{
+			ev := audit.AuditEvent{
 				Action:    action,
 				Actor:     actor,
 				Details:   details,
 				IPAddress: &clientIP,
 				Status:    wrapped.statusCode,
-			})
+				Method:    r.Method,
+			}
+			if routeTemplate != "unknown" {
+				ev.Route = routeTemplate
+			}
+
+			auditLogger.Log(r.Context(), ev)
 		})
 	}
 }

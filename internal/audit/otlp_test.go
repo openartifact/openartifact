@@ -140,6 +140,7 @@ func TestLogStreamsTheInsertedRow(t *testing.T) {
 	logAndDrain(t, l, ctx, AuditEvent{
 		Action: ActionRepositoryCreated, ActorType: "token", ActorID: &actorID, Actor: "alice",
 		RepositoryID: &repo, IPAddress: &ip, Details: "created", Status: 201,
+		Method: "POST", Route: "/api/v1/repositories",
 	})
 
 	if len(db.rows) != 1 {
@@ -188,6 +189,11 @@ func TestLogStreamsTheInsertedRow(t *testing.T) {
 		t.Errorf("status = %d, want 201", got)
 	}
 
+	checkSemconv(t, attrs, map[string]attribute.Value{
+		"client.address": attribute.StringValue(ip), "http.request.method": attribute.StringValue("POST"),
+		"http.route": attribute.StringValue("/api/v1/repositories"), "http.response.status_code": attribute.IntValue(201),
+	})
+
 	var details map[string]any
 	if err := json.Unmarshal(row.DetailsJSON, &details); err != nil {
 		t.Fatal(err)
@@ -218,6 +224,16 @@ func TestLogStreamsWhenTheInsertFails(t *testing.T) {
 
 	if got := recordAttrs(recs[0])[attrPrefix+"id"].AsString(); got != db.rows[0].ID {
 		t.Errorf("streamed id %q, row id %q", got, db.rows[0].ID)
+	}
+}
+
+func checkSemconv(t *testing.T, attrs, want map[string]attribute.Value) {
+	t.Helper()
+
+	for k, v := range want {
+		if got := attrs[k]; got != v {
+			t.Errorf("%s = %s, want %s", k, got, v)
+		}
 	}
 }
 

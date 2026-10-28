@@ -253,9 +253,25 @@ func expectedAttrs(t *testing.T, id string) (map[string]string, time.Time, strin
 		delete(want, "username")
 	}
 
-	full := make(map[string]string, len(want))
+	full := make(map[string]string, len(want)+4) //nolint:mnd // the semantic-convention names below
 	for k, v := range want {
 		full["openartifact.audit."+k] = v
+	}
+
+	// The same values under their semantic-convention names; the method and
+	// route of a middleware event come from its message.
+	for semconv, k := range map[string]string{"client.address": "ip", "http.response.status_code": "status"} {
+		if v, ok := want[k]; ok {
+			full[semconv] = v
+		}
+	}
+
+	var req struct{ Method, Path string }
+	if json.Unmarshal([]byte(message), &req) == nil && req.Method != "" {
+		full["http.request.method"] = req.Method
+		if req.Path != "unknown" {
+			full["http.route"] = req.Path
+		}
 	}
 
 	if message == "" {
