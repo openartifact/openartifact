@@ -6,12 +6,8 @@ package ansible
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/url"
 	"slices"
-	"strconv"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -22,115 +18,29 @@ import (
 	"github.com/openartifact/openartifact/pkg/ansible"
 )
 
-const (
-	// defaultLimit is the page size of a list without a limit parameter.
-	defaultLimit = 100
-	// maxLimit is the largest page a client can ask for.
-	maxLimit = 1000
-)
-
-// timeFormat is the timestamp layout of the Galaxy API (UTC, microseconds).
-const timeFormat = "2006-01-02T15:04:05.000000Z"
-
-func stamp(t time.Time) string { return t.UTC().Format(timeFormat) }
-
-// page is the pagination envelope of the Galaxy API v3.
-type page struct {
-	Meta  map[string]int `json:"meta"`
-	Links map[string]any `json:"links"`
-	Data  any            `json:"data"`
-}
-
-// newPage cuts the window [offset, offset+limit) out of count items; base is
-// listURL is the list URL without a query. The caller fills Data with the window.
-func newPage(listURL string, count, limit, offset int) page {
-	link := func(off int) string {
-		return listURL + "?limit=" + strconv.Itoa(limit) + "&offset=" + strconv.Itoa(off)
-	}
-
-	links := map[string]any{"first": link(0), "previous": nil, "next": nil, "last": link(max(count-1, 0) / limit * limit)}
-
-	if offset > 0 {
-		links["previous"] = link(max(offset-limit, 0))
-	}
-
-	if offset+limit < count {
-		links["next"] = link(offset + limit)
-	}
-
-	return page{Meta: map[string]int{"count": count}, Links: links}
+// links returns the URL builder of repoName's v3 API.
+func (h *HTTPHandler) links(repoName string) ansible.Links {
+	return ansible.Links{Root: h.apiPath(repoName)}
 }
 
 // pageParams reads limit and offset; ok is false, after a 400, for a value that
 // is not a non-negative number.
 func pageParams(w http.ResponseWriter, r *http.Request) (int, int, bool) {
-	limit, offset := defaultLimit, 0
-
-	for _, p := range []struct {
-		key string
-		dst *int
-		min int
-	}{{"limit", &limit, 1}, {"offset", &offset, 0}} {
-		raw := r.URL.Query().Get(p.key)
-		if raw == "" {
-			continue
-		}
-
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < p.min {
-			writeError(
-				w,
-				http.StatusBadRequest,
-				"invalid",
-				"Invalid pagination.",
-				p.key+" must be a number of at least "+strconv.Itoa(p.min),
-			)
-			return 0, 0, false
-		}
-
-		*p.dst = n
+	limit, offset, err := ansible.PageParams(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid", "Invalid pagination.", err.Error())
+		return 0, 0, false
 	}
 
-	return min(limit, maxLimit), offset, true
+	return limit, offset, true
 }
 
-// window returns items[offset:offset+limit] clamped to the slice.
-func window[T any](items []T, limit, offset int) []T {
-	if offset >= len(items) {
-		return nil
-	}
-
-	return items[offset:min(offset+limit, len(items))]
-}
-
-func (h *HTTPHandler) collectionPath(repoName, namespace, name string) string {
-	return fmt.Sprintf("%s/collections/%s/%s/", h.apiPath(repoName), namespace, name)
-}
-
-func (h *HTTPHandler) versionPath(repoName, namespace, name, version string) string {
-	return h.collectionPath(repoName, namespace, name) + "versions/" + url.PathEscape(version) + "/"
-}
-
-func (h *HTTPHandler) downloadPath(repoName, filename string) string {
-	return h.apiPath(repoName) + "/artifacts/collections/" + url.PathEscape(filename)
-}
-
-// versionRef is an entry of a version list.
-type versionRef struct {
-	Version         string   `json:"version"`
-	Href            string   `json:"href"`
-	CreatedAt       string   `json:"created_at"`
-	UpdatedAt       string   `json:"updated_at"`
-	RequiresAnsible string   `json:"requires_ansible,omitempty"`
-	Marks           []string `json:"marks"`
-}
-
-func (h *HTTPHandler) versionRef(repoName string, c *models.AnsibleCollection) versionRef {
-	return versionRef{
+func versionRef(l ansible.Links, c *models.AnsibleCollection) ansible.VersionRef {
+	return ansible.VersionRef{
 		Version:         c.Version,
-		Href:            h.versionPath(repoName, c.Namespace, c.Name, c.Version),
-		CreatedAt:       stamp(c.CreatedAt),
-		UpdatedAt:       stamp(c.UpdatedAt),
+		Href:            l.Version(c.Namespace, c.Name, c.Version),
+		CreatedAt:       ansible.Stamp(c.CreatedAt),
+		UpdatedAt:       ansible.Stamp(c.UpdatedAt),
 		RequiresAnsible: c.RequiresAnsible,
 		Marks:           []string{},
 	}
@@ -139,35 +49,6 @@ func (h *HTTPHandler) versionRef(repoName string, c *models.AnsibleCollection) v
 // newestFirst orders versions by descending precedence.
 func newestFirst(rows []*models.AnsibleCollection) {
 	slices.SortFunc(rows, func(a, b *models.AnsibleCollection) int { return ansible.CompareVersions(b.Version, a.Version) })
-}
-
-// highest picks the highest release of rows (ordered newest first), or the
-// highest pre-release when there is no release.
-func highest(rows []*models.AnsibleCollection) *models.AnsibleCollection {
-	for _, c := range rows {
-		if !ansible.IsPrerelease(c.Version) {
-			return c
-		}
-	}
-
-	return rows[0]
-}
-
-// collectionDoc is the Galaxy document of a collection.
-type collectionDoc struct {
-	Href           string      `json:"href"`
-	Namespace      string      `json:"namespace"`
-	Name           string      `json:"name"`
-	Deprecated     bool        `json:"deprecated"`
-	VersionsURL    string      `json:"versions_url"`
-	HighestVersion *versionTag `json:"highest_version,omitempty"`
-	CreatedAt      string      `json:"created_at"`
-	UpdatedAt      string      `json:"updated_at"`
-}
-
-type versionTag struct {
-	Href    string `json:"href"`
-	Version string `json:"version"`
 }
 
 func (h *HTTPHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -189,19 +70,21 @@ func (h *HTTPHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	docs := make([]collectionDoc, len(names))
+	l := h.links(repo.Name)
+
+	docs := make([]ansible.CollectionDoc, len(names))
 	for i, n := range names {
-		docs[i] = collectionDoc{
-			Href:        h.collectionPath(repo.Name, n.Namespace, n.Name),
+		docs[i] = ansible.CollectionDoc{
+			Href:        l.Collection(n.Namespace, n.Name),
 			Namespace:   n.Namespace,
 			Name:        n.Name,
-			VersionsURL: h.collectionPath(repo.Name, n.Namespace, n.Name) + "versions/",
-			CreatedAt:   stamp(n.CreatedAt),
-			UpdatedAt:   stamp(n.UpdatedAt),
+			VersionsURL: l.Versions(n.Namespace, n.Name),
+			CreatedAt:   ansible.Stamp(n.CreatedAt),
+			UpdatedAt:   ansible.Stamp(n.UpdatedAt),
 		}
 	}
 
-	pg := newPage(h.apiPath(repo.Name)+"/collections/", total, limit, offset)
+	pg := ansible.NewPage(l.Collections(), total, limit, offset)
 	pg.Data = docs
 	h.writeDoc(w, r, repo, pg)
 }
@@ -245,30 +128,14 @@ func (h *HTTPHandler) handleCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	top := highest(rows)
-	created, updated := rows[0].CreatedAt, rows[0].UpdatedAt
+	l := h.links(repo.Name)
 
-	for _, c := range rows {
-		if c.CreatedAt.Before(created) {
-			created = c.CreatedAt
-		}
-
-		if c.UpdatedAt.After(updated) {
-			updated = c.UpdatedAt
-		}
+	refs := make([]ansible.VersionRef, len(rows))
+	for i, c := range rows {
+		refs[i] = versionRef(l, c)
 	}
 
-	path := h.collectionPath(repo.Name, top.Namespace, top.Name)
-
-	h.writeDoc(w, r, repo, collectionDoc{
-		Href:           path,
-		Namespace:      top.Namespace,
-		Name:           top.Name,
-		VersionsURL:    path + "versions/",
-		HighestVersion: &versionTag{Href: h.versionPath(repo.Name, top.Namespace, top.Name, top.Version), Version: top.Version},
-		CreatedAt:      stamp(created),
-		UpdatedAt:      stamp(updated),
-	})
+	h.writeDoc(w, r, repo, ansible.NewCollectionDoc(l, rows[0].Namespace, rows[0].Name, refs))
 }
 
 func (h *HTTPHandler) handleVersions(w http.ResponseWriter, r *http.Request) {
@@ -287,50 +154,20 @@ func (h *HTTPHandler) handleVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refs := make([]versionRef, 0, min(limit, len(rows)))
-	for _, c := range window(rows, limit, offset) {
-		refs = append(refs, h.versionRef(repo.Name, c))
+	l := h.links(repo.Name)
+
+	refs := make([]ansible.VersionRef, 0, min(limit, len(rows)))
+	for _, c := range ansible.Window(rows, limit, offset) {
+		refs = append(refs, versionRef(l, c))
 	}
 
-	pg := newPage(h.collectionPath(repo.Name, rows[0].Namespace, rows[0].Name)+"versions/", len(rows), limit, offset)
+	pg := ansible.NewPage(l.Versions(rows[0].Namespace, rows[0].Name), len(rows), limit, offset)
 	pg.Data = refs
 	h.writeDoc(w, r, repo, pg)
 }
 
-// versionDoc is the Galaxy document of one collection version.
-type versionDoc struct {
-	Version         string            `json:"version"`
-	Href            string            `json:"href"`
-	CreatedAt       string            `json:"created_at"`
-	UpdatedAt       string            `json:"updated_at"`
-	RequiresAnsible string            `json:"requires_ansible,omitempty"`
-	Marks           []string          `json:"marks"`
-	Artifact        artifactDoc       `json:"artifact"`
-	Collection      collectionRefDoc  `json:"collection"`
-	DownloadURL     string            `json:"download_url"`
-	Name            string            `json:"name"`
-	Namespace       namespaceDoc      `json:"namespace"`
-	Metadata        map[string]any    `json:"metadata"`
-	Signatures      []json.RawMessage `json:"signatures"`
-}
-
-type artifactDoc struct {
-	Filename string `json:"filename"`
-	SHA256   string `json:"sha256"`
-	Size     int64  `json:"size"`
-}
-
-type collectionRefDoc struct {
-	Name string `json:"name"`
-	Href string `json:"href"`
-}
-
-type namespaceDoc struct {
-	Name string `json:"name"`
-}
-
 // versionDoc builds the detail document of a stored version.
-func (h *HTTPHandler) versionDoc(repoName string, c *models.AnsibleCollection) versionDoc {
+func (h *HTTPHandler) versionDoc(repoName string, c *models.AnsibleCollection) ansible.VersionDoc {
 	meta := map[string]any{}
 	if len(c.Metadata) > 0 {
 		// An undecodable document leaves the metadata empty: the artifact and
@@ -339,23 +176,22 @@ func (h *HTTPHandler) versionDoc(repoName string, c *models.AnsibleCollection) v
 	}
 
 	meta["dependencies"] = c.Dependencies
-	ref := h.versionRef(repoName, c)
+	ref := versionRef(h.links(repoName), c)
 
-	return versionDoc{
+	doc := ansible.VersionDoc{
 		Version:         ref.Version,
-		Href:            ref.Href,
 		CreatedAt:       ref.CreatedAt,
 		UpdatedAt:       ref.UpdatedAt,
 		RequiresAnsible: ref.RequiresAnsible,
-		Marks:           ref.Marks,
-		Artifact:        artifactDoc{Filename: c.Filename, SHA256: c.SHA256, Size: c.SizeBytes},
-		Collection:      collectionRefDoc{Name: c.Name, Href: h.collectionPath(repoName, c.Namespace, c.Name)},
-		DownloadURL:     h.downloadPath(repoName, c.Filename),
+		Artifact:        ansible.ArtifactDoc{Filename: c.Filename, SHA256: c.SHA256, Size: c.SizeBytes},
+		Collection:      ansible.CollectionRefDoc{Name: c.Name},
 		Name:            c.Name,
-		Namespace:       namespaceDoc{Name: c.Namespace},
+		Namespace:       ansible.NamespaceDoc{Name: c.Namespace},
 		Metadata:        meta,
-		Signatures:      []json.RawMessage{},
 	}
+	doc.Relink(h.links(repoName))
+
+	return doc
 }
 
 // lookupVersion returns the live version named in the URL, or writes a 404.
@@ -418,7 +254,7 @@ type importEntry struct {
 // before the artifact is stored, so every task that exists has completed; the
 // task id is the id of the stored version.
 func importTask(c *models.AnsibleCollection) importDoc {
-	at := stamp(c.CreatedAt)
+	at := ansible.Stamp(c.CreatedAt)
 
 	return importDoc{
 		ID:         c.ID,
