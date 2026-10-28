@@ -85,7 +85,7 @@ scrape_configs:
 | `openartifact_blob_downloads_total` | counter | `mode`, `reason` | blob `GET`s by delivery: `mode=redirect` (`reason=presigned`) or `mode=stream` (`disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed`, `missing_object`); see [presigned URLs](storage.md#presigned-urls) |
 | `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
 | `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
-| `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown: never written to `audit_logs` nor [streamed](#streaming-over-otlp) |
+| `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown: never written to `audit_logs`; [streamed](#streaming-over-otlp) unless recorded after shutdown began |
 | `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` | Unix time of the last successful [OSV mirror](../security/scanning.md#local-osv-mirror) import of an ecosystem (a check that found the export unchanged counts) |
 | `openartifact_osv_mirror_advisories` | gauge | `ecosystem` | live (not withdrawn) advisories in the local OSV mirror that affect an ecosystem |
 | `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` | OSV mirror imports; `result` is `imported`, `unchanged` or `error` |
@@ -429,7 +429,7 @@ oa audit export --since 1h \
 
 Behaviour to know:
 
-- Writes go through a buffered queue (1000 events). When it is full a request waits up to 2 s, then the event is dropped and `openartifact_audit_dropped_total` increases. The queue is flushed on graceful shutdown (5 s).
+- Writes go through a buffered queue (1000 events). When it is full a request waits up to 2 s, then the entry is dropped from the database (the [OTLP stream](#streaming-over-otlp), when on, already sent it) and `openartifact_audit_dropped_total` increases. The queue is flushed on graceful shutdown (5 s).
 - The entry id and `timestamp` are assigned when the event is recorded, before it is queued, so the [OTLP stream](#streaming-over-otlp) carries the same values.
 - Entries are kept forever unless you set `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`): a worker then deletes older ones in paced batches. Nothing is exported first, so run `oa audit export` beforehand; see [audit log retention](audit-retention.md).
 - Audit logs are not part of [backups](backup.md).
@@ -470,7 +470,7 @@ Attributes, each present only when the event has a value. They are named after t
 
 `auth.login_failed` events carry neither `actor` nor `username`: the attempted username is whatever the client typed, often a password. Correlate failed logins by `ip`; the `audit_logs` entry still names the attempted user for admins. A hash would not help: an unkeyed hash of a typed password is reversed by a dictionary.
 
-Delivery is best effort, at most once per event. The event is sent after the database insert, whatever its result, so an event the database refused is still streamed. Nothing ever waits for the collector: an event that does not fit the export queue (collector slow or down) is dropped and counted in `openartifact_telemetry_log_records_dropped_total{scope="openartifact.audit"}`; the events of an export that finally fails after a minute of retries are lost without being counted. Events lost before the writer (`openartifact_audit_dropped_total`) are neither stored nor streamed. Fill a gap from the source of truth with `oa audit export --since <start of the gap>` and drop the duplicates on `id` (`openartifact.audit.id` in the stream).
+Delivery is best effort, at most once per event. The event is sent when it is recorded, before it is queued for the database, so an event the database refused, or never received because its queue was full, is still streamed. Nothing ever waits for the collector: an event that does not fit the export queue (collector slow or down) is dropped and counted in `openartifact_telemetry_log_records_dropped_total{scope="openartifact.audit"}`; the events of an export that finally fails after a minute of retries are lost without being counted. `openartifact_audit_dropped_total` counts entries the database never received: streamed when the queue was full, neither stored nor streamed when recorded after shutdown began. Fill a gap from the source of truth with `oa audit export --since <start of the gap>` and drop the duplicates on `id` (`openartifact.audit.id` in the stream).
 
 Alert on:
 
@@ -480,7 +480,7 @@ increase(openartifact_telemetry_log_records_dropped_total{scope="openartifact.au
 
 #### Volume
 
-Every authenticated `POST`, `PUT`, `PATCH` and `DELETE` that has no named action is an `http.request` event, which includes every file of every package upload (a Maven deploy is one per file). The stream sends them because the database stores them; drop them in the Collector if the SIEM only needs the named actions. The rate is bounded by the audit writer, which streams at the speed it inserts.
+Every authenticated `POST`, `PUT`, `PATCH` and `DELETE` that has no named action is an `http.request` event, which includes every file of every package upload (a Maven deploy is one per file). The stream sends them because the database stores them; drop them in the Collector if the SIEM only needs the named actions. Events are streamed as they are recorded, so the stream follows the write rate of the server, not the rate the database absorbs.
 
 #### Collector routing
 

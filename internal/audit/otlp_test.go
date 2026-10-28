@@ -50,16 +50,22 @@ func (e *memExporter) all() []sdklog.Record {
 	return append([]sdklog.Record(nil), e.records...)
 }
 
-// rowDB records inserted rows and fails every insert when err is set.
+// rowDB records inserted rows and fails every insert when err is set. With
+// block set, every insert first waits until block is closed.
 type rowDB struct {
 	databasetest.BaseMockDB
 
-	mu   sync.Mutex
-	rows []*models.AuditLog
-	err  error
+	mu    sync.Mutex
+	rows  []*models.AuditLog
+	err   error
+	block chan struct{}
 }
 
 func (d *rowDB) InsertAuditLog(_ context.Context, row *models.AuditLog) error {
+	if d.block != nil {
+		<-d.block
+	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -212,6 +218,30 @@ func TestLogStreamsWhenTheInsertFails(t *testing.T) {
 
 	if got := recordAttrs(recs[0])[attrPrefix+"id"].AsString(); got != db.rows[0].ID {
 		t.Errorf("streamed id %q, row id %q", got, db.rows[0].ID)
+	}
+}
+
+// The event is streamed when Log returns, while the database still holds its
+// insert: the stream does not wait for the database.
+func TestLogStreamsBeforeTheInsert(t *testing.T) {
+	exp := installProvider(t)
+	db := &rowDB{block: make(chan struct{})}
+	l := newTestLogger(t, db, WithOTLP())
+
+	l.Log(context.Background(), AuditEvent{Action: ActionAuthLogin})
+
+	if n := len(exp.all()); n != 1 {
+		t.Errorf("records while the insert is pending = %d, want 1", n)
+	}
+
+	close(db.block)
+
+	if err := l.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(db.rows) != 1 {
+		t.Errorf("rows = %d, want 1", len(db.rows))
 	}
 }
 

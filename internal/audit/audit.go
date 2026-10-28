@@ -157,10 +157,6 @@ func (l *Logger) run() {
 		if err := l.insert(e); err != nil {
 			l.log.Errorw("audit log insert failed", "action", e.Action, "id", e.id, "error", err)
 		}
-
-		// Streamed whatever the insert did: a failed insert is exactly the
-		// event a SIEM must not miss, and it carries the same id.
-		l.emit(e)
 	}
 
 	close(l.done)
@@ -256,8 +252,9 @@ func capture(ctx context.Context, event AuditEvent) entry {
 	}
 }
 
-// Log enqueues an event. It never panics, even after Shutdown. If the buffer is
-// full the event is written synchronously (bounded wait) rather than dropped.
+// Log streams an event and enqueues it for the database. It never panics, even
+// after Shutdown. If the buffer is full it waits briefly for room rather than
+// dropping the row at once.
 func (l *Logger) Log(ctx context.Context, event AuditEvent) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -268,6 +265,11 @@ func (l *Logger) Log(ctx context.Context, event AuditEvent) {
 	}
 
 	e := capture(ctx, event)
+
+	// Streamed before the queue, so a slow or failing database (a full
+	// buffer, a refused insert) loses no event from the stream. Emit never
+	// waits for the collector.
+	l.emit(e)
 
 	select {
 	case l.ch <- e:
