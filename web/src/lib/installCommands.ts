@@ -229,15 +229,14 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
       ]
     case 'composer': {
       const secure = origin.startsWith('http://') ? '\ncomposer config secure-http false' : ''
-      const hn = hostnameOf(origin)
       return [
         {
           client: 'composer',
           configure:
             `# composer.json\n{\n  "repositories": [{"type": "composer", "url": "${base}"}]\n}` +
             `\n\n# or from the command line\ncomposer config repositories.openartifact composer ${base}${secure}` +
-            `\n\n# auth (or auth.json: {"http-basic": {"${hn}": {"username": "token", "password": "<TOKEN>"}}})` +
-            `\ncomposer config http-basic.${hn} token <TOKEN>\n\n# install\ncomposer require vendor/name`,
+            `\n\n# auth (or auth.json: {"http-basic": {"${host}": {"username": "token", "password": "<TOKEN>"}}})` +
+            `\ncomposer config http-basic.${host} token <TOKEN>\n\n# install\ncomposer require vendor/name`,
           publish:
             repoType === 'proxy' || repoType === 'group'
               ? undefined

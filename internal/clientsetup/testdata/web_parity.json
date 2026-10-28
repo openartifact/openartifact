@@ -196,7 +196,7 @@
     "snippets": [
       {
         "client": "composer",
-        "configure": "# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"https://artifacts.example.com:8443/repos/repo1\"}]\n}\n\n# or from the command line\ncomposer config repositories.openartifact composer https://artifacts.example.com:8443/repos/repo1\n\n# auth (or auth.json: {\"http-basic\": {\"artifacts.example.com\": {\"username\": \"token\", \"password\": \"\u003cTOKEN\u003e\"}}})\ncomposer config http-basic.artifacts.example.com token \u003cTOKEN\u003e\n\n# install\ncomposer require vendor/name",
+        "configure": "# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"https://artifacts.example.com:8443/repos/repo1\"}]\n}\n\n# or from the command line\ncomposer config repositories.openartifact composer https://artifacts.example.com:8443/repos/repo1\n\n# auth (or auth.json: {\"http-basic\": {\"artifacts.example.com:8443\": {\"username\": \"token\", \"password\": \"\u003cTOKEN\u003e\"}}})\ncomposer config http-basic.artifacts.example.com:8443 token \u003cTOKEN\u003e\n\n# install\ncomposer require vendor/name",
         "publish": "curl -T vendor-name-1.0.0.zip -H \"Authorization: Bearer \u003cTOKEN\u003e\" https://artifacts.example.com:8443/repos/repo1/packages/upload/vendor/name/1.0.0"
       }
     ]
@@ -210,7 +210,7 @@
     "snippets": [
       {
         "client": "composer",
-        "configure": "# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"https://artifacts.example.com:8443/repos/my%20repo\"}]\n}\n\n# or from the command line\ncomposer config repositories.openartifact composer https://artifacts.example.com:8443/repos/my%20repo\n\n# auth (or auth.json: {\"http-basic\": {\"artifacts.example.com\": {\"username\": \"token\", \"password\": \"\u003cTOKEN\u003e\"}}})\ncomposer config http-basic.artifacts.example.com token \u003cTOKEN\u003e\n\n# install\ncomposer require vendor/name",
+        "configure": "# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"https://artifacts.example.com:8443/repos/my%20repo\"}]\n}\n\n# or from the command line\ncomposer config repositories.openartifact composer https://artifacts.example.com:8443/repos/my%20repo\n\n# auth (or auth.json: {\"http-basic\": {\"artifacts.example.com:8443\": {\"username\": \"token\", \"password\": \"\u003cTOKEN\u003e\"}}})\ncomposer config http-basic.artifacts.example.com:8443 token \u003cTOKEN\u003e\n\n# install\ncomposer require vendor/name",
         "publish": "curl -T vendor-name-1.0.0.zip -H \"Authorization: Bearer \u003cTOKEN\u003e\" https://artifacts.example.com:8443/repos/my%20repo/packages/upload/vendor/name/1.0.0"
       }
     ]

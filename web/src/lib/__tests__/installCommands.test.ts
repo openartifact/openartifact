@@ -280,7 +280,7 @@ describe('composer', () => {
     const [setup] = clientSetup('composer', 'https://oa.example:8443', 'r1')
     expect(setup!.client).toBe('composer')
     expect(setup!.configure).toContain('composer config repositories.openartifact composer https://oa.example:8443/repos/r1')
-    expect(setup!.configure).toContain('composer config http-basic.oa.example token <TOKEN>')
+    expect(setup!.configure).toContain('composer config http-basic.oa.example:8443 token <TOKEN>')
     expect(setup!.configure).not.toContain('secure-http')
     expect(setup!.publish).toBe(
       'curl -T vendor-name-1.0.0.zip -H "Authorization: Bearer <TOKEN>" https://oa.example:8443/repos/r1/packages/upload/vendor/name/1.0.0',

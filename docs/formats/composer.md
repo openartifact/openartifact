@@ -46,7 +46,7 @@ composer config http-basic.HOST token TOKEN
 composer require VENDOR/NAME
 ```
 
-`HOST` in `http-basic.HOST` is the host name without a port. The same credentials can live in `auth.json`:
+`HOST` in `http-basic.HOST` is the host name, followed by `:PORT` when the repository URL names a port (Composer matches credentials on both). The same credentials can live in `auth.json`:
 
 ```json
 {
