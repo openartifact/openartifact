@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "Wird ausgelöst, wenn ein Repository aus dem Papierkorb wiederhergestellt wird",
   "adm.webhooks.event.repository.purged": "Wird ausgelöst, wenn ein Repository endgültig aus dem Papierkorb entfernt wird",
   "adm.webhooks.event.bundle.promoted": "Wird ausgelöst, wenn ein Release-Bundle in das Repository einer Pipeline-Stufe befördert wird",
+  "adm.webhooks.event.vulnerability.new": "Wird ausgelöst, wenn der OSV-Spiegel neue Schwachstellen in einer gespeicherten Paketversion findet",
   "adm.webhooks.loadFailed": "Webhooks konnten nicht geladen werden",
   "adm.webhooks.created": "Webhook erstellt",
   "adm.webhooks.createFailed": "Webhook konnte nicht erstellt werden",

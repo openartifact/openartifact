@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "Déclenché lorsqu'un dépôt est restauré depuis la corbeille",
   "adm.webhooks.event.repository.purged": "Déclenché lorsqu'un dépôt est définitivement purgé de la corbeille",
   "adm.webhooks.event.bundle.promoted": "Déclenché lorsqu'un bundle de release est promu vers le dépôt d'une étape de pipeline",
+  "adm.webhooks.event.vulnerability.new": "Déclenché lorsque le miroir OSV trouve de nouvelles vulnérabilités dans une version de paquet stockée",
   "adm.webhooks.loadFailed": "Échec du chargement des webhooks",
   "adm.webhooks.created": "Webhook créé",
   "adm.webhooks.createFailed": "Échec de la création du webhook",

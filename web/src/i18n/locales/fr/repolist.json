@@ -118,6 +118,7 @@
   "activity.action.repository.restored": "Dépôt restauré",
   "activity.action.repository.purged": "Dépôt supprimé définitivement",
   "activity.action.scan.vuln_detected": "Vulnérabilité détectée",
+  "activity.action.scan.vuln_resolved": "Vulnérabilité résolue",
   "activity.action.scan.secret_detected": "Secret détecté",
   "activity.action.scan.quarantine_applied": "Mis en quarantaine par une analyse",
   "rl.activity.caption": "Activité du dépôt",

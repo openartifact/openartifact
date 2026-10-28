@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -665,5 +666,31 @@ func TestUnknownPayloadFormatFailsPermanently(t *testing.T) {
 
 	if delivery.Status != "failed" || delivery.NextRetryAt != nil {
 		t.Fatalf("status = %q, next retry = %v", delivery.Status, delivery.NextRetryAt)
+	}
+}
+
+func TestVulnerabilityNewPayload(t *testing.T) {
+	p := VulnerabilityNewPayload(VulnerabilityDetected{
+		Artifact: Artifact{Repository: "npm-hosted", Format: "npm", Name: "lodash", Version: "4.17.20"},
+		RepoType: "hosted",
+		Findings: []VulnerabilityFinding{{ID: "GHSA-1", Severity: "HIGH", CVSS: 7.5, Summary: "flaw", FixedIn: "4.17.21"}},
+	})
+
+	if p["event"] != EventVulnerabilityNew || p["source"] != "osv-mirror" || p["type"] != "hosted" {
+		t.Fatalf("payload = %v", p)
+	}
+
+	found, _ := p["vulnerabilities"].([]any)
+	if len(found) != 1 {
+		t.Fatalf("vulnerabilities = %v", p["vulnerabilities"])
+	}
+
+	f, _ := found[0].(map[string]any)
+	if f["id"] != "GHSA-1" || f["fixed_in"] != "4.17.21" || f["summary"] != "flaw" {
+		t.Fatalf("finding = %v", f)
+	}
+
+	if !slices.Contains(SubscribableEvents(), EventVulnerabilityNew) {
+		t.Fatal("vulnerability.new must be subscribable")
 	}
 }

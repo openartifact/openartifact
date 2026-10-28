@@ -24,6 +24,14 @@ type Registry struct {
 	AuditDroppedTotal                   prometheus.Counter
 	TrashPurgedTotal                    *prometheus.CounterVec
 
+	// Local OSV mirror (osvMirror.enabled). The ecosystem label is an OSV
+	// ecosystem name: a handful of fixed values.
+	OSVMirrorLastImportSeconds *prometheus.GaugeVec
+	OSVMirrorAdvisories        *prometheus.GaugeVec
+	OSVMirrorImportsTotal      *prometheus.CounterVec
+	OSVMirrorRematchSeconds    prometheus.Histogram
+	OSVMirrorFindingsTotal     *prometheus.CounterVec
+
 	// Audit log retention (audit.retentionDays): rows deleted past the window
 	// and when the last pass finished.
 	AuditRetentionDeletedTotal   prometheus.Counter
@@ -155,6 +163,32 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 			Help: "Total number of trashed items permanently removed by the retention purge, by kind.",
 		}, []string{"kind"}),
 
+		OSVMirrorLastImportSeconds: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "openartifact_osv_mirror_last_import_timestamp_seconds",
+			Help: "Unix time of the last successful OSV mirror import of an ecosystem (a check that found the export unchanged counts).",
+		}, []string{"ecosystem"}),
+
+		OSVMirrorAdvisories: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "openartifact_osv_mirror_advisories",
+			Help: "Number of live (not withdrawn) advisories in the local OSV mirror that affect an ecosystem.",
+		}, []string{"ecosystem"}),
+
+		OSVMirrorImportsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_osv_mirror_imports_total",
+			Help: "Total number of OSV mirror imports, by ecosystem and result (imported, unchanged, error).",
+		}, []string{"ecosystem", "result"}),
+
+		OSVMirrorRematchSeconds: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "openartifact_osv_mirror_rematch_duration_seconds",
+			Help:    "Duration of the re-match of the stored packages against the changed OSV advisories of one ecosystem.",
+			Buckets: []float64{1, 5, 15, 60, 300, 900, 3600},
+		}),
+
+		OSVMirrorFindingsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_osv_mirror_findings_total",
+			Help: "Total number of findings the OSV re-match changed, by change (new, updated, resolved).",
+		}, []string{"change"}),
+
 		AuditRetentionDeletedTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "openartifact_audit_retention_deleted_total",
 			Help: "Total number of audit log entries deleted for being older than audit.retentionDays.",
@@ -245,6 +279,11 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		r.MetadataRegenerationDurationSeconds,
 		r.AuditDroppedTotal,
 		r.TrashPurgedTotal,
+		r.OSVMirrorLastImportSeconds,
+		r.OSVMirrorAdvisories,
+		r.OSVMirrorImportsTotal,
+		r.OSVMirrorRematchSeconds,
+		r.OSVMirrorFindingsTotal,
 		r.AuditRetentionDeletedTotal,
 		r.AuditRetentionLastRunSeconds,
 		r.TierBlobs,

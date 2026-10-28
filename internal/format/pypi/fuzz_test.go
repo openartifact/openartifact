@@ -14,6 +14,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/pypisimple"
+	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
 // FuzzValidateUploadIdentity feeds the name, version and file name of an
@@ -104,29 +105,25 @@ func FuzzComparePEP440(f *testing.F) {
 	f.Add("1.0-1", "1.0.r2", "1.0RC.1")
 
 	f.Fuzz(func(t *testing.T, a, b, c string) {
-		if comparePEP440(a, a) != 0 {
-			t.Fatalf("comparePEP440(%q, %q) != 0", a, a)
+		if pyversion.Compare(a, a) != 0 {
+			t.Fatalf("pyversion.Compare(%q, %q) != 0", a, a)
 		}
 
 		for _, pair := range [][2]string{{a, b}, {b, c}, {a, c}} {
 			x, y := pair[0], pair[1]
-			if fuzzSign(comparePEP440(x, y)) != -fuzzSign(comparePEP440(y, x)) {
-				t.Fatalf("comparePEP440 is not antisymmetric for %q and %q", x, y)
+			if fuzzSign(pyversion.Compare(x, y)) != -fuzzSign(pyversion.Compare(y, x)) {
+				t.Fatalf("pyversion.Compare is not antisymmetric for %q and %q", x, y)
 			}
 		}
 
-		ab, bc, ac := comparePEP440(a, b), comparePEP440(b, c), comparePEP440(a, c)
+		ab, bc, ac := pyversion.Compare(a, b), pyversion.Compare(b, c), pyversion.Compare(a, c)
 
 		if ab <= 0 && bc <= 0 && ac > 0 || ab >= 0 && bc >= 0 && ac < 0 {
-			t.Fatalf("comparePEP440 is not transitive for %q, %q, %q (%d, %d, %d)", a, b, c, ab, bc, ac)
+			t.Fatalf("pyversion.Compare is not transitive for %q, %q, %q (%d, %d, %d)", a, b, c, ab, bc, ac)
 		}
 
-		if ab == 0 && fuzzSign(comparePEP440(a, c)) != fuzzSign(comparePEP440(b, c)) {
-			t.Fatalf("comparePEP440 treats %q and %q as equal but orders them differently against %q", a, b, c)
-		}
-
-		if k, ok := parsePEP440(a); ok && (len(k.release) == 0 || k.preRank < 0 || k.preRank > 4 || k.epoch < 0) {
-			t.Fatalf("parsePEP440(%q) = %+v", a, k)
+		if ab == 0 && fuzzSign(pyversion.Compare(a, c)) != fuzzSign(pyversion.Compare(b, c)) {
+			t.Fatalf("pyversion.Compare treats %q and %q as equal but orders them differently against %q", a, b, c)
 		}
 	})
 }

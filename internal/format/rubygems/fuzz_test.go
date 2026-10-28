@@ -26,6 +26,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/pkg/gemversion"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
 	"go.uber.org/zap"
@@ -771,21 +772,21 @@ func FuzzGemVersionOrder(f *testing.F) {
 		vs := []string{a, b, c}
 
 		for _, x := range vs {
-			if compareVersions(x, x) != 0 {
-				t.Fatalf("compareVersions(%q, %q) != 0", x, x)
+			if gemversion.Compare(x, x) != 0 {
+				t.Fatalf("gemversion.Compare(%q, %q) != 0", x, x)
 			}
 
 			for _, y := range vs {
-				if compareVersions(x, y) != -compareVersions(y, x) {
+				if gemversion.Compare(x, y) != -gemversion.Compare(y, x) {
 					t.Fatalf("compareVersions not antisymmetric for %q, %q", x, y)
 				}
 
-				if fuzzPlainVersion(x) && fuzzPlainVersion(y) && compareVersions(x, y) != fuzzRefCompare(x, y) {
-					t.Fatalf("compareVersions(%q, %q) = %d, want %d", x, y, compareVersions(x, y), fuzzRefCompare(x, y))
+				if fuzzPlainVersion(x) && fuzzPlainVersion(y) && gemversion.Compare(x, y) != fuzzRefCompare(x, y) {
+					t.Fatalf("gemversion.Compare(%q, %q) = %d, want %d", x, y, gemversion.Compare(x, y), fuzzRefCompare(x, y))
 				}
 
 				for _, z := range vs {
-					if compareVersions(x, y) <= 0 && compareVersions(y, z) <= 0 && compareVersions(x, z) > 0 {
+					if gemversion.Compare(x, y) <= 0 && gemversion.Compare(y, z) <= 0 && gemversion.Compare(x, z) > 0 {
 						t.Fatalf("compareVersions not transitive for %q <= %q <= %q", x, y, z)
 					}
 				}
@@ -845,7 +846,7 @@ func checkSelectSpecs(t *testing.T, versions []string) {
 		}
 
 		for _, r := range released {
-			if r.Name == g.Name && r.Platform == g.Platform && compareVersions(r.Version, g.Version) > 0 {
+			if r.Name == g.Name && r.Platform == g.Platform && gemversion.Compare(r.Version, g.Version) > 0 {
 				t.Fatalf("latest_specs.4.8 lists %s %s although %s is newer", key, g.Version, r.Version)
 			}
 		}

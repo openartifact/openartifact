@@ -41,6 +41,7 @@ import (
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
+	"github.com/openartifact/openartifact/pkg/gemversion"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
 )
@@ -186,7 +187,7 @@ func selectSpecs(gems []*models.RubyGem, kind specsKind) []*models.RubyGem {
 			}
 
 			key := g.Name + ":" + g.Platform
-			if existing, ok := latest[key]; !ok || compareVersions(g.Version, existing.Version) > 0 {
+			if existing, ok := latest[key]; !ok || gemversion.Compare(g.Version, existing.Version) > 0 {
 				latest[key] = g
 			}
 		}
@@ -897,101 +898,6 @@ func mustMarshalJSON(v any) []byte {
 // isPrerelease follows Gem::Version#prerelease?: any letter in the version.
 func isPrerelease(version string) bool {
 	return strings.ContainsFunc(version, unicode.IsLetter)
-}
-
-// gemSegment is one run of a version: a number (ASCII digits, kept as text
-// without leading zeros so it has no size limit) or a string.
-type gemSegment struct {
-	text string
-	num  bool
-}
-
-// gemVersionSegments splits a version into numeric and string segments.
-func gemVersionSegments(v string) []gemSegment {
-	var (
-		segs []gemSegment
-		cur  strings.Builder
-		num  bool
-	)
-
-	flush := func() {
-		if cur.Len() == 0 {
-			return
-		}
-
-		if num {
-			segs = append(segs, gemSegment{text: strings.TrimLeft(cur.String(), "0"), num: true})
-		} else {
-			segs = append(segs, gemSegment{text: cur.String()})
-		}
-
-		cur.Reset()
-	}
-
-	for _, r := range v {
-		switch {
-		case r == '.' || r == '-':
-			flush()
-		case r >= '0' && r <= '9':
-			if !num {
-				flush()
-			}
-
-			num = true
-
-			cur.WriteRune(r)
-		default:
-			if num {
-				flush()
-			}
-
-			num = false
-
-			cur.WriteRune(r)
-		}
-	}
-
-	flush()
-
-	return segs
-}
-
-// compareVersions implements Gem::Version#<=>: numeric segments compare
-// numerically, string segments (prerelease) sort before numbers.
-func compareVersions(v1, v2 string) int {
-	a, b := gemVersionSegments(v1), gemVersionSegments(v2)
-
-	for i := 0; i < len(a) || i < len(b); i++ {
-		// A missing segment is the number 0.
-		x, y := gemSegment{num: true}, gemSegment{num: true}
-		if i < len(a) {
-			x = a[i]
-		}
-
-		if i < len(b) {
-			y = b[i]
-		}
-
-		if c := compareSegments(x, y); c != 0 {
-			return c
-		}
-	}
-
-	return 0
-}
-
-func compareSegments(x, y gemSegment) int {
-	switch {
-	case !x.num && !y.num:
-		return strings.Compare(x.text, y.text)
-	case !x.num:
-		return -1
-	case !y.num:
-		return 1
-	default:
-		// Numbers without leading zeros: the longer one is larger.
-		return cmp.Or(cmp.Compare(len(x.text), len(y.text)), strings.Compare(x.text, y.text))
-	}
 }
 
 // errAmbiguousGemFile means several gems of one repository share a

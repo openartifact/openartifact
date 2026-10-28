@@ -118,6 +118,7 @@
   "activity.action.repository.restored": "Repositorio restaurado",
   "activity.action.repository.purged": "Repositorio eliminado permanentemente",
   "activity.action.scan.vuln_detected": "Vulnerabilidad encontrada",
+  "activity.action.scan.vuln_resolved": "Vulnerabilidad resuelta",
   "activity.action.scan.secret_detected": "Secreto encontrado",
   "activity.action.scan.quarantine_applied": "En cuarentena por un análisis",
   "rl.activity.caption": "Actividad del repositorio",

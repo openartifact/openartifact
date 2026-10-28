@@ -135,6 +135,8 @@ type Config struct {
 	// Exploit configures the KEV and EPSS feeds behind the exploitation
 	// signals of vulnerability findings.
 	Exploit ExploitConfig `yaml:"exploit"`
+	// OSVMirror configures the local OSV vulnerability mirror (see docs/security/scanning.md).
+	OSVMirror OSVMirrorConfig `yaml:"osvMirror"`
 	// BaseURL is the public URL of the server; it is used for generated links
 	// and SSO callbacks, so set it when the server runs behind a reverse proxy.
 	BaseURL string `yaml:"baseUrl"`
@@ -743,6 +745,7 @@ func defaultConfig() *Config {
 			Concurrency:       4,
 			ReconcileInterval: 24 * time.Hour,
 		}},
+		OSVMirror: defaultOSVMirror(),
 		Scanners: ScannersConfig{
 			UpdateInterval:  6 * time.Hour,
 			DownloadBaseURL: DefaultScannerDownloadBaseURL,
@@ -962,6 +965,12 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Recovery.Journal.ReconcileInterval, "OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL")
 
 	// Vulnerability scanners
+	overrideBool(&cfg.OSVMirror.Enabled, "OPENARTIFACT_OSV_MIRROR_ENABLED")
+	overrideString(&cfg.OSVMirror.BaseURL, "OPENARTIFACT_OSV_MIRROR_BASE_URL")
+	overrideSlice(&cfg.OSVMirror.Ecosystems, "OPENARTIFACT_OSV_MIRROR_ECOSYSTEMS")
+	overrideDuration(&cfg.OSVMirror.Interval, "OPENARTIFACT_OSV_MIRROR_INTERVAL")
+	overrideString(&cfg.OSVMirror.TempDir, "OPENARTIFACT_OSV_MIRROR_TEMP_DIR")
+	overrideInt64(&cfg.OSVMirror.MaxArchiveBytes, "OPENARTIFACT_OSV_MIRROR_MAX_ARCHIVE_BYTES")
 	overrideString(&cfg.Scanners.CacheDir, "OPENARTIFACT_SCANNER_CACHE_DIR")
 	overrideDuration(&cfg.Scanners.UpdateInterval, "OPENARTIFACT_SCANNER_UPDATE_INTERVAL")
 	overrideBool(&cfg.Scanners.Offline, "OPENARTIFACT_SCANNER_OFFLINE")
@@ -1177,7 +1186,11 @@ func (c *Config) validateBackgroundServices() error {
 		return err
 	}
 
-	return c.validateAudit()
+	if err := c.validateAudit(); err != nil {
+		return err
+	}
+
+	return c.validateOSVMirror()
 }
 
 func (c *Config) validateBlobRetention() error {

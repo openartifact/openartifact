@@ -114,6 +114,7 @@
   "activity.action.repository.restored": "リポジトリを復元",
   "activity.action.repository.purged": "リポジトリを完全に削除",
   "activity.action.scan.vuln_detected": "脆弱性を検出",
+  "activity.action.scan.vuln_resolved": "脆弱性を解消",
   "activity.action.scan.secret_detected": "シークレットを検出",
   "activity.action.scan.quarantine_applied": "スキャンにより隔離",
   "rl.activity.caption": "リポジトリのアクティビティ",

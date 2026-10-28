@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "Disparado quando um repositório é restaurado da lixeira",
   "adm.webhooks.event.repository.purged": "Disparado quando um repositório é removido permanentemente da lixeira",
   "adm.webhooks.event.bundle.promoted": "Disparado quando um bundle de release é promovido para o repositório de uma etapa do pipeline",
+  "adm.webhooks.event.vulnerability.new": "Disparado quando o espelho OSV encontra novas vulnerabilidades em uma versão de pacote armazenada",
   "adm.webhooks.loadFailed": "Falha ao carregar os webhooks",
   "adm.webhooks.created": "Webhook criado",
   "adm.webhooks.createFailed": "Falha ao criar o webhook",

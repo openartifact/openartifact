@@ -89,6 +89,7 @@ const (
 	// Security scanning.
 
 	ActionScanVulnDetected    = "scan.vuln_detected"
+	ActionScanVulnResolved    = "scan.vuln_resolved"
 	ActionScanSecretDetected  = "scan.secret_detected" //nolint:gosec // action name, not a credential
 	ActionScanQuarantineApply = "scan.quarantine_applied"
 
@@ -169,7 +170,7 @@ var KnownActions = []string{
 
 	ActionSystemSettingChanged, ActionSystemStorageBackendChanged,
 
-	ActionScanVulnDetected, ActionScanSecretDetected, ActionScanQuarantineApply,
+	ActionScanVulnDetected, ActionScanVulnResolved, ActionScanSecretDetected, ActionScanQuarantineApply,
 
 	ActionBundleCreated, ActionBundleSealed, ActionBundleArchived, ActionBundlePromoted,
 

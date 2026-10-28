@@ -35,6 +35,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <SecurityHealthNotice v-if="health" :health="health" class="mb-4" />
 
+      <OsvMirrorCard v-if="isAdmin" class="mb-4" />
+
       <SecuritySummaryStrip class="mb-2" :summary="summary" :filters="filters" :error="summaryError" @select="applyStrip" />
 
       <ExploitFeedStatus class="mb-4" />
@@ -241,6 +243,7 @@ import ScanExportButtons from '../../components/ScanExportButtons.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import VexStatementsPanel from '../../components/VexStatementsPanel.vue'
 import VexStatusBadge from '../../components/VexStatusBadge.vue'
+import OsvMirrorCard from '../../components/security/OsvMirrorCard.vue'
 import SecurityFindingDrawer from '../../components/security/SecurityFindingDrawer.vue'
 import SecurityHealthNotice from '../../components/security/SecurityHealthNotice.vue'
 import SecurityScanDrawer from '../../components/security/SecurityScanDrawer.vue'

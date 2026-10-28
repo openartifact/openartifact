@@ -42,6 +42,11 @@ const (
 	// target repository of a pipeline stage. It is delivered to the webhooks of
 	// the target repository and the global ones.
 	EventBundlePromoted = "bundle.promoted"
+	// EventVulnerabilityNew fires when the OSV mirror's re-match finds a
+	// stored package version affected by an advisory it was not known to be
+	// affected by. It is delivered to the webhooks of the repository holding
+	// the version and the global ones.
+	EventVulnerabilityNew = "vulnerability.new"
 )
 
 const (

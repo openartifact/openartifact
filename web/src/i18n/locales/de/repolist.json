@@ -118,6 +118,7 @@
   "activity.action.repository.restored": "Repository wiederhergestellt",
   "activity.action.repository.purged": "Repository endgültig gelöscht",
   "activity.action.scan.vuln_detected": "Schwachstelle gefunden",
+  "activity.action.scan.vuln_resolved": "Schwachstelle behoben",
   "activity.action.scan.secret_detected": "Geheimnis gefunden",
   "activity.action.scan.quarantine_applied": "Durch einen Scan in Quarantäne gestellt",
   "rl.activity.caption": "Repository-Aktivität",

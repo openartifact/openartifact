@@ -34,7 +34,7 @@ func webhookEvents() []string {
 	return []string{
 		"artifact.uploaded", "artifact.deleted", "repository.created", "repository.deleted",
 		"artifact.restored", "artifact.purged", "repository.restored", "repository.purged",
-		"bundle.promoted",
+		"bundle.promoted", "vulnerability.new",
 	}
 }
 

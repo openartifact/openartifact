@@ -346,6 +346,23 @@ recovery:
     concurrency: 4            # sidecar blobs written or deleted at once
     reconcileInterval: 24h    # re-check every table for missing/stale sidecars (backfill); 0 = only the first complete pass
 
+# Local OSV mirror (https://osv.dev, data under CC-BY 4.0). A background worker
+# imports the OSV export of each ecosystem into the database once per interval
+# (incrementally by `modified`), the osv scanner matches against it, and every
+# import re-matches the stored packages of hosted and proxy repositories: new
+# findings raise the vulnerability.new webhook, an audit entry and a security
+# inbox item; withdrawn advisories close their findings. While the mirror is off,
+# or not yet populated for an ecosystem, the osv scanner queries api.osv.dev.
+# baseUrl serves "<baseUrl>/<Ecosystem>/all.zip": point it at an internal copy of
+# the bucket for air-gapped installs (a private host is fine). See docs/security/scanning.md.
+osvMirror:
+  enabled: false
+  baseUrl: https://osv-vulnerabilities.storage.googleapis.com
+  ecosystems: [npm, PyPI, Maven, crates.io, RubyGems, NuGet, Go]  # the ecosystems the mirror matches locally
+  interval: 24h             # pause between imports, at least 1h
+  tempDir: ""               # absolute; where the archive is downloaded while it is imported (default: system temp dir)
+  maxArchiveBytes: 2147483648  # cap on one downloaded archive
+
 # Trivy and grype vulnerability scanners (the "trivy" / "grype" scanner names of
 # POST .../vuln/scan). They are separate binaries: install them on PATH, set a
 # path below, or build the image with SCANNERS=trivy|grype|all. The server keeps

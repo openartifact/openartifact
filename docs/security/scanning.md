@@ -43,7 +43,7 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 - `POST` returns at once with `scan_status: "scanning"`; the scan runs in the background (120 s limit). Poll `GET …/vuln/scans/{id}` until the status is `completed`, `partial` or `failed`. At most 4 scans run at a time per server; further requests get 429 `too_many_scans` with `Retry-After: 10`.
 - A result carries `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count`, `low_count`, the `scanner` that ran (several are stored sorted and comma-joined, for example `osv,trivy`) and `failed_scanners`.
 - `ecosystem` uses these names: `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, `deb`, `rpm`, `helm` (OSV); the other backends support a subset: Trivy `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, and `deb` and `rpm` for known Debian, Ubuntu, RHEL and Amazon Linux releases; Grype `npm`, `pypi`, `maven`, `cargo`, `rubygems`, `nuget`, `go`, and `deb` and `rpm` once the distribution release is known ([below](#debian-and-rpm-packages)). Both scan the one package you name, not its dependencies: Trivy is given a generated lockfile that pins it (`package-lock.json`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json`, or `requirements.txt`, `go.mod`, `pom.xml`), Grype a Package URL (`pkg:npm/%40angular/core@8.0.0`). Trivy scans `deb` and `rpm` packages from a generated SBOM once the release is known and is Debian, Ubuntu, RHEL or Amazon Linux ([below](#debian-and-rpm-packages)).
-- `osv` needs outbound HTTPS to `api.osv.dev` and nothing else. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
+- `osv` needs outbound HTTPS to `api.osv.dev` and nothing else, unless the [local OSV mirror](#local-osv-mirror) is enabled and populated. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
 
 ### Exploitation signals
 
@@ -112,6 +112,94 @@ For `partial` and `failed` results `scan_error` summarizes each failed scanner a
 Failed vulnerability scans stored before this behavior (which kept the raw scanner error) have their `scan_error` replaced by `scan failed` when the database is migrated. The web UI shows them as *Not scanned* and *Partial* instead of as clean.
 
 The MCP tool `get_vulnerabilities` summarizes stored results and counts `failed` and `partial` scans in `failed_scans` ([MCP](../integrations/mcp.md)).
+
+## Local OSV mirror
+
+By default the `osv` scanner asks `api.osv.dev` about each package when you scan it. The local mirror keeps the [OSV](https://osv.dev) advisories in your database instead and watches them: when an advisory is published or changed, the package versions you already store are matched again and findings appear without anyone starting a scan. It is off by default.
+
+### How it works
+
+- A background worker downloads the per-ecosystem export `<baseUrl>/<Ecosystem>/all.zip` once per `interval` and imports it into PostgreSQL. With several replicas only one imports at a time (a PostgreSQL advisory lock elects it).
+- The download is a conditional request (`ETag` / `If-Modified-Since`), so an unchanged export costs one request. The archive is spooled to a temporary file (`tempDir`), never held in memory, and a download larger than `maxArchiveBytes` is aborted. A single advisory record larger than 16 MiB is skipped.
+- The import is incremental: records not newer than the stored high-water mark (their `modified` time) are skipped, and the mark only advances after the records are applied, so an interrupted import resumes. A re-match cut short by a crash is flagged and redone in full on the next pass.
+- After an import, every stored package version of the ecosystem whose package is named by a changed advisory is matched again, together with the versions stored since the last re-match. This covers hosted repositories and the proxy cache. Newly stored versions are also matched against the mirror when they are scanned.
+- The result is stored like a manual `osv` scan (scanner `osv`), so the [security inbox](findings.md), [VEX decisions](sbom.md#vex), [exports](#exporting-findings-sarif-csv-json) and [quarantine policies](#quarantine) work unchanged. The mirror never changes the quarantine flag of a package. When no advisory affects a version any more, the result shows 0 vulnerabilities (closed).
+- The first import of an ecosystem is a silent baseline: findings are created, but no per-finding webhook or audit entry is produced; one summary line is logged. From then on each package version with new advisories gets one [`vulnerability.new` webhook](../operations/webhooks.md) (up to 50 advisories listed) and a `scan.vuln_detected` audit entry; advisories that were withdrawn or stop affecting a version are recorded as `scan.vuln_resolved` (audit only, no webhook). See [audit log](../operations/monitoring.md#audit-log).
+- The `osv` scanner uses the mirror for an ecosystem once that ecosystem has completed an import; before that, and while the mirror is disabled, it queries `api.osv.dev`.
+- Finding ids are OSV ids. CVE aliases are kept in the `osv_advisory_aliases` table.
+
+Side effect: the mirror writes its result as the newest `osv` scan of the package, and the inbox shows the newest job per artifact, so a mirror result can supersede an older manual scan of the same package there.
+
+### Enabling it
+
+```yaml
+osvMirror:
+  enabled: true
+```
+
+or `OPENARTIFACT_OSV_MIRROR_ENABLED=true`. The first import downloads every enabled ecosystem; the npm and PyPI archives are the largest, so allow disk space in `tempDir` and some minutes. Watch progress in the card at the top of **Security** in the web UI, with [`GET /api/v1/vuln/osv-mirror`](#status-endpoint) or the [metrics](#osv-mirror-metrics).
+
+| YAML key (`osvMirror`) | Environment variable (`OPENARTIFACT_OSV_MIRROR_`) | Default | |
+|---|---|---|---|
+| `enabled` | `ENABLED` | `false` | turns the mirror on |
+| `baseUrl` | `BASE_URL` | `https://osv-vulnerabilities.storage.googleapis.com` | the archive is fetched from `<baseUrl>/<Ecosystem>/all.zip`. Private hosts are allowed |
+| `ecosystems` | `ECOSYSTEMS` | all supported | comma list of OSV ecosystem names |
+| `interval` | `INTERVAL` | `24h` | Go duration between imports, at least `1h` |
+| `tempDir` | `TEMP_DIR` | OS temp dir | where the archive is spooled while it is imported |
+| `maxArchiveBytes` | `MAX_ARCHIVE_BYTES` | 2 GiB | larger downloads abort |
+
+### Air-gapped installs
+
+Point `baseUrl` at an internal HTTP(S) server that serves the same layout as the public bucket: one `all.zip` per ecosystem under `<Ecosystem>/`, using the OSV ecosystem names as directory names (`npm`, `PyPI`, `Maven`, `crates.io`, `RubyGems`, `NuGet`, `Go`). Any static file server works; it should send `ETag` or `Last-Modified` so unchanged files are not downloaded again.
+
+Build the copy on a connected host and move it across, then repeat on whatever schedule you want updates:
+
+```sh
+for eco in npm PyPI Maven crates.io RubyGems NuGet Go; do
+  mkdir -p /srv/osv/$eco
+  curl -fsSL -o /srv/osv/$eco/all.zip "https://osv-vulnerabilities.storage.googleapis.com/$eco/all.zip"
+done
+# serve /srv/osv with nginx, Caddy or object storage, then:
+#   OPENARTIFACT_OSV_MIRROR_BASE_URL=https://osv.internal.example
+```
+
+With the mirror populated, the `osv` scanner needs no outbound access for the ecosystems it covers. Ecosystems the mirror does not cover (below) still need `api.osv.dev` for manual scans.
+
+### Supported ecosystems and matching
+
+| OSV ecosystem | Repository formats |
+|---|---|
+| `npm` | npm |
+| `PyPI` | pypi |
+| `Maven` | maven |
+| `crates.io` | cargo |
+| `RubyGems` | rubygems |
+| `NuGet` | nuget |
+| `Go` | go |
+
+Not mirrored: `deb`, `rpm`, `apk` and the other distribution-scoped ecosystems (Debian, Ubuntu, Alpine, Rocky and so on), formats without an OSV ecosystem (Helm, conda), advisories whose affected ranges are `GIT` ranges or `ecosystem_specific` ranges. The online API still serves these through a manual scan.
+
+Matching handles `SEMVER` and `ECOSYSTEM` ranges with the ordering of each ecosystem (semantic versioning for npm, crates.io and Go; the native ordering of Maven, NuGet, RubyGems and PyPI), plus exact `versions` lists. Package names are normalised per ecosystem before comparing (PyPI as in PEP 503; NuGet and Maven case-insensitively; and so on).
+
+### Status endpoint
+
+`GET /api/v1/vuln/osv-mirror` (admin) returns `enabled`, `source_url`, `interval_seconds`, an `ecosystems` list (`ecosystem`, `populated`, `advisories`, `high_water`, `last_checked_at`, `last_imported_at`, `last_import_seconds`, `last_rematch_seconds`, `last_error`, `rematch_pending`) and the `attribution`. It works while the mirror is disabled (`enabled: false`).
+
+### OSV mirror metrics
+
+| Metric | Type | Labels |
+|---|---|---|
+| `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` |
+| `openartifact_osv_mirror_advisories` | gauge | `ecosystem` |
+| `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` (`imported`, `unchanged`, `error`) |
+| `openartifact_osv_mirror_rematch_duration_seconds` | histogram | |
+| `openartifact_osv_mirror_findings_total` | counter | `change` (`new`, `updated`, `resolved`) |
+
+Details are in [Monitoring](../operations/monitoring.md#metric-families). A growing gap to `last_import_timestamp_seconds` or `imports_total{result="error"}` means the export is unreachable.
+
+### Attribution and license
+
+The advisory data is from [OSV](https://osv.dev) and is licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). The web UI shows the attribution next to the mirror status, and findings that come from it should keep it when you republish them. See the [OSV data documentation](https://google.github.io/osv.dev/data/) for the sources and terms of each advisory.
 
 ## Installing Trivy and Grype
 

@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "Attivato quando un repository viene ripristinato dal cestino",
   "adm.webhooks.event.repository.purged": "Attivato quando un repository viene eliminato definitivamente dal cestino",
   "adm.webhooks.event.bundle.promoted": "Attivato quando un bundle di rilascio viene promosso nel repository di una fase della pipeline",
+  "adm.webhooks.event.vulnerability.new": "Attivato quando la mirror OSV trova nuove vulnerabilità in una versione di pacchetto archiviata",
   "adm.webhooks.loadFailed": "Impossibile caricare i webhook",
   "adm.webhooks.created": "Webhook creato",
   "adm.webhooks.createFailed": "Impossibile creare il webhook",

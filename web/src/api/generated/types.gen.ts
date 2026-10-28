@@ -564,7 +564,7 @@ export type Webhook = {
     repository_id?: string | null;
     name?: string;
     url?: string;
-    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
+    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
     content_type?: string;
     /**
      * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -2188,6 +2188,58 @@ export type VulnScanResult = {
      * Scanners that produced no result. Empty unless `scan_status` is `partial` or `failed`.
      */
     failed_scanners: Array<'osv' | 'trivy' | 'grype'>;
+};
+
+/**
+ * Import state of one ecosystem of the local OSV mirror.
+ */
+export type OsvMirrorEcosystem = {
+    /**
+     * OSV ecosystem name, e.g. `npm` or `crates.io`.
+     */
+    ecosystem: string;
+    /**
+     * True once an import completed; only then does the `osv` scanner match against the mirror.
+     */
+    populated: boolean;
+    /**
+     * Advisories that affect the ecosystem.
+     */
+    advisories: number;
+    /**
+     * Newest advisory modification imported.
+     */
+    high_water: string | null;
+    last_checked_at: string | null;
+    last_imported_at: string | null;
+    last_import_seconds: number;
+    last_rematch_seconds: number;
+    /**
+     * Failure of the last import; null when it succeeded.
+     */
+    last_error: string | null;
+    /**
+     * True while changed advisories are not yet matched against the stored packages.
+     */
+    rematch_pending: boolean;
+};
+
+/**
+ * Local OSV mirror status.
+ */
+export type OsvMirrorStatus = {
+    enabled: boolean;
+    /**
+     * Configured export location, without credentials.
+     */
+    source_url: string;
+    interval_seconds: number;
+    ecosystems: Array<OsvMirrorEcosystem>;
+    attribution: {
+        source: 'OSV';
+        license: 'CC-BY-4.0';
+        url: string;
+    };
 };
 
 /**
@@ -4066,7 +4118,7 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -5508,6 +5560,29 @@ export type GetApiV1VulnScansExportResponses = {
 
 export type GetApiV1VulnScansExportResponse = GetApiV1VulnScansExportResponses[keyof GetApiV1VulnScansExportResponses];
 
+export type GetApiV1VulnOsvMirrorData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/vuln/osv-mirror';
+};
+
+export type GetApiV1VulnOsvMirrorErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1VulnOsvMirrorResponses = {
+    /**
+     * Mirror status
+     */
+    200: OsvMirrorStatus;
+};
+
+export type GetApiV1VulnOsvMirrorResponse = GetApiV1VulnOsvMirrorResponses[keyof GetApiV1VulnOsvMirrorResponses];
+
 export type GetApiV1VulnScansSummaryData = {
     body?: never;
     path?: never;
@@ -6248,7 +6323,7 @@ export type PostApiV1WebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -6361,7 +6436,7 @@ export type PutApiV1WebhooksByIdData = {
         name?: string;
         url?: string;
         secret?: string;
-        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
+        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted' | 'vulnerability.new'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.

@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/bgtask"
+	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
@@ -36,6 +37,9 @@ type VulnHandler struct {
 
 	// newBackend builds the scanner backend for a scanner name; tests replace it.
 	newBackend func(name string) vuln.ScannerBackend
+
+	// osvMirror is the mirror configuration reported by the status endpoint.
+	osvMirror config.OSVMirrorConfig
 
 	// onScanned, when set, is told about every scan that produced results.
 	onScanned func(repoID, artifactID string)
@@ -66,6 +70,13 @@ func (h *VulnHandler) WithTasks(tasks *bgtask.Runner) *VulnHandler {
 // was stored; the Dependency-Track integration uses it to push fresh results.
 func (h *VulnHandler) WithScanHook(f func(repoID, artifactID string)) *VulnHandler {
 	h.onScanned = f
+	return h
+}
+
+// WithOSVMirror tells the handler how the local OSV mirror is configured, for
+// the status endpoint.
+func (h *VulnHandler) WithOSVMirror(cfg config.OSVMirrorConfig) *VulnHandler {
+	h.osvMirror = cfg
 	return h
 }
 
@@ -320,18 +331,9 @@ func (h *VulnHandler) performScan(ctx context.Context, scanResult *models.VulnSc
 	scanResult.Vulnerabilities = outcome.Vulnerabilities
 	scanResult.VulnCount = len(outcome.Vulnerabilities)
 
-	for _, v := range outcome.Vulnerabilities {
-		switch strings.ToUpper(v.Severity) {
-		case "CRITICAL":
-			scanResult.CriticalCount++
-		case "HIGH":
-			scanResult.HighCount++
-		case "MEDIUM":
-			scanResult.MediumCount++
-		case "LOW":
-			scanResult.LowCount++
-		}
-	}
+	scanResult.CriticalCount, scanResult.HighCount, scanResult.MediumCount, scanResult.LowCount = vuln.CountSeverities(
+		outcome.Vulnerabilities,
+	)
 
 	now := time.Now()
 	scanResult.ScannedAt = &now

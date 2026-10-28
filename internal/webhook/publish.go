@@ -68,6 +68,51 @@ func BundlePromotedPayload(b BundlePromotion) map[string]any {
 	}
 }
 
+// VulnerabilityFinding is one advisory of a vulnerability.new event.
+type VulnerabilityFinding struct {
+	ID       string
+	Severity string
+	CVSS     float64
+	Summary  string
+	FixedIn  string
+}
+
+// VulnerabilityDetected describes the stored package version a
+// vulnerability.new event is about and the advisories newly affecting it.
+type VulnerabilityDetected struct {
+	Artifact Artifact
+	// RepoType is "hosted" or "proxy".
+	RepoType string
+	Findings []VulnerabilityFinding
+}
+
+// VulnerabilityNewPayload builds the JSON payload of a vulnerability.new event.
+// The "source" is always "osv-mirror": the findings come from the local OSV
+// mirror (OSV data, CC-BY 4.0, https://osv.dev).
+func VulnerabilityNewPayload(v VulnerabilityDetected) map[string]any {
+	payload := ArtifactPayload(EventVulnerabilityNew, v.Artifact)
+	findings := make([]any, len(v.Findings))
+
+	for i, f := range v.Findings {
+		finding := map[string]any{"id": f.ID, "severity": f.Severity, "cvss": f.CVSS}
+		if f.Summary != "" {
+			finding["summary"] = f.Summary
+		}
+
+		if f.FixedIn != "" {
+			finding["fixed_in"] = f.FixedIn
+		}
+
+		findings[i] = finding
+	}
+
+	payload["type"] = v.RepoType
+	payload["source"] = "osv-mirror"
+	payload["vulnerabilities"] = findings
+
+	return payload
+}
+
 // Artifact describes the artifact an artifact.* event is about.
 type Artifact struct {
 	Repository string // repository name

@@ -41,6 +41,7 @@ func SubscribableEvents() []string {
 		EventRepoRestored,
 		EventRepoPurged,
 		EventBundlePromoted,
+		EventVulnerabilityNew,
 	}
 }
 

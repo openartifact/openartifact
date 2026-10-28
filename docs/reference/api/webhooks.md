@@ -59,7 +59,7 @@ Create a new webhook for a repository
 |---|---|---|---|
 | `content_type` | string | no | - |
 | `enabled` | boolean | no | - |
-| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`. |
+| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
 | `max_retries` | integer | no | - |
 | `name` | string | yes | - |
 | `payload_format` | string | no | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |
@@ -110,7 +110,7 @@ Create a new webhook
 |---|---|---|---|
 | `content_type` | string | no | - |
 | `enabled` | boolean | no | - |
-| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`. |
+| `events` | array of string | yes | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
 | `max_retries` | integer | no | - |
 | `name` | string | yes | - |
 | `payload_format` | string | no | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |
@@ -168,7 +168,7 @@ Update a webhook
 |---|---|---|---|
 | `content_type` | string | no | - |
 | `enabled` | boolean | no | - |
-| `events` | array of string | no | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`. |
+| `events` | array of string | no | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
 | `max_retries` | integer | no | - |
 | `name` | string | no | - |
 | `payload_format` | string | no | Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes. One of: `openartifact`, `cloudevents`, `slack`, `teams`, `discord`. Default: `openartifact`. |

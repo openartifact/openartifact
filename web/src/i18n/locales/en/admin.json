@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "Triggered when a repository is restored from the trash",
   "adm.webhooks.event.repository.purged": "Triggered when a repository is permanently purged from the trash",
   "adm.webhooks.event.bundle.promoted": "Triggered when a release bundle is promoted into the repository of a pipeline stage",
+  "adm.webhooks.event.vulnerability.new": "Triggered when the OSV mirror finds new vulnerabilities in a stored package version",
   "adm.webhooks.loadFailed": "Failed to load webhooks",
   "adm.webhooks.created": "Webhook created",
   "adm.webhooks.createFailed": "Failed to create webhook",
