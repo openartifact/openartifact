@@ -947,6 +947,50 @@ type NugetPackage struct {
 	DependencyGroups []byte     `db:"dependency_groups" json:"dependency_groups"`
 }
 
+type OsvAdvisory struct {
+	ID         string          `db:"id" json:"id"`
+	Modified   time.Time       `db:"modified" json:"modified"`
+	Published  *time.Time      `db:"published" json:"published"`
+	Withdrawn  *time.Time      `db:"withdrawn" json:"withdrawn"`
+	Summary    string          `db:"summary" json:"summary"`
+	Severity   json.RawMessage `db:"severity" json:"severity"`
+	DbSeverity string          `db:"db_severity" json:"db_severity"`
+	CweIds     []string        `db:"cwe_ids" json:"cwe_ids"`
+	Refs       []string        `db:"refs" json:"refs"`
+	ImportedAt time.Time       `db:"imported_at" json:"imported_at"`
+}
+
+type OsvAdvisoryAlias struct {
+	AdvisoryID string `db:"advisory_id" json:"advisory_id"`
+	Alias      string `db:"alias" json:"alias"`
+}
+
+type OsvAffected struct {
+	ID         int64           `db:"id" json:"id"`
+	AdvisoryID string          `db:"advisory_id" json:"advisory_id"`
+	Ecosystem  string          `db:"ecosystem" json:"ecosystem"`
+	Name       string          `db:"name" json:"name"`
+	NameNorm   string          `db:"name_norm" json:"name_norm"`
+	Ranges     json.RawMessage `db:"ranges" json:"ranges"`
+	Versions   []string        `db:"versions" json:"versions"`
+}
+
+type OsvMirrorState struct {
+	Ecosystem          string     `db:"ecosystem" json:"ecosystem"`
+	HighWater          *time.Time `db:"high_water" json:"high_water"`
+	Etag               string     `db:"etag" json:"etag"`
+	ArchiveModified    string     `db:"archive_modified" json:"archive_modified"`
+	SourceUrl          string     `db:"source_url" json:"source_url"`
+	Advisories         int32      `db:"advisories" json:"advisories"`
+	LastCheckedAt      *time.Time `db:"last_checked_at" json:"last_checked_at"`
+	LastImportedAt     *time.Time `db:"last_imported_at" json:"last_imported_at"`
+	LastImportSeconds  float64    `db:"last_import_seconds" json:"last_import_seconds"`
+	LastRematchSeconds float64    `db:"last_rematch_seconds" json:"last_rematch_seconds"`
+	LastError          string     `db:"last_error" json:"last_error"`
+	RematchPending     bool       `db:"rematch_pending" json:"rematch_pending"`
+	RematchedAt        *time.Time `db:"rematched_at" json:"rematched_at"`
+}
+
 // Pre-computed bsdiff patches between package versions for bandwidth-efficient updates
 type PackageDelta struct {
 	ID           string    `db:"id" json:"id"`

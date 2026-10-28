@@ -103,8 +103,9 @@ BEGIN
         RETURN;
     END IF;
 
-    def := replace(def, '''scan.vuln_detected''::character varying',
-        '''scan.vuln_detected''::character varying, ''scan.vuln_resolved''::character varying');
+    -- pg_get_constraintdef prints each element as ('x'::character varying)::text.
+    def := replace(def, '''scan.vuln_detected''::character varying)::text',
+        '''scan.vuln_detected''::character varying)::text, (''scan.vuln_resolved''::character varying)::text');
 
     IF position('scan.vuln_resolved' IN def) = 0 THEN
         RAISE EXCEPTION 'chk_audit_action: could not extend constraint definition: %', def;
