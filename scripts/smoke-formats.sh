@@ -5,8 +5,8 @@
 #
 # Publish a tiny package to a running OpenArtifact instance and install it back
 # with the real client, one throwaway container per format. Round trips: deb
-# (dpkg-deb + apt), rpm (rpmbuild + dnf), npm (npm publish/install) and pypi
-# (build + twine + pip). Every step must succeed; the first failure fails the
+# (dpkg-deb + apt), npm (npm publish/install), pypi (build + twine + pip) and
+# rpm (rpmbuild + dnf). Every step must succeed; the first failure fails the
 # run. Modelled on yap's scripts/e2e-rpm.sh.
 #
 # Usage:
@@ -16,7 +16,7 @@
 #   OA_URL       base URL (default http://127.0.0.1:8080; argument wins)
 #   OA_TOKEN     access token of an administrator (required; repositories are
 #                created and deleted through the API)
-#   FORMATS      space-separated subset of "deb rpm npm pypi" (default: all)
+#   FORMATS      space-separated subset of "deb npm pypi rpm" (default: all)
 #   DEB_IMAGE    default debian:12
 #   RPM_IMAGE    default rockylinux:9
 #   NODE_IMAGE   default node:22-alpine
@@ -37,7 +37,7 @@ URL="${URL%/}"
 [ -n "${OA_TOKEN:-}" ] || die "set OA_TOKEN (see scripts/dev-token.sh)"
 for c in docker curl jq; do command -v "$c" >/dev/null || die "$c is required"; done
 
-FORMATS="${FORMATS:-deb rpm npm pypi}"
+FORMATS="${FORMATS:-deb npm pypi rpm}"
 DEB_IMAGE="${DEB_IMAGE:-debian:12}"
 RPM_IMAGE="${RPM_IMAGE:-rockylinux:9}"
 NODE_IMAGE="${NODE_IMAGE:-node:22-alpine}"
@@ -181,9 +181,9 @@ pip install -q --index-url "$scheme://smoke:$OA_TOKEN@$hp/repos/$REPO/simple/" "
 for f in $FORMATS; do
 	case "$f" in
 	deb) create_repo "smoke-deb-$id" deb; run deb "$DEB_IMAGE" "smoke-deb-$id" "$DEB_SCRIPT" ;;
-	rpm) create_repo "smoke-rpm-$id" rpm; run rpm "$RPM_IMAGE" "smoke-rpm-$id" "$RPM_SCRIPT" ;;
 	npm) create_repo "smoke-npm-$id" npm; run npm "$NODE_IMAGE" "smoke-npm-$id" "$NPM_SCRIPT" ;;
 	pypi) create_repo "smoke-pypi-$id" pypi; run pypi "$PY_IMAGE" "smoke-pypi-$id" "$PYPI_SCRIPT" ;;
+	rpm) create_repo "smoke-rpm-$id" rpm; run rpm "$RPM_IMAGE" "smoke-rpm-$id" "$RPM_SCRIPT" ;;
 	*) die "unknown format: $f" ;;
 	esac
 done

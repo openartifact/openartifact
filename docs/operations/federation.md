@@ -27,25 +27,25 @@ The full rationale is in the [design document](../design/federation.md).
 
 | Format | Replicated unit |
 |---|---|
-| raw | file path |
+| Cargo | crate version (yank state included) |
+| Docker / OCI | manifest (with config and layers), tag |
+| Go | module version |
+| Helm | chart version |
 | Maven | each file |
 | npm | version, dist-tag |
-| Docker / OCI | manifest (with config and layers), tag |
-| Helm | chart version |
-| PyPI | file |
-| Cargo | crate version (yank state included) |
-| Go | module version |
 | NuGet | package version |
+| PyPI | file |
+| raw | file path |
 
 Not supported, with the reason:
 
+- **Conan, Conda, RubyGems**: their indexes or revision graphs are regenerated whole and need their own unit design.
 - **Debian and RPM**: their metadata is signed with the instance's own key; consistent signed indexes across members need their own design.
-- **RubyGems, Conda, Conan**: their indexes or revision graphs are regenerated whole and need their own unit design.
-- **Terraform/OpenTofu**: not designed yet; modules and provider platforms are not replicated.
 - **Ivy and sbt**: not a technical limit; left out of the first test matrix.
+- **Terraform/OpenTofu**: not designed yet; modules and provider platforms are not replicated.
 - **Proxy and group repositories**: not authoritative content. Only hosted repositories can be federated.
 
-Derived metadata (Maven `maven-metadata.xml`, npm packuments, Helm `index.yaml`, PyPI and NuGet indexes) is never copied. Each member regenerates it from the replicated units, so members hold the same content but not necessarily byte-identical metadata files.
+Derived metadata (Helm `index.yaml`, Maven `maven-metadata.xml`, npm packuments, NuGet and PyPI indexes) is never copied. Each member regenerates it from the replicated units, so members hold the same content but not necessarily byte-identical metadata files.
 
 Member repository names may differ per instance; the formats must match.
 
@@ -208,7 +208,7 @@ Every instance generates an id when its database is first migrated, and a peer t
 
 ## Limits
 
-- No Debian, RPM, RubyGems, Conda, Conan, Terraform, Ivy or sbt; proxy and group repositories cannot be federated.
+- No Conan, Conda, Debian, Ivy, RPM, RubyGems, sbt or Terraform; proxy and group repositories cannot be federated.
 - Eventual consistency only; replication latency is about the poll interval.
 - Resume needs the spool to survive: with the default (under the OS temp dir) partials do not outlive a container restart.
 - Quotas apply on each side. A unit that exceeds the receiver's quota is deferred, not forced in. Trashed bytes keep counting as for local deletes.

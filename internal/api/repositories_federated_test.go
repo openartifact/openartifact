@@ -79,7 +79,7 @@ func newFedRepositoriesHandler(t *testing.T, withFederation bool) (*Repositories
 }
 
 func TestCreateRepositoryFederated(t *testing.T) {
-	for _, format := range []string{"raw", "maven", "npm", "docker", "helm", "pypi", "cargo", "go", "nuget"} {
+	for _, format := range []string{"cargo", "docker", "go", "helm", "maven", "npm", "nuget", "pypi", "raw"} {
 		t.Run(format, func(t *testing.T) {
 			h, e := newFedRepositoriesHandler(t, true)
 

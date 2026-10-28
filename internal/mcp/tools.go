@@ -137,7 +137,7 @@ func clampInt(v, def, lo, hi int) int {
 //
 //nolint:lll // jsonschema descriptions must stay on the tag line
 type listRepositoriesIn struct {
-	Format string `json:"format,omitempty" jsonschema:"Filter by package format (e.g. npm, maven, deb, rpm, helm, pypi, docker). Leave empty for all."`
+	Format string `json:"format,omitempty" jsonschema:"Filter by package format (e.g. deb, docker, helm, maven, npm, pypi, rpm). Leave empty for all."`
 	Page   int    `json:"page,omitempty"   jsonschema:"Page number (1-based, default 1)"`
 	Limit  int    `json:"limit,omitempty"  jsonschema:"Results per page (default 20, max 100)"`
 }
@@ -145,7 +145,7 @@ type listRepositoriesIn struct {
 type searchArtifactsIn struct {
 	Query      string `json:"query"                jsonschema:"Keyword or package name to look for"`
 	Repository string `json:"repository,omitempty" jsonschema:"Restrict the search to a specific repository name. Leave empty to search all."`
-	Format     string `json:"format,omitempty"     jsonschema:"Filter by package format (npm, maven, deb, rpm, helm, pypi, docker, etc.)"`
+	Format     string `json:"format,omitempty"     jsonschema:"Filter by package format (deb, docker, helm, maven, npm, pypi, rpm, etc.)"`
 }
 
 type artifactAnalysisIn struct {
@@ -170,7 +170,7 @@ type listAnalysesIn struct {
 type triggerAnalysisIn struct {
 	RepositoryID    string `json:"repository_id"              jsonschema:"Repository ID (UUID)"`
 	ArtifactID      string `json:"artifact_id"                jsonschema:"Artifact ID; must belong to the repository"`
-	ArtifactFormat  string `json:"artifact_format,omitempty"  jsonschema:"Package format: npm, maven, deb, rpm, helm, pypi, cargo, etc. (optional)"`
+	ArtifactFormat  string `json:"artifact_format,omitempty"  jsonschema:"Package format: cargo, deb, helm, maven, npm, pypi, rpm, etc. (optional)"`
 	ArtifactName    string `json:"artifact_name,omitempty"    jsonschema:"Package name"`
 	ArtifactVersion string `json:"artifact_version,omitempty" jsonschema:"Package version"`
 	ManifestText    string `json:"manifest_text,omitempty"    jsonschema:"Optional raw manifest content (package.json, pom.xml, go.mod, requirements.txt, etc.); when omitted the server extracts it from the stored artifact"` //nolint:lll // struct tag cannot be wrapped
@@ -182,7 +182,7 @@ type repositoryNameIn struct {
 
 type listPackagesIn struct {
 	Repository string `json:"repository"       jsonschema:"Repository name"`
-	Format     string `json:"format,omitempty" jsonschema:"Only list packages of this format (e.g. npm, deb, docker). Leave empty for all."`
+	Format     string `json:"format,omitempty" jsonschema:"Only list packages of this format (e.g. deb, docker, npm). Leave empty for all."`
 	Page       int    `json:"page,omitempty"   jsonschema:"Page number (1-based, default 1)"`
 	Limit      int    `json:"limit,omitempty"  jsonschema:"Results per page (default 20, max 100)"`
 }
@@ -285,7 +285,7 @@ func (s *Server) registerTools() {
 	addTool(s, readTool(
 		"client_setup",
 		"Get client setup",
-		"Get the commands to configure and publish with the native client tools for a repository (npm, docker, pip, mvn, apt, "+
+		"Get the commands to configure and publish with the native client tools for a repository (apt, docker, mvn, npm, pip, "+
 			"...). Credentials are placeholders: <USERNAME> and <TOKEN>. Requires read permission on the repository.",
 	),
 		false, s.clientSetup)

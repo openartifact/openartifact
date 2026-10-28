@@ -26,7 +26,7 @@ func (r *recordingGroupMetadata) NotifyMemberChanged(repoID string) {
 	r.members = append(r.members, repoID)
 }
 
-// groupsOfMemberDB reports a fixed set of deb/rpm/apk groups for every member.
+// groupsOfMemberDB reports a fixed set of apk/deb/rpm groups for every member.
 type groupsOfMemberDB struct {
 	repoLifecycleDB
 
@@ -129,7 +129,7 @@ func TestDeletingANonDebRepositoryDoesNotTouchGroupMetadata(t *testing.T) {
 }
 
 func TestCreatingDebRPMApkGroupsIsAccepted(t *testing.T) {
-	for _, format := range []string{"deb", "rpm", "apk"} {
+	for _, format := range []string{"apk", "deb", "rpm"} {
 		db := newProxyGroupDB()
 
 		rw := createRepo(t, db, `{"name":"g","format":"`+format+`","repo_type":"group"}`)

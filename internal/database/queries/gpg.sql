@@ -53,8 +53,8 @@ WHERE k.id = (SELECT a.gpg_key_id FROM gpg_key_repositories a WHERE a.repository
 LIMIT 1;
 
 -- name: ListSigningRepositoriesWithoutKey :many
--- deb, rpm and pacman repositories that have no key of their own (they follow the global key).
+-- deb, pacman and rpm repositories that have no key of their own (they follow the global key).
 SELECT r.id, r.format
 FROM repositories r
-WHERE r.format IN ('deb', 'rpm', 'pacman') AND r.repo_type = 'hosted'
+WHERE r.format IN ('deb', 'pacman', 'rpm') AND r.repo_type = 'hosted'
   AND NOT EXISTS (SELECT 1 FROM gpg_key_repositories a WHERE a.repository_id = r.id);

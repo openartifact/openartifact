@@ -12,21 +12,21 @@ Supported formats:
 
 | Format in OpenArtifact | Nexus 3 | Artifactory (package type) |
 |---|---|---|
-| `maven` | `maven2` | `maven`, `gradle` |
-| `deb` | `apt` | `debian` |
-| `rpm` | `yum` | `rpm` |
-| `raw` | `raw` | `generic` |
-| `npm` | `npm` | `npm` |
-| `pypi` | `pypi` | `pypi` |
-| `docker` | `docker` | `docker` |
-| `helm` | `helm` | `helm` |
-| `nuget` | `nuget` | `nuget` |
-| `rubygems` | `rubygems` | `gems` |
 | `cargo` | `cargo` | `cargo` |
-| `go` | `go` | `go` |
-| `conda` | `conda` | `conda` |
 | `conan` | `conan` (layout like Artifactory's) | `conan` (Conan 2 layout) |
+| `conda` | `conda` | `conda` |
+| `deb` | `apt` | `debian` |
+| `docker` | `docker` | `docker` |
+| `go` | `go` | `go` |
+| `helm` | `helm` | `helm` |
 | `ivy` | none | `ivy` |
+| `maven` | `maven2` | `maven`, `gradle` |
+| `npm` | `npm` | `npm` |
+| `nuget` | `nuget` | `nuget` |
+| `pypi` | `pypi` | `pypi` |
+| `raw` | `raw` | `generic` |
+| `rpm` | `yum` | `rpm` |
+| `rubygems` | `rubygems` | `gems` |
 | `sbt` | none | `sbt` |
 
 Only hosted repositories are imported: Nexus `hosted`, Artifactory `local` (and `federated`). Proxy, group and virtual repositories, and any other format, are refused with an error for that `--repo`; recreate them in OpenArtifact (see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md)).
@@ -87,26 +87,26 @@ Use an OpenArtifact **admin** access token (`oa auth login`, `--token` or `OA_TO
 
   | Format | Imported | Not imported |
   |---|---|---|
-  | `maven` | files with at least four path segments | checksum files (`.md5`, `.sha1`, `.sha256`, `.sha512`), `maven-metadata.xml` |
-  | `deb` / `rpm` | `*.deb` / `*.rpm` | `dists/`, `repodata/` |
-  | `raw` | every file | |
-  | `npm` | tarballs (`<pkg>/-/<file>.tgz`, scoped included) | packuments, `.npm/` metadata |
-  | `pypi` | `.whl`, `.tar.gz`, `.zip`, `.egg`, `.tar.bz2`, `.tar.xz`, `.tar` | signatures, `simple/` indexes, `.whl.metadata`, installers (`.exe`, `.msi`, ...) |
-  | `docker` | one image per **tag** (Nexus `v2/<image>/manifests/<tag>`, Artifactory `<image>/<tag>/manifest.json`) | untagged manifests, referrers, foreign layers, schema 1 manifests |
-  | `helm` | `*.tgz` charts | `index.yaml`, `.prov` |
-  | `nuget` | `*.nupkg` (Nexus `<Id>/<version>`) | symbol packages (`.snupkg`, `.symbols.nupkg`), `.nuspec` |
-  | `rubygems` | `gems/*.gem` | `quick/`, `specs.4.8.gz` and the other indexes |
   | `cargo` | `*.crate` | the sparse index, `config.json` |
-  | `go` | `<module>/@v/<version>.zip` | `.mod`, `.info`, `list`, `@latest` (the server derives them from the zip) |
-  | `conda` | `<subdir>/<file>.conda`, `.tar.bz2` | `repodata.json*`, `channeldata.json`, `index.html` |
   | `conan` | Conan 2 layout: `.../<rrev>/export/*` and `.../<rrev>/package/<id>/<prev>/*` | Conan 1 layout, `index.json` |
+  | `conda` | `<subdir>/<file>.conda`, `.tar.bz2` | `repodata.json*`, `channeldata.json`, `index.html` |
+  | `deb` / `rpm` | `*.deb` / `*.rpm` | `dists/`, `repodata/` |
+  | `docker` | one image per **tag** (Nexus `v2/<image>/manifests/<tag>`, Artifactory `<image>/<tag>/manifest.json`) | untagged manifests, referrers, foreign layers, schema 1 manifests |
+  | `go` | `<module>/@v/<version>.zip` | `.mod`, `.info`, `list`, `@latest` (the server derives them from the zip) |
+  | `helm` | `*.tgz` charts | `index.yaml`, `.prov` |
   | `ivy` / `sbt` | every file with at least four path segments | checksum files, `maven-metadata.xml` |
+  | `maven` | files with at least four path segments | checksum files (`.md5`, `.sha1`, `.sha256`, `.sha512`), `maven-metadata.xml` |
+  | `npm` | tarballs (`<pkg>/-/<file>.tgz`, scoped included) | packuments, `.npm/` metadata |
+  | `nuget` | `*.nupkg` (Nexus `<Id>/<version>`) | symbol packages (`.snupkg`, `.symbols.nupkg`), `.nuspec` |
+  | `pypi` | `.whl`, `.tar.gz`, `.zip`, `.egg`, `.tar.bz2`, `.tar.xz`, `.tar` | signatures, `simple/` indexes, `.whl.metadata`, installers (`.exe`, `.msi`, ...) |
+  | `raw` | every file | |
+  | `rubygems` | `gems/*.gem` | `quick/`, `specs.4.8.gz` and the other indexes |
 
   Package identity comes from the source's own component metadata (Nexus components, Artifactory package properties such as `npm.name`, `pypi.version`, `nuget.id`) and otherwise from the file name or the metadata inside the archive (`package.json`, `.nuspec`, `Cargo.toml`, `PKG-INFO`).
 - **Idempotent.** Maven and raw assets are matched by path and SHA-256; every other format by SHA-256 (or, for docker, by tag and manifest digest) against the destination's package listing, because the server derives file names from package metadata. A source that reports no SHA-256 for a file (Nexus does not for npm and NuGet) falls back to name and version where the format allows it; an npm upload that meets an identical package (`409`, same digest) is accepted, but counted as uploaded rather than already present. An asset already present is not uploaded again, but its properties are (re)applied. Assets whose source reports no SHA-256 cannot be matched this way and are uploaded again. This works with or without `--state-file`.
-- **Verification.** The source's SHA-256 is preferred, SHA-1 is the fallback; size is compared when the source reports it. The digest of what was sent is then compared with what the server stored. A copy that fails verification is removed from the destination and reported as a failure, unless it replaced pre-existing content, which is left in place. Formats whose API has no hard delete cannot be cleaned up: a bad RubyGems copy is yanked, and bad Cargo, Go and Conan copies are reported and left in place (a re-run from a corrected source replaces Conan files). npm's removal is refused by the server's 72-hour unpublish rule for versions imported with an older creation time.
-- **Memory and disk.** Files are streamed. npm, NuGet, PyPI and Cargo uploads need metadata from inside the archive, so those files are first copied to a temporary file in `$TMPDIR` (one per concurrent transfer) and read from there; memory use does not grow with file size.
-- **Order.** Within one package the importer works in a fixed order: npm versions oldest first (so the `latest` tag ends on the highest release), Conan recipe files before package files with `conanmanifest.txt` last, docker blobs and child manifests before the tag.
+- **Verification.** The source's SHA-256 is preferred, SHA-1 is the fallback; size is compared when the source reports it. The digest of what was sent is then compared with what the server stored. A copy that fails verification is removed from the destination and reported as a failure, unless it replaced pre-existing content, which is left in place. Formats whose API has no hard delete cannot be cleaned up: a bad RubyGems copy is yanked, and bad Cargo, Conan and Go copies are reported and left in place (a re-run from a corrected source replaces Conan files). npm's removal is refused by the server's 72-hour unpublish rule for versions imported with an older creation time.
+- **Memory and disk.** Files are streamed. Cargo, npm, NuGet and PyPI uploads need metadata from inside the archive, so those files are first copied to a temporary file in `$TMPDIR` (one per concurrent transfer) and read from there; memory use does not grow with file size.
+- **Order.** Within one package the importer works in a fixed order: Conan recipe files before package files with `conanmanifest.txt` last, docker blobs and child manifests before the tag, npm versions oldest first (so the `latest` tag ends on the highest release).
 - **Re-run.** Re-run the same command to retry only what is missing.
 
 ### Retries
@@ -117,7 +117,7 @@ Transient failures are retried up to `--retries` times with exponential backoff 
 - Never retried: any other 4xx (400, 401, 403, 404, 409, ...), verification failures, and cancellation.
 - `Retry-After` (seconds or an HTTP date) on a 429 or 503 replaces the backoff. When it exceeds `--retry-max-wait` the asset fails at once, so the run can be resumed later.
 - Source reads (listings, per-file details, downloads) are safe to repeat. Every attempt re-opens the source stream; a download that dies mid-stream restarts from byte 0.
-- Uploads are repeated only when that cannot create a duplicate. Maven, raw, ivy, sbt and Conan files are `PUT`s that overwrite in place. For every other format the destination is first searched by SHA-256: if the earlier attempt did land (only its response was lost) the package counts as uploaded, otherwise it is sent again. An asset whose source reports no SHA-256 cannot be checked, so its failed upload is not retried.
+- Uploads are repeated only when that cannot create a duplicate. Conan, ivy, Maven, raw and sbt files are `PUT`s that overwrite in place. For every other format the destination is first searched by SHA-256: if the earlier attempt did land (only its response was lost) the package counts as uploaded, otherwise it is sent again. An asset whose source reports no SHA-256 cannot be checked, so its failed upload is not retried.
 - The summary counts the retries performed; a failure that exhausted its retries says so in its message.
 
 ## What is preserved
@@ -151,6 +151,6 @@ What the importer relies on, usable by your own tooling:
 
 | Item | Detail |
 |---|---|
-| `X-OA-Import-Created-At: <RFC 3339>` | Accepted on every hosted upload: Maven, raw, ivy and sbt `PUT`; Debian (`POST /api/v1/repositories/REPO/debs`) and RPM (`POST /api/v1/repositories/REPO/packages`); npm publish, PyPI `legacy`, Helm `charts`, NuGet `v3/package`, RubyGems `api/v1/gems`, Cargo `crates/new`, Go `@v/<version>`, Conda and Conan file uploads; and docker manifest `PUT` (stamping the manifest and the tag). Honored only for principals with the `manage` action; for every other authenticated caller (and anonymous ones) it is silently ignored, so it cannot backdate artifacts. From a `manage` principal, a malformed timestamp or one more than one minute in the future is rejected with `400`. |
+| `X-OA-Import-Created-At: <RFC 3339>` | Accepted on every hosted upload: Ivy, Maven, raw and sbt `PUT`; Cargo `crates/new`, Conda and Conan file uploads, Debian (`POST /api/v1/repositories/REPO/debs`), docker manifest `PUT` (stamping the manifest and the tag), Go `@v/<version>`, Helm `charts`, npm publish, NuGet `v3/package`, PyPI `legacy`, RPM (`POST /api/v1/repositories/REPO/packages`) and RubyGems `api/v1/gems`. Honored only for principals with the `manage` action; for every other authenticated caller (and anonymous ones) it is silently ignored, so it cannot backdate artifacts. From a `manage` principal, a malformed timestamp or one more than one minute in the future is rejected with `400`. |
 | Artifact id | Maven `PUT` returns it in the `X-OA-Artifact-Id` response header; Debian and RPM return it as `data.id` in the JSON body, raw as top-level `id`. For the other formats the importer reads it from the response or, when the response has none, from `GET /api/v1/repositories/REPO/packages` (the id used for properties). |
 | Properties | Attached afterwards with `PATCH /api/v1/repositories/REPO/artifacts/ID/properties` (see [properties](../repositories/properties.md)). |

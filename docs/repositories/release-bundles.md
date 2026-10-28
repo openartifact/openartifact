@@ -140,17 +140,17 @@ Artifact bytes are content-addressed and stored once. Promotion adds metadata ro
 
 | Format | What is copied for an item |
 |---|---|
-| maven, ivy, sbt, pypi, nuget, cargo, rubygems, conda, helm, raw | The artifact row (file, coordinates, metadata). |
-| terraform | The module version, or one provider platform zip, as a row that references the same blob. Promote every platform of a provider version: the registry serves a version from the platforms it holds. |
-| npm | The version (with its manifest) and the source dist-tags that point at it; the target package is created if missing, gets a `latest` tag when it has none, and its packument is regenerated. |
-| go | The module version: zip, `go.mod` and `.info`. The item may be the zip or the `go.mod` blob. |
-| conan | The whole recipe revision the file belongs to: recipe files and every binary package revision under it. The copy becomes the newest revision in the target. |
-| docker | The manifest, its config and layer references, the manifest's tags and, for an image index, every child manifest. Blobs the target already holds are not charged again. |
 | apk | The package row; the target directory's `APKINDEX.tar.gz` is regenerated and signed with the target repository's key. |
+| cargo, conda, helm, ivy, maven, nuget, pypi, raw, rubygems, sbt | The artifact row (file, coordinates, metadata). |
+| conan | The whole recipe revision the file belongs to: recipe files and every binary package revision under it. The copy becomes the newest revision in the target. |
 | deb | The package, plus the distribution, component and architecture rows it needs; the Packages/Release indexes are regenerated. |
+| docker | The manifest, its config and layer references, the manifest's tags and, for an image index, every child manifest. Blobs the target already holds are not charged again. |
+| go | The module version: zip, `go.mod` and `.info`. The item may be the zip or the `go.mod` blob. |
+| npm | The version (with its manifest) and the source dist-tags that point at it; the target package is created if missing, gets a `latest` tag when it has none, and its packument is regenerated. |
 | rpm | The package; the repository's metadata is marked stale and regenerated. Signing keys of the source repository are never copied. |
+| terraform | The module version, or one provider platform zip, as a row that references the same blob. Promote every platform of a provider version: the registry serves a version from the platforms it holds. |
 
-Indexes that clients read from the database (maven, pypi, nuget, cargo, rubygems, conda, helm, go, conan, docker) need no regeneration; the formats with generated index files (deb, rpm, maven metadata, npm packuments) are refreshed by their background workers right after the promotion commits.
+Indexes that clients read from the database (cargo, conan, conda, docker, go, helm, maven, nuget, pypi, rubygems) need no regeneration; the formats with generated index files (deb, maven metadata, npm packuments, rpm) are refreshed by their background workers right after the promotion commits.
 
 ### Rules applied in the target
 

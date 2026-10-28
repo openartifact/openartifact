@@ -72,7 +72,7 @@ func (d *Dispatcher) WithBaseURL(baseURL string) *Dispatcher {
 	return d
 }
 
-// WithGroupMetadata enables deb, rpm and pacman groups: gen generates their merged
+// WithGroupMetadata enables deb, pacman and rpm groups: gen generates their merged
 // metadata, stored in blobs.
 func (d *Dispatcher) WithGroupMetadata(blobs storage.BlobStore, gen group.MetadataGenerator) *Dispatcher {
 	d.group.WithMetadata(blobs, gen)

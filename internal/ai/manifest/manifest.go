@@ -60,7 +60,7 @@ var (
 
 // Source describes the artifact to read.
 type Source struct {
-	// Format is the repository format (npm, pypi, maven, ...).
+	// Format is the repository format (maven, npm, pypi, ...).
 	Format string
 	// Filename is the artifact's file name or repository path; its extension
 	// selects the container type.
@@ -113,11 +113,11 @@ func Supported(format, filename string) bool {
 
 // AutoEligible reports whether the file is the artifact that represents a
 // package for unattended analysis. Formats that store several files per
-// package (maven/ivy/sbt: pom, jar, sources, ...) are limited to the
+// package (ivy/maven/sbt: pom, jar, sources, ...) are limited to the
 // descriptor so one upload yields one analysis.
 func AutoEligible(format, filename string) bool {
 	switch format {
-	case "maven", "ivy", "sbt":
+	case "ivy", "maven", "sbt":
 		base := path.Base(filename)
 
 		return strings.HasSuffix(base, ".pom") || base == "ivy.xml"

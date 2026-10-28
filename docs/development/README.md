@@ -203,7 +203,7 @@ The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often ma
 
 ## Adding a format
 
-The registry in `internal/repotype/repotype.go` is the single list of package formats. Add one `Spec` there (its position is the picker order), then run `go test ./...`: the exhaustiveness tests fail once for every place that has no decision for the new format, naming it. Work through them:
+The registry in `internal/repotype/repotype.go` is the single list of package formats. Add one `Spec` there (the registry is alphabetical, and so is the picker order: insert it in place), then run `go test ./...`: the exhaustiveness tests fail once for every place that has no decision for the new format, naming it. Work through them:
 
 1. **Registry:** the `Spec` fields (proxy, group and federation support, default upstream, signing, isolated URL namespace, version rules, Package URL type, OSV ecosystem, package tables) are the only place format facts live. Never add a new `switch` or slice of format names for such a fact.
 2. **Database:** a migration that extends `chk_repo_format` (the latest one is checked by `TestLatestMigrationAcceptsEveryFormat`), and the `internal/api/openapi.json` format enums.

@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Publishing yap packages
 
-[yap](https://github.com/M0Rf30/yap) builds `.deb` and `.rpm` packages (and `.apk` / `.pkg.tar.zst`) from one `PKGBUILD` recipe. It does not host packages or generate repository indexes. OpenArtifact does both: upload the built file and the Debian or RPM repository indexes (`Packages`, `Release`, `repomd.xml`) are regenerated for you, and optionally signed ([Debian](../formats/debian.md), [RPM](../formats/rpm.md)).
+[yap](https://github.com/M0Rf30/yap) builds `.apk`, `.deb`, `.pkg.tar.zst` and `.rpm` packages from one `PKGBUILD` recipe. It does not host packages or generate repository indexes. OpenArtifact does both: upload the built file and the Debian or RPM repository indexes (`Packages`, `Release`, `repomd.xml`) are regenerated for you, and optionally signed ([Debian](../formats/debian.md), [RPM](../formats/rpm.md)).
 
 ## 1. Create the repositories
 

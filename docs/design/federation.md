@@ -12,9 +12,9 @@ Shipped:
 
 - Everything in [Replication](#replication), [Security](#security), [Formats](#formats) (the formats of the table), [Observability](#observability) and [Configuration](#configuration), including the web UI Federation section of the repository's Settings tab and the admin API.
 - Resumable blob pulls, see [Resumable blob transfers](#resumable-blob-transfers).
-- Integration tests with two real server instances and, in CI, with three instances federated in a triangle (raw, npm and Docker) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
+- Integration tests with two real server instances and, in CI, with three instances federated in a triangle (Docker, npm and raw) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
 
-Still open: Debian, RPM, RubyGems, Conda, Conan, Terraform, Ivy and sbt; push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
+Still open: Conan, Conda, Debian, Ivy, RPM, RubyGems, sbt and Terraform; push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
 
 A **federated repository** is a set of *member* repositories, one per OpenArtifact instance, that converge to the same content. Any member accepts writes; changes flow in both directions. The goal is multi-site replication that survives network partitions and the loss of a whole member, without a coordinator and without a single point of failure.
 
@@ -35,7 +35,7 @@ Non-goals (v1):
 - Strong consistency on mutable references. Concurrent moves of one tag converge to one winner; the other write is discarded and counted as a conflict.
 - Replicating proxy caches, group repositories, users, permissions, repository settings, scan results, or quotas. Each member keeps its own.
 - Edge-node / signed release-bundle distribution, see [Legal constraint](#legal-constraint).
-- Debian, RPM, RubyGems, Conda, Conan, Terraform, Ivy and sbt repositories, see [Formats](#formats).
+- Conan, Conda, Debian, Ivy, RPM, RubyGems, sbt and Terraform repositories, see [Formats](#formats).
 
 ## Legal constraint
 
@@ -69,7 +69,7 @@ Replication works on **units**: the smallest piece of repository state that is c
 
 | Kind | What it is | Examples of unit key |
 |---|---|---|
-| `artifact` | A content-addressed object plus its metadata row | raw `path`; maven `repo_path`; npm `@scope/name@1.2.3`; pypi `name/version/filename`; cargo `name@version`; go `module@version`; helm `name@version`; nuget `id@version`; docker manifest `m:<image>@sha256:…` |
+| `artifact` | A content-addressed object plus its metadata row | cargo `name@version`; docker manifest `m:<image>@sha256:…`; go `module@version`; helm `name@version`; maven `repo_path`; npm `@scope/name@1.2.3`; nuget `id@version`; pypi `name/version/filename`; raw `path` |
 | `ref` | A mutable pointer to another unit | npm dist-tag `name#tag`; docker tag `t:<image>:<tag>` |
 
 Blobs are content-addressed (sha256) and immutable, so they never conflict. Everything that can conflict is a unit *row* (which blob a path or tag points to, plus its metadata).
@@ -298,22 +298,22 @@ v1 supports the formats whose state is *immutable blobs plus simple, row-shaped 
 
 | Format | Units | Derived metadata after apply |
 |---|---|---|
-| raw | `path` → blob | none |
+| cargo | crate `name@version` (yank is a column) | sparse index rendered on read |
+| docker / OCI | manifest (with config and layers), tag (`ref`) | none (served from rows) |
+| go | module `module@version` (zip + mod) | `@v/list` rendered on read |
+| helm | chart `name@version` | `index.yaml` rendered on read |
 | maven | one unit per file (`repo_path`) | `maven-metadata.xml`: Maven regen queue |
 | npm | version (tarball + manifest), dist-tag (`ref`) | packument: npm regen queue |
-| docker / OCI | manifest (with config and layers), tag (`ref`) | none (served from rows) |
-| helm | chart `name@version` | `index.yaml` rendered on read |
-| pypi | file `name/version/filename` | simple index rendered on read |
-| cargo | crate `name@version` (yank is a column) | sparse index rendered on read |
-| go | module `module@version` (zip + mod) | `@v/list` rendered on read |
 | nuget | package `id@version` | registration rendered on read |
+| pypi | file `name/version/filename` | simple index rendered on read |
+| raw | `path` → blob | none |
 
 Excluded in v1, with reasons:
 
+- **Conan, Conda, RubyGems**: Conda's `repodata` and RubyGems' marshalled specs are regenerated whole; Conan's recipe/package revisions and checksums form a graph with its own concurrency model. Each needs its own unit design and tests.
 - **Debian and RPM**: repository metadata is *signed* and generated per distribution/component with the instance's own GPG key, merged with group state and tied to per-repo regeneration; replicating packages is easy but replicating or recomputing consistent signed indexes across members is a design of its own (which member signs, key distribution, `InRelease` freshness).
-- **RubyGems, Conda, Conan**: Conda's `repodata` and RubyGems' marshalled specs are regenerated whole; Conan's recipe/package revisions and checksums form a graph with its own concurrency model. Each needs its own unit design and tests.
-- **Terraform/OpenTofu**: module versions and per-platform provider zips are plain content-addressed rows, but provider `SHA256SUMS` signing is computed per request from the repository's signing key, so it needs a decision on which member signs. Not designed yet.
 - **Ivy and sbt**: path files like maven; deferred only to keep the first test matrix small, not for a technical reason.
+- **Terraform/OpenTofu**: module versions and per-platform provider zips are plain content-addressed rows, but provider `SHA256SUMS` signing is computed per request from the repository's signing key, so it needs a decision on which member signs. Not designed yet.
 - **Proxy and group repositories**: not authoritative content.
 
 ## Interaction with other features
@@ -359,7 +359,7 @@ Integration tests (Postgres, two real server instances in one process with two d
 
 7. A blob transfer cut mid-body resumes with a `Range` request: unit tests cover range parsing and serving, a truncated body, a peer that ignores `Range`, and a digest mismatch; an integration test checks the membership check before a range.
 
-In CI the integration job also starts three real server binaries, each with its own database and filesystem storage, federates raw, npm and Docker repositories in a triangle and asserts: content published on each node reaches the others; a delete converges as a tombstone and survives a resync; the same key written on all three while partitioned resolves to the last writer on every node; and a 64 MiB blob whose transfer a proxy aborts twice mid-body arrives intact with `openartifact_federation_resumed_total` above zero and fewer than twice the blob size crossing the link.
+In CI the integration job also starts three real server binaries, each with its own database and filesystem storage, federates Docker, npm and raw repositories in a triangle and asserts: content published on each node reaches the others; a delete converges as a tombstone and survives a resync; the same key written on all three while partitioned resolves to the last writer on every node; and a 64 MiB blob whose transfer a proxy aborts twice mid-body arrives intact with `openartifact_federation_resumed_total` above zero and fewer than twice the blob size crossing the link.
 
 A smoke test with two real binaries and real clients is recorded in the implementation PRs.
 

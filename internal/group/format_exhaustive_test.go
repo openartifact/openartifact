@@ -23,11 +23,11 @@ func TestServeMergedCoversEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "group.serveMerged",
 		[]string{
-			"maven", "pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems", "conan", "terraform", "conda",
-			"deb", "rpm", "pacman", "apk", "nix", "ansible",
+			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget",
+			"pacman", "pypi", "rpm", "rubygems", "terraform",
 		},
 		// docker is served by the OCI path before serveMerged; the others answer from the first member that has the file.
-		[]string{"docker", "raw", "ivy", "sbt"},
+		[]string{"docker", "ivy", "raw", "sbt"},
 	)
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -53,12 +53,12 @@ func TestPackageRefCoversEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "group.packageRef",
 		[]string{
-			"npm", "pypi", "go", "cargo", "nuget", "maven", "helm", "ivy", "sbt", "rubygems", "conan", "conda", "terraform", "ansible",
+			"ansible", "cargo", "conan", "conda", "go", "helm", "ivy", "maven", "npm", "nuget", "pypi", "rubygems", "sbt", "terraform",
 		},
-		// docker has its own reference (ociRef); raw has no versions to hide; deb, rpm, apk and
-		// pacman serve generated indexes and are resolved member by member; nix asks hosted members before proxy ones and has no
+		// docker has its own reference (ociRef); raw has no versions to hide; apk, deb, pacman and
+		// rpm serve generated indexes and are resolved member by member; nix asks hosted members before proxy ones and has no
 		// package names to hide.
-		[]string{"docker", "raw", "deb", "rpm", "apk", "pacman", "nix"},
+		[]string{"apk", "deb", "docker", "nix", "pacman", "raw", "rpm"},
 	)
 
 	packageRequests := map[string]string{
@@ -96,10 +96,10 @@ func TestClassifyDebRPMCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "group.classifyDebRPM",
-		[]string{"deb", "rpm", "pacman"},
+		[]string{"deb", "pacman", "rpm"},
 		[]string{
-			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-			"ivy", "sbt", "terraform", "apk", "nix", "ansible",
+			"ansible", "apk", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"pypi", "raw", "rubygems", "sbt", "terraform",
 		},
 	)
 

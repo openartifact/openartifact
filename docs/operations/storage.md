@@ -190,7 +190,7 @@ One shared hook covers the binary download of every format. Only blobs are redir
 
 | Redirected | Always streamed |
 |---|---|
-| Maven jars, poms and other artifacts; npm tarballs; PyPI files; raw files; Helm charts; OCI/Docker layers and configs; deb `pool/*.deb` and rpm `*.rpm` files; cargo crates; NuGet nupkg; Go module zips; RubyGems gems; conda, conan, apk, ivy and sbt artifacts | `maven-metadata.xml`, checksum and `.asc` files; Docker manifests; deb `Packages`, `Release`, `InRelease`; rpm `repodata`; any other index or metadata response |
+| apk, conan, conda, ivy and sbt artifacts; cargo crates; deb `pool/*.deb` files; OCI/Docker layers and configs; Go module zips; Helm charts; Maven jars, poms and other artifacts; npm tarballs; NuGet nupkg; PyPI files; raw files; rpm `*.rpm` files; RubyGems gems | `maven-metadata.xml`, checksum and `.asc` files; Docker manifests; deb `Packages`, `Release`, `InRelease`; rpm `repodata`; any other index or metadata response |
 
 Further rules:
 
@@ -243,7 +243,7 @@ Addressing follows `forcePathStyle` for the public endpoint too. The AWS SDK fal
 
 ### Client compatibility
 
-Verified here in a smoke test against Garage S3 (server binary, `presignEndpoint` on a different host name than `endpoint`): `curl -L` on a raw file, a Maven jar and a pom, an OCI layer and config blob, and `podman pull` of an image from a Docker repository, which followed the `307` for both the config and the layer blob. Everything else below is expected behaviour from the clients' documented redirect handling and has not been individually verified.
+Verified here in a smoke test against Garage S3 (server binary, `presignEndpoint` on a different host name than `endpoint`): `curl -L` on an OCI layer and config blob, a Maven jar and a pom, and a raw file, and `podman pull` of an image from a Docker repository, which followed the `307` for both the config and the layer blob. Everything else below is expected behaviour from the clients' documented redirect handling and has not been individually verified.
 
 | Client | Status | Notes |
 |---|---|---|
@@ -256,7 +256,7 @@ Verified here in a smoke test against Garage S3 (server binary, `presignEndpoint
 | Helm | expected to work | Go `net/http` strips `Authorization` on cross-domain redirects |
 | apt | expected to work | follows redirects unless `Acquire::http::AllowRedirect=false`; an https endpoint needs `apt-transport-https`, and apt may refuse an https to http redirect |
 | dnf, yum | expected to work | librepo/libcurl follows redirects |
-| cargo, NuGet, `go` (GOPROXY), gem, conda, conan | expected to work | standard HTTP stacks that follow redirects |
+| cargo, conan, conda, gem, `go` (GOPROXY), NuGet | expected to work | standard HTTP stacks that follow redirects |
 | ivy, sbt | caveat | the Java `HttpURLConnection` handler does not follow redirects across protocols; the redirect works only when the scheme stays the same. Set `presign_downloads` to `false` on ivy and sbt repositories unless the object store uses the same scheme as OpenArtifact |
 
 ### Network and CORS requirements

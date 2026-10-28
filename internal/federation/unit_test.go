@@ -442,9 +442,9 @@ func TestRegistryCoversFederationSupportedFormats(t *testing.T) {
 	// Every format repotype advertises has a codec, and every codec's format
 	// is advertised: the repository API and the engine agree.
 	known := []string{
-		"raw", "maven", "npm", "docker", "helm", "pypi", "cargo", "go", "nuget",
+		"cargo", "docker", "go", "helm", "maven", "npm", "nuget", "pypi", "raw",
 		// formats federation does not serve
-		"deb", "rpm", "apt", "yum", "conan", "terraform", "generic", "", "RAW", "unknown",
+		"apt", "conan", "deb", "generic", "rpm", "terraform", "yum", "", "RAW", "unknown",
 	}
 
 	registered := registeredFormats()

@@ -388,7 +388,7 @@ func listedMatcher(f importFormat, p string) (string, func(ciPackage) bool, erro
 	}
 
 	return "", nil, fmt.Errorf(
-		"%w: --path works for raw, maven, ivy, sbt, deb and rpm repositories, not %s (use --from-build)",
+		"%w: --path works for deb, ivy, maven, raw, rpm and sbt repositories, not %s (use --from-build)",
 		errBundlePath,
 		f,
 	)

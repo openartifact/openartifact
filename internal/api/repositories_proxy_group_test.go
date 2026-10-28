@@ -100,7 +100,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget", "ivy", "sbt", "conan", "rubygems", "conda", "terraform"} {
+	for _, format := range []string{"cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "npm", "nuget", "pypi", "raw", "rpm", "rubygems", "sbt", "terraform"} {
 		db := newProxyGroupDB()
 		rw := createRepo(
 			t,
@@ -254,7 +254,7 @@ func TestUploadsAndDeletesToProxyAndGroupAreRefused(t *testing.T) {
 }
 
 func TestCreateRejectsReservedRepoNames(t *testing.T) {
-	for _, name := range []string{"new", "settings", "trash", "raw", "maven", "sbt", "ivy", "New"} {
+	for _, name := range []string{"new", "settings", "trash", "ivy", "maven", "raw", "sbt", "New"} {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, `{"name":"`+name+`","format":"npm"}`)
 

@@ -168,8 +168,8 @@ type Regenerator interface {
 	NotifyPacmanStale(repoID string)
 }
 
-// SetRegenerator wires the metadata workers so a restore regenerates rpm, deb
-// and maven metadata immediately instead of waiting for the next upload.
+// SetRegenerator wires the metadata workers so a restore regenerates deb,
+// maven and rpm metadata immediately instead of waiting for the next upload.
 func (e *Engine) SetRegenerator(r Regenerator) { e.regen = r }
 
 func NewEngine(db database.Database, blobStore storage.BlobStore, log *logger.Logger, backupDir string) *Engine {

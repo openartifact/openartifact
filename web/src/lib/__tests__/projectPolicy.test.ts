@@ -6,7 +6,7 @@ import { describe, it, expect } from 'bun:test'
 import { policyAllowsPublic, policyAllowsType, policyFormats, policyPrefix, type RepoPolicy } from '../projectPolicy'
 import type { FormatId } from '../formats'
 
-const formats = ['npm', 'maven', 'docker'] as FormatId[]
+const formats = ['docker', 'maven', 'npm'] as FormatId[]
 const acme: RepoPolicy = {
   allowed_formats: ['npm'],
   allowed_repo_types: ['hosted'],

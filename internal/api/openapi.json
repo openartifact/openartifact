@@ -589,27 +589,27 @@
           "format": {
             "type": "string",
             "enum": [
-              "deb",
-              "rpm",
-              "maven",
-              "npm",
-              "docker",
-              "helm",
-              "pypi",
-              "nuget",
-              "go",
-              "cargo",
-              "rubygems",
-              "raw",
-              "conda",
-              "conan",
-              "ivy",
-              "sbt",
-              "terraform",
+              "ansible",
               "apk",
-              "pacman",
+              "cargo",
+              "conan",
+              "conda",
+              "deb",
+              "docker",
+              "go",
+              "helm",
+              "ivy",
+              "maven",
               "nix",
-              "ansible"
+              "npm",
+              "nuget",
+              "pacman",
+              "pypi",
+              "raw",
+              "rpm",
+              "rubygems",
+              "sbt",
+              "terraform"
             ],
             "description": "Package format"
           },
@@ -729,7 +729,7 @@
           },
           "federated": {
             "type": "boolean",
-            "description": "True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation."
+            "description": "True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw only. Peers and tokens are managed under /api/v1/repositories/{name}/federation."
           },
           "stats": {
             "$ref": "#/components/schemas/RepositoryStats"
@@ -1196,7 +1196,7 @@
           },
           "filename": {
             "type": "string",
-            "description": "File within the package; empty for the formats with no file name of their own (conda, conan, docker, go)."
+            "description": "File within the package; empty for the formats with no file name of their own (conan, conda, docker, go)."
           },
           "checksum": {
             "type": "string",
@@ -2797,7 +2797,7 @@
           },
           "active_global": {
             "type": "boolean",
-            "description": "Signs every deb, rpm and pacman repository that has no key of its own"
+            "description": "Signs every deb, pacman and rpm repository that has no key of its own"
           },
           "repositories": {
             "type": "array",
@@ -3859,7 +3859,7 @@
           },
           "format": {
             "type": "string",
-            "description": "Format of the repository (npm, pypi, maven, ...)."
+            "description": "Format of the repository (maven, npm, pypi, ...)."
           },
           "package_name": {
             "type": "string"
@@ -4645,7 +4645,7 @@
           },
           "repository_format": {
             "type": "string",
-            "description": "Format of the repository (npm, pypi, maven, ...)."
+            "description": "Format of the repository (maven, npm, pypi, ...)."
           },
           "artifact_id": {
             "type": "string"
@@ -6228,7 +6228,7 @@
           },
           "supported": {
             "type": "boolean",
-            "description": "Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server."
+            "description": "Federation can be turned on for the repository: it is hosted, of a federation-capable format (cargo, docker, go, helm, maven, npm, nuget, pypi, raw), and federation is enabled on the server."
           },
           "server_enabled": {
             "type": "boolean",
@@ -7598,27 +7598,27 @@
             "schema": {
               "type": "string",
               "enum": [
-                "deb",
-                "rpm",
-                "maven",
-                "npm",
-                "docker",
-                "helm",
-                "pypi",
-                "nuget",
-                "go",
-                "cargo",
-                "rubygems",
-                "raw",
-                "conda",
-                "conan",
-                "ivy",
-                "sbt",
-                "terraform",
+                "ansible",
                 "apk",
-                "pacman",
+                "cargo",
+                "conan",
+                "conda",
+                "deb",
+                "docker",
+                "go",
+                "helm",
+                "ivy",
+                "maven",
                 "nix",
-                "ansible"
+                "npm",
+                "nuget",
+                "pacman",
+                "pypi",
+                "raw",
+                "rpm",
+                "rubygems",
+                "sbt",
+                "terraform"
               ]
             }
           },
@@ -7780,27 +7780,27 @@
                   "format": {
                     "type": "string",
                     "enum": [
-                      "deb",
-                      "rpm",
-                      "maven",
-                      "npm",
-                      "docker",
-                      "helm",
-                      "pypi",
-                      "nuget",
-                      "go",
-                      "cargo",
-                      "rubygems",
-                      "raw",
-                      "conda",
-                      "conan",
-                      "ivy",
-                      "sbt",
-                      "terraform",
+                      "ansible",
                       "apk",
-                      "pacman",
+                      "cargo",
+                      "conan",
+                      "conda",
+                      "deb",
+                      "docker",
+                      "go",
+                      "helm",
+                      "ivy",
+                      "maven",
                       "nix",
-                      "ansible"
+                      "npm",
+                      "nuget",
+                      "pacman",
+                      "pypi",
+                      "raw",
+                      "rpm",
+                      "rubygems",
+                      "sbt",
+                      "terraform"
                     ]
                   },
                   "description": {
@@ -7811,7 +7811,7 @@
                   },
                   "repo_type": {
                     "type": "string",
-                    "description": "hosted (default), proxy or group. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, apk, pacman, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw; group repositories for maven, sbt, ivy, deb, rpm, apk, pacman, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw (deb, rpm and apk groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.",
+                    "description": "hosted (default), proxy or group. Proxy repositories are supported for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform; group repositories for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform (apk, deb and rpm groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.",
                     "enum": [
                       "hosted",
                       "proxy",
@@ -7820,7 +7820,7 @@
                   },
                   "upstream_url": {
                     "type": "string",
-                    "description": "Required for proxy repos, except docker (defaults to https://registry-1.docker.io), nuget (defaults to the service index https://api.nuget.org/v3/index.json), pypi (defaults to https://pypi.org/simple) cargo (defaults to https://index.crates.io) and go (defaults to https://proxy.golang.org). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
+                    "description": "Required for proxy repos, except cargo (defaults to https://index.crates.io), docker (defaults to https://registry-1.docker.io), go (defaults to https://proxy.golang.org), nuget (defaults to the service index https://api.nuget.org/v3/index.json) and pypi (defaults to https://pypi.org/simple). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
                   },
                   "upstream_username": {
                     "type": "string"
@@ -7876,7 +7876,7 @@
                   },
                   "federated": {
                     "type": "boolean",
-                    "description": "Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true)."
+                    "description": "Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true)."
                   }
                 },
                 "required": [
@@ -12471,7 +12471,7 @@
           {
             "name": "checksum",
             "in": "query",
-            "description": "Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.",
+            "description": "Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.",
             "schema": {
               "type": "string"
             }
@@ -16960,7 +16960,7 @@
     "/api/v1/admin/gpg/keys/{id}/activate": {
       "put": {
         "summary": "Activate GPG key",
-        "description": "Makes the key sign every deb, rpm and pacman repository without a key of its own (global scope), or only the named hosted deb, rpm or pacman repository when `repository` is given. Affected repositories are re-signed (admin only).",
+        "description": "Makes the key sign every deb, pacman and rpm repository without a key of its own (global scope), or only the named hosted deb, pacman or rpm repository when `repository` is given. Affected repositories are re-signed (admin only).",
         "tags": [
           "Admin",
           "GPG"
@@ -17004,7 +17004,7 @@
             }
           },
           "400": {
-            "description": "Repository is not a hosted deb, rpm or pacman repository"
+            "description": "Repository is not a hosted deb, pacman or rpm repository"
           },
           "403": {
             "description": "Admin access required"
@@ -17895,7 +17895,7 @@
                   },
                   "federated": {
                     "type": "boolean",
-                    "description": "Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true)."
+                    "description": "Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true)."
                   }
                 }
               }
@@ -23934,7 +23934,7 @@
     "/api/v1/repositories/{name}/packages/{id}": {
       "get": {
         "summary": "Get a package version",
-        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.",
+        "description": "One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for cargo, conda, deb (Depends, Pre-Depends), go (go.mod require directives), npm (dependencies, devDependencies, peerDependencies, optionalDependencies), nuget (kind is the target framework), rpm (requires) and rubygems; the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for conan, docker, helm, maven and pypi there are no declared dependencies, and docker layers or the image config are not part of the response.",
         "tags": [
           "Repositories",
           "Packages"
@@ -24159,7 +24159,7 @@
     "/api/v1/repositories/{name}/packages/{id}/delta": {
       "get": {
         "summary": "Download a binary delta",
-        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to rpm and deb packages. Requires read access.",
+        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to deb and rpm packages. Requires read access.",
         "tags": [
           "Repositories"
         ],

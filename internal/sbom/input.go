@@ -30,7 +30,7 @@ type Dep struct {
 // from: the artifact identity, its stored properties, the latest license and
 // vulnerability scans and the admin VEX decisions.
 type Input struct {
-	Format     string // repository format ("npm", "maven", ...)
+	Format     string // repository format ("maven", "npm", ...)
 	ArtifactID string
 	Name       string
 	Version    string

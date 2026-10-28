@@ -130,7 +130,7 @@ func (h *BundlesHandler) WithPublisher(p webhook.Publisher) *BundlesHandler {
 	return h
 }
 
-// WithRegenerator enqueues the refresh of generated metadata (deb, rpm and npm
+// WithRegenerator enqueues the refresh of generated metadata (deb, npm and rpm
 // indexes) in the target repository after a promotion.
 func (h *BundlesHandler) WithRegenerator(r TrashRegenerator) *BundlesHandler {
 	h.promoter = promote.NewEngine(h.db, h.log, r)

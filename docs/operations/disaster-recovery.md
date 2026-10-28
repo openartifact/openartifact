@@ -90,7 +90,7 @@ curl -fsS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer <TOKEN>" HO
 oa trash list --repo releases                                   # the item left the trash
 ```
 
-Generated indexes (npm packuments, Maven metadata, Debian `Packages`, RPM repodata, Helm `index.yaml`) are rebuilt on restore; request one and check it lists the version.
+Generated indexes (Debian `Packages`, Helm `index.yaml`, Maven metadata, npm packuments, RPM repodata) are rebuilt on restore; request one and check it lists the version.
 
 | | RPO | RTO |
 |---|---|---|
@@ -178,7 +178,7 @@ for f in <KNOWN FILE 1> <KNOWN FILE 2>; do       # a known artifact per importan
 done
 ```
 
-Then use the native client of each format that matters: `npm view <package> versions`, `mvn dependency:get`, `apt-get update`, `docker pull`. Served metadata (packument, `maven-metadata.xml`, `Packages`) is regenerated from the rows, so it must list the same versions as before; compare against a saved copy if you have one. Check the application log for `restore completed` (backup) or the rebuild report (rebuild), and the [Prometheus metrics](monitoring.md) for rising error rates.
+Then use the native client of each format that matters: `apt-get update`, `docker pull`, `mvn dependency:get`, `npm view <package> versions`. Served metadata (`Packages`, `maven-metadata.xml`, packument) is regenerated from the rows, so it must list the same versions as before; compare against a saved copy if you have one. Check the application log for `restore completed` (backup) or the rebuild report (rebuild), and the [Prometheus metrics](monitoring.md) for rising error rates.
 
 ## The blob store is lost or damaged
 
@@ -255,5 +255,5 @@ Recovery procedures that have never run do not work. Quarterly, and after any ch
 |---|---|
 | WAL archiving, base backup and point-in-time recovery of the OpenArtifact database bring back repositories, rows written after the base backup, and tokens, and the artifacts download with their original checksum | `scripts/pitr-smoke.sh` ([postgres-pitr.md](postgres-pitr.md#how-this-was-tested)) |
 | A deleted repository is restored from the trash with its content | `TestTrashPolicies_RepositoryDeleteConfirmationAndTrash`, `TestTrashRepositoryHidesAndRestores` |
-| Rebuilding from the blob store after the database was wiped brings repositories and packages back for every covered format, and the served npm packument, Maven metadata and Debian `Packages` match the pre-wipe output | the integration tests of [rebuild from storage](rebuild-from-storage.md) |
+| Rebuilding from the blob store after the database was wiped brings repositories and packages back for every covered format, and the served Debian `Packages`, Maven metadata and npm packument match the pre-wipe output | the integration tests of [rebuild from storage](rebuild-from-storage.md) |
 | An upload reaches the replica, a missing primary blob is served from the replica and repaired by verification, and a failed copy is retried | the integration tests of [replication](replication.md) |

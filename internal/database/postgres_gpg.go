@@ -286,7 +286,7 @@ func (p *PostgresDB) ListRepositoriesForGPGKey(ctx context.Context, keyID string
 	return out, nil
 }
 
-// ListSigningRepositoriesWithoutKey returns the hosted deb, rpm and pacman repositories
+// ListSigningRepositoriesWithoutKey returns the hosted deb, pacman and rpm repositories
 // that have no key of their own, i.e. follow the global key.
 func (p *PostgresDB) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error) {
 	rows, err := p.q.ListSigningRepositoriesWithoutKey(ctx)

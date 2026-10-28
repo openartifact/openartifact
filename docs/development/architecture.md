@@ -15,7 +15,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `cmd/server` | HTTP server entrypoint: route wiring, startup/shutdown, bootstrap admin |
 | `cmd/oa` | CLI client |
 | `cmd/resetpw` | Admin password reset tool |
-| `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,rpm,npm,maven}.go`), `openapi.json` |
+| `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,maven,npm,rpm}.go`), `openapi.json` |
 | `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{name}/...`, `/v2/...`); `base` holds the shared handler plumbing, `filerepo` the one handler behind ivy and sbt, `formattest` test helpers |
 | `internal/middleware` | Security headers, recovery, request ID, tracing, metrics, logging, CORS, IP allowlist, rate limit, RBAC, CSRF, audit |
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
@@ -36,7 +36,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/urlparams` | `Vars(r)`: chi URL parameters as a map |
 | `internal/{backup,webhook,search,vuln,sbom,license,secrets,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM encryption of stored secrets (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers and helpers: `deb`, `rpm`, `npm`, `nuget`, `conan`, `apk`, `maven`, `helm`, `rubymarshal`, `compactindex`, `gpg`, `delta`, `errors`, `logger` |
+| `pkg/*` | Format parsers and helpers: `apk`, `conan`, `deb`, `helm`, `maven`, `npm`, `nuget`, `rpm`, `rubymarshal`, `compactindex`, `gpg`, `delta`, `errors`, `logger` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TypeScript + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go handler tests (many need `-tags=integration`); `tests/integration/` uses testcontainers |
@@ -75,10 +75,10 @@ RBAC is the authorization gate: `/api/v1/*` maps to the `manage` action, `/repos
 Every repo-scoped format handler registers **relative** routes on the single `/repos/{name}` subrouter in `cmd/server/main.go` (`RegisterRepoRoutes(r)`). Never register an absolute `/repos/{name}/...` route on `authedAPI`: the subrouter mount shadows it (404) or the route hijacks the subrouter.
 
 - Routes that need the same pattern are dispatched explicitly. `PUT /*` is shared by npm publish and GOPROXY upload: the catch-all calls `gomodHTTP.HandlePut` when `formatgomod.IsUploadPath` matches the tail, `npmUpload.HandlePublish` otherwise.
-- Formats whose wildcard paths would shadow others are mounted on isolated prefixes: `/repos/raw/{name}`, `/repos/maven/{name}`, `/repos/sbt/{name}`, `/repos/ivy/{name}`. All `/repos/...` mounts sit behind `repodispatch`. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, pacman, docker, npm, pypi, cargo, go, helm, nuget, conan, rubygems, conda, terraform and raw; groups for maven, sbt, ivy, deb, rpm, pacman, docker, npm, pypi, cargo, go, helm, nuget, conan, rubygems, conda, terraform and raw (`internal/repotype`). Docker proxies and groups are not served under `/repos/{name}`: `repodispatch.OCIMiddleware` sits in front of the `/v2` routes and hands them to `proxy.ServeOCI` / `group.ServeOCI` (bearer-token handling in `internal/proxy/oci_auth.go`).
+- Formats whose wildcard paths would shadow others are mounted on isolated prefixes: `/repos/ivy/{name}`, `/repos/maven/{name}`, `/repos/raw/{name}`, `/repos/sbt/{name}`. All `/repos/...` mounts sit behind `repodispatch`. Proxy repositories are supported for cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform; groups for cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform (`internal/repotype`). Docker proxies and groups are not served under `/repos/{name}`: `repodispatch.OCIMiddleware` sits in front of the `/v2` routes and hands them to `proxy.ServeOCI` / `group.ServeOCI` (bearer-token handling in `internal/proxy/oci_auth.go`).
 - The Terraform/OpenTofu registry needs two routes outside RBAC on the bare router: the service discovery document (`/.well-known/terraform.json`) and the ticket download route, because the clients send no credentials to download URLs ([terraform](../formats/terraform.md#download-tickets)). Everything else, including the publish API (`/_api/...`), is on the `/repos/{name}` subrouter. The ticket route stays in the hosted handler for proxy repositories too: a ticket whose repository is a proxy is handed to `proxy.Service.ServeTerraformDownload` (`terraform.ProxyServer`), which fetches the file from its upstream host on first use; the tickets are minted by `terraform.Minter` with the same HMAC key.
 - The Ansible Galaxy API v3 is served by `internal/format/ansible` on the `/repos/{name}` subrouter under `/api/` (hosted); proxy and group repositories are `internal/proxy/ansible.go` and `internal/group/ansible.go`.
-- Group repositories read hosted members through in-memory routers of the same Maven, npm, PyPI, cargo, Go, Helm, NuGet, Conan, RubyGems, conda, Terraform and raw handlers.
+- Group repositories read hosted members through in-memory routers of the same cargo, Conan, conda, Go, Helm, Maven, npm, NuGet, PyPI, raw, RubyGems and Terraform handlers.
 - `cmd/server/routes_test.go` guards the registration order against chi `Mount()` panics.
 
 ## Storage and database
@@ -94,7 +94,7 @@ Started by the `app` in `cmd/server` (`app.go` is the startup/shutdown sequence,
 
 | Worker | Role |
 |---|---|
-| RPM / Deb / Maven / npm metadata | Regenerate per-format repository metadata after uploads and deletes |
+| Deb / Maven / npm / RPM metadata | Regenerate per-format repository metadata after uploads and deletes |
 | Proxy cache | Evicts expired proxy cache entries (and their blobs once unreferenced), honoring each repository's max-stale window |
 | Cleanup | Applies cleanup policies and reclaims blobs no package row references any more |
 | Docker registry GC | Deletes untagged Docker manifests past a grace period and the blobs only they referenced ([details](../formats/docker.md#garbage-collection)) |

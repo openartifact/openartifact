@@ -8,7 +8,7 @@
 // gemspec, a .pom or an ivy.xml).
 //
 // Upload requests carry their own claims about a package (twine's form fields,
-// npm's publish JSON, cargo's publish metadata); a client that cannot or will
+// cargo's publish metadata, npm's publish JSON); a client that cannot or will
 // not send them (curl, minimal tools, imports) or that lies in them would
 // otherwise decide what license policies see. The artifact is the source of
 // truth, request fields are only a fallback for what the artifact does not say.
@@ -71,14 +71,14 @@ func (r Result) Empty() bool { return len(r.Licenses) == 0 }
 // Supported reports whether licenses can be read from a file of this format.
 func Supported(format, filename string) bool {
 	switch format {
-	case "pypi", "npm", "cargo", "nuget":
+	case "cargo", "npm", "nuget", "pypi":
 		return manifest.Supported(format, filename)
+	case "ivy":
+		return isIvyDescriptor(filename)
 	case "maven", "sbt":
 		return manifest.Supported("maven", filename) && !strings.HasSuffix(strings.ToLower(filename), ".xml")
 	case "rubygems":
 		return manifest.Supported(format, filename)
-	case "ivy":
-		return isIvyDescriptor(filename)
 	}
 
 	return false
@@ -94,12 +94,12 @@ func Supported(format, filename string) bool {
 // Expected holds is also Supported.
 func Expected(format, filename string) bool {
 	switch format {
-	case "pypi", "npm", "cargo", "nuget":
+	case "cargo", "npm", "nuget", "pypi":
 		return true
+	case "ivy", "rubygems":
+		return Supported(format, filename)
 	case "maven", "sbt":
 		return strings.HasSuffix(strings.ToLower(filename), ".pom")
-	case "rubygems", "ivy":
-		return Supported(format, filename)
 	}
 
 	return false
@@ -119,7 +119,7 @@ func Read(ctx context.Context, format, filename string, open func() (io.ReadClos
 	}
 
 	limit := int64(memberLimit)
-	if format == "maven" || format == "sbt" || format == "ivy" {
+	if format == "ivy" || format == "maven" || format == "sbt" {
 		limit = pkgmaven.MaxPOMBytes
 	}
 

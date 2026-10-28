@@ -44,7 +44,7 @@ func Classified(tb testing.TB, site string, handled, ignored []string) []string 
 	return handled
 }
 
-// Specs returns every registered Spec in display order.
+// Specs returns every registered Spec in display (alphabetical) order.
 func Specs() []repotype.Spec {
 	names := repotype.Names()
 	specs := make([]repotype.Spec, len(names))

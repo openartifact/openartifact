@@ -282,8 +282,8 @@ describe('clientSetup', () => {
     expect(clientSetup('npm', origin, 'r1').map((c) => c.client)).toEqual(['npm', 'pnpm', 'yarn'])
   })
 
-  it('uses the isolated prefix for maven, sbt, ivy and raw', () => {
-    for (const f of ['maven', 'sbt', 'ivy', 'raw']) {
+  it('uses the isolated prefix for ivy, maven, raw and sbt', () => {
+    for (const f of ['ivy', 'maven', 'raw', 'sbt']) {
       const text = clientSetup(f, origin, 'r1')
         .map((c) => c.configure + (c.publish ?? ''))
         .join('\n')
@@ -301,7 +301,7 @@ describe('clientSetup', () => {
   })
 
   it('uses /repos/{name} for other formats and never embeds real credentials', () => {
-    for (const f of ['pypi', 'helm', 'cargo', 'go', 'nuget', 'deb', 'rpm', 'conda']) {
+    for (const f of ['cargo', 'conda', 'deb', 'go', 'helm', 'nuget', 'pypi', 'rpm']) {
       const text = clientSetup(f, origin, 'r1').map((c) => c.configure).join('\n')
       expect(text).toContain(`${origin}/repos/r1`)
     }

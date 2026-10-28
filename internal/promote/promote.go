@@ -139,7 +139,7 @@ const (
 // Regen is one metadata refresh to enqueue once the promotion has committed.
 type Regen struct {
 	Kind RegenKind
-	// RepoID is the destination repository (deb, rpm, maven).
+	// RepoID is the destination repository (deb, maven, rpm).
 	RepoID string
 	// GroupID and ArtifactID name the maven artifact.
 	GroupID, ArtifactID string

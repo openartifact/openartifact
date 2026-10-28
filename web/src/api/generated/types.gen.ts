@@ -206,7 +206,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk' | 'pacman' | 'nix' | 'ansible';
+    format: 'ansible' | 'apk' | 'cargo' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
     /**
      * Repository description
      */
@@ -299,7 +299,7 @@ export type Repository = {
      */
     sign_packages?: boolean;
     /**
-     * True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation.
+     * True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw only. Peers and tokens are managed under /api/v1/repositories/{name}/federation.
      */
     federated?: boolean;
     stats?: RepositoryStats;
@@ -502,7 +502,7 @@ export type ChecksumHit = {
     name: string;
     version: string;
     /**
-     * File within the package; empty for the formats with no file name of their own (conda, conan, docker, go).
+     * File within the package; empty for the formats with no file name of their own (conan, conda, docker, go).
      */
     filename: string;
     /**
@@ -1203,7 +1203,7 @@ export type GpgKey = {
     source?: 'imported' | 'generated' | 'auto' | 'config';
     read_only?: boolean;
     /**
-     * Signs every deb, rpm and pacman repository that has no key of its own
+     * Signs every deb, pacman and rpm repository that has no key of its own
      */
     active_global?: boolean;
     /**
@@ -1700,7 +1700,7 @@ export type SecurityFinding = {
      */
     repository: string;
     /**
-     * Format of the repository (npm, pypi, maven, ...).
+     * Format of the repository (maven, npm, pypi, ...).
      */
     format: string;
     package_name: string;
@@ -2073,7 +2073,7 @@ export type VulnScanOverviewRow = {
     repo_id?: string;
     repository_name?: string;
     /**
-     * Format of the repository (npm, pypi, maven, ...).
+     * Format of the repository (maven, npm, pypi, ...).
      */
     repository_format?: string;
     artifact_id?: string;
@@ -2768,7 +2768,7 @@ export type FederationStatus = {
      */
     enabled: boolean;
     /**
-     * Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server.
+     * Federation can be turned on for the repository: it is hosted, of a federation-capable format (cargo, docker, go, helm, maven, npm, nuget, pypi, raw), and federation is enabled on the server.
      */
     supported: boolean;
     /**
@@ -3634,7 +3634,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk' | 'pacman' | 'nix' | 'ansible';
+        format?: 'ansible' | 'apk' | 'cargo' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
         /**
          * Page number (default: 1)
          */
@@ -3708,15 +3708,15 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 alphanumeric/hyphen/underscore)
          */
         name: string;
-        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt' | 'terraform' | 'apk' | 'pacman' | 'nix' | 'ansible';
+        format: 'ansible' | 'apk' | 'cargo' | 'conan' | 'conda' | 'deb' | 'docker' | 'go' | 'helm' | 'ivy' | 'maven' | 'nix' | 'npm' | 'nuget' | 'pacman' | 'pypi' | 'raw' | 'rpm' | 'rubygems' | 'sbt' | 'terraform';
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, apk, pacman, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw; group repositories for maven, sbt, ivy, deb, rpm, apk, pacman, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw (deb, rpm and apk groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Proxy repositories are supported for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform; group repositories for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform (apk, deb and rpm groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
-         * Required for proxy repos, except docker (defaults to https://registry-1.docker.io), nuget (defaults to the service index https://api.nuget.org/v3/index.json), pypi (defaults to https://pypi.org/simple) cargo (defaults to https://index.crates.io) and go (defaults to https://proxy.golang.org). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
+         * Required for proxy repos, except cargo (defaults to https://index.crates.io), docker (defaults to https://registry-1.docker.io), go (defaults to https://proxy.golang.org), nuget (defaults to the service index https://api.nuget.org/v3/index.json) and pypi (defaults to https://pypi.org/simple). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
          */
         upstream_url?: string;
         upstream_username?: string;
@@ -3757,7 +3757,7 @@ export type PostApiV1RepositoriesData = {
          */
         sign_packages?: boolean;
         /**
-         * Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true).
+         * Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true).
          */
         federated?: boolean;
     };
@@ -6268,7 +6268,7 @@ export type GetApiV1SearchData = {
          */
         flagged?: boolean;
         /**
-         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
+         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
          */
         checksum?: string;
     };
@@ -9137,7 +9137,7 @@ export type PutApiV1AdminGpgKeysByIdActivateData = {
 
 export type PutApiV1AdminGpgKeysByIdActivateErrors = {
     /**
-     * Repository is not a hosted deb, rpm or pacman repository
+     * Repository is not a hosted deb, pacman or rpm repository
      */
     400: unknown;
     /**
@@ -9662,7 +9662,7 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
          */
         sign_packages?: boolean;
         /**
-         * Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true).
+         * Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true).
          */
         federated?: boolean;
     };

@@ -14,7 +14,7 @@
   "federation.serverOff.title": "La fédération est désactivée sur ce serveur",
   "federation.serverOff.hint": "Un administrateur l'active avec federation.enabled (OPENARTIFACT_FEDERATION_ENABLED) dans la configuration du serveur, puis redémarre le serveur.",
   "federation.unsupported.title": "La fédération n'est pas disponible pour ce dépôt",
-  "federation.unsupported.hint": "Seuls les dépôts hébergés aux formats raw, maven, npm, docker, helm, pypi, cargo, go et nuget peuvent être fédérés. Les dépôts proxy et de groupe ne le peuvent pas.",
+  "federation.unsupported.hint": "Seuls les dépôts hébergés aux formats cargo, docker, go, helm, maven, npm, nuget, pypi et raw peuvent être fédérés. Les dépôts proxy et de groupe ne le peuvent pas.",
   "federation.disableTitle": "Désactiver la fédération ?",
   "federation.disableBody": "Le journal des modifications et tous les pairs de ce dépôt sont supprimés. Le contenu déjà synchronisé est conservé. Réactiver la fédération démarre un nouveau journal, et les pairs doivent être ajoutés de nouveau.",
   "federation.disableConfirm": "Désactiver",

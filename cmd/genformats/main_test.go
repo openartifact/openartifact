@@ -27,10 +27,10 @@ func TestRenderCoversPolicy(t *testing.T) {
 	out := string(render())
 
 	for _, want := range []string{
-		"export const FORMAT_IDS = ['docker', 'npm',",
+		"export const FORMAT_IDS = ['ansible', 'apk',",
 		"export type FormatId = (typeof FORMAT_IDS)[number]",
-		"export const FEDERATION_FORMATS: readonly FormatId[] = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'nuget', 'go', 'raw']",
-		"export const ISOLATED_FORMATS: readonly FormatId[] = ['maven', 'raw', 'ivy', 'sbt']",
+		"export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']",
+		"export const ISOLATED_FORMATS: readonly FormatId[] = ['ivy', 'maven', 'raw', 'sbt']",
 		"  docker: 'https://registry-1.docker.io',",
 	} {
 		if !strings.Contains(out, want) {

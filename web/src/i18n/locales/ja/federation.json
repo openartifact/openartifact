@@ -14,7 +14,7 @@
   "federation.serverOff.title": "このサーバーではフェデレーションが無効です",
   "federation.serverOff.hint": "管理者がサーバー設定で federation.enabled(OPENARTIFACT_FEDERATION_ENABLED)を有効にし、サーバーを再起動してください。",
   "federation.unsupported.title": "このリポジトリではフェデレーションを利用できません",
-  "federation.unsupported.hint": "フェデレーションできるのは、raw、maven、npm、docker、helm、pypi、cargo、go、nuget フォーマットのホスト型リポジトリのみです。プロキシおよびグループのリポジトリはできません。",
+  "federation.unsupported.hint": "フェデレーションできるのは、cargo、docker、go、helm、maven、npm、nuget、pypi、raw フォーマットのホスト型リポジトリのみです。プロキシおよびグループのリポジトリはできません。",
   "federation.disableTitle": "フェデレーションを無効にしますか?",
   "federation.disableBody": "このリポジトリの変更ログとすべてのピアが削除されます。同期済みのコンテンツは残ります。フェデレーションを再度有効にすると新しいログが開始され、ピアを追加し直す必要があります。",
   "federation.disableConfirm": "無効にする",

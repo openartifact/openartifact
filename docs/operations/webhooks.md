@@ -15,7 +15,7 @@ A webhook is either global (fires for events in every repository) or scoped to o
 | Event | Fired when |
 |---|---|
 | `artifact.uploaded` | an artifact is published to a repository, in every format. Proxy cache fills do not fire it |
-| `artifact.deleted` | an artifact is deleted, in every format except Go modules and Cargo, which do not emit it. It fires for both soft deletes (moved to the [trash](trash.md)) and permanent deletes |
+| `artifact.deleted` | an artifact is deleted, in every format except Cargo and Go modules, which do not emit it. It fires for both soft deletes (moved to the [trash](trash.md)) and permanent deletes |
 | `artifact.restored` | an artifact is restored from the trash |
 | `artifact.purged` | a trashed artifact is removed for good, by an admin or by the retention purge worker |
 | `repository.created` | a repository is created |

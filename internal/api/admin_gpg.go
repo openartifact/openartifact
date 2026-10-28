@@ -380,7 +380,7 @@ func boolString(b bool) string {
 }
 
 // signingRepo resolves the optional repository name of an activation to a
-// hosted deb, rpm, pacman or terraform repository; nil, true for the global scope.
+// hosted deb, pacman, rpm or terraform repository; nil, true for the global scope.
 func (h *AdminGPGHandler) signingRepo(w http.ResponseWriter, r *http.Request, name string) (*models.GPGSigningRepo, bool) {
 	if name == "" {
 		return nil, true

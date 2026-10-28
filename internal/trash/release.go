@@ -21,13 +21,13 @@ var pep440Marker = regexp.MustCompile(`(?i)[._-]?(post|rev|r)[._-]?\d*`)
 // pre-releases stay mutable so CI keeps overwriting them. The rule follows the
 // format's repotype.Versioning:
 //
-//	VersionMaven      (maven, ivy, sbt) not a *-SNAPSHOT version
-//	VersionSemver     (npm, nuget, cargo, helm, go, terraform) no semver
+//	VersionMaven      (ivy, maven, sbt) not a *-SNAPSHOT version
+//	VersionSemver     (cargo, go, helm, npm, nuget, terraform) no semver
 //	                  pre-release part ("-rc.1"); Go pseudo-versions
 //	                  (v0.0.0-2024...-abcdef) therefore count as pre-releases
 //	VersionPEP440     (pypi) no PEP 440 a/b/rc/dev segment
 //	VersionGem        (rubygems) no letter in the version (Gem::Version#prerelease?)
-//	VersionOpaque     (raw, deb, rpm, pacman, conda, conan, docker, apk) has no
+//	VersionOpaque     (apk, conan, conda, deb, docker, pacman, raw, rpm) has no
 //	                  snapshot concept: every version is a release
 func IsRelease(format, version string) bool {
 	spec, _ := repotype.Lookup(strings.ToLower(format))

@@ -47,7 +47,7 @@ Repository settings live on the repository; the **Settings** area is only about 
 
 ## The artifact page
 
-One page for every format: `/repos/REPO/packages/NAME` for the latest version and `/repos/REPO/packages/NAME/versions/VERSION` for a specific one. Names may contain slashes (npm scopes, Docker image paths, Go modules), they stay readable in the path. The version switcher keeps the current tab. Tabs, selected with `?tab=`:
+One page for every format: `/repos/REPO/packages/NAME` for the latest version and `/repos/REPO/packages/NAME/versions/VERSION` for a specific one. Names may contain slashes (Docker image paths, Go modules, npm scopes), they stay readable in the path. The version switcher keeps the current tab. Tabs, selected with `?tab=`:
 
 | Tab | Content |
 |---|---|

@@ -42,7 +42,7 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 
 - `POST` returns at once with `scan_status: "scanning"`; the scan runs in the background (120 s limit). Poll `GET …/vuln/scans/{id}` until the status is `completed`, `partial` or `failed`. At most 4 scans run at a time per server; further requests get 429 `too_many_scans` with `Retry-After: 10`.
 - A result carries `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count`, `low_count`, the `scanner` that ran (several are stored sorted and comma-joined, for example `osv,trivy`) and `failed_scanners`.
-- `ecosystem` uses these names: `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, `deb`, `rpm`, `helm` (OSV); the other backends support a subset: Trivy `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, and `deb` and `rpm` for known Debian, Ubuntu, RHEL and Amazon Linux releases; Grype `npm`, `pypi`, `maven`, `cargo`, `rubygems`, `nuget`, `go`, and `deb` and `rpm` once the distribution release is known ([below](#debian-and-rpm-packages)). Both scan the one package you name, not its dependencies: Trivy is given a generated lockfile that pins it (`package-lock.json`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json`, or `requirements.txt`, `go.mod`, `pom.xml`), Grype a Package URL (`pkg:npm/%40angular/core@8.0.0`). Trivy scans `deb` and `rpm` packages from a generated SBOM once the release is known and is Debian, Ubuntu, RHEL or Amazon Linux ([below](#debian-and-rpm-packages)).
+- `ecosystem` uses these names: `cargo`, `deb`, `go`, `helm`, `maven`, `npm`, `nuget`, `pypi`, `rpm`, `rubygems` (OSV); the other backends support a subset: Trivy `cargo`, `go`, `maven`, `npm`, `nuget`, `pypi`, `rubygems`, and `deb` and `rpm` for known Debian, Ubuntu, RHEL and Amazon Linux releases; Grype `cargo`, `go`, `maven`, `npm`, `nuget`, `pypi`, `rubygems`, and `deb` and `rpm` once the distribution release is known ([below](#debian-and-rpm-packages)). Both scan the one package you name, not its dependencies: Trivy is given a generated lockfile that pins it (`package-lock.json`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json`, or `requirements.txt`, `go.mod`, `pom.xml`), Grype a Package URL (`pkg:npm/%40angular/core@8.0.0`). Trivy scans `deb` and `rpm` packages from a generated SBOM once the release is known and is Debian, Ubuntu, RHEL or Amazon Linux ([below](#debian-and-rpm-packages)).
 - `osv` needs outbound HTTPS to `api.osv.dev` and nothing else, unless the [local OSV mirror](#local-osv-mirror) is enabled and populated. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
 
 ### Exploitation signals
@@ -150,12 +150,12 @@ or `OPENARTIFACT_OSV_MIRROR_ENABLED=true`. The first import downloads every enab
 
 ### Air-gapped installs
 
-Point `baseUrl` at an internal HTTP(S) server that serves the same layout as the public bucket: one `all.zip` per ecosystem under `<Ecosystem>/`, using the OSV ecosystem names as directory names (`npm`, `PyPI`, `Maven`, `crates.io`, `RubyGems`, `NuGet`, `Go`). Any static file server works; it should send `ETag` or `Last-Modified` so unchanged files are not downloaded again.
+Point `baseUrl` at an internal HTTP(S) server that serves the same layout as the public bucket: one `all.zip` per ecosystem under `<Ecosystem>/`, using the OSV ecosystem names as directory names (`crates.io`, `Go`, `Maven`, `npm`, `NuGet`, `PyPI`, `RubyGems`). Any static file server works; it should send `ETag` or `Last-Modified` so unchanged files are not downloaded again.
 
 Build the copy on a connected host and move it across, then repeat on whatever schedule you want updates:
 
 ```sh
-for eco in npm PyPI Maven crates.io RubyGems NuGet Go; do
+for eco in crates.io Go Maven npm NuGet PyPI RubyGems; do
   mkdir -p /srv/osv/$eco
   curl -fsSL -o /srv/osv/$eco/all.zip "https://osv-vulnerabilities.storage.googleapis.com/$eco/all.zip"
 done
@@ -169,17 +169,17 @@ With the mirror populated, the `osv` scanner needs no outbound access for the ec
 
 | OSV ecosystem | Repository formats |
 |---|---|
-| `npm` | npm |
-| `PyPI` | pypi |
-| `Maven` | maven |
 | `crates.io` | cargo |
-| `RubyGems` | rubygems |
-| `NuGet` | nuget |
 | `Go` | go |
+| `Maven` | maven |
+| `npm` | npm |
+| `NuGet` | nuget |
+| `PyPI` | pypi |
+| `RubyGems` | rubygems |
 
-Not mirrored: `deb`, `rpm`, `apk` and the other distribution-scoped ecosystems (Debian, Ubuntu, Alpine, Rocky and so on), formats without an OSV ecosystem (Helm, conda), advisories whose affected ranges are `GIT` ranges or `ecosystem_specific` ranges. The online API still serves these through a manual scan.
+Not mirrored: `apk`, `deb`, `rpm` and the other distribution-scoped ecosystems (Alpine, Debian, Rocky, Ubuntu and so on), formats without an OSV ecosystem (conda, Helm), advisories whose affected ranges are `GIT` ranges or `ecosystem_specific` ranges. The online API still serves these through a manual scan.
 
-Matching handles `SEMVER` and `ECOSYSTEM` ranges with the ordering of each ecosystem (semantic versioning for npm, crates.io and Go; the native ordering of Maven, NuGet, RubyGems and PyPI), plus exact `versions` lists. Package names are normalised per ecosystem before comparing (PyPI as in PEP 503; NuGet and Maven case-insensitively; and so on).
+Matching handles `SEMVER` and `ECOSYSTEM` ranges with the ordering of each ecosystem (semantic versioning for crates.io, Go and npm; the native ordering of Maven, NuGet, PyPI and RubyGems), plus exact `versions` lists. Package names are normalised per ecosystem before comparing (Maven and NuGet case-insensitively; PyPI as in PEP 503; and so on).
 
 ### Status endpoint
 
@@ -381,8 +381,8 @@ The rule set is built in and not configurable.
 
 A scan evaluates two sources and uses both:
 
-1. **The stored package file**, when `artifact_id` is the id of a stored package of a format whose file declares licenses (PyPI, npm, Cargo, NuGet, Maven, RubyGems, Ivy descriptors): the licenses the package declares in its own metadata. See [License metadata](licenses.md) for what is read and in which order.
-2. **The artifact's properties** (set them with the properties API, see [properties](../repositories/properties.md)): `license`, `License`, `spdx_id`, `spdxId`, or a comma-separated `licenses` / `Licenses`. This is how a license is recorded for raw, Go, Conan, Terraform and imported artifacts, and for ids that are not a stored package.
+1. **The stored package file**, when `artifact_id` is the id of a stored package of a format whose file declares licenses (Cargo, Ivy descriptors, Maven, npm, NuGet, PyPI, RubyGems): the licenses the package declares in its own metadata. See [License metadata](licenses.md) for what is read and in which order.
+2. **The artifact's properties** (set them with the properties API, see [properties](../repositories/properties.md)): `license`, `License`, `spdx_id`, `spdxId`, or a comma-separated `licenses` / `Licenses`. This is how a license is recorded for Conan, Go, raw, Terraform and imported artifacts, and for ids that are not a stored package.
 
 A property can add a license; it cannot hide the one the package file declares. Common names are normalized to SPDX ids (for example `MIT License` → `MIT`, `Apache 2.0` → `Apache-2.0`, `gpl-3.0` → `GPL-3.0-only`); anything else is kept as written. Entries that are not SPDX expressions after normalization (a raw `BSD`, the classifier `BSD License`, free text) are listed in `unresolved_licenses` and flagged in the web UI: they are kept as written because they do not name one license, so a policy can only match them by that exact text. Each result carries `license_source` (`artifact`, or `client_declared` when the licenses only come from properties). A package file whose metadata is oversized or ambiguous makes the scan answer `422 unsafe_artifact`; with a blocking policy, so does a package file that cannot be read (`422 unreadable_artifact`). A request containing `metadata` is rejected.
 
@@ -425,19 +425,19 @@ The license is read from the uploaded package file itself, not from what the cli
 
 | Format | Where the license is read |
 |---|---|
-| npm | `license` (a string or `{"type": …}`), else the legacy `licenses` array, of the `package.json` inside the tarball of every version in the publish body; the manifest in the publish JSON is only the fallback. Unpublish (`-rev`) requests are not checked |
 | Cargo | `package.license` of the `Cargo.toml` inside the `.crate`; the publish metadata's `license` is only the fallback. The crate is read before the duplicate-version check |
-| RubyGems | the gemspec `licenses` in the gem's `metadata.gz`. Checked before the duplicate-version check, so re-pushing a version under a block policy answers 403, not 409 |
-| PyPI | the wheel's `METADATA` or the sdist's `PKG-INFO` (`.tar.gz`, `.zip`): `License-Expression`, else a short single-line `License:`, else the `License ::` classifiers. The form fields `license_expression`, `license` and `classifiers` are only the fallback for files that declare none or are not a wheel or sdist |
-| NuGet | `<license type="expression">` in the root `.nuspec`, else a `licenseUrl` that names one license (`https://licenses.nuget.org/<expression>` or a canonical URL such as apache.org or opensource.org). Any other `licenseUrl` carries no identifier and is not checked |
-| Maven | the `<licenses><license><name>` of an uploaded `.pom` (the `<url>` when a license has no name and the URL is a canonical one); licenses are not inherited from a parent pom. A rejected `.pom` also quarantines the sibling files of the same group, artifact and version that were already uploaded (best effort), because `mvn deploy` sends the jar first |
-| Ivy / sbt | `<license name>` of an uploaded `ivy.xml`, or `<licenses>` of a `.pom`; other files of the module are not checked |
-| Debian | the `License:` field of the control file (few `.deb` files have one) |
-| RPM | the `License` tag of the package header |
+| Conan, Go, raw, Terraform | the upload carries no license: not checked at upload. Set the license as a [property](../repositories/properties.md) and the [after-upload path](#quarantine-after-upload) applies |
 | Conda | `license` in `info/index.json`, for both `.tar.bz2` and `.conda` |
-| Helm | the `artifacthub.io/license` chart annotation |
+| Debian | the `License:` field of the control file (few `.deb` files have one) |
 | Docker / OCI | the `org.opencontainers.image.licenses` annotation of the manifest, or the same label in the image config when that blob is already stored in the repository. Checked when the manifest is pushed; layers pushed before it stay stored as unreferenced blobs |
-| Conan, Go, Terraform, raw | the upload carries no license: not checked at upload. Set the license as a [property](../repositories/properties.md) and the [after-upload path](#quarantine-after-upload) applies |
+| Helm | the `artifacthub.io/license` chart annotation |
+| Ivy / sbt | `<license name>` of an uploaded `ivy.xml`, or `<licenses>` of a `.pom`; other files of the module are not checked |
+| Maven | the `<licenses><license><name>` of an uploaded `.pom` (the `<url>` when a license has no name and the URL is a canonical one); licenses are not inherited from a parent pom. A rejected `.pom` also quarantines the sibling files of the same group, artifact and version that were already uploaded (best effort), because `mvn deploy` sends the jar first |
+| npm | `license` (a string or `{"type": …}`), else the legacy `licenses` array, of the `package.json` inside the tarball of every version in the publish body; the manifest in the publish JSON is only the fallback. Unpublish (`-rev`) requests are not checked |
+| NuGet | `<license type="expression">` in the root `.nuspec`, else a `licenseUrl` that names one license (`https://licenses.nuget.org/<expression>` or a canonical URL such as apache.org or opensource.org). Any other `licenseUrl` carries no identifier and is not checked |
+| PyPI | the wheel's `METADATA` or the sdist's `PKG-INFO` (`.tar.gz`, `.zip`): `License-Expression`, else a short single-line `License:`, else the `License ::` classifiers. The form fields `license_expression`, `license` and `classifiers` are only the fallback for files that declare none or are not a wheel or sdist |
+| RPM | the `License` tag of the package header |
+| RubyGems | the gemspec `licenses` in the gem's `metadata.gz`. Checked before the duplicate-version check, so re-pushing a version under a block policy answers 403, not 409 |
 
 A package whose own licenses cannot be read from its file while the repository has a blocking policy (a PyPI `.egg`, a damaged archive, an unparsable `.pom`) is refused with `422` and code `LICENSE_METADATA_UNREADABLE`, because the client's own fields must not decide a blocking policy; without one the fields are the fallback. A package whose own metadata cannot be read safely (a metadata file or decompressed stream over the size limits, or two candidate metadata files in one archive) is refused with `422` and code `LICENSE_METADATA_UNSAFE`. Names are matched after the normalization described above. Free text that is not a known name or SPDX identifier (a Maven `<name>` such as `Our Company License`) cannot match a deny list, so only an allow list rejects it. Proxy-cache fills and group repositories are not upload paths and are not checked on the way in; an artifact fetched through a proxy can still be quarantined by a license scan or a license property. Creating or changing a policy does not re-examine artifacts that are already stored: scan them again.
 
@@ -494,6 +494,6 @@ HTTP/1.1 403 Forbidden
 
 If the quarantine state cannot be read the request fails closed with 500. Set `quarantined` back to `false` (or delete a vulnerability or secret scan result) to release the artifact. License scan results cannot be deleted: approve them with `POST …/license/scans/{id}/quarantine` (see [Quarantine after upload](#quarantine-after-upload)); a block policy quarantines license results automatically, the other scan types only when you set `quarantined`.
 
-An artifact matches when its scan's `artifact_id` equals one of the identifiers the download handler knows it by (a leading slash is ignored). Examples from the format handlers: npm `name@version` or `name/-/<tarball>`; Maven the repository path (`com/acme/lib/1.0/lib-1.0.jar`); PyPI, Debian, RPM, Helm, RubyGems and Conda the file name or the component/package ID returned by the repository package listing; raw the file path. A scan recorded under an identifier the client never requests quarantines nothing.
+An artifact matches when its scan's `artifact_id` equals one of the identifiers the download handler knows it by (a leading slash is ignored). Examples from the format handlers: Conda, Debian, Helm, PyPI, RPM and RubyGems the file name or the component/package ID returned by the repository package listing; Maven the repository path (`com/acme/lib/1.0/lib-1.0.jar`); npm `name@version` or `name/-/<tarball>`; raw the file path. A scan recorded under an identifier the client never requests quarantines nothing.
 
 AI analysis may *recommend* quarantine but never applies it: the recommendation is stored for review ([AI analysis](../integrations/ai-analysis.md)). The web UI exposes the same quarantine toggle on the findings of the **Security** inbox and on the **Security** tab of the artifact page.

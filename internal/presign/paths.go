@@ -18,39 +18,39 @@ func IsProxyBlobPath(format, relPath string) bool {
 	base := path.Base(relPath)
 
 	switch format {
-	case "maven":
-		return !isMavenMetadata(relPath, base)
-	case "deb":
-		return strings.HasPrefix(relPath, "pool/")
-	case "rpm":
-		return isRPMBlob(relPath, base)
-	case "pacman":
-		return strings.Contains(base, ".pkg.tar") && !strings.HasSuffix(base, ".sig")
-	case "npm":
-		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
-	case "helm":
-		// Chart archives only; index.yaml and .prov files are streamed.
-		return strings.HasPrefix(relPath, "charts/") && !strings.HasSuffix(base, ".prov")
+	case "ansible":
+		// Collection tarballs only; the version documents are streamed.
+		return strings.HasPrefix(relPath, "api/v3/artifacts/collections/")
 	case "cargo", "go", "nuget", "rubygems":
 		return isPackageArchive(format, relPath, base)
 	case "conan", "conda":
 		return isConanCondaBlob(format, relPath, base)
-	case "terraform":
-		// Module archives and provider zips; documents, the SHA256SUMS file
-		// and its signature are streamed.
-		return isTerraformArchive(relPath, base)
+	case "deb":
+		return strings.HasPrefix(relPath, "pool/")
+	case "helm":
+		// Chart archives only; index.yaml and .prov files are streamed.
+		return strings.HasPrefix(relPath, "charts/") && !strings.HasSuffix(base, ".prov")
+	case "maven":
+		return !isMavenMetadata(relPath, base)
 	case "nix":
 		// NARs only; narinfo and nix-cache-info are streamed.
 		return strings.HasPrefix(relPath, "nar/")
-	case "ansible":
-		// Collection tarballs only; the version documents are streamed.
-		return strings.HasPrefix(relPath, "api/v3/artifacts/collections/")
-	case "raw":
-		return true
+	case "npm":
+		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
+	case "pacman":
+		return strings.Contains(base, ".pkg.tar") && !strings.HasSuffix(base, ".sig")
 	case "pypi":
 		// Distribution files only; the PEP 658 .metadata siblings and the
 		// simple index pages are streamed.
 		return strings.HasPrefix(relPath, "files/") && !strings.HasSuffix(base, ".metadata")
+	case "raw":
+		return true
+	case "rpm":
+		return isRPMBlob(relPath, base)
+	case "terraform":
+		// Module archives and provider zips; documents, the SHA256SUMS file
+		// and its signature are streamed.
+		return isTerraformArchive(relPath, base)
 	default:
 		return false
 	}

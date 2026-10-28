@@ -116,7 +116,7 @@ func VulnerabilityNewPayload(v VulnerabilityDetected) map[string]any {
 // Artifact describes the artifact an artifact.* event is about.
 type Artifact struct {
 	Repository string // repository name
-	Format     string // repository format (npm, deb, ...)
+	Format     string // repository format (deb, npm, ...)
 	Name       string // package / artifact name
 	Version    string // version, when the format has one
 	Path       string // path or file name within the repository

@@ -15,17 +15,17 @@ import (
 // coordinateParsers maps a proxy repository format to the parser recovering
 // package coordinates from one of its cache keys. Formats absent from the map
 // either cache no versioned package artifact under a key that names its
-// version (docker, deb, rpm, apk, pacman, conda, conan, ivy, sbt, raw,
-// terraform) or are not proxied at all.
+// version (apk, conan, conda, deb, docker, ivy, pacman, raw, rpm,
+// sbt, terraform) or are not proxied at all.
 var coordinateParsers = map[string]func(key string) (string, string, bool){ //nolint:gochecknoglobals // constant lookup table
-	"npm":      npmCoordinates,
-	"pypi":     pypiCoordinates,
-	"maven":    mavenCoordinates,
 	"cargo":    cargoCoordinates,
-	"rubygems": rubygemsCoordinates,
-	"nuget":    nugetCoordinates,
 	"go":       goCoordinates,
 	"helm":     helmCoordinates,
+	"maven":    mavenCoordinates,
+	"npm":      npmCoordinates,
+	"nuget":    nugetCoordinates,
+	"pypi":     pypiCoordinates,
+	"rubygems": rubygemsCoordinates,
 }
 
 // PackageCoordinates recovers the package name and version from the cache key

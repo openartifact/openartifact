@@ -107,7 +107,7 @@ func TestPackageCoordinatesOddInputs(t *testing.T) {
 		"charts/-1.0.0.tgz", "a/b/c/d", "../../x/1/x-1.jar", "a/./1/a-1.jar", "g/a/-SNAPSHOT/a--SNAPSHOT.jar",
 		"g/a/1-SNAPSHOT/a-1-.jar", "\x00", "a\\b", strings.Repeat("-", 64), strings.Repeat("a/", 100), "é/-/é-1.tgz",
 	}
-	formats := []string{"npm", "pypi", "maven", "cargo", "rubygems", "nuget", "go", "helm", "docker", ""}
+	formats := []string{"cargo", "docker", "go", "helm", "maven", "npm", "nuget", "pypi", "rubygems", ""}
 
 	for _, f := range formats {
 		for _, k := range odd {

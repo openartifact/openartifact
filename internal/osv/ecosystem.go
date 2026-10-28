@@ -21,7 +21,7 @@ type ecosystem struct {
 
 // supported are the ecosystems the mirror matches locally: the ones whose
 // version ordering is implemented and whose package names are not scoped to a
-// distribution release. The other formats (deb, rpm, apk, helm, ...) keep using
+// distribution release. The other formats (apk, deb, helm, rpm, ...) keep using
 // the online OSV API.
 var supported = []ecosystem{ //nolint:gochecknoglobals // constant table
 	{"npm", "npm"},

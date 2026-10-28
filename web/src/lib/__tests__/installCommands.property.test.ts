@@ -54,7 +54,7 @@ const origin = fc
 const repoName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,40}$/)
 const imagePath = fc.array(fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,15}$/), { minLength: 1, maxLength: 4 }).map((s) => s.join('/'))
 
-const ISOLATED = ['maven', 'sbt', 'ivy', 'raw']
+const ISOLATED = ['ivy', 'maven', 'raw', 'sbt']
 const encode = encodeURIComponent
 const encodePath = (p: string) => p.split('/').map(encode).join('/')
 
@@ -62,25 +62,25 @@ const encodePath = (p: string) => p.split('/').map(encode).join('/')
 function expectedArgv(format: string, o: { url: string; host: string }, repo: string, pkg: string, version: string): string[] | null {
   const base = repoBaseUrl(format, o.url, repo)
   switch (format) {
-    case 'docker': return ['docker', 'pull', `${o.host}/${pkg}:${version}`]
-    case 'npm': return ['npm', 'install', `${pkg}@${version}`, `--registry=${base}/`]
-    case 'pypi': return ['pip', 'install', `${pkg}==${version}`, '--index-url', `${base}/simple/`]
-    case 'maven': return ['mvn', 'dependency:get', `-Dartifact=${pkg}:${version}`, `-DremoteRepositories=${base}`]
-    case 'helm': return ['helm', 'pull', pkg, '--repo', base, '--version', version]
-    case 'cargo': return ['cargo', 'install', pkg, '--version', version, '--index', `sparse+${base}/index/`]
-    case 'nuget': return ['dotnet', 'add', 'package', pkg, '--version', version, '--source', `${base}/v3/index.json`]
-    case 'go': return [`GOPROXY=${base}`, 'go', 'get', `${pkg}@${version}`]
-    case 'rubygems': return ['gem', 'install', pkg, '-v', version, '--source', `${base}/`]
-    case 'conda': return ['conda', 'install', '-c', base, `${pkg}=${version}`]
-    case 'conan': return ['conan', 'install', `--requires=${pkg}/${version}`, '-r', repo]
-    case 'deb': return ['apt', 'install', `${pkg}=${version}`]
-    case 'rpm': return ['dnf', 'install', `${pkg}-${version}`]
-    case 'pacman': return ['sudo', 'pacman', '-Sy', `${repo}/${pkg}`]
-    case 'nix': return ['nix', 'copy', '--from', base, `/nix/store/${version}-${pkg}`]
-    case 'apk': return ['apk', 'add', `${pkg}=${version}`]
     case 'ansible': return ['ansible-galaxy', 'collection', 'install', `${pkg}:${version}`, '--server', `${base}/api/`]
+    case 'apk': return ['apk', 'add', `${pkg}=${version}`]
+    case 'cargo': return ['cargo', 'install', pkg, '--version', version, '--index', `sparse+${base}/index/`]
+    case 'conan': return ['conan', 'install', `--requires=${pkg}/${version}`, '-r', repo]
+    case 'conda': return ['conda', 'install', '-c', base, `${pkg}=${version}`]
+    case 'deb': return ['apt', 'install', `${pkg}=${version}`]
+    case 'docker': return ['docker', 'pull', `${o.host}/${pkg}:${version}`]
+    case 'go': return [`GOPROXY=${base}`, 'go', 'get', `${pkg}@${version}`]
+    case 'helm': return ['helm', 'pull', pkg, '--repo', base, '--version', version]
+    case 'maven': return ['mvn', 'dependency:get', `-Dartifact=${pkg}:${version}`, `-DremoteRepositories=${base}`]
+    case 'nix': return ['nix', 'copy', '--from', base, `/nix/store/${version}-${pkg}`]
+    case 'npm': return ['npm', 'install', `${pkg}@${version}`, `--registry=${base}/`]
+    case 'nuget': return ['dotnet', 'add', 'package', pkg, '--version', version, '--source', `${base}/v3/index.json`]
+    case 'pacman': return ['sudo', 'pacman', '-Sy', `${repo}/${pkg}`]
+    case 'pypi': return ['pip', 'install', `${pkg}==${version}`, '--index-url', `${base}/simple/`]
     case 'raw': return ['curl', '-fO', `${base}/${encodePath(pkg)}`]
-    default: return null // sbt and ivy emit build-file fragments, not shell
+    case 'rpm': return ['dnf', 'install', `${pkg}-${version}`]
+    case 'rubygems': return ['gem', 'install', pkg, '-v', version, '--source', `${base}/`]
+    default: return null // ivy and sbt emit build-file fragments, not shell
   }
 }
 
@@ -141,7 +141,7 @@ describe('pullCommand (property)', () => {
   })
 
   it('splits into exactly the intended words however hostile the names are', () => {
-    const shellFormats = ALL_FORMATS.filter((f) => f !== 'sbt' && f !== 'ivy' && f !== 'terraform')
+    const shellFormats = ALL_FORMATS.filter((f) => f !== 'ivy' && f !== 'sbt' && f !== 'terraform')
     fc.assert(fc.property(fc.constantFrom(...shellFormats), origin, hostileWord, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       fc.pre(repo !== '.' && repo !== '..')
       fc.pre(format !== 'raw' || pkg.split('/').every((s) => s !== '.' && s !== '..'))
@@ -149,8 +149,8 @@ describe('pullCommand (property)', () => {
     }))
   })
 
-  it('points every URL argument under the repository base URL (deb, rpm, apk, pacman and conan commands carry none)', () => {
-    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'docker' && f !== 'deb' && f !== 'rpm' && f !== 'conan' && f !== 'terraform' && f !== 'apk' && f !== 'pacman')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
+  it('points every URL argument under the repository base URL (apk, conan, deb, pacman and rpm commands carry none)', () => {
+    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
       const words = format === 'sbt' || format === 'ivy' ? [cmd] : shellWords(cmd)
@@ -174,8 +174,8 @@ describe('pullCommand (property)', () => {
     }))
   })
 
-  it('writes sbt and ivy resolvers for the repository base URL', () => {
-    fc.assert(fc.property(fc.constantFrom('sbt', 'ivy'), origin, repoName, (format, o, repo) => {
+  it('writes ivy and sbt resolvers for the repository base URL', () => {
+    fc.assert(fc.property(fc.constantFrom('ivy', 'sbt'), origin, repoName, (format, o, repo) => {
       const cmd = pullCommand(format, o.url, repo, 'pkg', '1.0')
       expect(cmd).toContain(`"${repo}"`)
       expect(cmd).toContain(`"${repoBaseUrl(format, o.url, repo)}"`)

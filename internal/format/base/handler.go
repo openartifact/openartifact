@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package base provides shared HTTP handler infrastructure for artifact format handlers.
-// Artifact-level format handlers (cargo, helm, pypi, nuget, etc.) embed BaseHandler
+// Artifact-level format handlers (cargo, helm, nuget, pypi, etc.) embed BaseHandler
 // to eliminate duplicated struct definitions, constructors, and resolveRepoID.
 package base
 

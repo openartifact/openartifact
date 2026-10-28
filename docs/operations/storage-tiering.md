@@ -118,8 +118,8 @@ A policy says "blobs matching all of these conditions belong on `target_tier`". 
 | `min_idle_seconds` | Time since the last recorded download at least this many seconds. A blob never downloaded counts from its creation time. |
 | `min_size_bytes`, `max_size_bytes` | Blob size bounds, inclusive. `min <= max` is required. |
 | `repo_glob` | Repository name glob. |
-| `formats` | Package formats (`maven`, `npm`, `docker`, ...); any of them matches. |
-| `path_glob` | Glob on the artifact path inside the repository (for Maven the repository path, for npm the package name, for Docker the image name, and so on). |
+| `formats` | Package formats (`docker`, `maven`, `npm`, ...); any of them matches. |
+| `path_glob` | Glob on the artifact path inside the repository (for Docker the image name, for Maven the repository path, for npm the package name, and so on). |
 
 At least one condition is required: a policy with only a target would move every blob.
 

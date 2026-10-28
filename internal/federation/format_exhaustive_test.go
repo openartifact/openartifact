@@ -21,8 +21,8 @@ func TestFormatTablesDecideEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "federation.formatTables",
-		[]string{"raw", "maven", "npm", "docker", "helm", "pypi", "cargo", "go", "nuget"},
-		[]string{"rubygems", "deb", "rpm", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix", "ansible"})
+		[]string{"cargo", "docker", "go", "helm", "maven", "npm", "nuget", "pypi", "raw"},
+		[]string{"ansible", "apk", "conan", "conda", "deb", "ivy", "nix", "pacman", "rpm", "rubygems", "sbt", "terraform"})
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
 		t.Helper()
@@ -51,10 +51,10 @@ func TestQuarantineKeysDecideEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "federation.quarantineKeys",
-		[]string{"pypi", "helm", "cargo", "go", "nuget", "docker"},
+		[]string{"cargo", "docker", "go", "helm", "nuget", "pypi"},
 		[]string{
-			"raw", "maven", "npm", "rubygems", "deb", "rpm", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk", "pacman", "nix", "ansible",
+			"ansible", "apk", "conan", "conda", "deb", "ivy", "maven", "nix", "npm", "pacman",
+			"raw", "rpm", "rubygems", "sbt", "terraform",
 		})
 
 	units := map[string]string{

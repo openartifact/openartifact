@@ -17,20 +17,20 @@ import (
 //
 //nolint:gochecknoglobals // immutable test table
 var licenseFile = map[string]string{
-	"pypi": "x-1.0-py3-none-any.whl", "npm": "x-1.0.tgz", "cargo": "x-1.0.crate", "nuget": "x.1.0.nupkg", "maven": "x-1.0.pom",
-	"sbt": "x-1.0.pom", "rubygems": "x-1.0.gem", "ivy": "ivy.xml",
+	"cargo": "x-1.0.crate", "ivy": "ivy.xml", "maven": "x-1.0.pom", "npm": "x-1.0.tgz", "nuget": "x.1.0.nupkg",
+	"pypi": "x-1.0-py3-none-any.whl", "rubygems": "x-1.0.gem", "sbt": "x-1.0.pom",
 }
 
 // supported are the formats whose licenses are read from the package file.
 //
 //nolint:gochecknoglobals // immutable test table
-var supported = []string{"pypi", "npm", "cargo", "nuget", "maven", "sbt", "rubygems", "ivy"}
+var supported = []string{"cargo", "ivy", "maven", "npm", "nuget", "pypi", "rubygems", "sbt"}
 
 // notSupported are the formats whose licenses are not read: they have no
 // license metadata of their own that a policy could match.
 //
 //nolint:gochecknoglobals // immutable test table
-var notSupported = []string{"docker", "helm", "deb", "rpm", "go", "raw", "conda", "conan", "terraform", "apk", "pacman", "nix", "ansible"}
+var notSupported = []string{"ansible", "apk", "conan", "conda", "deb", "docker", "go", "helm", "nix", "pacman", "raw", "rpm", "terraform"}
 
 func TestSupportedCoversEveryFormat(t *testing.T) {
 	t.Parallel()
@@ -80,15 +80,15 @@ func TestExpectedCoversEveryFormat(t *testing.T) {
 	})
 }
 
-// TestDescriptorFormatsExpectOnlyTheDescriptor: maven, sbt and ivy modules hold
+// TestDescriptorFormatsExpectOnlyTheDescriptor: ivy, maven and sbt modules hold
 // several files; only the descriptor declares the license.
 func TestDescriptorFormatsExpectOnlyTheDescriptor(t *testing.T) {
 	t.Parallel()
 
 	for format, others := range map[string][]string{
+		"ivy":   {"x-1.0.jar", "ivy.xml.sha1", "ivy-1.0.xml.md5", "ivysettings.xml", "xivy.xml", "x-1.0.xml"},
 		"maven": {"x-1.0.jar", "x-1.0.pom.sha1", "maven-metadata.xml"},
 		"sbt":   {"x_2.13-1.0.jar", "ivy.xml"},
-		"ivy":   {"x-1.0.jar", "ivy.xml.sha1", "ivy-1.0.xml.md5", "ivysettings.xml", "xivy.xml", "x-1.0.xml"},
 	} {
 		for _, name := range others {
 			if Expected(format, name) {
@@ -106,7 +106,7 @@ func TestParseCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	// rubygems is read by readGem before the manifest extraction, so parse never sees it.
-	handled := repotypetest.Classified(t, "licensemeta.parse", []string{"pypi", "npm", "cargo", "nuget", "maven", "sbt", "ivy"},
+	handled := repotypetest.Classified(t, "licensemeta.parse", []string{"cargo", "ivy", "maven", "npm", "nuget", "pypi", "sbt"},
 		append([]string{"rubygems"}, notSupported...))
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -124,19 +124,19 @@ func TestParseCoversEveryFormat(t *testing.T) {
 }
 
 // TestReadFormatPlumbing covers what Read does per format before parsing:
-// the descriptor size limit (maven, sbt, ivy) and the gem reader (rubygems)
+// the descriptor size limit (ivy, maven, sbt) and the gem reader (rubygems)
 // live inline in Read and are classified only; the extractor name is probed.
 func TestReadFormatPlumbing(t *testing.T) {
 	t.Parallel()
 
-	others := []string{"docker", "npm", "pypi", "helm", "cargo", "nuget", "go", "raw", "conda", "conan", "terraform",
-		"deb", "rpm", "apk", "pacman", "nix", "ansible"}
+	others := []string{"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget",
+		"pacman", "pypi", "raw", "rpm", "terraform"}
 
-	repotypetest.Classified(t, "licensemeta.Read limit", []string{"maven", "sbt", "ivy"}, append([]string{"rubygems"}, others...))
-	repotypetest.Classified(t, "licensemeta.Read gem", []string{"rubygems"}, append([]string{"maven", "sbt", "ivy"}, others...))
+	repotypetest.Classified(t, "licensemeta.Read limit", []string{"ivy", "maven", "sbt"}, append([]string{"rubygems"}, others...))
+	repotypetest.Classified(t, "licensemeta.Read gem", []string{"rubygems"}, append([]string{"ivy", "maven", "sbt"}, others...))
 
 	// maven is already the extractor's name, as are ivy and the others, so only sbt is mapped.
-	handled := repotypetest.Classified(t, "licensemeta.jvmFormat", []string{"sbt"}, append([]string{"maven", "ivy", "rubygems"}, others...))
+	handled := repotypetest.Classified(t, "licensemeta.jvmFormat", []string{"sbt"}, append([]string{"ivy", "maven", "rubygems"}, others...))
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
 		t.Helper()

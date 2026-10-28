@@ -13,8 +13,8 @@ import (
 )
 
 // isShadowedPackageName reports names that are valid npm package names that another format
-// registers as a static route on the shared /repos/{name} subrouter (helm
-// /charts and /index.yaml, cargo /config.json, rpm/deb /public.key). chi
+// registers as a static route on the shared /repos/{name} subrouter (cargo
+// /config.json, helm /charts and /index.yaml, deb/rpm /public.key). chi
 // prefers the static segment, so without the guard `npm view charts` against
 // an npm repository would be answered by helm's handler.
 func isShadowedPackageName(name string) bool {

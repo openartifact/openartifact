@@ -14,7 +14,7 @@
   "federation.serverOff.title": "Federation is turned off on this server",
   "federation.serverOff.hint": "An administrator enables it with federation.enabled (OPENARTIFACT_FEDERATION_ENABLED) in the server configuration, then restarts the server.",
   "federation.unsupported.title": "Federation is not available for this repository",
-  "federation.unsupported.hint": "Only hosted repositories of the raw, maven, npm, docker, helm, pypi, cargo, go and nuget formats can be federated. Proxy and group repositories cannot.",
+  "federation.unsupported.hint": "Only hosted repositories of the cargo, docker, go, helm, maven, npm, nuget, pypi and raw formats can be federated. Proxy and group repositories cannot.",
   "federation.disableTitle": "Turn off federation?",
   "federation.disableBody": "The change log and all peers of this repository are removed. Content already synchronized stays. Turning federation on again starts a new log, and peers must be added again.",
   "federation.disableConfirm": "Turn off",

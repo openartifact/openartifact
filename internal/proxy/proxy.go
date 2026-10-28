@@ -52,7 +52,7 @@ const (
 
 	// DefaultMaxMetadata caps an index or metadata file fetched from an
 	// upstream (Packages, repodata, packuments, simple pages, maven-metadata,
-	// helm and cargo indexes, Go version lists). The largest real ones are
+	// cargo and helm indexes, Go version lists). The largest real ones are
 	// tens of MiB; a hostile upstream must not make the proxy spool and store
 	// gigabytes under a metadata name.
 	DefaultMaxMetadata int64 = 256 << 20
@@ -956,26 +956,26 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 // Immutable reports whether the file at key never changes once published, so a
 // cached copy never needs revalidation. Formats whose bodies are verified
 // against a published digest (see fetchOpts) pin by name alone; the ones that
-// have no such check here (Maven, deb, rpm, pacman) pin only under layouts whose file
+// have no such check here (deb, Maven, pacman, rpm) pin only under layouts whose file
 // names are never reused, and everything else is cached for the repository TTL
 // so a wrong copy is replaced on revalidation:
-//   - maven: released artifacts, not maven-metadata*.xml, archetype-catalog.xml
-//     (both are regenerated in place) or -SNAPSHOT files; a checksum or
-//     signature file (.md5 .sha1 .sha256 .sha512 .asc) is as immutable as the
-//     file it belongs to.
-//   - ivy, sbt: released files, not checksum or signature files, maven-metadata*.xml
-//     or -SNAPSHOT files; a file is pinned only when its body matched the
-//     checksum the upstream publishes (ivy.go), otherwise the repository TTL
-//     applies.
-//   - pacman: nothing. A mirror may republish a package file name, so package
-//     files use the repository TTL.
-//   - nix: nar/ files, cached only after their body matched the FileHash and
-//     FileSize of their narinfo (nix.go); narinfo and nix-cache-info move.
 //   - apk: `.apk` files of a `<branch>/<repo>/<arch>/<file>` key; they are
 //     only cached once their checksum matched the upstream index (apk.go).
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
 //     a file name is never reused); the same names in a flat repository, where
 //     a publisher may overwrite a package, use the repository TTL.
+//   - ivy, sbt: released files, not checksum or signature files, maven-metadata*.xml
+//     or -SNAPSHOT files; a file is pinned only when its body matched the
+//     checksum the upstream publishes (ivy.go), otherwise the repository TTL
+//     applies.
+//   - maven: released artifacts, not maven-metadata*.xml, archetype-catalog.xml
+//     (both are regenerated in place) or -SNAPSHOT files; a checksum or
+//     signature file (.md5 .sha1 .sha256 .sha512 .asc) is as immutable as the
+//     file it belongs to.
+//   - nix: nar/ files, cached only after their body matched the FileHash and
+//     FileSize of their narinfo (nix.go); narinfo and nix-cache-info move.
+//   - pacman: nothing. A mirror may republish a package file name, so package
+//     files use the repository TTL.
 //   - rpm: .rpm below a Packages/ directory (the layout of Fedora, CentOS, RHEL
 //     and most vendor repositories, whose NEVRA-named files are not rebuilt in
 //     place); flat or other layouts use the repository TTL. No cheap integrity
@@ -985,54 +985,54 @@ func Immutable(format, key string) bool {
 	name := key[strings.LastIndexByte(key, '/')+1:]
 
 	switch format {
-	case "maven":
-		return mavenImmutable(key)
-	case "deb", "rpm":
-		return debRPMImmutable(format, key, name)
-	case "pypi":
-		// Distribution files (and their PEP 658 metadata), not the index pages.
-		return strings.HasPrefix(key, "files/")
-	case "npm":
-		// Tarballs (<pkg>/-/<file>), not packuments.
-		return strings.HasSuffix(name, ".tgz") && strings.Contains(key, "/-/")
-	case "helm":
-		// Chart archives (charts/<file>), not index.yaml or provenance files.
-		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(name, helmProvExt)
-	case "cargo":
-		// Crate files, not index files or config.json.
-		return strings.HasPrefix(key, "api/v1/crates/") && name == "download"
-	case "go":
-		// .info/.mod/.zip of a canonical version, not list/@latest/queries.
-		return goImmutable(key)
-	case "nuget", "rubygems":
-		return packageFileImmutable(format, key, name)
-	case "conda":
-		// Package files, verified against the repodata digest; repodata moves.
-		return condaImmutable(name)
-	case "docker":
-		// Blobs and manifests addressed by digest; tags move.
-		return digestRE.MatchString(name)
+	case "ansible":
+		// Tarballs, checked against the artifact sha256 of their version document.
+		return strings.HasPrefix(key, ansibleArtifactDir)
 	case "apk":
 		// Packages whose checksum matched the upstream index; see apkFetchOpts.
 		return apkPackageKey(key)
-	case "ivy", "sbt":
-		// Released files that matched the upstream's checksum; see ivyFetchOpts.
-		return ivyImmutable(key)
+	case "cargo":
+		// Crate files, not index files or config.json.
+		return strings.HasPrefix(key, "api/v1/crates/") && name == "download"
 	case "conan":
 		// File lists and files below a revision, which a digest of its
 		// content names; revision lists and latest move.
 		return conanRevisionFile(key)
-	case "ansible":
-		// Tarballs, checked against the artifact sha256 of their version document.
-		return strings.HasPrefix(key, ansibleArtifactDir)
-	case "terraform":
-		// Provider zips, checked against the SHA256SUMS and package document
-		// checksums; module archives have no checksum upstream (see terraform.go).
-		return tfProviderZipKey(key)
+	case "conda":
+		// Package files, verified against the repodata digest; repodata moves.
+		return condaImmutable(name)
+	case "deb", "rpm":
+		return debRPMImmutable(format, key, name)
+	case "docker":
+		// Blobs and manifests addressed by digest; tags move.
+		return digestRE.MatchString(name)
+	case "go":
+		// .info/.mod/.zip of a canonical version, not list/@latest/queries.
+		return goImmutable(key)
+	case "helm":
+		// Chart archives (charts/<file>), not index.yaml or provenance files.
+		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(name, helmProvExt)
+	case "ivy", "sbt":
+		// Released files that matched the upstream's checksum; see ivyFetchOpts.
+		return ivyImmutable(key)
+	case "maven":
+		return mavenImmutable(key)
 	case "nix":
 		// NARs, which are only cached once they matched the FileHash and
 		// FileSize of their narinfo (nix.go); narinfo and cache-info move.
 		return nixNarKey(key)
+	case "npm":
+		// Tarballs (<pkg>/-/<file>), not packuments.
+		return strings.HasSuffix(name, ".tgz") && strings.Contains(key, "/-/")
+	case "nuget", "rubygems":
+		return packageFileImmutable(format, key, name)
+	case "pypi":
+		// Distribution files (and their PEP 658 metadata), not the index pages.
+		return strings.HasPrefix(key, "files/")
+	case "terraform":
+		// Provider zips, checked against the SHA256SUMS and package document
+		// checksums; module archives have no checksum upstream (see terraform.go).
+		return tfProviderZipKey(key)
 	}
 
 	return false
@@ -1085,39 +1085,39 @@ func isMetadataKey(format, key string) bool {
 	name := key[strings.LastIndexByte(key, '/')+1:]
 
 	switch format {
-	case "deb":
-		return inDir(key, "dists")
-	case "rpm":
-		return inDir(key, "repodata")
-	case "maven":
-		return strings.HasPrefix(name, "maven-metadata")
+	case "ansible":
+		return !strings.HasPrefix(key, ansibleArtifactDir)
 	case "apk":
 		return apkIndexKey(key)
-	case "ivy", "sbt":
-		return isIvyMetadata(key) || isIvySidecar(key) || name == "ivy.xml"
-	case "pypi":
-		return !strings.HasPrefix(key, "files/")
-	case "npm":
-		return !strings.Contains(key, "/-/")
-	case "helm":
-		return name == helmIndexKey
 	case "cargo", "nuget", "rubygems":
 		return !strings.HasPrefix(key, packageDir(format))
-	case "go":
-		return name == "list" || strings.HasSuffix(key, "/@latest")
+	case "conan":
+		return !strings.Contains(key, "/files/")
 	case "conda":
 		// Repodata is capped by maxCondaIndex instead; this covers channeldata.json.
 		return !strings.HasSuffix(name, conda.ExtConda) && !strings.HasSuffix(name, conda.ExtTarBz2)
-	case "conan":
-		return !strings.Contains(key, "/files/")
-	case "terraform":
-		return !tfArchiveKey(key)
-	case "ansible":
-		return !strings.HasPrefix(key, ansibleArtifactDir)
-	case "pacman":
-		return isPacmanDatabase(key)
+	case "deb":
+		return inDir(key, "dists")
+	case "go":
+		return name == "list" || strings.HasSuffix(key, "/@latest")
+	case "helm":
+		return name == helmIndexKey
+	case "ivy", "sbt":
+		return isIvyMetadata(key) || isIvySidecar(key) || name == "ivy.xml"
+	case "maven":
+		return strings.HasPrefix(name, "maven-metadata")
 	case "nix":
 		return nixMetadataKey(key)
+	case "npm":
+		return !strings.Contains(key, "/-/")
+	case "pacman":
+		return isPacmanDatabase(key)
+	case "pypi":
+		return !strings.HasPrefix(key, "files/")
+	case "rpm":
+		return inDir(key, "repodata")
+	case "terraform":
+		return !tfArchiveKey(key)
 	}
 
 	return false

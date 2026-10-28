@@ -24,8 +24,8 @@ func TestWithDistroCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "api.VulnHandler.withDistro",
 		[]string{"deb", "rpm"},
 		[]string{
-			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-			"ivy", "sbt", "terraform", "apk", "pacman", "nix", "ansible",
+			"ansible", "apk", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"pacman", "pypi", "raw", "rubygems", "sbt", "terraform",
 		},
 	)
 
@@ -60,14 +60,14 @@ func TestDownloadFilenameCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "api.downloadFilename",
-		[]string{"docker", "conan"},
+		[]string{"conan", "docker"},
 		[]string{
-			"npm", "pypi", "maven", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go", "raw", "conda", "ivy", "sbt",
-			"terraform", "apk", "pacman", "nix", "ansible",
+			"ansible", "apk", "cargo", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget", "pacman", "pypi",
+			"raw", "rpm", "rubygems", "sbt", "terraform",
 		},
 	)
 
-	want := map[string]string{"docker": "a_b.json", "conan": "a_b"}
+	want := map[string]string{"conan": "a_b", "docker": "a_b.json"}
 	in := map[string]string{"docker": "a:b"}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

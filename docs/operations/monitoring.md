@@ -79,11 +79,11 @@ scrape_configs:
 |---|---|---|---|
 | `openartifact_http_requests_total` | counter | `method`, `path`, `status` | `path` is the route template that served the request (see [the `path` label](#the-path-label)), or `unmatched` for requests that match no route; the raw URL is never used, so cardinality is bounded by the route table |
 | `openartifact_http_request_duration_seconds` | histogram | `method`, `path` | buckets 0.005 to 10 s; same `path` values |
-| `openartifact_uploads_total` | counter | `format`, `result` | hosted upload requests: `format` is one of `deb`, `rpm`, `npm`, `maven`, `helm`, `rubygems`, `docker`, `pypi`, `cargo`, `go`, `nuget`, `conda`, `conan`, `apk`, `terraform`, `ivy`, `sbt`, `raw`; `result` is `success` (HTTP status below 400) or `error` (400 and above). See [what counts as an upload](#what-counts-as-an-upload) |
+| `openartifact_uploads_total` | counter | `format`, `result` | hosted upload requests: `format` is one of `apk`, `cargo`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `npm`, `nuget`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`; `result` is `success` (HTTP status below 400) or `error` (400 and above). See [what counts as an upload](#what-counts-as-an-upload) |
 | `openartifact_blob_bytes_total` | counter | `operation` | bytes written (`put`) and read (`get`) through the blob store |
 | `openartifact_blob_operation_duration_seconds` | histogram | `operation`, `result` | latency of the object store as the server sees it, by `operation` (`put`, `get`, `exists`, `exists_by_sha256`, `delete`, `size`, `metadata`) and `result` (`ok`, `error`). This is the floor under every upload: on a store that syncs to a replicated volume it is tens of milliseconds, which is why every write route has the same p50. `put` includes reading the client's body, so a slow client inflates it; `get` is the time to open the object, not to stream it |
 | `openartifact_blob_downloads_total` | counter | `mode`, `reason` | blob `GET`s by delivery: `mode=redirect` (`reason=presigned`) or `mode=stream` (`disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed`, `missing_object`); see [presigned URLs](storage.md#presigned-urls) |
-| `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
+| `openartifact_metadata_regenerations_total` | counter | `format` | `maven`, `npm`, `rpm` |
 | `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
 | `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown |
 | `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` | Unix time of the last successful [OSV mirror](../security/scanning.md#local-osv-mirror) import of an ecosystem (a check that found the export unchanged counts) |
@@ -132,14 +132,14 @@ The OCI registry is served by one catch-all route, `/v2/*`; it is split by the e
 | `/v2/*` | any other path under `/v2/` |
 | `/v2`, `/v2/_catalog` | version check, catalog |
 
-Other templates worth knowing: `/repos/{name}/*` (a publish to an npm or Go repository, `PUT`), `/repos/{name}/{pkg}` (npm packument), `/repos/{name}/{platform}` (conda), `/*` (the web UI).
+Other templates worth knowing: `/repos/{name}/*` (a publish to a Go or npm repository, `PUT`), `/repos/{name}/{pkg}` (npm packument), `/repos/{name}/{platform}` (conda), `/*` (the web UI).
 
 #### What counts as an upload
 
 `openartifact_uploads_total` counts one per hosted upload request that reaches an upload handler, whatever the client protocol, so every format has the same series:
 
-- `deb`, `rpm` (API upload), `npm` (publish), `maven` (`PUT`), `raw` (presigned upload completion), and `go` (GOPROXY upload) are counted by their handlers.
-- `helm`, `rubygems`, `pypi`, `cargo`, `nuget`, `conda`, `conan`, `apk`, `terraform`, `ivy`, `sbt` and `raw` (direct `PUT`) are counted by the HTTP middleware from the response status of the upload route (`POST /charts`, `PUT /api/v1/crates/new`, `POST /legacy/`, `PUT /_api/modules/...`, ...).
+- `deb`, `go` (GOPROXY upload), `maven` (`PUT`), `npm` (publish), `raw` (presigned upload completion), and `rpm` (API upload) are counted by their handlers.
+- `apk`, `cargo`, `conan`, `conda`, `helm`, `ivy`, `nuget`, `pypi`, `raw` (direct `PUT`), `rubygems`, `sbt` and `terraform` are counted by the HTTP middleware from the response status of the upload route (`PUT /api/v1/crates/new`, `POST /charts`, `POST /legacy/`, `PUT /_api/modules/...`, ...).
 - `docker` counts the requests that finish pushing an object: a manifest `PUT`, the `PUT` that completes a blob upload, and a monolithic `POST ?digest=`. Starting an upload and chunk `PATCH`es are not counted, and a push of several layers counts one per layer plus one for the manifest.
 - A package made of several files counts one per file request (a Maven deploy issues a `PUT` for the POM, the jar and each checksum; Conan and Ivy/sbt likewise).
 - A request refused by authentication or RBAC (`401`, `403`) never reaches the route and is not counted. Anything the upload route itself answers with `4xx` or `5xx` (unknown repository, validation, quota, immutable release, storage failure) is `result="error"`.

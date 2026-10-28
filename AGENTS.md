@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # AGENTS.md
 
-Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format artifact manager (deb, rpm, pacman, nix, npm, maven, helm, rubygems, docker/OCI, pypi, cargo, go, nuget, conda, conan, apk, terraform/opentofu, ansible, ivy, sbt, raw). License: AGPL-3.0-or-later (REUSE-compliant; every new file needs an SPDX header).
+Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format artifact manager (ansible, apk, cargo, conan, conda, deb, docker/OCI, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform/opentofu). License: AGPL-3.0-or-later (REUSE-compliant; every new file needs an SPDX header).
 
 ## Layout
 
@@ -15,10 +15,10 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `cmd/server` | HTTP server entrypoint; route wiring, startup/shutdown, bootstrap admin |
 | `cmd/oa` | CLI client |
 | `cmd/resetpw` | Admin password reset tool |
-| `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,rpm,npm,maven}.go`), `openapi.json` |
+| `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,maven,npm,rpm}.go`), `openapi.json` |
 | `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{repo}/...`, `/v2/...`); the Go module format lives in `gomod` |
 | `internal/repodispatch` | chi middleware in front of the per-format routes: hosted repos pass through, proxy and group repos are served by `internal/proxy` / `internal/group` |
-| `internal/{group,repotype}` | Group member resolution + Maven metadata / npm packument / cargo index / Helm `index.yaml` / go `@v/list` / NuGet registration / Conan revision + search / RubyGems compact index merge (`pkg/helm/index.go` parses, rewrites and merges indexes); `repotype` is the registry of package formats (one `Spec` each: proxy/group/federation support, default upstream, signing, isolated URL namespace, version rules, PURL type, OSV ecosystem, package tables) and the single policy of which formats may be proxy or group; deb/rpm/apk/pacman groups serve generated merged metadata, `internal/worker/group_metadata*.go`; `internal/pypisimple` is the PEP 503/691 parser/renderer behind the pypi proxy and group |
+| `internal/{group,repotype}` | Group member resolution + cargo index / Conan revision + search / go `@v/list` / Helm `index.yaml` / Maven metadata / npm packument / NuGet registration / RubyGems compact index merge (`pkg/helm/index.go` parses, rewrites and merges indexes); `repotype` is the registry of package formats (one `Spec` each: proxy/group/federation support, default upstream, signing, isolated URL namespace, version rules, PURL type, OSV ecosystem, package tables) and the single policy of which formats may be proxy or group; apk/deb/pacman/rpm groups serve generated merged metadata, `internal/worker/group_metadata*.go`; `internal/pypisimple` is the PEP 503/691 parser/renderer behind the pypi proxy and group |
 | `internal/ocipath` | Parses `/v2/<name>/...` into OpenArtifact repo + image; shared by RBAC and the docker handler |
 | `internal/clientsetup` | Go port of `web/src/lib/installCommands.ts` (client snippets, used by MCP `client_setup`); keep both in sync (`testdata/web_parity.json` is checked by a Go test and `web/src/lib/__tests__/installCommands.parity.test.ts`; regenerate with `UPDATE_PARITY=1 go test ./internal/clientsetup -run Parity`) |
 | `internal/importmeta` | `X-OA-Import-Created-At` handling for `oa import` (honored only for `manage` principals) |
@@ -31,7 +31,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, AI analysis |
 | `internal/{backup,webhook,proxy,search,vuln,sbom,license,secrets,quarantine,quota,cron,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM secret encryption at rest (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers/libraries (deb, rpm, npm, nuget, conan, maven, helm, rubymarshal, compactindex, gpg, delta) plus shared `errors`/`logger` |
+| `pkg/*` | Format parsers/libraries (conan, deb, helm, maven, npm, nuget, rpm, rubymarshal, compactindex, gpg, delta) plus shared `errors`/`logger` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TS + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go integration/handler tests; `tests/integration/` uses testcontainers |
@@ -98,7 +98,7 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck, deadcode and act
 
 - Web: `bun run typecheck && bun test`, then look at the page in the running app (dark and light theme).
 - Go: `make lint` (gocyclo limit 20 applies to tests too; prefer table-driven subtests) and `make test`.
-- Client round trips: with a running instance, `OA_TOKEN=$(OA_PASS=… scripts/dev-token.sh URL) scripts/smoke-formats.sh URL` publishes a tiny package per format (deb, rpm, npm, pypi; `FORMATS="deb rpm"` to pick) and installs it with the real client (apt, dnf, npm, pip) in throwaway host-network containers; it deletes its repositories afterwards.
+- Client round trips: with a running instance, `OA_TOKEN=$(OA_PASS=… scripts/dev-token.sh URL) scripts/smoke-formats.sh URL` publishes a tiny package per format (deb, npm, pypi, rpm; `FORMATS="deb rpm"` to pick) and installs it with the real client (apt, npm, pip, dnf) in throwaway host-network containers; it deletes its repositories afterwards.
 - End to end, isolated (`.agents/commands/smoke.md`): start a separate compose project so several worktrees can run side by side: `OPENARTIFACT_RUNTIME=distroless OPENARTIFACT_PORT=18080 docker compose -p oa-<topic> -f docker/docker-compose.yml --env-file docker/.env up -d --build` (containers have no fixed names; `-p` isolates network and volumes), read the bootstrap password from `docker compose -p oa-<topic> -f docker/docker-compose.yml logs openartifact`, mint a token with `OA_PASS=… scripts/dev-token.sh --change-password http://127.0.0.1:18080` (logs in, handles the forced password change via `OA_NEW_PASS`, `POST /api/v1/auth/tokens` with the session cookie and `X-CSRF-Token`, prints only the token; tokens cannot mint tokens, see `docs/integrations/api.md`), and publish with the real client (`npm publish`, `curl -T` for raw, …) before claiming a format works. Tear down with `docker compose -p oa-<topic> -f docker/docker-compose.yml down -v`.
 
 ## Review skills

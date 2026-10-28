@@ -35,7 +35,7 @@ type (
 // workerRegenerator adapts the metadata workers to TrashRegenerator. A nil
 // worker (feature disabled) is skipped.
 type workerRegenerator struct {
-	deb, rpm, apk, pacman repoStaleNotifier
+	apk, deb, pacman, rpm repoStaleNotifier
 	maven                 mavenStaleNotifier
 	npm                   npmStaleNotifier
 }
@@ -43,7 +43,7 @@ type workerRegenerator struct {
 // NewWorkerRegenerator builds the TrashRegenerator over the metadata workers
 // constructed in main.go. Pass nil for a worker that is not running.
 func NewWorkerRegenerator(deb, rpm, apk, pacman repoStaleNotifier, maven mavenStaleNotifier, npm npmStaleNotifier) TrashRegenerator {
-	return &workerRegenerator{deb: deb, rpm: rpm, apk: apk, pacman: pacman, maven: maven, npm: npm}
+	return &workerRegenerator{apk: apk, deb: deb, maven: maven, npm: npm, pacman: pacman, rpm: rpm}
 }
 
 func (w *workerRegenerator) NotifyDebStale(repoID string) {

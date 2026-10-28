@@ -18,25 +18,25 @@ func TestRuleForCoversEveryFormat(t *testing.T) {
 		t,
 		"manifest.ruleFor",
 		[]string{
-			"npm",
-			"pypi",
-			"maven",
-			"ivy",
-			"sbt",
-			"nuget",
 			"cargo",
-			"helm",
-			"deb",
-			"rpm",
-			"pacman",
-			"go",
-			"rubygems",
-			"conda",
 			"conan",
+			"conda",
+			"deb",
+			"go",
+			"helm",
+			"ivy",
+			"maven",
+			"npm",
+			"nuget",
+			"pacman",
+			"pypi",
+			"rpm",
+			"rubygems",
+			"sbt",
 		},
 		// No manifest is extracted for these: docker images are layers, apk and raw carry no descriptor this
 		// package reads, terraform modules/providers are not parsed, and a nix store path has no descriptor file.
-		[]string{"docker", "apk", "raw", "terraform", "nix", "ansible"},
+		[]string{"ansible", "apk", "docker", "nix", "raw", "terraform"},
 	)
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -59,10 +59,10 @@ func TestAutoEligibleFormats(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "manifest.AutoEligible",
-		[]string{"maven", "ivy", "sbt"},
+		[]string{"ivy", "maven", "sbt"},
 		[]string{
-			"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "terraform", "deb", "rpm", "apk",
-			"pacman", "nix", "ansible",
+			"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget", "pacman", "pypi",
+			"raw", "rpm", "rubygems", "terraform",
 		})
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

@@ -144,7 +144,7 @@ func (d *Detector) DetectFromMetadata(metadata map[string]any) []string {
 }
 
 // collectLicenseStrings walks the shapes registries use for license fields:
-// a string, a list of strings, or the legacy npm/maven objects
+// a string, a list of strings, or the legacy maven/npm objects
 // ({"type": "MIT"}, {"name": "..."}), alone or in a list.
 func collectLicenseStrings(val any, add func(string), depth int) {
 	if depth > 3 {

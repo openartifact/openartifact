@@ -127,16 +127,16 @@ const apkArch = ref('')
 const archError = computed(() => (isApk.value && apkArch.value !== '' && !validApkSegment(apkArch.value) ? t('upload.apk.invalid') : ''))
 const coordinatesValid = computed(() => branchError.value === '' && repoError.value === '' && archError.value === '')
 
-// The terraform publish API is a raw token-authenticated PUT per module version or provider platform,
-// nix is published by `nix copy` and the ansible one is a token-authenticated multipart POST driven by
-// ansible-galaxy; the dropzone cannot express any of them, so the zone shows the publish commands instead.
-const publishOnly = computed(() => props.format === 'terraform' || props.format === 'nix' || props.format === 'ansible')
+// The ansible publish API is a token-authenticated multipart POST driven by ansible-galaxy, nix is
+// published by `nix copy` and the terraform one is a raw token-authenticated PUT per module version or
+// provider platform; the dropzone cannot express any of them, so the zone shows the publish commands instead.
+const publishOnly = computed(() => props.format === 'ansible' || props.format === 'nix' || props.format === 'terraform')
 const publishBodyKey = computed(() => {
   switch (props.format) {
-    case 'nix':
-      return 'upload.nix.body'
     case 'ansible':
       return 'upload.ansible.body'
+    case 'nix':
+      return 'upload.nix.body'
     default:
       return 'upload.terraform.body'
   }
@@ -151,14 +151,14 @@ const formatHint = computed(() => {
       return t('upload.hint.apk')
     case 'deb':
       return t('upload.hint.deb')
-    case 'rpm':
-      return t('upload.hint.rpm')
     case 'maven':
       return t('upload.hint.maven')
     case 'npm':
       return t('upload.hint.npm')
     case 'pacman':
       return t('upload.hint.pacman')
+    case 'rpm':
+      return t('upload.hint.rpm')
     default:
       return t('upload.hint.generic')
   }

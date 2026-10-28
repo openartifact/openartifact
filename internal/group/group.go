@@ -47,7 +47,7 @@ type Handler struct {
 	// condaMerges bounds concurrent conda repodata merges, which spool to disk.
 	condaMerges base.Gate
 
-	// blobs and metadata serve deb, rpm and pacman groups (WithMetadata).
+	// blobs and metadata serve deb, pacman and rpm groups (WithMetadata).
 	blobs    storage.BlobStore
 	metadata MetadataGenerator
 	// apkKeys serves the public key of an apk group (WithApkKeys).
@@ -119,7 +119,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget, rubygems, conan, conda, terraform, ansible, deb, rpm, apk, pacman) merges over its
+// (ansible, apk, cargo, conan, conda, deb, go, helm, maven, npm, nuget, pacman, pypi, rpm, rubygems, terraform) merges over its
 // members, or answers itself (nix); false means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
@@ -130,6 +130,26 @@ func (h *Handler) serveMerged(
 	be Backend,
 ) bool {
 	switch grp.Format {
+	case "ansible":
+		return h.serveAnsible(w, r, grp, relPath, readable, be)
+	case "apk":
+		h.serveApk(w, r, grp, readable, relPath, be)
+
+		return true
+	case "cargo":
+		return h.serveCargo(w, r, grp, relPath, readable, be)
+	case "conan":
+		return h.serveConan(w, r, grp, relPath, readable, be)
+	case "conda":
+		return h.serveConda(w, r, grp, readable, relPath, be)
+	case "deb", "pacman", "rpm":
+		h.serveDebRPM(w, r, grp, readable, relPath, be)
+
+		return true
+	case "go":
+		return h.serveGo(w, r, grp, relPath, readable, be)
+	case "helm":
+		return h.serveHelm(w, r, grp, relPath, readable, be)
 	case "maven":
 		base, suffix, ok := mavenMetadataPath(relPath)
 		if ok {
@@ -137,40 +157,20 @@ func (h *Handler) serveMerged(
 		}
 
 		return ok
-	case "pypi":
-		return h.servePyPI(w, r, grp, readable, relPath, be)
-	case "npm":
-		return h.serveNPM(w, r, grp, relPath, readable, be)
-	case "helm":
-		return h.serveHelm(w, r, grp, relPath, readable, be)
-	case "cargo":
-		return h.serveCargo(w, r, grp, relPath, readable, be)
-	case "go":
-		return h.serveGo(w, r, grp, relPath, readable, be)
-	case "nuget":
-		return h.serveNuGet(w, r, grp, relPath, readable, be)
-	case "rubygems":
-		return h.serveRubyGems(w, r, grp, relPath, readable, be)
-	case "conan":
-		return h.serveConan(w, r, grp, relPath, readable, be)
-	case "terraform":
-		return h.serveTerraform(w, r, grp, relPath, readable, be)
-	case "ansible":
-		return h.serveAnsible(w, r, grp, relPath, readable, be)
-	case "conda":
-		return h.serveConda(w, r, grp, readable, relPath, be)
-	case "deb", "rpm", "pacman":
-		h.serveDebRPM(w, r, grp, readable, relPath, be)
-
-		return true
-	case "apk":
-		h.serveApk(w, r, grp, readable, relPath, be)
-
-		return true
 	case "nix":
 		h.serveNix(w, r, grp, readable, relPath, be)
 
 		return true
+	case "npm":
+		return h.serveNPM(w, r, grp, relPath, readable, be)
+	case "nuget":
+		return h.serveNuGet(w, r, grp, relPath, readable, be)
+	case "pypi":
+		return h.servePyPI(w, r, grp, readable, relPath, be)
+	case "rubygems":
+		return h.serveRubyGems(w, r, grp, relPath, readable, be)
+	case "terraform":
+		return h.serveTerraform(w, r, grp, relPath, readable, be)
 	}
 
 	return false

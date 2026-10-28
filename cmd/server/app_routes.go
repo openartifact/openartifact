@@ -202,7 +202,7 @@ func (a *app) registerAdminRoutes() {
 	a.registerUploadRoutes()
 }
 
-// registerUploadRoutes registers the rpm, deb and presigned upload APIs.
+// registerUploadRoutes registers the deb, rpm and presigned upload APIs.
 func (a *app) registerUploadRoutes() {
 	db, log, blobStore, reg := a.db, a.log, a.store.blobs, a.reg
 	u, wk := &a.web.uploads, &a.workers
