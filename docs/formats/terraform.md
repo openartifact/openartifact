@@ -155,7 +155,7 @@ Terraform and OpenTofu refuse a provider whose zip is not listed in a `SHA256SUM
 - Without an active key the provider endpoints answer `503` with `no GPG signing key is configured for this repository` and `terraform init` fails. Modules are not signed and need no key.
 - Because the signature is computed from the stored zips, adding a platform to an existing version changes `SHA256SUMS` and its signature; clients that already locked the version keep working with the checksums in their lock file.
 - `SHA256SUMS` files and signatures produced elsewhere (a GoReleaser `signs:` step) cannot be uploaded: only the zips are stored, and the server signs them. The provider's own build can therefore stay unsigned.
-- Changing the active key only affects later `init` runs: the registry answer always carries the public key that signed the `SHA256SUMS` it returns, and an existing lock file pins the zip hashes (`zh:`), not the key.
+- Changing the active key only affects later `init` runs: the registry answer always carries the public key that signed the `SHA256SUMS` it returns, and an existing lock file pins the zip hashes (`zh:`), not the key. No signature or key is stored: activating, rotating or removing a key needs no re-signing step and takes effect on the next request (a client that fetched the package document just before a rotation and the signature just after fails that one `init`; retry it).
 
 ```sh
 oa gpg generate --name registry --algorithm rsa4096 --activate

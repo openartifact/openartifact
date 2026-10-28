@@ -239,6 +239,28 @@ func TestScanRubyGem_ReadsGemspecLicenses(t *testing.T) {
 	}
 }
 
+// An Ivy module's descriptor declares the license; the scan reads it from the
+// stored ivy.xml and records the artifact as its source.
+func TestScanIvyDescriptor_ReadsTheLicense(t *testing.T) {
+	descriptor := `<ivy-module version="2.0"><info organisation="org.example" module="demo" revision="1.0.0">` +
+		`<license name="GPL-3.0-only" url="https://www.gnu.org/licenses/gpl-3.0"/></info></ivy-module>`
+
+	db, bs := storedArtifact(t, "ivy", "ivy.xml.xml", []byte(descriptor))
+
+	code, out := scanArtifact(t, db, bs)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d: %v", code, out)
+	}
+
+	if got := stringsOf(out["licenses"]); len(got) != 1 || got[0] != "GPL-3.0-only" {
+		t.Errorf("licenses = %v, want [GPL-3.0-only]", got)
+	}
+
+	if out["license_source"] != models.LicenseSourceArtifact {
+		t.Errorf("license_source = %v, want artifact", out["license_source"])
+	}
+}
+
 // Under a blocking policy, a package whose file cannot be read must not be
 // judged on what clients declared: the scan refuses it, and so does a change of
 // its license properties.
@@ -251,6 +273,8 @@ func TestLicenseScan_UnderivableArtifactUnderBlockPolicy(t *testing.T) {
 		"egg":                    {"pypi", "Django-3.0-py3.8.egg", []byte("egg")},
 		"npm without a manifest": {"npm", "demo-1.0.0.tgz", archivetest.TarGz(t, archivetest.File("package/index.js", ""))},
 		"unparsable pom":         {"maven", "demo-1.0.0.pom", []byte("<project><unclosed>")},
+		"unparsable ivy.xml":     {"ivy", "ivy.xml.xml", []byte("<ivy-module><info>")},
+		"gem without a gemspec":  {"rubygems", "demo-1.0.0.gem", []byte("not a tar")},
 	}
 
 	for name, f := range files {

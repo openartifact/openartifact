@@ -36,7 +36,7 @@ RUN wget -O /etc/apk/keys/openartifact-REPO.rsa.pub HOST/repos/REPO/public.key \
 ```
 
 - The key file name must be the key name inside the index signature (default `openartifact-REPO.rsa.pub`); the key is also served as `HOST/repos/REPO/<keyname>`. [Signing key](#signing-key) shows how to read the name.
-- A private repository (not public, no anonymous read) needs credentials for the key and for the repository: put them in the URL (`https://USERNAME:<TOKEN>@HOST/repos/REPO/v3.20/main`) and download the key with `wget --user USERNAME --password <TOKEN>`.
+- A private repository (not public, no anonymous read) needs credentials for the key and for the repository: put them in the URL (`https://USERNAME:<TOKEN>@HOST/repos/REPO/v3.20/main`) and download the key with `wget --header "Authorization: Bearer <TOKEN>"` (BusyBox `wget`, the one Alpine ships, has no `--user`/`--password`).
 - Alpine 3.5 and older reject SHA-256 signatures and cannot use these repositories. Verified with apk-tools 2.14 (Alpine 3.20), apk-tools 3.x on edge (which still reads the v2 index) and Alpine 3.6 to 3.16.
 
 The web UI and the MCP server show the same snippets on the repository page.

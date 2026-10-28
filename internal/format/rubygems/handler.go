@@ -68,7 +68,7 @@ func (h *RubyGemsHandler) parseGemMetadata(r io.Reader) (map[string]any, error) 
 			}
 
 			if len(data) > maxMetadataBytes {
-				return nil, errMetadataTooLarge
+				return nil, ErrMetadataTooLarge
 			}
 
 			return parseGemspecMetadata(data), nil
@@ -139,7 +139,9 @@ func gemspecToMetadata(spec *rubymarshal.Specification) map[string]any {
 
 const maxMetadataBytes = 4 << 20
 
-var errMetadataTooLarge = errors.New("gem metadata.gz exceeds maximum decompressed size")
+// ErrMetadataTooLarge means the metadata.gz of a gem decompresses to more than
+// maxMetadataBytes.
+var ErrMetadataTooLarge = errors.New("gem metadata.gz exceeds maximum decompressed size")
 
 // parseYAMLGemspec decodes the YAML Gem::Specification that `gem build`
 // writes (tagged with !ruby/object:... nodes) into the metadata shape used by

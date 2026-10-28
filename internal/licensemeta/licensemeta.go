@@ -4,7 +4,8 @@
 
 // Package licensemeta reads the licenses a package declares from the package
 // file itself: the metadata inside the artifact (a wheel's METADATA, an npm
-// tarball's package.json, a crate's Cargo.toml, a nupkg's .nuspec, a .pom).
+// tarball's package.json, a crate's Cargo.toml, a nupkg's .nuspec, a gem's
+// gemspec, a .pom or an ivy.xml).
 //
 // Upload requests carry their own claims about a package (twine's form fields,
 // npm's publish JSON, cargo's publish metadata); a client that cannot or will
@@ -55,8 +56,8 @@ type Result struct {
 	// SPDX expression, an alias, a classifier or free text.
 	Licenses []string
 	// Source names where they were read from: "License-Expression",
-	// "License", "classifier", "package.json", "Cargo.toml", ".nuspec" or
-	// "pom".
+	// "License", "classifier", "package.json", "Cargo.toml", ".nuspec",
+	// "gemspec", "pom" or "ivy.xml".
 	Source string
 	// Parent is the <parent> a Maven pom declares; set only for a pom that
 	// declares no license of its own, whose licenses are then the parent's
@@ -74,6 +75,10 @@ func Supported(format, filename string) bool {
 		return manifest.Supported(format, filename)
 	case "maven", "sbt":
 		return manifest.Supported("maven", filename) && !strings.HasSuffix(strings.ToLower(filename), ".xml")
+	case "rubygems":
+		return manifest.Supported(format, filename)
+	case "ivy":
+		return isIvyDescriptor(filename)
 	}
 
 	return false
@@ -81,16 +86,20 @@ func Supported(format, filename string) bool {
 
 // Expected reports whether a file of this format is a package that declares
 // its own license metadata: a wheel or sdist, an npm tarball, a crate, a nupkg,
-// a gem or a .pom. For these a failure to read the licenses (an unsupported
+// a gem, a .pom or an ivy.xml. For these a failure to read the licenses (an unsupported
 // file type such as a PyPI .egg, a damaged archive) leaves nothing but the
 // client's claims to judge the package by. Maven jars, checksums and
-// maven-metadata.xml are not: the .pom beside them is the authority.
+// maven-metadata.xml are not: the .pom beside them is the authority, as the
+// module descriptor is for the artifacts of an Ivy module. Every format
+// Expected holds is also Supported.
 func Expected(format, filename string) bool {
 	switch format {
-	case "pypi", "npm", "cargo", "nuget", "rubygems":
+	case "pypi", "npm", "cargo", "nuget":
 		return true
 	case "maven", "sbt":
 		return strings.HasSuffix(strings.ToLower(filename), ".pom")
+	case "rubygems", "ivy":
+		return Supported(format, filename)
 	}
 
 	return false
@@ -105,8 +114,12 @@ func Read(ctx context.Context, format, filename string, open func() (io.ReadClos
 		return Result{}, ErrUnsupported
 	}
 
+	if format == "rubygems" {
+		return readGem(ctx, open)
+	}
+
 	limit := int64(memberLimit)
-	if format == "maven" || format == "sbt" {
+	if format == "maven" || format == "sbt" || format == "ivy" {
 		limit = pkgmaven.MaxPOMBytes
 	}
 
@@ -156,6 +169,8 @@ func parse(format, filename string, parts []manifest.Part) (Result, error) {
 		return parseNuspec(parts[0].Body)
 	case "maven", "sbt":
 		return parsePOM(filename, parts)
+	case "ivy":
+		return parseIvy(parts[0].Body)
 	}
 
 	return Result{}, ErrUnsupported

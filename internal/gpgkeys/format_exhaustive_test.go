@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/repotype/repotypetest"
 )
 
@@ -24,15 +25,30 @@ func (r *recordingRefresher) NotifyStale(id string) {
 	r.mu.Unlock()
 }
 
+// signedWhenServed lists the GPG-signed formats that need no refresh because
+// they store no signature: terraform builds SHA256SUMS, its detached signature
+// and the signing_keys of the package document from the repository's current
+// key on every request (internal/format/terraform
+// TestProviderSigningFollowsKeyRotation proves a rotation is picked up).
+//
+//nolint:gochecknoglobals // immutable test table
+var signedWhenServed = []string{"terraform"}
+
 // TestRefreshCoversEveryFormat: a key change must re-sign the metadata of every
-// format that stores a signature. terraform and apk are not re-rendered: a
-// terraform provider is signed when downloaded and apk uses its own RSA key.
+// format that stores a signature. terraform is not re-rendered (see
+// signedWhenServed) and apk uses its own RSA key, not a GPG key.
 func TestRefreshCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "gpgkeys.refresh", []string{"rpm", "deb", "pacman"},
 		[]string{"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt",
 			"terraform", "apk"})
+
+	for _, spec := range repotypetest.Specs() {
+		if spec.Signing == repotype.SigningGPG && !slices.Contains(handled, spec.Name) && !slices.Contains(signedWhenServed, spec.Name) {
+			t.Errorf("format %s is GPG-signed but neither refreshed nor listed in signedWhenServed", spec.Name)
+		}
+	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
 		t.Helper()
