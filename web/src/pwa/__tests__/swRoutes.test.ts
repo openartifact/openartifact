@@ -85,6 +85,14 @@ describe('classifyRequest', () => {
     expect(classifyRequest(req('/repos/x/y'), ORIGIN, listed)).toBe('bypass')
   })
 
+  it('leaves the frontend telemetry settings and relay to the network', () => {
+    const listed = new Set(['/api/v1/telemetry/frontend'])
+    expect(classifyRequest(req('/api/v1/telemetry/frontend'), ORIGIN, listed)).toBe('bypass')
+    for (const signal of ['traces', 'logs']) {
+      expect(classifyRequest(req(`/api/v1/telemetry/${signal}`, { method: 'POST' }), ORIGIN, PRECACHED)).toBe('bypass')
+    }
+  })
+
   it('ignores everything but GET', () => {
     for (const method of ['POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']) {
       expect(classifyRequest(nav('/', { method }), ORIGIN, PRECACHED)).toBe('bypass')
