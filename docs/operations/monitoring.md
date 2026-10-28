@@ -85,7 +85,7 @@ scrape_configs:
 | `openartifact_blob_downloads_total` | counter | `mode`, `reason` | blob `GET`s by delivery: `mode=redirect` (`reason=presigned`) or `mode=stream` (`disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed`, `missing_object`); see [presigned URLs](storage.md#presigned-urls) |
 | `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
 | `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
-| `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown |
+| `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown: never written to `audit_logs` nor [streamed](#streaming-over-otlp) |
 | `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` | Unix time of the last successful [OSV mirror](../security/scanning.md#local-osv-mirror) import of an ecosystem (a check that found the export unchanged counts) |
 | `openartifact_osv_mirror_advisories` | gauge | `ecosystem` | live (not withdrawn) advisories in the local OSV mirror that affect an ecosystem |
 | `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` | OSV mirror imports; `result` is `imported`, `unchanged` or `error` |
@@ -225,7 +225,7 @@ telemetry:
 | `traces` | `OTEL_TRACES_EXPORTER=otlp` (`none` turns it off) | `true` | distributed traces; the HTTP server middleware, the client and database spans and the log correlation fields exist only with it |
 | `metrics` | `OTEL_METRICS_EXPORTER=otlp` (`none` turns it off) | `false` | also export metrics over OTLP, see below |
 | `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP as well, the log output is unchanged; see [log records](#log-records-over-otlp) |
-| `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | audit events over OTLP (scope `openartifact.audit`), independent of `traces`; reserved, no events yet (#193), see [log records](#log-records-over-otlp) |
+| `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | every audit event as an OTLP log event (scope `openartifact.audit`), independent of `traces`; see [streaming the audit log](#streaming-over-otlp) |
 
 Environment variables win over the YAML file. An `OTEL_*_EXPORTER` variable is a comma-separated list: one containing `otlp` turns the signal on, otherwise `none` turns it off, and any other value (`zipkin`) is ignored. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable telemetry: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_METRICS_*` and `OTEL_EXPORTER_OTLP_LOGS_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
 
@@ -264,7 +264,7 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 
 ### Log records over OTLP
 
-With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit`; either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail. Audit events are not written to the provider yet (#193).
+With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit` (see [streaming the audit log](#streaming-over-otlp)); either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail.
 
 With `logs` on, every line the server logs once telemetry is set up (at or above `LOG_LEVEL`) is also exported as a record under the instrumentation scope `github.com/openartifact/openartifact`; the startup banner and the unencrypted-secrets warning come earlier and stay on the log output only. The configured [log output](#logging) is unchanged: same lines, same fields. Each record has:
 
@@ -289,7 +289,7 @@ telemetry:
     logs: true
 ```
 
-Writing a record never waits for the collector. Records are queued for export (`OTEL_BLRP_MAX_QUEUE_SIZE`, 2048 by default); while the queue is full, because the collector is slow or unreachable, new records are dropped and `openartifact_telemetry_log_records_dropped_total` counts them by instrumentation scope. It should stay 0.
+Writing a record never waits for the collector. Records are queued for export (`OTEL_BLRP_MAX_QUEUE_SIZE`, 2048 by default); while the queue is full, because the collector is slow or unreachable, new records are dropped and `openartifact_telemetry_log_records_dropped_total` counts them by instrumentation scope. It should stay 0. The records of an export that finally fails (the exporter retries for up to a minute) are lost as well and are not counted: the failure only shows as the `OpenTelemetry export error` warning.
 
 ### Overhead and binary size
 
@@ -338,7 +338,7 @@ Recorded:
 - Every authenticated `POST`, `PUT` and `DELETE` request (reads are not recorded), with actor (username, or `anonymous`), client IP and a `details` object with `method`, `path` (the route pattern such as `/api/v1/repositories/{name}`, not the concrete URL), `status`, and `error: true` for status 400 and above.
 - Named actions: `repository.created`, `repository.deleted`, `repository.restored`, `repository.purged`, `artifact.uploaded` (deb upload through `POST /api/v1/repositories/{name}/debs` only), `artifact.deleted` (details `moved to trash` or `deleted`), `artifact.restored`, `artifact.purged` (see [trash](trash.md#audit-and-webhook-events)), `bundle.promoted` (a release bundle promotion; resource is the bundle, repository the promotion target, details the stage and the counts), `auth.password_changed`, `auth.token_created`, `auth.token_revoked`. A rejected `auth.*` request is recorded as `http.request` instead. Admin changes also write an explicit event naming the target (`resource_type`, `resource_id`, and the changed fields, never secrets): `user.created`, `user.updated` (changed fields, e.g. `password_reset`, `disabled=true`), `user.disabled`, `group.created`, `group.updated`, `group.deleted`, `group.member_added`, `group.member_removed`, `group.members_set`, `permission_target.created`, `permission_target.updated`, `permission_target.deleted`, `permission_target.assigned`, `permission_target.unassigned`, `sso_provider.created`, `sso_provider.updated`, `sso_provider.deleted` and `token.created_for_user` (a token minted for another user). Denied (403) requests are not audited. Every other write, including format uploads such as `PUT /repos/...`, is `http.request`.
 - Scan events written by the [local OSV mirror](../security/scanning.md#local-osv-mirror): `scan.vuln_detected` (advisories that newly affect a stored package version; resource is the package, details the advisory ids) and `scan.vuln_resolved` (advisories withdrawn or no longer affecting it). Manual scans record `scan.vuln_detected` too. The mirror's first import of an ecosystem writes neither.
-- Login traffic: `auth.login`, `auth.login_failed` (with the attempted username, never the password), `auth.logout` and `auth.sso_login`. Requests answered with `429` are not recorded.
+- Login traffic: `auth.login`, `auth.login_failed` (with the attempted username, never the password; the [OTLP stream](#streaming-over-otlp) leaves the username out), `auth.logout` and `auth.sso_login`. Requests answered with `429` are not recorded.
 
 Query it (admin only):
 
@@ -430,8 +430,115 @@ oa audit export --since 1h \
 Behaviour to know:
 
 - Writes go through a buffered queue (1000 events). When it is full a request waits up to 2 s, then the event is dropped and `openartifact_audit_dropped_total` increases. The queue is flushed on graceful shutdown (5 s).
+- The entry id and `timestamp` are assigned when the event is recorded, before it is queued, so the [OTLP stream](#streaming-over-otlp) carries the same values.
 - Entries are kept forever unless you set `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`): a worker then deletes older ones in paced batches. Nothing is exported first, so run `oa audit export` beforehand; see [audit log retention](audit-retention.md).
 - Audit logs are not part of [backups](backup.md).
+
+### Streaming over OTLP
+
+With [`telemetry.otlp.enabled`](#opentelemetry) and `telemetry.otlp.audit` (`OPENARTIFACT_OTLP_AUDIT=true`) on, every audit event is also sent as an [OpenTelemetry log event](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-eventname) to the configured collector, continuously, instead of being pulled with `oa audit export`. It works with traces, metrics and application logs off. Syslog/CEF, Splunk HEC, Elasticsearch and Loki are then routing in the [Collector](#local-collector), not code in OpenArtifact.
+
+Each event is one log record:
+
+| Field | Value |
+|---|---|
+| instrumentation scope | `openartifact.audit` |
+| event name | `openartifact.audit` for every action (event names carry no dynamic value; the action is an attribute) |
+| timestamp | when the event was recorded: the entry's `timestamp` in `audit_logs` and the export, to the microsecond |
+| trace id, span id | the request's span when traces are on, so an event links to its trace; empty otherwise |
+| severity | `INFO` (`9`), `WARN` (`13`) when the outcome is `failure` |
+| body | the details `message`, or the action when there is none |
+
+Attributes, each present only when the event has a value. They are named after the [export](#export) fields and the `details` keys, so the stream and `oa audit export` describe an entry the same way. The set is a contract: attributes may be added, never renamed or removed.
+
+| Attribute | Type | Meaning |
+|---|---|---|
+| `openartifact.audit.id` | string | entry UUID, the export `id`: the dedup key between the stream and the export |
+| `openartifact.audit.action` | string | action name, for example `auth.login` |
+| `openartifact.audit.outcome` | string | `success` or `failure` (an HTTP status of 400 and above, a failed login) |
+| `openartifact.audit.actor` | string | username or name of the acting principal; `anonymous` for unauthenticated writes |
+| `openartifact.audit.actor_type` | string | `user`, `system`, `token` or `sso` |
+| `openartifact.audit.actor_id` | string | UUID of the acting user |
+| `openartifact.audit.username` | string | login name of the authenticated user |
+| `openartifact.audit.token_id` | string | UUID of the API token the request authenticated with |
+| `openartifact.audit.resource_type`, `openartifact.audit.resource_id` | string | the object the event names |
+| `openartifact.audit.repository_id`, `openartifact.audit.project_id` | string | UUIDs of the repository or project concerned |
+| `openartifact.audit.package`, `openartifact.audit.version`, `openartifact.audit.subject` | string | package version the event concerns and the display name of what it acted on |
+| `openartifact.audit.ip` | string | client address |
+| `openartifact.audit.request_id` | string | `X-Request-ID` of the request, also in the `HTTP request` log line |
+| `openartifact.audit.status` | int | HTTP status of the request, for events recorded by the HTTP middleware |
+
+`auth.login_failed` events carry neither `actor` nor `username`: the attempted username is whatever the client typed, often a password. Correlate failed logins by `ip`; the `audit_logs` entry still names the attempted user for admins. A hash would not help: an unkeyed hash of a typed password is reversed by a dictionary.
+
+Delivery is best effort, at most once per event. The event is sent after the database insert, whatever its result, so an event the database refused is still streamed. Nothing ever waits for the collector: an event that does not fit the export queue (collector slow or down) is dropped and counted in `openartifact_telemetry_log_records_dropped_total{scope="openartifact.audit"}`; the events of an export that finally fails after a minute of retries are lost without being counted. Events lost before the writer (`openartifact_audit_dropped_total`) are neither stored nor streamed. Fill a gap from the source of truth with `oa audit export --since <start of the gap>` and drop the duplicates on `id` (`openartifact.audit.id` in the stream).
+
+Alert on:
+
+```promql
+increase(openartifact_telemetry_log_records_dropped_total{scope="openartifact.audit"}[15m]) > 0
+```
+
+#### Volume
+
+Every authenticated `POST`, `PUT`, `PATCH` and `DELETE` that has no named action is an `http.request` event, which includes every file of every package upload (a Maven deploy is one per file). The stream sends them because the database stores them; drop them in the Collector if the SIEM only needs the named actions. The rate is bounded by the audit writer, which streams at the speed it inserts.
+
+#### Collector routing
+
+This Collector configuration sends audit events to Splunk (HTTP Event Collector) and to Loki (native OTLP ingestion, Loki 3), without the `http.request` events, and every other log record to an OTLP backend. The `routing` connector selects on the instrumentation scope:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+
+processors:
+  batch: {}
+  # Optional: drop the generic http.request events (one per write request).
+  filter/audit-http-request:
+    error_mode: ignore
+    logs:
+      log_record:
+        - attributes["openartifact.audit.action"] == "http.request"
+
+connectors:
+  # Audit events go to logs/audit, every other log record to logs/app.
+  routing/audit:
+    default_pipelines: [logs/app]
+    table:
+      - context: log
+        condition: instrumentation_scope.name == "openartifact.audit"
+        pipelines: [logs/audit]
+
+exporters:
+  splunk_hec/audit:
+    endpoint: https://splunk.example.com:8088/services/collector
+    token: ${env:SPLUNK_HEC_TOKEN}
+    source: openartifact
+    sourcetype: openartifact:audit
+    index: audit
+  otlphttp/loki:
+    endpoint: http://loki.example.com:3100/otlp
+  otlphttp/app:
+    endpoint: https://otlp.example.com
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [routing/audit]
+    logs/audit:
+      receivers: [routing/audit]
+      processors: [filter/audit-http-request, batch]
+      exporters: [splunk_hec/audit, otlphttp/loki]
+    logs/app:
+      receivers: [routing/audit]
+      processors: [batch]
+      exporters: [otlphttp/app]
+```
+
+Check it with `otelcol-contrib validate --config <file>`. Splunk indexes the attributes as fields and takes the event time from the record. Loki stores them as structured metadata (`openartifact_audit_action` and so on) and labels the stream with `service_name`, so `{service_name="openartifact"} | openartifact_audit_action="auth.login_failed"` finds failed logins. Syslog/CEF works the same way with the Collector's `syslog` exporter. The baseline [`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) has no routing: audit events go to `OTELCOL_EXPORT_ENDPOINT` with the other logs.
 
 ## Logging
 

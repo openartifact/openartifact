@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -89,26 +91,32 @@ func WithRequest(ctx context.Context, req Request) context.Context {
 	return context.WithValue(ctx, requestKey{}, req)
 }
 
-// entry is an event as Log captured it, with the row id and the event time.
+// entry is an event as Log captured it: the row id, the event time and the
+// span context of the caller, shared by the database row and the OTLP event.
 type entry struct {
 	AuditEvent
 
-	id string
-	at time.Time
+	id   string
+	at   time.Time
+	span trace.SpanContext
 }
 
 type Logger struct {
-	ch   chan entry
-	db   database.Database
-	log  *logger.Logger
-	reg  *metrics.Registry
-	done chan struct{}
+	ch     chan entry
+	db     database.Database
+	log    *logger.Logger
+	reg    *metrics.Registry
+	stream otellog.Logger // nil unless WithOTLP
+	done   chan struct{}
 
 	mu     sync.RWMutex
 	closed bool
 }
 
-func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, bufferSize int) *Logger {
+// Option configures a Logger.
+type Option func(*Logger)
+
+func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, bufferSize int, opts ...Option) *Logger {
 	if bufferSize <= 0 {
 		bufferSize = 1000
 	}
@@ -119,6 +127,10 @@ func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, 
 		log:  log,
 		reg:  reg,
 		done: make(chan struct{}),
+	}
+
+	for _, o := range opts {
+		o(l)
 	}
 
 	go l.run()
@@ -145,6 +157,10 @@ func (l *Logger) run() {
 		if err := l.insert(e); err != nil {
 			l.log.Errorw("audit log insert failed", "action", e.Action, "id", e.id, "error", err)
 		}
+
+		// Streamed whatever the insert did: a failed insert is exactly the
+		// event a SIEM must not miss, and it carries the same id.
+		l.emit(e)
 	}
 
 	close(l.done)
@@ -228,13 +244,15 @@ func complete(ctx context.Context, event AuditEvent) AuditEvent {
 	return event
 }
 
-// capture completes event and stamps it with a new row id and the event time,
-// to the microsecond the database keeps.
+// capture completes event and stamps it: a new row id, the event time (to the
+// microsecond the database keeps, so the row and the OTLP event agree) and the
+// caller's span context.
 func capture(ctx context.Context, event AuditEvent) entry {
 	return entry{
 		AuditEvent: complete(ctx, event),
 		id:         uuid.NewString(),
 		at:         time.Now().Truncate(time.Microsecond),
+		span:       trace.SpanContextFromContext(ctx),
 	}
 }
 

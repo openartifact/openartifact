@@ -192,7 +192,12 @@ func (a *app) initCore() error {
 	prometheus.MustRegister(a.logDropped)
 	metrics.RegisterDBPools(a.db.PoolStat, a.db.GetDB().Stats)
 
-	a.auditLogger = audit.NewLogger(a.db, a.log, a.reg, 1000)
+	var auditOpts []audit.Option
+	if otlp := a.cfg.Telemetry.OTLP; otlp.Enabled && otlp.Audit {
+		auditOpts = append(auditOpts, audit.WithOTLP())
+	}
+
+	a.auditLogger = audit.NewLogger(a.db, a.log, a.reg, 1000, auditOpts...)
 	audit.SetDefault(a.auditLogger)
 
 	return nil
