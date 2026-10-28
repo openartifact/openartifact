@@ -90,6 +90,45 @@ docker pull HOSTPORT/dockerhub/alpine:3.20            # same image on Docker Hub
 - **Writes:** uploads, manifest push and deletes on a proxy or group are `405 UNSUPPORTED` (`Allow: GET, HEAD`).
 - **Storage:** cached content is a normal proxy cache (see [proxy repositories](../repositories/hosted-proxy-group.md#proxy-repositories)): it is listed in the package list, deduplicated by sha256 in the blob store and removed with the repository. Blobs are fully downloaded and verified before the first byte is sent, so a large first pull starts late. Digest-addressed entries are evicted after `workers.proxyDockerDigestTtl` without a pull (see Caching).
 
+## bootc and OSTree container images
+
+Images built for [bootc](https://containers.github.io/bootc/) or `rpm-ostree` (an OSTree commit wrapped in an OCI image) are ordinary OCI images with `ostree.*` annotations; the registry needs no special setup. Checked with `ostree container image pull` and `ostree container unencapsulate` (rpm-ostree 2026.3, libostree 2026.4) against hosted, proxy and group repositories, public and private:
+
+```sh
+# plain HTTP is only for a trial; use HTTPS in production
+printf '[[registry]]\nlocation = "HOST:PORT"\ninsecure = true\n' > /etc/containers/registries.conf.d/oa.conf
+
+# private repository: Basic with the token as password
+printf '{"auths":{"HOST:PORT":{"auth":"%s"}}}' "$(printf 'USERNAME:TOKEN' | base64 -w0)" > /etc/ostree/auth.json
+
+ostree init --repo=/ostree/repo --mode=bare-user
+ostree container image pull /ostree/repo ostree-unverified-registry:HOST:PORT/REPO/IMAGE:TAG
+```
+
+- A private repository answers `401` (`authentication required`) without `/etc/ostree/auth.json` or with a wrong token. `ostree container info` does not read that file; pass `--authfile`.
+- Proxy and group repositories work the same way (`HOST:PORT/PROXY/IMAGE`). A proxy of `quay.io` serves the index and manifests of `quay.io/fedora/fedora-bootc` with the upstream digests.
+- `skopeo copy` keeps the OCI manifest and its annotations (`ostree.commit`, `ostree.final-diffid`).
+
+### Signature policy (`ostree-image-signed`)
+
+cosign signatures are stored as `sha256-<digest>.sig` tags and verified by the client, so `ostree-image-signed:docker://...` works with a `sigstoreSigned` policy. `ostree` refuses a `policy.json` whose default is `insecureAcceptAnything`; set the default to `reject` and list the registry path:
+
+```json
+{"default": [{"type": "reject"}],
+ "transports": {"docker": {"HOST:PORT/REPO/IMAGE": [
+   {"type": "sigstoreSigned", "keyPath": "/etc/pki/cosign.pub",
+    "signedIdentity": {"type": "matchRepository"}}]}}}
+```
+
+```yaml
+# /etc/containers/registries.d/oa.yaml
+docker:
+  HOST:PORT:
+    use-sigstore-attachments: true
+```
+
+Sign with `cosign sign --key cosign.key HOST:PORT/REPO/IMAGE@sha256:<digest>` or `skopeo copy --sign-by-sigstore-private-key`. An unsigned image (`A signature was required, but no signature exists`) and an image signed with another key are rejected. Through a proxy or group the pulled name differs from the one inside the signature: use `{"type": "exactRepository", "dockerRepository": "HOST:PORT/REPO/IMAGE"}` as `signedIdentity` and a policy scope for the proxy or group path.
+
 ## Garbage collection
 
 Deleting a tag, or pushing a new image to an existing tag, leaves the old manifest behind untagged, and the layers only that manifest used stay in storage. Registry garbage collection reclaims them: it deletes untagged manifests older than a grace period and then the blobs nothing references any more. A [cleanup policy](../repositories/cleanup-and-quotas.md) removes old tags and runs this collection afterwards when it removed tags permanently; the admin API below runs it on demand.
