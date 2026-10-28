@@ -217,7 +217,7 @@ telemetry:
 | `sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | `1` | fraction of **new** traces recorded (0 to 1). Parent based: a request arriving with a sampled `traceparent` is always recorded, an unsampled one never |
 | `traces` | `OTEL_TRACES_EXPORTER=otlp` (`none` turns it off) | `true` | distributed traces; the HTTP server middleware, the client and database spans and the log correlation fields exist only with it |
 | `metrics` | `OTEL_METRICS_EXPORTER=otlp` (`none` turns it off) | `false` | also export metrics over OTLP, see below |
-| `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP; reserved, no records yet (#192), see [log records](#log-records-over-otlp) |
+| `logs` | `OTEL_LOGS_EXPORTER=otlp` (`none` turns it off) | `false` | application log records over OTLP as well, the log output is unchanged; see [log records](#log-records-over-otlp) |
 | `audit` | `OPENARTIFACT_OTLP_AUDIT` | `false` | audit events over OTLP (scope `openartifact.audit`), independent of `traces`; reserved, no events yet (#193), see [log records](#log-records-over-otlp) |
 
 Environment variables win over the YAML file. An `OTEL_*_EXPORTER` variable is a comma-separated list: one containing `otlp` turns the signal on, otherwise `none` turns it off, and any other value (`zipkin`) is ignored. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable telemetry: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_METRICS_*` and `OTEL_EXPORTER_OTLP_LOGS_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
@@ -247,7 +247,9 @@ With tracing enabled every `HTTP request` log line carries `trace_id` and `span_
 {"message":"HTTP request","method":"GET","path":"/repos/npm/left-pad","status":200,"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
 ```
 
-The fields are absent while tracing is disabled.
+The fields are absent while tracing is disabled. Exported over OTLP (`logs: true`), the same line is a log record whose own trace and span ids are those of the request span, so the backend links it to the trace without parsing fields.
+
+Only the `HTTP request` line is written with the request context today. The other lines logged while serving a request (handler, upload, proxy and group errors) have no context: on stdout they have no `trace_id`, and over OTLP their record has no trace or span id.
 
 ### Metrics over OTLP
 
@@ -255,7 +257,28 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 
 ### Log records over OTLP
 
-With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit`; either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail. This release only starts the provider: no records are written to it yet.
+With `logs` or `audit` on, one OTLP log provider is started on the same endpoint, protocol and headers (`/v1/logs` for `http`). `logs` is for the application log records, `audit` for the audit events under the instrumentation scope `openartifact.audit`; either works with `traces` off. The `audit_logs` table stays the source of truth for the audit trail. Audit events are not written to the provider yet (#193).
+
+With `logs` on, every line the server logs (at or above `LOG_LEVEL`) is also exported as a record under the instrumentation scope `github.com/openartifact/openartifact`. The configured [log output](#logging) is unchanged: same lines, same fields. Each record has:
+
+| Record field | Value |
+|---|---|
+| body | the message (`HTTP request`) |
+| severity | number from the level (`debug` 5 DEBUG, `info` 9 INFO, `warn` 13 WARN, `error` 17 ERROR), text the level itself |
+| attributes | the line's fields (`method`, `path`, `status`, ...), `code.file.path`, `code.line.number` and `code.function.name`; an `error` field becomes `exception.type` and `exception.message`, the same text as on the log line |
+| trace and span ids | those of the request span, for the lines written with the request context (see [log correlation](#log-correlation)) |
+| resource | the same as traces and metrics: `service.name`, `service.version`, `service.instance.id` and `OTEL_RESOURCE_ATTRIBUTES` |
+
+Exporter errors are written to the log output only, never exported, so a collector outage does not feed its own errors into the queue.
+
+```yaml
+telemetry:
+  otlp:
+    enabled: true
+    endpoint: "otel-collector:4317"
+    traces: true
+    logs: true
+```
 
 Writing a record never waits for the collector. Records are queued for export (`OTEL_BLRP_MAX_QUEUE_SIZE`, 2048 by default); while the queue is full, because the collector is slow or unreachable, new records are dropped and `openartifact_telemetry_log_records_dropped_total` counts them by instrumentation scope. It should stay 0.
 
@@ -402,7 +425,7 @@ Behaviour to know:
 
 ## Logging
 
-Logs are structured, written by zap.
+Logs are structured, written by zap. With [`telemetry.otlp.logs`](#log-records-over-otlp) they are also exported over OTLP; the output below does not change.
 
 | Environment variable | YAML key (`log:`) | Values | Default |
 |---|---|---|---|
