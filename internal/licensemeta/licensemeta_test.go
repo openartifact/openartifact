@@ -7,12 +7,14 @@ package licensemeta_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
+	"github.com/openartifact/openartifact/pkg/rubymarshal"
 )
 
 type member = archivetest.Member
@@ -250,6 +252,184 @@ func TestMavenPOM(t *testing.T) {
 	})
 }
 
+// realGemspec is the metadata.gz of a gem as `gem build` writes it (the shape of
+// rainbow 3.1.1: a tagged YAML Gem::Specification), with the licenses spliced in.
+func realGemspec(licenses string) string {
+	return `--- !ruby/object:Gem::Specification
+name: rainbow
+version: !ruby/object:Gem::Version
+  version: 3.1.1
+platform: ruby
+authors:
+- Marcin Kulik
+autorequire:
+bindir: bin
+cert_chain: []
+date: 2022-01-11 00:00:00.000000000 Z
+dependencies:
+- !ruby/object:Gem::Dependency
+  name: bundler
+  requirement: !ruby/object:Gem::Requirement
+    requirements:
+    - - ">="
+      - !ruby/object:Gem::Version
+        version: '1.3'
+  type: :development
+  prerelease: false
+description: Colorize printed text on ANSI terminals
+email:
+- m@ku1ik.com
+executables: []
+files:
+- lib/rainbow.rb
+homepage: https://github.com/sickill/rainbow
+` + licenses + `metadata: {}
+post_install_message:
+require_paths:
+- lib
+`
+}
+
+func TestRubyGem(t *testing.T) {
+	t.Parallel()
+
+	marshalled, err := rubymarshal.EncodeSpecification(rubymarshal.Specification{
+		Name: "demo", Version: "1.0.0", Platform: "ruby", Licenses: []string{"MIT", "Apache-2.0"},
+	})
+	noError(t, err)
+
+	tests := []struct {
+		name, gemspec string
+		want          []string
+	}{
+		{"one license", realGemspec("licenses:\n- MIT\n"), []string{"MIT"}},
+		{"several licenses", realGemspec("licenses:\n- MIT\n- Apache-2.0\n"), []string{"MIT", "Apache-2.0"}},
+		{"blank entries are dropped", realGemspec("licenses:\n- \" GPL-3.0-only \"\n- \"\"\n"), []string{"GPL-3.0-only"}},
+		{"empty list", realGemspec("licenses: []\n"), nil},
+		{"no field", realGemspec(""), nil},
+		{"a Marshal dump written by this registry", string(marshalled), []string{"MIT", "Apache-2.0"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := read(t, "rubygems", "demo-1.0.0.gem", archivetest.Gem(t, tc.gemspec))
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
+			equal(t, "gemspec", res.Source)
+		})
+	}
+
+	t.Run("metadata over the limit is unsafe", func(t *testing.T) {
+		t.Parallel()
+
+		huge := realGemspec("licenses:\n- MIT\n") + strings.Repeat("# padding\n", 1<<20)
+
+		_, err := read(t, "rubygems", "demo-1.0.0.gem", archivetest.Gem(t, huge))
+		errorIs(t, err, licensemeta.ErrUnsafe)
+		isTrue(t, licensemeta.Unsafe(err))
+	})
+
+	t.Run("a file that is not a gem is unreadable, not unsafe", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := read(t, "rubygems", "demo-1.0.0.gem", []byte("not a tar"))
+		isFalse(t, licensemeta.Unsafe(err))
+	})
+
+	t.Run("only a .gem is read", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := read(t, "rubygems", "demo-1.0.0.gem.sha256", []byte("x"))
+		errorIs(t, err, licensemeta.ErrUnsupported)
+	})
+}
+
+// TestIvyDescriptor reads the <info> of module descriptors as Ivy writes them
+// (the shape sbt and `ivy:publish` produce, with the extra-attributes namespace).
+func TestIvyDescriptor(t *testing.T) {
+	t.Parallel()
+
+	const head = `<?xml version="1.0" encoding="UTF-8"?>
+<ivy-module version="2.0" xmlns:e="http://ant.apache.org/ivy/extra">
+  <info organisation="org.example" module="demo_2.13" revision="1.0.0" status="release" publication="20240105120000" e:sbtVersion="1.0" e:scalaVersion="2.13">
+    <description homepage="https://example.org/demo">demo</description>
+`
+
+	const tail = `  </info>
+  <configurations><conf name="compile"/></configurations>
+  <publications><artifact name="demo_2.13" type="jar" ext="jar" conf="compile"/></publications>
+  <dependencies><dependency org="org.scala-lang" name="scala-library" rev="2.13.12" conf="compile->default(compile)"/></dependencies>
+</ivy-module>
+`
+
+	tests := []struct {
+		name, filename, info string
+		want                 []string
+	}{
+		{
+			"one license", "ivy.xml",
+			`<license name="Apache-2.0" url="https://www.apache.org/licenses/LICENSE-2.0"/>`, []string{"Apache-2.0"},
+		},
+		{"as the table lists it", "ivy.xml.xml", `<license name="MIT"/>`, []string{"MIT"}},
+		{"revisioned descriptor", "ivy-1.0.0.xml", `<license name="MIT" url="https://opensource.org/licenses/MIT"/>`, []string{"MIT"}},
+		{"several licenses", "ivy.xml", `<license name=" MIT "/><license name="Apache-2.0"/>`, []string{"MIT", "Apache-2.0"}},
+		{"canonical url without a name", "ivy.xml", `<license url="https://opensource.org/licenses/MIT"/>`, []string{"MIT"}},
+		{"unknown url without a name", "ivy.xml", `<license url="https://example.org/terms"/>`, nil},
+		{"no license", "ivy.xml", ``, nil},
+		{"a license outside <info> is not the module's", "ivy.xml", `<description>x</description>`, nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := read(t, "ivy", tc.filename, []byte(head+"    "+tc.info+"\n"+tail))
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
+			equal(t, "ivy.xml", res.Source)
+		})
+	}
+
+	t.Run("a license element in a dependency is ignored", func(t *testing.T) {
+		t.Parallel()
+
+		doc := head + tail[:len(tail)-len("</ivy-module>\n")] + `<license name="GPL-3.0-only"/></ivy-module>`
+
+		res, err := read(t, "ivy", "ivy.xml", []byte(doc))
+		noError(t, err)
+		isTrue(t, res.Empty(), "licenses read from outside <info>:", strings.Join(res.Licenses, ","))
+	})
+
+	t.Run("malformed descriptor is unreadable, not unsafe", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := read(t, "ivy", "ivy.xml", []byte("<ivy-module><info>"))
+		hasError(t, err)
+		isFalse(t, licensemeta.Unsafe(err))
+	})
+
+	t.Run("descriptor over the limit is unsafe", func(t *testing.T) {
+		t.Parallel()
+
+		huge := head + strings.Repeat("<!-- padding -->\n", 1<<20) + tail
+
+		_, err := read(t, "ivy", "ivy.xml", []byte(huge))
+		isTrue(t, licensemeta.Unsafe(err), "err:", fmt.Sprint(err))
+	})
+
+	t.Run("other files of the module are not read", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := read(t, "ivy", "demo_2.13-1.0.0.jar", []byte("PK"))
+		errorIs(t, err, licensemeta.ErrUnsupported)
+
+		_, err = read(t, "ivy", "ivysettings.xml", []byte("<ivysettings/>"))
+		errorIs(t, err, licensemeta.ErrUnsupported)
+	})
+}
+
 func TestUnsupportedAndEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -421,6 +601,14 @@ func equal(t *testing.T, want, got any, msg ...string) {
 	}
 }
 
+func isTrue(t *testing.T, v bool, msg ...string) {
+	t.Helper()
+
+	if !v {
+		t.Errorf("expected true: %s", strings.Join(msg, " "))
+	}
+}
+
 func isFalse(t *testing.T, v bool, msg ...string) {
 	t.Helper()
 
@@ -440,6 +628,15 @@ func TestExpected(t *testing.T) {
 		{"cargo", "demo-0.1.0.crate", true},
 		{"nuget", "Demo.1.0.0.nupkg", true},
 		{"rubygems", "demo-1.0.0.gem", true},
+		{"rubygems", "demo-1.0.0-x86_64-linux.gem", true},
+		{"rubygems", "demo-1.0.0.gem.sha256", false},
+		{"ivy", "ivy.xml", true},
+		{"ivy", "ivy-1.0.0.xml", true},
+		{"ivy", "ivy.xml.xml", true},
+		{"ivy", "ivy-1.0.0.xml.xml", true},
+		{"ivy", "ivysettings.xml.xml", false},
+		{"ivy", "demo_2.13-1.0.0.jar", false},
+		{"ivy", "ivysettings.xml", false},
 		{"maven", "demo-1.0.0.POM", true},
 		{"sbt", "demo_2.13-1.0.0.pom", true},
 		{"maven", "demo-1.0.0.jar", false},

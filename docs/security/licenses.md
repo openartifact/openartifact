@@ -27,8 +27,9 @@ The request's own fields are only a **fallback**, used when the file is readable
 | NuGet | the root `.nuspec` of the `.nupkg` | `<license type="expression">`, else a `<licenseUrl>` that names one license (`https://licenses.nuget.org/<expression>`, or a canonical apache.org, opensource.org, gnu.org URL). Any other URL names no license. `<license type="file">` declares nothing |
 | Maven | the uploaded `.pom`, or the `META-INF/maven/**/pom.xml` embedded in a stored `.jar` | each `<license><name>`; the `<url>` when a license has no name and the URL is a canonical one |
 | RubyGems | `metadata.gz` of the `.gem` | the gemspec `licenses` |
+| Ivy | the stored module descriptor, `ivy.xml` or `ivy-<revision>.xml` (a scan reads it; an upload is checked as in [Scanning](scanning.md#blocking-licenses)) | each `<license name>` of `<info>`; the `url` when a license has no name and the URL is a canonical one. Other files of the module (jars, checksums, `ivysettings.xml`) are judged through the descriptor |
 
-Other formats keep their own readers (Debian, RPM, Conda, Helm, Docker, Ivy; see [Scanning](scanning.md#blocking-licenses)); Conan, Go, Terraform and raw packages declare no license, so use [properties](../repositories/properties.md).
+Other formats keep their own readers (Debian, RPM, Conda, Helm, Docker; see [Scanning](scanning.md#blocking-licenses)); Conan, Go, Terraform and raw packages declare no license, so use [properties](../repositories/properties.md).
 
 ## Names that are not SPDX
 
@@ -49,7 +50,7 @@ A client can send a file this server cannot read but that its own tools do read 
 | yes | refused: `422`, code `LICENSE_METADATA_UNREADABLE`, nothing stored | refused: `422 unreadable_artifact`; a property change is saved but not evaluated |
 | no | admitted on the client's fields | evaluated on the artifact's license properties |
 
-This applies to the package files of PyPI, npm, Cargo, NuGet, RubyGems and Maven `.pom` files; a Maven jar, a checksum or `maven-metadata.xml` is judged through its `.pom`. A readable file that simply declares no license is not refused: it cannot hide a license, and the client's fields are the fallback as before. To publish such a file under a blocking policy, add the license to the package metadata in a form this server reads.
+This applies to the package files of PyPI, npm, Cargo, NuGet, RubyGems, Maven `.pom` files and stored Ivy descriptors (scans); a Maven jar, a checksum or `maven-metadata.xml` is judged through its `.pom`. A readable file that simply declares no license is not refused: it cannot hide a license, and the client's fields are the fallback as before. To publish such a file under a blocking policy, add the license to the package metadata in a form this server reads.
 
 Every license scan result says where its licenses came from in `license_source`:
 
@@ -85,6 +86,6 @@ An upload that fails these limits answers `422` with code `LICENSE_METADATA_UNSA
 
 - Maven parent poms are only found in the pom's repository and its groups' members (stored or already proxy-cached); nothing is fetched from upstream. See [Maven parent poms](#maven-parent-poms).
 - Without a blocking policy, a file that cannot be read is judged on the client's fields (marked `client_declared`).
-- Debian, RPM, Conda, Helm, Docker and Ivy/sbt keep their own readers and are not covered by `LICENSE_METADATA_UNREADABLE`: a descriptor that does not parse declares no license there.
+- Debian, RPM, Conda, Helm and Docker keep their own readers, and so do Ivy and sbt uploads (`ivy.xml` and `.pom` of the upload): none is covered by `LICENSE_METADATA_UNREADABLE`, a descriptor that does not parse declares no license there. A scan of an already stored Ivy descriptor that does not parse is refused under a blocking policy like any other file.
 - The metadata the registry **serves** (npm packument, PyPI JSON, the Cargo index) is still the client's. Only the license policy decision and the license scan use the file's licenses.
 - Existing license scan results are not rewritten: scan the artifact again to pick up the file's licenses.

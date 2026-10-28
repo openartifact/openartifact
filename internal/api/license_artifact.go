@@ -14,7 +14,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/rubygems"
 	"github.com/openartifact/openartifact/internal/license"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
@@ -142,10 +141,6 @@ func (s artifactLicenseSource) fromFile(ctx context.Context, repoID, artifactID 
 func (s artifactLicenseSource) read(ctx context.Context, repoID string, blob *models.ComponentBlob) ([]string, error) {
 	open := func() (io.ReadCloser, error) { return s.blobs.Get(ctx, blob.SHA256) }
 
-	if blob.Format == "rubygems" {
-		return readGemLicenses(ctx, open)
-	}
-
 	res, err := licensemeta.Read(ctx, blob.Format, blob.Filename, open)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // callers test the licensemeta sentinels
@@ -182,20 +177,4 @@ func writeLicenseSourceError(w http.ResponseWriter, err error, prefix string) bo
 	}
 
 	return true
-}
-
-func readGemLicenses(ctx context.Context, open func() (io.ReadCloser, error)) ([]string, error) {
-	rc, err := open()
-	if err != nil {
-		return nil, fmt.Errorf("open gem: %w", err)
-	}
-
-	defer func() { _ = rc.Close() }()
-
-	licenses, err := rubygems.ParseLicenses(ctx, rc)
-	if err != nil {
-		return nil, fmt.Errorf("read gem: %w", err)
-	}
-
-	return licenses, nil
 }

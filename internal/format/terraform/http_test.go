@@ -768,6 +768,55 @@ func TestProviderSignatureIsBinaryAndVerifies(t *testing.T) {
 	}
 }
 
+// TestProviderSigningFollowsKeyRotation: nothing signed is stored, so rotating
+// the repository's key needs no re-signing step. The package document and the
+// signature are both made from the key the repository has when they are
+// requested, and what `terraform init` checks (the served signing key against
+// the served signature of the served SHA256SUMS) holds before and after.
+func TestProviderSigningFollowsKeyRotation(t *testing.T) {
+	f := newProviderFixture(t)
+
+	verify := func(t *testing.T, signer *gpg.LocalSigner) {
+		t.Helper()
+
+		desc := f.e.do(http.MethodGet, "/repos/myrepo/aws/1.2.3/download/linux/amd64", nil)
+		if desc.Code != http.StatusOK {
+			t.Fatalf("package description: %d %s", desc.Code, desc.Body)
+		}
+
+		pkg := jsonOf[providerPackage](t, desc)
+		if len(pkg.SigningKeys.Keys) != 1 || !strings.HasSuffix(strings.ToUpper(signer.KeyFingerprint()), pkg.SigningKeys.Keys[0].KeyID) {
+			t.Fatalf("signing keys = %+v, want only the key %s", pkg.SigningKeys, signer.KeyFingerprint())
+		}
+
+		ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(pkg.SigningKeys.Keys[0].Armor))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sums, sig := f.fetch(t, pkg.SumsURL), f.fetch(t, pkg.SigURL)
+		if sums.Code != http.StatusOK || sig.Code != http.StatusOK {
+			t.Fatalf("sums %d, signature %d", sums.Code, sig.Code)
+		}
+
+		signedBy, err := openpgp.CheckDetachedSignature(ring, bytes.NewReader(sums.Body.Bytes()), sig.Body, nil)
+		if err != nil {
+			t.Fatalf("the served signature does not verify against the served key: %v", err)
+		}
+
+		if got := strings.ToUpper(hex.EncodeToString(signedBy.PrimaryKey.Fingerprint)); got != strings.ToUpper(signer.KeyFingerprint()) {
+			t.Fatalf("signed by %s, want %s", got, signer.KeyFingerprint())
+		}
+	}
+
+	verify(t, f.signer)
+
+	rotated := newSigner(t)
+	f.e.h.WithSigner(signerResolver{rotated})
+
+	verify(t, rotated)
+}
+
 func TestProviderChecksumsTrackNewPlatforms(t *testing.T) {
 	f := newProviderFixture(t)
 

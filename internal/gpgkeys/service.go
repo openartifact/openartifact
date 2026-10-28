@@ -594,7 +594,9 @@ func (s *Service) refreshFollowers(ctx context.Context) {
 }
 
 // refresh re-renders the metadata of the repositories so their signatures
-// follow the new key assignment.
+// follow the new key assignment. Formats that store no signature need nothing:
+// a terraform repository signs SHA256SUMS and publishes its signing key per
+// request, so it follows the assignment by itself.
 func (s *Service) refresh(ctx context.Context, repos []models.GPGSigningRepo) {
 	seen := make(map[string]struct{}, len(repos))
 
