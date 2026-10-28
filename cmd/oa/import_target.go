@@ -364,6 +364,9 @@ type uploadMeta struct {
 	Created      time.Time
 	DebDist      string
 	DebComponent string
+	// Version is the package version for the formats whose file may not state
+	// it (composer: a composer.json without "version"); "" takes the file's own.
+	Version string
 }
 
 // uploadResult is what the server reported for a stored asset.

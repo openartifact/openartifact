@@ -17,6 +17,7 @@ import (
 	formatansible "github.com/openartifact/openartifact/internal/format/ansible"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
+	formatcomposer "github.com/openartifact/openartifact/internal/format/composer"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
@@ -63,6 +64,7 @@ type formatHandlers struct {
 	nuget     *formatnuget.HTTPHandler
 	npm       *formatnpm.HTTPHandler
 	cargo     *formatcargo.HTTPHandler
+	composer  *formatcomposer.HTTPHandler
 	rubygems  *formatrubygems.HTTPHandler
 	raw       *formatraw.HTTPHandler
 	conda     *formatconda.HTTPHandler
@@ -242,6 +244,7 @@ func (a *app) newFormatHandlers() {
 	f.nuget = formatnuget.NewHTTPHandler(log, db, served, baseURL)
 	f.npm = formatnpm.NewHTTPHandler(log, db, served, baseURL)
 	f.cargo = formatcargo.NewHTTPHandler(log, db, served, baseURL)
+	f.composer = formatcomposer.NewHTTPHandler(log, db, served, baseURL).WithMetrics(a.reg)
 	f.rubygems = formatrubygems.NewHTTPHandler(log, db, served, baseURL)
 	f.raw = formatraw.NewHTTPHandler(log, db, served, baseURL)
 	f.conda = formatconda.NewHTTPHandler(log, db, served, baseURL)
@@ -302,6 +305,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.npm.RegisterRepoRoutes(routers["npm"])
 	f.nuget.RegisterRepoRoutes(routers["nuget"])
 	f.cargo.RegisterRepoRoutes(routers["cargo"])
+	f.composer.RegisterRepoRoutes(routers["composer"])
 	f.pypi.RegisterRepoRoutes(routers["pypi"])
 	f.helm.RegisterRepoRoutes(routers["helm"])
 	f.conan.RegisterRepoRoutes(routers["conan"])
@@ -355,6 +359,10 @@ func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 		// The binary cache paths (/<hash>.narinfo, /nar/<file>) likewise clash with
 		// the wildcard routes below; the guard serves them for nix repositories only.
 		r.Use(f.nix.Guard)
+		// The composer paths (/p2/..., /packages/upload/..., /dists/...) clash with the
+		// parameter routes of other formats too; the guard serves them for composer
+		// repositories only.
+		r.Use(f.composer.Guard)
 		f.rpm.RegisterRepoRoutes(r)
 		f.deb.RegisterRepoRoutes(r)
 		f.helm.RegisterRepoRoutes(r)
@@ -594,7 +602,7 @@ func (a *app) finishRoutes() {
 	// deb HTTP handlers do not publish events.
 	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
 		u.rpm, u.deb, u.presigned, u.npm, u.maven,
-		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.rubygems, f.raw,
+		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.composer, f.rubygems, f.raw,
 		f.conda, f.pacman, f.nix, f.ansible, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
 	} {
 		h.SetPublisher(a.feat.dtPublisher)

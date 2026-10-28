@@ -60,6 +60,10 @@ SELECT COUNT(*)::bigint FROM (
     SELECT 1 FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
     UNION ALL
+    -- composer
+    SELECT 1 FROM composer_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'composer') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
+    UNION ALL
     -- ansible
     SELECT 1 FROM ansible_collections t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ansible') AND ($3::text = '' OR (namespace || '.' || name) = $3::text) AND ($4::text = '' OR strpos(lower((namespace || '.' || name)), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0)
@@ -365,6 +369,11 @@ FROM (
     FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    SELECT t.id::uuid, 'composer'::text, (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text, t.name::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM composer_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
     SELECT t.id::uuid, 'ansible'::text, t.filename::text, (t.namespace || '.' || t.name)::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM ansible_collections t LEFT JOIN blobs b ON b.id = t.blob_id
@@ -572,6 +581,13 @@ FROM (
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint AS installed_size,
            (t.store_hash || '.narinfo')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT id, repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, refs, deriver, ca, signatures, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM nix_paths WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nix') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(store_hash), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
+    -- composer: one row per package version; filename = vendor-name-version.zip.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'composer'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, version, version_normalized, blob_id, sha1, composer_json, created_at, updated_at, deleted_at, deleted_by FROM composer_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'composer') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY created_at DESC, id LIMIT ($5::int + $6::int)) t
     UNION ALL
     -- ansible: one row per collection version; name = NAMESPACE.NAME.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.namespace || '.' || t.name::text AS name, t.version::text AS version,
@@ -850,6 +866,13 @@ FROM (
            (t.store_hash || '.narinfo')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT id, repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, refs, deriver, ca, signatures, download_count, created_at, updated_at, blob_id, deleted_at, deleted_by FROM nix_paths WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nix') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(store_hash), lower($4::text)) > 0) ORDER BY name, store_hash, id LIMIT ($5::int + $6::int)) t
     UNION ALL
+    -- composer: one row per package version; filename = vendor-name-version.zip.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'composer'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, version, version_normalized, blob_id, sha1, composer_json, created_at, updated_at, deleted_at, deleted_by FROM composer_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'composer') AND ($3::text = '' OR name = $3::text) AND ($4::text = '' OR strpos(lower(name), lower($4::text)) > 0 OR strpos(lower(version), lower($4::text)) > 0) ORDER BY name, version, id LIMIT ($5::int + $6::int)) t
+    UNION ALL
     -- ansible: one row per collection version; name = NAMESPACE.NAME.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.namespace || '.' || t.name::text AS name, t.version::text AS version,
            'ansible'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
@@ -1035,6 +1058,9 @@ FROM (
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM conda_packages t WHERE t.id = ANY($1::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, t.name::text, t.version::text
+    FROM composer_packages t WHERE t.id = ANY($1::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, (t.namespace || '.' || t.name)::text, t.version::text
     FROM ansible_collections t WHERE t.id = ANY($1::uuid[])

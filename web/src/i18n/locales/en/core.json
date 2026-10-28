@@ -72,6 +72,7 @@
   "upload.failed": "Failed",
   "upload.queued": "Queued",
   "upload.ansible.body": "Ansible collections are published with ansible-galaxy, which sends one multipart POST authenticated with an API token. Add the server to ansible.cfg, then run:",
+  "upload.composer.body": "Composer packages are published with one PUT request per version, authenticated with an API token. The vendor, package name and version are part of the URL:",
   "upload.hint.apk": "Upload .apk packages. They are stored under the branch and repository (directory) below; the architecture comes from the package.",
   "upload.apk.branch": "Branch",
   "upload.apk.branchHint": "Alpine release branch, for example v3.20 or edge.",

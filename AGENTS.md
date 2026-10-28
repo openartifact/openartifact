@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # AGENTS.md
 
-Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format artifact manager (ansible, apk, cargo, conan, conda, deb, docker/OCI, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform/opentofu). License: AGPL-3.0-or-later (REUSE-compliant; every new file needs an SPDX header).
+Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format artifact manager (ansible, apk, cargo, composer, conan, conda, deb, docker/OCI, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt, terraform/opentofu). License: AGPL-3.0-or-later (REUSE-compliant; every new file needs an SPDX header).
 
 ## Layout
 

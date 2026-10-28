@@ -72,6 +72,7 @@
   "upload.failed": "失敗",
   "upload.queued": "待機中",
   "upload.ansible.body": "Ansible コレクションは ansible-galaxy で公開します。API トークンで認証された multipart POST リクエストが 1 回送信されます。サーバーを ansible.cfg に追加してから実行します:",
+  "upload.composer.body": "Composer パッケージは、バージョンごとに、API トークンで認証した PUT リクエストを 1 回送って公開します。ベンダー、パッケージ名、バージョンは URL に含まれます:",
   "upload.hint.apk": ".apk パッケージをアップロードします。下のブランチとリポジトリ（ディレクトリ）に保存され、アーキテクチャはパッケージから取得されます。",
   "upload.apk.branch": "ブランチ",
   "upload.apk.branchHint": "Alpine のリリースブランチ（例: v3.20、edge）。",

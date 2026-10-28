@@ -88,6 +88,8 @@ export function pullCommand(
       return `apk add ${q(`${pkg}=${version}`)}`
     case 'cargo':
       return `cargo install ${q(pkg)} --version ${q(version)} --index ${q(`sparse+${base}/index/`)}`
+    case 'composer':
+      return `composer require ${q(`${pkg}:${version}`)}`
     case 'conan':
       return `conan install ${q(`--requires=${pkg}/${version}`)} -r ${q(repo)}`
     case 'conda':
@@ -225,6 +227,24 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
           publish: `cargo publish --registry ${repo}`,
         },
       ]
+    case 'composer': {
+      const secure = origin.startsWith('http://') ? '\ncomposer config secure-http false' : ''
+      const hn = hostnameOf(origin)
+      return [
+        {
+          client: 'composer',
+          configure:
+            `# composer.json\n{\n  "repositories": [{"type": "composer", "url": "${base}"}]\n}` +
+            `\n\n# or from the command line\ncomposer config repositories.openartifact composer ${base}${secure}` +
+            `\n\n# auth (or auth.json: {"http-basic": {"${hn}": {"username": "token", "password": "<TOKEN>"}}})` +
+            `\ncomposer config http-basic.${hn} token <TOKEN>\n\n# install\ncomposer require vendor/name`,
+          publish:
+            repoType === 'proxy' || repoType === 'group'
+              ? undefined
+              : `curl -T vendor-name-1.0.0.zip -H "Authorization: Bearer <TOKEN>" ${base}/packages/upload/vendor/name/1.0.0`,
+        },
+      ]
+    }
     case 'conan':
       return [
         {

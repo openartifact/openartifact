@@ -126,6 +126,11 @@ var trashSpecs = []*trashSpec{
 		blobCols: []string{"t.blob_id"},
 	},
 	{
+		kind: models.TrashKindComposer, table: "composer_packages", format: "composer", quota: true,
+		repoID: "t.repository_id", name: "t.name", version: "t.version",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
 		kind: models.TrashKindRubyGems, table: "rubygems_gems", format: "rubygems", quota: true,
 		repoID:   "t.repository_id",
 		name:     "t.name || CASE WHEN t.platform IN ('', 'ruby') THEN '' ELSE ' (' || t.platform || ')' END",

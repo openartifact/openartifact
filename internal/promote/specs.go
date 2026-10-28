@@ -88,6 +88,20 @@ func rowSpecs() []rowSpec {
 			},
 		},
 		{
+			format:  "composer",
+			kind:    models.TrashKindComposer,
+			table:   "composer_packages",
+			name:    "s.name",
+			version: "s.version",
+			idents:  []string{"s.name || '/' || s.version"},
+			key:     []string{"name", "version_normalized"},
+			licenses: "CASE jsonb_typeof(s.composer_json->'license') " +
+				"WHEN 'string' THEN ARRAY[s.composer_json->>'license'] " +
+				"WHEN 'array' THEN ARRAY(SELECT jsonb_array_elements_text(s.composer_json->'license')) " +
+				"ELSE '{}'::text[] END",
+			cols: []string{"name", "version", "version_normalized", "sha1", "composer_json"},
+		},
+		{
 			format:  "rubygems",
 			kind:    models.TrashKindRubyGems,
 			table:   "rubygems_gems",

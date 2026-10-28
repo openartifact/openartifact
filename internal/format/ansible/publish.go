@@ -367,15 +367,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 // hardDelete is the permanent delete: the row, the quota it held and, once no
 // row references it, the content-addressed blob.
 func (h *HTTPHandler) hardDelete(ctx context.Context, repo *models.Repository, c *models.AnsibleCollection) error {
-	if err := h.DB.DeleteAnsibleCollection(ctx, repo.ID, c.ID); err != nil {
-		return fmt.Errorf("delete ansible collection: %w", err)
-	}
-
-	defer h.dropBlob(ctx, c.SHA256, "delete")
-
-	if err := quota.Release(ctx, h.DB, repo.ID, c.SizeBytes); err != nil {
-		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", err)
-	}
-
-	return nil
+	return h.DeleteAccounted(ctx, repo.ID, c.SHA256, c.SizeBytes, func(ctx context.Context) error {
+		return h.DB.DeleteAnsibleCollection(ctx, repo.ID, c.ID) //nolint:wrapcheck // wrapped by DeleteAccounted
+	})
 }

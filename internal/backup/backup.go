@@ -445,6 +445,7 @@ type packageExport struct {
 	pypiPackages       []*models.PyPIPackage
 	nugetPackages      []*models.NuGetPackage
 	cargoCrates        []*models.CargoCrate
+	composerPackages   []*models.ComposerPackage
 	rubyGems           []*models.RubyGem
 	conanPackages      []*models.ConanPackage
 	apkPackages        []*models.ApkPackage
@@ -551,6 +552,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"pypi_packages", pkg.pypiPackages, len(pkg.pypiPackages)},
 		{"nuget_packages", pkg.nugetPackages, len(pkg.nugetPackages)},
 		{"cargo_crates", pkg.cargoCrates, len(pkg.cargoCrates)},
+		{"composer_packages", pkg.composerPackages, len(pkg.composerPackages)},
 		{"rubygems", pkg.rubyGems, len(pkg.rubyGems)},
 		{"conan_packages", pkg.conanPackages, len(pkg.conanPackages)},
 		{"apk_packages", pkg.apkPackages, len(pkg.apkPackages)},
@@ -692,6 +694,9 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 		// without a dedicated method.
 		v, err := e.db.SearchCargoCrates(ctx, id, "", bulkListLimit)
 		collectRepoList(pkg, &pkg.cargoCrates, "cargo crates", id, v, err)
+	case "composer":
+		v, err := e.db.ListComposerPackages(ctx, id)
+		collectRepoList(pkg, &pkg.composerPackages, "composer packages", id, v, err)
 	case "rubygems":
 		v, err := e.db.ListRubyGems(ctx, id)
 		collectRepoList(pkg, &pkg.rubyGems, "ruby gems", id, v, err)
@@ -1355,6 +1360,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.CargoCrate) string { return c.RepositoryID },
 			func(c *models.CargoCrate, id string) { c.RepositoryID = id },
 			false, e.db.CreateCargoCrate)
+	case "composer_packages.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "composer package",
+			func(c *models.ComposerPackage) string { return c.RepositoryID },
+			func(c *models.ComposerPackage, id string) { c.RepositoryID = id },
+			false, e.db.CreateComposerPackage)
 	case "rubygems.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "ruby gem",
 			func(c *models.RubyGem) string { return c.RepositoryID },

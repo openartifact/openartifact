@@ -127,14 +127,17 @@ const apkArch = ref('')
 const archError = computed(() => (isApk.value && apkArch.value !== '' && !validApkSegment(apkArch.value) ? t('upload.apk.invalid') : ''))
 const coordinatesValid = computed(() => branchError.value === '' && repoError.value === '' && archError.value === '')
 
-// The ansible publish API is a token-authenticated multipart POST driven by ansible-galaxy, nix is
-// published by `nix copy` and the terraform one is a raw token-authenticated PUT per module version or
-// provider platform; the dropzone cannot express any of them, so the zone shows the publish commands instead.
-const publishOnly = computed(() => props.format === 'ansible' || props.format === 'nix' || props.format === 'terraform')
+// The ansible publish API is a token-authenticated multipart POST driven by ansible-galaxy, composer is a
+// raw token-authenticated PUT of the zip per version, nix is published by `nix copy` and the terraform one
+// is a raw token-authenticated PUT per module version or provider platform; the dropzone cannot express
+// any of them, so the zone shows the publish commands instead.
+const publishOnly = computed(() => props.format === 'ansible' || props.format === 'composer' || props.format === 'nix' || props.format === 'terraform')
 const publishBodyKey = computed(() => {
   switch (props.format) {
     case 'ansible':
       return 'upload.ansible.body'
+    case 'composer':
+      return 'upload.composer.body'
     case 'nix':
       return 'upload.nix.body'
     default:

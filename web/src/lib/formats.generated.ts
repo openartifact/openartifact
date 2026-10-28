@@ -6,7 +6,7 @@
 // Add or change a format in the Go registry, then run `make generate`.
 
 /** Every package format id, in alphabetical (picker) order. */
-export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'] as const
+export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'] as const
 
 export type FormatId = (typeof FORMAT_IDS)[number]
 
@@ -26,7 +26,7 @@ export const GPG_SIGNED_FORMATS: readonly FormatId[] = ['deb', 'pacman', 'rpm', 
 export const ISOLATED_FORMATS: readonly FormatId[] = ['ivy', 'maven', 'raw', 'sbt']
 
 /** Formats the OSV scanner has an ecosystem for (format id = ecosystem id). */
-export const VULN_ECOSYSTEMS: readonly FormatId[] = ['cargo', 'deb', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'rpm', 'rubygems']
+export const VULN_ECOSYSTEMS: readonly FormatId[] = ['cargo', 'composer', 'deb', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'rpm', 'rubygems']
 
 /** Upstream a proxy repository uses when none is given; formats not listed need one. */
 export const DEFAULT_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {

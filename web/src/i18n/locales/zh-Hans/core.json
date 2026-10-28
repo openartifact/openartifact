@@ -72,6 +72,7 @@
   "upload.failed": "失败",
   "upload.queued": "已排队",
   "upload.ansible.body": "Ansible 集合通过 ansible-galaxy 发布，它会发送一个使用 API 令牌认证的 multipart POST 请求。先将服务器添加到 ansible.cfg，然后运行：",
+  "upload.composer.body": "Composer 包通过 PUT 请求发布，每个版本一个请求，并使用 API 令牌认证。vendor、包名和版本包含在 URL 中：",
   "upload.hint.apk": "上传 .apk 包。它们保存在下方的分支和仓库（目录）下，架构取自软件包。",
   "upload.apk.branch": "分支",
   "upload.apk.branchHint": "Alpine 发布分支，例如 v3.20 或 edge。",

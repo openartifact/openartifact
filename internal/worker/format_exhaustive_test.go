@@ -95,7 +95,7 @@ func TestRefreshMetadataCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshMetadata",
 		[]string{"apk", "deb", "pacman", "rpm"},
 		[]string{
-			"ansible", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"ansible", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 			"pypi", "raw", "rubygems", "sbt", "terraform",
 		},
 	)
@@ -163,7 +163,7 @@ func TestRefreshFormatMetadataCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshFormatMetadata",
 		[]string{"docker", "maven", "npm"},
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "ivy", "nix", "nuget", "pacman", "pypi",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "go", "helm", "ivy", "nix", "nuget", "pacman", "pypi",
 			"raw", "rpm", "rubygems", "sbt", "terraform",
 		},
 	)
@@ -208,7 +208,7 @@ func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 
 	generated := []string{"apk", "deb", "pacman", "rpm"}
 	others := []string{
-		"ansible", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+		"ansible", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 		"pypi", "raw", "rubygems", "sbt", "terraform",
 	}
 

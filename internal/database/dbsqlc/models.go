@@ -387,6 +387,26 @@ type CleanupPolicy struct {
 	ProjectID *string `db:"project_id" json:"project_id"`
 }
 
+// Composer packages: one dist zip per package name and normalised version.
+type ComposerPackage struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+	// The version as published, e.g. v1.2.3 or dev-main.
+	Version string `db:"version" json:"version"`
+	// Composer VersionParser::normalize of version, e.g. 1.2.3.0.
+	VersionNormalized string `db:"version_normalized" json:"version_normalized"`
+	BlobID            string `db:"blob_id" json:"blob_id"`
+	// Hex sha1 of the dist zip (Composer dist.shasum).
+	Sha1 string `db:"sha1" json:"sha1"`
+	// The composer.json of the package as uploaded.
+	ComposerJson json.RawMessage `db:"composer_json" json:"composer_json"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+	DeletedAt    *time.Time      `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string         `db:"deleted_by" json:"deleted_by"`
+}
+
 type ConanPackage struct {
 	ID             string     `db:"id" json:"id"`
 	RepositoryID   string     `db:"repository_id" json:"repository_id"`
@@ -1325,7 +1345,7 @@ type ReleaseBundleItem struct {
 type Repository struct {
 	ID   string `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
-	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix, ansible. Constrained by chk_repo_format.
+	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, composer, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix, ansible. Constrained by chk_repo_format.
 	Format      string    `db:"format" json:"format"`
 	Description *string   `db:"description" json:"description"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`

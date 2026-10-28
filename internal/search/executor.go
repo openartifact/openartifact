@@ -131,6 +131,8 @@ func unifiedSearchBranches() []string {
 			"\n\t\tFROM nix_paths np WHERE np.deleted_at IS NULL",
 		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
 			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
+		searchBranch("composer", "cmp.name", "cmp.version", "''", null, null, "cmp.blob_id", null, "cmp") +
+			"\n\t\tFROM composer_packages cmp WHERE cmp.deleted_at IS NULL",
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
 			"\n\t\tFROM conda_packages cp WHERE cp.deleted_at IS NULL",
 		searchBranch("ansible", "ac.namespace || '.' || ac.name", "ac.version", "ac.filename", null, null, "ac.blob_id", null, "ac") +

@@ -72,6 +72,7 @@
   "upload.failed": "Échec",
   "upload.queued": "En attente",
   "upload.ansible.body": "Les collections Ansible sont publiées avec ansible-galaxy, qui envoie une requête POST multipart authentifiée par un jeton d'API. Ajoutez le serveur à ansible.cfg, puis exécutez :",
+  "upload.composer.body": "Les paquets Composer sont publiés avec une requête PUT par version, authentifiée par un jeton d'API. Le vendor, le nom du paquet et la version font partie de l'URL :",
   "upload.hint.apk": "Téléversez des paquets .apk. Ils sont stockés sous la branche et le dépôt (répertoire) ci-dessous ; l'architecture provient du paquet.",
   "upload.apk.branch": "Branche",
   "upload.apk.branchHint": "Branche de version Alpine, par exemple v3.20 ou edge.",

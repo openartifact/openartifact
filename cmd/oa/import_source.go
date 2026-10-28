@@ -40,6 +40,7 @@ const (
 	formatSBT      importFormat = "sbt"
 	formatPacman   importFormat = "pacman"
 	formatAnsible  importFormat = "ansible"
+	formatComposer importFormat = "composer"
 )
 
 const (

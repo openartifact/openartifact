@@ -292,6 +292,7 @@ UNION ALL SELECT repository_id, blob_id, 1 FROM rubygems_gems
 UNION ALL SELECT p.repository_id, v.blob_id, 1 FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id
 UNION ALL SELECT repository_id, blob_id, 1 FROM pypi_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM cargo_crates
+UNION ALL SELECT repository_id, blob_id, 1 FROM composer_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM nuget_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM conda_packages
 UNION ALL SELECT repository_id, blob_id, 1 FROM ansible_collections

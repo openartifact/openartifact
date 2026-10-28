@@ -145,6 +145,7 @@ func metadataEntries(info map[string]string) []responses.PackageMetadataEntry {
 var dependencyDecoders = map[string]func([]byte) []responses.PackageDependencyResponse{
 	"npm":      decodeNpmDeps,
 	"cargo":    decodeCargoDeps,
+	"composer": decodeComposerDeps,
 	"nuget":    decodeNugetDeps,
 	"rubygems": decodeGemDeps,
 	"conda":    decodeCondaDeps,
@@ -212,6 +213,28 @@ func decodeCargoDeps(raw []byte) []responses.PackageDependencyResponse {
 	out := make([]responses.PackageDependencyResponse, 0, len(meta.Deps))
 	for _, d := range meta.Deps {
 		out = append(out, responses.PackageDependencyResponse{Name: d.Name, Version: d.VersionReq, Kind: d.Kind})
+	}
+
+	return out
+}
+
+// decodeComposerDeps reads the require object of a composer.json: package name
+// to version constraint. Platform requirements (php, ext-*, lib-*) are not
+// packages and are left out.
+func decodeComposerDeps(raw []byte) []responses.PackageDependencyResponse {
+	var deps map[string]string
+	if json.Unmarshal(raw, &deps) != nil {
+		return nil
+	}
+
+	out := make([]responses.PackageDependencyResponse, 0, len(deps))
+
+	for _, name := range slices.Sorted(maps.Keys(deps)) {
+		if !strings.Contains(name, "/") {
+			continue
+		}
+
+		out = append(out, responses.PackageDependencyResponse{Name: name, Version: deps[name]})
 	}
 
 	return out

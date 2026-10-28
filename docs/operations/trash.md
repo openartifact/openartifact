@@ -12,7 +12,7 @@ Deleting an artifact, a version, a Docker tag or a whole repository does not des
 
 Everything a delete can remove, in every format, plus repositories:
 
-- Package rows of the hosted formats: Alpine packages, Ansible collections, Cargo, Conan, Conda, Debian packages, Docker manifests and tags, Go modules, Helm, Ivy, Maven, Nix store paths, npm versions, NuGet, Arch Linux (pacman), PyPI, raw files, RPM, RubyGems, sbt and Terraform modules and providers.
+- Package rows of the hosted formats: Alpine packages, Ansible collections, Cargo, Composer, Conan, Conda, Debian packages, Docker manifests and tags, Go modules, Helm, Ivy, Maven, Nix store paths, npm versions, NuGet, Arch Linux (pacman), PyPI, raw files, RPM, RubyGems, sbt and Terraform modules and providers.
 - Whole repositories.
 - Items removed by a [cleanup policy](../repositories/cleanup-and-quotas.md#cleanup-policies).
 
@@ -77,6 +77,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `ansible` | an Ansible collection version |
 | `apk_package` | one Alpine `.apk` package; restoring it regenerates the directory's `APKINDEX.tar.gz` |
 | `cargo_crate` | a Cargo crate version |
+| `composer` | a Composer package version |
 | `conan_package` | one stored file of a Conan recipe or package revision |
 | `conda_package` | a Conda package |
 | `deb_package` | a Debian package |

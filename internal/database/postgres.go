@@ -1900,6 +1900,7 @@ var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // 
 	{"nuget_packages", "blob_id = b.id"},
 	{"gomod_modules", "zip_blob_id = b.id OR mod_blob_id = b.id"},
 	{"cargo_crates", "blob_id = b.id"},
+	{"composer_packages", "blob_id = b.id"},
 	{"rubygems_gems", "blob_id = b.id"},
 	{"conda_packages", "blob_id = b.id"},
 	{"ansible_collections", "blob_id = b.id"},

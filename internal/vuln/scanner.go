@@ -412,6 +412,17 @@ func (s *TrivyScanner) writeManifest(dir, packageName, version, ecosystem string
 
 		return os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(content), 0600)
 
+	case "composer":
+		data, err := json.Marshal(map[string]any{
+			"packages":     []map[string]string{{"name": packageName, "version": composerVersion(version)}},
+			"packages-dev": []map[string]string{},
+		})
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(filepath.Join(dir, "composer.lock"), data, 0600)
+
 	case "go":
 		content := fmt.Sprintf(`module scan-pkg
 

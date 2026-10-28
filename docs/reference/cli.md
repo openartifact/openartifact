@@ -486,6 +486,7 @@ promote <name> <version> --stage S [--target-repo R] [--notes T]
 | `-property` | `value` | Property k=v set on every uploaded artifact (repeatable) |
 | `-target-path` | `string` | Path in the repository; a trailing / makes it a directory (default: the file's path) |
 | `-vcs-revision` | `string` | Source revision, recorded as property vcs.revision |
+| `-version` | `string` | Package version, for the formats whose file does not say (composer: when composer.json has no "version") |
 
 ### `oa bundle`
 

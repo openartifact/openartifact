@@ -172,6 +172,7 @@
   "trash.kind.ansible": "Colección de Ansible",
   "trash.kind.apk_package": "Paquete Alpine",
   "trash.kind.cargo_crate": "Crate de Cargo",
+  "trash.kind.composer": "Paquete de Composer",
   "trash.kind.conan_package": "Paquete Conan",
   "trash.kind.conda_package": "Paquete Conda",
   "trash.kind.deb_package": "Paquete deb",

@@ -20,6 +20,7 @@ func TestParseCoversEveryFormat(t *testing.T) {
 		"pkgdeps.parse",
 		[]string{
 			"cargo",
+			"composer",
 			"conan",
 			"conda",
 			"deb",

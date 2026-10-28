@@ -23,6 +23,7 @@ const (
 	FormatDocker    = "docker"
 	FormatPyPI      = "pypi"
 	FormatCargo     = "cargo"
+	FormatComposer  = "composer"
 	FormatGo        = "go"
 	FormatNuGet     = "nuget"
 	FormatConda     = "conda"

@@ -104,6 +104,7 @@ func catalogBranches() []catalogBranch {
 		simpleBranch("nuget", "nuget_packages", "t.package_id", "t.version", "t.blob_id"),
 		simpleBranch("go", "gomod_modules", "t.module_path", "t.version", "COALESCE(t.zip_blob_id, t.mod_blob_id)"),
 		simpleBranch("cargo", "cargo_crates", "t.name", "t.version", "t.blob_id"),
+		simpleBranch("composer", "composer_packages", "t.name", "t.version", "t.blob_id"),
 		gems,
 		simpleBranch("conda", "conda_packages", "t.name", "t.version", "t.blob_id"),
 		simpleBranch("ansible", "ansible_collections", "t.namespace || '.' || t.name", "t.version", "t.blob_id"),

@@ -17,14 +17,14 @@ import (
 //
 //nolint:gochecknoglobals // immutable test table
 var licenseFile = map[string]string{
-	"cargo": "x-1.0.crate", "ivy": "ivy.xml", "maven": "x-1.0.pom", "npm": "x-1.0.tgz", "nuget": "x.1.0.nupkg",
+	"cargo": "x-1.0.crate", "composer": "x-1.0.zip", "ivy": "ivy.xml", "maven": "x-1.0.pom", "npm": "x-1.0.tgz", "nuget": "x.1.0.nupkg",
 	"pypi": "x-1.0-py3-none-any.whl", "rubygems": "x-1.0.gem", "sbt": "x-1.0.pom",
 }
 
 // supported are the formats whose licenses are read from the package file.
 //
 //nolint:gochecknoglobals // immutable test table
-var supported = []string{"cargo", "ivy", "maven", "npm", "nuget", "pypi", "rubygems", "sbt"}
+var supported = []string{"cargo", "composer", "ivy", "maven", "npm", "nuget", "pypi", "rubygems", "sbt"}
 
 // notSupported are the formats whose licenses are not read: they have no
 // license metadata of their own that a policy could match.
@@ -106,7 +106,7 @@ func TestParseCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	// rubygems is read by readGem before the manifest extraction, so parse never sees it.
-	handled := repotypetest.Classified(t, "licensemeta.parse", []string{"cargo", "ivy", "maven", "npm", "nuget", "pypi", "sbt"},
+	handled := repotypetest.Classified(t, "licensemeta.parse", []string{"cargo", "composer", "ivy", "maven", "npm", "nuget", "pypi", "sbt"},
 		append([]string{"rubygems"}, notSupported...))
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -129,7 +129,7 @@ func TestParseCoversEveryFormat(t *testing.T) {
 func TestReadFormatPlumbing(t *testing.T) {
 	t.Parallel()
 
-	others := []string{"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget",
+	others := []string{"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget",
 		"pacman", "pypi", "raw", "rpm", "terraform"}
 
 	repotypetest.Classified(t, "licensemeta.Read limit", []string{"ivy", "maven", "sbt"}, append([]string{"rubygems"}, others...))

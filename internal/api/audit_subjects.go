@@ -184,6 +184,7 @@ var auditPackageKinds = map[string]bool{
 	string(models.TrashKindNuGet):          true,
 	string(models.TrashKindGoMod):          true,
 	string(models.TrashKindCargo):          true,
+	string(models.TrashKindComposer):       true,
 	string(models.TrashKindRubyGems):       true,
 	string(models.TrashKindConda):          true,
 	string(models.TrashKindPacman):         true,

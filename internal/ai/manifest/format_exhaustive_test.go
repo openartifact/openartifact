@@ -19,6 +19,7 @@ func TestRuleForCoversEveryFormat(t *testing.T) {
 		"manifest.ruleFor",
 		[]string{
 			"cargo",
+			"composer",
 			"conan",
 			"conda",
 			"deb",
@@ -61,7 +62,7 @@ func TestAutoEligibleFormats(t *testing.T) {
 	handled := repotypetest.Classified(t, "manifest.AutoEligible",
 		[]string{"ivy", "maven", "sbt"},
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget", "pacman", "pypi",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget", "pacman", "pypi",
 			"raw", "rpm", "rubygems", "terraform",
 		})
 

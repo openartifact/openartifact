@@ -72,6 +72,7 @@
   "upload.failed": "Fehlgeschlagen",
   "upload.queued": "In Warteschlange",
   "upload.ansible.body": "Ansible-Collections werden mit ansible-galaxy veröffentlicht, das eine einzelne Multipart-POST-Anfrage mit API-Token sendet. Server in die ansible.cfg eintragen und dann ausführen:",
+  "upload.composer.body": "Composer-Pakete werden mit je einer PUT-Anfrage pro Version veröffentlicht, authentifiziert mit einem API-Token. Vendor, Paketname und Version sind Teil der URL:",
   "upload.hint.apk": "Lade .apk-Pakete hoch. Sie werden unter dem Branch und Repository (Verzeichnis) unten abgelegt; die Architektur stammt aus dem Paket.",
   "upload.apk.branch": "Branch",
   "upload.apk.branchHint": "Alpine-Release-Branch, zum Beispiel v3.20 oder edge.",

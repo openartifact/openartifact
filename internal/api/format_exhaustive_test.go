@@ -24,7 +24,7 @@ func TestWithDistroCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "api.VulnHandler.withDistro",
 		[]string{"deb", "rpm"},
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 			"pacman", "pypi", "raw", "rubygems", "sbt", "terraform",
 		},
 	)
@@ -62,7 +62,7 @@ func TestDownloadFilenameCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "api.downloadFilename",
 		[]string{"conan", "docker"},
 		[]string{
-			"ansible", "apk", "cargo", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget", "pacman", "pypi",
+			"ansible", "apk", "cargo", "composer", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget", "pacman", "pypi",
 			"raw", "rpm", "rubygems", "sbt", "terraform",
 		},
 	)

@@ -23,7 +23,7 @@ func TestIsProxyBlobPathDecidesEveryFormat(t *testing.T) {
 			"ansible", "cargo", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget", "pacman", "pypi",
 			"raw", "rpm", "rubygems", "terraform",
 		},
-		[]string{"apk", "docker", "ivy", "sbt"})
+		[]string{"apk", "composer", "docker", "ivy", "sbt"})
 
 	blobs := map[string]string{
 		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",

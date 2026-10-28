@@ -749,6 +749,7 @@ var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built o
 	{"gomod_modules t", "t.repository_id", "t.zip_blob_id = b.id", "t.module_path || '/@v/' || t.version || '.zip'"},
 	{"gomod_modules t", "t.repository_id", "t.mod_blob_id = b.id", "t.module_path || '/@v/' || t.version || '.mod'"},
 	{"cargo_crates t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
+	{"composer_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
 	{"rubygems_gems t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
 	{"ansible_collections t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
 	{"pacman_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},

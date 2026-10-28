@@ -60,6 +60,10 @@ FROM (
     SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
     UNION ALL
+    -- composer
+    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM composer_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
+    UNION ALL
     -- ansible
     SELECT (t.namespace || '.' || t.name)::text AS name, t.created_at::timestamptz AS created_at FROM ansible_collections t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid

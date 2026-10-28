@@ -24,6 +24,7 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 	formats := []string{
 		"apk",
 		"cargo",
+		"composer",
 		"conda",
 		"conan",
 		"terraform",
