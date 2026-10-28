@@ -152,6 +152,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pypi": metrics.FormatPyPI,
 		"raw": metrics.FormatRaw, "rpm": metrics.FormatRPM, "rubygems": metrics.FormatRubyGems,
 		"sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform, "apk": metrics.FormatApk, "pacman": metrics.FormatPacman,
+		"nix": metrics.FormatNix,
 	}
 
 	entries, err := os.ReadDir("../format")

@@ -107,6 +107,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewRPMUploadHandler(log, nil, nil, nil).Register(r)
 	NewDeltaHandler(log, nil, nil).Register(r)
 	NewApkKeyHandler(nil, nil, nil, nil).Register(r)
+	NewNixKeyHandler(nil, nil, nil, nil).Register(r)
 
 	routes := map[string]bool{}
 	err = chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {

@@ -99,7 +99,8 @@ A store path is identified by its store hash. Uploading a path that already exis
 
 ## Limits and notes
 
-- Uploads follow the global upload size limit and the repository [quota](../repositories/cleanup-and-quotas.md); `nix copy` sends the NAR with a `Content-Length`.
+- A NAR file may be up to 16 GiB (it is streamed to a temporary file while its hash is checked, never held in memory) and counts against the repository [quota](../repositories/cleanup-and-quotas.md); a NAR is checked against the SHA-256 in its file name, and a narinfo against the NAR it names (`FileHash`, `FileSize`, `URL`). A narinfo may be sent with `Content-Encoding` gzip, xz, zstd or bzip2 (`narinfo-compression`).
+- A NAR is hosted once per repository however many paths share it. Range requests are not supported.
 - The repository is not served under an isolated prefix: always use `HOST/repos/REPO` as the substituter URL, without a trailing slash.
 - Package downloads are counted per store path.
 

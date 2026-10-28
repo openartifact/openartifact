@@ -42,7 +42,7 @@ func TestRefreshCoversEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "gpgkeys.refresh", []string{"rpm", "deb", "pacman"},
 		[]string{"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk"})
+			"terraform", "apk", "nix"})
 
 	for _, spec := range repotypetest.Specs() {
 		if spec.Signing == repotype.SigningGPG && !slices.Contains(handled, spec.Name) && !slices.Contains(signedWhenServed, spec.Name) {
