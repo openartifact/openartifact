@@ -545,7 +545,7 @@ func TestLogFields(t *testing.T) {
 	defer span.End()
 
 	f := LogFields(ctx)
-	if len(f) != 4 || f[0] != "trace_id" || f[2] != "span_id" {
+	if len(f) != 5 || f[0] != "trace_id" || f[2] != "span_id" {
 		t.Fatalf("fields = %v", f)
 	}
 

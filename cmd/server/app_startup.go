@@ -88,7 +88,22 @@ func (a *app) setupTelemetry() error {
 		}
 	})
 
-	if otlp := a.cfg.Telemetry.OTLP; otlp.Enabled {
+	otlp := a.cfg.Telemetry.OTLP
+
+	// From here on application logs also go to the OTLP log provider, next
+	// to the configured output. The exporter error handler Setup installed
+	// keeps the logger without the bridge, so an export failure is never fed
+	// back into the export queue.
+	if otlp.Enabled && otlp.Logs {
+		log, err := a.log.Tee(telemetry.LogCore())
+		if err != nil {
+			return a.fail("failed to bridge logs to OpenTelemetry", err)
+		}
+
+		a.log = log
+	}
+
+	if otlp.Enabled {
 		a.log.Infow("OpenTelemetry enabled",
 			"protocol", otlp.Protocol,
 			"service_name", otlp.ServiceName,
