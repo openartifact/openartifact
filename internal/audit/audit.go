@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -87,8 +89,16 @@ func WithRequest(ctx context.Context, req Request) context.Context {
 	return context.WithValue(ctx, requestKey{}, req)
 }
 
+// entry is an event as Log captured it, with the row id and the event time.
+type entry struct {
+	AuditEvent
+
+	id string
+	at time.Time
+}
+
 type Logger struct {
-	ch   chan AuditEvent
+	ch   chan entry
 	db   database.Database
 	log  *logger.Logger
 	reg  *metrics.Registry
@@ -104,7 +114,7 @@ func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, 
 	}
 
 	l := &Logger{
-		ch:   make(chan AuditEvent, bufferSize),
+		ch:   make(chan entry, bufferSize),
 		db:   db,
 		log:  log,
 		reg:  reg,
@@ -131,21 +141,23 @@ func (l *Logger) run() {
 		}
 	}()
 
-	for event := range l.ch {
-		if err := l.insert(event); err != nil {
-			l.log.Errorw("audit log insert failed", "action", event.Action, "error", err)
+	for e := range l.ch {
+		if err := l.insert(e); err != nil {
+			l.log.Errorw("audit log insert failed", "action", e.Action, "id", e.id, "error", err)
 		}
 	}
 
 	close(l.done)
 }
 
-func (l *Logger) insert(e AuditEvent) error {
+func (l *Logger) insert(e entry) error {
 	row := &models.AuditLog{
+		ID:           e.id,
+		CreatedAt:    e.at,
 		Action:       e.Action,
 		ActorID:      e.ActorID,
 		ActorType:    nilActorType(e.ActorType),
-		DetailsJSON:  json.RawMessage(buildDetailsJSON(e)),
+		DetailsJSON:  json.RawMessage(buildDetailsJSON(e.AuditEvent)),
 		ResourceType: e.ResourceType,
 		ResourceID:   e.ResourceID,
 		RepositoryID: e.RepositoryID,
@@ -156,7 +168,7 @@ func (l *Logger) insert(e AuditEvent) error {
 	ctx, cancel := context.WithTimeout(context.Background(), insertTimeout)
 	defer cancel()
 
-	return l.db.InsertAuditLog(ctx, row) //nolint:wrapcheck // logged by the caller with the action
+	return l.db.InsertAuditLog(ctx, row) //nolint:wrapcheck // logged by the caller with the action and id
 }
 
 // insertTimeout bounds one audit insert so a stalled database cannot wedge the
@@ -216,6 +228,16 @@ func complete(ctx context.Context, event AuditEvent) AuditEvent {
 	return event
 }
 
+// capture completes event and stamps it with a new row id and the event time,
+// to the microsecond the database keeps.
+func capture(ctx context.Context, event AuditEvent) entry {
+	return entry{
+		AuditEvent: complete(ctx, event),
+		id:         uuid.NewString(),
+		at:         time.Now().Truncate(time.Microsecond),
+	}
+}
+
 // Log enqueues an event. It never panics, even after Shutdown. If the buffer is
 // full the event is written synchronously (bounded wait) rather than dropped.
 func (l *Logger) Log(ctx context.Context, event AuditEvent) {
@@ -227,7 +249,7 @@ func (l *Logger) Log(ctx context.Context, event AuditEvent) {
 		return
 	}
 
-	e := complete(ctx, event)
+	e := capture(ctx, event)
 
 	select {
 	case l.ch <- e:

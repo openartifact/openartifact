@@ -13,11 +13,21 @@ import (
 )
 
 const insertAuditLog = `-- name: InsertAuditLog :exec
-INSERT INTO audit_logs (action, actor_id, actor_type, details_json, resource_type, resource_id, repository_id, project_id, ip_address)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO audit_logs (
+    id, created_at, action, actor_id, actor_type, details_json,
+    resource_type, resource_id, repository_id, project_id, ip_address
+)
+VALUES (
+    COALESCE($1::uuid, gen_random_uuid()),
+    COALESCE($2::timestamptz, CURRENT_TIMESTAMP),
+    $3, $4, $5, $6,
+    $7, $8, $9, $10, $11
+)
 `
 
 type InsertAuditLogParams struct {
+	ID           *string         `db:"id" json:"id"`
+	CreatedAt    *time.Time      `db:"created_at" json:"created_at"`
 	Action       string          `db:"action" json:"action"`
 	ActorID      *string         `db:"actor_id" json:"actor_id"`
 	ActorType    *string         `db:"actor_type" json:"actor_type"`
@@ -29,8 +39,13 @@ type InsertAuditLogParams struct {
 	IpAddress    *netip.Addr     `db:"ip_address" json:"ip_address"`
 }
 
+// The audit writer passes the id and created_at it stamped when the event was
+// recorded, so the row and the OTLP audit event carry the same values; a
+// caller that leaves them NULL gets the column defaults.
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
 	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.ID,
+		arg.CreatedAt,
 		arg.Action,
 		arg.ActorID,
 		arg.ActorType,

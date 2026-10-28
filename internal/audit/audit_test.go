@@ -126,7 +126,7 @@ func TestLogger_Shutdown(t *testing.T) {
 		// through the expired context. (With a live writer an empty buffer
 		// drains instantly and select picks either case at random.)
 		l := &Logger{
-			ch:   make(chan AuditEvent, 1),
+			ch:   make(chan entry, 1),
 			done: make(chan struct{}),
 		}
 
@@ -145,7 +145,7 @@ func TestLogger_Log_Channel(t *testing.T) {
 		// Log() only touches l.reg on the drop path (channel full); a buffered
 		// channel avoids that branch entirely.
 		l := &Logger{
-			ch:   make(chan AuditEvent, 10),
+			ch:   make(chan entry, 10),
 			done: make(chan struct{}),
 		}
 
@@ -284,5 +284,18 @@ func TestCompleteOutcomeAndRequest(t *testing.T) {
 
 	if e := complete(context.Background(), AuditEvent{}); e.RequestID != "" || e.Outcome != OutcomeSuccess {
 		t.Errorf("without a request: %+v", e)
+	}
+}
+
+func TestCaptureStampsIDAndTime(t *testing.T) {
+	a, b := capture(context.Background(), AuditEvent{}), capture(context.Background(), AuditEvent{})
+
+	if a.id == "" || a.id == b.id {
+		t.Errorf("ids %q and %q: want two distinct ids", a.id, b.id)
+	}
+
+	// The database keeps microseconds: a finer time would not round-trip.
+	if a.at.IsZero() || a.at.Nanosecond()%1000 != 0 {
+		t.Errorf("at = %v, want a time truncated to the microsecond", a.at)
 	}
 }

@@ -2703,7 +2703,23 @@ func (p *PostgresDB) InsertAuditLog(ctx context.Context, event *models.AuditLog)
 			ip = &addr
 		}
 	}
+	// An unset id or time leaves the column default to the database.
+	var (
+		id        *string
+		createdAt *time.Time
+	)
+
+	if event.ID != "" {
+		id = &event.ID
+	}
+
+	if !event.CreatedAt.IsZero() {
+		createdAt = &event.CreatedAt
+	}
+
 	if err := p.q.InsertAuditLog(ctx, dbsqlc.InsertAuditLogParams{
+		ID:           id,
+		CreatedAt:    createdAt,
 		Action:       event.Action,
 		ActorID:      event.ActorID,
 		ActorType:    event.ActorType,
