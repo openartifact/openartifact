@@ -19,7 +19,7 @@ func TestFormatServerDecidesEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "proxy.formatServer",
 		[]string{"pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems", "terraform"},
-		[]string{"docker", "maven", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "apk", "pacman", "nix"})
+		[]string{"docker", "maven", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "apk", "pacman", "nix", "ansible"})
 
 	s := &Service{}
 
@@ -44,7 +44,7 @@ func TestFetchDecidesEveryFormat(t *testing.T) {
 		[]string{"ivy", "sbt", "apk", "nix"},
 		[]string{
 			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go",
-			"raw", "conda", "conan", "terraform", "pacman",
+			"raw", "conda", "conan", "terraform", "pacman", "ansible",
 		})
 
 	for _, f := range []string{"ivy", "sbt"} {
@@ -65,7 +65,7 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 			"maven", "deb", "rpm", "pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems",
 			"conda", "docker", "apk", "ivy", "sbt", "conan", "terraform", "nix",
 		},
-		[]string{"raw", "pacman"})
+		[]string{"raw", "pacman", "ansible"})
 
 	keys := map[string]string{
 		"maven":     "g/a/1.0/a-1.0.jar",
@@ -112,7 +112,7 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 			"deb", "rpm", "maven", "apk", "ivy", "sbt", "pypi", "npm", "helm", "cargo", "nuget", "rubygems",
 			"go", "conda", "conan", "terraform", "pacman", "nix",
 		},
-		[]string{"docker", "raw"})
+		[]string{"docker", "raw", "ansible"})
 
 	keys := map[string]string{
 		"deb":       "dists/stable/InRelease",
@@ -159,7 +159,7 @@ func TestPackageDirDecidesEveryFormat(t *testing.T) {
 		[]string{"cargo", "nuget", "rubygems"},
 		[]string{
 			"docker", "npm", "pypi", "maven", "helm", "deb", "rpm", "go", "raw", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk", "pacman", "nix",
+			"terraform", "apk", "pacman", "nix", "ansible",
 		})
 
 	want := map[string]string{"cargo": "api/v1/crates/", "nuget": "v3/package/", "rubygems": "gems/"}
@@ -177,7 +177,7 @@ func TestPackageExtsDecideEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	ignored := []string{
-		"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conan", "apk",
+		"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conan", "apk", "ansible",
 	}
 
 	for _, site := range []string{"proxy.packageExts", "proxy.isHTMLForPackage"} {

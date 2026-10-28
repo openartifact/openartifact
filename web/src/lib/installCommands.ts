@@ -121,6 +121,8 @@ export function pullCommand(
       return `apk add ${q(`${pkg}=${version}`)}`
     case 'raw':
       return `curl -fO ${q(`${base}/${encodePath(pkg)}`)}`
+    case 'ansible':
+      return `ansible-galaxy collection install ${q(`${pkg}:${version}`)} --server ${q(`${base}/api/`)}`
     case 'terraform':
       return terraformUsage(hostOf(origin), repo, pkg, version)
     case 'sbt':
@@ -402,6 +404,19 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
       return [
         { client: 'terraform', configure: creds('~/.terraformrc') + usage, publish },
         { client: 'OpenTofu', configure: creds('~/.tofurc') + usage, publish },
+      ]
+    }
+    case 'ansible': {
+      const api = `${base}/api/`
+      return [
+        {
+          client: 'ansible-galaxy',
+          configure:
+            `# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = ${api}\ntoken = <TOKEN>` +
+            `\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact` +
+            `\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: ${api}`,
+          publish: 'ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact',
+        },
       ]
     }
     case 'sbt':

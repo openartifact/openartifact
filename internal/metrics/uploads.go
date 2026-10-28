@@ -33,6 +33,7 @@ const (
 	FormatRaw       = "raw"
 	FormatPacman    = "pacman"
 	FormatNix       = "nix"
+	FormatAnsible   = "ansible"
 	FormatTerraform = "terraform"
 )
 

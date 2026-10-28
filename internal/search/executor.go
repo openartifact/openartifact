@@ -133,6 +133,8 @@ func unifiedSearchBranches() []string {
 			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
 			"\n\t\tFROM conda_packages cp WHERE cp.deleted_at IS NULL",
+		searchBranch("ansible", "ac.namespace || '.' || ac.name", "ac.version", "ac.filename", null, null, "ac.blob_id", null, "ac") +
+			"\n\t\tFROM ansible_collections ac WHERE ac.deleted_at IS NULL",
 		searchBranch("pacman", "pk.name", "pk.version", "pk.filename", null, null, "pk.blob_id", null, "pk") +
 			"\n\t\tFROM pacman_packages pk WHERE pk.deleted_at IS NULL",
 		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +

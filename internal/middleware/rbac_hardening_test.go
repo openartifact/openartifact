@@ -488,6 +488,7 @@ func TestAuthorizationSecrets(t *testing.T) {
 	}{
 		{"none", "", "", ""},
 		{"bearer", "Bearer oa_pat_abc", "oa_pat_abc", ""},
+		{"token scheme of ansible-galaxy", "Token oa_pat_abc", "oa_pat_abc", ""},
 		{"basic password is the token", basic("ci", "oa_dep_xyz"), "", "oa_dep_xyz"},
 		{"basic with empty user", basic("", "oa_pat_abc"), "", "oa_pat_abc"},
 		{"basic with malformed payload", "Basic !!!notbase64", "", ""},

@@ -51,6 +51,7 @@ func TestRegenerateRestoredMetadataFormats(t *testing.T) {
 			"sbt",
 			"terraform",
 			"nix",
+			"ansible",
 		},
 	)
 

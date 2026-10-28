@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div v-if="format === 'terraform' || format === 'nix'" class="rounded-lg border border-border bg-surface p-4">
-    <p class="text-sm text-foreground">{{ t(format === 'nix' ? 'upload.nix.body' : 'upload.terraform.body') }}</p>
-    <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-bg p-3 text-xs text-foreground">{{ publishCommands }}</pre>
+  <div v-if="publishOnly" class="rounded-lg border border-border bg-surface p-4">
+    <p class="text-sm text-foreground">{{ t(publishBodyKey) }}</p>
+    <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-bg p-3 text-xs text-foreground">{{ publishSnippet }}</pre>
   </div>
   <div
     v-else
@@ -128,9 +128,22 @@ const archError = computed(() => (isApk.value && apkArch.value !== '' && !validA
 const coordinatesValid = computed(() => branchError.value === '' && repoError.value === '' && archError.value === '')
 
 // The terraform publish API is a raw token-authenticated PUT per module version or provider platform,
-// and nix is published by `nix copy`; the multipart dropzone cannot express either, so the zone shows
-// the publish commands instead.
-const publishCommands = computed(() => clientSetup(props.format ?? '', window.location.origin, props.repo)[0]?.publish ?? '')
+// nix is published by `nix copy` and the ansible one is a token-authenticated multipart POST driven by
+// ansible-galaxy; the dropzone cannot express any of them, so the zone shows the publish commands instead.
+const publishOnly = computed(() => props.format === 'terraform' || props.format === 'nix' || props.format === 'ansible')
+const publishBodyKey = computed(() => {
+  switch (props.format) {
+    case 'nix':
+      return 'upload.nix.body'
+    case 'ansible':
+      return 'upload.ansible.body'
+    default:
+      return 'upload.terraform.body'
+  }
+})
+const publishSnippet = computed(() =>
+  publishOnly.value ? (clientSetup(props.format ?? '', window.location.origin, props.repo)[0]?.publish ?? '') : '',
+)
 
 const formatHint = computed(() => {
   switch (props.format) {

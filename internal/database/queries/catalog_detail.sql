@@ -162,6 +162,16 @@ FROM (
     FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
+    -- ansible
+    SELECT t.id::uuid, 'ansible'::text, (t.namespace || '.' || t.name)::text, t.version::text, ''::text,
+           t.filename::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, ''::text, ''::text, ''::text, ''::text, ''::text,
+           jsonb_build_object('namespace', t.namespace, 'requires_ansible', t.requires_ansible)::jsonb,
+           t.dependencies::jsonb
+    FROM ansible_collections t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
     -- pacman
     SELECT t.id::uuid, 'pacman'::text, t.name::text, t.version::text, t.arch::text,
            t.filename::text, t.created_at::timestamptz, t.updated_at::timestamptz,

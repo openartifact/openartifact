@@ -436,43 +436,44 @@ type debPackageRecord struct {
 // by exportPackageTables, keyed by the same names exportMetadata writes to
 // the archive.
 type packageExport struct {
-	debDists        []models.DebianDistribution
-	debComps        []models.DebianComponent
-	debArchs        []models.DebianArchitecture
-	debPackages     []debPackageRecord
-	rpmComponents   []models.Component
-	helmCharts      []*models.HelmChart
-	pypiPackages    []*models.PyPIPackage
-	nugetPackages   []*models.NuGetPackage
-	cargoCrates     []*models.CargoCrate
-	rubyGems        []*models.RubyGem
-	conanPackages   []*models.ConanPackage
-	apkPackages     []*models.ApkPackage
-	tfModules       []*models.TerraformModule
-	tfProviders     []*models.TerraformProvider
-	ivyArtifacts    []*models.IvyArtifact
-	sbtArtifacts    []*models.SBTArtifact
-	rawArtifacts    []*models.RawArtifact
-	npmPackages     []*models.NPMPackage
-	npmVersions     []*models.NPMVersion
-	npmDistTags     []*models.NPMDistTag
-	mavenArtifacts  []*models.MavenArtifact
-	condaPackages   []*models.CondaPackage
-	pacmanPackages  []*models.PacmanPackage
-	nixPaths        []*models.NixPath
-	gomodModules    []*models.GoModule
-	dockerBlobs     []*models.DockerBlob
-	dockerManifests []*models.DockerManifest
-	dockerTags      []*models.DockerTag
-	webhooks        []*models.Webhook
-	cleanupPolicies []*models.CleanupPolicy
-	sbomReports     []*models.SBOMReport
-	vexStatements   []*models.VEXStatement
-	licenseResults  []*models.LicenseScanResult
-	secretResults   []*models.SecretScanResult
-	vulnResults     []*models.VulnScanResult
-	aiAnalyses      []*models.AIAnalysis
-	errs            []error
+	debDists           []models.DebianDistribution
+	debComps           []models.DebianComponent
+	debArchs           []models.DebianArchitecture
+	debPackages        []debPackageRecord
+	rpmComponents      []models.Component
+	helmCharts         []*models.HelmChart
+	pypiPackages       []*models.PyPIPackage
+	nugetPackages      []*models.NuGetPackage
+	cargoCrates        []*models.CargoCrate
+	rubyGems           []*models.RubyGem
+	conanPackages      []*models.ConanPackage
+	apkPackages        []*models.ApkPackage
+	tfModules          []*models.TerraformModule
+	tfProviders        []*models.TerraformProvider
+	ivyArtifacts       []*models.IvyArtifact
+	sbtArtifacts       []*models.SBTArtifact
+	rawArtifacts       []*models.RawArtifact
+	npmPackages        []*models.NPMPackage
+	npmVersions        []*models.NPMVersion
+	npmDistTags        []*models.NPMDistTag
+	mavenArtifacts     []*models.MavenArtifact
+	condaPackages      []*models.CondaPackage
+	pacmanPackages     []*models.PacmanPackage
+	nixPaths           []*models.NixPath
+	ansibleCollections []*models.AnsibleCollection
+	gomodModules       []*models.GoModule
+	dockerBlobs        []*models.DockerBlob
+	dockerManifests    []*models.DockerManifest
+	dockerTags         []*models.DockerTag
+	webhooks           []*models.Webhook
+	cleanupPolicies    []*models.CleanupPolicy
+	sbomReports        []*models.SBOMReport
+	vexStatements      []*models.VEXStatement
+	licenseResults     []*models.LicenseScanResult
+	secretResults      []*models.SecretScanResult
+	vulnResults        []*models.VulnScanResult
+	aiAnalyses         []*models.AIAnalysis
+	errs               []error
 }
 
 // exportMetadata exports database metadata to the archive.
@@ -568,6 +569,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"conda_packages", pkg.condaPackages, len(pkg.condaPackages)},
 		{"pacman_packages", pkg.pacmanPackages, len(pkg.pacmanPackages)},
 		{"nix_paths", pkg.nixPaths, len(pkg.nixPaths)},
+		{"ansible_collections", pkg.ansibleCollections, len(pkg.ansibleCollections)},
 		{"gomod_modules", pkg.gomodModules, len(pkg.gomodModules)},
 		{"webhooks", pkg.webhooks, len(pkg.webhooks)},
 		{"cleanup_policies", pkg.cleanupPolicies, len(pkg.cleanupPolicies)},
@@ -662,6 +664,7 @@ func (e *exporter) exportPackageTables(ctx context.Context, repos []*models.Repo
 // exportFormatTables gathers the format-specific package tables of one repo.
 //
 //nolint:gocyclo,cyclop // one case per format
+//nolint:cyclop,gocyclo // one case per format
 func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	id := repo.ID
 
@@ -730,6 +733,9 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 	case "maven":
 		v, err := e.db.ListMavenArtifactsByRepo(ctx, id)
 		collectRepoList(pkg, &pkg.mavenArtifacts, "maven artifacts", id, v, err)
+	case "ansible":
+		v, err := e.db.ListAnsibleCollections(ctx, id)
+		collectRepoList(pkg, &pkg.ansibleCollections, "ansible collections", id, v, err)
 	case "pacman":
 		v, err := e.db.ListPacmanPackages(ctx, id)
 		collectRepoList(pkg, &pkg.pacmanPackages, "pacman packages", id, v, err)
@@ -1430,6 +1436,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.NixPath) string { return c.RepositoryID },
 			func(c *models.NixPath, id string) { c.RepositoryID = id },
 			false, e.db.CreateNixPath)
+	case "ansible_collections.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "ansible collection",
+			func(c *models.AnsibleCollection) string { return c.RepositoryID },
+			func(c *models.AnsibleCollection, id string) { c.RepositoryID = id },
+			false, e.db.CreateAnsibleCollection)
 	case "pacman_packages.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "pacman package",
 			func(c *models.PacmanPackage) string { return c.RepositoryID },

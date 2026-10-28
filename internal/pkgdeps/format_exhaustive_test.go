@@ -36,7 +36,7 @@ func TestParseCoversEveryFormat(t *testing.T) {
 			"conan",
 		},
 		// No dependency manifest is read for these.
-		[]string{"docker", "apk", "raw", "terraform", "nix"},
+		[]string{"docker", "apk", "raw", "terraform", "nix", "ansible"},
 	)
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

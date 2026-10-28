@@ -39,6 +39,7 @@ const (
 	formatIvy      importFormat = "ivy"
 	formatSBT      importFormat = "sbt"
 	formatPacman   importFormat = "pacman"
+	formatAnsible  importFormat = "ansible"
 )
 
 const (

@@ -187,6 +187,7 @@
   "trash.kind.rpm_package": "RPM package",
   "trash.kind.deb_package": "Deb package",
   "trash.kind.pacman": "Pacman package",
+  "trash.kind.ansible": "Ansible collection",
   "trash.kind.apk_package": "Alpine package",
   "apkKey.title": "Signing key",
   "apkKey.hint": "Alpine clients verify the package index with this repository's public key. Install it into /etc/apk/keys on every client.",

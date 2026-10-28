@@ -750,5 +750,33 @@
         "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/my%20repo\nextra-trusted-public-keys = $(curl -fsS https://artifacts.example.com:8443/repos/my%20repo/public.key)  # the group's key, for narinfo its hosted members serve\n#   also trust the upstream's key when the group has proxy members, for example cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/my%20repo --option require-sigs true /nix/store/HASH-NAME"
       }
     ]
+  },
+  {
+    "format": "ansible",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "ansible-galaxy",
+        "configure": "# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = https://artifacts.example.com:8443/repos/repo1/api/\ntoken = \u003cTOKEN\u003e\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: https://artifacts.example.com:8443/repos/repo1/api/",
+        "publish": "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact"
+      }
+    ]
+  },
+  {
+    "format": "ansible",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "ansible-galaxy",
+        "configure": "# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = https://artifacts.example.com:8443/repos/my%20repo/api/\ntoken = \u003cTOKEN\u003e\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: https://artifacts.example.com:8443/repos/my%20repo/api/",
+        "publish": "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact"
+      }
+    ]
   }
 ]

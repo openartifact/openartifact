@@ -760,6 +760,22 @@ type Database interface {
 	SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error
 	DeletePacmanPackage(ctx context.Context, repoID, id string) error
 
+	// Ansible collection methods (docs/formats/ansible.md).
+	//
+	// CreateAnsibleCollection stores a collection version; a live row with the
+	// same namespace, name and version is a unique violation (IsUniqueViolation).
+	// The Get methods return (nil, nil) when there is none.
+	CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error
+	GetAnsibleCollection(ctx context.Context, repoID, namespace, name, version string) (*models.AnsibleCollection, error)
+	GetAnsibleCollectionByID(ctx context.Context, repoID, id string) (*models.AnsibleCollection, error)
+	// ListAnsibleCollectionVersions returns every live version of one collection, oldest upload first.
+	ListAnsibleCollectionVersions(ctx context.Context, repoID, namespace, name string) ([]*models.AnsibleCollection, error)
+	// ListAnsibleCollections returns every live version of every collection of a repository.
+	ListAnsibleCollections(ctx context.Context, repoID string) ([]*models.AnsibleCollection, error)
+	// ListAnsibleCollectionNames returns a page of the repository's collections in name order and their total.
+	ListAnsibleCollectionNames(ctx context.Context, repoID string, limit, offset int) ([]*models.AnsibleCollectionName, int, error)
+	DeleteAnsibleCollection(ctx context.Context, repoID, id string) error
+
 	// Conda methods
 	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
 	// GetCondaPackageFile returns the live package file with exactly this

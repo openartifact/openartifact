@@ -106,6 +106,7 @@ func catalogBranches() []catalogBranch {
 		simpleBranch("cargo", "cargo_crates", "t.name", "t.version", "t.blob_id"),
 		gems,
 		simpleBranch("conda", "conda_packages", "t.name", "t.version", "t.blob_id"),
+		simpleBranch("ansible", "ansible_collections", "t.namespace || '.' || t.name", "t.version", "t.blob_id"),
 		simpleBranch("pacman", "pacman_packages", "t.name", "t.version", "t.blob_id"),
 		conan,
 		simpleBranch("apk", "apk_packages", "t.branch || '/' || t.repo || '/' || t.name", "t.version", "t.blob_id"),

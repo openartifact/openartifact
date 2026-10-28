@@ -8,10 +8,12 @@
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // RPM uses the Red Hat mark, Cargo the Rust mark, Conda the Anaconda mark and
 // sbt the Scala mark, apk the Alpine Linux mark, Terraform the Terraform mark (also used for OpenTofu
-// repositories: one `terraform` format serves both clients), pacman the Arch Linux mark, nix the NixOS mark.
+// repositories: one `terraform` format serves both clients), pacman the Arch Linux mark, nix the NixOS mark,
+// Ansible the Ansible mark.
 
 import {
   siAlpinelinux,
+  siAnsible,
   siAnaconda,
   siArchlinux,
   siApache,
@@ -79,6 +81,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   apk: brand('Alpine (apk)', siAlpinelinux),
   nix: brand('Nix', siNixos),
   terraform: brand('Terraform', siTerraform),
+  ansible: brand('Ansible', siAnsible),
 }
 
 /** Ordered format ids — drives the format pickers on repo-create screens. Generated from the Go registry. */

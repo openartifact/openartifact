@@ -148,7 +148,7 @@ func terraformCleanupTables() []formatTable {
 
 // cleanupFormatTable is the single-table part of cleanupFormatTables.
 //
-//nolint:cyclop // one case per format
+//nolint:gocyclo,cyclop // one case per format
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":
@@ -218,6 +218,11 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 			quotaTracked:  true,
 			kind:          models.TrashKindConda,
 		}, true
+	case "ansible":
+		// Ranked per collection: the newest versions of one FQCN are kept.
+		return formatTable{table: "ansible_collections", nameCol: "namespace || '.' || name",
+			partitionCols: []string{"namespace", "name"}, versionExpr: "version",
+			blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindAnsible}, true
 	case "pacman":
 		// One row is one package file; ranked per package name and architecture.
 		return formatTable{table: "pacman_packages", nameCol: "name", partitionCols: []string{"name", "arch"},

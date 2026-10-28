@@ -70,6 +70,12 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 		"nix copy --to 'HOST/repos/REPO' /nix/store/...",
 		"nix copy --to 'https://HOST/repos/REPO'",
 	},
+	"ansible": {
+		http.MethodPost,
+		"/repos/{name}/api/v3/artifacts/collections/",
+		"POST /api/v3/artifacts/collections/",
+		"ansible-galaxy collection publish",
+	},
 	"apk": {
 		http.MethodPut,
 		"/repos/{name}/*",

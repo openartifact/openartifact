@@ -6,7 +6,7 @@
 // Add or change a format in the Go registry, then run `make generate`.
 
 /** Every package format id, in picker order. */
-export const FORMAT_IDS = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix'] as const
+export const FORMAT_IDS = ['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible'] as const
 
 export type FormatId = (typeof FORMAT_IDS)[number]
 

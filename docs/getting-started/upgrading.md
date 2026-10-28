@@ -87,7 +87,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
-Migrations `091`, `092`, `093` and `094`, rolling-safe (`092` adds tables and widens the format check without validating in the same transaction; `094` is additive).
+Migrations `091` to `095`, rolling-safe (`092` (Nix) and `095` (Ansible) add tables and widen the format check without validating in the same transaction; `093` and `094` are additive).
 
 - **Exploitation signals (CISA KEV and FIRST EPSS).** Migration `093` is additive: new tables `kev_entries`, `epss_scores` and `exploit_feeds`, two new columns on `vuln_results` (`kev_count`, `max_epss`), and an index built concurrently. Old replicas keep serving during the rollout. New config keys `exploit.enabled`, `exploit.kevUrl`, `exploit.epssUrl`, `exploit.interval`, `exploit.epssThreshold` (`OPENARTIFACT_EXPLOIT_ENABLED`, `OPENARTIFACT_EXPLOIT_KEV_URL`, `OPENARTIFACT_EXPLOIT_EPSS_URL`, `OPENARTIFACT_EXPLOIT_INTERVAL`, `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD`; defaults `true`, CISA's catalog, `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz`, `24h`, `0.1`; see [configuration](configuration.md#exploitation-signals-exploit)). **The server now makes outbound HTTPS requests to `cisa.gov` and `epss.empiricalsecurity.com` once a day by default**: add them to an egress allow-list, mirror the two files and set the URLs, or set `OPENARTIFACT_EXPLOIT_ENABLED=false`. Existing findings are annotated as soon as the first import finishes (the aggregates of stored results are recomputed after it). Results stored before the upgrade have no aliases for non-CVE ids (such as GHSA) until they are scanned again. See [Exploitation signals](../security/exploit-signals.md).
 
@@ -97,6 +97,8 @@ Migrations `091`, `092`, `093` and `094`, rolling-safe (`092` adds tables and wi
 - **The `storage_backends.is_default` column and its `idx_storage_backends_default` index are dropped.** Nothing has read or written them since 0.13.0 (migration `087`), so 0.13.x replicas keep serving during the rollout. 0.12.x pods still referenced the column: **upgrade from 0.12.x through 0.13.x first**, then to this release. No action required otherwise.
 
 - **New format: Nix (`nix`), hosted.** `format: nix` repositories are Nix binary caches served at `HOST/repos/REPO`; publish with `nix copy --to`. `.narinfo` files are signed with a per-repository ed25519 key (`GET`/`POST /api/v1/repositories/{name}/nix-key`, needs `OPENARTIFACT_SECRET_KEY`). Proxy and group repositories are covered in the entry above. See [Nix](../formats/nix.md).
+
+- **New format: Ansible collections (`ansible`), hosted.** `format: ansible` repositories serve the Galaxy API v3 under `HOST/repos/REPO/api/` to `ansible-galaxy`: collections are published with `ansible-galaxy collection publish` (or `oa upload`) and installed with `ansible-galaxy collection install`; API tokens may be sent as `Authorization: Token <TOKEN>`. Migration `095` (`ansible_collections`) widens `chk_repo_format` with `NOT VALID` in a short transaction, validates it in a separate `*_validate.no_tx` file without blocking writes, and creates the new table; no existing table is rewritten. Older instances keep running against the migrated schema but do not know the format, so create the first Ansible repository only after every replica is upgraded. Proxy and group repositories are not available yet. See [Ansible collections](../formats/ansible.md).
 
 ### 0.13.2
 

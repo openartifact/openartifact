@@ -117,6 +117,16 @@ func rowSpecs() []rowSpec {
 			},
 		},
 		{
+			format:  "ansible",
+			kind:    models.TrashKindAnsible,
+			table:   "ansible_collections",
+			name:    "s.namespace || '.' || s.name",
+			version: "s.version",
+			idents:  []string{"s.filename"},
+			key:     []string{"namespace", "name", "version"},
+			cols:    []string{"namespace", "name", "version", "filename", "dependencies", "metadata", "requires_ansible"},
+		},
+		{
 			format:   "pacman",
 			kind:     models.TrashKindPacman,
 			table:    "pacman_packages",

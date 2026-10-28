@@ -140,6 +140,13 @@ var trashSpecs = []*trashSpec{
 		blobCols: []string{"t.blob_id"},
 	},
 	{
+		kind: models.TrashKindAnsible, table: "ansible_collections", format: "ansible", quota: true,
+		repoID:   "t.repository_id",
+		name:     "t.namespace || '.' || t.name",
+		version:  "t.version",
+		blobCols: []string{"t.blob_id"},
+	},
+	{
 		kind: models.TrashKindPacman, table: "pacman_packages", format: "pacman", quota: true,
 		repoID:   "t.repository_id",
 		name:     "t.name",

@@ -187,6 +187,7 @@
   "trash.kind.rpm_package": "Pacchetto RPM",
   "trash.kind.deb_package": "Pacchetto deb",
   "trash.kind.pacman": "Pacchetto pacman",
+  "trash.kind.ansible": "Collection Ansible",
   "trash.kind.apk_package": "Pacchetto Alpine",
   "apkKey.title": "Chiave di firma",
   "apkKey.hint": "I client Alpine verificano l'indice dei pacchetti con la chiave pubblica di questo repository. Installala in /etc/apk/keys su ogni client.",

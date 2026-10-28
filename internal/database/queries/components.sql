@@ -180,6 +180,13 @@ FROM (
            (t.store_hash || '.narinfo')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT * FROM nix_paths WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'nix') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(store_hash), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
+    -- ansible: one row per collection version; name = NAMESPACE.NAME.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.namespace || '.' || t.name::text AS name, t.version::text AS version,
+           'ansible'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM ansible_collections WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'ansible') AND (sqlc.arg(name_filter)::text = '' OR (namespace || '.' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((namespace || '.' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
     -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
     -- release = recipe_revision, filename = full reference.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
@@ -355,6 +362,13 @@ FROM (
            (t.store_hash || '.narinfo')::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM (SELECT * FROM nix_paths WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'nix') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(store_hash), lower(sqlc.arg(q)::text)) > 0) ORDER BY name, store_hash, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
+    -- ansible: one row per collection version; name = NAMESPACE.NAME.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.namespace || '.' || t.name::text AS name, t.version::text AS version,
+           'ansible'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
+           t.filename::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT * FROM ansible_collections WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'ansible') AND (sqlc.arg(name_filter)::text = '' OR (namespace || '.' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((namespace || '.' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0) ORDER BY (namespace || '.' || name), version, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    UNION ALL
     -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
     -- release = recipe_revision, filename = full reference.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
@@ -471,6 +485,10 @@ SELECT COUNT(*)::bigint FROM (
     SELECT 1 FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'conda') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
     UNION ALL
+    -- ansible
+    SELECT 1 FROM ansible_collections t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'ansible') AND (sqlc.arg(name_filter)::text = '' OR (namespace || '.' || name) = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower((namespace || '.' || name)), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
+    UNION ALL
     -- pacman
     SELECT 1 FROM pacman_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'pacman') AND (sqlc.arg(name_filter)::text = '' OR name = sqlc.arg(name_filter)::text) AND (sqlc.arg(q)::text = '' OR strpos(lower(name), lower(sqlc.arg(q)::text)) > 0 OR strpos(lower(version), lower(sqlc.arg(q)::text)) > 0)
@@ -583,6 +601,11 @@ FROM (
     FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
+    SELECT t.id::uuid, 'ansible'::text, t.filename::text, (t.namespace || '.' || t.name)::text, t.version::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM ansible_collections t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
     SELECT t.id::uuid, 'pacman'::text, t.filename::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM pacman_packages t LEFT JOIN blobs b ON b.id = t.blob_id
@@ -681,6 +704,9 @@ FROM (
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM conda_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
+    UNION ALL
+    SELECT t.repository_id, t.id, (t.namespace || '.' || t.name)::text, t.version::text
+    FROM ansible_collections t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])
     UNION ALL
     SELECT t.repository_id, t.id, t.name::text, t.version::text
     FROM pacman_packages t WHERE t.id = ANY(sqlc.arg(ids)::uuid[])

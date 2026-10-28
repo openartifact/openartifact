@@ -1251,6 +1251,37 @@ func (m *BaseMockDB) CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.
 func (m *BaseMockDB) ReplaceNixSigningKey(ctx context.Context, k *models.NixSigningKey) error {
 	return errNotImpl("ReplaceNixSigningKey")
 }
+func (m *BaseMockDB) ListAnsibleCollections(ctx context.Context, repoID string) ([]*models.AnsibleCollection, error) {
+	return nil, errNotImpl("ListAnsibleCollections")
+}
+
+func (m *BaseMockDB) CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error {
+	return errNotImpl("CreateAnsibleCollection")
+}
+func (m *BaseMockDB) GetAnsibleCollection(ctx context.Context, repoID, namespace, name, version string) (*models.AnsibleCollection, error) {
+	return nil, errNotImpl("GetAnsibleCollection")
+}
+func (m *BaseMockDB) GetAnsibleCollectionByID(ctx context.Context, repoID, id string) (*models.AnsibleCollection, error) {
+	return nil, errNotImpl("GetAnsibleCollectionByID")
+}
+
+func (m *BaseMockDB) ListAnsibleCollectionVersions(
+	ctx context.Context,
+	repoID, namespace, name string,
+) ([]*models.AnsibleCollection, error) {
+	return nil, errNotImpl("ListAnsibleCollectionVersions")
+}
+
+func (m *BaseMockDB) ListAnsibleCollectionNames(
+	ctx context.Context,
+	repoID string,
+	limit, offset int,
+) ([]*models.AnsibleCollectionName, int, error) {
+	return nil, 0, errNotImpl("ListAnsibleCollectionNames")
+}
+func (m *BaseMockDB) DeleteAnsibleCollection(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteAnsibleCollection")
+}
 func (m *BaseMockDB) CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error {
 	return errNotImpl("CreatePacmanPackage")
 }

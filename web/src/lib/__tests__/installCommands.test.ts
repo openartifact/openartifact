@@ -253,6 +253,24 @@ describe('terraform', () => {
   })
 })
 
+describe('ansible', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('installs a collection from the Galaxy API root of the repository', () => {
+    expect(pullCommand('ansible', origin, 'r1', 'community.general', '1.2.3')).toBe(
+      'ansible-galaxy collection install community.general:1.2.3 --server https://oa.example:8443/repos/r1/api/',
+    )
+  })
+
+  it('writes ansible.cfg, requirements.yml and the publish command', () => {
+    const [setup] = clientSetup('ansible', origin, 'r1')
+    expect(setup!.client).toBe('ansible-galaxy')
+    expect(setup!.configure).toContain('[galaxy_server.openartifact]\nurl = https://oa.example:8443/repos/r1/api/\ntoken = <TOKEN>')
+    expect(setup!.configure).toContain('source: https://oa.example:8443/repos/r1/api/')
+    expect(setup!.publish).toBe('ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact')
+  })
+})
+
 describe('clientSetup', () => {
   const origin = 'http://oa.example:8080'
 
