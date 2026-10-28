@@ -41,7 +41,7 @@ func TestRefreshCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "gpgkeys.refresh", []string{"deb", "pacman", "rpm"},
-		[]string{"ansible", "apk", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+		[]string{"ansible", "apk", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 			"pypi", "raw", "rubygems", "sbt", "terraform"})
 
 	for _, spec := range repotypetest.Specs() {

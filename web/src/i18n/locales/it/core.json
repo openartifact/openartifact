@@ -72,6 +72,7 @@
   "upload.failed": "Non riuscito",
   "upload.queued": "In coda",
   "upload.ansible.body": "Le collection Ansible si pubblicano con ansible-galaxy, che invia una singola richiesta POST multipart autenticata con un token API. Aggiungi il server ad ansible.cfg ed esegui:",
+  "upload.composer.body": "I pacchetti Composer si pubblicano con una richiesta PUT per ogni versione, autenticata con un token API. Vendor, nome del pacchetto e versione fanno parte dell'URL:",
   "upload.hint.apk": "Carica pacchetti .apk. Vengono salvati sotto il branch e il repository (directory) indicati sotto; l'architettura deriva dal pacchetto.",
   "upload.apk.branch": "Branch",
   "upload.apk.branchHint": "Branch di rilascio Alpine, per esempio v3.20 o edge.",

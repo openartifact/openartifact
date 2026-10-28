@@ -75,6 +75,7 @@ var Tables = []Table{
 	{Name: "nuget_packages", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "gomod_modules", Key: idKey(), BlobRefs: []string{"zip_blob_id", "mod_blob_id"}},
 	{Name: "cargo_crates", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
+	{Name: "composer_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "rubygems_gems", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
 	{Name: "conda_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
 	{Name: "ansible_collections", Key: idKey(), BlobRefs: []string{"blob_id"}},

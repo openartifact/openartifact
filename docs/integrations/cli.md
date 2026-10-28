@@ -93,7 +93,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `cleanup` | `list <repo>`, `create <repo> --name N (--keep-count N \| --keep-days N) [--name-pattern REGEX] [--schedule CRON] [--enabled=false]`, `show <repo> <id>`, `update <repo> <id> [same flags]` (only the flags you pass are sent), `delete <repo> <id>`, `run <repo> <id>` |
 | `quota` | `show <repo>`, `set <repo> [--limit N [--unit MB\|GB\|TB]] [--max-artifacts N] [--warn-percent P]` (default unit `GB`; at least one flag), `delete <repo>` |
 | `props` | `list <repo> <artifact-id>`, `set <repo> <artifact-id> <key> <value>`, `delete <repo> <artifact-id> <key>`, `search <repo> <key> <value>` |
-| `upload` | `<repo> <file\|glob>... [--target-path P] [--flat] [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]`: upload files with build properties, see [CI commands](#ci-commands) |
+| `upload` | `<repo> <file\|glob>... [--target-path P] [--flat] [--version V] [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]`: upload files with build properties, see [CI commands](#ci-commands) |
 | `bundle` | `create <name> <version> [--description D] [--pipeline P]`, `add <name> <version> (--repo R --path P... \| --from-build NAME/NUMBER [--repo R]...)`, `seal <name> <version> [--gpg-key K]`, `show <name> <version>`: [release bundles](../repositories/release-bundles.md) for CI, see [CI commands](#ci-commands) |
 | `promote` | `<name> <version> --stage S [--target-repo R] [--notes T]`: promote a sealed bundle, see [CI commands](#ci-commands) |
 | `delta` | `list <repo> <pkg-id>`, `get <repo> <pkg-id> --from <sha256> <dest>` |
@@ -157,11 +157,11 @@ There are no top-level `oa upload` / `oa download` commands.
 #### `oa upload`
 
 ```sh
-oa --format json upload <repo> <file|glob>... [--target-path P] [--flat] \
+oa --format json upload <repo> <file|glob>... [--target-path P] [--flat] [--version V] \
    [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
 ```
 
-Uploads to a hosted `ansible`, `deb`, `ivy`, `maven`, `pacman`, `raw`, `rpm` or `sbt` repository (ansible: a collection `NAMESPACE-NAME-VERSION.tar.gz` published through the Galaxy API, see [ansible](../formats/ansible.md); pacman: the package and its `.sig`, stored under `os/<arch>/` by file name, see [pacman](../formats/pacman.md)) and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`docker push`, `npm publish`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
+Uploads to a hosted `ansible`, `composer`, `deb`, `ivy`, `maven`, `pacman`, `raw`, `rpm` or `sbt` repository (ansible: a collection `NAMESPACE-NAME-VERSION.tar.gz` published through the Galaxy API, see [ansible](../formats/ansible.md); composer: a package zip uploaded to `packages/upload/VENDOR/NAME/VERSION`, with `vendor/name` and the version read from the zip's `composer.json`, see [composer](../formats/composer.md); pacman: the package and its `.sig`, stored under `os/<arch>/` by file name, see [pacman](../formats/pacman.md)) and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`docker push`, `npm publish`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
 
 Arguments are files or globs (`*`, `?`, `[...]`, and `**` for any depth); quote globs to keep the shell out of it. A pattern without a match, a directory or a missing file is an error before anything is uploaded.
 
@@ -175,6 +175,8 @@ Remote path (ivy, maven, raw, sbt; deb and rpm keep the name the server derives 
 | `--target-path rel/1.0/ --flat` | `rel/1.0/b.tgz` |
 | `--target-path rel/b-1.0.tgz`, a single file | `rel/b-1.0.tgz` (exact path) |
 | `--target-path rel`, several files | `rel/<path>` (a directory) |
+
+`--version V` sets the package version for the formats whose file does not state it; only `composer` uses it, for a `composer.json` without a `version` field (it wins over a `version` the file has).
 
 An absolute path or one that climbs out of the working directory (`..`) needs `--flat`. An Ivy, Maven or sbt path must be the repository layout (`com/acme/lib/1.0/lib-1.0.jar`).
 

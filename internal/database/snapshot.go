@@ -86,6 +86,7 @@ type SnapshotReader interface {
 	ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error)
 	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
 	ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error)
+	ListComposerPackages(ctx context.Context, repoID string) ([]*models.ComposerPackage, error)
 	ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error)
 	ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error)
 	ListDockerManifestsByRepo(ctx context.Context, repoID string) ([]*models.DockerManifest, error)

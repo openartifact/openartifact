@@ -76,6 +76,11 @@ describe('FormatBadge', () => {
     expect(wrapper.text()).toContain('Ansible')
   })
 
+  it('renders correct label for composer', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'composer' } })
+    expect(wrapper.text()).toContain('Composer')
+  })
+
   it('renders correct label for terraform', () => {
     const wrapper = mount(FormatBadge, { props: { format: 'terraform' } })
     expect(wrapper.text()).toContain('Terraform')

@@ -127,6 +127,8 @@ func builderFor(format string) func(target) []Snippet {
 		return nixSnippets
 	case "cargo":
 		return cargoSnippets
+	case "composer":
+		return composerSnippets
 	case "go":
 		return gomodSnippets
 	case "nuget":
@@ -522,6 +524,35 @@ func ansibleSnippets(c target) []Snippet {
 		),
 		Publish: publish,
 	}}
+}
+
+// composerSnippets configures Composer against the repository root, which
+// serves packages.json. Composer matches http-basic credentials by host name
+// plus the port when the URL names one, and refuses plain http unless
+// secure-http is disabled.
+// Proxy and group repositories are read-only, so they carry no publish hint.
+func composerSnippets(c target) []Snippet {
+	publish := "curl -T vendor-name-1.0.0.zip -H \"Authorization: Bearer <TOKEN>\" " + c.base + "/packages/upload/vendor/name/1.0.0"
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = "" // proxy and group repositories are read-only
+	}
+
+	configure := fmt.Sprintf(
+		"# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"%[1]s\"}]\n}"+
+			"\n\n# or from the command line\ncomposer config repositories.openartifact composer %[1]s",
+		c.base,
+	)
+	if strings.HasPrefix(c.origin, "http://") {
+		configure += "\ncomposer config secure-http false"
+	}
+
+	configure += fmt.Sprintf(
+		"\n\n# auth (or auth.json: {\"http-basic\": {\"%[1]s\": {\"username\": \"token\", \"password\": \"<TOKEN>\"}}})"+
+			"\ncomposer config http-basic.%[1]s token <TOKEN>\n\n# install\ncomposer require vendor/name",
+		c.host,
+	)
+
+	return []Snippet{{Client: "composer", Configure: configure, Publish: publish}}
 }
 
 func sbtSnippets(c target) []Snippet {

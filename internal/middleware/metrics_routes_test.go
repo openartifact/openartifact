@@ -149,8 +149,8 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	known := map[string]string{
 		"base": "", "filerepo": "", "formattest": "",
 		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
-		"conan": metrics.FormatConan, "conda": metrics.FormatConda, "deb": metrics.FormatDeb,
-		"docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
+		"composer": metrics.FormatComposer, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
+		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
 		"ivy": metrics.FormatIvy, "maven": metrics.FormatMaven, "nix": metrics.FormatNix,
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pacman": metrics.FormatPacman,
 		"pypi": metrics.FormatPyPI, "raw": metrics.FormatRaw, "rpm": metrics.FormatRPM,

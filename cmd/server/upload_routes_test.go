@@ -82,6 +82,12 @@ var documentedUploads = map[string]documentedUpload{ //nolint:gochecknoglobals /
 		"PUT <branch>/<repo>/<arch>/<name>-<version>.apk",
 		"curl -T my-pkg-1.0-r0.apk",
 	},
+	"composer": {
+		http.MethodPut,
+		"/repos/{name}/*",
+		"PUT /packages/upload/VENDOR/NAME/VERSION",
+		"curl -T vendor-name-1.0.0.zip",
+	},
 	"terraform": {
 		http.MethodPut,
 		"/repos/{name}/_api/modules/{mod}/{system}/{version}",

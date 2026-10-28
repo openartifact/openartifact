@@ -19,7 +19,7 @@ func TestFormatServerDecidesEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "proxy.formatServer",
 		[]string{"ansible", "cargo", "go", "helm", "npm", "nuget", "pypi", "rubygems", "terraform"},
-		[]string{"apk", "conan", "conda", "deb", "docker", "ivy", "maven", "nix", "pacman", "raw", "rpm", "sbt"})
+		[]string{"apk", "composer", "conan", "conda", "deb", "docker", "ivy", "maven", "nix", "pacman", "raw", "rpm", "sbt"})
 
 	s := &Service{}
 
@@ -43,7 +43,7 @@ func TestFetchDecidesEveryFormat(t *testing.T) {
 	repotypetest.Classified(t, "proxy.Service.fetch",
 		[]string{"apk", "ivy", "nix", "sbt"},
 		[]string{
-			"ansible", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "maven", "npm", "nuget",
+			"ansible", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "maven", "npm", "nuget",
 			"pacman", "pypi", "raw", "rpm", "rubygems", "terraform",
 		})
 
@@ -65,7 +65,7 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 			"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "nix", "npm",
 			"nuget", "pypi", "rpm", "rubygems", "sbt", "terraform",
 		},
-		[]string{"pacman", "raw"})
+		[]string{"composer", "pacman", "raw"})
 
 	keys := map[string]string{
 		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",
@@ -113,7 +113,7 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 			"pacman", "pypi", "rpm", "rubygems", "sbt", "terraform",
 		},
-		[]string{"docker", "raw"})
+		[]string{"composer", "docker", "raw"})
 
 	keys := map[string]string{
 		"ansible":   "api/v3/collections/a/b/versions/",
@@ -160,7 +160,7 @@ func TestPackageDirDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "proxy.packageDir",
 		[]string{"cargo", "nuget", "rubygems"},
 		[]string{
-			"ansible", "apk", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "pacman",
+			"ansible", "apk", "composer", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "pacman",
 			"pypi", "raw", "rpm", "sbt", "terraform",
 		})
 
@@ -179,7 +179,7 @@ func TestPackageExtsDecideEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	ignored := []string{
-		"ansible", "apk", "cargo", "conan", "docker", "go", "helm", "npm", "nuget", "pypi", "raw", "rubygems",
+		"ansible", "apk", "cargo", "composer", "conan", "docker", "go", "helm", "npm", "nuget", "pypi", "raw", "rubygems",
 	}
 
 	for _, site := range []string{"proxy.packageExts", "proxy.isHTMLForPackage"} {

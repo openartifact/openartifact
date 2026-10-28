@@ -760,6 +760,23 @@ type Database interface {
 	SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error
 	DeletePacmanPackage(ctx context.Context, repoID, id string) error
 
+	// Composer package methods (docs/formats/composer.md).
+	//
+	// CreateComposerPackage stores one version; a live row with the same name and
+	// version_normalized is a unique violation (IsUniqueViolation).
+	// The Get methods return (nil, nil) when there is none.
+	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
+	GetComposerPackage(ctx context.Context, repoID, name, versionNormalized string) (*models.ComposerPackage, error)
+	GetComposerPackageByID(ctx context.Context, repoID, id string) (*models.ComposerPackage, error)
+	// ListComposerPackageVersions returns every live version of one package, oldest upload first.
+	ListComposerPackageVersions(ctx context.Context, repoID, name string) ([]*models.ComposerPackage, error)
+	// ListComposerPackages returns every live version of every package of a repository (backup, snapshot).
+	ListComposerPackages(ctx context.Context, repoID string) ([]*models.ComposerPackage, error)
+	// ListComposerPackageNames returns every live package name of the repository in name order with the
+	// description (composer_json->>'description', "" if absent) of its newest live version.
+	ListComposerPackageNames(ctx context.Context, repoID string) ([]*models.ComposerPackageName, error)
+	DeleteComposerPackage(ctx context.Context, repoID, id string) error
+
 	// Ansible collection methods (docs/formats/ansible.md).
 	//
 	// CreateAnsibleCollection stores a collection version; a live row with the

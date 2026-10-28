@@ -203,6 +203,10 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 	case "cargo":
 		return formatTable{table: "cargo_crates", nameCol: "name", partitionCols: []string{"name"},
 			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindCargo}, true
+	case "composer":
+		// Ranked per package name: the newest versions of one vendor/package are kept.
+		return formatTable{table: "composer_packages", nameCol: "name", partitionCols: []string{"name"},
+			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindComposer}, true
 	case "rubygems":
 		return formatTable{table: "rubygems_gems", nameCol: "name", partitionCols: []string{"name", "platform"},
 			versionExpr: "version", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindRubyGems}, true

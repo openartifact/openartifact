@@ -60,6 +60,9 @@ WITH q_candidates AS MATERIALIZED (
         SELECT t.repository_id, t.id, t.name::text, t.version::text
         FROM conda_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.version::text
+        FROM composer_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
         SELECT t.repository_id, t.id, (t.namespace || '.' || t.name)::text, t.version::text
         FROM ansible_collections t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL

@@ -23,6 +23,7 @@ const (
 	TrashKindNuGet             TrashKind = "nuget_package"
 	TrashKindGoMod             TrashKind = "go_module"
 	TrashKindCargo             TrashKind = "cargo_crate"
+	TrashKindComposer          TrashKind = "composer"
 	TrashKindRubyGems          TrashKind = "rubygems_gem"
 	TrashKindConda             TrashKind = "conda_package"
 	TrashKindPacman            TrashKind = "pacman"

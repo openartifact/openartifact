@@ -136,6 +136,17 @@ func rowFixtures() []fixture {
 			},
 		},
 		{
+			format: "composer", version: "v1.2.0", path: "acme/shop/v1.2.0",
+			tables: []string{"composer_packages"}, compare: []string{"composer_packages"},
+			seed: func(h *harness, repo, blob string) {
+				h.row("composer_packages", repo, "blob_id", blob, map[string]any{
+					"name": "acme/shop", "version": "v1.2.0", "version_normalized": "1.2.0.0",
+					"sha1":          "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+					"composer_json": sqlExpr(`'{"name": "acme/shop", "license": ["MIT"], "require": {"php": ">=8.1"}}'::jsonb`),
+				})
+			},
+		},
+		{
 			format: "ansible", version: "1.2.0", path: "acme-shop-1.2.0.tar.gz",
 			tables: []string{"ansible_collections"}, compare: []string{"ansible_collections"},
 			seed: func(h *harness, repo, blob string) {

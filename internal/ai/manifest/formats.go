@@ -5,14 +5,17 @@
 package manifest
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
 	"sort"
 	"strings"
 
+	"github.com/openartifact/openartifact/pkg/composer"
 	"github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/pacman"
 	"github.com/openartifact/openartifact/pkg/rpm"
@@ -48,6 +51,33 @@ func extractCargo(ctx context.Context, src Source) ([]section, error) {
 	}
 
 	return tarManifest(ctx, src, compGzip, slots)
+}
+
+// extractComposer reads composer.json of a dist zip: from the archive root or,
+// when the root has none, from the single top-level directory the archive lives
+// in (pkg/composer.ReadArchive, the rule the upload applies).
+func extractComposer(ctx context.Context, src Source) ([]section, error) {
+	ra, err := openAt(ctx, src.Open)
+	if err != nil {
+		return nil, err
+	}
+	defer ra.release()
+
+	m, err := composer.ReadArchive(ra, ra.size)
+	if err != nil {
+		if errors.Is(err, composer.ErrInvalidArchive) {
+			return nil, ErrNotFound
+		}
+
+		return nil, fmt.Errorf("read composer.json: %w", err)
+	}
+
+	body, err := readText(bytes.NewReader(m.JSON), src.limits())
+	if err != nil {
+		return nil, err
+	}
+
+	return []section{{label: "composer.json", body: body}}, nil
 }
 
 func extractHelm(ctx context.Context, src Source) ([]section, error) {

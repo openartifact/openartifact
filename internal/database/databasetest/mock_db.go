@@ -1251,6 +1251,34 @@ func (m *BaseMockDB) CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.
 func (m *BaseMockDB) ReplaceNixSigningKey(ctx context.Context, k *models.NixSigningKey) error {
 	return errNotImpl("ReplaceNixSigningKey")
 }
+func (m *BaseMockDB) CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error {
+	return errNotImpl("CreateComposerPackage")
+}
+
+func (m *BaseMockDB) GetComposerPackage(ctx context.Context, repoID, name, versionNormalized string) (*models.ComposerPackage, error) {
+	return nil, errNotImpl("GetComposerPackage")
+}
+
+func (m *BaseMockDB) GetComposerPackageByID(ctx context.Context, repoID, id string) (*models.ComposerPackage, error) {
+	return nil, errNotImpl("GetComposerPackageByID")
+}
+
+func (m *BaseMockDB) ListComposerPackageVersions(ctx context.Context, repoID, name string) ([]*models.ComposerPackage, error) {
+	return nil, errNotImpl("ListComposerPackageVersions")
+}
+
+func (m *BaseMockDB) ListComposerPackages(ctx context.Context, repoID string) ([]*models.ComposerPackage, error) {
+	return nil, errNotImpl("ListComposerPackages")
+}
+
+func (m *BaseMockDB) ListComposerPackageNames(ctx context.Context, repoID string) ([]*models.ComposerPackageName, error) {
+	return nil, errNotImpl("ListComposerPackageNames")
+}
+
+func (m *BaseMockDB) DeleteComposerPackage(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteComposerPackage")
+}
+
 func (m *BaseMockDB) ListAnsibleCollections(ctx context.Context, repoID string) ([]*models.AnsibleCollection, error) {
 	return nil, errNotImpl("ListAnsibleCollections")
 }

@@ -22,7 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
-const ciUploadUsage = "Usage: oa upload <repo> <file|glob>... [--target-path P] [--flat] [--property k=v]... " +
+const ciUploadUsage = "Usage: oa upload <repo> <file|glob>... [--target-path P] [--flat] [--version V] [--property k=v]... " +
 	"[--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]"
 
 // Property keys `oa upload` records for the build that produced an artifact;
@@ -49,6 +49,7 @@ type ciUploadOptions struct {
 	patterns    []string
 	targetPath  string
 	flat        bool
+	version     string
 	properties  []string // key=value as given
 	buildName   string
 	buildNumber string
@@ -92,6 +93,12 @@ func parseCIUploadArgs(args []string, output io.Writer) (ciUploadOptions, error)
 		"Path in the repository; a trailing / makes it a directory (default: the file's path)",
 	)
 	flags.BoolVar(&o.flat, "flat", false, "Drop the local directories: upload every file by its name")
+	flags.StringVar(
+		&o.version,
+		"version",
+		"",
+		"Package version, for the formats whose file does not say (composer: when composer.json has no \"version\")",
+	)
 	flags.Func("property", "Property k=v set on every uploaded artifact (repeatable)", func(s string) error {
 		if k, _, ok := strings.Cut(s, "="); !ok || k == "" {
 			return fmt.Errorf("%w: --property wants key=value, got %q", errCIUsage, s)
@@ -178,10 +185,11 @@ func handleCIUpload(args []string, client *Client, outFmt string) {
 
 // uploadable reports whether `oa upload` can store into the format: the
 // path-addressed ones, the two with an upload endpoint that reads package
-// metadata, pacman (a PUT of the package file and of its .sig) and ansible (the
-// Galaxy publish POST of a collection tarball).
+// metadata, pacman (a PUT of the package file and of its .sig), ansible (the
+// Galaxy publish POST of a collection tarball) and composer (a PUT of the dist
+// zip to the package and version its composer.json names).
 func uploadable(f importFormat) bool {
-	return pathAddressed(f) || f == formatDeb || f == formatRPM || f == formatPacman || f == formatAnsible
+	return pathAddressed(f) || f == formatDeb || f == formatRPM || f == formatPacman || f == formatAnsible || f == formatComposer
 }
 
 // pathAddressed reports whether the format stores a file at the path it is
@@ -235,7 +243,7 @@ func runCIUpload(ctx context.Context, api *ciAPI, o ciUploadOptions) (ciUploadRe
 	props := o.props()
 
 	for i, file := range files {
-		u, err := uploadCIFile(ctx, api, repo, file, paths[i], props)
+		u, err := uploadCIFile(ctx, api, repo, file, paths[i], props, uploadMeta{Version: o.version})
 		if err != nil {
 			return res, fmt.Errorf("%s: %w", file, err)
 		}
@@ -247,7 +255,14 @@ func runCIUpload(ctx context.Context, api *ciAPI, o ciUploadOptions) (ciUploadRe
 }
 
 // uploadCIFile stores one file, verifies the stored digest and sets props.
-func uploadCIFile(ctx context.Context, api *ciAPI, repo ciRepo, file, remote string, props map[string]string) (ciUploadedFile, error) {
+func uploadCIFile(
+	ctx context.Context,
+	api *ciAPI,
+	repo ciRepo,
+	file, remote string,
+	props map[string]string,
+	meta uploadMeta,
+) (ciUploadedFile, error) {
 	f := importFormat(repo.Format)
 
 	src, err := os.Open(file)
@@ -262,7 +277,7 @@ func uploadCIFile(ctx context.Context, api *ciAPI, repo ciRepo, file, remote str
 		return ciUploadedFile{}, err
 	}
 
-	stored, err := api.t.upload(ctx, f, repo.Name, sourceAsset{Path: remote, Size: size, SHA256: sum}, src, uploadMeta{})
+	stored, err := api.t.upload(ctx, f, repo.Name, sourceAsset{Path: remote, Size: size, SHA256: sum}, src, meta)
 	if err != nil {
 		return ciUploadedFile{}, err
 	}

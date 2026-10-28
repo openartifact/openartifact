@@ -56,7 +56,7 @@ type Result struct {
 	// SPDX expression, an alias, a classifier or free text.
 	Licenses []string
 	// Source names where they were read from: "License-Expression",
-	// "License", "classifier", "package.json", "Cargo.toml", ".nuspec",
+	// "License", "classifier", "package.json", "Cargo.toml", "composer.json", ".nuspec",
 	// "gemspec", "pom" or "ivy.xml".
 	Source string
 	// Parent is the <parent> a Maven pom declares; set only for a pom that
@@ -71,7 +71,7 @@ func (r Result) Empty() bool { return len(r.Licenses) == 0 }
 // Supported reports whether licenses can be read from a file of this format.
 func Supported(format, filename string) bool {
 	switch format {
-	case "cargo", "npm", "nuget", "pypi":
+	case "cargo", "composer", "npm", "nuget", "pypi":
 		return manifest.Supported(format, filename)
 	case "ivy":
 		return isIvyDescriptor(filename)
@@ -94,7 +94,7 @@ func Supported(format, filename string) bool {
 // Expected holds is also Supported.
 func Expected(format, filename string) bool {
 	switch format {
-	case "cargo", "npm", "nuget", "pypi":
+	case "cargo", "composer", "npm", "nuget", "pypi":
 		return true
 	case "ivy", "rubygems":
 		return Supported(format, filename)
@@ -165,6 +165,8 @@ func parse(format, filename string, parts []manifest.Part) (Result, error) {
 		return parsePackageJSON([]byte(parts[0].Body))
 	case "cargo":
 		return parseCargo(parts[0].Body)
+	case "composer":
+		return parseComposer(parts[0].Body)
 	case "nuget":
 		return parseNuspec(parts[0].Body)
 	case "maven", "sbt":

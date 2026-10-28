@@ -19,7 +19,7 @@ func TestRootTypeCoversEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "sbom.rootType",
 		[]string{"docker", "raw"},
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 			"pacman", "pypi", "rpm", "rubygems", "sbt", "terraform",
 		},
 	)
@@ -51,7 +51,7 @@ func TestGeneratePURLNameRulesCoverEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "sbom.generatePURLNS",
 		[]string{"ivy", "maven", "pacman", "pypi", "sbt"},
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "nix", "npm", "nuget",
 			"raw", "rpm", "rubygems", "terraform",
 		},
 	)

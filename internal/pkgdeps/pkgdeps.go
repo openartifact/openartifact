@@ -4,7 +4,7 @@
 
 // Package pkgdeps lists the dependencies a stored package file declares: the
 // manifest and, where the package ships one, the lockfile (npm package.json and
-// shrinkwrap, pypi Requires-Dist, maven pom, Cargo.toml and Cargo.lock, go.mod,
+// shrinkwrap, pypi Requires-Dist, maven pom, Cargo.toml and Cargo.lock, composer.json, go.mod,
 // nuspec, gemspec, Chart.yaml and Chart.lock, conda index.json, deb Depends, rpm
 // Requires, conan recipe, ivy.xml).
 //
@@ -143,6 +143,8 @@ func parse(format, filename string, parts []manifest.Part) (Result, error) {
 	switch format {
 	case "cargo":
 		return parseCargo(parts)
+	case "composer":
+		return parseComposer(parts)
 	case "conan":
 		return parseConan(parts), nil
 	case "conda":

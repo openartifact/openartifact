@@ -70,6 +70,14 @@ func buildPURL(p Package) (string, error) {
 		if mod, last, found := strings.CutLast(p.Name, "/"); found {
 			namespace, pkg = strings.Split(mod, "/"), last
 		}
+	case "composer":
+		// "vendor/name": the vendor is the namespace; a leading "v" of a tag
+		// ("v1.2.3") is not part of the version advisories are written against.
+		if vendor, name, found := strings.Cut(p.Name, "/"); found {
+			namespace, pkg = []string{vendor}, name
+		}
+
+		version = composerVersion(version)
 	case "deb", "rpm":
 		if !validDistro(p.Distro) {
 			return "", errDistroRequired
@@ -109,6 +117,15 @@ func buildPURL(p Package) (string, error) {
 	b.WriteString(purlEscape(pkg) + "@" + purlEscape(version) + qualifiers)
 
 	return b.String(), nil
+}
+
+// composerVersion drops the "v" of a "v1.2.3" tag.
+func composerVersion(v string) string {
+	if len(v) > 1 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
+		return v[1:]
+	}
+
+	return v
 }
 
 // rpmEVR returns the epoch and the "version-release" an rpm is scanned as. The

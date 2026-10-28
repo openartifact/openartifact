@@ -38,6 +38,7 @@ func TestRegenerateRestoredMetadataFormats(t *testing.T) {
 		[]string{
 			"ansible",
 			"cargo",
+			"composer",
 			"conan",
 			"conda",
 			"docker",

@@ -17,6 +17,7 @@ Every proxy format can be grouped; see the [format matrix](../formats/README.md#
 | ansible | yes | yes | yes |
 | apk | yes | yes | yes |
 | cargo | yes | yes | yes |
+| composer | yes | no | no |
 | conan | yes | yes | yes |
 | conda | yes | yes | yes |
 | deb | yes | yes | yes |

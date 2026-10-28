@@ -450,6 +450,8 @@ func ruleFor(format string) (formatRule, bool) {
 		return formatRule{[]string{".nupkg"}, extractNuGet}, true
 	case "cargo":
 		return formatRule{[]string{".crate"}, extractCargo}, true
+	case "composer":
+		return formatRule{[]string{".zip"}, extractComposer}, true
 	case "helm":
 		return formatRule{[]string{".tgz", ".tar.gz"}, extractHelm}, true
 	case "deb":

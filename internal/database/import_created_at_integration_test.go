@@ -173,6 +173,28 @@ func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string
 	return "conda_packages", p.ID
 }
 
+func (e *importEnv) createComposer(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	p := &models.ComposerPackage{
+		RepositoryID:      repo,
+		Name:              "acme/d",
+		Version:           "v1.0.0",
+		VersionNormalized: "1.0.0.0",
+		SHA1:              "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		ComposerJSON:      []byte(`{"name":"acme/d"}`),
+		SHA256:            e.uniq("sha"),
+		BlobKey:           e.uniq("k"),
+		SizeBytes:         1,
+		CreatedAt:         at,
+	}
+	if err := e.pg.CreateComposerPackage(e.ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	return "composer_packages", p.ID
+}
+
 func (e *importEnv) createAnsible(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
@@ -304,6 +326,7 @@ func TestImportCreatedAt(t *testing.T) {
 		"nuget":    e.createNuget,
 		"rubygems": e.createRubygems,
 		"cargo":    e.createCargo,
+		"composer": e.createComposer,
 		"go":       e.createGo,
 		"conda":    e.createConda,
 		"conan":    e.createConan,

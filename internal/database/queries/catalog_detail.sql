@@ -162,6 +162,17 @@ FROM (
     FROM conda_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
+    -- composer
+    SELECT t.id::uuid, 'composer'::text, t.name::text, t.version::text, ''::text,
+           (replace(t.name, '/', '-') || '-' || t.version || '.zip')::text, t.created_at::timestamptz, t.updated_at::timestamptz,
+           t.blob_id::uuid, NULL::text, NULL::bigint, NULL::bigint,
+           ''::text, COALESCE(t.composer_json->>'description', '')::text, ''::text, COALESCE(t.composer_json->>'homepage', '')::text,
+           ''::text, t.sha1::text,
+           jsonb_build_object('version_normalized', t.version_normalized)::jsonb,
+           COALESCE(t.composer_json->'require', '{}'::jsonb)::jsonb
+    FROM composer_packages t
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
+    UNION ALL
     -- ansible
     SELECT t.id::uuid, 'ansible'::text, (t.namespace || '.' || t.name)::text, t.version::text, ''::text,
            t.filename::text, t.created_at::timestamptz, t.updated_at::timestamptz,

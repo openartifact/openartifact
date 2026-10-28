@@ -72,6 +72,7 @@
   "upload.failed": "Error",
   "upload.queued": "En cola",
   "upload.ansible.body": "Las colecciones de Ansible se publican con ansible-galaxy, que envía una única petición POST multipart autenticada con un token de API. Añada el servidor a ansible.cfg y ejecute:",
+  "upload.composer.body": "Los paquetes de Composer se publican con una petición PUT por versión, autenticada con un token de API. El vendor, el nombre del paquete y la versión forman parte de la URL:",
   "upload.hint.apk": "Sube paquetes .apk. Se guardan bajo la rama y el repositorio (directorio) indicados abajo; la arquitectura viene del paquete.",
   "upload.apk.branch": "Rama",
   "upload.apk.branchHint": "Rama de versión de Alpine, por ejemplo v3.20 o edge.",

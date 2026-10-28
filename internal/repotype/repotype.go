@@ -138,6 +138,10 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
 	{
+		Name: "composer", PackageTables: []string{"composer_packages"},
+		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,
+	},
+	{
 		Name: "conan", PackageTables: []string{"conan_packages"},
 		Proxy: true, Group: true, DefaultUpstream: "https://center2.conan.io", PURLType: "conan",
 	},

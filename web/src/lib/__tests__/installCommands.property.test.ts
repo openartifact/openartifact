@@ -65,6 +65,7 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'ansible': return ['ansible-galaxy', 'collection', 'install', `${pkg}:${version}`, '--server', `${base}/api/`]
     case 'apk': return ['apk', 'add', `${pkg}=${version}`]
     case 'cargo': return ['cargo', 'install', pkg, '--version', version, '--index', `sparse+${base}/index/`]
+    case 'composer': return ['composer', 'require', `${pkg}:${version}`]
     case 'conan': return ['conan', 'install', `--requires=${pkg}/${version}`, '-r', repo]
     case 'conda': return ['conda', 'install', '-c', base, `${pkg}=${version}`]
     case 'deb': return ['apt', 'install', `${pkg}=${version}`]
@@ -149,8 +150,8 @@ describe('pullCommand (property)', () => {
     }))
   })
 
-  it('points every URL argument under the repository base URL (apk, conan, deb, pacman and rpm commands carry none)', () => {
-    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
+  it('points every URL argument under the repository base URL (apk, composer, conan, deb, pacman and rpm commands carry none)', () => {
+    fc.assert(fc.property(fc.constantFrom(...ALL_FORMATS.filter((f) => f !== 'apk' && f !== 'composer' && f !== 'conan' && f !== 'deb' && f !== 'docker' && f !== 'pacman' && f !== 'rpm' && f !== 'terraform')), origin, repoName, hostileWord, hostileWord, (format, o, repo, pkg, version) => {
       const base = repoBaseUrl(format, o.url, repo)
       const cmd = pullCommand(format, o.url, repo, pkg, version)
       const words = format === 'sbt' || format === 'ivy' ? [cmd] : shellWords(cmd)

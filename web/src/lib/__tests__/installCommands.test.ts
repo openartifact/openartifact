@@ -271,6 +271,28 @@ describe('ansible', () => {
   })
 })
 
+describe('composer', () => {
+  it('requires a package', () => {
+    expect(pullCommand('composer', 'https://oa.example', 'r1', 'acme/lib', '1.2.3')).toBe('composer require acme/lib:1.2.3')
+  })
+
+  it('configures the repository, auth and publish for https', () => {
+    const [setup] = clientSetup('composer', 'https://oa.example:8443', 'r1')
+    expect(setup!.client).toBe('composer')
+    expect(setup!.configure).toContain('composer config repositories.openartifact composer https://oa.example:8443/repos/r1')
+    expect(setup!.configure).toContain('composer config http-basic.oa.example:8443 token <TOKEN>')
+    expect(setup!.configure).not.toContain('secure-http')
+    expect(setup!.publish).toBe(
+      'curl -T vendor-name-1.0.0.zip -H "Authorization: Bearer <TOKEN>" https://oa.example:8443/repos/r1/packages/upload/vendor/name/1.0.0',
+    )
+  })
+
+  it('disables secure-http for a plain http origin', () => {
+    const [setup] = clientSetup('composer', 'http://oa.example:8080', 'r1')
+    expect(setup!.configure).toContain('composer config secure-http false')
+  })
+})
+
 describe('clientSetup', () => {
   const origin = 'http://oa.example:8080'
 
