@@ -1393,7 +1393,6 @@ type StorageBackend struct {
 	ID            string          `db:"id" json:"id"`
 	Name          string          `db:"name" json:"name"`
 	Kind          string          `db:"kind" json:"kind"`
-	IsDefault     bool            `db:"is_default" json:"is_default"`
 	Config        json.RawMessage `db:"config" json:"config"`
 	Status        string          `db:"status" json:"status"`
 	StatusMessage *string         `db:"status_message" json:"status_message"`

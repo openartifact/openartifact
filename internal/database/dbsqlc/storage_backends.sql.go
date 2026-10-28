@@ -12,7 +12,6 @@ import (
 )
 
 const createStorageBackend = `-- name: CreateStorageBackend :exec
-
 INSERT INTO storage_backends (id, name, kind, config, status, status_message, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
@@ -28,9 +27,6 @@ type CreateStorageBackendParams struct {
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
-// storage_backends.is_default is no longer read or written: the primary store
-// comes from the server configuration, and the column is dropped by a later
-// contract migration once no 0.12 pod runs.
 func (q *Queries) CreateStorageBackend(ctx context.Context, arg CreateStorageBackendParams) error {
 	_, err := q.db.Exec(ctx, createStorageBackend,
 		arg.ID,
@@ -59,21 +55,9 @@ SELECT id, name, kind, config, status, status_message, last_checked_at, created_
 FROM storage_backends WHERE name = $1
 `
 
-type GetStorageBackendRow struct {
-	ID            string          `db:"id" json:"id"`
-	Name          string          `db:"name" json:"name"`
-	Kind          string          `db:"kind" json:"kind"`
-	Config        json.RawMessage `db:"config" json:"config"`
-	Status        string          `db:"status" json:"status"`
-	StatusMessage *string         `db:"status_message" json:"status_message"`
-	LastCheckedAt *time.Time      `db:"last_checked_at" json:"last_checked_at"`
-	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetStorageBackend(ctx context.Context, name string) (GetStorageBackendRow, error) {
+func (q *Queries) GetStorageBackend(ctx context.Context, name string) (StorageBackend, error) {
 	row := q.db.QueryRow(ctx, getStorageBackend, name)
-	var i GetStorageBackendRow
+	var i StorageBackend
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -93,27 +77,15 @@ SELECT id, name, kind, config, status, status_message, last_checked_at, created_
 FROM storage_backends ORDER BY name ASC
 `
 
-type ListStorageBackendsRow struct {
-	ID            string          `db:"id" json:"id"`
-	Name          string          `db:"name" json:"name"`
-	Kind          string          `db:"kind" json:"kind"`
-	Config        json.RawMessage `db:"config" json:"config"`
-	Status        string          `db:"status" json:"status"`
-	StatusMessage *string         `db:"status_message" json:"status_message"`
-	LastCheckedAt *time.Time      `db:"last_checked_at" json:"last_checked_at"`
-	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListStorageBackends(ctx context.Context) ([]ListStorageBackendsRow, error) {
+func (q *Queries) ListStorageBackends(ctx context.Context) ([]StorageBackend, error) {
 	rows, err := q.db.Query(ctx, listStorageBackends)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListStorageBackendsRow{}
+	items := []StorageBackend{}
 	for rows.Next() {
-		var i ListStorageBackendsRow
+		var i StorageBackend
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
