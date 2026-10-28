@@ -572,6 +572,14 @@ jobs:
             go.sum
             tools/go.sum
 
+      # A merge that kept a marker (including the diff3 "|||||||" base line) ships it into the docs.
+      - name: No merge conflict markers
+        run: |
+          if git grep -nE '^(<{7}|\|{7}|>{7})( |$)|^={7}$' -- docs README.md; then
+            echo "::error::merge conflict marker found (see lines above)"
+            exit 1
+          fi
+
       # docs/reference is generated from the code (config keys, metrics, CLI, OpenAPI);
       # the same run checks .env.example and openartifact.example.yaml list every config key.
       - name: Generated reference is up to date
