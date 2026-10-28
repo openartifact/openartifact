@@ -88,7 +88,7 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isProbe(r.URL.Path) {
+			if untraced(r.URL.Path) {
 				next.ServeHTTP(w, r)
 
 				return
@@ -134,7 +134,9 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-func isProbe(path string) bool {
+// untraced reports whether path is served without a server span: the probes
+// and the frontend telemetry relay.
+func untraced(path string) bool {
 	switch path {
 	case "/health", "/ready", "/metrics", "/api/v1/telemetry/traces", "/api/v1/telemetry/logs":
 		return true
