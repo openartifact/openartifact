@@ -431,6 +431,7 @@ Behaviour to know:
 
 - Writes go through a buffered queue (1000 events). When it is full a request waits up to 2 s, then the entry is dropped from the database (the [OTLP stream](#streaming-over-otlp), when on, already sent it) and `openartifact_audit_dropped_total` increases. The queue is flushed on graceful shutdown (5 s).
 - The entry id and `timestamp` are assigned when the event is recorded, before it is queued, so the [OTLP stream](#streaming-over-otlp) carries the same values.
+- Because the time is taken before the queue, entries can reach the database out of `timestamp` order: by the queue delay (normally well under a second, but up to the whole backlog while the database is slow, each insert waiting up to 10 s) and by clock skew between replicas. A job that polls with `--since` must start each window a few minutes before the newest `timestamp` it has seen and drop duplicates on `id`; after a database incident, export again from its start.
 - Entries are kept forever unless you set `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`): a worker then deletes older ones in paced batches. Nothing is exported first, so run `oa audit export` beforehand; see [audit log retention](audit-retention.md).
 - Audit logs are not part of [backups](backup.md).
 
