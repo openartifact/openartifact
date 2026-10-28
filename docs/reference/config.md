@@ -35,6 +35,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `server.readHeaderTimeout` | `SERVER_READ_HEADER_TIMEOUT` | int | `20` | `readHeaderTimeout` bounds only the time to read request headers, in seconds. It stays short regardless of readTimeout to still mitigate slowloris-style attacks even when body reads are unbounded. |
 | `server.maxBodyBytes` | `SERVER_MAX_BODY_BYTES` | int | `17179869184` | `maxBodyBytes` caps the body of every request (http.MaxBytesReader), a last line of defence behind the per-handler limits so no endpoint can be made to spool or buffer an unbounded body. 0 disables the cap. |
 | `server.shutdownTimeout` | `SERVER_SHUTDOWN_TIMEOUT` | int | `30` | `shutdownTimeout` is how many seconds in-flight requests get to finish during a graceful shutdown. |
+| `server.shutdownDelay` | `SERVER_SHUTDOWN_DELAY` | int | `0` | `shutdownDelay` is how many seconds the server keeps serving, reporting not ready on /ready, after a shutdown signal and before it stops accepting connections, so load balancers stop routing to it first. A second signal skips the delay. 0 disables it. |
 | `server.tlsEnabled` | `SERVER_TLS_ENABLED` | bool | `false` | `tlsEnabled` serves HTTPS and sends HSTS; it requires tlsCert and tlsKey. |
 | `server.tlsCert` | `SERVER_TLS_CERT` | string | `empty` | `tlsCert` is the path of the PEM certificate file. |
 | `server.tlsKey` | `SERVER_TLS_KEY` | string | `empty` | `tlsKey` is the path of the PEM private key file. |

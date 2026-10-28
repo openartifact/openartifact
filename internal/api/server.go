@@ -102,6 +102,12 @@ func (s *HTTPServer) EnableTLS(certFile, keyFile string) {
 	s.httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 }
 
+// DisableKeepAlives makes the server close each connection after its current
+// request, so clients reconnect (to another replica) while the pod drains.
+func (s *HTTPServer) DisableKeepAlives() {
+	s.httpServer.SetKeepAlivesEnabled(false)
+}
+
 // Stop gracefully stops the server.
 func (s *HTTPServer) Stop(ctx context.Context) error {
 	s.log.Infow("Stopping HTTP server")

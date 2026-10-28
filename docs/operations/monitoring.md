@@ -17,7 +17,7 @@ The REST API, OpenAPI spec and interactive API reference are covered in [API](..
 | Endpoint | Success | Failure |
 |---|---|---|
 | `GET /health` | always `200`, JSON | never fails; a broken dependency shows as `"status":"degraded"` |
-| `GET /ready` | `200 {"status":"ready"}` | `503 {"status":"not ready","reason":"database unavailable"}`, `"storage unavailable"` or `"storage tiers not loaded"` |
+| `GET /ready` | `200 {"status":"ready"}` | `503 {"status":"not ready","reason":"database unavailable"}`, `"storage unavailable"`, `"storage tiers not loaded"` or `"shutting down"` (after a shutdown signal, see [graceful shutdown](#graceful-shutdown-and-rolling-updates)) |
 
 `/health` body:
 
@@ -38,6 +38,16 @@ A failing component has `"status":"error"` and `"message":"unavailable"` (the ca
 What is checked: the database is pinged. Storage is probed through the same store stack that serves requests, for every backend: bucket access for `s3`, `garage`, `seaweedfs` and `gcs`, container access for `azure`, `GET /v2/` for `oci`, and for `filesystem` that the blob directory exists and a temporary file can be written and removed in it. The probe is cached for 10 seconds and bounded to 3 seconds, so polling `/health` does not turn into backend requests, and a failure shows up within that window. `/ready` checks the S3-family stores only, on every call. See [storage](storage.md#health).
 
 The compose healthcheck is `wget --spider http://localhost:8080/health`.
+
+### Graceful shutdown and rolling updates
+
+On `SIGTERM` or `SIGINT` the server shuts down in this order:
+
+1. `/ready` starts answering `503 {"status":"not ready","reason":"shutting down"}`; `/health` (liveness) keeps answering normally. HTTP keep-alives are switched off, so clients reconnect to another replica. The server keeps accepting and serving requests for `server.shutdownDelay` seconds (`SERVER_SHUTDOWN_DELAY`). A second signal skips the rest of the delay.
+2. The listener stops and in-flight requests get up to `server.shutdownTimeout` seconds (`SERVER_SHUTDOWN_TIMEOUT`) to finish.
+3. Background tasks drain (15 s at most), the workers stop and the audit log is flushed (5 s).
+
+The delay exists because a Kubernetes Service removes a terminating pod from its endpoints a few seconds after the `SIGTERM`, so without it a few requests are routed to a pod that no longer accepts connections. The image has no shell, so a `preStop` `sleep` hook is not available; `shutdownDelay` replaces it. Set it to more than the readiness probe needs to fail plus the endpoint propagation time (10 is a good value), and make `terminationGracePeriodSeconds` at least `shutdownDelay + shutdownTimeout` plus about 20 s for the drain. The default is `0` (no delay, no change in behaviour) because outside Kubernetes nothing needs to be waited for; the Helm chart sets it for you.
 
 ## Metrics
 

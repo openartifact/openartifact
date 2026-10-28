@@ -14,6 +14,7 @@ server:
   # readTimeout: 0       # seconds
   # writeTimeout: 0      # seconds
   shutdownTimeout: 30  # seconds
+  # shutdownDelay: 0     # seconds to serve with /ready=503 after SIGTERM, before the listener closes
   # tlsEnabled: false
   # tlsCert: /etc/openartifact/tls/cert.pem
   # tlsKey: /etc/openartifact/tls/key.pem
