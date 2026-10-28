@@ -219,7 +219,8 @@ func TestProbesAreNotTraced(t *testing.T) {
 	rec := install(t)
 	h := HTTPMiddleware()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
-	for _, p := range []string{"/health", "/ready", "/metrics"} {
+	// The last two are the frontend telemetry relay's exports.
+	for _, p := range []string{"/health", "/ready", "/metrics", "/api/v1/telemetry/traces", "/api/v1/telemetry/logs"} {
 		serve(h, http.MethodGet, p, nil)
 	}
 
