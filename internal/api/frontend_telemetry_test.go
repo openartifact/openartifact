@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -276,6 +277,28 @@ func TestFrontendTelemetryRelayForwardsUnchanged(t *testing.T) {
 
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("collector 503 answered %d, want 502", rec.Code)
+	}
+}
+
+// TestFrontendTelemetryRelayRefusesRedirects: a 307 from the collector must not replay the body and the
+// collector headers to the Location; it answers 502 like any other failing collector.
+func TestFrontendTelemetryRelayRefusesRedirects(t *testing.T) {
+	var hits atomic.Int32
+
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(target.Close)
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+
+	rec := httptest.NewRecorder()
+	newFrontendRouter(frontendConfig(redirector.URL), nil, sessionPrincipal("user-1")).
+		ServeHTTP(rec, relayRequest("traces", otlpProtobuf, []byte("\x0a\x03abc")))
+
+	if rec.Code != http.StatusBadGateway || hits.Load() != 0 {
+		t.Errorf("answered %d with %d requests at the redirect target, want 502 and none", rec.Code, hits.Load())
 	}
 }
 

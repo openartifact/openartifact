@@ -64,13 +64,20 @@ func (h *FrontendTelemetryHandler) count(signal, result string) {
 	}
 }
 
-// NewFrontendTelemetryHandler creates the handler for cfg; reg may be nil.
+// NewFrontendTelemetryHandler creates the handler for cfg; reg may be nil. Its
+// client refuses redirects: one would replay the body and the otlp.headers
+// (collector credentials) to wherever it points. It is deliberately not the
+// SSRF-safe client of internal/netutil: the collector is operator
+// configuration and usually internal (localhost, a sidecar, a compose service).
 func NewFrontendTelemetryHandler(cfg telemetry.Config, reg *metrics.Registry, log *logger.Logger) *FrontendTelemetryHandler {
 	return &FrontendTelemetryHandler{
-		cfg:    cfg,
-		client: &http.Client{Timeout: frontendTelemetryTimeout},
-		reg:    reg,
-		log:    log,
+		cfg: cfg,
+		client: &http.Client{
+			Timeout:       frontendTelemetryTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+		reg: reg,
+		log: log,
 	}
 }
 
