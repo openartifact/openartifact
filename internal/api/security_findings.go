@@ -393,6 +393,9 @@ func (h *SecurityHandler) findingToResponse(f *models.Finding) responses.Securit
 	}
 }
 
+// findingMaxRank is the highest rank of any order (the priority order's kev).
+const findingMaxRank = 6
+
 var errInvalidFindingCursor = errors.New("invalid security finding cursor")
 
 // encodeFindingCursor renders a keyset position as an opaque URL-safe token:
@@ -432,7 +435,7 @@ func decodeFindingCursor(s string) (*models.FindingCursor, error) {
 	}
 
 	rank, err := strconv.Atoi(parts[0])
-	if err != nil || rank < 0 || rank > maxRank {
+	if err != nil || rank < 0 || rank > findingMaxRank || rank > maxRank {
 		return nil, errInvalidFindingCursor
 	}
 

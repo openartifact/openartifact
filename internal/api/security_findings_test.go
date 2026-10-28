@@ -810,6 +810,21 @@ func TestSecuritySummary_Response(t *testing.T) {
 	}
 }
 
+// requireExploitColumns checks the exploit columns come last and the earlier
+// ones keep their positions.
+func requireExploitColumns(t *testing.T, rows [][]string) {
+	t.Helper()
+
+	if h := securityCSVHeader(); !slices.Equal(h[len(h)-4:], []string{"id", "kev_count", "max_epss", "priority"}) ||
+		slices.Index(h, "id") != 17 {
+		t.Fatalf("header = %v", h)
+	}
+
+	if got := rows[1][18:]; !slices.Equal(got, []string{"1", "0.5", "kev"}) {
+		t.Fatalf("exploit columns = %v", got)
+	}
+}
+
 func TestSecurityExport_CSVAndJSON(t *testing.T) {
 	at := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
 	epss := 0.5
@@ -840,15 +855,7 @@ func TestSecurityExport_CSVAndJSON(t *testing.T) {
 		t.Fatalf("rows = %v", rows)
 	}
 
-	// the exploit columns come last; the earlier ones keep their positions
-	if h := securityCSVHeader(); !slices.Equal(h[len(h)-4:], []string{"id", "kev_count", "max_epss", "priority"}) ||
-		slices.Index(h, "id") != 17 {
-		t.Fatalf("header = %v", h)
-	}
-
-	if got := rows[1][18:]; !slices.Equal(got, []string{"1", "0.5", "kev"}) {
-		t.Fatalf("exploit columns = %v", got)
-	}
+	requireExploitColumns(t, rows)
 
 	title := rows[1][slices.Index(securityCSVHeader(), "title")]
 	if strings.HasPrefix(title, "=") {
