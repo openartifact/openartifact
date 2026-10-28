@@ -40,9 +40,9 @@ var signedWhenServed = []string{"terraform"}
 func TestRefreshCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
-	handled := repotypetest.Classified(t, "gpgkeys.refresh", []string{"rpm", "deb", "pacman"},
-		[]string{"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk", "nix", "ansible"})
+	handled := repotypetest.Classified(t, "gpgkeys.refresh", []string{"deb", "pacman", "rpm"},
+		[]string{"ansible", "apk", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"pypi", "raw", "rubygems", "sbt", "terraform"})
 
 	for _, spec := range repotypetest.Specs() {
 		if spec.Signing == repotype.SigningGPG && !slices.Contains(handled, spec.Name) && !slices.Contains(signedWhenServed, spec.Name) {

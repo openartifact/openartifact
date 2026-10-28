@@ -58,7 +58,7 @@ type RPMPackageLoader interface {
 	PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 }
 
-// GroupMetadataWorker generates the metadata of deb, rpm, apk and pacman group
+// GroupMetadataWorker generates the metadata of apk, deb, pacman and rpm group
 // repositories: the Release/Packages indexes, repodata, APKINDEX or databases a client needs, merged
 // across the group's hosted and proxy members in member order, plus the table
 // of which member owns which file so downloads are served from the member
@@ -145,7 +145,7 @@ func (w *GroupMetadataWorker) NotifyStale(groupID string) {
 	w.q.Notify(groupID)
 }
 
-// NotifyMemberChanged marks every deb, rpm or pacman group that lists repoID as a member
+// NotifyMemberChanged marks every deb, pacman or rpm group that lists repoID as a member
 // stale. It is the hook of the hosted workers' NotifyStale: uploads, deletes,
 // trash and restores of a member all end up there.
 func (w *GroupMetadataWorker) NotifyMemberChanged(repoID string) {
@@ -192,7 +192,7 @@ func (w *GroupMetadataWorker) Generate(ctx context.Context, groupID, hint string
 }
 
 // variantPrefix prefixes the paths of the metadata variants of a group; no path
-// of a deb, rpm or pacman repository starts with it.
+// of a deb, pacman or rpm repository starts with it.
 const variantPrefix = ".oa-variant/"
 
 // Scope returns the path prefix under which the metadata for a caller who can
@@ -412,7 +412,7 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 // have no such request.
 func (w *GroupMetadataWorker) checkHint(ctx context.Context, grp *models.Repository, hint string, members []*models.Repository) error {
 	switch grp.Format {
-	case "deb", "apk":
+	case "apk", "deb":
 		return w.checkDist(ctx, grp, hint, members)
 	case "pacman":
 		return w.checkArch(ctx, hint, members)

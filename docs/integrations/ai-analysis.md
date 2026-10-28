@@ -83,21 +83,21 @@ The manifest is read from the stored blob, streaming and bounded (at most 64 KiB
 
 | Format | Text sent to the model |
 |---|---|
-| npm | `package.json` of the tarball |
-| pypi | wheel/egg `METADATA`, sdist `PKG-INFO` (description body cut to 2 KiB) |
-| maven, sbt, ivy | `.pom` / `ivy.xml` as stored; for a `.jar`, `META-INF/maven/*/pom.xml` and `META-INF/MANIFEST.MF` |
-| nuget | `.nuspec` |
 | cargo | `Cargo.toml` of the crate |
-| helm | `Chart.yaml` and `requirements.yaml` |
-| deb | control fields (package, version, depends, description, ...) |
-| rpm | header summary: name, version, license, summary, requires/provides |
-| go | `go.mod` (`.mod` file, or inside the module `.zip`) |
-| rubygems | `metadata.gz` of the gem |
-| conda | `info/index.json` and `info/about.json` (`.tar.bz2` and `.conda`) |
 | conan | the recipe's `conanfile.py` / `conandata.yml` (the binary package's `conaninfo.txt` is not used) |
+| conda | `info/index.json` and `info/about.json` (`.tar.bz2` and `.conda`) |
+| deb | control fields (package, version, depends, description, ...) |
 | docker, raw | not supported on purpose: images and arbitrary files are never sent to an external model; supply `manifest_text` instead |
+| go | `go.mod` (`.mod` file, or inside the module `.zip`) |
+| helm | `Chart.yaml` and `requirements.yaml` |
+| ivy, maven, sbt | `.pom` / `ivy.xml` as stored; for a `.jar`, `META-INF/maven/*/pom.xml` and `META-INF/MANIFEST.MF` |
+| npm | `package.json` of the tarball |
+| nuget | `.nuspec` |
+| pypi | wheel/egg `METADATA`, sdist `PKG-INFO` (description body cut to 2 KiB) |
+| rpm | header summary: name, version, license, summary, requires/provides |
+| rubygems | `metadata.gz` of the gem |
 
-With automatic analysis on, maven, sbt and ivy are analysed only for their `.pom` / `ivy.xml` files, not for every `.jar`, sources or javadoc artifact.
+With automatic analysis on, ivy, maven and sbt are analysed only for their `.pom` / `ivy.xml` files, not for every `.jar`, sources or javadoc artifact.
 
 ### Automatic analysis
 

@@ -385,7 +385,7 @@ func TestExtractCorruptArchive(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct{ format, name string }{
-		{"npm", "x.tgz"}, {"nuget", "x.nupkg"}, {"deb", "x.deb"}, {"rpm", "x.rpm"}, {"pypi", "x.whl"}, {"rubygems", "x.gem"},
+		{"deb", "x.deb"}, {"npm", "x.tgz"}, {"nuget", "x.nupkg"}, {"pypi", "x.whl"}, {"rpm", "x.rpm"}, {"rubygems", "x.gem"},
 	} {
 		t.Run(tc.format, func(t *testing.T) {
 			t.Parallel()

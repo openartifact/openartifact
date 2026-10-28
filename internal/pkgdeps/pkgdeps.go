@@ -48,8 +48,8 @@ var (
 
 // Dep is one declared dependency.
 type Dep struct {
-	// Name is the package name in the ecosystem's own spelling: the npm
-	// "@scope/name", the maven "group:artifact", the go module path.
+	// Name is the package name in the ecosystem's own spelling: the go
+	// module path, the maven "group:artifact", the npm "@scope/name".
 	Name string
 	// Version is the exact version when the manifest or lockfile pins one;
 	// "" when only a range is declared.
@@ -141,32 +141,32 @@ func Read(ctx context.Context, src Source) (Result, error) {
 
 func parse(format, filename string, parts []manifest.Part) (Result, error) {
 	switch format {
-	case "npm":
-		return parseNPM(parts)
-	case "pypi":
-		return parsePyPI(parts), nil
-	case "maven", "ivy", "sbt":
-		return parseJVM(filename, parts)
-	case "nuget":
-		return parseNuGet(parts)
 	case "cargo":
 		return parseCargo(parts)
-	case "helm":
-		return parseHelm(parts)
-	case "deb":
-		return parseDeb(parts), nil
-	case "rpm":
-		return parseRPM(parts), nil
-	case "pacman":
-		return parsePacman(parts), nil
-	case "go":
-		return parseGoMod(filename, parts)
-	case "rubygems":
-		return parseGem(parts)
-	case "conda":
-		return parseConda(parts)
 	case "conan":
 		return parseConan(parts), nil
+	case "conda":
+		return parseConda(parts)
+	case "deb":
+		return parseDeb(parts), nil
+	case "go":
+		return parseGoMod(filename, parts)
+	case "helm":
+		return parseHelm(parts)
+	case "ivy", "maven", "sbt":
+		return parseJVM(filename, parts)
+	case "npm":
+		return parseNPM(parts)
+	case "nuget":
+		return parseNuGet(parts)
+	case "pacman":
+		return parsePacman(parts), nil
+	case "pypi":
+		return parsePyPI(parts), nil
+	case "rpm":
+		return parseRPM(parts), nil
+	case "rubygems":
+		return parseGem(parts)
 	}
 
 	return Result{}, ErrUnsupported

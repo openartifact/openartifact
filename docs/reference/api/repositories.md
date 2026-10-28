@@ -46,7 +46,7 @@ List all repositories with optional filtering
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`, `nix`, `ansible`. |
+| `format` | query | string | no | Filter by package format. One of: `ansible`, `apk`, `cargo`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
 | `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
@@ -89,8 +89,8 @@ Create a new repository (admin only)
 | `blocked` | boolean | no | - |
 | `cache_ttl_seconds` | integer | no | - |
 | `description` | string | no | - |
-| `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true). |
-| `format` | string | yes | One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`, `nix`, `ansible`. |
+| `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
+| `format` | string | yes | One of: `ansible`, `apk`, `cargo`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
 | `member_repos` | array of string | no | For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested. |
@@ -100,11 +100,11 @@ Create a new repository (admin only)
 | `presign_downloads` | boolean | no | Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Nullable. |
 | `project` | string | no | Name of the owning project. Defaults to the built-in system project, whose membership grants nothing. Unknown project: 404. |
 | `public` | boolean | no | - |
-| `repo_type` | string | no | hosted (default), proxy or group. Proxy repositories are supported for maven, sbt, ivy, deb, rpm, apk, pacman, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw; group repositories for maven, sbt, ivy, deb, rpm, apk, pacman, docker, go, npm, nuget, pypi, cargo, rubygems, helm, conan, conda, terraform and raw (deb, rpm and apk groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only. One of: `hosted`, `proxy`, `group`. |
+| `repo_type` | string | no | hosted (default), proxy or group. Proxy repositories are supported for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform; group repositories for apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, npm, nuget, pacman, pypi, raw, rubygems, sbt and terraform (apk, deb and rpm groups serve generated Release/Packages, repodata or APKINDEX merged across their members). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only. One of: `hosted`, `proxy`, `group`. |
 | `sign_packages` | boolean | no | Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed. |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `upstream_password` | string | no | - |
-| `upstream_url` | string | no | Required for proxy repos, except docker (defaults to https://registry-1.docker.io), nuget (defaults to the service index https://api.nuget.org/v3/index.json), pypi (defaults to https://pypi.org/simple) cargo (defaults to https://index.crates.io) and go (defaults to https://proxy.golang.org). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy. |
+| `upstream_url` | string | no | Required for proxy repos, except cargo (defaults to https://index.crates.io), docker (defaults to https://registry-1.docker.io), go (defaults to https://proxy.golang.org), nuget (defaults to the service index https://api.nuget.org/v3/index.json) and pypi (defaults to https://pypi.org/simple). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy. |
 | `upstream_username` | string | no | - |
 
 **Responses**
@@ -833,7 +833,7 @@ Upload a package into a hosted rpm repository (multipart/form-data). Requires wr
 
 Get a package version
 
-One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
+One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for cargo, conda, deb (Depends, Pre-Depends), go (go.mod require directives), npm (dependencies, devDependencies, peerDependencies, optionalDependencies), nuget (kind is the target framework), rpm (requires) and rubygems; the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for conan, docker, helm, maven and pypi there are no declared dependencies, and docker layers or the image config are not part of the response.
 
 **Security:** `bearerAuth` or `cookieAuth` or .
 
@@ -880,7 +880,7 @@ Delete a package row (an id of the package listing) from a hosted repository of 
 
 Download a binary delta
 
-Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to rpm and deb packages. Requires read access.
+Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to deb and rpm packages. Requires read access.
 
 **Parameters**
 

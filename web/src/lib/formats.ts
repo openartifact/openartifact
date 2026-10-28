@@ -6,18 +6,18 @@
 // color, and a single-path SVG icon. Brand marks come from the simple-icons
 // package (CC0); `raw` uses a generic heroicons archive-box glyph and `ivy`
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
-// RPM uses the Red Hat mark, Cargo the Rust mark, Conda the Anaconda mark and
-// sbt the Scala mark, apk the Alpine Linux mark, Terraform the Terraform mark (also used for OpenTofu
-// repositories: one `terraform` format serves both clients), pacman the Arch Linux mark, nix the NixOS mark,
-// Ansible the Ansible mark.
+// Ansible uses the Ansible mark, apk the Alpine Linux mark, Cargo the Rust mark,
+// Conda the Anaconda mark, nix the NixOS mark, pacman the Arch Linux mark,
+// RPM the Red Hat mark, sbt the Scala mark and Terraform the Terraform mark (also used for OpenTofu
+// repositories: one `terraform` format serves both clients).
 
 import {
   siAlpinelinux,
-  siAnsible,
   siAnaconda,
-  siArchlinux,
+  siAnsible,
   siApache,
   siApachemaven,
+  siArchlinux,
   siConan,
   siDebian,
   siDocker,
@@ -61,27 +61,27 @@ const RAW_ICON =
   'M3.375 3C2.339 3 1.5 3.84 1.5 4.875v.75c0 1.036.84 1.875 1.875 1.875h17.25c1.035 0 1.875-.84 1.875-1.875v-.75C22.5 3.839 21.66 3 20.625 3H3.375ZM3.087 9l.54 9.176A3 3 0 0 0 6.62 21h10.757a3 3 0 0 0 2.995-2.824L20.913 9H3.087Zm6.163 3.75A.75.75 0 0 1 10 12h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1-.75-.75Z'
 
 export const FORMAT_META: Record<FormatId, FormatMeta> = {
-  docker: brand('Docker', siDocker),
-  npm: brand('npm', siNpm),
-  pypi: brand('PyPI', siPypi),
-  maven: brand('Maven', siApachemaven),
-  helm: brand('Helm', siHelm),
-  cargo: brand('Cargo', siRust),
-  rubygems: brand('RubyGems', siRubygems),
-  deb: brand('Deb', siDebian),
-  rpm: brand('RPM', siRedhat),
-  nuget: brand('NuGet', siNuget),
-  go: brand('Go', siGo),
-  raw: { label: 'Raw', color: FALLBACK_COLOR, icon: RAW_ICON, evenodd: true },
-  conda: brand('Conda', siAnaconda),
-  conan: brand('Conan', siConan),
-  ivy: brand('Ivy', siApache),
-  sbt: brand('sbt', siScala),
-  pacman: brand('Arch Linux (pacman)', siArchlinux),
-  apk: brand('Alpine (apk)', siAlpinelinux),
-  nix: brand('Nix', siNixos),
-  terraform: brand('Terraform', siTerraform),
   ansible: brand('Ansible', siAnsible),
+  apk: brand('Alpine (apk)', siAlpinelinux),
+  cargo: brand('Cargo', siRust),
+  conan: brand('Conan', siConan),
+  conda: brand('Conda', siAnaconda),
+  deb: brand('Deb', siDebian),
+  docker: brand('Docker', siDocker),
+  go: brand('Go', siGo),
+  helm: brand('Helm', siHelm),
+  ivy: brand('Ivy', siApache),
+  maven: brand('Maven', siApachemaven),
+  nix: brand('Nix', siNixos),
+  npm: brand('npm', siNpm),
+  nuget: brand('NuGet', siNuget),
+  pacman: brand('Arch Linux (pacman)', siArchlinux),
+  pypi: brand('PyPI', siPypi),
+  raw: { label: 'Raw', color: FALLBACK_COLOR, icon: RAW_ICON, evenodd: true },
+  rpm: brand('RPM', siRedhat),
+  rubygems: brand('RubyGems', siRubygems),
+  sbt: brand('sbt', siScala),
+  terraform: brand('Terraform', siTerraform),
 }
 
 /** Ordered format ids — drives the format pickers on repo-create screens. Generated from the Go registry. */

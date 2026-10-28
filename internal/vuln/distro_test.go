@@ -119,7 +119,7 @@ func TestDistroVendor(t *testing.T) {
 func TestNeedsDistro(t *testing.T) {
 	for ecosystem, want := range map[string]bool{
 		"deb": true, "rpm": true, "DEB": true, "RPM": true,
-		"npm": false, "pypi": false, "maven": false, "docker": false, "": false,
+		"docker": false, "maven": false, "npm": false, "pypi": false, "": false,
 	} {
 		if got := NeedsDistro(ecosystem); got != want {
 			t.Errorf("NeedsDistro(%q) = %v, want %v", ecosystem, got, want)

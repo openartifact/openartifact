@@ -55,7 +55,7 @@ func ivySBTDef(f importFormat, listed func(filename string) string) formatDef {
 }
 
 // putOverwriting PUTs the asset to an endpoint that stores it in place and
-// answers 201 {id, sha256} (ivy, sbt, conan). A 409 means the repository keeps
+// answers 201 {id, sha256} (conan, ivy, sbt). A 409 means the repository keeps
 // its releases immutable and the destination holds different bytes at that
 // address; it is reported as a conflict with the server's own explanation.
 func putOverwriting(ctx context.Context, t *importTarget, apiPath string, r uploadRequest) (uploadResult, error) {

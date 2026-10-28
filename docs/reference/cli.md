@@ -464,7 +464,7 @@ props search <repo> <key> <value>  Search artifacts by property
 
 ```text
 upload <repo> <file|glob>... [--target-path P] [--flat] [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
-                                   Upload files to a raw/maven/ivy/sbt/deb/rpm repository and set build properties
+                                   Upload files to a deb/ivy/maven/raw/rpm/sbt repository and set build properties
 bundle create <name> <version> [--description D] [--pipeline P]
                                    Create a draft release bundle
 bundle add <name> <version> --repo R --path P... | --from-build NAME/NUMBER [--repo R]...

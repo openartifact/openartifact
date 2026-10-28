@@ -148,14 +148,13 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	// package without hosted uploads.
 	known := map[string]string{
 		"base": "", "filerepo": "", "formattest": "",
-		"cargo": metrics.FormatCargo, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
-		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo,
-		"helm": metrics.FormatHelm, "ivy": metrics.FormatIvy, "maven": metrics.FormatMaven,
-		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pypi": metrics.FormatPyPI,
-		"raw": metrics.FormatRaw, "rpm": metrics.FormatRPM, "rubygems": metrics.FormatRubyGems,
-		"sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform, "apk": metrics.FormatApk, "pacman": metrics.FormatPacman,
-		"nix":     metrics.FormatNix,
-		"ansible": metrics.FormatAnsible,
+		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
+		"conan": metrics.FormatConan, "conda": metrics.FormatConda, "deb": metrics.FormatDeb,
+		"docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,
+		"ivy": metrics.FormatIvy, "maven": metrics.FormatMaven, "nix": metrics.FormatNix,
+		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pacman": metrics.FormatPacman,
+		"pypi": metrics.FormatPyPI, "raw": metrics.FormatRaw, "rpm": metrics.FormatRPM,
+		"rubygems": metrics.FormatRubyGems, "sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform,
 	}
 
 	entries, err := os.ReadDir("../format")
@@ -369,7 +368,7 @@ func TestPathLabelCardinalityBounded(t *testing.T) {
 	for _, want := range []string{
 		"/v2/{name}/manifests/{reference}", "/v2/{name}/blobs/{digest}", "/v2/{name}/blobs/uploads",
 		"/v2/{name}/blobs/uploads/{uuid}", "/v2/{name}/tags/list", "/v2/{name}/referrers/{digest}",
-		"/repos/raw/{name}/*", "/repos/maven/{name}/*",
+		"/repos/maven/{name}/*", "/repos/raw/{name}/*",
 	} {
 		if !after[want] {
 			t.Errorf("missing path label %q", want)

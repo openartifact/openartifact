@@ -12,7 +12,7 @@ Deleting an artifact, a version, a Docker tag or a whole repository does not des
 
 Everything a delete can remove, in every format, plus repositories:
 
-- Package rows of the hosted formats: Maven, Ivy, sbt, npm versions, PyPI, NuGet, Go modules, Cargo, RubyGems, Conda, Conan, Alpine packages, Terraform modules and providers, Helm, raw files, Docker manifests and tags, RPM, Arch Linux (pacman), Nix store paths, Ansible collections and Debian packages.
+- Package rows of the hosted formats: Alpine packages, Ansible collections, Cargo, Conan, Conda, Debian packages, Docker manifests and tags, Go modules, Helm, Ivy, Maven, Nix store paths, npm versions, NuGet, Arch Linux (pacman), PyPI, raw files, RPM, RubyGems, sbt and Terraform modules and providers.
 - Whole repositories.
 - Items removed by a [cleanup policy](../repositories/cleanup-and-quotas.md#cleanup-policies).
 
@@ -24,7 +24,7 @@ A trashed item is not copied or renamed: it is the same record with a `deleted_a
 |---|---|
 | Native protocols | `404`, like any missing path or version |
 | Listings, UI, search, counts and statistics | the item is absent |
-| Generated indexes (Debian `Packages`, RPM `repodata`, Helm `index.yaml`, npm packuments, Maven `maven-metadata.xml`, PyPI index, ...) | rebuilt without the item; metadata is regenerated on delete and again on restore |
+| Generated indexes (Debian `Packages`, Helm `index.yaml`, Maven `maven-metadata.xml`, npm packuments, PyPI index, RPM `repodata`, ...) | rebuilt without the item; metadata is regenerated on delete and again on restore |
 | Proxy and group repositories | a trashed hosted item is not served through a group; a trashed repository is not a group member |
 | Uniqueness | the path or version can be published again while the old copy is in the trash (see [restore conflicts](#restore)) |
 | Blobs | kept until purge; storage usage does not drop on delete |
@@ -74,27 +74,27 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | Kind | What it is |
 |---|---|
 | `repository` | a whole repository |
-| `maven_artifact`, `ivy_artifact`, `sbt_artifact` | a file in a Maven, Ivy or sbt repository |
-| `npm_version` | one npm package version |
-| `pypi_package` | a PyPI distribution file |
-| `nuget_package` | a NuGet package version |
-| `go_module` | a Go module version |
-| `cargo_crate` | a Cargo crate version |
-| `rubygems_gem` | a gem version |
+| `ansible` | an Ansible collection version |
 | `apk_package` | one Alpine `.apk` package; restoring it regenerates the directory's `APKINDEX.tar.gz` |
-| `conda_package` | a Conda package |
+| `cargo_crate` | a Cargo crate version |
 | `conan_package` | one stored file of a Conan recipe or package revision |
-| `terraform_module` | a Terraform/OpenTofu module version |
-| `terraform_provider` | one platform zip of a Terraform/OpenTofu provider version |
-| `helm_chart` | a Helm chart version |
-| `raw_artifact` | a raw file |
+| `conda_package` | a Conda package |
+| `deb_package` | a Debian package |
 | `docker_manifest` | a Docker/OCI manifest (and its tags) |
 | `docker_tag` | a single Docker tag |
-| `rpm_package` | an RPM package |
-| `pacman` | an Arch Linux (pacman) package |
+| `go_module` | a Go module version |
+| `helm_chart` | a Helm chart version |
+| `ivy_artifact`, `maven_artifact`, `sbt_artifact` | a file in an Ivy, Maven or sbt repository |
 | `nix_path` | a Nix store path (its NAR and narinfo) |
-| `ansible` | an Ansible collection version |
-| `deb_package` | a Debian package |
+| `npm_version` | one npm package version |
+| `nuget_package` | a NuGet package version |
+| `pacman` | an Arch Linux (pacman) package |
+| `pypi_package` | a PyPI distribution file |
+| `raw_artifact` | a raw file |
+| `rpm_package` | an RPM package |
+| `rubygems_gem` | a gem version |
+| `terraform_module` | a Terraform/OpenTofu module version |
+| `terraform_provider` | one platform zip of a Terraform/OpenTofu provider version |
 
 ## API
 
@@ -226,12 +226,12 @@ What counts as a release:
 
 | Format | A version is a release when |
 |---|---|
-| Maven, Ivy, sbt | it is not a `-SNAPSHOT` version |
-| npm, NuGet, Cargo, Helm, Terraform, Ansible | it is semver without a pre-release part (`1.2.3` yes, `1.2.3-rc.1` no) |
+| Ansible, Cargo, Helm, npm, NuGet, Terraform | it is semver without a pre-release part (`1.2.3` yes, `1.2.3-rc.1` no) |
+| Alpine, Conan, Conda, Debian, Docker, Nix, pacman, Raw, RPM | every version is a release; there is no snapshot concept |
 | Go | semver without a pre-release part; pseudo-versions (`v0.0.0-2026...-abcdef123456`) count as pre-releases |
+| Ivy, Maven, sbt | it is not a `-SNAPSHOT` version |
 | PyPI | PEP 440 without an `a`, `b`, `rc` or `dev` segment (`1.0`, `1.0.post1` are releases; `1.0rc1`, `1.0.dev3` are not) |
 | RubyGems | the version has no letters (`1.2.3` yes, `1.2.3.pre` no) |
-| Raw, Debian, RPM, Alpine, pacman, Nix, Conda, Conan, Docker | every version is a release; there is no snapshot concept |
 
 The rule covers both directions:
 

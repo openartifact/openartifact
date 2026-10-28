@@ -222,7 +222,7 @@ func TestBackupRestore_GroupMembersRoundTrip(t *testing.T) {
 	}
 }
 
-// BKP-4: restoring rpm/deb/maven package rows leaves repodata/dists/
+// BKP-4: restoring deb/maven/rpm package rows leaves repodata/dists/
 // maven-metadata.xml missing; the restore must schedule their regeneration.
 func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	ctx := context.Background()
@@ -232,7 +232,7 @@ func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	deb := &models.Repository{Name: "d", Format: "deb", RepoType: "hosted"}
 	mvn := &models.Repository{Name: "m", Format: "maven", RepoType: "hosted"}
 
-	for _, r := range []*models.Repository{rpm, deb, mvn} {
+	for _, r := range []*models.Repository{deb, mvn, rpm} {
 		if err := src.CreateRepository(ctx, r); err != nil {
 			t.Fatal(err)
 		}

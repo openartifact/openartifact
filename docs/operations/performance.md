@@ -49,7 +49,7 @@ Run it against a throwaway instance. Seeding writes thousands of artifacts and a
 
 #### Seed data
 
-`oabench seed` creates the repositories `bench-maven`, `bench-npm`, `bench-deb`, `bench-rpm` and `bench-docker` and fills them with 3000 Maven artifacts (jar and pom), 1500 npm packages and 400 deb packages. It adds "hot" items for the metadata scenarios (a Maven artifact with 200 versions, an npm package with 100 versions), a 10 MB Maven jar and a Docker image with one 8 MB layer. Flags: `-url`, `-user`, `-pass`, `-new-pass`, `-token` (reuse a token instead of logging in), `-state`, `-maven`, `-npm`, `-deb`, `-rpm FILE`, `-workers` (default 16).
+`oabench seed` creates the repositories `bench-deb`, `bench-docker`, `bench-maven`, `bench-npm` and `bench-rpm` and fills them with 400 deb packages, 3000 Maven artifacts (jar and pom) and 1500 npm packages. It adds "hot" items for the metadata scenarios (a Maven artifact with 200 versions, an npm package with 100 versions), a Docker image with one 8 MB layer and a 10 MB Maven jar. Flags: `-url`, `-user`, `-pass`, `-new-pass`, `-token` (reuse a token instead of logging in), `-state`, `-deb`, `-maven`, `-npm`, `-rpm FILE`, `-workers` (default 16).
 
 `run.sh` does not pass `-rpm`, so `bench-rpm` stays empty and the rpm scenario measures an empty repository. To seed an RPM, run `oabench seed ... -rpm pkg/rpm/testdata/weakdeps.rpm` yourself first.
 
@@ -59,15 +59,15 @@ Run it against a throwaway instance. Seeding writes thousands of artifacts and a
 
 | Group | Scenarios |
 |---|---|
-| Downloads | Maven jar (8 KB), Maven jar (10 MB), npm tarball, Docker blob (8 MB), Docker manifest |
-| Metadata | `maven-metadata.xml` (200 versions), npm packument (100 versions), abbreviated npm packument, deb `Packages.gz`, deb `Release`, rpm `repomd.xml` |
-| Conditional metadata | `maven-metadata.xml`, npm packument, deb `Release`, rpm `repomd.xml` sent with `If-None-Match` (304 path; servers without an ETag see plain GETs) |
+| Downloads | Docker blob (8 MB), Docker manifest, Maven jar (8 KB), Maven jar (10 MB), npm tarball |
+| Metadata | deb `Packages.gz`, deb `Release`, `maven-metadata.xml` (200 versions), npm packument (100 versions), abbreviated npm packument, rpm `repomd.xml` |
+| Conditional metadata | deb `Release`, `maven-metadata.xml`, npm packument, rpm `repomd.xml` sent with `If-None-Match` (304 path; servers without an ETag see plain GETs) |
 | API | `GET /auth/me`, `GET /repositories`, package lists for Maven and npm (`limit=100`) |
 | Search | `q=bench`, `q=art1` |
 | Dashboard | audit log, system info, SPA `index.html` |
-| Uploads | Maven `PUT` (10 MB), npm publish, deb upload |
+| Uploads | deb upload, Maven `PUT` (10 MB), npm publish |
 
-Heavy scenarios are capped below `OA_CONCURRENCY`: 8 clients for the 10 MB jar and 8 MB Docker blob downloads, 4 for the 10 MB upload.
+Heavy scenarios are capped below `OA_CONCURRENCY`: 8 clients for the 8 MB Docker blob and 10 MB jar downloads, 4 for the 10 MB upload.
 
 #### Output columns
 
@@ -161,7 +161,7 @@ Two pools talk to PostgreSQL, a pgx pool for the generated queries and a `databa
 
 ### Metadata regeneration
 
-Uploads mark metadata stale; npm packument denormalisation, Maven `maven-metadata.xml`, deb and rpm indexes are rebuilt by a bounded queue (`internal/worker/regen_queue.go`). Per key (npm package, Maven artifact, deb/rpm repository) there is at most one running and one pending regeneration, bursts coalesce after a 500 ms debounce (at most 5 s from the first upload), and `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` caps concurrent runs across all formats. Runs take a Postgres advisory lock on a pinned connection; if another replica holds it the run is retried with backoff. On shutdown pending regenerations are drained for up to 10 s.
+Uploads mark metadata stale; deb indexes, Maven `maven-metadata.xml`, npm packument denormalisation and rpm indexes are rebuilt by a bounded queue (`internal/worker/regen_queue.go`). Per key (deb/rpm repository, Maven artifact, npm package) there is at most one running and one pending regeneration, bursts coalesce after a 500 ms debounce (at most 5 s from the first upload), and `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` caps concurrent runs across all formats. Runs take a Postgres advisory lock on a pinned connection; if another replica holds it the run is retried with backoff. On shutdown pending regenerations are drained for up to 10 s.
 
 ### Storage quota
 
@@ -173,9 +173,9 @@ The embedded SPA is gzip-precompressed at startup; hashed `assets/*` get `Cache-
 
 ### Rendered metadata cache and compression
 
-Large generated documents are not rebuilt per request. The validators (ETags) of Helm `index.yaml`, conda `repodata.json`, the RubyGems specs indexes (`specs.4.8.gz`, `latest_specs.4.8.gz`, `prerelease_specs.4.8.gz`) and the Cargo sparse index entry of a crate come from a cheap fingerprint of the live rows (a count plus an order-independent hash of their IDs, one narrow index range, no blob join). A matching `If-None-Match` is answered with 304 before any row is loaded. A miss renders once and the document is kept in a process-wide cache of at most 64 MiB (least recently used out, one render at a time per document); the same cache holds the npm packument and `maven-metadata.xml`, the checksums of the latter are cached and computed for the requested algorithm only, and a group's merged npm packument is cached under a digest of its members' documents. Documents above a quarter of the budget are rendered per request instead of cached. The cache key embeds the fingerprint, so a publish, delete, trash or yank produces a new key (quarantine only gates downloads, which are checked on every request and are never cached) and an old rendering can never be served; replicas keep independent caches and need no coordination.
+Large generated documents are not rebuilt per request. The validators (ETags) of the Cargo sparse index entry of a crate, conda `repodata.json`, Helm `index.yaml` and the RubyGems specs indexes (`specs.4.8.gz`, `latest_specs.4.8.gz`, `prerelease_specs.4.8.gz`) come from a cheap fingerprint of the live rows (a count plus an order-independent hash of their IDs, one narrow index range, no blob join). A matching `If-None-Match` is answered with 304 before any row is loaded. A miss renders once and the document is kept in a process-wide cache of at most 64 MiB (least recently used out, one render at a time per document); the same cache holds `maven-metadata.xml` and the npm packument, the checksums of the former are cached and computed for the requested algorithm only, and a group's merged npm packument is cached under a digest of its members' documents. Documents above a quarter of the budget are rendered per request instead of cached. The cache key embeds the fingerprint, so a publish, delete, trash or yank produces a new key (quarantine only gates downloads, which are checked on every request and are never cached) and an old rendering can never be served; replicas keep independent caches and need no coordination.
 
-Text metadata (the documents above, PyPI simple pages and JSON, NuGet service index, search and registration pages, npm version manifests, Cargo search) is gzip-encoded when the client sends `Accept-Encoding: gzip`, with `Vary: Accept-Encoding` and a weak ETag on the compressed form. Cached documents are compressed once. Blobs, artifacts and Range requests are never compressed. The RubyGems specs files are already gzip files and are sent as they are.
+Text metadata (the documents above, Cargo search, npm version manifests, NuGet service index, search and registration pages, PyPI simple pages and JSON) is gzip-encoded when the client sends `Accept-Encoding: gzip`, with `Vary: Accept-Encoding` and a weak ETag on the compressed form. Cached documents are compressed once. Blobs, artifacts and Range requests are never compressed. The RubyGems specs files are already gzip files and are sent as they are.
 
 The NuGet registration index takes its ETag from the IDs and versions of the package's rows, which it lists anyway. It used to read every `.nupkg` of a package to list its dependency groups. They are now stored in `nuget_packages.dependency_groups` at push time. Packages pushed before the `nuget_dependency_groups` migration have no stored value; the server derives it from the package on first use and records it, so the first registration request after an upgrade still reads those packages once.
 

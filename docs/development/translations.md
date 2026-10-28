@@ -22,7 +22,7 @@ web/scripts/i18n-check.ts             the check CI runs
 
 A catalog file is a flat JSON object of dotted keys to strings, split by area (`admin.json`, `repos.json`, ...). A message with a number has one entry per plural form, `<key>_one` and `<key>_other` (and `_zero`, `_two`, `_few`, `_many` for languages that distinguish them, in the [CLDR](https://cldr.unicode.org/) sense). Japanese and Simplified Chinese have only `_other`. Placeholders are `{name}`, filled by the code at runtime; keep them exactly as in the English text.
 
-Never translate product names (OpenArtifact), package formats and tools (npm, Maven, Docker, ...), commands and flags, file names, paths, URLs or API field names. The "Powered by OpenArtifact" attribution is not in the catalogs at all.
+Never translate product names (OpenArtifact), package formats and tools (Docker, Maven, npm, ...), commands and flags, file names, paths, URLs or API field names. The "Powered by OpenArtifact" attribution is not in the catalogs at all.
 
 ## Adding or changing UI text
 

@@ -105,7 +105,7 @@ func render() []byte {
 		}
 	}
 
-	b.WriteString("/** Every package format id, in picker order. */\n")
+	b.WriteString("/** Every package format id, in alphabetical (picker) order. */\n")
 	b.WriteString("export const FORMAT_IDS = " + tsList(repotype.Names()) + " as const\n\n")
 	b.WriteString("export type FormatId = (typeof FORMAT_IDS)[number]\n\n")
 

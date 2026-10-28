@@ -630,7 +630,7 @@ Create a repository owned by the project. Requires the maintainer or owner role 
 |---|---|---|---|
 | `cache_ttl_seconds` | integer | no | - |
 | `description` | string | no | - |
-| `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true). |
+| `federated` | boolean | no | Enable federation at creation. Only valid for hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw (400 otherwise when true). |
 | `format` | string | yes | - |
 | `immutable_releases` | boolean | no | - |
 | `max_stale_seconds` | integer | no | - |

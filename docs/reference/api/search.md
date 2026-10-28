@@ -29,7 +29,7 @@ Search the packages of the repositories the caller can read, and the names of th
 | `limit` | query | integer | no | Maximum results to return. Minimum: 1. Maximum: 100. |
 | `offset` | query | integer | no | Offset for pagination. Minimum: 0. |
 | `flagged` | query | boolean | no | true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned. |
-| `checksum` | query | string | no | Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape. |
+| `checksum` | query | string | no | Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches conan, maven and npm, MD5 conan, conda and maven (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape. |
 
 **Responses**
 

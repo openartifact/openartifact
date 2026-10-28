@@ -288,7 +288,7 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 |---|---|---|---|
 | `algorithm` | string | yes | One of: `sha256`, `sha1`, `md5`. |
 | `checksum` | string | yes | The checksum searched for, lowercase. |
-| `filename` | string | yes | File within the package; empty for the formats with no file name of their own (conda, conan, docker, go). |
+| `filename` | string | yes | File within the package; empty for the formats with no file name of their own (conan, conda, docker, go). |
 | `format` | string | yes | - |
 | `name` | string | yes | - |
 | `repository` | string | yes | - |
@@ -609,7 +609,7 @@ A remote instance this repository pulls changes from. Secrets (token, client key
 | `log_id` | string | yes | Identifier of this repository's log; changes when federation is disabled and enabled again. |
 | `peers` | array of [FederationPeer](#federationpeer) | yes | - |
 | `server_enabled` | boolean | yes | Federation is enabled on the server (federation.enabled); when false no repository can be federated. |
-| `supported` | boolean | yes | Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server. |
+| `supported` | boolean | yes | Federation can be turned on for the repository: it is hosted, of a federation-capable format (cargo, docker, go, helm, maven, npm, nuget, pypi, raw), and federation is enabled on the server. |
 | `tokens` | array of [FederationToken](#federationtoken) | yes | - |
 | `tombstones` | integer (int64) | yes | Logged deletions. |
 | `units` | integer (int64) | yes | Logged units. |
@@ -641,7 +641,7 @@ A signing key. Private key material is never part of the API.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `active_global` | boolean | no | Signs every deb, rpm and pacman repository that has no key of its own |
+| `active_global` | boolean | no | Signs every deb, pacman and rpm repository that has no key of its own |
 | `algorithm` | string | no | ed25519, rsa2048, rsa4096, ... |
 | `created_at` | string (date-time) | no | Nullable. |
 | `created_by` | string | no | - |
@@ -1516,8 +1516,8 @@ Counts only; no finding ids, titles or other details.
 | `cache_ttl_seconds` | integer | no | Cache TTL in seconds |
 | `created_at` | string (date-time) | no | Creation timestamp |
 | `description` | string | no | Repository description |
-| `federated` | boolean | no | True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation. |
-| `format` | string | yes | Package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`, `terraform`, `apk`, `pacman`, `nix`, `ansible`. |
+| `federated` | boolean | no | True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats cargo, docker, go, helm, maven, npm, nuget, pypi and raw only. Peers and tokens are managed under /api/v1/repositories/{name}/federation. |
+| `format` | string | yes | Package format. One of: `ansible`, `apk`, `cargo`, `conan`, `conda`, `deb`, `docker`, `go`, `helm`, `ivy`, `maven`, `nix`, `npm`, `nuget`, `pacman`, `pypi`, `raw`, `rpm`, `rubygems`, `sbt`, `terraform`. |
 | `id` | string (uuid) | yes | Repository unique identifier |
 | `immutable_releases` | boolean | no | When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true. |
 | `max_stale_seconds` | integer | no | Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000. |
@@ -1673,7 +1673,7 @@ One stored scan result (a package version of one type) that reports something.
 |---|---|---|---|
 | `artifact_id` | string | yes | The artifact the result belongs to, `name@version`. |
 | `counts` | [SecurityFindingCounts](#securityfindingcounts) | yes | What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium. |
-| `format` | string | yes | Format of the repository (npm, pypi, maven, ...). |
+| `format` | string | yes | Format of the repository (maven, npm, pypi, ...). |
 | `id` | string (uuid) | yes | - |
 | `kev_count` | integer | yes | Vulnerabilities of a vuln finding that are in the CISA KEV catalog; 0 for the other types. Minimum: 0. |
 | `max_epss` | number | yes | Highest FIRST EPSS score among the vulnerabilities of a vuln finding; null when none is scored (and for the other types). Nullable. Minimum: 0. Maximum: 1. |
@@ -2111,7 +2111,7 @@ A vulnerability scan without its findings (`vulnerabilities`), with the name and
 | `priority` | [ExploitPriority](#exploitpriority) | yes | `kev` when kev_count is above 0, else `epss` when max_epss reaches the server threshold, else the worst severity. |
 | `quarantined` | boolean | no | - |
 | `repo_id` | string (uuid) | no | - |
-| `repository_format` | string | no | Format of the repository (npm, pypi, maven, ...). |
+| `repository_format` | string | no | Format of the repository (maven, npm, pypi, ...). |
 | `repository_name` | string | no | - |
 | `scan_error` | string | no | Sanitized summary of the failing scanners. Nullable. |
 | `scan_status` | string | no | Same meaning as on VulnScanResult. One of: `pending`, `scanning`, `completed`, `partial`, `failed`. |

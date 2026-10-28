@@ -14,7 +14,7 @@
   "federation.serverOff.title": "此服务器已关闭联邦功能",
   "federation.serverOff.hint": "管理员需在服务器配置中通过 federation.enabled（OPENARTIFACT_FEDERATION_ENABLED）启用该功能，然后重启服务器。",
   "federation.unsupported.title": "此仓库不支持联邦",
-  "federation.unsupported.hint": "只有 raw、maven、npm、docker、helm、pypi、cargo、go 和 nuget 格式的托管仓库可以联邦，代理仓库和组合仓库不可以。",
+  "federation.unsupported.hint": "只有 cargo、docker、go、helm、maven、npm、nuget、pypi 和 raw 格式的托管仓库可以联邦，代理仓库和组合仓库不可以。",
   "federation.disableTitle": "关闭联邦？",
   "federation.disableBody": "此仓库的变更日志和所有对等节点将被移除，已同步的内容会保留。再次开启联邦将启用新的日志，且必须重新添加对等节点。",
   "federation.disableConfirm": "关闭",

@@ -17,7 +17,7 @@ Besides the Go unit and integration tests (see the [development guide](README.md
 
 ## Test server
 
-`scripts/testenv.sh start` starts a built server against a Postgres, seeds it and writes `$OA_TESTENV_DIR/env`. The first admin comes from `bootstrap.adminPasswordFile` and `bootstrap.adminTokenFile`; the script also creates the user `dev` (read, write and delete on every repository, no `manage`: the developer role) and the repositories `seed-npm` (public), `seed-npm-private`, `seed-raw` (public, one file), `seed-pypi`, `seed-maven`, `seed-helm` and `seed-docker`.
+`scripts/testenv.sh start` starts a built server against a Postgres, seeds it and writes `$OA_TESTENV_DIR/env`. The first admin comes from `bootstrap.adminPasswordFile` and `bootstrap.adminTokenFile`; the script also creates the user `dev` (read, write and delete on every repository, no `manage`: the developer role) and the repositories `seed-docker`, `seed-helm`, `seed-maven`, `seed-npm` (public), `seed-npm-private`, `seed-pypi` and `seed-raw` (public, one file).
 
 ```sh
 podman run -d --name oa-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=oa -p 55999:5432 docker.io/postgres:18-alpine

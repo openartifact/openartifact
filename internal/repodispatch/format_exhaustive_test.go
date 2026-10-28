@@ -19,8 +19,8 @@ func TestRestUploadEndpointDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "repodispatch.restUploadEndpoint",
 		[]string{"deb", "rpm"},
 		[]string{
-			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw",
-			"conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix", "ansible",
+			"ansible", "apk", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm",
+			"nuget", "pacman", "pypi", "raw", "rubygems", "sbt", "terraform",
 		})
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

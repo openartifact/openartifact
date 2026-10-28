@@ -11,7 +11,7 @@ type AIAnalysis struct {
 	ID                    string    `json:"id"`
 	RepositoryID          string    `json:"repository_id"`
 	ArtifactID            string    `json:"artifact_id"`     // generic reference (component ID, npm version ID, etc.)
-	ArtifactFormat        string    `json:"artifact_format"` // "npm", "maven", "deb", "rpm", "helm", "pypi", etc.
+	ArtifactFormat        string    `json:"artifact_format"` // "deb", "helm", "maven", "npm", "pypi", "rpm", etc.
 	ArtifactName          string    `json:"artifact_name"`
 	ArtifactVersion       string    `json:"artifact_version"`
 	Summary               string    `json:"summary"`

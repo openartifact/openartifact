@@ -37,7 +37,7 @@ type ChecksumResult struct {
 	Name       string `json:"name"`
 	Version    string `json:"version"`
 	// Filename is the file within the package, "" for the formats that have no
-	// file name of their own (conda, conan, docker, go).
+	// file name of their own (conan, conda, docker, go).
 	Filename  string `json:"filename"`
 	Checksum  string `json:"checksum"`
 	Algorithm string `json:"algorithm"`
@@ -124,8 +124,8 @@ const (
 //
 // A SHA-256 matches through the blob store, so it finds every file stored under
 // that content, whichever format holds it. A SHA-1 or MD5 only matches the
-// formats that record one (maven, npm and conan record SHA-1, maven, conan and
-// conda MD5): the blob store keeps only SHA-256.
+// formats that record one (conan, maven and npm record SHA-1, conan, conda and
+// maven MD5): the blob store keeps only SHA-256.
 func (e *Executor) SearchChecksum(
 	ctx context.Context,
 	digest, algorithm string,

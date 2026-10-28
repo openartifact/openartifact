@@ -103,7 +103,7 @@ PostgreSQL is the only supported database.
 
 | Environment variable | YAML key | Default | Meaning |
 |---|---|---|---|
-| `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | `4` | Max concurrent metadata regenerations (npm, maven, deb, rpm share it); each pins about two DB connections |
+| `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | `4` | Max concurrent metadata regenerations (deb, maven, npm, rpm share it); each pins about two DB connections |
 | `OPENARTIFACT_DOCKER_GC_INTERVAL` | `workers.dockerGcInterval` | `1h` | Pause between Docker registry garbage-collection passes over all docker repositories; `0` disables the schedule (an admin can still run it through the API). See [Docker registry GC](../formats/docker.md#garbage-collection) |
 | `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `workers.dockerGcGracePeriod` | `24h` | How long an untagged manifest or an unreferenced blob must sit idle before GC may delete it; keep it longer than your slowest push and any digest-pinned reference to an untagged image. Must not be negative |
 | `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL` | `workers.proxyDockerDigestTtl` | `720h` | How long a Docker proxy keeps a manifest or blob addressed by digest after its last pull; the proxy cache worker then evicts it (and the blob once no other entry references it) and the next pull fetches it from the upstream again. A pull in the second half of the period renews it. `0` keeps them until an admin purge or the repository's removal. Must not be negative. See [Docker proxy caching](../formats/docker.md#proxy-and-group-repositories) |

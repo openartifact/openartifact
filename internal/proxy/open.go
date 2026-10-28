@@ -20,7 +20,7 @@ var ErrNotFound = errors.New("proxy: not found upstream")
 var ErrBlocked = errors.New("proxy: repository is blocked")
 
 // Open returns the body of relPath of a path-mirrored proxy repository (deb,
-// rpm, maven, raw), fetching and caching it exactly as Serve would. It is for
+// maven, raw, rpm), fetching and caching it exactly as Serve would. It is for
 // server-side consumers of upstream metadata (deb/rpm groups merging a proxy
 // member's indexes), which read it once and must see what a client of the
 // proxy would. An expired entry is revalidated, and served stale when the

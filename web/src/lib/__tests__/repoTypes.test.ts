@@ -28,10 +28,10 @@ describe('allowedFormats', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
   it('restricts proxy to ansible, apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible'])
+    expect(allowedFormats('proxy')).toEqual(['ansible', 'apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
   })
   it('restricts group to ansible, apk, cargo, conan, conda, deb, docker, go, helm, ivy, maven, nix, npm, nuget, pacman, pypi, raw, rpm, rubygems, sbt and terraform', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb', 'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt', 'terraform', 'apk', 'pacman', 'nix', 'ansible'])
+    expect(allowedFormats('group')).toEqual(['ansible', 'apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform'])
     expect(isFormatAllowed('group', 'deb')).toBe(true)
     expect(isFormatAllowed('group', 'rpm')).toBe(true)
     expect(isFormatAllowed('group', 'conda')).toBe(true)
@@ -59,7 +59,7 @@ describe('coerceFormat', () => {
 })
 
 describe('upstream URL', () => {
-  it('is optional only for docker, pypi, cargo, go, nuget, conan, rubygems and terraform (well-known defaults)', () => {
+  it('is optional only for cargo, conan, docker, go, nuget, pypi, rubygems and terraform (well-known defaults)', () => {
     expect(upstreamUrlRequired('terraform')).toBe(false)
     expect(upstreamUrlPlaceholder('terraform')).toBe('https://registry.terraform.io')
     expect(upstreamUrlRequired('docker')).toBe(false)
@@ -92,7 +92,7 @@ describe('upstream URL', () => {
 
 describe('federationAvailable', () => {
   it('is true for hosted repositories of the nine capable formats', () => {
-    for (const f of ['raw', 'maven', 'npm', 'docker', 'helm', 'pypi', 'cargo', 'go', 'nuget']) {
+    for (const f of ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']) {
       expect(federationAvailable('hosted', f)).toBe(true)
     }
   })
@@ -104,7 +104,7 @@ describe('federationAvailable', () => {
     expect(federationAvailable('group', 'maven')).toBe(false)
   })
   it('is false for formats without a federation codec', () => {
-    for (const f of ['deb', 'rpm', 'rubygems', 'conda', 'conan', 'ivy', 'sbt', 'apk']) {
+    for (const f of ['apk', 'conan', 'conda', 'deb', 'ivy', 'rpm', 'rubygems', 'sbt']) {
       expect(federationAvailable('hosted', f)).toBe(false)
     }
     expect(federationAvailable('hosted', undefined)).toBe(false)

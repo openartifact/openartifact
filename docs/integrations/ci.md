@@ -37,7 +37,7 @@ oa --format json promote     shop "$VERSION" --stage prod --notes "build $BUILD_
 
 Every command exits `0` on success and `1` on failure and prints one JSON document with `--format json`; the exact shapes, the remote path rules of `upload` and the semantics of `--from-build` are in the [CLI reference](cli.md#ci-commands). Promotion adds metadata rows that reference the same blobs, so it costs the same for a 1 KiB or a 10 GiB bundle ([details](../repositories/release-bundles.md#what-a-copy-is)).
 
-Supported by `oa upload`: hosted `raw`, `maven`, `ivy`, `sbt`, `deb` and `rpm` repositories. For every other format publish with the native client in the job (`npm publish`, `docker push`, `twine upload`, `helm push`, `cargo publish`, ...; Terraform and OpenTofu have no publish command, use `curl` against the [publish API](../formats/terraform.md#publish-api)). `bundle add` resolves artifacts of the same six formats, so bundles built by the CLI contain raw, Maven, Ivy, sbt, Debian and RPM artifacts; items of other formats can be added through the [bundles API](../repositories/release-bundles.md#bundles-api).
+Supported by `oa upload`: hosted `deb`, `ivy`, `maven`, `raw`, `rpm` and `sbt` repositories. For every other format publish with the native client in the job (`cargo publish`, `docker push`, `helm push`, `npm publish`, `twine upload`, ...; Terraform and OpenTofu have no publish command, use `curl` against the [publish API](../formats/terraform.md#publish-api)). `bundle add` resolves artifacts of the same six formats, so bundles built by the CLI contain Debian, Ivy, Maven, raw, RPM and sbt artifacts; items of other formats can be added through the [bundles API](../repositories/release-bundles.md#bundles-api).
 
 ## Installing `oa`
 
@@ -79,7 +79,7 @@ Bundles are private to their creator: another CI user sees one only with `read` 
 | `HTTP 401` | missing, wrong or revoked token; `OA_SERVER` points elsewhere |
 | `HTTP 403 forbidden` | the token lacks `read`/`write` on the repository, or the route is administrative (list bundles, pipelines, repository management) |
 | `HTTP 404 bundle not found` | the bundle does not exist, or the token cannot read every source repository |
-| `format not supported by oa upload` | the repository is not raw, maven, ivy, sbt, deb or rpm |
+| `format not supported by oa upload` | the repository is not deb, ivy, maven, raw, rpm or sbt |
 | `no artifact carries build.name=... and build.number=...` | nothing was uploaded with those `--build-name` / `--build-number` values, or in a repository the token cannot read; the name is everything before the last `/` of `--from-build` |
 | `can only promote sealed bundles` | run `bundle seal` first |
 | `target_repo is required` | the pipeline stage is not bound to a repository: pass `--target-repo` |

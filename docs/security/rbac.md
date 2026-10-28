@@ -54,7 +54,7 @@ Beyond `write`, completing a presigned upload additionally requires being the us
 
 Repository and path extraction for data requests:
 
-- `/repos/{name}/<path>`: repository `name`, path after it. For `raw`, `maven`, `sbt` and `ivy` the marker form `/repos/{raw|maven|sbt|ivy}/{name}/<path>` is also accepted.
+- `/repos/{name}/<path>`: repository `name`, path after it. For `ivy`, `maven`, `raw` and `sbt` the marker form `/repos/{ivy|maven|raw|sbt}/{name}/<path>` is also accepted.
 - `/v2/<name>/…` (Docker/OCI): the first segment of `<name>` is the repository and the rest is the image; the RBAC path is `image/<kind>/<ref>` (for example `org/team/app/manifests/1`). A single-segment name addresses the repository's default image.
 
 Trash permissions ([trash](../operations/trash.md)): a principal with `delete` on a repository can list that repository's trash and restore its items, so whoever can delete an artifact can undo it. The global trash list, restoring or purging a whole repository, and purging any item now (`DELETE /api/v1/trash/...`) are admin operations (`manage`). Deleting a repository (`DELETE /api/v1/repository/{name}`) stays an admin operation and now also needs the repository name as confirmation. The `?force=true` override of [immutable releases](../operations/trash.md#immutable-releases) is honoured only for admins; for anyone else it is ignored and the `409` stands. Trashed items and repositories are invisible to every principal on the native protocols and in listings; only the trash endpoints see them.

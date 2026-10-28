@@ -14,7 +14,7 @@
   "federation.serverOff.title": "Die Föderation ist auf diesem Server ausgeschaltet",
   "federation.serverOff.hint": "Ein Administrator aktiviert sie mit federation.enabled (OPENARTIFACT_FEDERATION_ENABLED) in der Serverkonfiguration und startet den Server anschließend neu.",
   "federation.unsupported.title": "Die Föderation ist für dieses Repository nicht verfügbar",
-  "federation.unsupported.hint": "Nur gehostete Repositories der Formate raw, maven, npm, docker, helm, pypi, cargo, go und nuget können föderiert werden. Proxy- und Gruppen-Repositories nicht.",
+  "federation.unsupported.hint": "Nur gehostete Repositories der Formate cargo, docker, go, helm, maven, npm, nuget, pypi und raw können föderiert werden. Proxy- und Gruppen-Repositories nicht.",
   "federation.disableTitle": "Föderation ausschalten?",
   "federation.disableBody": "Das Änderungsprotokoll und alle Peers dieses Repositorys werden entfernt. Bereits synchronisierte Inhalte bleiben erhalten. Beim erneuten Einschalten der Föderation beginnt ein neues Protokoll, und die Peers müssen erneut hinzugefügt werden.",
   "federation.disableConfirm": "Ausschalten",

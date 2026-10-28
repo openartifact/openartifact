@@ -142,7 +142,7 @@ Uploads and downloads stream through the CLI without buffering whole files:
 
 | Command | Behavior |
 |---|---|
-| `oa artifact upload <repo> <file>` | multipart upload. `*.deb` goes to `POST /api/v1/repositories/{repo}/debs`; `*.apk` goes to `.../apks` (with `--branch`, `--apk-repo` and `--arch`, see [Alpine](../formats/apk.md#upload)); any other file goes to `.../packages` (the RPM upload endpoint). Other formats are published with their native client (`npm publish`, `mvn deploy`, `curl -T`, ...), see [formats](../formats/README.md) |
+| `oa artifact upload <repo> <file>` | multipart upload. `*.deb` goes to `POST /api/v1/repositories/{repo}/debs`; `*.apk` goes to `.../apks` (with `--branch`, `--apk-repo` and `--arch`, see [Alpine](../formats/apk.md#upload)); any other file goes to `.../packages` (the RPM upload endpoint). Other formats are published with their native client (`mvn deploy`, `npm publish`, `curl -T`, ...), see [formats](../formats/README.md) |
 | `oa artifact upload --presigned [--path P] [--content-type T] [--multipart] [--part-size SIZE] [--parallel N] <repo> <file>` | raw repositories on any storage backend with presigned uploads (S3, GCS, Azure, and filesystem/OCI through the server's signed relay URLs): hashes the file, asks `POST /api/v1/repositories/{repo}/uploads` for a presigned PUT, uploads the bytes straight to the object store (the OpenArtifact token is never sent there) and calls `.../uploads/{id}/complete`, which reads the object back from storage, verifies size and sha256 and records the artifact. Files above 5 GiB are uploaded in parts automatically (`--multipart` forces it, `--part-size` such as `128M` sets the part size, `--parallel` the parts in flight, default 4, at most 16); each part is retried with backoff and the upload is aborted on the server if a part fails for good. The complete call has no response-header timeout and is retried while the server answers `409 upload_in_progress`. `--path` defaults to the file name. See [Presigned URLs](../operations/storage.md#presigned-urls) |
 | `oa backup download <id> <dest>` | writes to a temp file next to `<dest>`, syncs, then renames onto `<dest>` |
 | `oa sbom download <repo> <id> <dest>` | same |
@@ -161,11 +161,11 @@ oa --format json upload <repo> <file|glob>... [--target-path P] [--flat] \
    [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
 ```
 
-Uploads to a hosted `raw`, `maven`, `ivy`, `sbt`, `deb`, `rpm`, `pacman` or `ansible` repository (pacman: the package and its `.sig`, stored under `os/<arch>/` by file name, see [pacman](../formats/pacman.md); ansible: a collection `NAMESPACE-NAME-VERSION.tar.gz` published through the Galaxy API, see [ansible](../formats/ansible.md)) and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`npm publish`, `docker push`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
+Uploads to a hosted `ansible`, `deb`, `ivy`, `maven`, `pacman`, `raw`, `rpm` or `sbt` repository (ansible: a collection `NAMESPACE-NAME-VERSION.tar.gz` published through the Galaxy API, see [ansible](../formats/ansible.md); pacman: the package and its `.sig`, stored under `os/<arch>/` by file name, see [pacman](../formats/pacman.md)) and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`docker push`, `npm publish`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
 
 Arguments are files or globs (`*`, `?`, `[...]`, and `**` for any depth); quote globs to keep the shell out of it. A pattern without a match, a directory or a missing file is an error before anything is uploaded.
 
-Remote path (raw, maven, ivy, sbt; deb and rpm keep the name the server derives from the package and reject `--target-path`):
+Remote path (ivy, maven, raw, sbt; deb and rpm keep the name the server derives from the package and reject `--target-path`):
 
 | Flags | Remote path of `dist/a/b.tgz` |
 |---|---|
@@ -176,7 +176,7 @@ Remote path (raw, maven, ivy, sbt; deb and rpm keep the name the server derives 
 | `--target-path rel/b-1.0.tgz`, a single file | `rel/b-1.0.tgz` (exact path) |
 | `--target-path rel`, several files | `rel/<path>` (a directory) |
 
-An absolute path or one that climbs out of the working directory (`..`) needs `--flat`. A Maven, Ivy or sbt path must be the repository layout (`com/acme/lib/1.0/lib-1.0.jar`).
+An absolute path or one that climbs out of the working directory (`..`) needs `--flat`. An Ivy, Maven or sbt path must be the repository layout (`com/acme/lib/1.0/lib-1.0.jar`).
 
 Every file is hashed locally and the digest the server stored is compared with it (Maven through the `.sha256` sidecar); a mismatch fails the upload. Files are uploaded in order and the command stops at the first failure.
 
@@ -213,7 +213,7 @@ oa --format json promote       <name> <version> --stage S [--target-repo R] [--n
 ```
 
 - `create` makes a [draft bundle](../repositories/release-bundles.md); `--pipeline` attaches an existing pipeline by name.
-- `add --repo R --path P...` adds artifacts of one repository by their path as `oa upload` printed it (raw: the path; Maven: the repository path; Ivy and sbt: the repository path; deb and rpm: the stored file name). A path that matches nothing, or more than one artifact, is an error.
+- `add --repo R --path P...` adds artifacts of one repository by their path as `oa upload` printed it (deb and rpm: the stored file name; Ivy and sbt: the repository path; Maven: the repository path; raw: the path). A path that matches nothing, or more than one artifact, is an error.
 - `add --from-build NAME/NUMBER` adds every artifact whose properties are `build.name=NAME` and `build.number=NUMBER` (split at the **last** `/`, so `NAME` may contain slashes such as a Jenkins `folder/job/main`). It searches the hosted repositories the token can read, or only the `--repo` ones (repeatable). It is an error when nothing carries both properties. The same content added twice (by repository and SHA-256) counts once.
 - `seal` freezes the bundle; `--gpg-key` signs its manifest with a key id, fingerprint or `config` (the operator hands the id to the job, the key list is admin-only).
 - `promote` copies a sealed bundle into the repository of `--stage`. `--target-repo` is optional when the pipeline stage is bound to a repository.
@@ -253,4 +253,4 @@ None of these commands needs an administrator: a token with `read` and `write` o
 
 ### Importing from Nexus or Artifactory
 
-`oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted repositories from a Nexus 3 or Artifactory server: Maven (also Gradle), Debian, RPM, raw, npm, PyPI, Docker/OCI, Helm, NuGet, RubyGems, Cargo, Go, Conda, Conan, Ivy and sbt, with created-at, properties, checksum verification and resume. The source password or token is read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line. Flags, supported formats, resume and checksum behavior are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md).
+`oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted repositories from a Nexus 3 or Artifactory server: Cargo, Conan, Conda, Debian, Docker/OCI, Go, Helm, Ivy, Maven (also Gradle), npm, NuGet, PyPI, raw, RPM, RubyGems and sbt, with created-at, properties, checksum verification and resume. The source password or token is read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line. Flags, supported formats, resume and checksum behavior are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md).

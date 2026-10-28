@@ -825,7 +825,7 @@ func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, 
 	return c, nil
 }
 
-// GetComponentBySHA256 finds a live rpm or deb package in a repository by the
+// GetComponentBySHA256 finds a live deb or rpm package in a repository by the
 // sha256 of its blob using a single-row lookup per table.
 func (p *PostgresDB) GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error) {
 	c, err := p.scanRpmComponent(

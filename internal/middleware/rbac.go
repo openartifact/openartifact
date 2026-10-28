@@ -374,7 +374,7 @@ func writeAccessDenied(
 			w.Header().Add("WWW-Authenticate", `Bearer realm="`+AuthRealm+`"`)
 		}
 
-		// Package managers (maven, pip, helm, docker) only send credentials
+		// Package managers (docker, helm, maven, pip) only send credentials
 		// after a Basic challenge. Never challenge /api/ with Basic: browsers
 		// would pop a native login dialog over the SPA on every expired session.
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
@@ -989,7 +989,7 @@ func isSPARepoPath(segments []string) bool {
 	default:
 		// /repos/{name}/packages/{package...}[/versions/{version...}] and the
 		// legacy /repos/{name}/packages/{format}/{package}: package names may
-		// hold "/" (npm scope, docker image path, go module), so any depth
+		// hold "/" (docker image path, go module, npm scope), so any depth
 		// under the literal "packages" segment is the artifact page. No format
 		// handler registers a route under that literal.
 		return segments[2] == "packages"

@@ -183,8 +183,8 @@ type BootstrapConfig struct {
 
 // WorkersConfig contains background worker tuning.
 type WorkersConfig struct {
-	// MetadataRegenConcurrency caps how many metadata regenerations (npm,
-	// maven, deb, rpm together) run at once. Each pins up to two database
+	// MetadataRegenConcurrency caps how many metadata regenerations (deb,
+	// maven, npm, rpm together) run at once. Each pins up to two database
 	// connections, so keep it well below database.maxOpenConns.
 	MetadataRegenConcurrency int `yaml:"metadataRegenConcurrency"`
 	// DockerGCInterval is the pause between scheduled Docker registry garbage

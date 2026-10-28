@@ -21,7 +21,7 @@ Terraform and OpenTofu talk to a registry through [service discovery](#service-d
 - The **namespace is the repository**. Create a repository of format `terraform` named `acme` and the namespace `acme` exists on the registry host: `HOST/acme/vpc/aws` is the module `vpc` for system `aws`, `HOST/acme/random` is the provider `random`.
 - Modules and providers share the repository. Permissions, quota, [trash](../operations/trash.md), webhooks and [cleanup](../repositories/cleanup-and-quotas.md) apply to the repository as for any other format.
 - A repository is hosted (it stores what you publish), a [proxy](#proxy-repositories) of a public registry, or a [group](#group-repositories) that merges hosted and proxy repositories. Publishing and deleting need a hosted repository; proxy and group repositories are read-only.
-- The names `raw`, `maven`, `sbt` and `ivy` cannot be a namespace: those repository names are served under their own isolated prefix (`/repos/raw/REPO`, ...), not under `/repos/REPO`, so the registry API would never reach them. See [URL conventions](README.md#url-conventions).
+- The names `ivy`, `maven`, `raw` and `sbt` cannot be a namespace: those repository names are served under their own isolated prefix (`/repos/ivy/REPO`, ...), not under `/repos/REPO`, so the registry API would never reach them. See [URL conventions](README.md#url-conventions).
 
 ## Requirements
 

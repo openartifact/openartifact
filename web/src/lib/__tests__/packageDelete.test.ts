@@ -7,7 +7,7 @@ import { supportsPackageDelete } from '../formats'
 
 describe('supportsPackageDelete', () => {
   it('allows every hosted package format', () => {
-    for (const f of ['deb', 'rpm', 'npm', 'maven', 'pypi', 'docker', 'raw', 'go', 'cargo', 'conan']) {
+    for (const f of ['cargo', 'conan', 'deb', 'docker', 'go', 'maven', 'npm', 'pypi', 'raw', 'rpm']) {
       expect(supportsPackageDelete(f)).toBe(true)
     }
     for (const f of ['', 'unknown']) {

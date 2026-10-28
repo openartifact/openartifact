@@ -513,7 +513,7 @@ func validatePolicyConditions(p *models.StoragePolicy) error {
 
 	for _, f := range p.Formats {
 		if !storageFormatRe.MatchString(f) {
-			return policyErr("formats must be lower-case format names such as maven or docker")
+			return policyErr("formats must be lower-case format names such as docker or maven")
 		}
 	}
 

@@ -46,7 +46,7 @@ func usesExplicitCredential(r *http.Request) bool {
 // crossSiteBasic reports whether r is Basic-authenticated and carries browser
 // signals showing it was initiated from another site. Browsers cache Basic
 // credentials per origin and attach them to cross-site requests; CLI clients
-// (curl, mvn, npm, docker) send neither Origin nor Sec-Fetch-Site.
+// (curl, docker, mvn, npm) send neither Origin nor Sec-Fetch-Site.
 func crossSiteBasic(r *http.Request) bool {
 	p := PrincipalFromContext(r.Context())
 	if p == nil || p.Credential != auth.CredentialBasicToken {

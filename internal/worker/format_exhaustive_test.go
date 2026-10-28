@@ -93,10 +93,10 @@ func TestRefreshMetadataCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshMetadata",
-		[]string{"rpm", "deb", "pacman", "apk"},
+		[]string{"apk", "deb", "pacman", "rpm"},
 		[]string{
-			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-			"ivy", "sbt", "terraform", "nix", "ansible",
+			"ansible", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"pypi", "raw", "rubygems", "sbt", "terraform",
 		},
 	)
 
@@ -154,17 +154,17 @@ func (g *dockerGCCounter) RunRepo(context.Context, *models.Repository, DockerGCO
 
 func (*dockerGCCounter) DefaultGrace() time.Duration { return 0 }
 
-// TestRefreshFormatMetadataCoversEveryFormat: maven, npm and docker have a
+// TestRefreshFormatMetadataCoversEveryFormat: docker, maven and npm have a
 // follow-up of a run that removed rows; every other format computes its
 // indexes live from the tables.
 func TestRefreshFormatMetadataCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshFormatMetadata",
-		[]string{"maven", "npm", "docker"},
+		[]string{"docker", "maven", "npm"},
 		[]string{
-			"pypi", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk", "pacman", "nix", "ansible",
+			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "ivy", "nix", "nuget", "pacman", "pypi",
+			"raw", "rpm", "rubygems", "sbt", "terraform",
 		},
 	)
 
@@ -206,16 +206,16 @@ func TestRefreshFormatMetadataCoversEveryFormat(t *testing.T) {
 func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
-	generated := []string{"deb", "rpm", "pacman", "apk"}
+	generated := []string{"apk", "deb", "pacman", "rpm"}
 	others := []string{
-		"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-		"ivy", "sbt", "terraform", "nix", "ansible",
+		"ansible", "cargo", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+		"pypi", "raw", "rubygems", "sbt", "terraform",
 	}
 
 	// run dispatches to buildDeb/buildRPM/buildPacman/buildApk: it needs a database and storage, so it is classified only.
 	runHandled := repotypetest.Classified(t, "worker.GroupMetadataWorker.run", generated, others)
 	hintHandled := repotypetest.Classified(t, "worker.GroupMetadataWorker.checkHint",
-		[]string{"deb", "apk", "pacman"}, append([]string{"rpm"}, others...))
+		[]string{"apk", "deb", "pacman"}, append([]string{"rpm"}, others...))
 	anchorHandled := repotypetest.Classified(t, "worker.groupAnchor", generated, others)
 
 	for _, f := range repotype.Names() {

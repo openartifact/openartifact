@@ -57,14 +57,14 @@ type Versioning string
 
 const (
 	// VersionOpaque is a format without a snapshot or pre-release concept:
-	// every version is a release (raw, deb, rpm, pacman, conda, conan, docker,
-	// apk).
+	// every version is a release (apk, conan, conda, deb, docker, pacman, raw,
+	// rpm).
 	VersionOpaque Versioning = ""
 	// VersionMaven is the Maven scheme: "-SNAPSHOT" versions are not releases,
-	// and versions compare with the Maven comparator (maven, ivy, sbt).
+	// and versions compare with the Maven comparator (ivy, maven, sbt).
 	VersionMaven Versioning = "maven"
 	// VersionSemver is semantic versioning: a "-" pre-release part is not a
-	// release (npm, nuget, cargo, helm, go, terraform).
+	// release (cargo, go, helm, npm, nuget, terraform).
 	VersionSemver Versioning = "semver"
 	// VersionPEP440 is the Python scheme: a/b/rc/dev segments are not releases.
 	VersionPEP440 Versioning = "pep440"
@@ -86,7 +86,7 @@ type Spec struct {
 	// codecs replicate.
 	Federation bool
 	// GeneratedGroupMetadata is set for formats whose groups serve metadata the
-	// group worker generates from their members (deb, rpm, apk, pacman) rather
+	// group worker generates from their members (apk, deb, pacman, rpm) rather
 	// than resolving requests member by member.
 	GeneratedGroupMetadata bool
 	// DefaultUpstream is the upstream a proxy repository uses when none is
@@ -119,35 +119,18 @@ type Spec struct {
 	DistroScoped bool
 }
 
-// specs is the registry, in display order (the order of the format pickers).
+// specs is the registry, in alphabetical order (the order of the format pickers).
 // Treat it as read-only.
 //
 //nolint:gochecknoglobals // immutable registry
 var specs = [...]Spec{
 	{
-		Name: "docker", PackageTables: []string{"docker_manifests", "docker_tags"},
-		Proxy: true, Group: true, Federation: true,
-		DefaultUpstream: DockerHubUpstream, PURLType: "docker",
+		Name: "ansible", PackageTables: []string{"ansible_collections"},
+		Proxy: true, Group: true, DefaultUpstream: "https://galaxy.ansible.com", Versioning: VersionSemver,
 	},
 	{
-		Name: "npm", PackageTables: []string{"npm_packages", "npm_versions"},
-		Proxy: true, Group: true, Federation: true,
-		Versioning: VersionSemver, PURLType: "npm", OSVEcosystem: "npm", GrypeScan: true,
-	},
-	{
-		Name: "pypi", PackageTables: []string{"pypi_packages"},
-		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://pypi.org/simple",
-		Versioning: VersionPEP440, PURLType: "pypi", OSVEcosystem: "PyPI", GrypeScan: true,
-	},
-	{
-		Name: "maven", PackageTables: []string{"maven_artifacts"},
-		Proxy: true, Group: true, Federation: true, Isolated: true,
-		Versioning: VersionMaven, PURLType: "maven", OSVEcosystem: "Maven", GrypeScan: true,
-	},
-	{
-		Name: "helm", PackageTables: []string{"helm_charts"},
-		Proxy: true, Group: true, Federation: true,
-		Versioning: VersionSemver, PURLType: "helm", OSVEcosystem: "Helm",
+		Name: "apk", PackageTables: []string{"apk_packages"},
+		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningRSA, PURLType: "apk",
 	},
 	{
 		Name: "cargo", PackageTables: []string{"cargo_crates"},
@@ -155,9 +138,12 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
 	{
-		Name: "rubygems", PackageTables: []string{"rubygems_gems"},
-		Proxy: true, Group: true, DefaultUpstream: "https://rubygems.org",
-		Versioning: VersionGem, PURLType: "gem", OSVEcosystem: "RubyGems", GrypeScan: true,
+		Name: "conan", PackageTables: []string{"conan_packages"},
+		Proxy: true, Group: true, DefaultUpstream: "https://center2.conan.io", PURLType: "conan",
+	},
+	{
+		Name: "conda", PackageTables: []string{"conda_packages"},
+		Proxy: true, Group: true, PURLType: "conda",
 	},
 	{
 		Name: "deb", PackageTables: []string{"deb_packages"},
@@ -165,14 +151,9 @@ var specs = [...]Spec{
 		PURLType: "deb", OSVEcosystem: "Debian", GrypeScan: true, DistroScoped: true,
 	},
 	{
-		Name: "rpm", PackageTables: []string{"rpm_packages"},
-		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
-		PURLType: "rpm", OSVEcosystem: "Red Hat", GrypeScan: true, DistroScoped: true,
-	},
-	{
-		Name: "nuget", PackageTables: []string{"nuget_packages"},
-		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://api.nuget.org/v3/index.json",
-		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
+		Name: "docker", PackageTables: []string{"docker_manifests", "docker_tags"},
+		Proxy: true, Group: true, Federation: true,
+		DefaultUpstream: DockerHubUpstream, PURLType: "docker",
 	},
 	{
 		Name: "go", PackageTables: []string{"gomod_modules"},
@@ -180,20 +161,56 @@ var specs = [...]Spec{
 		Versioning: VersionSemver, PURLType: "golang", OSVEcosystem: "Go", GrypeScan: true,
 	},
 	{
-		Name: "raw", PackageTables: []string{"raw_artifacts"},
-		Proxy: true, Group: true, Federation: true, Isolated: true,
-	},
-	{
-		Name: "conda", PackageTables: []string{"conda_packages"},
-		Proxy: true, Group: true, PURLType: "conda",
-	},
-	{
-		Name: "conan", PackageTables: []string{"conan_packages"},
-		Proxy: true, Group: true, DefaultUpstream: "https://center2.conan.io", PURLType: "conan",
+		Name: "helm", PackageTables: []string{"helm_charts"},
+		Proxy: true, Group: true, Federation: true,
+		Versioning: VersionSemver, PURLType: "helm", OSVEcosystem: "Helm",
 	},
 	{
 		Name: "ivy", PackageTables: []string{"ivy_artifacts"},
 		Proxy: true, Group: true, Isolated: true, Versioning: VersionMaven, PURLType: "maven",
+	},
+	{
+		Name: "maven", PackageTables: []string{"maven_artifacts"},
+		Proxy: true, Group: true, Federation: true, Isolated: true,
+		Versioning: VersionMaven, PURLType: "maven", OSVEcosystem: "Maven", GrypeScan: true,
+	},
+	{
+		Name: "nix", PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
+		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
+	},
+	{
+		Name: "npm", PackageTables: []string{"npm_packages", "npm_versions"},
+		Proxy: true, Group: true, Federation: true,
+		Versioning: VersionSemver, PURLType: "npm", OSVEcosystem: "npm", GrypeScan: true,
+	},
+	{
+		Name: "nuget", PackageTables: []string{"nuget_packages"},
+		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://api.nuget.org/v3/index.json",
+		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
+	},
+	{
+		Name: "pacman", PackageTables: []string{"pacman_packages"},
+		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
+		Signing: SigningGPG, PURLType: "alpm",
+	},
+	{
+		Name: "pypi", PackageTables: []string{"pypi_packages"},
+		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://pypi.org/simple",
+		Versioning: VersionPEP440, PURLType: "pypi", OSVEcosystem: "PyPI", GrypeScan: true,
+	},
+	{
+		Name: "raw", PackageTables: []string{"raw_artifacts"},
+		Proxy: true, Group: true, Federation: true, Isolated: true,
+	},
+	{
+		Name: "rpm", PackageTables: []string{"rpm_packages"},
+		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
+		PURLType: "rpm", OSVEcosystem: "Red Hat", GrypeScan: true, DistroScoped: true,
+	},
+	{
+		Name: "rubygems", PackageTables: []string{"rubygems_gems"},
+		Proxy: true, Group: true, DefaultUpstream: "https://rubygems.org",
+		Versioning: VersionGem, PURLType: "gem", OSVEcosystem: "RubyGems", GrypeScan: true,
 	},
 	{
 		Name: "sbt", PackageTables: []string{"sbt_artifacts"},
@@ -203,23 +220,6 @@ var specs = [...]Spec{
 		Name: "terraform", PackageTables: []string{"terraform_modules", "terraform_providers"},
 		Proxy: true, Group: true, DefaultUpstream: "https://registry.terraform.io",
 		Signing: SigningGPG, Versioning: VersionSemver,
-	},
-	{
-		Name: "apk", PackageTables: []string{"apk_packages"},
-		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningRSA, PURLType: "apk",
-	},
-	{
-		Name: "pacman", PackageTables: []string{"pacman_packages"},
-		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
-		Signing: SigningGPG, PURLType: "alpm",
-	},
-	{
-		Name: "nix", PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
-		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
-	},
-	{
-		Name: "ansible", PackageTables: []string{"ansible_collections"},
-		Proxy: true, Group: true, DefaultUpstream: "https://galaxy.ansible.com", Versioning: VersionSemver,
 	},
 }
 
@@ -252,7 +252,7 @@ func Valid(name string) bool {
 	return ok
 }
 
-// Names returns the registered format ids in display order.
+// Names returns the registered format ids in display (alphabetical) order.
 func Names() []string {
 	names := make([]string, len(specs))
 	for i := range specs {
@@ -283,9 +283,9 @@ func ProxySupported(format string) bool {
 // GroupSupported reports whether group repositories of format can be served.
 // Groups resolve members by path (and merge Maven metadata, npm packuments,
 // NuGet registrations, PyPI project pages, Go version lists, Conan revision
-// lists and searches and the RubyGems compact index; ivy, sbt and raw groups
+// lists and searches and the RubyGems compact index; ivy, raw and sbt groups
 // answer from the first member that has the file), for docker by OCI
-// manifest/blob, and for deb, rpm, apk and pacman by generating the
+// manifest/blob, and for apk, deb, pacman and rpm by generating the
 // Release/Packages indexes, repodata or databases of the group from all
 // members (internal/worker's GroupMetadataWorker) and serving each package
 // from the member that owns it.
@@ -296,7 +296,7 @@ func GroupSupported(format string) bool {
 }
 
 // GeneratedGroupMetadata reports whether the groups of format serve metadata
-// the group worker generates from their members (deb, rpm, apk and pacman)
+// the group worker generates from their members (apk, deb, pacman and rpm)
 // rather than resolving requests member by member.
 func GeneratedGroupMetadata(format string) bool {
 	s, _ := Lookup(format)

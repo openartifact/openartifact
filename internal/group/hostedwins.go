@@ -64,8 +64,8 @@ import (
 // asked (5xx), the request fails closed with 502: serving the proxies then
 // could hand out the very versions that must be hidden.
 //
-// Names that only index lists (pypi simple/ index, the nuget service index,
-// cargo config.json) are merged unchanged: they reveal no versions.
+// Names that only index lists (cargo config.json, the nuget service index,
+// pypi simple/ index) are merged unchanged: they reveal no versions.
 
 // pkgRef is the package a request names and how to find out whether a hosted
 // member holds it.

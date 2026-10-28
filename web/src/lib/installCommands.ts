@@ -4,7 +4,7 @@
 
 // Builds the native client URL / install command for a package. Repository
 // routes mirror cmd/server/main.go: most formats live under /repos/{repo};
-// maven, sbt, ivy and raw use an isolated /repos/{format}/{repo} prefix, and
+// ivy, maven, raw and sbt use an isolated /repos/{format}/{repo} prefix, and
 // docker serves the registry API at the host root (/v2/). The isolated prefixes
 // come from the Go registry (formats.generated.ts).
 
@@ -82,53 +82,53 @@ export function pullCommand(
   const base = repoBaseUrl(format, origin, repo)
   const q = shellQuote
   switch (format) {
+    case 'ansible':
+      return `ansible-galaxy collection install ${q(`${pkg}:${version}`)} --server ${q(`${base}/api/`)}`
+    case 'apk':
+      return `apk add ${q(`${pkg}=${version}`)}`
+    case 'cargo':
+      return `cargo install ${q(pkg)} --version ${q(version)} --index ${q(`sparse+${base}/index/`)}`
+    case 'conan':
+      return `conan install ${q(`--requires=${pkg}/${version}`)} -r ${q(repo)}`
+    case 'conda':
+      return `conda install -c ${q(base)} ${q(`${pkg}=${version}`)}`
+    case 'deb':
+      return `apt install ${q(`${pkg}=${version}`)}`
     case 'docker':
       // The listed package name already is the registry name, `<repo>` or
       // `<repo>/<image path>` (internal/ocipath), so it is the pull path.
       return `docker pull ${q(`${hostOf(origin)}/${pkg}:${version}`)}`
-    case 'npm':
-      return `npm install ${q(`${pkg}@${version}`)} ${q(`--registry=${base}/`)}`
-    case 'pypi':
-      return `pip install ${q(`${pkg}==${version}`)} --index-url ${q(`${base}/simple/`)}`
-    case 'maven':
-      return `mvn dependency:get ${q(`-Dartifact=${pkg}:${version}`)} ${q(`-DremoteRepositories=${base}`)}`
-    case 'helm':
-      return `helm pull ${q(pkg)} --repo ${q(base)} --version ${q(version)}`
-    case 'cargo':
-      return `cargo install ${q(pkg)} --version ${q(version)} --index ${q(`sparse+${base}/index/`)}`
-    case 'nuget':
-      return `dotnet add package ${q(pkg)} --version ${q(version)} --source ${q(`${base}/v3/index.json`)}`
     case 'go':
       // A quoted value is still a valid environment assignment; a quoted word is not.
       return `GOPROXY=${q(base)} go get ${q(`${pkg}@${version}`)}`
-    case 'rubygems':
-      return `gem install ${q(pkg)} -v ${q(version)} --source ${q(`${base}/`)}`
-    case 'conda':
-      return `conda install -c ${q(base)} ${q(`${pkg}=${version}`)}`
-    case 'conan':
-      return `conan install ${q(`--requires=${pkg}/${version}`)} -r ${q(repo)}`
-    case 'deb':
-      return `apt install ${q(`${pkg}=${version}`)}`
-    case 'rpm':
-      return `dnf install ${q(`${pkg}-${version}`)}`
-    case 'pacman':
-      // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
-      return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`
+    case 'helm':
+      return `helm pull ${q(pkg)} --repo ${q(base)} --version ${q(version)}`
+    case 'ivy':
+      return `<ibiblio name="${repo}" m2compatible="true" root="${base}"/>`
+    case 'maven':
+      return `mvn dependency:get ${q(`-Dartifact=${pkg}:${version}`)} ${q(`-DremoteRepositories=${base}`)}`
     case 'nix':
       // The version is the 32 character store hash; the path is `<hash>-<name>`.
       return `nix copy --from ${q(base)} ${q(`/nix/store/${version}-${pkg}`)}`
-    case 'apk':
-      return `apk add ${q(`${pkg}=${version}`)}`
+    case 'npm':
+      return `npm install ${q(`${pkg}@${version}`)} ${q(`--registry=${base}/`)}`
+    case 'nuget':
+      return `dotnet add package ${q(pkg)} --version ${q(version)} --source ${q(`${base}/v3/index.json`)}`
+    case 'pacman':
+      // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
+      return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`
+    case 'pypi':
+      return `pip install ${q(`${pkg}==${version}`)} --index-url ${q(`${base}/simple/`)}`
     case 'raw':
       return `curl -fO ${q(`${base}/${encodePath(pkg)}`)}`
-    case 'ansible':
-      return `ansible-galaxy collection install ${q(`${pkg}:${version}`)} --server ${q(`${base}/api/`)}`
-    case 'terraform':
-      return terraformUsage(hostOf(origin), repo, pkg, version)
+    case 'rpm':
+      return `dnf install ${q(`${pkg}-${version}`)}`
+    case 'rubygems':
+      return `gem install ${q(pkg)} -v ${q(version)} --source ${q(`${base}/`)}`
     case 'sbt':
       return `resolvers += "${repo}" at "${base}"`
-    case 'ivy':
-      return `<ibiblio name="${repo}" m2compatible="true" root="${base}"/>`
+    case 'terraform':
+      return terraformUsage(hostOf(origin), repo, pkg, version)
     default:
       return `${base}/`
   }
@@ -159,76 +159,22 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
   const base = repoBaseUrl(format, origin, repo)
   const host = hostOf(origin)
   switch (format) {
-    case 'npm':
+    case 'ansible': {
+      const api = `${base}/api/`
       return [
         {
-          client: 'npm',
-          configure: `npm config set registry ${base}/\nnpm config set //${host}/repos/${encodeURIComponent(repo)}/:_authToken <TOKEN>`,
-          publish: `npm publish --registry ${base}/`,
-        },
-        {
-          client: 'pnpm',
-          configure: `pnpm config set registry ${base}/\npnpm config set //${host}/repos/${encodeURIComponent(repo)}/:_authToken <TOKEN>`,
-          publish: `pnpm publish --registry ${base}/`,
-        },
-        {
-          client: 'yarn',
-          configure: `yarn config set npmRegistryServer ${base}/\nyarn config set npmAuthToken <TOKEN>`,
-          publish: `yarn npm publish`,
+          client: 'ansible-galaxy',
+          configure:
+            `# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = ${api}\ntoken = <TOKEN>` +
+            `\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact` +
+            `\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: ${api}`,
+          publish:
+            repoType === 'proxy' || repoType === 'group'
+              ? undefined
+              : 'ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact',
         },
       ]
-    case 'docker':
-      return [
-        {
-          client: 'docker',
-          configure: `docker login ${host} -u <USERNAME> -p <TOKEN>`,
-          publish: `docker tag my-image:latest ${host}/${repo}:latest\ndocker push ${host}/${repo}:latest`,
-        },
-      ]
-    case 'pypi':
-      return [
-        {
-          client: 'pip',
-          configure: `pip config set global.index-url ${base}/simple/`,
-        },
-        {
-          client: 'twine',
-          configure: `# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = ${base}/legacy/\nusername = <USERNAME>\npassword = <TOKEN>`,
-          publish: `twine upload --repository openartifact dist/*`,
-        },
-      ]
-    case 'maven':
-      return [
-        {
-          client: 'Maven',
-          configure: `<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>${repo}</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>`,
-          publish: `mvn deploy -DaltDeploymentRepository=${repo}::default::${base}`,
-        },
-      ]
-    case 'helm':
-      return [
-        {
-          client: 'helm',
-          configure: `helm repo add ${repo} ${base} --username <USERNAME> --password <TOKEN>\nhelm repo update`,
-          publish: `curl -u <USERNAME>:<TOKEN> --data-binary @my-chart-0.1.0.tgz ${base}/charts`,
-        },
-      ]
-    case 'deb':
-      return [
-        {
-          client: 'apt',
-          configure: `curl -fsSL ${base}/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/${repo}.gpg\necho "deb [signed-by=/etc/apt/keyrings/${repo}.gpg] ${base} stable main" | sudo tee /etc/apt/sources.list.d/${repo}.list\nsudo apt update`,
-          publish: `curl -u <USERNAME>:<TOKEN> -F file=@my-package_1.0_amd64.deb -F distribution=stable -F component=main ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/debs`,
-        },
-      ]
-    case 'rpm':
-      return [
-        {
-          client: 'dnf / yum',
-          configure: `# /etc/yum.repos.d/${repo}.repo\n[${repo}]\nname=${repo}\nbaseurl=${base}\nenabled=1\nrepo_gpgcheck=1\ngpgkey=${base}/public.key`,
-          publish: `curl -u <USERNAME>:<TOKEN> -F file=@my-package-1.0.x86_64.rpm ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/packages`,
-        },
-      ]
+    }
     case 'apk': {
       const keyFile = `/etc/apk/keys/openartifact-${repo}.rsa.pub`
       const authBase = base.replace(/^(https?:\/\/)/, '$1<USERNAME>:<TOKEN>@')
@@ -279,11 +225,108 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
           publish: `cargo publish --registry ${repo}`,
         },
       ]
+    case 'conan':
+      return [
+        {
+          client: 'conan',
+          configure: `conan remote add ${repo} ${base}\nconan remote login ${repo} <USERNAME> -p <TOKEN>`,
+          publish: `conan upload "my-lib/1.0" -r ${repo} --confirm`,
+        },
+      ]
+    case 'conda':
+      return [
+        {
+          client: 'conda',
+          configure: `conda config --add channels ${base}`,
+          publish: `curl -u <USERNAME>:<TOKEN> -H "X-Filename: my-package-1.0-0.conda" --data-binary @my-package-1.0-0.conda ${base}/linux-64`,
+        },
+      ]
+    case 'deb':
+      return [
+        {
+          client: 'apt',
+          configure: `curl -fsSL ${base}/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/${repo}.gpg\necho "deb [signed-by=/etc/apt/keyrings/${repo}.gpg] ${base} stable main" | sudo tee /etc/apt/sources.list.d/${repo}.list\nsudo apt update`,
+          publish: `curl -u <USERNAME>:<TOKEN> -F file=@my-package_1.0_amd64.deb -F distribution=stable -F component=main ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/debs`,
+        },
+      ]
+    case 'docker':
+      return [
+        {
+          client: 'docker',
+          configure: `docker login ${host} -u <USERNAME> -p <TOKEN>`,
+          publish: `docker tag my-image:latest ${host}/${repo}:latest\ndocker push ${host}/${repo}:latest`,
+        },
+      ]
     case 'go':
       return [
         {
           client: 'go',
           configure: `go env -w GOPROXY=${base},direct\ngo env -w GONOSUMDB=*`,
+        },
+      ]
+    case 'helm':
+      return [
+        {
+          client: 'helm',
+          configure: `helm repo add ${repo} ${base} --username <USERNAME> --password <TOKEN>\nhelm repo update`,
+          publish: `curl -u <USERNAME>:<TOKEN> --data-binary @my-chart-0.1.0.tgz ${base}/charts`,
+        },
+      ]
+    case 'ivy':
+      return [
+        {
+          client: 'Ivy',
+          configure: `<ibiblio name="${repo}" m2compatible="true" root="${base}"/>`,
+          publish: `<ivy:publish resolver="${repo}" pubrevision="1.0" overwrite="true">\n  <artifacts pattern="dist/[artifact]-[revision].[ext]"/>\n</ivy:publish>`,
+        },
+      ]
+    case 'maven':
+      return [
+        {
+          client: 'Maven',
+          configure: `<!-- ~/.m2/settings.xml -->\n<settings>\n  <servers>\n    <server>\n      <id>${repo}</id>\n      <username><USERNAME></username>\n      <password><TOKEN></password>\n    </server>\n  </servers>\n</settings>`,
+          publish: `mvn deploy -DaltDeploymentRepository=${repo}::default::${base}`,
+        },
+      ]
+    case 'nix': {
+      const key = `${base}/public.key`
+      // A proxy passes the upstream's signatures through; a group signs what its hosted members serve.
+      const upstreamKey = 'cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
+      let trusted = `$(curl -fsS ${key})`
+      if (repoType === 'proxy') {
+        trusted = `${upstreamKey}  # the upstream's key (cache.nixos.org by default): use the key of your upstream cache`
+      } else if (repoType === 'group') {
+        trusted =
+          `$(curl -fsS ${key})  # the group's key, for narinfo its hosted members serve` +
+          `\n#   also trust the upstream's key when the group has proxy members, for example ${upstreamKey}`
+      }
+      const snippet: ClientSetup = {
+        client: 'nix',
+        configure:
+          `# /etc/nix/nix.conf\nextra-substituters = ${base}\nextra-trusted-public-keys = ${trusted}` +
+          `\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine ${hostnameOf(origin)} login oa password <TOKEN>` +
+          `\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc` +
+          `\n\n# one-off, without editing nix.conf\nnix build --substituters ${base} --option require-sigs true /nix/store/HASH-NAME`,
+      }
+      if (repoType !== 'proxy' && repoType !== 'group') snippet.publish = `nix copy --to '${base}' /nix/store/HASH-NAME`
+      return [snippet]
+    }
+    case 'npm':
+      return [
+        {
+          client: 'npm',
+          configure: `npm config set registry ${base}/\nnpm config set //${host}/repos/${encodeURIComponent(repo)}/:_authToken <TOKEN>`,
+          publish: `npm publish --registry ${base}/`,
+        },
+        {
+          client: 'pnpm',
+          configure: `pnpm config set registry ${base}/\npnpm config set //${host}/repos/${encodeURIComponent(repo)}/:_authToken <TOKEN>`,
+          publish: `pnpm publish --registry ${base}/`,
+        },
+        {
+          client: 'yarn',
+          configure: `yarn config set npmRegistryServer ${base}/\nyarn config set npmAuthToken <TOKEN>`,
+          publish: `yarn npm publish`,
         },
       ]
     case 'nuget':
@@ -292,22 +335,6 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
           client: 'dotnet',
           configure: `dotnet nuget add source ${base}/v3/index.json --name ${repo} --username <USERNAME> --password <TOKEN> --store-password-in-clear-text`,
           publish: `dotnet nuget push my-package.1.0.0.nupkg --source ${repo} --api-key <TOKEN>`,
-        },
-      ]
-    case 'rubygems':
-      return [
-        {
-          client: 'gem',
-          configure: `gem sources --add ${base}/`,
-          publish: `GEM_HOST_API_KEY="Bearer <TOKEN>" gem push my-gem-1.0.0.gem --host ${base}`,
-        },
-      ]
-    case 'raw':
-      return [
-        {
-          client: 'curl',
-          configure: `curl -fO ${base}/path/to/file.bin`,
-          publish: `curl -u <USERNAME>:<TOKEN> -T file.bin ${base}/path/to/file.bin`,
         },
       ]
     case 'pacman': {
@@ -351,43 +378,48 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
         },
       ]
     }
-    case 'nix': {
-      const key = `${base}/public.key`
-      // A proxy passes the upstream's signatures through; a group signs what its hosted members serve.
-      const upstreamKey = 'cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
-      let trusted = `$(curl -fsS ${key})`
-      if (repoType === 'proxy') {
-        trusted = `${upstreamKey}  # the upstream's key (cache.nixos.org by default): use the key of your upstream cache`
-      } else if (repoType === 'group') {
-        trusted =
-          `$(curl -fsS ${key})  # the group's key, for narinfo its hosted members serve` +
-          `\n#   also trust the upstream's key when the group has proxy members, for example ${upstreamKey}`
-      }
-      const snippet: ClientSetup = {
-        client: 'nix',
-        configure:
-          `# /etc/nix/nix.conf\nextra-substituters = ${base}\nextra-trusted-public-keys = ${trusted}` +
-          `\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine ${hostnameOf(origin)} login oa password <TOKEN>` +
-          `\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc` +
-          `\n\n# one-off, without editing nix.conf\nnix build --substituters ${base} --option require-sigs true /nix/store/HASH-NAME`,
-      }
-      if (repoType !== 'proxy' && repoType !== 'group') snippet.publish = `nix copy --to '${base}' /nix/store/HASH-NAME`
-      return [snippet]
-    }
-    case 'conda':
+    case 'pypi':
       return [
         {
-          client: 'conda',
-          configure: `conda config --add channels ${base}`,
-          publish: `curl -u <USERNAME>:<TOKEN> -H "X-Filename: my-package-1.0-0.conda" --data-binary @my-package-1.0-0.conda ${base}/linux-64`,
+          client: 'pip',
+          configure: `pip config set global.index-url ${base}/simple/`,
+        },
+        {
+          client: 'twine',
+          configure: `# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = ${base}/legacy/\nusername = <USERNAME>\npassword = <TOKEN>`,
+          publish: `twine upload --repository openartifact dist/*`,
         },
       ]
-    case 'conan':
+    case 'raw':
       return [
         {
-          client: 'conan',
-          configure: `conan remote add ${repo} ${base}\nconan remote login ${repo} <USERNAME> -p <TOKEN>`,
-          publish: `conan upload "my-lib/1.0" -r ${repo} --confirm`,
+          client: 'curl',
+          configure: `curl -fO ${base}/path/to/file.bin`,
+          publish: `curl -u <USERNAME>:<TOKEN> -T file.bin ${base}/path/to/file.bin`,
+        },
+      ]
+    case 'rpm':
+      return [
+        {
+          client: 'dnf / yum',
+          configure: `# /etc/yum.repos.d/${repo}.repo\n[${repo}]\nname=${repo}\nbaseurl=${base}\nenabled=1\nrepo_gpgcheck=1\ngpgkey=${base}/public.key`,
+          publish: `curl -u <USERNAME>:<TOKEN> -F file=@my-package-1.0.x86_64.rpm ${origin}/api/v1/repositories/${encodeURIComponent(repo)}/packages`,
+        },
+      ]
+    case 'rubygems':
+      return [
+        {
+          client: 'gem',
+          configure: `gem sources --add ${base}/`,
+          publish: `GEM_HOST_API_KEY="Bearer <TOKEN>" gem push my-gem-1.0.0.gem --host ${base}`,
+        },
+      ]
+    case 'sbt':
+      return [
+        {
+          client: 'sbt',
+          configure: `// build.sbt\nresolvers += "${repo}" at "${base}"\ncredentials += Credentials("openartifact", "${hostnameOf(origin)}", "<USERNAME>", "<TOKEN>")`,
+          publish: `ThisBuild / publishTo := Some("${repo}" at "${base}")\n// then: sbt publish`,
         },
       ]
     case 'terraform': {
@@ -406,38 +438,6 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
         { client: 'OpenTofu', configure: creds('~/.tofurc') + usage, publish },
       ]
     }
-    case 'ansible': {
-      const api = `${base}/api/`
-      return [
-        {
-          client: 'ansible-galaxy',
-          configure:
-            `# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = ${api}\ntoken = <TOKEN>` +
-            `\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact` +
-            `\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: ${api}`,
-          publish:
-            repoType === 'proxy' || repoType === 'group'
-              ? undefined
-              : 'ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact',
-        },
-      ]
-    }
-    case 'sbt':
-      return [
-        {
-          client: 'sbt',
-          configure: `// build.sbt\nresolvers += "${repo}" at "${base}"\ncredentials += Credentials("openartifact", "${hostnameOf(origin)}", "<USERNAME>", "<TOKEN>")`,
-          publish: `ThisBuild / publishTo := Some("${repo}" at "${base}")\n// then: sbt publish`,
-        },
-      ]
-    case 'ivy':
-      return [
-        {
-          client: 'Ivy',
-          configure: `<ibiblio name="${repo}" m2compatible="true" root="${base}"/>`,
-          publish: `<ivy:publish resolver="${repo}" pubrevision="1.0" overwrite="true">\n  <artifacts pattern="dist/[artifact]-[revision].[ext]"/>\n</ivy:publish>`,
-        },
-      ]
     default:
       return [{ client: 'URL', configure: `${base}/` }]
   }

@@ -13,8 +13,8 @@ form (plural, case, article), inflect the glossary word instead of choosing a sy
 
 ## Never translated
 
-- Product and project names: OpenArtifact, Docker, npm, Maven, PyPI, Helm, NuGet, Cargo, Go, RPM, Debian/deb,
-  RubyGems, Arch Linux, pacman, Conan, Conda, Ivy, sbt, Alpine, apk, abuild, Terraform, OpenTofu, OIDC, SAML, S3, GCS, Azure, GPG, SBOM, VEX, CycloneDX, SPDX, Dependency-Track,
+- Product and project names: OpenArtifact, Alpine, apk, abuild, Cargo, Conan, Conda, Debian/deb, Docker, Go, Helm, Ivy, Maven,
+  npm, NuGet, Arch Linux, pacman, PyPI, RPM, RubyGems, sbt, Terraform, OpenTofu, OIDC, SAML, S3, GCS, Azure, GPG, SBOM, VEX, CycloneDX, SPDX, Dependency-Track,
   Trivy, Grype, Prometheus, Kubernetes, and every other proper noun.
 - Package format names, CLI commands and flags, code, file names and paths, URLs, environment variables,
   API field names, HTTP methods and status codes, glob and regex examples, keyboard keys (Ctrl, Esc, ⌘).

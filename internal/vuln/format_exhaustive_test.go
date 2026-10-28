@@ -22,9 +22,9 @@ func TestWriteManifestCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "vuln.TrivyScanner.writeManifest",
-		[]string{"npm", "pypi", "maven", "cargo", "go", "rubygems", "nuget"},
+		[]string{"cargo", "go", "maven", "npm", "nuget", "pypi", "rubygems"},
 		[]string{
-			"docker", "helm", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix", "ansible",
+			"ansible", "apk", "conan", "conda", "deb", "docker", "helm", "ivy", "nix", "pacman", "raw", "rpm", "sbt", "terraform",
 		},
 	)
 
@@ -55,29 +55,29 @@ func TestWriteManifestCoversEveryFormat(t *testing.T) {
 
 // TestBuildPURLCoversEveryFormat: a grype-scannable format yields a Package
 // URL of its registry type, the others are refused. handled have a name or
-// qualifier rewrite of their own; the ignored grype formats (cargo, rubygems,
-// nuget) use the plain name.
+// qualifier rewrite of their own; the ignored grype formats (cargo, nuget,
+// rubygems) use the plain name.
 func TestBuildPURLCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	repotypetest.Classified(t, "vuln.buildPURL",
-		[]string{"npm", "pypi", "maven", "go", "deb", "rpm"},
+		[]string{"deb", "go", "maven", "npm", "pypi", "rpm"},
 		[]string{
+			"ansible",
+			"apk",
+			"cargo",
+			"conan",
+			"conda",
 			"docker",
 			"helm",
-			"cargo",
-			"rubygems",
-			"nuget",
-			"raw",
-			"conda",
-			"conan",
 			"ivy",
+			"nix",
+			"nuget",
+			"pacman",
+			"raw",
+			"rubygems",
 			"sbt",
 			"terraform",
-			"apk",
-			"pacman",
-			"nix",
-			"ansible",
 		},
 	)
 

@@ -64,20 +64,20 @@ spdx3-validate --json sbom.spdx3.json -s 3.0.1
 
 | Format | Read from | Notes |
 |---|---|---|
-| npm | `package.json` (`dependencies`, `optionalDependencies`), `npm-shrinkwrap.json` / `package-lock.json` when the tarball ships one | the lockfile pins exact versions and adds the installed transitive packages (dev-only entries are left out) and their licenses |
-| pypi | `Requires-Dist` of `METADATA` / `PKG-INFO` | requirements gated on an `extra` are skipped; only `==` pins a version |
-| maven, sbt | `<dependencies>` of the pom (`compile` and `runtime` scopes) | `${property}` references and `dependencyManagement` versions are resolved; unresolved ones leave the version out |
-| ivy | `ivy.xml` dependencies | |
 | cargo | `[dependencies]`, `[build-dependencies]` and `[target.*.dependencies]` of `Cargo.toml`; `Cargo.lock` when the crate ships one | the lockfile pins versions and adds locked packages; only `=x.y.z` pins a version in `Cargo.toml` |
-| go | `require` of `go.mod` (the `.mod` file or the one inside the module zip) | exact versions |
-| nuget | `.nuspec` dependency groups | only `[x.y.z]` pins a version |
-| rubygems | runtime dependencies of the gemspec | only `= x.y.z` pins a version |
-| helm | `Chart.yaml` and `requirements.yaml` dependencies, `Chart.lock` when present | the lock pins versions |
+| conan | quoted `name/version` references in the `requires` of `conanfile.py` | `tool_requires` and `test_requires` are skipped; the recipe is never executed |
 | conda | `depends` of `info/index.json` | only `==x.y.z` pins a version |
 | deb | `Pre-Depends` and `Depends` of the control file | the first of a set of alternatives; purls use the namespace `ubuntu` when the version or maintainer says so, `debian` otherwise |
-| rpm | `Requires` of the header | rpmlib features, file paths and shared-object or boolean capabilities are skipped; the purl namespace is derived from `Vendor` or the release tag |
-| conan | quoted `name/version` references in the `requires` of `conanfile.py` | `tool_requires` and `test_requires` are skipped; the recipe is never executed |
 | docker, raw, terraform | not read | components come from the `dependencies` property only |
+| go | `require` of `go.mod` (the `.mod` file or the one inside the module zip) | exact versions |
+| helm | `Chart.yaml` and `requirements.yaml` dependencies, `Chart.lock` when present | the lock pins versions |
+| ivy | `ivy.xml` dependencies | |
+| maven, sbt | `<dependencies>` of the pom (`compile` and `runtime` scopes) | `${property}` references and `dependencyManagement` versions are resolved; unresolved ones leave the version out |
+| npm | `package.json` (`dependencies`, `optionalDependencies`), `npm-shrinkwrap.json` / `package-lock.json` when the tarball ships one | the lockfile pins exact versions and adds the installed transitive packages (dev-only entries are left out) and their licenses |
+| nuget | `.nuspec` dependency groups | only `[x.y.z]` pins a version |
+| pypi | `Requires-Dist` of `METADATA` / `PKG-INFO` | requirements gated on an `extra` are skipped; only `==` pins a version |
+| rpm | `Requires` of the header | rpmlib features, file paths and shared-object or boolean capabilities are skipped; the purl namespace is derived from `Vendor` or the release tag |
+| rubygems | runtime dependencies of the gemspec | only `= x.y.z` pins a version |
 
 A dependency whose manifest gives only a version range has no `version` and a purl without one; the range is kept in the CycloneDX component property `openartifact:version_range`. A file that cannot be read (damaged, not the archive its name says) leaves the properties as the only source and is logged. A file that cannot be read **safely** (a manifest or lockfile over 8 MiB, a decompressed stream over the limit, an archive with two candidates for the same manifest) fails the request with `422 unsafe_artifact`. At most 10 000 dependencies are listed per artifact. See [properties](../repositories/properties.md).
 

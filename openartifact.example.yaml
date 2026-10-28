@@ -223,7 +223,7 @@ mcp:
   # aiTriggerPerMinute: 10       # trigger_ai_analysis calls per principal per minute (0 = unlimited)
 
 workers:
-  # Max metadata regenerations (npm, maven, deb, rpm together) running at once.
+  # Max metadata regenerations (deb, maven, npm, rpm together) running at once.
   # Each pins up to two database connections while it runs; keep it well below
   # database.maxOpenConns.
   metadataRegenConcurrency: 4

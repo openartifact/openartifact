@@ -114,12 +114,12 @@ func (h *RepositoriesHandler) WithPublisher(p webhook.Publisher) *RepositoriesHa
 	return h
 }
 
-// GroupMetadataNotifier invalidates the generated metadata of deb, rpm and apk
+// GroupMetadataNotifier invalidates the generated metadata of apk, deb and rpm
 // group repositories (worker.GroupMetadataWorker).
 type GroupMetadataNotifier interface {
 	// NotifyStale marks a group's metadata stale and schedules its regeneration.
 	NotifyStale(groupID string)
-	// NotifyMemberChanged does so for every deb/rpm/apk group listing the repository.
+	// NotifyMemberChanged does so for every apk/deb/rpm group listing the repository.
 	NotifyMemberChanged(repoID string)
 }
 
@@ -132,7 +132,7 @@ func (h *RepositoriesHandler) WithGroupMetadata(n GroupMetadataNotifier) *Reposi
 }
 
 // metadataChanged invalidates the merged metadata a change to repo affects: a
-// deb/rpm/apk group's own, or its member's groups'.
+// apk/deb/rpm group's own, or its member's groups'.
 func (h *RepositoriesHandler) metadataChanged(repo *models.Repository) {
 	notifyGroupMetadata(h.groupMeta, repo)
 }
@@ -1210,7 +1210,7 @@ func deleteConfirmation(r *http.Request) string {
 	return body.Confirm
 }
 
-// metadataGroupsOf returns the deb/rpm/apk groups whose merged metadata lists repo.
+// metadataGroupsOf returns the apk/deb/rpm groups whose merged metadata lists repo.
 func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models.Repository) []string {
 	if h.groupMeta == nil || repo.RepoType == repotype.Group || !repotype.GeneratedGroupMetadata(repo.Format) {
 		return nil

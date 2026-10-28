@@ -20,29 +20,29 @@ func TestIsProxyBlobPathDecidesEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "presign.IsProxyBlobPath",
 		[]string{
-			"maven", "deb", "rpm", "pacman", "npm", "helm", "cargo", "go", "nuget", "rubygems",
-			"conan", "conda", "terraform", "raw", "pypi", "nix", "ansible",
+			"ansible", "cargo", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget", "pacman", "pypi",
+			"raw", "rpm", "rubygems", "terraform",
 		},
-		[]string{"docker", "ivy", "sbt", "apk"})
+		[]string{"apk", "docker", "ivy", "sbt"})
 
 	blobs := map[string]string{
-		"maven":     "g/a/1.0/a-1.0.jar",
-		"deb":       "pool/main/a/app/app_1_amd64.deb",
-		"rpm":       "Packages/a-1.rpm",
-		"pacman":    "x86_64/a-1-1-x86_64.pkg.tar.zst",
-		"npm":       "left-pad/-/left-pad-1.0.0.tgz",
-		"helm":      "charts/a-1.tgz",
+		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",
 		"cargo":     "api/v1/crates/a/1.0.0/download",
-		"go":        "example.com/m/@v/v1.0.0.zip",
-		"nuget":     "v3/package/a/1.0.0/a.1.0.0.nupkg",
-		"rubygems":  "gems/a-1.gem",
 		"conan":     "v2/conans/a/1/_/_/revisions/r/files/conan_package.tgz",
 		"conda":     "linux-64/a-1.conda",
-		"terraform": "providers/hashicorp/aws/1.0.0/linux_amd64/p.zip",
-		"raw":       "any/file.bin",
-		"pypi":      "files/x-1.whl",
+		"deb":       "pool/main/a/app/app_1_amd64.deb",
+		"go":        "example.com/m/@v/v1.0.0.zip",
+		"helm":      "charts/a-1.tgz",
+		"maven":     "g/a/1.0/a-1.0.jar",
 		"nix":       "nar/0123456789abcdfghijklmnpqrsvwxyz0123456789abcdfghijk.nar.xz",
-		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",
+		"npm":       "left-pad/-/left-pad-1.0.0.tgz",
+		"nuget":     "v3/package/a/1.0.0/a.1.0.0.nupkg",
+		"pacman":    "x86_64/a-1-1-x86_64.pkg.tar.zst",
+		"pypi":      "files/x-1.whl",
+		"raw":       "any/file.bin",
+		"rpm":       "Packages/a-1.rpm",
+		"rubygems":  "gems/a-1.gem",
+		"terraform": "providers/hashicorp/aws/1.0.0/linux_amd64/p.zip",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

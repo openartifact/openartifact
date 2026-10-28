@@ -14,7 +14,7 @@
   "federation.serverOff.title": "La federazione è disattivata su questo server",
   "federation.serverOff.hint": "Un amministratore la attiva con federation.enabled (OPENARTIFACT_FEDERATION_ENABLED) nella configurazione del server, poi riavvia il server.",
   "federation.unsupported.title": "La federazione non è disponibile per questo repository",
-  "federation.unsupported.hint": "Solo i repository hosted dei formati raw, maven, npm, docker, helm, pypi, cargo, go e nuget possono essere federati. I repository proxy e gruppo no.",
+  "federation.unsupported.hint": "Solo i repository hosted dei formati cargo, docker, go, helm, maven, npm, nuget, pypi e raw possono essere federati. I repository proxy e gruppo no.",
   "federation.disableTitle": "Disattivare la federazione?",
   "federation.disableBody": "Il log delle modifiche e tutti i peer di questo repository vengono rimossi. Il contenuto già sincronizzato resta. Riattivando la federazione si avvia un nuovo log e i peer devono essere aggiunti di nuovo.",
   "federation.disableConfirm": "Disattiva",

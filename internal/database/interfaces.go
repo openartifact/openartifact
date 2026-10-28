@@ -95,7 +95,7 @@ type Database interface {
 	ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error)
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
-	// GetComponentBySHA256 returns the live rpm or deb package in a repository whose blob has the given sha256, or nil.
+	// GetComponentBySHA256 returns the live deb or rpm package in a repository whose blob has the given sha256, or nil.
 	GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error)
 	DeleteComponent(ctx context.Context, componentID string) error
 
@@ -226,9 +226,9 @@ type Database interface {
 	MarkGroupMetadataStale(ctx context.Context, groupID string) error
 	// GetGroupMetadataState returns a group's regeneration state, nil when it has none.
 	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
-	// ListMetadataGroupsOfMember returns the deb, rpm/apk and pacman groups that list the repository as a member.
+	// ListMetadataGroupsOfMember returns the apk, deb, pacman and rpm groups that list the repository as a member.
 	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
-	// ListStaleMetadataGroups returns the deb, rpm/apk and pacman groups that are stale or were never generated.
+	// ListStaleMetadataGroups returns the apk, deb, pacman and rpm groups that are stale or were never generated.
 	ListStaleMetadataGroups(ctx context.Context) ([]string, error)
 	// GetGroupPackageOwner returns the member owning a file the group's merged index lists.
 	GetGroupPackageOwner(ctx context.Context, groupID, path string) (string, bool, error)

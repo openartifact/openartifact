@@ -441,7 +441,7 @@ func quarantineKeys(format, key string) []string {
 		return quarantine.PathKeys(dockerQuarantineKeys(key)...)
 	}
 
-	return quarantine.PathKeys(key) // raw, maven, npm: the unit key is the path
+	return quarantine.PathKeys(key) // maven, npm, raw: the unit key is the path
 }
 
 // cutLast splits s around the last '@'; without one the whole string is the head.
