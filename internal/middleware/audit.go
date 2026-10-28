@@ -41,6 +41,12 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 				}
 			}
 
+			// Browser telemetry exports change nothing and arrive every few
+			// seconds per open UI: auditing them would bury real events.
+			if routeTemplate == "/api/v1/telemetry/{signal}" {
+				return
+			}
+
 			actor := "anonymous"
 			if p := PrincipalFromContext(r.Context()); p != nil && !p.IsAnonymous {
 				actor = p.Username

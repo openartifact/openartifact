@@ -8,9 +8,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -79,5 +81,33 @@ func TestAuditMiddlewareClientIP(t *testing.T) {
 				t.Fatal("audit event was not recorded")
 			}
 		})
+	}
+}
+
+// TestAuditMiddlewareSkipsTelemetryRelay: browser telemetry exports are not
+// audited. Events are written in order, so the first one recorded after the
+// relay request must be the following request's.
+func TestAuditMiddlewareSkipsTelemetryRelay(t *testing.T) {
+	db := &auditCaptureDB{events: make(chan *models.AuditLog, 2)}
+	logger := audit.NewLogger(db, nil, nil, 1)
+	defer func() { _ = logger.Shutdown(context.Background()) }()
+
+	r := chi.NewRouter()
+	r.Use(AuditMiddleware(logger))
+	noop := func(http.ResponseWriter, *http.Request) {}
+	r.Post("/api/v1/telemetry/{signal}", noop)
+	r.Post("/api/v1/repositories", noop)
+
+	for _, path := range []string{"/api/v1/telemetry/traces", "/api/v1/repositories"} {
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, nil))
+	}
+
+	select {
+	case event := <-db.events:
+		if strings.Contains(string(event.DetailsJSON), "telemetry") {
+			t.Fatalf("telemetry relay request audited: %s", event.DetailsJSON)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("audit event of the following request was not recorded")
 	}
 }

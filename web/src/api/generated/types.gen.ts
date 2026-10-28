@@ -134,6 +134,17 @@ export type ReadyResponse = {
     reason?: string;
 };
 
+export type FrontendTelemetryConfig = {
+    /**
+     * Always true: the endpoint answers 404 while frontend telemetry is off
+     */
+    enabled: boolean;
+    /**
+     * Fraction of new UI traces recorded (telemetry.otlp.sampleRatio)
+     */
+    sample_ratio: number;
+};
+
 export type PublicSystemInfo = {
     version?: string;
     status?: string;
@@ -3386,6 +3397,85 @@ export type GetApiV1SystemInfoResponses = {
 };
 
 export type GetApiV1SystemInfoResponse = GetApiV1SystemInfoResponses[keyof GetApiV1SystemInfoResponses];
+
+export type GetApiV1TelemetryFrontendData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/telemetry/frontend';
+};
+
+export type GetApiV1TelemetryFrontendErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Frontend telemetry is off
+     */
+    404: unknown;
+};
+
+export type GetApiV1TelemetryFrontendResponses = {
+    /**
+     * Frontend telemetry is on
+     */
+    200: FrontendTelemetryConfig;
+};
+
+export type GetApiV1TelemetryFrontendResponse = GetApiV1TelemetryFrontendResponses[keyof GetApiV1TelemetryFrontendResponses];
+
+export type PostApiV1TelemetryBySignalData = {
+    /**
+     * OTLP ExportTraceServiceRequest or ExportLogsServiceRequest
+     */
+    body: Blob | File;
+    path: {
+        signal: 'traces' | 'logs';
+    };
+    query?: never;
+    url: '/api/v1/telemetry/{signal}';
+};
+
+export type PostApiV1TelemetryBySignalErrors = {
+    /**
+     * The collector rejected the payload
+     */
+    400: unknown;
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Not a browser session, or missing CSRF token
+     */
+    403: unknown;
+    /**
+     * Frontend telemetry is off, or the signal is not relayed
+     */
+    404: unknown;
+    /**
+     * Body larger than 1 MiB
+     */
+    413: unknown;
+    /**
+     * Content-Type is not application/x-protobuf, or the body is compressed
+     */
+    415: unknown;
+    /**
+     * The collector is unreachable or failed
+     */
+    502: unknown;
+};
+
+export type PostApiV1TelemetryBySignalResponses = {
+    /**
+     * Accepted by the collector; the body is its OTLP export response
+     */
+    200: Blob | File;
+};
+
+export type PostApiV1TelemetryBySignalResponse = PostApiV1TelemetryBySignalResponses[keyof PostApiV1TelemetryBySignalResponses];
 
 export type PostApiV1AuthLoginData = {
     body: {

@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 REST API of the OpenArtifact artifact repository manager.
 
-This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 292 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
+This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 294 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
 ## Security
 
@@ -52,7 +52,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Search](search.md) | 1 | - |
 | [SSO](sso.md) | 13 | - |
 | [Storage](storage.md) | 25 | - |
-| [System](system.md) | 5 | - |
+| [System](system.md) | 7 | - |
 | [Tokens](tokens.md) | 9 | - |
 | [Trash](trash.md) | 6 | - |
 | [Users](users.md) | 9 | - |
@@ -60,4 +60,4 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 ## Schemas
 
-All 159 named request and response objects are on the [schemas page](schemas.md).
+All 160 named request and response objects are on the [schemas page](schemas.md).

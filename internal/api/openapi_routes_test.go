@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/ai"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -58,6 +59,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	sso.RegisterPublic(r)
 	sso.RegisterAuthed(r)
 	NewOpenAPIHandler("", true).RegisterRoutes(r)
+	NewFrontendTelemetryHandler(telemetry.Config{}, nil, nil).RegisterAuthed(r)
 	NewAdminUsersHandler(nil, nil, nil).Register(r)
 	NewAdminGroupsHandler(nil, nil, nil).Register(r)
 	NewAdminPermissionsHandler(nil, nil, nil).Register(r)

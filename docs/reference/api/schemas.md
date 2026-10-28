@@ -635,6 +635,13 @@ An inbound token a peer presents to pull this repository's log. The secret is sh
 | `name` | string | yes | - |
 | `token` | string | yes | Clear-text token, returned only by this response. |
 
+### FrontendTelemetryConfig
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | yes | Always true: the endpoint answers 404 while frontend telemetry is off |
+| `sample_ratio` | number | yes | Fraction of new UI traces recorded (telemetry.otlp.sampleRatio). Minimum: 0. Maximum: 1. |
+
 ### GPGKey
 
 A signing key. Private key material is never part of the API.

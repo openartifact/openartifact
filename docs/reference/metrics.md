@@ -69,6 +69,12 @@ Buckets of `openartifact_blob_operation_duration_seconds`: 0.0005, 0.001, 0.0025
 | `openartifact_federation_pull_errors_total` | counter | `repo`, `peer` | Pull attempts of a peer that ended in an error. |
 | `openartifact_federation_resumed_total` | counter | `repo`, `peer` | Blob transfers from a peer resumed with a Range request after the connection dropped (or from a partial download of an earlier pull). |
 
+## Frontend
+
+| Metric | Type | Labels | Help |
+|---|---|---|---|
+| `openartifact_frontend_telemetry_requests_total` | counter | `signal`, `result` | Export requests of the experimental browser telemetry relay, by signal (traces, logs) and result: relayed (the collector accepted them), rejected (refused by the relay or the collector as invalid) or failed (collector unreachable or erroring, answered 502). |
+
 ## HTTP
 
 | Metric | Type | Labels | Help |

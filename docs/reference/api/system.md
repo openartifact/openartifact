@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # System API
 
-5 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+7 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -38,6 +38,51 @@ Returns the public version and health status. Detailed build and runtime informa
 | Status | Description | Body |
 |---|---|---|
 | `200` | System information | `application/json`: [PublicSystemInfo](schemas.md#publicsysteminfo) |
+
+### `GET /api/v1/telemetry/frontend`
+
+Frontend telemetry settings
+
+Experimental. Tells the web UI whether to load the OpenTelemetry browser SDK and the trace sample ratio to use (telemetry.otlp.sampleRatio). Answers 404 while telemetry.frontend.enabled or telemetry.otlp.enabled is off.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Frontend telemetry is on | `application/json`: [FrontendTelemetryConfig](schemas.md#frontendtelemetryconfig) |
+| `401` | Not authenticated | - |
+| `404` | Frontend telemetry is off | - |
+
+### `POST /api/v1/telemetry/{signal}`
+
+Relay browser telemetry
+
+Experimental. Same-origin relay of the web UI's OTLP/HTTP export requests: the body is forwarded unchanged to the collector (telemetry.frontend.endpoint, or telemetry.otlp.endpoint when it speaks OTLP/HTTP) with the configured headers. Browser sessions only (with the CSRF header); API tokens are refused. The body is capped at 1 MiB. Answers 404 while frontend telemetry is off and for any signal other than traces and logs.
+
+**Security:** `cookieAuth`.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `signal` | path | string | yes | One of: `traces`, `logs`. |
+
+**Request body** (required)
+
+`application/x-protobuf`: string (binary)
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Accepted by the collector; the body is its OTLP export response | `application/x-protobuf`: string (binary) |
+| `400` | The collector rejected the payload | - |
+| `401` | Not authenticated | - |
+| `403` | Not a browser session, or missing CSRF token | - |
+| `404` | Frontend telemetry is off, or the signal is not relayed | - |
+| `413` | Body larger than 1 MiB | - |
+| `415` | Content-Type is not application/x-protobuf, or the body is compressed | - |
+| `502` | The collector is unreachable or failed | - |
 
 ### `GET /health`
 

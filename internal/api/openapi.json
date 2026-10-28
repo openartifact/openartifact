@@ -428,6 +428,25 @@
           }
         }
       },
+      "FrontendTelemetryConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Always true: the endpoint answers 404 while frontend telemetry is off"
+          },
+          "sample_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Fraction of new UI traces recorded (telemetry.otlp.sampleRatio)"
+          }
+        },
+        "required": [
+          "enabled",
+          "sample_ratio"
+        ]
+      },
       "PublicSystemInfo": {
         "type": "object",
         "properties": {
@@ -7188,6 +7207,107 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/telemetry/frontend": {
+      "get": {
+        "summary": "Frontend telemetry settings",
+        "description": "Experimental. Tells the web UI whether to load the OpenTelemetry browser SDK and the trace sample ratio to use (telemetry.otlp.sampleRatio). Answers 404 while telemetry.frontend.enabled or telemetry.otlp.enabled is off.",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "Frontend telemetry is on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendTelemetryConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "404": {
+            "description": "Frontend telemetry is off"
+          }
+        }
+      }
+    },
+    "/api/v1/telemetry/{signal}": {
+      "post": {
+        "summary": "Relay browser telemetry",
+        "description": "Experimental. Same-origin relay of the web UI's OTLP/HTTP export requests: the body is forwarded unchanged to the collector (telemetry.frontend.endpoint, or telemetry.otlp.endpoint when it speaks OTLP/HTTP) with the configured headers. Browser sessions only (with the CSRF header); API tokens are refused. The body is capped at 1 MiB. Answers 404 while frontend telemetry is off and for any signal other than traces and logs.",
+        "tags": [
+          "System"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "signal",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "traces",
+                "logs"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-protobuf": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "OTLP ExportTraceServiceRequest or ExportLogsServiceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted by the collector; the body is its OTLP export response",
+            "content": {
+              "application/x-protobuf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The collector rejected the payload"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Not a browser session, or missing CSRF token"
+          },
+          "404": {
+            "description": "Frontend telemetry is off, or the signal is not relayed"
+          },
+          "413": {
+            "description": "Body larger than 1 MiB"
+          },
+          "415": {
+            "description": "Content-Type is not application/x-protobuf, or the body is compressed"
+          },
+          "502": {
+            "description": "The collector is unreachable or failed"
           }
         }
       }

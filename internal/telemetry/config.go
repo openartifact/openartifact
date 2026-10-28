@@ -70,6 +70,24 @@ type FrontendConfig struct {
 // feature toggle and the OTLP master switch.
 func (c Config) FrontendActive() bool { return c.Frontend.Enabled && c.OTLP.Enabled }
 
+// FrontendURL is the collector URL the relay forwards signal ("traces" or
+// "logs") to. It assumes a configuration Validate accepted with the frontend
+// active.
+func (c Config) FrontendURL(signal string) string {
+	if c.Frontend.Endpoint != "" {
+		return strings.TrimRight(strings.TrimSpace(c.Frontend.Endpoint), "/") + "/v1/" + signal
+	}
+
+	ep, _ := parseEndpoint(c.OTLP.Endpoint)
+
+	scheme := "https"
+	if ep.plaintext || c.OTLP.Insecure {
+		scheme = "http"
+	}
+
+	return scheme + "://" + ep.hostPort + ep.path + "/v1/" + signal
+}
+
 // OTLPConfig configures the OTLP exporters. The endpoint, protocol, headers
 // and TLS settings are shared by every signal. The standard OTEL_* environment
 // variables override the file; the signal specific OTEL_EXPORTER_OTLP_TRACES_*,
