@@ -376,7 +376,7 @@ service:
       processors: [memory_limiter, redaction/frontend, batch]
 ```
 
-The data carries `service.name=openartifact-web`: filter on it in the backend to separate the UI from the server.
+The UI sets `service.name=openartifact-web`: filter on it to separate the UI from the server. The relay forwards payloads unchanged and accepts them from every signed-in account, so a user can send records with any resource attributes, including the server's own `service.name`: treat this data as untrusted.
 
 #### What the UI sends
 
