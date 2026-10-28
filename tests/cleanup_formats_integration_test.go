@@ -93,7 +93,7 @@ func (e *cleanupQuotaEnv) seedFormat(repoID, format, name, version string, ageDa
 			VALUES ($1, $2, $3, 'h0_0', 'linux-64', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
 	case "ansible":
 		id = e.queryID(`INSERT INTO ansible_collections (repository_id, namespace, name, version, filename, blob_id, created_at, updated_at)
-			VALUES ($1, 'acme', $2, $3, $2 || '-' || $3 || '.tar.gz', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
+			VALUES ($1, 'acme', $2::text, $3::text, $2::text || '-' || $3::text || '.tar.gz', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
 	case "pacman":
 		id = e.queryID(
 			`INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, created_at, updated_at)

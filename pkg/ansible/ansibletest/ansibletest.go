@@ -14,8 +14,13 @@ import (
 	"encoding/json"
 	"maps"
 	"slices"
-	"testing"
 )
+
+// TB is the part of testing.TB the builders use, which fuzz targets satisfy too.
+type TB interface {
+	Helper()
+	Fatal(args ...any)
+}
 
 // Spec describes a collection.
 type Spec struct {
@@ -43,7 +48,7 @@ func sum(b []byte) string {
 	return hex.EncodeToString(s[:])
 }
 
-func mustJSON(tb testing.TB, v any) []byte {
+func mustJSON(tb TB, v any) []byte {
 	tb.Helper()
 
 	b, err := json.Marshal(v)
@@ -56,7 +61,7 @@ func mustJSON(tb testing.TB, v any) []byte {
 
 // Entries returns the entries of a valid artifact of s: MANIFEST.json,
 // FILES.json and the files.
-func Entries(tb testing.TB, s Spec) []Entry {
+func Entries(tb TB, s Spec) []Entry {
 	tb.Helper()
 
 	files := map[string]string{"README.md": "# " + s.Name + "\n"}
@@ -100,7 +105,7 @@ func Entries(tb testing.TB, s Spec) []Entry {
 }
 
 // Tar returns the gzip-compressed tar of entries.
-func Tar(tb testing.TB, entries []Entry) []byte {
+func Tar(tb TB, entries []Entry) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
@@ -143,7 +148,7 @@ func Tar(tb testing.TB, entries []Entry) []byte {
 }
 
 // Build returns a valid artifact of s.
-func Build(tb testing.TB, s Spec) []byte {
+func Build(tb TB, s Spec) []byte {
 	tb.Helper()
 
 	return Tar(tb, Entries(tb, s))
