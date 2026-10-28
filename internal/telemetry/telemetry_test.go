@@ -94,7 +94,7 @@ func routerWithMiddleware() http.Handler {
 }
 
 func TestDisabledIsNoOp(t *testing.T) {
-	shutdown, err := Setup(t.Context(), DefaultConfig(), Build{}, nil, nil)
+	shutdown, err := Setup(t.Context(), DefaultConfig(), Build{}, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

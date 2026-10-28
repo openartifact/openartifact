@@ -148,7 +148,7 @@ func describeRegistered() ([]describedMetric, error) {
 	rec := &descRecorder{}
 
 	metrics.NewRegistryOn(rec)
-	rec.MustRegister(metrics.NewDBPoolCollector())
+	rec.MustRegister(metrics.NewDBPoolCollector(), metrics.NewTelemetryLogRecordsDropped())
 
 	if _, err := federation.NewMetrics(rec, nil); err != nil {
 		return nil, fmt.Errorf("federation metrics: %w", err)

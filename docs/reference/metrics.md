@@ -128,6 +128,12 @@ Buckets of `openartifact_metadata_regeneration_duration_seconds`: 0.005, 0.01, 0
 | `openartifact_storage_tier_moves_total` | counter | `from`, `to`, `result` | Blob moves between storage tiers by outcome (moved, failed, skipped). |
 | `openartifact_storage_tier_reads_total` | counter | `tier` | Blob reads served from each storage tier. |
 
+## Telemetry
+
+| Metric | Type | Labels | Help |
+|---|---|---|---|
+| `openartifact_telemetry_log_records_dropped_total` | counter | `scope` | Log records not exported over OTLP because the export queue was full (collector slow or unreachable), by instrumentation scope. |
+
 ## Trash
 
 | Metric | Type | Labels | Help |

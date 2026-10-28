@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -69,6 +71,9 @@ type app struct {
 	db          *database.PostgresDB
 	reg         *metrics.Registry
 	auditLogger *audit.Logger
+	// logDropped is created with the OTLP log provider, before reg, and
+	// registered with it.
+	logDropped *prometheus.CounterVec
 
 	store   storageStack
 	workers workerSet

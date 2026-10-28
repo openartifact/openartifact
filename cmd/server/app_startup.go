@@ -70,8 +70,11 @@ func (a *app) logStartup() {
 // before the database and the HTTP clients are used; it is flushed on the way
 // out.
 func (a *app) setupTelemetry() error {
+	a.logDropped = metrics.NewTelemetryLogRecordsDropped()
+
 	shutdownTelemetry, err := telemetry.Setup(context.Background(), a.cfg.Telemetry,
-		telemetry.Build{Version: version, InstanceID: a.cfg.Server.InstanceID}, prometheus.DefaultGatherer, a.log)
+		telemetry.Build{Version: version, InstanceID: a.cfg.Server.InstanceID}, prometheus.DefaultGatherer,
+		a.logDropped, a.log)
 	if err != nil {
 		return a.fail("failed to initialize telemetry", err)
 	}
@@ -171,6 +174,7 @@ func (a *app) initCore() error {
 	}
 
 	a.reg = metrics.NewRegistry()
+	prometheus.MustRegister(a.logDropped)
 	metrics.RegisterDBPools(a.db.PoolStat, a.db.GetDB().Stats)
 
 	a.auditLogger = audit.NewLogger(a.db, a.log, a.reg, 1000)

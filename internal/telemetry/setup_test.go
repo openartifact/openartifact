@@ -77,7 +77,7 @@ func TestSetupExportsTracesAndMetricsOverOTLPHTTP(t *testing.T) {
 	cfg.OTLP.Metrics = true
 	cfg.OTLP.Logs = true
 
-	shutdown, err := Setup(t.Context(), cfg, Build{Version: "9.9.9", InstanceID: "node-1"}, reg, nil)
+	shutdown, err := Setup(t.Context(), cfg, Build{Version: "9.9.9", InstanceID: "node-1"}, reg, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestSetupSignalMatrix(t *testing.T) {
 
 			warn := &warnings{}
 
-			shutdown, err := Setup(t.Context(), cfg, Build{}, prometheus.NewRegistry(), warn)
+			shutdown, err := Setup(t.Context(), cfg, Build{}, prometheus.NewRegistry(), nil, warn)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -252,7 +252,7 @@ func TestSetupTracesOnlyByDefault(t *testing.T) {
 	cfg.OTLP.Protocol = ProtocolHTTP
 	cfg.OTLP.Endpoint = srv.URL
 
-	shutdown, err := Setup(t.Context(), cfg, Build{}, prometheus.NewRegistry(), nil)
+	shutdown, err := Setup(t.Context(), cfg, Build{}, prometheus.NewRegistry(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -82,9 +82,17 @@ func Install(tp trace.TracerProvider) func() {
 // single log provider (otel.SetLoggerProvider) when logs or audit is on. With
 // cfg.OTLP.Enabled false, or every signal off, it installs nothing and the
 // returned shutdown is a no-op. gatherer feeds the metrics bridge (nil
-// disables it). The shutdown flushes every provider and restores the no-op
-// ones.
-func Setup(ctx context.Context, cfg Config, build Build, gatherer prometheus.Gatherer, log Logger) (func(context.Context) error, error) {
+// disables it). logDropped counts, by instrumentation scope, the log records
+// the log provider drops because its export queue is full (nil counts
+// nothing). The shutdown flushes every provider and restores the no-op ones.
+func Setup(
+	ctx context.Context,
+	cfg Config,
+	build Build,
+	gatherer prometheus.Gatherer,
+	logDropped *prometheus.CounterVec,
+	log Logger,
+) (func(context.Context) error, error) {
 	noopShutdown := func(context.Context) error { return nil }
 
 	o := cfg.OTLP
@@ -111,7 +119,7 @@ func Setup(ctx context.Context, cfg Config, build Build, gatherer prometheus.Gat
 
 	otel.SetErrorHandler(newErrorHandler(log))
 
-	stops, err := startProviders(ctx, o, res, gatherer)
+	stops, err := startProviders(ctx, o, res, gatherer, logDropped)
 	shutdown := func(ctx context.Context) error {
 		var errs []error
 		for _, s := range stops {
@@ -137,6 +145,7 @@ func startProviders(
 	o OTLPConfig,
 	res *resource.Resource,
 	gatherer prometheus.Gatherer,
+	logDropped *prometheus.CounterVec,
 ) ([]func(context.Context) error, error) {
 	var stops []func(context.Context) error
 
@@ -179,7 +188,7 @@ func startProviders(
 	// openartifact.audit (audit) scopes; which scopes write to it is up to
 	// their emitters, according to the two switches.
 	if o.Logs || o.Audit {
-		lp, err := newLoggerProvider(ctx, o, res)
+		lp, err := newLoggerProvider(ctx, o, res, logDropped)
 		if err != nil {
 			return stops, fmt.Errorf("telemetry log exporter: %w", err)
 		}
@@ -328,7 +337,12 @@ func newMeterProvider(ctx context.Context, o OTLPConfig, res *resource.Resource,
 	), nil
 }
 
-func newLoggerProvider(ctx context.Context, o OTLPConfig, res *resource.Resource) (*sdklog.LoggerProvider, error) {
+func newLoggerProvider(
+	ctx context.Context,
+	o OTLPConfig,
+	res *resource.Resource,
+	dropped *prometheus.CounterVec,
+) (*sdklog.LoggerProvider, error) {
 	ep, err := endpointFor(o)
 	if err != nil {
 		return nil, err
@@ -376,7 +390,7 @@ func newLoggerProvider(ctx context.Context, o OTLPConfig, res *resource.Resource
 
 	return sdklog.NewLoggerProvider(
 		sdklog.WithResource(res),
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
+		sdklog.WithProcessor(newCountingProcessor(exp, dropped)),
 	), nil
 }
 

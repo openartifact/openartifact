@@ -68,6 +68,20 @@ func NewRegistry() *Registry {
 	return NewRegistryOn(prometheus.DefaultRegisterer)
 }
 
+// NewTelemetryLogRecordsDropped creates the unregistered counter of log
+// records the OTLP log provider dropped because its export queue was full. It
+// is not part of Registry because the provider starts before the registry is
+// built; the server registers it together with the registry. The scope label
+// is the instrumentation scope name, a set fixed by the code that emits logs
+// (never by request input).
+func NewTelemetryLogRecordsDropped() *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "openartifact_telemetry_log_records_dropped_total",
+		Help: "Log records not exported over OTLP because the export queue was full (collector slow or unreachable), " +
+			"by instrumentation scope.",
+	}, []string{"scope"})
+}
+
 // NewRegistryOn is NewRegistry with an explicit Prometheus registerer, so tests
 // can build a Registry (and read it back) without touching the process-wide
 // default registry, where a second registration would panic.
