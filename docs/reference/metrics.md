@@ -87,6 +87,18 @@ Buckets of `openartifact_http_request_duration_seconds`: 0.005, 0.01, 0.025, 0.0
 
 Buckets of `openartifact_metadata_regeneration_duration_seconds`: 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10.
 
+## Osv
+
+| Metric | Type | Labels | Help |
+|---|---|---|---|
+| `openartifact_osv_mirror_advisories` | gauge | `ecosystem` | Number of live (not withdrawn) advisories in the local OSV mirror that affect an ecosystem. |
+| `openartifact_osv_mirror_findings_total` | counter | `change` | Total number of findings the OSV re-match changed, by change (new, updated, resolved). |
+| `openartifact_osv_mirror_imports_total` | counter | `ecosystem`, `result` | Total number of OSV mirror imports, by ecosystem and result (imported, unchanged, error). |
+| `openartifact_osv_mirror_last_import_timestamp_seconds` | gauge | `ecosystem` | Unix time of the last successful OSV mirror import of an ecosystem (a check that found the export unchanged counts). |
+| `openartifact_osv_mirror_rematch_duration_seconds` | histogram | none | Duration of the re-match of the stored packages against the changed OSV advisories of one ecosystem. |
+
+Buckets of `openartifact_osv_mirror_rematch_duration_seconds`: 1, 5, 15, 60, 300, 900, 3600.
+
 ## Disaster-recovery journal
 
 | Metric | Type | Labels | Help |

@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "从回收站恢复仓库时触发",
   "adm.webhooks.event.repository.purged": "从回收站永久清除仓库时触发",
   "adm.webhooks.event.bundle.promoted": "将发布捆绑包晋级到流水线阶段的仓库时触发",
+  "adm.webhooks.event.vulnerability.new": "OSV 镜像在已存储的软件包版本中发现新漏洞时触发",
   "adm.webhooks.loadFailed": "加载 Webhook 失败",
   "adm.webhooks.created": "Webhook 已创建",
   "adm.webhooks.createFailed": "创建 Webhook 失败",

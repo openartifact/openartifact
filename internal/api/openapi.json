@@ -1347,7 +1347,8 @@
                 "artifact.purged",
                 "repository.restored",
                 "repository.purged",
-                "bundle.promoted"
+                "bundle.promoted",
+                "vulnerability.new"
               ]
             }
           },
@@ -4915,6 +4916,129 @@
           "priority"
         ]
       },
+      "OSVMirrorEcosystem": {
+        "type": "object",
+        "description": "Import state of one ecosystem of the local OSV mirror.",
+        "properties": {
+          "ecosystem": {
+            "type": "string",
+            "description": "OSV ecosystem name, e.g. `npm` or `crates.io`."
+          },
+          "populated": {
+            "type": "boolean",
+            "description": "True once an import completed; only then does the `osv` scanner match against the mirror."
+          },
+          "advisories": {
+            "type": "integer",
+            "description": "Advisories that affect the ecosystem."
+          },
+          "high_water": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Newest advisory modification imported."
+          },
+          "last_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_imported_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_import_seconds": {
+            "type": "number"
+          },
+          "last_rematch_seconds": {
+            "type": "number"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Failure of the last import; null when it succeeded."
+          },
+          "rematch_pending": {
+            "type": "boolean",
+            "description": "True while changed advisories are not yet matched against the stored packages."
+          }
+        },
+        "required": [
+          "ecosystem",
+          "populated",
+          "advisories",
+          "high_water",
+          "last_checked_at",
+          "last_imported_at",
+          "last_import_seconds",
+          "last_rematch_seconds",
+          "last_error",
+          "rematch_pending"
+        ]
+      },
+      "OSVMirrorStatus": {
+        "type": "object",
+        "description": "Local OSV mirror status.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "source_url": {
+            "type": "string",
+            "description": "Configured export location, without credentials."
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "ecosystems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OSVMirrorEcosystem"
+            }
+          },
+          "attribution": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "OSV"
+                ]
+              },
+              "license": {
+                "type": "string",
+                "enum": [
+                  "CC-BY-4.0"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "license",
+              "url"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "source_url",
+          "interval_seconds",
+          "ecosystems",
+          "attribution"
+        ]
+      },
       "VulnScanner": {
         "type": "object",
         "description": "Whether one vulnerability scanner can run on the server. Fixed, client-safe text only.",
@@ -8478,7 +8602,8 @@
                         "artifact.purged",
                         "repository.restored",
                         "repository.purged",
-                        "bundle.promoted"
+                        "bundle.promoted",
+                        "vulnerability.new"
                       ]
                     }
                   },
@@ -11095,6 +11220,30 @@
         }
       }
     },
+    "/api/v1/vuln/osv-mirror": {
+      "get": {
+        "summary": "Show the local OSV mirror",
+        "description": "Import state of the local OSV advisory mirror (admin only): the export location, the schedule and, per configured ecosystem, the advisory count, the last import and re-match, and the last error. When `enabled` is false the `osv` scanner queries the online API. The advisory data is licensed CC-BY 4.0; `attribution` names the source.",
+        "tags": [
+          "Scanning"
+        ],
+        "responses": {
+          "200": {
+            "description": "Mirror status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OSVMirrorStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
     "/api/v1/vuln/scans/summary": {
       "get": {
         "summary": "Count vulnerability scans of all repositories",
@@ -12422,7 +12571,8 @@
                         "artifact.purged",
                         "repository.restored",
                         "repository.purged",
-                        "bundle.promoted"
+                        "bundle.promoted",
+                        "vulnerability.new"
                       ]
                     }
                   },
@@ -12598,7 +12748,8 @@
                         "artifact.purged",
                         "repository.restored",
                         "repository.purged",
-                        "bundle.promoted"
+                        "bundle.promoted",
+                        "vulnerability.new"
                       ]
                     }
                   },

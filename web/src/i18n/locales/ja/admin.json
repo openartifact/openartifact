@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "リポジトリがゴミ箱から復元されたときに発火します",
   "adm.webhooks.event.repository.purged": "リポジトリがゴミ箱から完全に消去されたときに発火します",
   "adm.webhooks.event.bundle.promoted": "リリースバンドルがパイプラインステージのリポジトリにプロモートされたときに発火します",
+  "adm.webhooks.event.vulnerability.new": "OSV ミラーが保存済みパッケージバージョンの新しい脆弱性を検出したときに発火します",
   "adm.webhooks.loadFailed": "Webhook を読み込めませんでした",
   "adm.webhooks.created": "Webhook を作成しました",
   "adm.webhooks.createFailed": "Webhook を作成できませんでした",

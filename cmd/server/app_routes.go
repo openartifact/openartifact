@@ -548,13 +548,20 @@ func (a *app) registerVulnRoutes() {
 	// Trivy and grype are external binaries; the registry downloads and
 	// refreshes their databases in the background (docs/security/scanning.md).
 	scannerRegistry := vuln.NewRegistry(a.log, a.cfg.Scanners.VulnOptions()).WithMetrics(a.reg)
+	if a.cfg.OSVMirror.Enabled {
+		scannerRegistry = scannerRegistry.WithOSVMirror(vuln.NewMirror(a.db))
+	}
+
 	scannerRegistry.LogStatus()
 	scannerRegistry.Start(context.Background())
 
 	a.extraStops = append(a.extraStops, scannerRegistry.Stop)
 
-	vulnHandler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scannerRegistry).WithTasks(a.tasks).WithScanHook(a.onScanned).
-		WithExploit(a.workers.exploit)
+	vulnHandler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scannerRegistry).
+		WithTasks(a.tasks).
+		WithScanHook(a.onScanned).
+		WithExploit(a.workers.exploit).
+		WithOSVMirror(a.cfg.OSVMirror)
 	vulnHandler.RegisterRoutes(a.web.authed, "/api/v1/repositories/{name}")
 	vulnHandler.RegisterOverviewRoutes(a.web.authed)
 

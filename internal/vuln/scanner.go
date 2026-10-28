@@ -51,6 +51,47 @@ type OSVScanner struct {
 	log        *logger.Logger
 	httpClient *http.Client
 	osvBaseURL string
+	// mirror, when set, answers the ecosystems it holds from the local OSV
+	// mirror; the online API serves the others and any mirror failure.
+	mirror *Mirror
+}
+
+// WithMirror makes the scanner match against the local OSV mirror whenever it
+// is populated for the package's ecosystem, keeping the online API as the
+// fallback.
+func (s *OSVScanner) WithMirror(m *Mirror) *OSVScanner {
+	s.mirror = m
+
+	return s
+}
+
+// scanMirror matches pkg against the local mirror. ok is false when the mirror
+// is not configured, holds no completed import of the ecosystem or failed: the
+// caller then queries the online API.
+func (s *OSVScanner) scanMirror(ctx context.Context, osvEcosystem string, pkg Package) ([]models.Vulnerability, bool) {
+	if s.mirror == nil {
+		return nil, false
+	}
+
+	ready, err := s.mirror.Ready(ctx, osvEcosystem)
+	if err != nil {
+		s.log.Warnw("osv mirror unavailable, using the online API", "error", err)
+
+		return nil, false
+	}
+
+	if !ready {
+		return nil, false
+	}
+
+	res, err := s.mirror.Match(ctx, osvEcosystem, []NameVersion{{Name: pkg.Name, Version: pkg.Version}})
+	if err != nil {
+		s.log.Warnw("osv mirror lookup failed, using the online API", "error", err)
+
+		return nil, false
+	}
+
+	return res[0], true
 }
 
 // NewOSVScanner creates a new OSV vulnerability scanner.
@@ -116,6 +157,10 @@ func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerabil
 	osvEcosystem := mapEcosystem(pkg.Ecosystem)
 	if osvEcosystem == "" {
 		return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, pkg.Ecosystem))
+	}
+
+	if vulns, ok := s.scanMirror(ctx, osvEcosystem, pkg); ok {
+		return vulns, nil
 	}
 
 	// Build request

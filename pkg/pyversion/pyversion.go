@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package pypi
+package pyversion
 
 import (
 	"cmp"
@@ -17,7 +17,7 @@ var pep440Re = regexp.MustCompile(
 		`(?:(?:-(\d+))|(?:[-_.]?(post|rev|r)[-_.]?(\d*)))?(?:[-_.]?(dev)[-_.]?(\d*))?(?:\+.*)?$`,
 )
 
-// pep440Key is a parsed version, comparable via comparePEP440.
+// pep440Key is a parsed version, comparable via Compare.
 type pep440Key struct {
 	epoch    int
 	release  []int
@@ -30,7 +30,7 @@ type pep440Key struct {
 
 const noDev = int(^uint(0) >> 1)
 
-func parsePEP440(v string) (pep440Key, bool) {
+func parse(v string) (pep440Key, bool) {
 	m := pep440Re.FindStringSubmatch(strings.ToLower(strings.TrimSpace(v)))
 	if m == nil {
 		return pep440Key{}, false
@@ -79,11 +79,11 @@ func parsePEP440(v string) (pep440Key, bool) {
 	return k, true
 }
 
-// comparePEP440 orders two versions; versions that do not parse sort below
+// Compare orders two versions; versions that do not parse sort below
 // every valid one and among themselves lexically.
-func comparePEP440(a, b string) int {
-	ka, okA := parsePEP440(a)
-	kb, okB := parsePEP440(b)
+func Compare(a, b string) int {
+	ka, okA := parse(a)
+	kb, okB := parse(b)
 
 	switch {
 	case !okA && !okB:
@@ -119,4 +119,11 @@ func comparePEP440(a, b string) int {
 		cmp.Compare(ka.post, kb.post),
 		cmp.Compare(ka.dev, kb.dev),
 	)
+}
+
+// Valid reports whether v parses as a PEP 440 version.
+func Valid(v string) bool {
+	_, ok := parse(v)
+
+	return ok
 }

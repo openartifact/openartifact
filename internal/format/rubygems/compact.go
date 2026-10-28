@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/compactindex"
+	"github.com/openartifact/openartifact/pkg/gemversion"
 )
 
 // The compact index (versions, names, info/<gem>) is what bundler and current
@@ -251,7 +252,7 @@ func sortGemsAscending(gems []*models.RubyGem) {
 	}
 
 	slices.SortStableFunc(gems, func(a, b *models.RubyGem) int {
-		return cmp.Or(compareVersions(a.Version, b.Version), strings.Compare(platform(a), platform(b)))
+		return cmp.Or(gemversion.Compare(a.Version, b.Version), strings.Compare(platform(a), platform(b)))
 	})
 }
 

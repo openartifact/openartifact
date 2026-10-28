@@ -40,6 +40,7 @@ function mockApi(api: Api = {}) {
     }
     if (url.pathname === '/api/v1/security/exploit-feeds') return api.feeds ? json(api.feeds) : json({ error: 'nope', code: 'forbidden' }, 403)
     if (url.pathname === '/api/v1/security/health') return json(api.health ?? { scanners: [], ai: { enabled: true }, scans_pending: 0, scans_failed_24h: 0, unscanned_repositories: 0, dependency_track: { enabled: false } })
+    if (url.pathname === '/api/v1/vuln/osv-mirror') return json({ enabled: false, source_url: '', interval_seconds: 0, ecosystems: [], attribution: { source: 'OSV', license: 'CC-BY-4.0', url: 'https://osv.dev' } })
     if (url.pathname === '/api/v1/repositories') return json({ total: 1, repositories: [{ name: 'libs' }] })
     if (/\/vuln\/scans\/[^/]+$/.test(url.pathname)) return json({ id: 'f1', artifact_id: 'a1', status: 'completed', scanner: 'osv', package_name: 'left-pad', package_version: '1.0.0', results: [] })
     return json({})

@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Scanning API
 
-34 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+35 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -745,6 +745,19 @@ Scanner readiness, the scan queue, the Dependency-Track and AI integrations and 
 | Status | Description | Body |
 |---|---|---|
 | `200` | The health aggregate | `application/json`: [SecurityHealth](schemas.md#securityhealth) |
+| `403` | Admin access required | - |
+
+### `GET /api/v1/vuln/osv-mirror`
+
+Show the local OSV mirror
+
+Import state of the local OSV advisory mirror (admin only): the export location, the schedule and, per configured ecosystem, the advisory count, the last import and re-match, and the last error. When `enabled` is false the `osv` scanner queries the online API. The advisory data is licensed CC-BY 4.0; `attribution` names the source.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Mirror status | `application/json`: [OSVMirrorStatus](schemas.md#osvmirrorstatus) |
 | `403` | Admin access required | - |
 
 ### `GET /api/v1/vuln/scans`

@@ -161,6 +161,8 @@ func eventTitle(event string) string {
 		return "Repository purged"
 	case EventBundlePromoted:
 		return "Bundle promoted"
+	case EventVulnerabilityNew:
+		return "Vulnerability detected"
 	case EventWebhookTest:
 		return "Webhook test"
 	default:
@@ -172,7 +174,7 @@ func eventSeverity(event string) severity {
 	switch event {
 	case EventArtifactUploaded, EventArtifactRestored, EventRepoCreated, EventRepoRestored, EventBundlePromoted:
 		return severityGood
-	case EventArtifactDeleted, EventArtifactPurged, EventRepoDeleted, EventRepoPurged:
+	case EventArtifactDeleted, EventArtifactPurged, EventRepoDeleted, EventRepoPurged, EventVulnerabilityNew:
 		return severityBad
 	default:
 		return severityInfo
@@ -276,6 +278,10 @@ func summarize(d *models.WebhookDelivery) eventSummary {
 		}
 
 		s.headline = strings.TrimSpace(title + ": " + name + " " + version)
+
+		if event == EventVulnerabilityNew {
+			facts = addFact(facts, "Vulnerabilities", vulnerabilitySummary(p))
+		}
 	} else if bundle, ok := p["bundle"].(map[string]any); ok {
 		name := payloadString(bundle, "name")
 		version := payloadString(bundle, "version")
@@ -295,6 +301,29 @@ func summarize(d *models.WebhookDelivery) eventSummary {
 	s.facts = facts
 
 	return s
+}
+
+// vulnerabilitySummary lists the advisory ids of a vulnerability.new payload
+// with their severity ("GHSA-x (HIGH), CVE-y (LOW)").
+func vulnerabilitySummary(p map[string]any) string {
+	list, _ := p["vulnerabilities"].([]any)
+	parts := make([]string, 0, len(list))
+
+	for _, item := range list {
+		v, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		id := payloadString(v, "id")
+		if sev := payloadString(v, "severity"); sev != "" {
+			id += " (" + sev + ")"
+		}
+
+		parts = append(parts, id)
+	}
+
+	return strings.Join(parts, ", ")
 }
 
 func humanSize(n int64) string {

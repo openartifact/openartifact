@@ -23,6 +23,7 @@ A webhook is either global (fires for events in every repository) or scoped to o
 | `repository.restored` | a repository is restored from the trash |
 | `repository.purged` | a trashed repository is removed for good |
 | `bundle.promoted` | a [release bundle](../repositories/release-bundles.md) was promoted: its artifacts were copied into the target repository of a pipeline stage. It goes to the webhooks of the target repository and the global ones |
+| `vulnerability.new` | the [local OSV mirror](../security/scanning.md#local-osv-mirror) found advisories that newly affect a stored package version (hosted repository or proxy cache). One event per package version, not per advisory. The first import of an ecosystem is a silent baseline and sends none. It goes to the webhooks of the repository and the global ones |
 | `webhook.test` | only by the test route; cannot be subscribed to |
 
 Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
@@ -52,6 +53,37 @@ Artifact events:
 ```
 
 `version`, `sha256` and `size` are omitted when the format or the operation does not provide them. Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`). `artifact.restored` and `artifact.purged` use the artifact payload and `repository.restored` and `repository.purged` the repository payload; only the `event` value differs. See [Trash](trash.md#audit-and-webhook-events). `bundle.promoted` carries the target repository's `event`, `timestamp`, `repository`, `format` and `type`, plus `bundle` (`name`, `version`), `from_stage` (empty when the bundle had no stage), `to_stage`, `items` (bundle items promoted), `copied` (artifacts newly written to the target) and `existing` (artifacts the target already held with the same content) and `replaced` (artifacts a forced promotion moved to the target's trash). The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
+
+`vulnerability.new` uses the repository fields plus an `artifact` block, the `type` of the repository (`hosted` or `proxy`), `source` (always `osv-mirror`) and the advisories that are new for that package version (at most 50):
+
+```json
+{
+  "event": "vulnerability.new",
+  "timestamp": "2026-01-02T15:04:05Z",
+  "repository": "REPO",
+  "format": "npm",
+  "type": "hosted",
+  "source": "osv-mirror",
+  "artifact": {
+    "repository": "REPO",
+    "format": "npm",
+    "name": "left-pad",
+    "version": "1.3.0",
+    "path": "left-pad/-/left-pad-1.3.0.tgz"
+  },
+  "vulnerabilities": [
+    {
+      "id": "GHSA-xxxx-xxxx-xxxx",
+      "severity": "high",
+      "cvss": 7.5,
+      "summary": "Short advisory title",
+      "fixed_in": "1.3.1"
+    }
+  ]
+}
+```
+
+Advisories that are later withdrawn or stop affecting the version send no webhook; they are recorded in the audit log as `scan.vuln_resolved`. The data comes from [OSV](https://osv.dev) (CC-BY 4.0).
 
 ## Payload formats
 

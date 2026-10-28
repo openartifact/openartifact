@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"testing"
+
+	"github.com/openartifact/openartifact/pkg/gemversion"
 )
 
 const sampleGemYAML = `--- !ruby/object:Gem::Specification
@@ -47,7 +49,7 @@ func TestParseYAMLGemspec(t *testing.T) {
 }
 
 func TestCompareGemVersions(t *testing.T) {
-	if compareVersions("10.0", "9.0") != 1 || compareVersions("1.0.a", "1.0") != -1 || compareVersions("1.0", "1.0.0") != 0 {
+	if gemversion.Compare("10.0", "9.0") != 1 || gemversion.Compare("1.0.a", "1.0") != -1 || gemversion.Compare("1.0", "1.0.0") != 0 {
 		t.Fatal("bad comparison")
 	}
 

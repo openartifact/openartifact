@@ -31,6 +31,7 @@ const (
 func (h *VulnHandler) RegisterOverviewRoutes(authedRouter chi.Router) {
 	authedRouter.Get("/api/v1/vuln/scans", h.handleOverview)
 	authedRouter.Get("/api/v1/vuln/scans/summary", h.handleOverviewSummary)
+	authedRouter.Get("/api/v1/vuln/osv-mirror", h.handleOSVMirrorStatus)
 	authedRouter.Get("/api/v1/vuln/scans/export", h.handleExportOverview)
 	authedRouter.Get("/api/v1/security/exploit-feeds", h.handleExploitFeeds)
 }

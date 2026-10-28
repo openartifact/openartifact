@@ -38,6 +38,7 @@ import (
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
+	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
 type HTTPHandler struct {
@@ -746,7 +747,7 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	firstPkg := versions[0]
 
 	for _, pkg := range versions[1:] {
-		if comparePEP440(pkg.Version, firstPkg.Version) > 0 {
+		if pyversion.Compare(pkg.Version, firstPkg.Version) > 0 {
 			firstPkg = pkg
 		}
 	}

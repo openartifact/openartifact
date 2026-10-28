@@ -13,6 +13,7 @@ export const WEBHOOK_EVENTS = [
   'repository.restored',
   'repository.purged',
   'bundle.promoted',
+  'vulnerability.new',
 ] as const
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]

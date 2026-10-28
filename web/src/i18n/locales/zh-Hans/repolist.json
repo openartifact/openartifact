@@ -114,6 +114,7 @@
   "activity.action.repository.restored": "仓库已恢复",
   "activity.action.repository.purged": "仓库已永久删除",
   "activity.action.scan.vuln_detected": "发现漏洞",
+  "activity.action.scan.vuln_resolved": "漏洞已解决",
   "activity.action.scan.secret_detected": "发现机密",
   "activity.action.scan.quarantine_applied": "扫描已将其隔离",
   "rl.activity.caption": "仓库活动",

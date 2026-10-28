@@ -42,6 +42,7 @@
   "adm.webhooks.event.repository.restored": "Se activa cuando se restaura un repositorio desde la papelera",
   "adm.webhooks.event.repository.purged": "Se activa cuando un repositorio se purga definitivamente de la papelera",
   "adm.webhooks.event.bundle.promoted": "Se activa cuando un bundle de versión se promueve al repositorio de una etapa del pipeline",
+  "adm.webhooks.event.vulnerability.new": "Se activa cuando el espejo OSV encuentra nuevas vulnerabilidades en una versión de paquete almacenada",
   "adm.webhooks.loadFailed": "No se pudieron cargar los webhooks",
   "adm.webhooks.created": "Webhook creado",
   "adm.webhooks.createFailed": "No se pudo crear el webhook",

@@ -12,6 +12,7 @@ import type {
   LicensePolicyViolation,
   LicenseScanResult,
   LicenseScanRunResult,
+  OsvMirrorStatus,
   VulnScanner as VulnScannerInfo,
   VulnScanRequest,
   VulnScanResult,
@@ -357,4 +358,9 @@ export function vulnScanExportUrl(repo: string, scanId: string, format: ScanExpo
  */
 export function downloadScanExport(url: string, fallbackName: string): Promise<void> {
   return downloadAttachment(url, fallbackName)
+}
+
+/** Admin only: state of the local OSV advisory mirror. */
+export function getOsvMirrorStatus(): Promise<OsvMirrorStatus> {
+  return request<OsvMirrorStatus>('/api/v1/vuln/osv-mirror')
 }

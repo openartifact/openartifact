@@ -427,6 +427,19 @@ This page lists every configuration key with its type, built-in default and the 
 | `exploit.interval` | `OPENARTIFACT_EXPLOIT_INTERVAL` | duration | `24h` | `interval` is the pause between imports, at least 1h. |
 | `exploit.epssThreshold` | `OPENARTIFACT_EXPLOIT_EPSS_THRESHOLD` | float | `0.1` | `epssThreshold` is the EPSS score (0..1) from which a finding that is not in KEV is prioritised above its severity. |
 
+## osvMirror
+
+`osvMirror` configures the local OSV vulnerability mirror (see [security/scanning.md](../security/scanning.md)).
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `osvMirror.enabled` | `OPENARTIFACT_OSV_MIRROR_ENABLED` | bool | `false` | `enabled` turns the mirror, its worker and the local matching on. Off by default: the osv scanner then queries api.osv.dev. |
+| `osvMirror.baseUrl` | `OPENARTIFACT_OSV_MIRROR_BASE_URL` | string | `https://osv-vulnerabilities.storage.googleapis.com` | `baseUrl` is where the exports are fetched from ("\<baseUrl>/\<Ecosystem>/all.zip"). Point it at an internal mirror of the OSV bucket for air-gapped installs; the host may be on a private network. http or https, no credentials. |
+| `osvMirror.ecosystems` | `OPENARTIFACT_OSV_MIRROR_ECOSYSTEMS` | list | `npm,PyPI,Maven,crates.io,RubyGems,NuGet,Go` | `ecosystems` are the OSV ecosystems to mirror. The supported ones are listed in [security/scanning.md](../security/scanning.md); the others keep using api.osv.dev. |
+| `osvMirror.interval` | `OPENARTIFACT_OSV_MIRROR_INTERVAL` | duration | `24h` | `interval` is the pause between imports, at least 1h. |
+| `osvMirror.tempDir` | `OPENARTIFACT_OSV_MIRROR_TEMP_DIR` | string | `empty` | `tempDir` holds the downloaded archive while it is imported (absolute). Empty means the system temporary directory. |
+| `osvMirror.maxArchiveBytes` | `OPENARTIFACT_OSV_MIRROR_MAX_ARCHIVE_BYTES` | int | `2147483648` | `maxArchiveBytes` caps the size of one downloaded archive. |
+
 ## Environment-only variables
 
 These variables are read by the configuration loader but have no YAML key.

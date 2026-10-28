@@ -826,6 +826,38 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 | `userinfo_url` | string | no | type oauth2: userinfo endpoint (subject is sub, else id). |
 | `username_claim` | string | no | - |
 
+### OSVMirrorEcosystem
+
+Import state of one ecosystem of the local OSV mirror.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `advisories` | integer | yes | Advisories that affect the ecosystem. |
+| `ecosystem` | string | yes | OSV ecosystem name, e.g. `npm` or `crates.io`. |
+| `high_water` | string (date-time) | yes | Newest advisory modification imported. Nullable. |
+| `last_checked_at` | string (date-time) | yes | Nullable. |
+| `last_error` | string | yes | Failure of the last import; null when it succeeded. Nullable. |
+| `last_import_seconds` | number | yes | - |
+| `last_imported_at` | string (date-time) | yes | Nullable. |
+| `last_rematch_seconds` | number | yes | - |
+| `populated` | boolean | yes | True once an import completed; only then does the `osv` scanner match against the mirror. |
+| `rematch_pending` | boolean | yes | True while changed advisories are not yet matched against the stored packages. |
+
+### OSVMirrorStatus
+
+Local OSV mirror status.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `attribution` | object | yes | - |
+| `attribution.license` | string | yes | One of: `CC-BY-4.0`. |
+| `attribution.source` | string | yes | One of: `OSV`. |
+| `attribution.url` | string | yes | - |
+| `ecosystems` | array of [OSVMirrorEcosystem](#osvmirrorecosystem) | yes | - |
+| `enabled` | boolean | yes | - |
+| `interval_seconds` | integer | yes | - |
+| `source_url` | string | yes | Configured export location, without credentials. |
+
 ### PackageDeleteResult
 
 | Field | Type | Required | Description |
@@ -2170,7 +2202,7 @@ Whether one vulnerability scanner can run on the server. Fixed, client-safe text
 | `content_type` | string | no | - |
 | `created_at` | string (date-time) | no | - |
 | `enabled` | boolean | no | - |
-| `events` | array of string | no | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`. |
+| `events` | array of string | no | Items: one of: `artifact.uploaded`, `artifact.deleted`, `repository.created`, `repository.deleted`, `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`, `bundle.promoted`, `vulnerability.new`. |
 | `has_secret` | boolean | no | Secret is write-only and never returned |
 | `id` | string (uuid) | no | - |
 | `max_retries` | integer | no | - |

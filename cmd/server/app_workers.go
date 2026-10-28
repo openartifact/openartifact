@@ -15,7 +15,9 @@ import (
 	"github.com/openartifact/openartifact/internal/exploit"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
+	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/nixkeys"
+	"github.com/openartifact/openartifact/internal/osv"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/recovery"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -50,6 +52,7 @@ type workerSet struct {
 	dockerGC            *worker.DockerGCWorker
 	dockerUploadSweeper *worker.DockerUploadSweeper
 	trashPurge          *worker.TrashPurgeWorker
+	osvMirror           *worker.OSVMirrorWorker
 	auditRetention      *worker.AuditRetentionWorker
 	exploitFeeds        *worker.ExploitFeedsWorker
 	// exploit marks findings with the KEV and EPSS signals; it is never nil.
@@ -191,6 +194,8 @@ func (a *app) startHousekeepingWorkers() {
 	w.trashPurge.SetPublisher(w.webhook)
 	w.trashPurge.Start()
 
+	w.startOSVMirror(db, cfg, log, reg)
+
 	// Audit log retention: deletes entries older than audit.retentionDays in
 	// paced batches, one replica at a time (advisory lock). Off by default (see
 	// docs/operations/audit-retention.md).
@@ -314,4 +319,35 @@ func (g groupRefresher) NotifyStale(repoID string) {
 	}
 
 	g.hosted.NotifyStale(repoID)
+}
+
+// startOSVMirror builds the OSV mirror worker and starts it when osvMirror is
+// enabled. A disabled worker is still built (and does nothing), so shutdown
+// stops it like the others.
+func (w *workerSet) startOSVMirror(db database.Database, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
+	var importer *osv.Importer
+
+	interval := time.Duration(0)
+
+	if store, ok := db.(database.OSVStore); ok && cfg.OSVMirror.Enabled {
+		var err error
+
+		importer, err = osv.NewImporter(store, osv.Options{
+			BaseURL:         cfg.OSVMirror.BaseURL,
+			Ecosystems:      cfg.OSVMirror.Ecosystems,
+			TempDir:         cfg.OSVMirror.TempDir,
+			MaxArchiveBytes: cfg.OSVMirror.MaxArchiveBytes,
+		}, log)
+		if err != nil {
+			log.Errorw("osv mirror disabled: invalid configuration", "error", err)
+
+			importer = nil
+		} else {
+			interval = cfg.OSVMirror.Interval
+		}
+	}
+
+	w.osvMirror = worker.NewOSVMirrorWorker(db, importer, cfg.OSVMirror.Ecosystems, log, interval).WithMetrics(reg)
+	w.osvMirror.SetPublisher(w.webhook)
+	w.osvMirror.Start()
 }

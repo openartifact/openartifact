@@ -493,6 +493,50 @@ type VulnScannerResponse struct {
 	DocsURL *string `json:"docs_url"`
 }
 
+// OSVMirrorEcosystemResponse is the state of one ecosystem of the local OSV mirror.
+type OSVMirrorEcosystemResponse struct {
+	// Ecosystem is the OSV ecosystem name, e.g. npm or crates.io.
+	Ecosystem string `json:"ecosystem"`
+	// Populated is true once an import completed: only then does the osv
+	// scanner match against the mirror instead of the online API.
+	Populated bool `json:"populated"`
+	// Advisories counts the advisories that affect the ecosystem.
+	Advisories int `json:"advisories"`
+	// HighWater is the newest advisory modification imported.
+	HighWater *string `json:"high_water"`
+	// LastCheckedAt is when the export was last requested; LastImportedAt when
+	// new data was last applied.
+	LastCheckedAt  *string `json:"last_checked_at"`
+	LastImportedAt *string `json:"last_imported_at"`
+	// LastImportSeconds and LastRematchSeconds are the durations of the last
+	// import and of the last re-match against the stored packages.
+	LastImportSeconds  float64 `json:"last_import_seconds"`
+	LastRematchSeconds float64 `json:"last_rematch_seconds"`
+	// LastError is the failure of the last import, null when it succeeded.
+	LastError *string `json:"last_error"`
+	// RematchPending is true while changed advisories are not yet matched.
+	RematchPending bool `json:"rematch_pending"`
+}
+
+// OSVAttributionResponse names the source and license of the advisory data.
+type OSVAttributionResponse struct {
+	Source  string `json:"source"`
+	License string `json:"license"`
+	URL     string `json:"url"`
+}
+
+// OSVMirrorStatusResponse reports the local OSV mirror.
+type OSVMirrorStatusResponse struct {
+	// Enabled is false when osvMirror is off: the osv scanner then uses the online API.
+	Enabled bool `json:"enabled"`
+	// SourceURL is the configured export location, without credentials.
+	SourceURL string `json:"source_url"`
+	// IntervalSeconds is the import schedule.
+	IntervalSeconds int                          `json:"interval_seconds"`
+	Ecosystems      []OSVMirrorEcosystemResponse `json:"ecosystems"`
+	Attribution     OSVAttributionResponse       `json:"attribution"`
+}
+
 // SecretScanResultResponse represents a secret scan result.
 type SecretScanResultResponse struct {
 	ID           string  `json:"id"`

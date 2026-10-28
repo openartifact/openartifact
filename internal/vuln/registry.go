@@ -124,6 +124,8 @@ type Registry struct {
 	maxArchive int64
 	maxBinary  int64
 	metrics    *metrics.Registry
+	// osvMirror, when set, backs the osv scanner (see OSVScanner.WithMirror).
+	osvMirror *Mirror
 
 	mu     sync.Mutex
 	cancel func()
@@ -189,6 +191,13 @@ func (r *Registry) WithMetrics(reg *metrics.Registry) *Registry {
 	return r
 }
 
+// WithOSVMirror makes the osv scanner match against the local OSV mirror.
+func (r *Registry) WithOSVMirror(m *Mirror) *Registry {
+	r.osvMirror = m
+
+	return r
+}
+
 // defaultCacheDir is the scanner cache base when none is configured, and
 // whether it fell back to the shared temp directory (no user cache directory).
 func defaultCacheDir() (string, bool) {
@@ -207,7 +216,7 @@ func (r *Registry) Backend(name string) ScannerBackend {
 	case scannerGrype:
 		return &GrypeScanner{log: r.log, tool: &r.grype}
 	default:
-		return NewOSVScanner(r.log)
+		return NewOSVScanner(r.log).WithMirror(r.osvMirror)
 	}
 }
 
