@@ -38,6 +38,8 @@ const HTTP_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', '
 export interface Telemetry {
   startClientSpan(method: string): ClientSpan
   recordError(err: unknown): void
+  /** Stops capturing and shuts both providers down; the final export is best effort (the session may already be gone). */
+  shutdown(): Promise<void>
 }
 
 /** The headers of every export: read per request, so a CSRF token rotated by a new sign-in is picked up. */
@@ -92,7 +94,8 @@ export function initTelemetry(settings: FrontendTelemetryConfig): Telemetry {
   // Unhandled errors and rejections as `exception` events, Core Web Vitals as
   // `browser.web_vital` events. Created disabled so nothing is captured
   // before they write to our provider instead of the (no-op) global one.
-  for (const instrumentation of [new ErrorsInstrumentation({ enabled: false }), new WebVitalsInstrumentation({ enabled: false })]) {
+  const instrumentations = [new ErrorsInstrumentation({ enabled: false }), new WebVitalsInstrumentation({ enabled: false })]
+  for (const instrumentation of instrumentations) {
     instrumentation.setLoggerProvider(loggerProvider)
     instrumentation.enable()
   }
@@ -125,6 +128,10 @@ export function initTelemetry(settings: FrontendTelemetryConfig): Telemetry {
     },
     recordError(err) {
       logger.emit({ eventName: 'exception', severityNumber: SeverityNumber.ERROR, attributes: exceptionAttributes(err) })
+    },
+    async shutdown() {
+      for (const instrumentation of instrumentations) instrumentation.disable()
+      await Promise.allSettled([tracerProvider.shutdown(), loggerProvider.shutdown()])
     },
   }
 }

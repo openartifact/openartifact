@@ -11,6 +11,7 @@ import { getFrontendTelemetry } from '../api/telemetry'
 import { setClientSpanFactory } from '../api/client'
 
 let recorder: ((err: unknown) => void) | undefined
+let shutdown: (() => Promise<void>) | undefined
 let starting: Promise<void> | undefined
 
 /**
@@ -20,17 +21,36 @@ let starting: Promise<void> | undefined
  * telemetry off until the next call.
  */
 export function startTelemetry(): Promise<void> {
-  starting ??= getFrontendTelemetry()
+  if (starting) return starting
+  const run: Promise<void> = getFrontendTelemetry()
     .then(async (settings) => {
       const { initTelemetry } = await import('./otel')
+      // Signed out while the settings or the chunk were loading.
+      if (starting !== run) return
       const telemetry = initTelemetry(settings)
       setClientSpanFactory(telemetry.startClientSpan)
       recorder = telemetry.recordError
+      shutdown = telemetry.shutdown
     })
     .catch(() => {
-      starting = undefined
+      if (starting === run) starting = undefined
     })
-  return starting
+  starting = run
+  return run
+}
+
+/**
+ * Stops telemetry when the user signs out or the session ends: no more client
+ * spans or captured errors, and the providers are shut down so nothing keeps
+ * posting to the relay without a session. The next sign-in starts it again.
+ */
+export function stopTelemetry(): void {
+  const stop = shutdown
+  starting = undefined
+  shutdown = undefined
+  recorder = undefined
+  setClientSpanFactory(undefined)
+  void stop?.()
 }
 
 /** Records an error the app handled itself (Vue's error handler); a no-op while telemetry is off. */

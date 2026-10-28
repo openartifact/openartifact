@@ -5,8 +5,8 @@
 import { describe, it, expect, afterAll, spyOn } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { request, setClientSpanFactory } from '../../api/client'
-import { startTelemetry } from '..'
+import { request } from '../../api/client'
+import { startTelemetry, stopTelemetry } from '..'
 import { exceptionAttributes, initTelemetry, traceparent } from '../otel'
 
 const WEB = join(import.meta.dir, '..', '..', '..')
@@ -18,9 +18,9 @@ function headersOf(spy: { mock: { calls: unknown[][] } }, n: number): Headers {
 }
 
 describe('startTelemetry', () => {
-  // The last test installs the wrapper for real; leave no span factory behind
+  // Some tests install the wrapper for real; leave no span factory behind
   // for the test files that run afterwards.
-  afterAll(() => setClientSpanFactory(undefined))
+  afterAll(stopTelemetry)
 
   it('loads nothing while the server has frontend telemetry off', async () => {
     const fetch = spyOn(globalThis, 'fetch')
@@ -43,6 +43,43 @@ describe('startTelemetry', () => {
     await request('/api/v1/test')
 
     expect(headersOf(fetch, 1).get('traceparent')).toMatch(/-01$/)
+  })
+
+  it('stops on sign-out and starts again on the next sign-in', async () => {
+    const enabled = () => new Response(JSON.stringify({ enabled: true, sample_ratio: 1 }), { status: 200 })
+    const fetch = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(enabled())
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockResolvedValueOnce(enabled())
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+
+    stopTelemetry()
+    await startTelemetry()
+    await request('/api/v1/test')
+    expect(headersOf(fetch, 1).has('traceparent')).toBe(true)
+
+    stopTelemetry()
+    await request('/api/v1/test')
+    expect(headersOf(fetch, 2).has('traceparent')).toBe(false)
+
+    await startTelemetry()
+    await request('/api/v1/test')
+    expect(headersOf(fetch, 4).has('traceparent')).toBe(true)
+  })
+
+  it('does not start when the user signs out while the settings are loading', async () => {
+    stopTelemetry()
+    const fetch = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: true, sample_ratio: 1 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+
+    const starting = startTelemetry()
+    stopTelemetry()
+    await starting
+    await request('/api/v1/test')
+
+    expect(headersOf(fetch, 1).has('traceparent')).toBe(false)
   })
 })
 

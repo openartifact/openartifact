@@ -15,7 +15,7 @@ import { isSessionExpired } from './api/client'
 import { initI18n, t } from './i18n'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { startServiceWorker } from './pwa/register'
-import { recordError, startTelemetry } from './telemetry'
+import { recordError, startTelemetry, stopTelemetry } from './telemetry'
 
 // The catalog of the user's language is fetched before anything renders in it.
 await initI18n()
@@ -63,12 +63,13 @@ window.addEventListener('unhandledrejection', (event) => {
 captureInstallPrompt()
 
 // Experimental frontend telemetry: its settings need a session, so they are
-// asked for once someone is signed in; nothing is loaded while the server has it off.
+// asked for once someone is signed in and stopped again on sign-out; nothing is loaded while the server has it off.
 const session = useSessionStore()
 watch(
   () => session.isAuthenticated && !session.mustChangePassword,
   (signedIn) => {
     if (signedIn) void startTelemetry()
+    else stopTelemetry()
   },
   { immediate: true },
 )
