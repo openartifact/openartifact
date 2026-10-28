@@ -90,6 +90,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 Migration `091`, rolling-safe.
 
 - **The `storage_backends.is_default` column and its `idx_storage_backends_default` index are dropped.** Nothing has read or written them since 0.13.0 (migration `087`), so 0.13.x replicas keep serving during the rollout. 0.12.x pods still referenced the column: **upgrade from 0.12.x through 0.13.x first**, then to this release. No action required otherwise.
+- **`telemetry.otlp.logs` (`OTEL_LOGS_EXPORTER=otlp`) now exports the application log lines.** It only started the log provider until now (see 0.13.0: "no records yet"). An install that already sets it sends every log line at or above `LOG_LEVEL` to the collector from the first start of this release, with the fields of the line (`path`, `remote_addr`, `request_id`, error text). The log output is unchanged. Set `OTEL_LOGS_EXPORTER=none` before upgrading to keep the old behaviour. See [log records over OTLP](../operations/monitoring.md#log-records-over-otlp).
 
 ### 0.13.2
 
