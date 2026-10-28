@@ -8,7 +8,7 @@
 // uses the Apache mark (Ivy is an Apache project with no mark of its own).
 // RPM uses the Red Hat mark, Cargo the Rust mark, Conda the Anaconda mark and
 // sbt the Scala mark, apk the Alpine Linux mark, Terraform the Terraform mark (also used for OpenTofu
-// repositories: one `terraform` format serves both clients), pacman the Arch Linux mark.
+// repositories: one `terraform` format serves both clients), pacman the Arch Linux mark, nix the NixOS mark.
 
 import {
   siAlpinelinux,
@@ -21,6 +21,7 @@ import {
   siDocker,
   siGo,
   siHelm,
+  siNixos,
   siNpm,
   siNuget,
   siPypi,
@@ -76,6 +77,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   sbt: brand('sbt', siScala),
   pacman: brand('Arch Linux (pacman)', siArchlinux),
   apk: brand('Alpine (apk)', siAlpinelinux),
+  nix: brand('Nix', siNixos),
   terraform: brand('Terraform', siTerraform),
 }
 

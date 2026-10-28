@@ -789,6 +789,54 @@ type MavenArtifact struct {
 	DeletedBy           *string    `db:"deleted_by" json:"deleted_by"`
 }
 
+// Nix store paths: one narinfo and NAR file per store hash.
+type NixPath struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	// The 32 character nixbase32 hash of the store path (the narinfo file name).
+	StoreHash string `db:"store_hash" json:"store_hash"`
+	// Store path name without the hash, for example hello-2.12.
+	Name string `db:"name" json:"name"`
+	// narinfo NarHash: sha256:<nixbase32> of the uncompressed NAR.
+	NarHash string `db:"nar_hash" json:"nar_hash"`
+	NarSize int64  `db:"nar_size" json:"nar_size"`
+	// File name below nar/: <nixbase32 sha256 of the file>.nar.<ext>; several paths may share one.
+	NarFile     string `db:"nar_file" json:"nar_file"`
+	Compression string `db:"compression" json:"compression"`
+	// narinfo References: base names of the store paths referenced.
+	Refs    []string `db:"refs" json:"refs"`
+	Deriver string   `db:"deriver" json:"deriver"`
+	Ca      string   `db:"ca" json:"ca"`
+	// narinfo Sig lines supplied by the uploader (name:base64).
+	Signatures    []string   `db:"signatures" json:"signatures"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID        string     `db:"blob_id" json:"blob_id"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// Uploaded NAR files waiting for their narinfo; swept by the cleanup worker.
+type NixPendingNar struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	Sha256       string    `db:"sha256" json:"sha256"`
+	NarFile      string    `db:"nar_file" json:"nar_file"`
+	BlobID       string    `db:"blob_id" json:"blob_id"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+}
+
+// Nix narinfo signing keys; private_key is sealed with internal/crypto.
+type NixSigningKey struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	KeyName      string    `db:"key_name" json:"key_name"`
+	PublicKey    string    `db:"public_key" json:"public_key"`
+	PrivateKey   []byte    `db:"private_key" json:"private_key"`
+	CreatedBy    string    `db:"created_by" json:"created_by"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Distribution tags for npm packages, e.g. latest, next, beta
 type NpmDistTag struct {
 	ID        string `db:"id" json:"id"`
@@ -1176,7 +1224,7 @@ type ReleaseBundleItem struct {
 type Repository struct {
 	ID   string `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
-	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman. Constrained by chk_repo_format.
+	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix. Constrained by chk_repo_format.
 	Format      string    `db:"format" json:"format"`
 	Description *string   `db:"description" json:"description"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`

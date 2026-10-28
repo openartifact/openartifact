@@ -74,78 +74,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
 import AppButton from '../AppButton.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import FormField from '../FormField.vue'
 import CopyButton from '../ui/CopyButton.vue'
-import { getApkKey, replaceApkKey, type ApkKey, type ApkKeyInput } from '../../api/apk'
-import { ApiError } from '../../api/client'
+import { getApkKey, replaceApkKey } from '../../api/apk'
+import { useSigningKey } from '../../composables/useSigningKey'
 import { INPUT_CLASS } from '../../lib/formClasses'
-import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n'
 
 const props = defineProps<{ repo: string }>()
 
-const toasts = useToastStore()
-
-const key = ref<ApkKey | null>(null)
-const loading = ref(true)
-const loadError = ref('')
-// The server cannot seal a private key without OPENARTIFACT_SECRET_KEY: no key can be generated or imported.
-const secretRequired = ref(false)
-
-// Mirrors pkg/apk's key file name rule; the server stays authoritative.
-const KEY_NAME = /^[A-Za-z0-9._@+-]{1,128}\.rsa\.pub$/
-
-const open = ref(false)
-const keyName = ref('')
-const privateKey = ref('')
-const saving = ref(false)
-const saveError = ref('')
-const nameValid = computed(() => keyName.value === '' || KEY_NAME.test(keyName.value))
-
-async function load(): Promise<void> {
-  loading.value = true
-  loadError.value = ''
-  secretRequired.value = false
-  try {
-    key.value = await getApkKey(props.repo)
-  } catch (err) {
-    secretRequired.value = err instanceof ApiError && err.status === 409 && err.code === 'secret_key_required'
-    loadError.value = err instanceof Error ? err.message : t('apkKey.loadFailed')
-  } finally {
-    loading.value = false
-  }
-}
-onMounted(load)
-
-function close(): void {
-  if (saving.value) return
-  open.value = false
-  saveError.value = ''
-  privateKey.value = ''
-  keyName.value = ''
-}
-
-async function replace(): Promise<void> {
-  const body: ApkKeyInput = {}
-  if (privateKey.value.trim()) body.private_key = privateKey.value.trim()
-  if (keyName.value) body.key_name = keyName.value
-  saving.value = true
-  saveError.value = ''
-  try {
-    key.value = await replaceApkKey(props.repo, body)
-    loadError.value = ''
-    saving.value = false
-    close()
-    toasts.success(t('apkKey.replaced'), t('apkKey.replacedHint'))
-  } catch (err) {
-    saveError.value = err instanceof Error ? err.message : t('apkKey.replaceFailed')
-  } finally {
-    saving.value = false
-  }
-}
+// Mirrors the server's key name rule; the server stays authoritative.
+const { key, loading, loadError, secretRequired, open, keyName, privateKey, saving, saveError, nameValid, close, replace } = useSigningKey({
+  messages: {
+    loadFailed: () => t('apkKey.loadFailed'),
+    replaced: () => t('apkKey.replaced'),
+    replacedHint: () => t('apkKey.replacedHint'),
+    replaceFailed: () => t('apkKey.replaceFailed'),
+  },
+  nameRule: /^[A-Za-z0-9._@+-]{1,128}\.rsa\.pub$/,
+  get: () => getApkKey(props.repo),
+  replace: (body) => replaceApkKey(props.repo, body),
+})
 
 /** Saves the PEM as `<key name>`, the file clients keep in /etc/apk/keys. */
 function download(): void {

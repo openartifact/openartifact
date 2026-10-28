@@ -32,6 +32,7 @@ const (
 	FormatApk       = "apk"
 	FormatRaw       = "raw"
 	FormatPacman    = "pacman"
+	FormatNix       = "nix"
 	FormatTerraform = "terraform"
 )
 

@@ -459,6 +459,7 @@ type packageExport struct {
 	mavenArtifacts  []*models.MavenArtifact
 	condaPackages   []*models.CondaPackage
 	pacmanPackages  []*models.PacmanPackage
+	nixPaths        []*models.NixPath
 	gomodModules    []*models.GoModule
 	dockerBlobs     []*models.DockerBlob
 	dockerManifests []*models.DockerManifest
@@ -566,6 +567,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"maven_artifacts", pkg.mavenArtifacts, len(pkg.mavenArtifacts)},
 		{"conda_packages", pkg.condaPackages, len(pkg.condaPackages)},
 		{"pacman_packages", pkg.pacmanPackages, len(pkg.pacmanPackages)},
+		{"nix_paths", pkg.nixPaths, len(pkg.nixPaths)},
 		{"gomod_modules", pkg.gomodModules, len(pkg.gomodModules)},
 		{"webhooks", pkg.webhooks, len(pkg.webhooks)},
 		{"cleanup_policies", pkg.cleanupPolicies, len(pkg.cleanupPolicies)},
@@ -691,6 +693,9 @@ func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Reposito
 	case "conan":
 		v, err := e.db.ListConanPackages(ctx, id)
 		collectRepoList(pkg, &pkg.conanPackages, "conan packages", id, v, err)
+	case "nix":
+		v, err := e.db.ListNixPaths(ctx, id)
+		collectRepoList(pkg, &pkg.nixPaths, "nix paths", id, v, err)
 	case "apk":
 		v, err := e.db.ListApkPackages(ctx, id)
 		collectRepoList(pkg, &pkg.apkPackages, "apk packages", id, v, err)
@@ -1418,6 +1423,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.CondaPackage) string { return c.RepositoryID },
 			func(c *models.CondaPackage, id string) { c.RepositoryID = id },
 			false, e.db.CreateCondaPackage)
+	case "nix_paths.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "nix path",
+			func(c *models.NixPath) string { return c.RepositoryID },
+			func(c *models.NixPath, id string) { c.RepositoryID = id },
+			false, e.db.CreateNixPath)
 	case "pacman_packages.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "pacman package",
 			func(c *models.PacmanPackage) string { return c.RepositoryID },

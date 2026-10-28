@@ -68,6 +68,10 @@ FROM (
     SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM pacman_packages t
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid
     UNION ALL
+    -- nix
+    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM nix_paths t
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid
+    UNION ALL
     -- conan
     SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conan_packages t
     WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = $1::uuid

@@ -22,7 +22,7 @@ func TestFormatTablesDecideEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "federation.formatTables",
 		[]string{"raw", "maven", "npm", "docker", "helm", "pypi", "cargo", "go", "nuget"},
-		[]string{"rubygems", "deb", "rpm", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman"})
+		[]string{"rubygems", "deb", "rpm", "conda", "conan", "ivy", "sbt", "terraform", "apk", "pacman", "nix"})
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
 		t.Helper()
@@ -54,7 +54,7 @@ func TestQuarantineKeysDecideEveryFormat(t *testing.T) {
 		[]string{"pypi", "helm", "cargo", "go", "nuget", "docker"},
 		[]string{
 			"raw", "maven", "npm", "rubygems", "deb", "rpm", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk", "pacman",
+			"terraform", "apk", "pacman", "nix",
 		})
 
 	units := map[string]string{

@@ -153,6 +153,25 @@ describe('pacman group', () => {
   })
 })
 
+describe('nix', () => {
+  const origin = 'https://oa.example:8443'
+
+  it('substitutes a store path from the repository', () => {
+    expect(pullCommand('nix', origin, 'cache', 'hello-2.12', 'abcdfghijklmnpqrsvwxyz0123456789')).toBe(
+      'nix copy --from https://oa.example:8443/repos/cache /nix/store/abcdfghijklmnpqrsvwxyz0123456789-hello-2.12',
+    )
+  })
+
+  it('configures substituters, the trusted key and the netrc, and publishes with nix copy', () => {
+    const [setup] = clientSetup('nix', origin, 'cache')
+    expect(setup!.configure).toContain('extra-substituters = https://oa.example:8443/repos/cache')
+    expect(setup!.configure).toContain('extra-trusted-public-keys = $(curl -fsS https://oa.example:8443/repos/cache/public.key)')
+    expect(setup!.configure).toContain('machine oa.example login oa password <TOKEN>')
+    expect(setup!.configure).toContain('--option require-sigs true')
+    expect(setup!.publish).toBe("nix copy --to 'https://oa.example:8443/repos/cache' /nix/store/HASH-NAME")
+  })
+})
+
 describe('apk', () => {
   const origin = 'https://oa.example:8443'
 

@@ -127,5 +127,6 @@
   "docs.sso": "シングルサインオンを設定する",
   "docs.rbac": "権限ターゲットの仕組み",
   "docs.projects": "プロジェクトについて",
-  "docs.webhooks": "Webhook のイベントと署名"
+  "docs.webhooks": "Webhook のイベントと署名",
+  "upload.nix.body": "Nix のバイナリキャッシュは `nix copy --to` で公開し、netrc ファイルの API トークンで認証します。ブラウザからはアップロードしません："
 }

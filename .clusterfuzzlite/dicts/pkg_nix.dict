@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# narinfo keys
+"StorePath: "
+"URL: "
+"Compression: "
+"FileHash: "
+"FileSize: "
+"NarHash: "
+"NarSize: "
+"References: "
+"Deriver: "
+"Deriver: unknown"
+"Sig: "
+"CA: "
+# values
+"/nix/store/"
+"nar/"
+".nar"
+".nar.xz"
+".nar.zst"
+".nar.bz2"
+".nar.br"
+"sha256:"
+"sha256-"
+"fixed:r:sha256:"
+"cache.nixos.org-1:"
+"\x0a"

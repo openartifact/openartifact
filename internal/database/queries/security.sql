@@ -60,6 +60,9 @@ WITH q_candidates AS MATERIALIZED (
         SELECT t.repository_id, t.id, t.name::text, t.version::text
         FROM pacman_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL
+        SELECT t.repository_id, t.id, t.name::text, t.store_hash::text
+        FROM nix_paths t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        UNION ALL
         SELECT t.repository_id, t.id, t.name::text, t.version::text
         FROM conan_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL

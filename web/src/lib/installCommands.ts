@@ -114,6 +114,9 @@ export function pullCommand(
     case 'pacman':
       // A proxy mirrors the whole Arch mirror: the package is named without a repository qualifier.
       return repoType === 'proxy' ? `sudo pacman -Sy ${q(pkg)}` : `sudo pacman -Sy ${q(`${repo}/${pkg}`)}`
+    case 'nix':
+      // The version is the 32 character store hash; the path is `<hash>-<name>`.
+      return `nix copy --from ${q(base)} ${q(`/nix/store/${version}-${pkg}`)}`
     case 'apk':
       return `apk add ${q(`${pkg}=${version}`)}`
     case 'raw':
@@ -343,6 +346,20 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
           client: 'pacman',
           configure,
           publish: `${put(pkg)}\n\n# optional detached signature\n${put(`${pkg}.sig`)}`,
+        },
+      ]
+    }
+    case 'nix': {
+      const key = `${base}/public.key`
+      return [
+        {
+          client: 'nix',
+          configure:
+            `# /etc/nix/nix.conf\nextra-substituters = ${base}\nextra-trusted-public-keys = $(curl -fsS ${key})` +
+            `\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine ${hostnameOf(origin)} login oa password <TOKEN>` +
+            `\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc` +
+            `\n\n# one-off, without editing nix.conf\nnix build --substituters ${base} --option require-sigs true /nix/store/HASH-NAME`,
+          publish: `nix copy --to '${base}' /nix/store/HASH-NAME`,
         },
       ]
     }

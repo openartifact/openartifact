@@ -2614,6 +2614,19 @@ export type ApkSigningKey = {
     updated_at: string;
 };
 
+export type NixKey = {
+    /**
+     * Key name, the part before the colon of the public key
+     */
+    key_name: string;
+    /**
+     * Public key in Nix format, name:base64, to add to trusted-public-keys
+     */
+    public_key: string;
+    created_at: string;
+    updated_at: string;
+};
+
 export type ApkUploadResult = {
     success?: boolean;
     data?: {
@@ -12658,6 +12671,99 @@ export type PostApiV1RepositoriesByNameApkKeyResponses = {
 };
 
 export type PostApiV1RepositoriesByNameApkKeyResponse = PostApiV1RepositoriesByNameApkKeyResponses[keyof PostApiV1RepositoriesByNameApkKeyResponses];
+
+export type GetApiV1RepositoriesByNameNixKeyData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/nix-key';
+};
+
+export type GetApiV1RepositoriesByNameNixKeyErrors = {
+    /**
+     * The repository is not a hosted nix repository
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)
+     */
+    409: Error;
+};
+
+export type GetApiV1RepositoriesByNameNixKeyError = GetApiV1RepositoriesByNameNixKeyErrors[keyof GetApiV1RepositoriesByNameNixKeyErrors];
+
+export type GetApiV1RepositoriesByNameNixKeyResponses = {
+    /**
+     * The signing key
+     */
+    200: NixKey;
+};
+
+export type GetApiV1RepositoriesByNameNixKeyResponse = GetApiV1RepositoriesByNameNixKeyResponses[keyof GetApiV1RepositoriesByNameNixKeyResponses];
+
+export type PostApiV1RepositoriesByNameNixKeyData = {
+    body?: {
+        /**
+         * Nix secret key as written by nix-store --generate-binary-cache-key (name:base64 of 64 bytes); omit to generate a new key
+         */
+        private_key?: string;
+        /**
+         * Name of the key, the part before the colon; only with private_key (default openartifact-<repository>-1)
+         */
+        key_name?: string;
+    };
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/nix-key';
+};
+
+export type PostApiV1RepositoriesByNameNixKeyErrors = {
+    /**
+     * Invalid key or the repository is not a hosted nix repository
+     */
+    400: Error;
+    /**
+     * Forbidden
+     */
+    403: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)
+     */
+    409: Error;
+};
+
+export type PostApiV1RepositoriesByNameNixKeyError = PostApiV1RepositoriesByNameNixKeyErrors[keyof PostApiV1RepositoriesByNameNixKeyErrors];
+
+export type PostApiV1RepositoriesByNameNixKeyResponses = {
+    /**
+     * The new signing key
+     */
+    200: NixKey;
+};
+
+export type PostApiV1RepositoriesByNameNixKeyResponse = PostApiV1RepositoriesByNameNixKeyResponses[keyof PostApiV1RepositoriesByNameNixKeyResponses];
 
 export type PostApiV1RepositoriesByNameDebsData = {
     body: {

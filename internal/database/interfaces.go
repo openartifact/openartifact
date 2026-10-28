@@ -715,6 +715,30 @@ type Database interface {
 	GetSystemSetting(ctx context.Context, key string) (string, error)
 	SetSystemSetting(ctx context.Context, key, value string) error
 
+	// Nix binary cache methods (docs/formats/nix.md).
+
+	// PutNixPendingNar stores a NAR file that awaits its narinfo (idempotent per repository and sha256).
+	PutNixPendingNar(ctx context.Context, n *models.NixPendingNar) error
+	// GetNixPendingNar returns (nil, nil) when absent.
+	GetNixPendingNar(ctx context.Context, repoID, sha256 string) (*models.NixPendingNar, error)
+	// GetNixPathByNarFile returns a live path of the NAR file name, or (nil, nil).
+	GetNixPathByNarFile(ctx context.Context, repoID, narFile string) (*models.NixPath, error)
+	// GetNixPathByHash returns the live path of the store hash, or (nil, nil).
+	GetNixPathByHash(ctx context.Context, repoID, storeHash string) (*models.NixPath, error)
+	// CreateNixPath stores the path and drops the staging row of its NAR in one
+	// transaction; a live row with the same store hash is a unique violation (IsUniqueViolation).
+	CreateNixPath(ctx context.Context, p *models.NixPath) error
+	DeleteNixPath(ctx context.Context, repoID, id string) error
+	IncrementNixDownloadCount(ctx context.Context, id, repoID string) error
+	ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error)
+	// DeleteStaleNixPendingNars deletes up to limit staging rows older than
+	// before and returns the sha256 of their NAR files for the caller to delete.
+	DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error)
+	GetNixSigningKey(ctx context.Context, repoID string) (*models.NixSigningKey, error)
+	// CreateNixSigningKeyIfAbsent reports whether the key was stored.
+	CreateNixSigningKeyIfAbsent(ctx context.Context, k *models.NixSigningKey) (bool, error)
+	ReplaceNixSigningKey(ctx context.Context, k *models.NixSigningKey) error
+
 	// Pacman (Arch Linux) package methods (docs/formats/pacman.md).
 	//
 	// CreatePacmanPackage stores a package that is not live yet; a live row with

@@ -123,6 +123,8 @@ func builderFor(format string) func(target) []Snippet {
 		return rpmSnippets
 	case "pacman":
 		return pacmanSnippets
+	case "nix":
+		return nixSnippets
 	case "cargo":
 		return cargoSnippets
 	case "go":
@@ -291,6 +293,23 @@ func pacmanSnippets(c target) []Snippet {
 		Client:    "pacman",
 		Configure: configure,
 		Publish:   put(pkg) + "\n\n# optional detached signature\n" + put(pkg+".sig"),
+	}}
+}
+
+// nixSnippets configures a Nix client to substitute from, and `nix copy` to,
+// a hosted binary cache. The netrc carries the token of a private repository
+// for reads and for uploads; netrc matches the host name without the port.
+func nixSnippets(c target) []Snippet {
+	key := c.base + "/public.key"
+
+	return []Snippet{{
+		Client: "nix",
+		Configure: "# /etc/nix/nix.conf\nextra-substituters = " + c.base +
+			"\nextra-trusted-public-keys = $(curl -fsS " + key + ")" +
+			"\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine " + c.name + " login oa password <TOKEN>" +
+			"\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc" +
+			"\n\n# one-off, without editing nix.conf\nnix build --substituters " + c.base + " --option require-sigs true /nix/store/HASH-NAME",
+		Publish: "nix copy --to '" + c.base + "' /nix/store/HASH-NAME",
 	}}
 }
 

@@ -96,7 +96,7 @@ func TestRefreshMetadataCoversEveryFormat(t *testing.T) {
 		[]string{"rpm", "deb", "pacman", "apk"},
 		[]string{
 			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-			"ivy", "sbt", "terraform",
+			"ivy", "sbt", "terraform", "nix",
 		},
 	)
 
@@ -164,7 +164,7 @@ func TestRefreshFormatMetadataCoversEveryFormat(t *testing.T) {
 		[]string{"maven", "npm", "docker"},
 		[]string{
 			"pypi", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt",
-			"terraform", "apk", "pacman",
+			"terraform", "apk", "pacman", "nix",
 		},
 	)
 
@@ -209,7 +209,7 @@ func TestGroupMetadataCoversEveryFormat(t *testing.T) {
 	generated := []string{"deb", "rpm", "pacman", "apk"}
 	others := []string{
 		"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan",
-		"ivy", "sbt", "terraform",
+		"ivy", "sbt", "terraform", "nix",
 	}
 
 	// run dispatches to buildDeb/buildRPM/buildPacman/buildApk: it needs a database and storage, so it is classified only.

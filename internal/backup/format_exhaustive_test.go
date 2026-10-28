@@ -33,7 +33,7 @@ func TestRegenerateRestoredMetadataFormats(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "backup.regenerateRestoredMetadata",
 		[]string{"rpm", "deb", "pacman", "apk", "maven"},
-		[]string{"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt", "terraform"})
+		[]string{"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conda", "conan", "ivy", "sbt", "terraform", "nix"})
 
 	// rpm and maven read the database, which an Engine built here has not.
 	probed := map[string]string{"deb": "deb:", "pacman": "pacman:", "apk": "apk:"}

@@ -670,5 +670,33 @@
         "configure": "# /etc/pacman.conf\n[my repo]\nSigLevel = Required\nServer = https://artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# private repository: Server = https://\u003cUSER\u003e:\u003cTOKEN\u003e@artifacts.example.com:8443/repos/my%20repo/os/$arch\n\n# trust the repository key\ncurl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo pacman-key --add -\nsudo pacman-key --lsign-key $(curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | gpg --show-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')\n\n# packages keep the signatures of the members that hold them: trust each hosted member's key too (it is the group's when they share the active key), for example\n# curl -fsSL https://artifacts.example.com:8443/repos/\u003cmember\u003e/public.key | sudo pacman-key --add -"
       }
     ]
+  },
+  {
+    "format": "nix",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "nix",
+        "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/repo1\nextra-trusted-public-keys = $(curl -fsS https://artifacts.example.com:8443/repos/repo1/public.key)\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/repo1 --option require-sigs true /nix/store/HASH-NAME",
+        "publish": "nix copy --to 'https://artifacts.example.com:8443/repos/repo1' /nix/store/HASH-NAME"
+      }
+    ]
+  },
+  {
+    "format": "nix",
+    "repo_type": "hosted",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "nix",
+        "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/my%20repo\nextra-trusted-public-keys = $(curl -fsS https://artifacts.example.com:8443/repos/my%20repo/public.key)\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/my%20repo --option require-sigs true /nix/store/HASH-NAME",
+        "publish": "nix copy --to 'https://artifacts.example.com:8443/repos/my%20repo' /nix/store/HASH-NAME"
+      }
+    ]
   }
 ]

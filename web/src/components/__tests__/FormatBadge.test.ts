@@ -60,6 +60,11 @@ describe('FormatBadge', () => {
     expect(wrapper.text()).toContain('Arch Linux (pacman)')
   })
 
+  it('renders the label for nix', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'nix' } })
+    expect(wrapper.text()).toContain('Nix')
+  })
+
   it('renders the Alpine label and icon for apk', () => {
     const wrapper = mount(FormatBadge, { props: { format: 'apk' } })
     expect(wrapper.text()).toContain('Alpine (apk)')

@@ -1,0 +1,10 @@
+StorePath: /nix/store/dnz35byzl8yw7s81gzqhdq33dds220mx-hello-2.12.3
+URL: nar/1ikjnm41hig7040f8bndzqjg1ldxmf536y6s780r51lcml7xcn56.nar.zst
+Compression: zstd
+FileHash: sha256:1hvmafpaj9mbrz6iy1j7cfi6vxmffmm6mf6yf0qdrnzyhqkr7smr
+FileSize: 76734
+NarHash: sha256:1ikjnm41hig7040f8bndzqjg1ldxmf536y6s780r51lcml7xcn56
+NarSize: 294360
+References: dnz35byzl8yw7s81gzqhdq33dds220mx-hello-2.12.3 nhphqkv18x8fpf3flz0bsm1h554pawn7-glibc-2.44-57
+Deriver: swp079mz7xihnxj5sqfsfpaf250j61k1-hello-2.12.3.drv
+Sig: cache.nixos.org-1:1lmDRv305Q1GoUN1aGedV0KpBuWruyzi7noCh45Ww/fS9Vtk8ZYhRVxR9xHd/AgrIOvlT98LnyaOLLpe/TdIBA==

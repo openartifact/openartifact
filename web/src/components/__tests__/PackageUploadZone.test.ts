@@ -144,6 +144,13 @@ describe('PackageUploadZone', () => {
     expect(rows(wrapper)[1].text()).not.toContain('not a deb package')
   })
 
+  it('shows the nix copy instructions instead of a dropzone for nix', () => {
+    const wrapper = mountZone({ repo: 'cache', format: 'nix' })
+    expect(wrapper.text()).toContain('nix copy --to')
+    expect(wrapper.text()).toContain('/repos/cache')
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+  })
+
   describe('apk', () => {
     const branch = (w: VueWrapper) => w.find('#apk-upload-branch')
     const repoInput = (w: VueWrapper) => w.find('#apk-upload-repo')

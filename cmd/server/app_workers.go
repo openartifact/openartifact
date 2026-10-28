@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
+	"github.com/openartifact/openartifact/internal/nixkeys"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/recovery"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -28,6 +29,7 @@ import (
 type workerSet struct {
 	gpgKeys  *gpgkeys.Service
 	apkKeys  *apkkeys.Service
+	nixKeys  *nixkeys.Service
 	proxySvc *proxy.Service
 
 	webhook *webhook.Dispatcher
@@ -101,6 +103,7 @@ func (a *app) startMetadataWorkers() {
 
 	// Alpine apk repositories sign their index with a key of their own, not a GPG one.
 	w.apkKeys = apkkeys.New(db, log)
+	w.nixKeys = nixkeys.New(db, log)
 	w.apk = worker.NewApkMetadataWorker(db, blobStore, w.apkKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 
 	if a.cfg.GPG.AutoGenerate {
