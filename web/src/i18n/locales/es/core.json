@@ -88,6 +88,7 @@
   "upload.apk.archHint": "Solo necesaria para paquetes noarch, por ejemplo x86_64. Si no, déjala vacía.",
   "upload.apk.invalid": "Letras, dígitos, puntos, guiones y guiones bajos; empieza por letra o dígito (hasta 64 caracteres).",
   "upload.terraform.body": "Los módulos y proveedores de Terraform y OpenTofu se publican con una petición PUT por versión de módulo o plataforma de proveedor, autenticada con un token de API. Las coordenadas forman parte de la URL:",
+  "upload.ansible.body": "Las colecciones de Ansible se publican con ansible-galaxy, que envía una única petición POST multipart autenticada con un token de API. Añada el servidor a ansible.cfg y ejecute:",
   "pwa.updateAvailable": "Nueva versión disponible",
   "pwa.updateHint": "Recarga para cambiar a ella. Tu página actual no se modifica hasta que lo hagas.",
   "pwa.reload": "Recargar",

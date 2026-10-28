@@ -34,6 +34,7 @@ Every proxy format can be grouped; see the [format matrix](../formats/README.md#
 | pacman | yes | yes | yes |
 | terraform | yes | yes | yes |
 | nix | yes | yes | yes |
+| ansible | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 

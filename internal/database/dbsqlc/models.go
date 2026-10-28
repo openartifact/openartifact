@@ -29,6 +29,27 @@ type AiResult struct {
 	ArtifactVersion       string          `db:"artifact_version" json:"artifact_version"`
 }
 
+// Ansible collections: one ns-name-version.tar.gz artifact per namespace, name and version.
+type AnsibleCollection struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Namespace    string `db:"namespace" json:"namespace"`
+	Name         string `db:"name" json:"name"`
+	Version      string `db:"version" json:"version"`
+	Filename     string `db:"filename" json:"filename"`
+	BlobID       string `db:"blob_id" json:"blob_id"`
+	// Collection dependencies from MANIFEST.json: {"namespace.name": "version requirement"}.
+	Dependencies json.RawMessage `db:"dependencies" json:"dependencies"`
+	// The collection_info object of MANIFEST.json (authors, description, license, tags, links); served as the metadata of the version detail.
+	Metadata json.RawMessage `db:"metadata" json:"metadata"`
+	// requires_ansible of meta/runtime.yml, empty when the collection has none.
+	RequiresAnsible string     `db:"requires_ansible" json:"requires_ansible"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt       *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy       *string    `db:"deleted_by" json:"deleted_by"`
+}
+
 // Alpine packages: one .apk per branch/repo/arch/name/version.
 type ApkPackage struct {
 	ID           string `db:"id" json:"id"`
@@ -1304,7 +1325,7 @@ type ReleaseBundleItem struct {
 type Repository struct {
 	ID   string `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
-	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix. Constrained by chk_repo_format.
+	// Package format: rpm, deb, maven, npm, docker, helm, pypi, nuget, go, cargo, rubygems, raw, conda, conan, ivy, sbt, terraform, apk, pacman, nix, ansible. Constrained by chk_repo_format.
 	Format      string    `db:"format" json:"format"`
 	Description *string   `db:"description" json:"description"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`

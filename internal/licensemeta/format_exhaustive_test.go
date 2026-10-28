@@ -30,7 +30,7 @@ var supported = []string{"pypi", "npm", "cargo", "nuget", "maven", "sbt", "rubyg
 // license metadata of their own that a policy could match.
 //
 //nolint:gochecknoglobals // immutable test table
-var notSupported = []string{"docker", "helm", "deb", "rpm", "go", "raw", "conda", "conan", "terraform", "apk", "pacman", "nix"}
+var notSupported = []string{"docker", "helm", "deb", "rpm", "go", "raw", "conda", "conan", "terraform", "apk", "pacman", "nix", "ansible"}
 
 func TestSupportedCoversEveryFormat(t *testing.T) {
 	t.Parallel()
@@ -130,7 +130,7 @@ func TestReadFormatPlumbing(t *testing.T) {
 	t.Parallel()
 
 	others := []string{"docker", "npm", "pypi", "helm", "cargo", "nuget", "go", "raw", "conda", "conan", "terraform",
-		"deb", "rpm", "apk", "pacman", "nix"}
+		"deb", "rpm", "apk", "pacman", "nix", "ansible"}
 
 	repotypetest.Classified(t, "licensemeta.Read limit", []string{"maven", "sbt", "ivy"}, append([]string{"rubygems"}, others...))
 	repotypetest.Classified(t, "licensemeta.Read gem", []string{"rubygems"}, append([]string{"maven", "sbt", "ivy"}, others...))

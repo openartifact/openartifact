@@ -608,7 +608,8 @@
               "terraform",
               "apk",
               "pacman",
-              "nix"
+              "nix",
+              "ansible"
             ],
             "description": "Package format"
           },
@@ -5874,6 +5875,7 @@
               "conda_package",
               "pacman",
               "nix_path",
+              "ansible",
               "conan_package",
               "helm_chart",
               "raw_artifact",
@@ -7615,7 +7617,8 @@
                 "terraform",
                 "apk",
                 "pacman",
-                "nix"
+                "nix",
+                "ansible"
               ]
             }
           },
@@ -7796,7 +7799,8 @@
                       "terraform",
                       "apk",
                       "pacman",
-                      "nix"
+                      "nix",
+                      "ansible"
                     ]
                   },
                   "description": {
@@ -22197,6 +22201,7 @@
                 "conda_package",
                 "pacman",
                 "nix_path",
+                "ansible",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -22293,6 +22298,7 @@
                 "conda_package",
                 "pacman",
                 "nix_path",
+                "ansible",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -22393,6 +22399,7 @@
                 "conda_package",
                 "pacman",
                 "nix_path",
+                "ansible",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -22494,6 +22501,7 @@
                 "conda_package",
                 "pacman",
                 "nix_path",
+                "ansible",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",
@@ -22638,6 +22646,7 @@
                 "conda_package",
                 "pacman",
                 "nix_path",
+                "ansible",
                 "conan_package",
                 "helm_chart",
                 "raw_artifact",

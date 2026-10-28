@@ -178,9 +178,10 @@ func handleCIUpload(args []string, client *Client, outFmt string) {
 
 // uploadable reports whether `oa upload` can store into the format: the
 // path-addressed ones, the two with an upload endpoint that reads package
-// metadata and pacman (a PUT of the package file and of its .sig).
+// metadata, pacman (a PUT of the package file and of its .sig) and ansible (the
+// Galaxy publish POST of a collection tarball).
 func uploadable(f importFormat) bool {
-	return pathAddressed(f) || f == formatDeb || f == formatRPM || f == formatPacman
+	return pathAddressed(f) || f == formatDeb || f == formatRPM || f == formatPacman || f == formatAnsible
 }
 
 // pathAddressed reports whether the format stores a file at the path it is

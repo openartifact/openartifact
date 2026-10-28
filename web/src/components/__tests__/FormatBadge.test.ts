@@ -71,6 +71,11 @@ describe('FormatBadge', () => {
     expect(wrapper.find('svg path').exists()).toBe(true)
   })
 
+  it('renders correct label for ansible', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'ansible' } })
+    expect(wrapper.text()).toContain('Ansible')
+  })
+
   it('renders correct label for terraform', () => {
     const wrapper = mount(FormatBadge, { props: { format: 'terraform' } })
     expect(wrapper.text()).toContain('Terraform')

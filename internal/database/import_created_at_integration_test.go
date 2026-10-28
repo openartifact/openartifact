@@ -173,6 +173,18 @@ func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string
 	return "conda_packages", p.ID
 }
 
+func (e *importEnv) createAnsible(t *testing.T, repo string, at time.Time) (string, string) {
+	t.Helper()
+
+	c := &models.AnsibleCollection{RepositoryID: repo, Namespace: "acme", Name: "d", Version: "1.0.0", Filename: "acme-d-1.0.0.tar.gz",
+		SHA256: e.uniq("sha"), BlobKey: e.uniq("k"), SizeBytes: 1, CreatedAt: at}
+	if err := e.pg.CreateAnsibleCollection(e.ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	return "ansible_collections", c.ID
+}
+
 func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (string, string) {
 	t.Helper()
 
@@ -297,6 +309,7 @@ func TestImportCreatedAt(t *testing.T) {
 		"conan":    e.createConan,
 		"pacman":   e.createPacman,
 		"nix":      e.createNix,
+		"ansible":  e.createAnsible,
 		"ivy":      e.createIvy,
 		"sbt":      e.createSbt,
 		"apk":      e.createApk,

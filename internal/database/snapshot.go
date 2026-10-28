@@ -100,6 +100,7 @@ type SnapshotReader interface {
 	ListNPMVersionsByRepo(ctx context.Context, repoID string) ([]*models.NPMVersion, error)
 	ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error)
 	ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error)
+	ListAnsibleCollections(ctx context.Context, repoID string) ([]*models.AnsibleCollection, error)
 	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
 	ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error)
 	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)

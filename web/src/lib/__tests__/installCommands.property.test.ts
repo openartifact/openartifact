@@ -78,6 +78,7 @@ function expectedArgv(format: string, o: { url: string; host: string }, repo: st
     case 'pacman': return ['sudo', 'pacman', '-Sy', `${repo}/${pkg}`]
     case 'nix': return ['nix', 'copy', '--from', base, `/nix/store/${version}-${pkg}`]
     case 'apk': return ['apk', 'add', `${pkg}=${version}`]
+    case 'ansible': return ['ansible-galaxy', 'collection', 'install', `${pkg}:${version}`, '--server', `${base}/api/`]
     case 'raw': return ['curl', '-fO', `${base}/${encodePath(pkg)}`]
     default: return null // sbt and ivy emit build-file fragments, not shell
   }

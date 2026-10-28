@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/dtrack"
+	formatansible "github.com/openartifact/openartifact/internal/format/ansible"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
@@ -56,6 +57,7 @@ type formatHandlers struct {
 	deb       *formatdeb.HTTPHandler
 	pacman    *formatpacman.HTTPHandler
 	nix       *formatnix.HTTPHandler
+	ansible   *formatansible.HTTPHandler
 	helm      *formathelm.HTTPHandler
 	pypi      *formatpypi.HTTPHandler
 	nuget     *formatnuget.HTTPHandler
@@ -246,6 +248,7 @@ func (a *app) newFormatHandlers() {
 	f.pacman = formatpacman.NewHTTPHandler(log, db, served, baseURL)
 	f.pacman.SetRegenerator(a.workers.pacman)
 	f.nix = formatnix.NewHTTPHandler(log, db, served, baseURL).WithKeys(a.workers.nixKeys).WithMetrics(a.reg)
+	f.ansible = formatansible.NewHTTPHandler(log, db, served, baseURL)
 	f.conan = formatconan.NewHTTPHandler(log, db, served, baseURL)
 	f.ivy = formativy.NewHTTPHandler(log, db, served, baseURL)
 	f.sbt = formatsbt.NewHTTPHandler(log, db, served, baseURL)
@@ -310,6 +313,7 @@ func (a *app) hostedRouters() map[string]http.Handler {
 	f.rpm.RegisterRepoRoutes(routers["rpm"])
 	f.pacman.RegisterRepoRoutes(routers["pacman"])
 	f.nix.RegisterRepoRoutes(routers["nix"])
+	f.ansible.RegisterRepoRoutes(routers["ansible"])
 	f.conda.RegisterRepoRoutes(routers["conda"])
 	f.apk.RegisterRepoRoutes(routers["apk"])
 	f.terraform.RegisterRepoRoutes(routers["terraform"])
@@ -361,6 +365,7 @@ func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
 		f.rubygems.RegisterRepoRoutes(r)
 		f.conda.RegisterRepoRoutes(r)
 		f.pacman.RegisterRepoRoutes(r)
+		f.ansible.RegisterRepoRoutes(r)
 		f.conan.RegisterRepoRoutes(r)
 		f.gomod.RegisterRepoRoutes(r)
 		f.terraform.RegisterRepoRoutes(r)
@@ -590,7 +595,7 @@ func (a *app) finishRoutes() {
 	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
 		u.rpm, u.deb, u.presigned, u.npm, u.maven,
 		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.rubygems, f.raw,
-		f.conda, f.pacman, f.nix, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
+		f.conda, f.pacman, f.nix, f.ansible, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
 	} {
 		h.SetPublisher(a.feat.dtPublisher)
 	}

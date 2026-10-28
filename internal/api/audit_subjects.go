@@ -187,6 +187,7 @@ var auditPackageKinds = map[string]bool{
 	string(models.TrashKindRubyGems):       true,
 	string(models.TrashKindConda):          true,
 	string(models.TrashKindPacman):         true,
+	string(models.TrashKindAnsible):        true,
 	string(models.TrashKindConan):          true,
 	string(models.TrashKindHelm):           true,
 	string(models.TrashKindRaw):            true,

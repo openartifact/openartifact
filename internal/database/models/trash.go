@@ -26,6 +26,7 @@ const (
 	TrashKindRubyGems          TrashKind = "rubygems_gem"
 	TrashKindConda             TrashKind = "conda_package"
 	TrashKindPacman            TrashKind = "pacman"
+	TrashKindAnsible           TrashKind = "ansible"
 	TrashKindConan             TrashKind = "conan_package"
 	TrashKindTerraformModule   TrashKind = "terraform_module"
 	TrashKindTerraformProvider TrashKind = "terraform_provider"

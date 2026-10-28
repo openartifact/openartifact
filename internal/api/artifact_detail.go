@@ -152,6 +152,7 @@ var dependencyDecoders = map[string]func([]byte) []responses.PackageDependencyRe
 	"rpm":      decodeRpmDeps,
 	"go":       decodeGoDeps,
 	"pacman":   decodePacmanDeps,
+	"ansible":  decodeAnsibleDeps,
 }
 
 // decodeDependencies returns the declared dependencies of a package version
@@ -292,6 +293,23 @@ func decodePacmanDeps(raw []byte) []responses.PackageDependencyResponse {
 		}
 
 		out = append(out, responses.PackageDependencyResponse{Name: spec})
+	}
+
+	return out
+}
+
+// decodeAnsibleDeps reads the dependencies object of an Ansible collection:
+// collection FQCN to version requirement.
+func decodeAnsibleDeps(raw []byte) []responses.PackageDependencyResponse {
+	var deps map[string]string
+	if json.Unmarshal(raw, &deps) != nil {
+		return nil
+	}
+
+	out := make([]responses.PackageDependencyResponse, 0, len(deps))
+
+	for _, name := range slices.Sorted(maps.Keys(deps)) {
+		out = append(out, responses.PackageDependencyResponse{Name: name, Version: deps[name]})
 	}
 
 	return out

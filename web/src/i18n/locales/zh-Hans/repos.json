@@ -184,6 +184,7 @@
   "trash.kind.rpm_package": "RPM 软件包",
   "trash.kind.deb_package": "deb 软件包",
   "trash.kind.pacman": "pacman 软件包",
+  "trash.kind.ansible": "Ansible 集合",
   "trash.kind.apk_package": "Alpine 包",
   "apkKey.title": "签名密钥",
   "apkKey.hint": "Alpine 客户端使用此仓库的公钥验证包索引。请在每个客户端的 /etc/apk/keys 中安装它。",

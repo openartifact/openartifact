@@ -553,13 +553,16 @@ func tokenPrincipal(ctx context.Context, tokenValue, kind string, db database.Da
 }
 
 // authorizationSecrets extracts the credential strings carried by the
-// Authorization header: the Bearer value, and the password part of Basic
+// Authorization header: the Bearer value (ansible-galaxy sends its token as
+// `Token <token>`, which counts the same), and the password part of Basic
 // credentials (package managers send tokens as `user:<token>`).
 func authorizationSecrets(r *http.Request) (string, string) {
 	header := r.Header.Get("Authorization")
 
-	if after, ok := strings.CutPrefix(header, "Bearer "); ok {
-		return strings.TrimSpace(after), ""
+	for _, scheme := range []string{"Bearer ", "Token "} {
+		if after, ok := strings.CutPrefix(header, scheme); ok {
+			return strings.TrimSpace(after), ""
+		}
 	}
 
 	if strings.HasPrefix(header, "Basic ") {

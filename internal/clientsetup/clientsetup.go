@@ -143,6 +143,8 @@ func builderFor(format string) func(target) []Snippet {
 		return apkSnippets
 	case "terraform":
 		return terraformSnippets
+	case "ansible":
+		return ansibleSnippets
 	case "sbt":
 		return sbtSnippets
 	case "ivy":
@@ -497,6 +499,23 @@ func terraformSnippets(c target) []Snippet {
 		{Client: "terraform", Configure: creds("~/.terraformrc") + usage, Publish: publish},
 		{Client: "OpenTofu", Configure: creds("~/.tofurc") + usage, Publish: publish},
 	}
+}
+
+// ansibleSnippets configures ansible-galaxy against the Galaxy v3 API rooted at
+// the repository's /api/ path. Galaxy sends the API token as `Token <token>`.
+func ansibleSnippets(c target) []Snippet {
+	api := c.base + "/api/"
+
+	return []Snippet{{
+		Client: "ansible-galaxy",
+		Configure: fmt.Sprintf(
+			"# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = %s\ntoken = <TOKEN>"+
+				"\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact"+
+				"\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: %s",
+			api, api,
+		),
+		Publish: "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact",
+	}}
 }
 
 func sbtSnippets(c target) []Snippet {

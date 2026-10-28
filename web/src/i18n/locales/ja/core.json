@@ -88,6 +88,7 @@
   "upload.apk.archHint": "noarch パッケージにのみ必要です（例: x86_64）。それ以外は空欄にします。",
   "upload.apk.invalid": "英数字、ドット、ハイフン、アンダースコアが使えます。英数字で始め、64 文字以内にしてください。",
   "upload.terraform.body": "Terraform と OpenTofu のモジュールとプロバイダーは、モジュールのバージョンまたはプロバイダーのプラットフォームごとに、API トークンで認証した PUT リクエストを 1 回送って公開します。座標は URL に含まれます:",
+  "upload.ansible.body": "Ansible コレクションは ansible-galaxy で公開します。API トークンで認証された multipart POST リクエストが 1 回送信されます。サーバーを ansible.cfg に追加してから実行します:",
   "pwa.updateAvailable": "新しいバージョンがあります",
   "pwa.updateHint": "再読み込みすると切り替わります。再読み込みするまで、現在のページはそのままです。",
   "pwa.reload": "再読み込み",

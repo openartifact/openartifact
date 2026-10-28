@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
+	formatansible "github.com/openartifact/openartifact/internal/format/ansible"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
@@ -67,6 +68,7 @@ func serverRoutes(t *testing.T) chi.Router {
 		formatconda.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatconan.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatpacman.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
+		formatansible.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatterraform.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		formatgomod.NewHTTPHandler(nil, nil, nil, "").RegisterRepoRoutes(r)
 		api.NewNPMUploadHandler(log, nil, nil, "", nil).RegisterRepoRoutes(r)
@@ -152,7 +154,8 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 		"npm": metrics.FormatNPM, "nuget": metrics.FormatNuGet, "pypi": metrics.FormatPyPI,
 		"raw": metrics.FormatRaw, "rpm": metrics.FormatRPM, "rubygems": metrics.FormatRubyGems,
 		"sbt": metrics.FormatSBT, "terraform": metrics.FormatTerraform, "apk": metrics.FormatApk, "pacman": metrics.FormatPacman,
-		"nix": metrics.FormatNix,
+		"nix":     metrics.FormatNix,
+		"ansible": metrics.FormatAnsible,
 	}
 
 	entries, err := os.ReadDir("../format")

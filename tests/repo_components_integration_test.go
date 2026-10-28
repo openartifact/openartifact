@@ -324,6 +324,10 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 			`INSERT INTO nix_paths (repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, blob_id)
 			 VALUES ($1,'0123456789abcdfghijklmnpqrsvwxyz','hello-2.12','sha256:abc',100,'f.nar.xz','xz',$2)`,
 			[]any{repo, blobID}},
+		{"ansible", "acme.tools", "1.2.0", "", "acme-tools-1.2.0.tar.gz",
+			`INSERT INTO ansible_collections (repository_id, namespace, name, version, filename, blob_id)
+			 VALUES ($1,'acme','tools','1.2.0','acme-tools-1.2.0.tar.gz',$2)`,
+			[]any{repo, blobID}},
 		{"pacman", "pm", "1:2.0-1", "x86_64", "pm-1:2.0-1-x86_64.pkg.tar.zst",
 			`INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5)
 			 VALUES ($1,'pm','pm','1:2.0-1','x86_64','x86_64','pm-1:2.0-1-x86_64.pkg.tar.zst',$2,'abc')`,
