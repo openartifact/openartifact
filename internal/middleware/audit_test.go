@@ -113,6 +113,10 @@ func TestAuditMiddlewareRecordsRequest(t *testing.T) {
 		},
 	}
 
+	if len(db.events) != len(want) {
+		t.Fatalf("recorded %d events, want %d", len(db.events), len(want))
+	}
+
 	for range want {
 		event := <-db.events
 
