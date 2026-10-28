@@ -264,31 +264,28 @@ func (h *HTTPHandler) store(
 // commit stores the blob first, then inserts the referencing row under the
 // per-blob lock so a concurrent delete cannot remove the blob in between. When
 // no row results the blob is dropped again unless something else references it.
-func (h *HTTPHandler) commit(ctx context.Context, row *models.AnsibleCollection, part body) error {
-	blob := storage.SeekerBlob(row.SHA256, part.Reader(), map[string]string{
-		"sha256":   row.SHA256,
-		"filename": row.Filename,
-	})
+func (h *HTTPHandler) commit(ctx context.Context, row *models.AnsibleCollection, part body) (err error) {
+	defer func() {
+		if err != nil {
+			h.dropBlob(ctx, row.SHA256, "publish")
+		}
+	}()
 
-	err := storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
+	blob := storage.SeekerBlob(row.SHA256, part.Reader(), map[string]string{"sha256": row.SHA256, "filename": row.Filename})
+
+	return storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		row.BlobKey = blobKey
 		row.CreatedAt = importmeta.CreatedAt(ctx)
 
-		if err := h.DB.CreateAnsibleCollection(ctx, row); err != nil {
-			return fmt.Errorf("create ansible collection: %w", err)
-		}
-
-		return nil
+		return h.DB.CreateAnsibleCollection(ctx, row) //nolint:wrapcheck // the caller reports the failure
 	})
-	if err == nil {
-		return nil
-	}
+}
 
-	if cleanErr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, row.SHA256); cleanErr != nil {
-		h.Log.Warnw("failed to clean up ansible blob", "sha256", row.SHA256, "error", cleanErr)
+// dropBlob removes the content-addressed blob once no row references it.
+func (h *HTTPHandler) dropBlob(ctx context.Context, sha256, after string) {
+	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, sha256); err != nil {
+		h.Log.Warnw("failed to clean up ansible blob", "after", after, "sha256", sha256, "error", err)
 	}
-
-	return err
 }
 
 // serveBlob streams the artifact of c.
@@ -374,12 +371,10 @@ func (h *HTTPHandler) hardDelete(ctx context.Context, repo *models.Repository, c
 		return fmt.Errorf("delete ansible collection: %w", err)
 	}
 
+	defer h.dropBlob(ctx, c.SHA256, "delete")
+
 	if err := quota.Release(ctx, h.DB, repo.ID, c.SizeBytes); err != nil {
 		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", err)
-	}
-
-	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, c.SHA256); err != nil {
-		h.Log.Warnw("failed to clean up blob after ansible delete", "sha256", c.SHA256, "error", err)
 	}
 
 	return nil
