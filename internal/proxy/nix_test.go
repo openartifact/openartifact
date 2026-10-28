@@ -96,6 +96,15 @@ func nixZstdFixture(t *testing.T) (*fixture, *nixCache, []byte, string) {
 	return newNixFixture(t, c), c, nar, narPath
 }
 
+// nixZstdProxy is nixZstdFixture for the tests that need only the proxy.
+func nixZstdProxy(t *testing.T) *fixture {
+	t.Helper()
+
+	f, _, _, _ := nixZstdFixture(t) //nolint:dogsled // the other results are for the tests that need them
+
+	return f
+}
+
 func TestNix_NarinfoCachedByTTLAndPassedThroughUntouched(t *testing.T) {
 	f, c, _, _ := nixZstdFixture(t)
 	key := nixTestHash + ".narinfo"
@@ -141,7 +150,7 @@ func TestNix_NarinfoCachedByTTLAndPassedThroughUntouched(t *testing.T) {
 }
 
 func TestNix_AbsentNarinfoIsNegativelyCached(t *testing.T) {
-	f, _, _, _ := nixZstdFixture(t)
+	f := nixZstdProxy(t)
 	missing := strings.Repeat("0", 32) + ".narinfo"
 
 	for range 3 {
@@ -156,7 +165,7 @@ func TestNix_AbsentNarinfoIsNegativelyCached(t *testing.T) {
 }
 
 func TestNix_CacheInfoPassesThroughTheCache(t *testing.T) {
-	f, _, _, _ := nixZstdFixture(t)
+	f := nixZstdProxy(t)
 
 	for range 2 {
 		w := f.do(http.MethodGet, "nix-cache-info")

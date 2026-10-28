@@ -5,8 +5,6 @@
 package api
 
 import (
-	"errors"
-	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,25 +22,14 @@ type NixKeyHandler struct {
 
 // NewNixKeyHandler builds the handler.
 func NewNixKeyHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, keys *nixkeys.Service) *NixKeyHandler {
-	return &NixKeyHandler{signingKeyAdmin[nixkeys.Info]{
-		db: db, log: log, evaluator: evaluator, keys: keys,
-		format: "nix", route: "nix-key", noun: "nix signing key", groups: true,
-		respond:  func(i *nixkeys.Info) any { return nixKeyResponseOf(i) },
-		describe: func(i *nixkeys.Info) string { return "key " + i.KeyName },
-		mapError: func(w http.ResponseWriter, err error) bool {
-			switch {
-			case errors.Is(err, nixkeys.ErrSecretKeyRequired):
-				writeError(w, http.StatusConflict, "secret_key_required",
-					"OPENARTIFACT_SECRET_KEY must be set: nix signing keys are only stored encrypted")
-			case errors.Is(err, nixkeys.ErrInvalidKey):
-				writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			default:
-				return false
-			}
+	h := &NixKeyHandler{}
+	h.db, h.log, h.evaluator, h.keys = db, log, evaluator, keys
+	h.format, h.route, h.noun, h.groups = "nix", "nix-key", "nix signing key", true
+	h.respond = func(i *nixkeys.Info) any { return nixKeyResponseOf(i) }
+	h.describe = func(i *nixkeys.Info) string { return "key " + i.KeyName }
+	h.mapError = keyErrorMapper("nix", nixkeys.ErrSecretKeyRequired, nixkeys.ErrInvalidKey)
 
-			return true
-		},
-	}}
+	return h
 }
 
 // Register registers the routes on the authenticated REST router.

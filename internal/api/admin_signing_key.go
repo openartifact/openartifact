@@ -151,3 +151,21 @@ func (h *signingKeyAdmin[I]) writeError(w http.ResponseWriter, err error) {
 	h.log.Errorw(h.noun+" operation failed", "error", err)
 	writeError(w, http.StatusInternalServerError, "internal_error", h.noun+" operation failed")
 }
+
+// keyErrorMapper answers the errors every signing key service shares: no
+// OPENARTIFACT_SECRET_KEY to seal a key with (409) and an unusable imported key (400).
+func keyErrorMapper(format string, required, invalid error) func(http.ResponseWriter, error) bool {
+	return func(w http.ResponseWriter, err error) bool {
+		switch {
+		case errors.Is(err, required):
+			writeError(w, http.StatusConflict, "secret_key_required",
+				"OPENARTIFACT_SECRET_KEY must be set: "+format+" signing keys are only stored encrypted")
+		case errors.Is(err, invalid):
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		default:
+			return false
+		}
+
+		return true
+	}
+}

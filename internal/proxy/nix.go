@@ -241,7 +241,7 @@ func (s *Service) readNixSidecar(ctx context.Context, repo *models.Repository, u
 	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
 	if err != nil {
 		// The blob is gone: as if never recorded; the narinfo refetch writes it again.
-		return nixNarExpectation{}, false, nil //nolint:nilerr // a missing record is "no expectation"
+		return nixNarExpectation{}, false, nil
 	}
 	defer func() { _ = rc.Close() }()
 
@@ -252,7 +252,7 @@ func (s *Service) readNixSidecar(ctx context.Context, repo *models.Repository, u
 
 	exp, perr := parseNixExpectation(data)
 	if perr != nil {
-		return nixNarExpectation{}, false, nil //nolint:nilerr // a damaged record is "no expectation"
+		return nixNarExpectation{}, false, nil
 	}
 
 	return exp, true, nil
