@@ -410,6 +410,11 @@ type ServerConfig struct {
 	// ShutdownTimeout is how many seconds in-flight requests get to finish
 	// during a graceful shutdown.
 	ShutdownTimeout int `yaml:"shutdownTimeout"`
+	// ShutdownDelay is how many seconds the server keeps serving, reporting
+	// not ready on /ready, after a shutdown signal and before it stops
+	// accepting connections, so load balancers stop routing to it first. A
+	// second signal skips the delay. 0 disables it.
+	ShutdownDelay int `yaml:"shutdownDelay"`
 	// TLSEnabled serves HTTPS and sends HSTS; it requires tlsCert and tlsKey.
 	TLSEnabled bool `yaml:"tlsEnabled"`
 	// TLSCert is the path of the PEM certificate file.
@@ -588,6 +593,7 @@ func defaultConfig() *Config {
 			ReadHeaderTimeout: 20,
 			MaxBodyBytes:      16 << 30,
 			ShutdownTimeout:   30,
+			ShutdownDelay:     0,
 			TLSEnabled:        false,
 			TLSCert:           "",
 			TLSKey:            "",
@@ -768,6 +774,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Server.ReadHeaderTimeout, "SERVER_READ_HEADER_TIMEOUT")
 	overrideInt64(&cfg.Server.MaxBodyBytes, "SERVER_MAX_BODY_BYTES")
 	overrideInt(&cfg.Server.ShutdownTimeout, "SERVER_SHUTDOWN_TIMEOUT")
+	overrideInt(&cfg.Server.ShutdownDelay, "SERVER_SHUTDOWN_DELAY")
 	overrideBool(&cfg.Server.TLSEnabled, "SERVER_TLS_ENABLED")
 	overrideString(&cfg.Server.TLSCert, "SERVER_TLS_CERT")
 	overrideString(&cfg.Server.TLSKey, "SERVER_TLS_KEY")

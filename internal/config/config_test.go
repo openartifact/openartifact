@@ -406,6 +406,7 @@ func TestLoad_ServerTimeouts(t *testing.T) {
 		t.Setenv("SERVER_READ_TIMEOUT", "30")
 		t.Setenv("SERVER_WRITE_TIMEOUT", "45")
 		t.Setenv("SERVER_SHUTDOWN_TIMEOUT", "60")
+		t.Setenv("SERVER_SHUTDOWN_DELAY", "7")
 
 		cfg, err := Load("")
 		if err != nil {
@@ -422,6 +423,10 @@ func TestLoad_ServerTimeouts(t *testing.T) {
 
 		if cfg.Server.ShutdownTimeout != 60 {
 			t.Errorf("expected ShutdownTimeout=60, got %d", cfg.Server.ShutdownTimeout)
+		}
+
+		if cfg.Server.ShutdownDelay != 7 {
+			t.Errorf("expected ShutdownDelay=7, got %d", cfg.Server.ShutdownDelay)
 		}
 	})
 }

@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+No migrations.
+
+- **New optional `server.shutdownDelay`** (`SERVER_SHUTDOWN_DELAY`, seconds, default `0`) fixes the few failed requests during a Kubernetes rolling update. On `SIGTERM`/`SIGINT` the server now flips `/ready` to `503` first (`/health` stays `200`), turns HTTP keep-alives off and keeps serving for the delay so the Service drops the pod from its endpoints before the listener closes; a second signal skips the delay. With the default `0` nothing changes. If you set it, keep `terminationGracePeriodSeconds` at or above `shutdownDelay + shutdownTimeout` plus about 20 s. See [graceful shutdown](../operations/monitoring.md#graceful-shutdown-and-rolling-updates).
+
 ### 0.13.1
 
 No migrations and no configuration changes; a rolling upgrade from 0.13.0 works. Maintenance release:
@@ -139,6 +145,11 @@ Migration `086`. It drops the stored `search_tsv` columns (`deb_packages`, `rpm_
 - **RPM groups over a proxy of a tree of repositories.** A group whose RPM proxy members have no `repodata/repomd.xml` at their upstream root (a mirror directory holding several repositories in sub-directories) now serves the sub-paths of such a member, for example `HOST/repos/GROUP/9/BaseOS/x86_64/os/repodata/repomd.xml` and the packages below it, from the proxy as it would, unmerged. When the group has no other package to list, `HOST/repos/GROUP/repodata/repomd.xml` answers `404` with a message naming the members instead of an empty index. A group that already published an empty index keeps serving that empty index until a package appears in it. See [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups).
 - **The `annotate` permission is now enforced.** Until now a permission target could list `annotate` but it granted nothing. `PUT` and `PATCH` of an artifact's properties and `DELETE` of one property now succeed with either `annotate` or `write` on the repository (reading them still needs `read`); `write` behaves exactly as before. `annotate` authorizes nothing else: no uploads, package changes or deletes. A principal that holds `annotate` without `write` on a target (the seeded `admin-all` holds both) can therefore now edit properties on the repositories the target matches; review such targets before upgrading. See [RBAC](../security/rbac.md#which-action-a-request-needs).
 - **deb groups over a large proxy build their metadata much faster.** Generating the merged `Release` and `Packages` indexes of a group over a proxy of a full distribution archive (about 78,000 packages) now reads and parses the upstream indexes and compresses the merged ones concurrently, and no longer reads the cached upstream `Packages.xz` one byte per system call: on a synthetic archive of that size the first request drops from about 10.3 s to about 3.8 s. The published files are byte-identical to before. A generation now uses several CPU cores for those seconds and holds the parsed indexes in memory (about 570 MB peak on that archive instead of about 285 MB). No action required.
+||||||| base
+### Unreleased
+
+No migrations.
+
 - **The web UI is translated** into Italian, German, French, Spanish, Brazilian Portuguese, Simplified Chinese and Japanese. The language follows the browser (`navigator.languages`) until a user picks one under **Language** in the user menu or on the sign-in page; the choice is stored in that browser's local storage only, nothing on the server changes and no setting is needed. Dates, numbers and sort order follow the language. Anything without a translation is shown in English. See [Language](language.md). No action required; the web bundle grows by one small chunk per language, downloaded only for users of that language.
 - **Fixes found by the new coverage tests.** Backup jobs, license policies, storage backends and bundle items created without an explicit timestamp now get the current time instead of the zero time. In the web UI, saving a proxy's settings requires the upstream URL, the AI settings page disables Save and Test when its configuration failed to load, the SBOM tab merges components that share `name@version` and sorts reports without a date last, and upload progress and status now reach the upload list. No action required.
 

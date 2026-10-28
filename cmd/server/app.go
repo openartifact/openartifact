@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -86,6 +87,10 @@ type app struct {
 	stopOnce   sync.Once
 	drainOnce  sync.Once
 	extraStops []func()
+
+	// draining is set when the shutdown delay starts; /ready then answers 503
+	// while /health keeps answering normally.
+	draining atomic.Bool
 }
 
 // onClose registers fn to run when serve returns, after every function
@@ -171,18 +176,54 @@ func serve(opts options) error {
 // underneath us. The latter still runs the ordered shutdown, then exits
 // non-zero: it returns that error.
 func (a *app) awaitShutdownSignal(srv *api.HTTPServer) error {
-	sigChan := make(chan os.Signal, 1)
+	sigChan := make(chan os.Signal, 2)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	defer signal.Stop(sigChan)
+
+	return a.awaitShutdown(srv, sigChan)
+}
+
+// awaitShutdown is awaitShutdownSignal's body over an explicit signal channel.
+// On the first signal it starts the shutdown delay; see shutdownDelay.
+func (a *app) awaitShutdown(srv *api.HTTPServer, sigChan <-chan os.Signal) error {
 	select {
 	case <-sigChan:
 		a.log.Infow("Shutdown signal received, gracefully stopping")
+
+		a.shutdownDelay(srv, sigChan)
 
 		return nil
 	case serveErr := <-srv.ServeErrors():
 		a.log.Errorw("HTTP server stopped unexpectedly, shutting down", "error", serveErr)
 
 		return serveErr
+	}
+}
+
+// shutdownDelay reports not ready on /ready and keeps serving for
+// server.shutdownDelay seconds, so the endpoint is removed from the Service
+// before the listener closes. Keep-alives go off at once so clients reconnect
+// elsewhere. A second signal, or the accept loop dying, ends the delay early.
+func (a *app) shutdownDelay(srv *api.HTTPServer, sigChan <-chan os.Signal) {
+	delay := time.Duration(a.cfg.Server.ShutdownDelay) * time.Second
+	if delay <= 0 {
+		return
+	}
+
+	a.draining.Store(true)
+	srv.DisableKeepAlives()
+	a.log.Infow("Not ready, serving until the shutdown delay ends", "delay", delay.String())
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+	case <-sigChan:
+		a.log.Infow("Second shutdown signal, skipping the shutdown delay")
+	case err := <-srv.ServeErrors():
+		a.log.Errorw("HTTP server stopped during the shutdown delay", "error", err)
 	}
 }
 

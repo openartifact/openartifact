@@ -117,8 +117,14 @@ func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleReady answers 200 once the database and the object store answer.
+// handleReady answers 200 once the database and the object store answer, and
+// 503 once a shutdown signal started the shutdown delay.
 func (a *app) handleReady(w http.ResponseWriter, r *http.Request) {
+	if a.draining.Load() {
+		writeJSONBody(w, http.StatusServiceUnavailable, `{"status":"not ready","reason":"shutting down"}`)
+		return
+	}
+
 	if err := a.db.Ping(r.Context()); err != nil {
 		writeJSONBody(w, http.StatusServiceUnavailable, `{"status":"not ready","reason":"database unavailable"}`)
 		return
