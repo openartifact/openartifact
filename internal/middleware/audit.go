@@ -26,6 +26,18 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// RBAC ran first: the principal is known. Attach the request to the
+			// context so the events handlers record carry it too.
+			req := audit.Request{ID: r.Header.Get("X-Request-ID")}
+
+			actor := "anonymous"
+			if p := PrincipalFromContext(r.Context()); p != nil && !p.IsAnonymous {
+				actor = p.Username
+				req.Username, req.TokenID = p.Username, p.TokenID
+			}
+
+			r = r.WithContext(audit.WithRequest(r.Context(), req))
+
 			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(wrapped, r)
 
@@ -39,11 +51,6 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 				if p := rctx.RoutePattern(); p != "" {
 					routeTemplate = strings.TrimSuffix(p, "/*")
 				}
-			}
-
-			actor := "anonymous"
-			if p := PrincipalFromContext(r.Context()); p != nil && !p.IsAnonymous {
-				actor = p.Username
 			}
 
 			action := routeToAction(r.Method, routeTemplate)
@@ -67,6 +74,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 				Actor:     actor,
 				Details:   details,
 				IPAddress: &clientIP,
+				Status:    wrapped.statusCode,
 			})
 		})
 	}
@@ -162,7 +170,11 @@ func AuthAuditMiddleware(auditLogger *audit.Logger, db database.Database, truste
 			next.ServeHTTP(wrapped, r)
 
 			clientIP := ClientIP(r, proxies)
-			ev := audit.AuditEvent{IPAddress: &clientIP}
+			ev := audit.AuditEvent{
+				IPAddress: &clientIP,
+				RequestID: r.Header.Get("X-Request-ID"),
+				Status:    wrapped.statusCode,
+			}
 
 			newSession := newSessionCookie(w.Header())
 
@@ -174,6 +186,7 @@ func AuthAuditMiddleware(auditLogger *audit.Logger, db database.Database, truste
 					ev.Details = "login succeeded"
 				} else {
 					ev.Action = audit.ActionAuthLoginFailed
+					ev.Outcome = audit.OutcomeFailure
 					ev.Actor = attempted
 					ev.Details = fmt.Sprintf("login failed (status %d)", wrapped.statusCode)
 				}
@@ -192,6 +205,7 @@ func AuthAuditMiddleware(auditLogger *audit.Logger, db database.Database, truste
 					ev.Details = "sso login succeeded"
 				} else {
 					ev.Action = audit.ActionAuthLoginFailed
+					ev.Outcome = audit.OutcomeFailure
 					ev.ActorType = "sso"
 					ev.Details = fmt.Sprintf("sso callback failed (status %d)", wrapped.statusCode)
 				}
@@ -218,6 +232,7 @@ type auditActorInfo struct {
 func setActor(ev *audit.AuditEvent, a auditActorInfo, actorType string) {
 	ev.ActorType = actorType
 	ev.Actor = a.username
+	ev.Username = a.username
 
 	if a.id != "" {
 		id := a.id

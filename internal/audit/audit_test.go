@@ -250,3 +250,39 @@ func TestBuildDetailsJSONKeys(t *testing.T) {
 		t.Errorf("empty keys must be omitted, got %s", out)
 	}
 }
+
+func TestCompleteOutcomeAndRequest(t *testing.T) {
+	ctx := WithRequest(context.Background(), Request{ID: "r", Username: "u", TokenID: "t"})
+
+	for _, tc := range []struct {
+		name string
+		ev   AuditEvent
+		want string
+	}{
+		{"explicit action", AuditEvent{}, OutcomeSuccess},
+		{"2xx", AuditEvent{Status: 204}, OutcomeSuccess},
+		{"4xx", AuditEvent{Status: 403}, OutcomeFailure},
+		{"5xx", AuditEvent{Status: 500}, OutcomeFailure},
+		{"set by the emitter", AuditEvent{Status: 302, Outcome: OutcomeFailure}, OutcomeFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := complete(ctx, tc.ev)
+			if e.Outcome != tc.want {
+				t.Errorf("outcome = %q, want %q", e.Outcome, tc.want)
+			}
+
+			if e.RequestID != "r" || e.Username != "u" || e.TokenID != "t" {
+				t.Errorf("request fields = %q %q %q", e.RequestID, e.Username, e.TokenID)
+			}
+		})
+	}
+
+	// Fields the emitter set win over the request.
+	if e := complete(ctx, AuditEvent{Username: "other"}); e.Username != "other" {
+		t.Errorf("username = %q, want the emitter's", e.Username)
+	}
+
+	if e := complete(context.Background(), AuditEvent{}); e.RequestID != "" || e.Outcome != OutcomeSuccess {
+		t.Errorf("without a request: %+v", e)
+	}
+}

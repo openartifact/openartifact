@@ -28,6 +28,12 @@ func Default() *Logger {
 	return defaultLogger.Load()
 }
 
+// Outcome values of AuditEvent.Outcome.
+const (
+	OutcomeSuccess = "success"
+	OutcomeFailure = "failure"
+)
+
 // AuditEvent is the canonical event type sent to the audit logger.
 // Fields correspond to the audit_logs schema.
 type AuditEvent struct {
@@ -49,6 +55,36 @@ type AuditEvent struct {
 	Package string
 	Version string
 	Subject string
+	// Outcome is OutcomeSuccess or OutcomeFailure. Log fills an empty one:
+	// failure for a Status of 400 and above, success otherwise (an explicit
+	// action records something that happened).
+	Outcome string
+	// Username is the login name of the authenticated user, TokenID the API
+	// token the request authenticated with and RequestID its X-Request-ID.
+	// Log fills empty ones from the Request attached to its context.
+	Username  string
+	TokenID   string
+	RequestID string
+	// Status is the HTTP status of the request, 0 when the event records none.
+	// The five fields above are stored in details_json as "outcome",
+	// "username", "token_id", "request_id" and "status", omitted when empty.
+	Status int
+}
+
+// Request identifies the HTTP request events are recorded under. The audit
+// middleware attaches it to the request context (WithRequest) so the events
+// handlers record carry it without each emitter filling it in.
+type Request struct {
+	ID       string
+	Username string
+	TokenID  string
+}
+
+type requestKey struct{}
+
+// WithRequest returns ctx carrying req for Log.
+func WithRequest(ctx context.Context, req Request) context.Context {
+	return context.WithValue(ctx, requestKey{}, req)
 }
 
 type Logger struct {
@@ -74,6 +110,7 @@ func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, 
 		reg:  reg,
 		done: make(chan struct{}),
 	}
+
 	go l.run()
 
 	return l
@@ -95,33 +132,31 @@ func (l *Logger) run() {
 	}()
 
 	for event := range l.ch {
-		detailsJSON := "{}"
-		if event.Details != "" || event.Actor != "" || event.Package != "" || event.Version != "" || event.Subject != "" {
-			detailsJSON = buildDetailsJSON(event)
-		}
-
-		entry := &models.AuditLog{
-			Action:       event.Action,
-			ActorID:      event.ActorID,
-			ActorType:    nilActorType(event.ActorType),
-			DetailsJSON:  json.RawMessage(detailsJSON),
-			ResourceType: event.ResourceType,
-			ResourceID:   event.ResourceID,
-			RepositoryID: event.RepositoryID,
-			ProjectID:    event.ProjectID,
-			IPAddress:    event.IPAddress,
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), insertTimeout)
-		err := l.db.InsertAuditLog(ctx, entry)
-
-		cancel()
-
-		if err != nil {
+		if err := l.insert(event); err != nil {
 			l.log.Errorw("audit log insert failed", "action", event.Action, "error", err)
 		}
 	}
 
 	close(l.done)
+}
+
+func (l *Logger) insert(e AuditEvent) error {
+	row := &models.AuditLog{
+		Action:       e.Action,
+		ActorID:      e.ActorID,
+		ActorType:    nilActorType(e.ActorType),
+		DetailsJSON:  json.RawMessage(buildDetailsJSON(e)),
+		ResourceType: e.ResourceType,
+		ResourceID:   e.ResourceID,
+		RepositoryID: e.RepositoryID,
+		ProjectID:    e.ProjectID,
+		IPAddress:    e.IPAddress,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), insertTimeout)
+	defer cancel()
+
+	return l.db.InsertAuditLog(ctx, row) //nolint:wrapcheck // logged by the caller with the action
 }
 
 // insertTimeout bounds one audit insert so a stalled database cannot wedge the
@@ -130,15 +165,20 @@ const insertTimeout = 10 * time.Second
 
 // buildDetailsJSON always yields valid JSON regardless of input bytes.
 func buildDetailsJSON(event AuditEvent) string {
-	m := make(map[string]string, 5)
+	m := make(map[string]any, 10) //nolint:mnd // one slot per key below
 
 	for k, v := range map[string]string{
 		"message": event.Details, "actor": event.Actor,
 		"package": event.Package, "version": event.Version, "subject": event.Subject,
+		"outcome": event.Outcome, "username": event.Username, "token_id": event.TokenID, "request_id": event.RequestID,
 	} {
 		if v != "" {
 			m[k] = v
 		}
+	}
+
+	if event.Status != 0 {
+		m["status"] = event.Status
 	}
 
 	b, err := json.Marshal(m)
@@ -149,9 +189,36 @@ func buildDetailsJSON(event AuditEvent) string {
 	return string(b)
 }
 
+// complete fills the request fields event leaves empty from the Request on
+// ctx, and its outcome.
+func complete(ctx context.Context, event AuditEvent) AuditEvent {
+	if req, ok := ctx.Value(requestKey{}).(Request); ok {
+		if event.RequestID == "" {
+			event.RequestID = req.ID
+		}
+
+		if event.Username == "" {
+			event.Username = req.Username
+		}
+
+		if event.TokenID == "" {
+			event.TokenID = req.TokenID
+		}
+	}
+
+	if event.Outcome == "" {
+		event.Outcome = OutcomeSuccess
+		if event.Status >= 400 { //nolint:mnd // HTTP client and server errors
+			event.Outcome = OutcomeFailure
+		}
+	}
+
+	return event
+}
+
 // Log enqueues an event. It never panics, even after Shutdown. If the buffer is
 // full the event is written synchronously (bounded wait) rather than dropped.
-func (l *Logger) Log(_ context.Context, event AuditEvent) {
+func (l *Logger) Log(ctx context.Context, event AuditEvent) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
@@ -160,8 +227,10 @@ func (l *Logger) Log(_ context.Context, event AuditEvent) {
 		return
 	}
 
+	e := complete(ctx, event)
+
 	select {
-	case l.ch <- event:
+	case l.ch <- e:
 		return
 	default:
 	}
@@ -170,7 +239,7 @@ func (l *Logger) Log(_ context.Context, event AuditEvent) {
 	t := time.NewTimer(2 * time.Second)
 	defer t.Stop()
 	select {
-	case l.ch <- event:
+	case l.ch <- e:
 	case <-t.C:
 		l.dropped(event.Action, "audit buffer full; event dropped")
 	}

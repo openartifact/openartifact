@@ -115,6 +115,7 @@ func TestAuthAuditLoginSuccessAndFailure(t *testing.T) {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/login",
 			strings.NewReader(`{"username":"mallory","password":"hunter2hunter2"}`))
 		req.RemoteAddr = "203.0.113.9:1111"
+		req.Header.Set("X-Request-ID", "req-login")
 		handler.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
@@ -137,6 +138,12 @@ func TestAuthAuditLoginSuccessAndFailure(t *testing.T) {
 		t.Errorf("IPAddress = %v, want 203.0.113.9", failed.IPAddress)
 	}
 
+	for _, want := range []string{`"outcome":"failure"`, `"status":401`, `"request_id":"req-login"`} {
+		if !strings.Contains(string(failed.DetailsJSON), want) {
+			t.Errorf("failed login details lack %s: %s", want, failed.DetailsJSON)
+		}
+	}
+
 	db.users["u1"] = &models.User{ID: "u1", Username: "mallory"}
 
 	raw, _, err := auth.CreateSession(context.Background(), db, "u1", "203.0.113.9", "ua")
@@ -155,6 +162,12 @@ func TestAuthAuditLoginSuccessAndFailure(t *testing.T) {
 
 	if ok.ActorID == nil || *ok.ActorID != "u1" || !strings.Contains(string(ok.DetailsJSON), `"actor":"mallory"`) {
 		t.Errorf("login must record the authenticated user, got actor_id=%v details=%s", ok.ActorID, ok.DetailsJSON)
+	}
+
+	for _, want := range []string{`"outcome":"success"`, `"status":200`, `"username":"mallory"`, `"request_id":"req-login"`} {
+		if !strings.Contains(string(ok.DetailsJSON), want) {
+			t.Errorf("login details lack %s: %s", want, ok.DetailsJSON)
+		}
 	}
 }
 

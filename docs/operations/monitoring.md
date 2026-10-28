@@ -391,7 +391,7 @@ Fields, in this order. The set is stable: fields may be appended, never renamed 
 | `resource_type`, `resource_id` | the object the event names, if any |
 | `repository_id`, `project_id` | UUIDs of the repository or project concerned, if any |
 | `ip` | client address |
-| `details` | the event details: a JSON object in JSONL, its JSON text in one CSV cell |
+| `details` | the event details: a JSON object in JSONL, its JSON text in one CSV cell. Keys, each present only when set: `message`, `actor`, `package`, `version`, `subject`, `outcome` (`success` or `failure`), `username` (login name of the authenticated user), `token_id` (API token the request used), `request_id` (its `X-Request-ID`) and `status` (HTTP status, a number) |
 
 Unset values are `null` in JSONL and an empty cell in CSV. CSV is RFC 4180 (quoted cells, doubled quotes, newlines allowed inside quotes). To keep spreadsheets from running attacker-controlled text, a CSV cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading `'`; read JSONL when you need the exact value.
 
