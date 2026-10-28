@@ -18,8 +18,8 @@ package nix
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
+	"hash/fnv"
 	"net/http"
 	"slices"
 	"strconv"
@@ -365,9 +365,11 @@ func (h *HTTPHandler) serveNarInfo(w http.ResponseWriter, r *http.Request, repo 
 	}
 
 	body := n.String()
-	sum := sha256.Sum256([]byte(body))
+	// A validator, not a security digest: the body changes with the signing key.
+	tag := fnv.New128a()
+	_, _ = tag.Write([]byte(body))
 
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, narinfoMaxAge) {
+	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(tag.Sum(nil))+`"`, narinfoMaxAge) {
 		return
 	}
 
