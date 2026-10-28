@@ -122,7 +122,7 @@ func (d *ansibleDB) ListAnsibleCollectionNames(
 		return strings.Compare(a.Namespace+"."+a.Name, b.Namespace+"."+b.Name)
 	})
 
-	return window(names, limit, offset), len(names), nil
+	return pkgansible.Window(names, limit, offset), len(names), nil
 }
 
 func (d *ansibleDB) DeleteAnsibleCollection(_ context.Context, _, id string) error {

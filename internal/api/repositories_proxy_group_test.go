@@ -67,10 +67,6 @@ func TestUnsupportedRepoTypeMessage(t *testing.T) {
 				continue // pacman groups arrive in a later change
 			}
 
-			if format == "ansible" {
-				continue // hosted only: ansible proxy and group arrive in a later change
-			}
-
 			if msg := unsupportedRepoTypeMessage(repoType, format); msg != "" {
 				t.Errorf("%s of %s: unexpected message %q", repoType, format, msg)
 			}

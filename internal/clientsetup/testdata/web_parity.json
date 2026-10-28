@@ -778,5 +778,57 @@
         "publish": "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact"
       }
     ]
+  },
+  {
+    "format": "ansible",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "ansible-galaxy",
+        "configure": "# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = https://artifacts.example.com:8443/repos/repo1/api/\ntoken = \u003cTOKEN\u003e\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: https://artifacts.example.com:8443/repos/repo1/api/"
+      }
+    ]
+  },
+  {
+    "format": "ansible",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "ansible-galaxy",
+        "configure": "# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = https://artifacts.example.com:8443/repos/my%20repo/api/\ntoken = \u003cTOKEN\u003e\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: https://artifacts.example.com:8443/repos/my%20repo/api/"
+      }
+    ]
+  },
+  {
+    "format": "ansible",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "ansible-galaxy",
+        "configure": "# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = https://artifacts.example.com:8443/repos/repo1/api/\ntoken = \u003cTOKEN\u003e\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: https://artifacts.example.com:8443/repos/repo1/api/"
+      }
+    ]
+  },
+  {
+    "format": "ansible",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "ansible-galaxy",
+        "configure": "# ansible.cfg\n[galaxy]\nserver_list = openartifact\n\n[galaxy_server.openartifact]\nurl = https://artifacts.example.com:8443/repos/my%20repo/api/\ntoken = \u003cTOKEN\u003e\n\n# install\nansible-galaxy collection install NAMESPACE.NAME --server openartifact\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: https://artifacts.example.com:8443/repos/my%20repo/api/"
+      }
+    ]
   }
 ]

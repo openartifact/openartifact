@@ -34,7 +34,7 @@ Every proxy format can be grouped; see the [format matrix](../formats/README.md#
 | pacman | yes | yes | yes |
 | terraform | yes | yes | yes |
 | nix | yes | yes | yes |
-| ansible | yes | no | no |
+| ansible | yes | yes | yes |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -67,7 +67,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required, except docker, pypi, cargo, go, nuget and rubygems; for conda a channel URL such as `https://conda.anaconda.org/conda-forge`) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`), go (defaults to `https://proxy.golang.org`) nuget (defaults to the nuget.org service index, `https://api.nuget.org/v3/index.json`) and rubygems (defaults to `https://rubygems.org`). |
+| `upstream_url` | proxy (required, except docker, pypi, cargo, go, nuget, rubygems and ansible; for conda a channel URL such as `https://conda.anaconda.org/conda-forge`) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`), go (defaults to `https://proxy.golang.org`) nuget (defaults to the nuget.org service index, `https://api.nuget.org/v3/index.json`) rubygems (defaults to `https://rubygems.org`) and ansible (defaults to `https://galaxy.ansible.com`). |
 | `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream (for docker: sent to the registry's token service). Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |

@@ -18,8 +18,8 @@ func TestFormatServerDecidesEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "proxy.formatServer",
-		[]string{"pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems", "terraform"},
-		[]string{"docker", "maven", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "apk", "pacman", "nix", "ansible"})
+		[]string{"pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems", "terraform", "ansible"},
+		[]string{"docker", "maven", "deb", "rpm", "raw", "conda", "conan", "ivy", "sbt", "apk", "pacman", "nix"})
 
 	s := &Service{}
 
@@ -63,9 +63,9 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "proxy.Immutable",
 		[]string{
 			"maven", "deb", "rpm", "pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems",
-			"conda", "docker", "apk", "ivy", "sbt", "conan", "terraform", "nix",
+			"conda", "docker", "apk", "ivy", "sbt", "conan", "terraform", "nix", "ansible",
 		},
-		[]string{"raw", "pacman", "ansible"})
+		[]string{"raw", "pacman"})
 
 	keys := map[string]string{
 		"maven":     "g/a/1.0/a-1.0.jar",
@@ -88,6 +88,7 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 		"raw":       "any/file.bin",
 		"pacman":    "x86_64/a-1-1-x86_64.pkg.tar.zst",
 		"nix":       "nar/0123456789abcdfghijklmnpqrsvwxyz0123456789abcdfghijk.nar.xz",
+		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -110,9 +111,9 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "proxy.isMetadataKey",
 		[]string{
 			"deb", "rpm", "maven", "apk", "ivy", "sbt", "pypi", "npm", "helm", "cargo", "nuget", "rubygems",
-			"go", "conda", "conan", "terraform", "pacman", "nix",
+			"go", "conda", "conan", "terraform", "pacman", "nix", "ansible",
 		},
-		[]string{"docker", "raw", "ansible"})
+		[]string{"docker", "raw"})
 
 	keys := map[string]string{
 		"deb":       "dists/stable/InRelease",
@@ -135,6 +136,7 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 		"docker":    "v2/x/manifests/latest",
 		"raw":       "index.html",
 		"nix":       "nix-cache-info",
+		"ansible":   "api/v3/collections/a/b/versions/",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

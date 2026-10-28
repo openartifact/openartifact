@@ -284,6 +284,8 @@ func (s *Service) formatServer(format string) func(http.ResponseWriter, *http.Re
 		return s.serveRubyGems
 	case "terraform":
 		return s.serveTerraform
+	case "ansible":
+		return s.serveAnsible
 	}
 
 	return nil
@@ -1020,6 +1022,9 @@ func Immutable(format, key string) bool {
 		// File lists and files below a revision, which a digest of its
 		// content names; revision lists and latest move.
 		return conanRevisionFile(key)
+	case "ansible":
+		// Tarballs, checked against the artifact sha256 of their version document.
+		return strings.HasPrefix(key, ansibleArtifactDir)
 	case "terraform":
 		// Provider zips, checked against the SHA256SUMS and package document
 		// checksums; module archives have no checksum upstream (see terraform.go).
@@ -1074,6 +1079,8 @@ func condaImmutable(name string) bool {
 
 // isMetadataKey reports whether key names an index or metadata file of format
 // (small by nature, capped at DefaultMaxMetadata) rather than a package file.
+//
+//nolint:gocyclo,cyclop // one case per format
 func isMetadataKey(format, key string) bool {
 	name := key[strings.LastIndexByte(key, '/')+1:]
 
@@ -1105,6 +1112,8 @@ func isMetadataKey(format, key string) bool {
 		return !strings.Contains(key, "/files/")
 	case "terraform":
 		return !tfArchiveKey(key)
+	case "ansible":
+		return !strings.HasPrefix(key, ansibleArtifactDir)
 	case "pacman":
 		return isPacmanDatabase(key)
 	case "nix":

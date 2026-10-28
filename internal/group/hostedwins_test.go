@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -110,6 +111,23 @@ func hostedWinsCases() map[string]hostedWinsCase {
 			hostedHas: `"1.0.0"`, proxyOnly: `"9.9.9"`,
 			file: "v3/package/lib/9.9.9/lib.9.9.9.nupkg", other: "v3/package/other/index.json",
 		},
+		"ansible": {
+			format: "ansible",
+			setup: func(_ *testing.T, f *fixture) {
+				const list = "api/v3/collections/acme/lib/versions/"
+
+				f.set("hosted", "api/v3/collections/acme/lib/", 200, `{}`)
+				f.set("hosted", list, 200, ansibleVersionPage("1.0.0"))
+				f.set("mirror", "api/v3/collections/acme/lib/", 200, `{}`)
+				f.set("mirror", list, 200, ansibleVersionPage("1.0.0", "9.9.9"))
+				f.set("mirror", "api/v3/artifacts/collections/acme-lib-9.9.9.tar.gz", 200, "evil")
+				f.set("mirror", "api/v3/collections/pub/tools/", 200, `{}`)
+				f.set("mirror", "api/v3/collections/pub/tools/versions/", 200, ansibleVersionPage("1.0.0"))
+			},
+			meta: "api/v3/collections/acme/lib/versions/", probe: "api/v3/collections/acme/lib/",
+			hostedHas: `"1.0.0"`, proxyOnly: `"9.9.9"`,
+			file: "api/v3/artifacts/collections/acme-lib-9.9.9.tar.gz", other: "api/v3/collections/pub/tools/versions/",
+		},
 		"maven": {
 			format: "maven",
 			setup: func(_ *testing.T, f *fixture) {
@@ -123,6 +141,16 @@ func hostedWinsCases() map[string]hostedWinsCase {
 			file: "org/x/lib/9.9/lib-9.9.jar", other: "org/x/other/maven-metadata.xml",
 		},
 	}
+}
+
+// ansibleVersionPage is a member's version list page holding versions.
+func ansibleVersionPage(versions ...string) string {
+	entries := make([]string, len(versions))
+	for i, v := range versions {
+		entries[i] = `{"version":"` + v + `"}`
+	}
+
+	return `{"meta":{"count":` + strconv.Itoa(len(versions)) + `},"links":{"next":null},"data":[` + strings.Join(entries, ",") + `]}`
 }
 
 func newHostedWins(t *testing.T, c hostedWinsCase) *fixture {

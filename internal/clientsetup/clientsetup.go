@@ -503,8 +503,14 @@ func terraformSnippets(c target) []Snippet {
 
 // ansibleSnippets configures ansible-galaxy against the Galaxy v3 API rooted at
 // the repository's /api/ path. Galaxy sends the API token as `Token <token>`.
+// Proxy and group repositories are read-only, so they carry no publish hint.
 func ansibleSnippets(c target) []Snippet {
 	api := c.base + "/api/"
+
+	publish := "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact"
+	if c.repoType == "proxy" || c.repoType == "group" {
+		publish = "" // proxy and group repositories are read-only
+	}
 
 	return []Snippet{{
 		Client: "ansible-galaxy",
@@ -514,7 +520,7 @@ func ansibleSnippets(c target) []Snippet {
 				"\n\n# requirements.yml\ncollections:\n  - name: NAMESPACE.NAME\n    version: 1.0.0\n    source: %s",
 			api, api,
 		),
-		Publish: "ansible-galaxy collection publish NAMESPACE-NAME-VERSION.tar.gz --server openartifact",
+		Publish: publish,
 	}}
 }
 
