@@ -7308,6 +7308,9 @@
           },
           "502": {
             "description": "The collector is unreachable or failed"
+          },
+          "503": {
+            "description": "The relay is busy: 32 forwards are already in flight. Retry after the Retry-After delay"
           }
         }
       }

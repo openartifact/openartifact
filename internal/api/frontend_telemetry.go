@@ -32,6 +32,10 @@ const (
 	// frontendTelemetryTimeout bounds one forward, so a stuck collector holds
 	// no handler for long.
 	frontendTelemetryTimeout = 10 * time.Second
+	// frontendTelemetryMaxInflight caps the forwards in progress. Each holds up
+	// to frontendTelemetryMaxBody in memory for up to frontendTelemetryTimeout,
+	// so a hung collector cannot pile them up; the rate limit is per client.
+	frontendTelemetryMaxInflight = 32
 
 	otlpProtobuf = "application/x-protobuf"
 )
@@ -51,10 +55,11 @@ const (
 // collector. Both answer 404 while the feature is off. Redaction is the
 // collector's job: the relay neither parses nor rewrites the payload.
 type FrontendTelemetryHandler struct {
-	cfg    telemetry.Config
-	client *http.Client
-	reg    *metrics.Registry
-	log    *logger.Logger
+	cfg      telemetry.Config
+	client   *http.Client
+	reg      *metrics.Registry
+	log      *logger.Logger
+	inflight chan struct{}
 }
 
 // count increments the relay counter (a no-op without a metrics registry).
@@ -76,8 +81,9 @@ func NewFrontendTelemetryHandler(cfg telemetry.Config, reg *metrics.Registry, lo
 			Timeout:       frontendTelemetryTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		reg: reg,
-		log: log,
+		reg:      reg,
+		log:      log,
+		inflight: make(chan struct{}, frontendTelemetryMaxInflight),
 	}
 }
 
@@ -133,6 +139,16 @@ func (h *FrontendTelemetryHandler) handleRelay(w http.ResponseWriter, r *http.Re
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != otlpProtobuf ||
 		r.Header.Get("Content-Encoding") != "" {
 		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "expected uncompressed "+otlpProtobuf)
+		return
+	}
+
+	select {
+	case h.inflight <- struct{}{}:
+		defer func() { <-h.inflight }()
+	default:
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusServiceUnavailable, "relay_busy", "telemetry relay busy")
+
 		return
 	}
 
@@ -206,7 +222,7 @@ func (h *FrontendTelemetryHandler) badGateway(w http.ResponseWriter, signal stri
 }
 
 // countResult counts every relay answer for a known signal by its status:
-// 2xx relayed, 502 failed, any other refusal (401, 403, 413, 415, 400)
+// 2xx relayed, 502 failed, any other refusal (401, 403, 413, 415, 400, 503)
 // rejected. 404s (feature off, unknown signal) are not counted, so the signal
 // label stays bounded. It sits outside MaxBodyMiddleware to see its 413s too.
 func (h *FrontendTelemetryHandler) countResult(next http.Handler) http.Handler {

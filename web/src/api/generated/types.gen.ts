@@ -3466,6 +3466,10 @@ export type PostApiV1TelemetryBySignalErrors = {
      * The collector is unreachable or failed
      */
     502: unknown;
+    /**
+     * The relay is busy: 32 forwards are already in flight. Retry after the Retry-After delay
+     */
+    503: unknown;
 };
 
 export type PostApiV1TelemetryBySignalResponses = {

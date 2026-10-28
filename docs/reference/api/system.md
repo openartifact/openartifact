@@ -83,6 +83,7 @@ Experimental. Same-origin relay of the web UI's OTLP/HTTP export requests: the b
 | `413` | Body larger than 1 MiB | - |
 | `415` | Content-Type is not application/x-protobuf, or the body is compressed | - |
 | `502` | The collector is unreachable or failed | - |
+| `503` | The relay is busy: 32 forwards are already in flight. Retry after the Retry-After delay | - |
 
 ### `GET /health`
 

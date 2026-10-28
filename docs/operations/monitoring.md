@@ -351,6 +351,7 @@ The browser never talks to the Collector. It posts OTLP/HTTP protobuf to a same-
 - takes `Content-Type: application/x-protobuf`, uncompressed, at most 1 MiB per request (`415`, `413`);
 - answers `404` while the feature is off and for any other signal (`/api/v1/telemetry/metrics`);
 - answers `502` when the Collector is unreachable or fails (the browser exporter retries later), `400` when the Collector rejects the payload; a forward times out after 10 seconds and affects no other request;
+- answers `503` with `Retry-After` while 32 forwards are already in flight, so a hung Collector cannot pile up request bodies in memory (the browser exporter retries);
 - is covered by `server.rateLimitRps` like every other route, is not written to the audit log, and counts the requests it handles in `openartifact_frontend_telemetry_requests_total{signal, result}` with `result` `relayed`, `rejected` or `failed` (the `401` and a missing CSRF token are refused before it and not counted).
 
 `GET /api/v1/telemetry/frontend` tells a signed-in UI whether to load the SDK: `{"enabled": true, "sample_ratio": ...}`, or `404` while off. `sample_ratio` is `otlp.sampleRatio`: the UI samples its traces with it, so its `traceparent` cannot make the server record more than it would on its own.

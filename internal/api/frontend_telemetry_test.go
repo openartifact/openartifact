@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -299,6 +300,70 @@ func TestFrontendTelemetryRelayRefusesRedirects(t *testing.T) {
 
 	if rec.Code != http.StatusBadGateway || hits.Load() != 0 {
 		t.Errorf("answered %d with %d requests at the redirect target, want 502 and none", rec.Code, hits.Load())
+	}
+}
+
+// TestFrontendTelemetryRelayBusy: with frontendTelemetryMaxInflight forwards stuck at the collector, the next
+// request is answered 503 with Retry-After at once, and the relay recovers when they finish.
+func TestFrontendTelemetryRelayBusy(t *testing.T) {
+	gate := make(chan struct{})
+
+	var (
+		entered atomic.Int32
+		release sync.Once
+	)
+
+	collector := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		entered.Add(1)
+		<-gate
+	}))
+	t.Cleanup(collector.Close)
+	t.Cleanup(func() { release.Do(func() { close(gate) }) }) // runs first: Close waits for the requests
+
+	router := newFrontendRouter(frontendConfig(collector.URL), nil, sessionPrincipal("user-1"))
+	payload := []byte("\x0a\x03abc")
+	codes := make([]int, frontendTelemetryMaxInflight)
+
+	var wg sync.WaitGroup
+
+	for i := range codes {
+		wg.Go(func() {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, relayRequest("traces", otlpProtobuf, payload))
+			codes[i] = rec.Code
+		})
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for entered.Load() < frontendTelemetryMaxInflight && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if n := entered.Load(); n != frontendTelemetryMaxInflight {
+		t.Fatalf("%d forwards reached the collector, want %d", n, frontendTelemetryMaxInflight)
+	}
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, relayRequest("logs", otlpProtobuf, payload))
+
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+		t.Errorf("over the cap = %d (Retry-After %q), want 503 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
+	}
+
+	release.Do(func() { close(gate) })
+	wg.Wait()
+
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Errorf("forward %d answered %d, want 200", i, code)
+		}
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, relayRequest("traces", otlpProtobuf, payload))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("after the forwards finished = %d, want 200", rec.Code)
 	}
 }
 
