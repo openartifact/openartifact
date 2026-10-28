@@ -52,8 +52,8 @@ the AGPL.
 | Repository type | Formats |
 |---|---|
 | Hosted | all 20 (listed above) |
-| Proxy (read-only mirror of an upstream) | Maven, Debian, RPM, Arch Linux (pacman), raw |
-| Group (ordered members, first hit wins) | Maven, Debian, RPM, Arch Linux (pacman), raw |
+| Proxy (read-only mirror of an upstream) | Maven, Debian, RPM, Arch Linux (pacman), Nix, raw |
+| Group (ordered members, first hit wins) | Maven, Debian, RPM, Arch Linux (pacman), Nix, raw |
 
 Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 

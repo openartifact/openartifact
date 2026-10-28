@@ -215,6 +215,7 @@ var specs = [...]Spec{
 	},
 	{
 		Name: "nix", PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
+		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
 	},
 }
 

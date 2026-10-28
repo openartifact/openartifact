@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
+	formatnix "github.com/openartifact/openartifact/internal/format/nix"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/ocipath"
@@ -83,6 +84,15 @@ func (d *Dispatcher) WithGroupMetadata(blobs storage.BlobStore, gen group.Metada
 // key a group's merged indexes are signed with.
 func (d *Dispatcher) WithApkKeys(keys formatapk.KeyProvider) *Dispatcher {
 	d.group.WithApkKeys(keys)
+
+	return d
+}
+
+// WithNixKeys enables the signing of nix groups: keys resolves the key of a
+// group, the one its hosted members' narinfo are signed with and its
+// public.key is served from.
+func (d *Dispatcher) WithNixKeys(keys formatnix.KeyProvider) *Dispatcher {
+	d.group.WithNixKeys(keys)
 
 	return d
 }

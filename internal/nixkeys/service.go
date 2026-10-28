@@ -8,7 +8,7 @@
 // ed25519 key in Nix's own text format, so it lives beside, not inside, the
 // GPG key administration.
 //
-// Every nix repository has at most one key. It is generated on first use,
+// Every hosted or group nix repository has at most one key. It is generated on first use,
 // replaced by a rotation or an import, and its private half is sealed with
 // internal/crypto (AES-256-GCM under OPENARTIFACT_SECRET_KEY) and never handed
 // out again. Without OPENARTIFACT_SECRET_KEY no key is stored and narinfo are

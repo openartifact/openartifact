@@ -36,7 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </section>
 
     <ApkKeyPanel v-if="repo.format === 'apk' && repo.repo_type !== 'proxy'" :repo="repo.name" />
-    <NixKeyPanel v-if="repo.format === 'nix' && repo.repo_type === 'hosted'" :repo="repo.name" />
+    <NixKeyPanel v-if="repo.format === 'nix' && repo.repo_type !== 'proxy'" :repo="repo.name" />
 
     <section class="space-y-4 rounded-lg border border-border bg-surface p-5" :aria-label="t('repoDetail.tab.cleanup')">
       <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.tab.cleanup') }}</h2>

@@ -351,17 +351,26 @@ export function clientSetup(format: string, origin: string, repo: string, repoTy
     }
     case 'nix': {
       const key = `${base}/public.key`
-      return [
-        {
-          client: 'nix',
-          configure:
-            `# /etc/nix/nix.conf\nextra-substituters = ${base}\nextra-trusted-public-keys = $(curl -fsS ${key})` +
-            `\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine ${hostnameOf(origin)} login oa password <TOKEN>` +
-            `\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc` +
-            `\n\n# one-off, without editing nix.conf\nnix build --substituters ${base} --option require-sigs true /nix/store/HASH-NAME`,
-          publish: `nix copy --to '${base}' /nix/store/HASH-NAME`,
-        },
-      ]
+      // A proxy passes the upstream's signatures through; a group signs what its hosted members serve.
+      const upstreamKey = 'cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
+      let trusted = `$(curl -fsS ${key})`
+      if (repoType === 'proxy') {
+        trusted = `${upstreamKey}  # the upstream's key (cache.nixos.org by default): use the key of your upstream cache`
+      } else if (repoType === 'group') {
+        trusted =
+          `$(curl -fsS ${key})  # the group's key, for narinfo its hosted members serve` +
+          `\n#   also trust the upstream's key when the group has proxy members, for example ${upstreamKey}`
+      }
+      const snippet: ClientSetup = {
+        client: 'nix',
+        configure:
+          `# /etc/nix/nix.conf\nextra-substituters = ${base}\nextra-trusted-public-keys = ${trusted}` +
+          `\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine ${hostnameOf(origin)} login oa password <TOKEN>` +
+          `\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc` +
+          `\n\n# one-off, without editing nix.conf\nnix build --substituters ${base} --option require-sigs true /nix/store/HASH-NAME`,
+      }
+      if (repoType !== 'proxy' && repoType !== 'group') snippet.publish = `nix copy --to '${base}' /nix/store/HASH-NAME`
+      return [snippet]
     }
     case 'conda':
       return [

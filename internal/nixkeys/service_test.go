@@ -265,3 +265,31 @@ func TestImportRejections(t *testing.T) {
 		t.Error("a rejected import must store nothing")
 	}
 }
+
+func TestGroupRepositoryHoldsItsOwnKey(t *testing.T) {
+	withSecretKey(t)
+
+	st := newStore()
+	svc := newService(t, st)
+	ctx := context.Background()
+	hosted := &models.Repository{ID: "h1", Name: "hosted", RepoType: "hosted"}
+	group := &models.Repository{ID: "g1", Name: "everything", RepoType: "group"}
+
+	hostedKey, err := svc.SecretKeyForRepo(ctx, hosted)
+	if err != nil || hostedKey == nil {
+		t.Fatalf("hosted key = %v, %v", hostedKey, err)
+	}
+
+	groupKey, err := svc.SecretKeyForRepo(ctx, group)
+	if err != nil || groupKey == nil {
+		t.Fatalf("group key = %v, %v", groupKey, err)
+	}
+
+	if groupKey.Name() != "openartifact-everything-1" || groupKey.PublicKey() == hostedKey.PublicKey() {
+		t.Errorf("group key %s must be distinct from the hosted key %s", groupKey.PublicKey(), hostedKey.PublicKey())
+	}
+
+	if len(st.keys) != 2 || st.keys["g1"] == nil {
+		t.Errorf("stored keys = %v, want one row per repository", st.keys)
+	}
+}

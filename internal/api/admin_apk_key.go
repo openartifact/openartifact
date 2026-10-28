@@ -5,8 +5,6 @@
 package api
 
 import (
-	"errors"
-	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -29,19 +27,7 @@ func NewApkKeyHandler(db database.Database, log *logger.Logger, evaluator *auth.
 		format: "apk", route: "apk-key", noun: "apk signing key", groups: true,
 		respond:  func(i *apkkeys.Info) any { return apkKeyResponseOf(i) },
 		describe: func(i *apkkeys.Info) string { return "fingerprint " + i.Fingerprint },
-		mapError: func(w http.ResponseWriter, err error) bool {
-			switch {
-			case errors.Is(err, apkkeys.ErrSecretKeyRequired):
-				writeError(w, http.StatusConflict, "secret_key_required",
-					"OPENARTIFACT_SECRET_KEY must be set: apk signing keys are only stored encrypted")
-			case errors.Is(err, apkkeys.ErrInvalidKey):
-				writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
-			default:
-				return false
-			}
-
-			return true
-		},
+		mapError: keyErrorMapper("apk", apkkeys.ErrSecretKeyRequired, apkkeys.ErrInvalidKey),
 	}}
 }
 

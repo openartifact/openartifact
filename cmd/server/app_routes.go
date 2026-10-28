@@ -329,7 +329,7 @@ func (a *app) registerFormatRoutes() {
 
 	w := &a.workers
 	repoDispatch := repodispatch.New(a.log, a.db, w.proxySvc, a.web.evaluator, a.hostedRouters()).
-		WithBaseURL(a.cfg.BaseURL).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys)
+		WithBaseURL(a.cfg.BaseURL).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys).WithNixKeys(w.nixKeys)
 
 	a.mountRepoRoutes(repoDispatch)
 	a.mountIsolatedRepoRoutes(repoDispatch)

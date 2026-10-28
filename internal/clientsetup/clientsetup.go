@@ -296,21 +296,41 @@ func pacmanSnippets(c target) []Snippet {
 	}}
 }
 
+// nixUpstreamKey is the public key of cache.nixos.org, the default upstream of
+// a nix proxy repository. A proxy passes the upstream's signatures through, so
+// that is the key clients must trust.
+const nixUpstreamKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+
 // nixSnippets configures a Nix client to substitute from, and `nix copy` to,
 // a hosted binary cache. The netrc carries the token of a private repository
-// for reads and for uploads; netrc matches the host name without the port.
+// for reads and for uploads; netrc matches the host name without the port. A
+// proxy and a group are read-only: a proxy serves the upstream's signatures, a
+// group signs what its hosted members serve with its own key and passes proxy
+// members' narinfo through untouched.
 func nixSnippets(c target) []Snippet {
 	key := c.base + "/public.key"
+	trusted := "$(curl -fsS " + key + ")"
 
-	return []Snippet{{
-		Client: "nix",
-		Configure: "# /etc/nix/nix.conf\nextra-substituters = " + c.base +
-			"\nextra-trusted-public-keys = $(curl -fsS " + key + ")" +
-			"\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine " + c.name + " login oa password <TOKEN>" +
-			"\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc" +
-			"\n\n# one-off, without editing nix.conf\nnix build --substituters " + c.base + " --option require-sigs true /nix/store/HASH-NAME",
-		Publish: "nix copy --to '" + c.base + "' /nix/store/HASH-NAME",
-	}}
+	switch c.repoType {
+	case "proxy":
+		trusted = nixUpstreamKey + "  # the upstream's key (cache.nixos.org by default): use the key of your upstream cache"
+	case "group":
+		trusted = "$(curl -fsS " + key + ")  # the group's key, for narinfo its hosted members serve" +
+			"\n#   also trust the upstream's key when the group has proxy members, for example " + nixUpstreamKey
+	}
+
+	configure := "# /etc/nix/nix.conf\nextra-substituters = " + c.base +
+		"\nextra-trusted-public-keys = " + trusted +
+		"\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine " + c.name + " login oa password <TOKEN>" +
+		"\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc" +
+		"\n\n# one-off, without editing nix.conf\nnix build --substituters " + c.base + " --option require-sigs true /nix/store/HASH-NAME"
+
+	snippet := Snippet{Client: "nix", Configure: configure}
+	if c.repoType != "proxy" && c.repoType != "group" {
+		snippet.Publish = "nix copy --to '" + c.base + "' /nix/store/HASH-NAME"
+	}
+
+	return []Snippet{snippet}
 }
 
 // pacmanProxySnippets points pacman at a proxy repository, which mirrors an

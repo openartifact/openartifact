@@ -21,9 +21,9 @@ func TestIsProxyBlobPathDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "presign.IsProxyBlobPath",
 		[]string{
 			"maven", "deb", "rpm", "pacman", "npm", "helm", "cargo", "go", "nuget", "rubygems",
-			"conan", "conda", "terraform", "raw", "pypi",
+			"conan", "conda", "terraform", "raw", "pypi", "nix",
 		},
-		[]string{"docker", "ivy", "sbt", "apk", "nix"})
+		[]string{"docker", "ivy", "sbt", "apk"})
 
 	blobs := map[string]string{
 		"maven":     "g/a/1.0/a-1.0.jar",
@@ -41,6 +41,7 @@ func TestIsProxyBlobPathDecidesEveryFormat(t *testing.T) {
 		"terraform": "providers/hashicorp/aws/1.0.0/linux_amd64/p.zip",
 		"raw":       "any/file.bin",
 		"pypi":      "files/x-1.whl",
+		"nix":       "nar/0123456789abcdfghijklmnpqrsvwxyz0123456789abcdfghijk.nar.xz",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {

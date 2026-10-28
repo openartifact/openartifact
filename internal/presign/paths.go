@@ -39,6 +39,9 @@ func IsProxyBlobPath(format, relPath string) bool {
 		// Module archives and provider zips; documents, the SHA256SUMS file
 		// and its signature are streamed.
 		return isTerraformArchive(relPath, base)
+	case "nix":
+		// NARs only; narinfo and nix-cache-info are streamed.
+		return strings.HasPrefix(relPath, "nar/")
 	case "raw":
 		return true
 	case "pypi":

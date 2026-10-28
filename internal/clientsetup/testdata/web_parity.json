@@ -698,5 +698,57 @@
         "publish": "nix copy --to 'https://artifacts.example.com:8443/repos/my%20repo' /nix/store/HASH-NAME"
       }
     ]
+  },
+  {
+    "format": "nix",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "nix",
+        "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/repo1\nextra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=  # the upstream's key (cache.nixos.org by default): use the key of your upstream cache\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/repo1 --option require-sigs true /nix/store/HASH-NAME"
+      }
+    ]
+  },
+  {
+    "format": "nix",
+    "repo_type": "proxy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "nix",
+        "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/my%20repo\nextra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=  # the upstream's key (cache.nixos.org by default): use the key of your upstream cache\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/my%20repo --option require-sigs true /nix/store/HASH-NAME"
+      }
+    ]
+  },
+  {
+    "format": "nix",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "nix",
+        "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/repo1\nextra-trusted-public-keys = $(curl -fsS https://artifacts.example.com:8443/repos/repo1/public.key)  # the group's key, for narinfo its hosted members serve\n#   also trust the upstream's key when the group has proxy members, for example cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/repo1 --option require-sigs true /nix/store/HASH-NAME"
+      }
+    ]
+  },
+  {
+    "format": "nix",
+    "repo_type": "group",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "nix",
+        "configure": "# /etc/nix/nix.conf\nextra-substituters = https://artifacts.example.com:8443/repos/my%20repo\nextra-trusted-public-keys = $(curl -fsS https://artifacts.example.com:8443/repos/my%20repo/public.key)  # the group's key, for narinfo its hosted members serve\n#   also trust the upstream's key when the group has proxy members, for example cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n\n# private repository: a netrc file with the token\n# /etc/nix/netrc\nmachine artifacts.example.com login oa password \u003cTOKEN\u003e\n# and in /etc/nix/nix.conf\nnetrc-file = /etc/nix/netrc\n\n# one-off, without editing nix.conf\nnix build --substituters https://artifacts.example.com:8443/repos/my%20repo --option require-sigs true /nix/store/HASH-NAME"
+      }
+    ]
   }
 ]

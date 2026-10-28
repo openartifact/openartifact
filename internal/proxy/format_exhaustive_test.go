@@ -41,10 +41,10 @@ func TestFetchDecidesEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	repotypetest.Classified(t, "proxy.Service.fetch",
-		[]string{"ivy", "sbt", "apk"},
+		[]string{"ivy", "sbt", "apk", "nix"},
 		[]string{
 			"docker", "npm", "pypi", "maven", "helm", "cargo", "rubygems", "deb", "rpm", "nuget", "go",
-			"raw", "conda", "conan", "terraform", "pacman", "nix",
+			"raw", "conda", "conan", "terraform", "pacman",
 		})
 
 	for _, f := range []string{"ivy", "sbt"} {
@@ -63,9 +63,9 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "proxy.Immutable",
 		[]string{
 			"maven", "deb", "rpm", "pypi", "npm", "helm", "cargo", "go", "nuget", "rubygems",
-			"conda", "docker", "apk", "ivy", "sbt", "conan", "terraform",
+			"conda", "docker", "apk", "ivy", "sbt", "conan", "terraform", "nix",
 		},
-		[]string{"raw", "pacman", "nix"})
+		[]string{"raw", "pacman"})
 
 	keys := map[string]string{
 		"maven":     "g/a/1.0/a-1.0.jar",
@@ -87,6 +87,7 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 		"terraform": "providers/hashicorp/aws/1.0.0/linux_amd64/p.zip",
 		"raw":       "any/file.bin",
 		"pacman":    "x86_64/a-1-1-x86_64.pkg.tar.zst",
+		"nix":       "nar/0123456789abcdfghijklmnpqrsvwxyz0123456789abcdfghijk.nar.xz",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -109,9 +110,9 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 	handled := repotypetest.Classified(t, "proxy.isMetadataKey",
 		[]string{
 			"deb", "rpm", "maven", "apk", "ivy", "sbt", "pypi", "npm", "helm", "cargo", "nuget", "rubygems",
-			"go", "conda", "conan", "terraform", "pacman",
+			"go", "conda", "conan", "terraform", "pacman", "nix",
 		},
-		[]string{"docker", "raw", "nix"})
+		[]string{"docker", "raw"})
 
 	keys := map[string]string{
 		"deb":       "dists/stable/InRelease",
@@ -133,6 +134,7 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 		"pacman":    "x86_64/core.db",
 		"docker":    "v2/x/manifests/latest",
 		"raw":       "index.html",
+		"nix":       "nix-cache-info",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -175,12 +177,12 @@ func TestPackageExtsDecideEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	ignored := []string{
-		"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conan", "apk", "nix",
+		"docker", "npm", "pypi", "helm", "cargo", "rubygems", "nuget", "go", "raw", "conan", "apk",
 	}
 
 	for _, site := range []string{"proxy.packageExts", "proxy.isHTMLForPackage"} {
 		repotypetest.Classified(t, site,
-			[]string{"maven", "deb", "rpm", "pacman", "ivy", "sbt", "conda", "terraform"}, ignored)
+			[]string{"maven", "deb", "rpm", "pacman", "ivy", "sbt", "conda", "terraform", "nix"}, ignored)
 	}
 
 	html := &http.Response{Header: http.Header{"Content-Type": {"text/html; charset=utf-8"}}}

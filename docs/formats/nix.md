@@ -6,16 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Nix
 
-Hosted Nix binary cache: `nix copy --to` uploads store paths and Nix substitutes from the repository. Every `.narinfo` is signed with the repository's own ed25519 key.
+Nix binary cache: hosted repositories take `nix copy --to` uploads and Nix substitutes from them, every `.narinfo` signed with the repository's own ed25519 key; proxy repositories mirror an upstream cache (`cache.nixos.org` by default); group repositories combine both.
 
 | | |
 |---|---|
 | Format id | `nix` |
 | Repo URL (substituter) | `HOST/repos/REPO` (`/nix-cache-info`, `/<hash>.narinfo`, `/nar/<file>`) |
-| Repository types | hosted |
-| Public key | `HOST/repos/REPO/public.key` (plain text, `name:base64`) |
-
-Proxy and group repositories are not available for this format yet.
+| Repository types | hosted, proxy, group |
+| Public key | `HOST/repos/REPO/public.key` (plain text, `name:base64`; hosted and group repositories) |
 
 A component is one store path: its name is the store path name without the hash (`hello-2.12`) and its version is the 32 character store hash.
 
@@ -32,7 +30,7 @@ curl -fsS HOST/repos/REPO/public.key
 # openartifact-REPO-1:AbCd...=
 ```
 
-Administrators manage the key on the repository **Settings** page or through the API (global manage permission, hosted nix repositories only):
+Administrators manage the key on the repository **Settings** page or through the API (global manage permission, hosted and group nix repositories; a proxy has no key):
 
 | Call | Effect |
 |---|---|
@@ -41,6 +39,32 @@ Administrators manage the key on the repository **Settings** page or through the
 | `POST /api/v1/repositories/REPO/nix-key` with `{"private_key": "name:base64", "key_name": "..."}` | Imports a key made with `nix-store --generate-binary-cache-key NAME secret.key public.key` (`private_key` is the content of `secret.key`, 64 bytes encoded as base64; `key_name` is optional). |
 
 Without `OPENARTIFACT_SECRET_KEY` both calls answer `409 secret_key_required`. Rotating or importing a key re-signs every `.narinfo` immediately, because they are signed when served; every client has to add the new public key to `trusted-public-keys`.
+
+## Proxy
+
+A proxy repository (`repo_type: proxy`, default `upstream_url` `https://cache.nixos.org`) is a read-only mirror of an upstream binary cache; point `extra-substituters` at `HOST/repos/REPO`.
+
+- **narinfo** (`/<hash>.narinfo`) is cached for the repository TTL and served byte-for-byte: the upstream's `Sig:` lines pass through untouched, so clients trust the **upstream's** key (`cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=` for the default), not a key of this server. A narinfo is cached only when it parses, its `StorePath` hash equals the requested hash and its `URL` is a clean relative path; absent paths (404) are cached briefly (negative cache), upstream errors are not.
+- **`/nix-cache-info`** is passed through the cache like other metadata.
+- **NARs** (`/nar/...`) are immutable. When the proxy caches a narinfo it records the `FileHash` and `FileSize` the NAR must have; a NAR is stored only after its body matches both, a mismatching body is refused (and not cached), and a NAR whose narinfo was never fetched through the proxy is refused unless its file name is the nix32 SHA-256 of its own content. The NAR file name need not be the file hash (`cache.nixos.org` names zstd NARs after the `NarHash`): the narinfo is authoritative.
+- **Limits:** metadata (narinfo, `nix-cache-info`, `.ls`) is capped at the proxy metadata size limit and a NAR larger than the proxy body limit is refused, so very large store paths cannot be substituted through a proxy; fetch them from the upstream directly.
+- A proxy is read-only: uploads answer `405`.
+
+## Group
+
+A group repository (`repo_type: group`) serves a read-only binary cache over ordered members (hosted and proxy nix repositories).
+
+- Members are asked **hosted first** (stable order within each kind); the first member that has the file answers, and 404/5xx answers are passed over.
+- `/nix-cache-info` and `/public.key` are answered by the group itself (`Priority: 30`, like a hosted repository). `/public.key` is the group's own key; manage it with `GET`/`POST /api/v1/repositories/GROUP/nix-key` (same calls as for a hosted repository).
+- **Signature policy:** a narinfo from a **hosted** member gets the group's own signature added (over the same fingerprint) next to the member's signatures; without `OPENARTIFACT_SECRET_KEY` it is served as is. A narinfo from a **proxy** member is passed through unchanged: the group does not sign what it did not vouch for, so clients must trust the upstream's key for those paths.
+- Clients therefore trust the group's public key and, when the group has proxy members, the upstream's key too:
+
+```ini
+extra-substituters = HOST/repos/GROUP
+extra-trusted-public-keys = openartifact-GROUP-1:AbCd...= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+- NARs and other paths are served by the first member that has them; `HEAD` on a narinfo works. Groups are read-only (`405`).
 
 ## Client setup
 
