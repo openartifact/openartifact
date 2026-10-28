@@ -9,7 +9,7 @@
 -- Rolling-safe: the repositories.format constraint is widened in one statement
 -- pair (a superset of the old list, added NOT VALID, so replicas of the previous
 -- version keep working and no table scan runs under the lock; the existing rows
--- are validated in 091_nix_validate.no_tx.sql), and the three tables are new, so
+-- are validated in 092_nix_validate.no_tx.sql), and the three tables are new, so
 -- no existing table is rewritten. The live-row unique index is created together
 -- with the empty table.
 
