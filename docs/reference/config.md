@@ -383,6 +383,15 @@ This page lists every configuration key with its type, built-in default and the 
 | `telemetry.otlp.logs` | `OTEL_LOGS_EXPORTER` | bool | `false` | `logs` sends the application log records over OTLP as well, next to the configured log output; with it (or audit) on, an OTLP log provider is started on the same endpoint. The environment form is `OTEL_LOGS_EXPORTER`: otlp turns it on, none turns it off. |
 | `telemetry.otlp.audit` | `OPENARTIFACT_OTLP_AUDIT` | bool | `false` | `audit` is the switch for audit events over OTLP (scope openartifact.audit), independent of traces. It shares the log provider with logs. Reserved: no events are written to it yet (#193). The audit_logs table stays the source of truth. |
 
+### `telemetry.frontend`
+
+`telemetry.frontend` configures the experimental browser telemetry: the web UI loads the OpenTelemetry browser SDK and sends its errors, web vitals and API client spans to a same-origin relay, which forwards them unchanged as OTLP/HTTP to the collector. It needs telemetry.otlp.enabled (the shared headers and TLS) and has no compatibility promise.
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `telemetry.frontend.enabled` | `OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED` | bool | `false` | `enabled` turns the whole feature on. Off by default: the UI then loads no telemetry code and the relay and its config endpoint answer 404. |
+| `telemetry.frontend.endpoint` | `OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT` | string | `empty` | `endpoint` is the OTLP/HTTP base URL the relay forwards to ("/v1/traces" and "/v1/logs" are appended). Empty uses telemetry.otlp.endpoint, which then has to be an OTLP/HTTP one (protocol http). |
+
 ## scanners
 
 `scanners` configures the external vulnerability scanners (trivy, grype) used by on-demand scans (see [security/scanning.md](../security/scanning.md)). OSV needs none of it.

@@ -848,6 +848,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Logger.OutputPath, "LOG_OUTPUT")
 
 	applyTelemetryEnv(&cfg.Telemetry.OTLP)
+	applyFrontendTelemetryEnv(&cfg.Telemetry.Frontend)
 
 	// GPG config
 	overrideBool(&cfg.GPG.Enabled, "GPG_ENABLED")

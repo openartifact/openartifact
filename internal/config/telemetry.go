@@ -62,6 +62,14 @@ func applyTelemetryEnv(o *telemetry.OTLPConfig) {
 	}
 }
 
+// applyFrontendTelemetryEnv overrides the telemetry.frontend settings:
+// OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED and
+// OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT.
+func applyFrontendTelemetryEnv(f *telemetry.FrontendConfig) {
+	overrideBool(&f.Enabled, "OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED")
+	overrideString(&f.Endpoint, "OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT")
+}
+
 // overrideExporter reads a standard OTEL_*_EXPORTER variable, a comma-separated
 // list: one naming otlp switches the signal on, otherwise none switches it off;
 // any other list leaves the setting unchanged.

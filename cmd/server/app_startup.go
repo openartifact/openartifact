@@ -112,7 +112,12 @@ func (a *app) setupTelemetry() error {
 			"metrics", otlp.Metrics,
 			"logs", otlp.Logs,
 			"audit", otlp.Audit,
+			"frontend", a.cfg.Telemetry.FrontendActive(),
 		)
+	}
+
+	if a.cfg.Telemetry.Frontend.Enabled && !a.cfg.Telemetry.OTLP.Enabled {
+		a.log.Warnw("telemetry.frontend.enabled is set but telemetry.otlp.enabled is not: frontend telemetry stays off")
 	}
 
 	return nil
