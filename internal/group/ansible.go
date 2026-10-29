@@ -105,9 +105,9 @@ type ansiblePage[T any] struct {
 	next  string
 }
 
-// ansibleGetRequest is the request members are asked with: a plain GET without
+// memberGetRequest is the request members are asked with: a plain GET without
 // the client's conditional or range headers.
-func ansibleGetRequest(r *http.Request) *http.Request {
+func memberGetRequest(r *http.Request) *http.Request {
 	mr := r.Clone(r.Context())
 	mr.Method = http.MethodGet
 
@@ -118,10 +118,10 @@ func ansibleGetRequest(r *http.Request) *http.Request {
 	return mr
 }
 
-// ansibleMemberRequest is ansibleGetRequest for the page of a list at offset,
+// ansibleMemberRequest is memberGetRequest for the page of a list at offset,
 // with the largest page size.
 func ansibleMemberRequest(r *http.Request, offset int) *http.Request {
-	mr := ansibleGetRequest(r)
+	mr := memberGetRequest(r)
 	mr.URL.RawQuery = url.Values{
 		"limit":  {strconv.Itoa(pkgansible.MaxLimit)},
 		"offset": {strconv.Itoa(offset)},
@@ -296,7 +296,7 @@ func (h *Handler) serveAnsibleVersion(
 	members []*models.Repository,
 	be Backend,
 ) {
-	mr := ansibleGetRequest(r)
+	mr := memberGetRequest(r)
 
 	sess := h.newSession(r.Context())
 	defer sess.release()
@@ -434,9 +434,16 @@ func (h *Handler) writeAnsible(w http.ResponseWriter, r *http.Request, grp *mode
 		return
 	}
 
+	writeMergedJSON(w, r, grp, body, ansibleMetaMaxAge, partial)
+}
+
+// writeMergedJSON answers an encoded JSON document a group generated, with a
+// content ETag and a shared-cache lifetime of maxAge seconds for a public group;
+// partial documents are not cached (revalidateMerged).
+func writeMergedJSON(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, maxAge int, partial bool) {
 	sum := sha256.Sum256(body)
 
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:16])+`"`, ansibleMetaMaxAge, partial) {
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:16])+`"`, maxAge, partial) {
 		return
 	}
 

@@ -181,7 +181,7 @@ func versions(t *testing.T, w *httptest.ResponseRecorder, name string) []pkgcomp
 		t.Fatalf("metadata = %d: %s", w.Code, w.Body.String())
 	}
 
-	pkgs, err := composertest.Decode(w.Body.Bytes())
+	pkgs, err := pkgcomposer.Decode(w.Body.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,32 +412,6 @@ func TestWrongMethodsAndFormats(t *testing.T) {
 
 	if w := do(h, http.MethodGet, root+"packages.json", nil); w.Code != http.StatusNotFound {
 		t.Errorf("packages.json of a raw repository = %d, want 404", w.Code)
-	}
-}
-
-func TestClassify(t *testing.T) {
-	t.Parallel()
-
-	for _, c := range []struct {
-		path string
-		want route
-		ok   bool
-	}{
-		{"/packages.json", route{kind: routeRoot}, true},
-		{"/p2/acme/tools.json", route{kind: routeMetadata, name: "acme/tools"}, true},
-		{"/p2/acme/tools~dev.json", route{kind: routeMetadata, name: "acme/tools", dev: true}, true},
-		{"/packages/upload/acme/tools/dev-feature%2Fx", route{kind: routeUpload, name: "acme/tools", version: "dev-feature/x"}, true},
-		{"/dists/acme/tools/1.0.0/abc.zip", route{kind: routeDist, name: "acme/tools", version: "1.0.0", ref: "abc"}, true},
-		{"/dists/acme/tools/1.0.0/abc.tar", route{}, false},
-		{"/p2/acme/Tools.json", route{}, false},
-		{"/p2/acme/tools.json/x", route{}, false},
-		{"/packages/upload/acme/tools", route{}, false},
-		{"/dists/acme/tools/%zz/abc.zip", route{}, false},
-	} {
-		got, ok := classify(c.path)
-		if ok != c.ok || (ok && got != c.want) {
-			t.Errorf("classify(%q) = %+v, %v; want %+v, %v", c.path, got, ok, c.want, c.ok)
-		}
 	}
 }
 

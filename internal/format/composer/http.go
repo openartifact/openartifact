@@ -67,87 +67,9 @@ func (h *HTTPHandler) WithMetrics(reg *metrics.Registry) *HTTPHandler {
 	return h
 }
 
-type routeKind int
-
-const (
-	routeRoot routeKind = iota + 1
-	routeMetadata
-	routeList
-	routeSearch
-	routeUpload
-	routeDist
-)
-
-// route is a request path the protocol defines. name is "vendor/package"; the
-// other fields are set per kind.
-type route struct {
-	kind routeKind
-	name string
-	// dev is set on a p2 document of the "~dev" variant.
-	dev bool
-	// version is the version of an upload or a dist, unescaped.
-	version string
-	// ref is the content reference of a dist (the sha256 of the zip).
-	ref string
-}
-
-// unescapeAll unescapes every path segment, failing on invalid escapes.
-func unescapeAll(parts []string) ([]string, bool) {
-	out := make([]string, len(parts))
-
-	for i, p := range parts {
-		s, err := url.PathUnescape(p)
-		if err != nil {
-			return nil, false
-		}
-
-		out[i] = s
-	}
-
-	return out, true
-}
-
-// classify maps the path below the repository to a route.
-func classify(rel string) (route, bool) {
-	rel = strings.TrimPrefix(rel, "/")
-
-	switch rel {
-	case "packages.json":
-		return route{kind: routeRoot}, true
-	case "list.json":
-		return route{kind: routeList}, true
-	case "search.json":
-		return route{kind: routeSearch}, true
-	}
-
-	parts, ok := unescapeAll(strings.Split(rel, "/"))
-	if !ok {
-		return route{}, false
-	}
-
-	switch {
-	case len(parts) == 3 && parts[0] == "p2":
-		pkg, dev, ok := composer.MetadataName(parts[2])
-		name := parts[1] + "/" + pkg
-
-		return route{kind: routeMetadata, name: name, dev: dev}, ok && composer.ValidName(name)
-	case len(parts) == 5 && parts[0] == "packages" && parts[1] == "upload":
-		name := parts[2] + "/" + parts[3]
-
-		return route{kind: routeUpload, name: name, version: parts[4]}, composer.ValidName(name) && parts[4] != ""
-	case len(parts) == 5 && parts[0] == "dists":
-		name := parts[1] + "/" + parts[2]
-		ref, isZip := strings.CutSuffix(parts[4], ".zip")
-
-		return route{kind: routeDist, name: name, version: parts[3], ref: ref}, isZip && composer.ValidName(name) && parts[3] != ""
-	}
-
-	return route{}, false
-}
-
 // allowed returns the methods a route answers.
-func (k routeKind) allowed() []string {
-	if k == routeUpload {
+func allowed(k composer.Kind) []string {
+	if k == composer.KindUpload {
 		return []string{http.MethodPut, http.MethodDelete}
 	}
 
@@ -160,7 +82,7 @@ func (k routeKind) allowed() []string {
 // unknown path is a 404.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.HandleFunc("/*", func(w http.ResponseWriter, req *http.Request) {
-		rt, ok := classify(chi.URLParam(req, "*"))
+		rt, ok := composer.ParsePath(chi.URLParam(req, "*"))
 		if !ok {
 			writeError(w, http.StatusNotFound, "Not found.")
 			return
@@ -177,12 +99,12 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 // composer repository, and passed on untouched otherwise. Run it before the
 // per-format routes.
 func (h *HTTPHandler) Guard(next http.Handler) http.Handler {
-	return base.Guard(h.Handler, FormatName, classify, h.serve)(next)
+	return base.Guard(h.Handler, FormatName, composer.ParsePath, h.serve)(next)
 }
 
 // serve answers a classified request for the repository called name.
-func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string, rt route) {
-	if allowed := rt.kind.allowed(); !slices.Contains(allowed, r.Method) {
+func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string, rt composer.Path) {
+	if allowed := allowed(rt.Kind); !slices.Contains(allowed, r.Method) {
 		w.Header().Set("Allow", strings.Join(allowed, ", "))
 		writeError(w, http.StatusMethodNotAllowed, "Method not allowed.")
 
@@ -202,18 +124,18 @@ func (h *HTTPHandler) serve(w http.ResponseWriter, r *http.Request, name string,
 		return
 	}
 
-	switch rt.kind {
-	case routeRoot:
+	switch rt.Kind {
+	case composer.KindRoot:
 		h.handleRoot(w, r, repo)
-	case routeMetadata:
+	case composer.KindMetadata:
 		h.handleMetadata(w, r, repo, rt)
-	case routeList:
+	case composer.KindList:
 		h.handleList(w, r, repo)
-	case routeSearch:
+	case composer.KindSearch:
 		h.handleSearch(w, r, repo)
-	case routeDist:
+	case composer.KindDist:
 		h.handleDist(w, r, repo, rt)
-	case routeUpload:
+	case composer.KindUpload:
 		if r.Method == http.MethodDelete {
 			h.handleDelete(w, r, repo, rt)
 			return
@@ -234,7 +156,7 @@ func (h *HTTPHandler) repoURL(repoName string) string {
 // distURL is the download URL of one version: the coordinates and the content
 // reference (the sha256 of the zip), so a URL never changes its bytes.
 func (h *HTTPHandler) distURL(repoName string, p *models.ComposerPackage) string {
-	return h.repoURL(repoName) + "/dists/" + p.Name + "/" + url.PathEscape(p.Version) + "/" + p.SHA256 + ".zip"
+	return h.repoURL(repoName) + "/" + composer.DistPath(p.Name, p.Version, p.SHA256)
 }
 
 // errorBody is the error document of the repository, the shape Packagist uses.

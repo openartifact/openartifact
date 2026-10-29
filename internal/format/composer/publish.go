@@ -32,13 +32,13 @@ const maxPublishBytes = 500 << 20
 // handlePublish stores the dist zip in the request body as one version of the
 // package in the URL. The zip's composer.json must name the same package, and
 // its "version", when it has one, must be the same version.
-func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt route) {
-	normalized, err := composer.NormalizePublished(rt.version)
+func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt composer.Path) {
+	normalized, err := composer.NormalizePublished(rt.Version)
 	if err != nil {
 		writeError(
 			w,
 			http.StatusBadRequest,
-			"Invalid version "+rt.version+": it must be a Composer version such as 1.2.3, 1.0.0-RC1, dev-main or 1.x-dev.",
+			"Invalid version "+rt.Version+": it must be a Composer version such as 1.2.3, 1.0.0-RC1, dev-main or 1.x-dev.",
 		)
 		return
 	}
@@ -75,9 +75,9 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	existing, err := h.DB.GetComposerPackage(r.Context(), repo.ID, rt.name, normalized)
+	existing, err := h.DB.GetComposerPackage(r.Context(), repo.ID, rt.Name, normalized)
 	if err != nil {
-		h.Log.Errorw("failed to look up composer package", "package", rt.name, "error", err)
+		h.Log.Errorw("failed to look up composer package", "package", rt.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "Internal error.")
 
 		return
@@ -90,14 +90,14 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request, repo
 
 	// A branch is always "dev-<branch>" in the metadata, however it was spelled
 	// ("master" is the branch dev-master).
-	version := rt.version
+	version := rt.Version
 	if strings.HasPrefix(normalized, "dev-") {
 		version = normalized
 	}
 
 	row := &models.ComposerPackage{
 		RepositoryID:      repo.ID,
-		Name:              rt.name,
+		Name:              rt.Name,
 		Version:           version,
 		VersionNormalized: normalized,
 		SizeBytes:         part.Size(),
@@ -145,7 +145,7 @@ func artifact(repo *models.Repository, p *models.ComposerPackage) webhook.Artifa
 
 // checkArchive reads and validates the zip. The returned message is empty when
 // the upload is acceptable.
-func checkArchive(part *base.Spool, rt route, normalized string) (*composer.Manifest, string) {
+func checkArchive(part *base.Spool, rt composer.Path, normalized string) (*composer.Manifest, string) {
 	man, err := composer.ReadArchive(part.Reader(), part.Size())
 	if err != nil {
 		if errors.Is(err, composer.ErrInvalidArchive) {
@@ -155,22 +155,22 @@ func checkArchive(part *base.Spool, rt route, normalized string) (*composer.Mani
 		return nil, "Cannot read the package: " + err.Error()
 	}
 
-	if !strings.EqualFold(man.Name, rt.name) {
-		return nil, fmt.Sprintf("The package name %q in composer.json must be %q, the one in the URL.", man.Name, rt.name)
+	if !strings.EqualFold(man.Name, rt.Name) {
+		return nil, fmt.Sprintf("The package name %q in composer.json must be %q, the one in the URL.", man.Name, rt.Name)
 	}
 
 	if man.Version != "" {
 		declared, err := composer.Normalize(man.Version)
 		if err != nil || declared != normalized {
-			return nil, fmt.Sprintf("The version %q in composer.json is not the version %q in the URL.", man.Version, rt.version)
+			return nil, fmt.Sprintf("The version %q in composer.json is not the version %q in the URL.", man.Version, rt.Version)
 		}
 	}
 
 	return man, ""
 }
 
-func writeConflict(w http.ResponseWriter, rt route) {
-	writeError(w, http.StatusConflict, "Version already exists: "+rt.name+" "+rt.version+" is already published.")
+func writeConflict(w http.ResponseWriter, rt composer.Path) {
+	writeError(w, http.StatusConflict, "Version already exists: "+rt.Name+" "+rt.Version+" is already published.")
 }
 
 // store reserves the quota and persists the dist and its row. On failure it
@@ -204,7 +204,7 @@ func (h *HTTPHandler) store(
 	}
 
 	if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
-		writeConflict(w, route{name: row.Name, version: row.Version})
+		writeConflict(w, composer.Path{Name: row.Name, Version: row.Version})
 		return false
 	}
 
@@ -242,16 +242,16 @@ func (h *HTTPHandler) dropBlob(ctx context.Context, sha256, after string) {
 }
 
 // handleDelete moves one version to the trash.
-func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt route) {
-	normalized, err := composer.NormalizePublished(rt.version)
+func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt composer.Path) {
+	normalized, err := composer.NormalizePublished(rt.Version)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "Not found.")
 		return
 	}
 
-	p, err := h.DB.GetComposerPackage(r.Context(), repo.ID, rt.name, normalized)
+	p, err := h.DB.GetComposerPackage(r.Context(), repo.ID, rt.Name, normalized)
 	if err != nil {
-		h.Log.Errorw("failed to get composer package", "package", rt.name, "error", err)
+		h.Log.Errorw("failed to get composer package", "package", rt.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "Internal error.")
 
 		return

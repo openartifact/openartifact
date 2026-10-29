@@ -86,6 +86,9 @@ const (
 	immutableTTL = 100 * 365 * 24 * time.Hour
 
 	maxPathLen = 2048
+
+	// jsonMediaType is the Content-Type of the JSON documents the proxy generates.
+	jsonMediaType = "application/json"
 )
 
 var (
@@ -286,6 +289,8 @@ func (s *Service) formatServer(format string) func(http.ResponseWriter, *http.Re
 		return s.serveTerraform
 	case "ansible":
 		return s.serveAnsible
+	case "composer":
+		return s.serveComposer
 	}
 
 	return nil
@@ -961,6 +966,9 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 // so a wrong copy is replaced on revalidation:
 //   - apk: `.apk` files of a `<branch>/<repo>/<arch>/<file>` key; they are
 //     only cached once their checksum matched the upstream index (apk.go).
+//   - composer: dists of released versions (not branches), which are refused
+//     when they differ from a non-empty shasum; the reference in the key names
+//     the content (composer.go).
 //   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
 //     a file name is never reused); the same names in a flat repository, where
 //     a publisher may overwrite a package, use the repository TTL.
@@ -981,6 +989,8 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 //     place); flat or other layouts use the repository TTL. No cheap integrity
 //     signal (the repodata checksums are not checked by this proxy) exists to
 //     pin the rest.
+//
+//nolint:gocyclo,cyclop // one case per format
 func Immutable(format, key string) bool {
 	name := key[strings.LastIndexByte(key, '/')+1:]
 
@@ -994,6 +1004,9 @@ func Immutable(format, key string) bool {
 	case "cargo":
 		// Crate files, not index files or config.json.
 		return strings.HasPrefix(key, "api/v1/crates/") && name == "download"
+	case "composer":
+		// Dists of released versions; the reference in their key names the content.
+		return composerDistImmutable(key)
 	case "conan":
 		// File lists and files below a revision, which a digest of its
 		// content names; revision lists and latest move.
@@ -1091,6 +1104,8 @@ func isMetadataKey(format, key string) bool {
 		return apkIndexKey(key)
 	case "cargo", "nuget", "rubygems":
 		return !strings.HasPrefix(key, packageDir(format))
+	case "composer":
+		return !strings.HasPrefix(key, composerDistDir)
 	case "conan":
 		return !strings.Contains(key, "/files/")
 	case "conda":

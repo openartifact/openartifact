@@ -23,6 +23,9 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "api/v3/artifacts/collections/")
 	case "cargo", "go", "nuget", "rubygems":
 		return isPackageArchive(format, relPath, base)
+	case "composer":
+		// Dists only; packages.json and the p2 documents are generated.
+		return strings.HasPrefix(relPath, "dists/")
 	case "conan", "conda":
 		return isConanCondaBlob(format, relPath, base)
 	case "deb":

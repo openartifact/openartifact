@@ -2,30 +2,28 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package composertest
+package composer
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
-
-	"github.com/openartifact/openartifact/pkg/composer"
 )
 
 // Expand is Composer's MetadataMinifier::expand: it turns a minified version
 // list, in which every entry after the first carries only what changed, into
 // full entries. The input is not modified.
-func Expand(versions []composer.Version) []composer.Version {
-	out := make([]composer.Version, 0, len(versions))
+func Expand(versions []Version) []Version {
+	out := make([]Version, 0, len(versions))
 
-	var cur composer.Version
+	var cur Version
 
 	for _, v := range versions {
 		if cur == nil {
 			cur = maps.Clone(v)
 			if cur == nil {
-				cur = composer.Version{}
+				cur = Version{}
 			}
 
 			out = append(out, maps.Clone(cur))
@@ -34,7 +32,7 @@ func Expand(versions []composer.Version) []composer.Version {
 		}
 
 		for k, val := range v {
-			if s, ok := val.(string); ok && s == "__unset" {
+			if s, ok := val.(string); ok && s == unsetMarker {
 				delete(cur, k)
 				continue
 			}
@@ -50,11 +48,8 @@ func Expand(versions []composer.Version) []composer.Version {
 
 // Decode parses a p2 document into full version entries per package name,
 // expanding a minified one. Numbers decode as json.Number.
-func Decode(data []byte) (map[string][]composer.Version, error) {
-	var doc struct {
-		Minified string                        `json:"minified"`
-		Packages map[string][]composer.Version `json:"packages"`
-	}
+func Decode(data []byte) (map[string][]Version, error) {
+	var doc document
 
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -63,7 +58,7 @@ func Decode(data []byte) (map[string][]composer.Version, error) {
 		return nil, fmt.Errorf("decode composer metadata: %w", err)
 	}
 
-	if doc.Minified == composer.MinifiedMarker {
+	if doc.Minified == MinifiedMarker {
 		for name, versions := range doc.Packages {
 			doc.Packages[name] = Expand(versions)
 		}

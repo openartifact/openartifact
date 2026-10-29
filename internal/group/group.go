@@ -119,7 +119,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (ansible, apk, cargo, conan, conda, deb, go, helm, maven, npm, nuget, pacman, pypi, rpm, rubygems, terraform) merges over its
+// (ansible, apk, cargo, composer, conan, conda, deb, go, helm, maven, npm, nuget, pacman, pypi, rpm, rubygems, terraform) merges over its
 // members, or answers itself (nix); false means the request is a plain first-hit one.
 func (h *Handler) serveMerged(
 	w http.ResponseWriter,
@@ -138,6 +138,8 @@ func (h *Handler) serveMerged(
 		return true
 	case "cargo":
 		return h.serveCargo(w, r, grp, relPath, readable, be)
+	case "composer":
+		return h.serveComposer(w, r, grp, relPath, readable, be)
 	case "conan":
 		return h.serveConan(w, r, grp, relPath, readable, be)
 	case "conda":

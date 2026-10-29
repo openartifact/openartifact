@@ -139,6 +139,7 @@ var specs = [...]Spec{
 	},
 	{
 		Name: "composer", PackageTables: []string{"composer_packages"},
+		Proxy: true, Group: true, DefaultUpstream: "https://repo.packagist.org",
 		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,
 	},
 	{

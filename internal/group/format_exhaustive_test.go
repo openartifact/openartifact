@@ -23,11 +23,11 @@ func TestServeMergedCoversEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "group.serveMerged",
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget",
 			"pacman", "pypi", "rpm", "rubygems", "terraform",
 		},
 		// docker is served by the OCI path before serveMerged; the others answer from the first member that has the file.
-		[]string{"composer", "docker", "ivy", "raw", "sbt"},
+		[]string{"docker", "ivy", "raw", "sbt"},
 	)
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
@@ -53,12 +53,26 @@ func TestPackageRefCoversEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "group.packageRef",
 		[]string{
-			"ansible", "cargo", "conan", "conda", "go", "helm", "ivy", "maven", "npm", "nuget", "pypi", "rubygems", "sbt", "terraform",
+			"ansible",
+			"cargo",
+			"composer",
+			"conan",
+			"conda",
+			"go",
+			"helm",
+			"ivy",
+			"maven",
+			"npm",
+			"nuget",
+			"pypi",
+			"rubygems",
+			"sbt",
+			"terraform",
 		},
 		// docker has its own reference (ociRef); raw has no versions to hide; apk, deb, pacman and
 		// rpm serve generated indexes and are resolved member by member; nix asks hosted members before proxy ones and has no
 		// package names to hide.
-		[]string{"apk", "composer", "deb", "docker", "nix", "pacman", "raw", "rpm"},
+		[]string{"apk", "deb", "docker", "nix", "pacman", "raw", "rpm"},
 	)
 
 	packageRequests := map[string]string{
@@ -76,6 +90,7 @@ func TestPackageRefCoversEveryFormat(t *testing.T) {
 		"conda":     "linux-64/numpy-1.26.0-py311_0.conda",
 		"terraform": "aws/versions",
 		"ansible":   "api/v3/collections/acme/lib/versions/",
+		"composer":  "p2/acme/lib.json",
 	}
 
 	repotypetest.Each(t, func(t *testing.T, format string) {
