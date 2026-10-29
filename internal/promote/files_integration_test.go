@@ -225,7 +225,9 @@ func TestPromoteConanCopiesRecipeAndPackagesWithTheirSideRows(t *testing.T) {
 		pkg: "shop", version: "1.0", versionKey: key, path: "shop/1.0/_/_/rev1/package/abc/prev1/conan_package.tgz", role: "binary",
 	})
 	h.exec(`INSERT INTO conan_files (id, package_id, package_revision) VALUES ($1, '', ''), ($2, 'abc', 'prev1')`, rf, bf)
-	h.file(dst.ID, extra, fileSeed{pkg: "shop", version: "1.0", versionKey: key, path: "shop/1.0/_/_/rev1/export/conanmanifest.txt", role: "metadata"})
+	h.file(dst.ID, extra, fileSeed{
+		pkg: "shop", version: "1.0", versionKey: key, path: "shop/1.0/_/_/rev1/export/conanmanifest.txt", role: "metadata",
+	})
 
 	res, err := promoteFiles(t, h, src, dst, recipeSHA, "", false)
 	if err != nil || len(res.Copied) != 1 {
