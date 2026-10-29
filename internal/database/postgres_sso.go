@@ -14,6 +14,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// SSOStore owns the configured SSO providers (OIDC and SAML).
+type SSOStore struct{ *core }
+
 func scanSSOProvider(row interface {
 	Scan(dest ...any) error
 }) (*models.SSOProvider, error) {
@@ -57,7 +60,7 @@ func scanSSOProvider(row interface {
 	return p, nil
 }
 
-func (p *PostgresDB) CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
+func (p *SSOStore) CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
 	groupMappingJSON, err := json.Marshal(provider.GroupMapping)
 	if err != nil {
 		return fmt.Errorf("failed to marshal group_mapping: %w", err)
@@ -88,7 +91,7 @@ func (p *PostgresDB) CreateSSOProvider(ctx context.Context, provider *models.SSO
 	).Scan(&provider.ID, &provider.CreatedAt, &provider.UpdatedAt)
 }
 
-func (p *PostgresDB) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
+func (p *SSOStore) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
 	row := p.db.QueryRowContext(
 		ctx,
 		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
@@ -109,7 +112,7 @@ func (p *PostgresDB) GetSSOProviderBySlug(ctx context.Context, slug string) (*mo
 	return provider, nil
 }
 
-func (p *PostgresDB) UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
+func (p *SSOStore) UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
 	groupMappingJSON, err := json.Marshal(provider.GroupMapping)
 	if err != nil {
 		return fmt.Errorf("failed to marshal group_mapping: %w", err)
@@ -146,7 +149,7 @@ func (p *PostgresDB) UpdateSSOProvider(ctx context.Context, provider *models.SSO
 	return nil
 }
 
-func (p *PostgresDB) DeleteSSOProvider(ctx context.Context, id string) error {
+func (p *SSOStore) DeleteSSOProvider(ctx context.Context, id string) error {
 	_, err := p.db.ExecContext(ctx, `DELETE FROM auth_sso_providers WHERE id=$1`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete sso provider: %w", err)
@@ -155,7 +158,7 @@ func (p *PostgresDB) DeleteSSOProvider(ctx context.Context, id string) error {
 	return nil
 }
 
-func (p *PostgresDB) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
+func (p *SSOStore) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
 	rows, err := p.db.QueryContext(
 		ctx,
 		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
@@ -170,7 +173,7 @@ func (p *PostgresDB) ListEnabledSSOProviders(ctx context.Context) ([]*models.SSO
 	return scanSSOProviderRows(rows)
 }
 
-func (p *PostgresDB) ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
+func (p *SSOStore) ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error) {
 	rows, err := p.db.QueryContext(
 		ctx,
 		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping,
