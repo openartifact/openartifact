@@ -5,12 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <section class="bg-surface rounded-xl border border-border overflow-hidden" :aria-label="t('tiering.mover.title')">
-    <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
-      <div class="min-w-0 mr-auto">
-        <h2 class="text-sm font-semibold text-foreground">{{ t('tiering.mover.title') }}</h2>
-        <p class="text-caption text-muted">{{ t('tiering.mover.description') }}</p>
-      </div>
+  <CardSection :title="t('tiering.mover.title')" :description="t('tiering.mover.description')">
+    <template #action>
       <AppButton
         size="sm"
         :loading="starting || polling"
@@ -22,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <PlayIcon v-if="!starting && !polling" class="w-4 h-4" aria-hidden="true" />
         {{ t('tiering.mover.runNow') }}
       </AppButton>
-    </div>
+    </template>
 
     <div v-if="loading" class="px-5 py-6"><div class="h-4 w-48 rounded skel" /></div>
 
@@ -69,49 +65,37 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="font-normal text-muted ml-1">{{ pendingCaption }}</span>
         </h3>
         <p v-if="pending.length === 0" class="text-xs text-muted">{{ t('tiering.mover.noPending') }}</p>
-        <TableScroller v-else>
-          <table class="w-full text-sm" data-testid="mover-pending">
-            <thead>
-              <tr class="text-left text-caption font-semibold text-muted">
-                <th scope="col" class="py-1.5 pr-3">{{ t('tiering.dryRun.sha') }}</th>
-                <th scope="col" class="py-1.5 px-3 text-right">{{ t('tiering.dryRun.size') }}</th>
-                <th scope="col" class="py-1.5 px-3">{{ t('tiering.dryRun.route') }}</th>
-                <th scope="col" class="py-1.5 px-3">{{ t('tiering.mover.state') }}</th>
-                <th scope="col" data-drop-order="2" class="py-1.5 px-3 text-right">{{ t('tiering.mover.attempts') }}</th>
-                <th scope="col" class="py-1.5 px-3">{{ t('tiering.mover.reason') }}</th>
-                <th scope="col" data-drop-order="1" class="py-1.5 pl-3">{{ t('tiering.mover.updated') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border">
-              <tr v-for="m in pending" :key="m.sha256" class="group/row">
-                <td class="py-1.5 pr-3"><ShortSha :sha="m.sha256 ?? ''" /></td>
-                <td class="py-1.5 px-3 text-right tabular-nums">{{ formatBytes(m.size_bytes ?? 0) }}</td>
-                <td class="py-1.5 px-3 font-mono text-xs">{{ m.from }} → {{ m.to }}</td>
-                <td class="py-1.5 px-3">
-                  <StatusBadge
-                    :label="m.state === 'flipped' ? t('tiering.mover.state.flipped') : t('tiering.mover.state.copying')"
-                    variant="neutral"
-                  />
-                </td>
-                <td class="py-1.5 px-3 text-right tabular-nums">{{ m.attempts }}</td>
-                <td class="py-1.5 px-3 text-xs text-muted break-all">{{ m.reason || '—' }}</td>
-                <td class="py-1.5 pl-3 text-muted whitespace-nowrap">{{ formatDateTime(m.updated_at) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </TableScroller>
+        <TierBlobTable v-else :rows="pending" data-testid="mover-pending">
+          <template #head>
+            <th scope="col" class="py-1.5 px-3">{{ t('tiering.mover.state') }}</th>
+            <th scope="col" data-drop-order="2" class="py-1.5 px-3 text-right">{{ t('tiering.mover.attempts') }}</th>
+            <th scope="col" class="py-1.5 px-3">{{ t('tiering.mover.reason') }}</th>
+            <th scope="col" data-drop-order="1" class="py-1.5 pl-3">{{ t('tiering.mover.updated') }}</th>
+          </template>
+          <template #cells="{ row }">
+            <td class="py-1.5 px-3">
+              <StatusBadge
+                :label="row.state === 'flipped' ? t('tiering.mover.state.flipped') : t('tiering.mover.state.copying')"
+                variant="neutral"
+              />
+            </td>
+            <td class="py-1.5 px-3 text-right tabular-nums">{{ row.attempts }}</td>
+            <td class="py-1.5 px-3 text-xs text-muted break-all">{{ row.reason || '—' }}</td>
+            <td class="py-1.5 pl-3 text-muted whitespace-nowrap">{{ formatDateTime(row.updated_at) }}</td>
+          </template>
+        </TierBlobTable>
       </div>
     </div>
-  </section>
+  </CardSection>
 </template>
 
 <script setup lang="ts">
+import CardSection from './ui/CardSection.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { PlayIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
-import ShortSha from './ShortSha.vue'
 import StatusBadge from './StatusBadge.vue'
-import TableScroller from './ui/TableScroller.vue'
+import TierBlobTable from './TierBlobTable.vue'
 import { getMoverStatus, runMover, type TierMoverStatus } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
 import { t, tp } from '../i18n'

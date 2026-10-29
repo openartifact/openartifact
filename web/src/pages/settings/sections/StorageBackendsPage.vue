@@ -21,73 +21,38 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </SectionActions>
 
     <!-- ─── Stat Tiles ──────────────────────────────────────────────────────── -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
-      <div
-        v-for="tile in statTiles"
-        :key="tile.label"
-        class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3"
-      >
-        <div
-          class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-          :style="{ background: tile.iconBg }"
-        >
-          <component :is="tile.icon" class="w-5 h-5" :style="{ color: tile.iconColor }" />
-        </div>
-        <div class="min-w-0">
-          <p class="text-micro font-mono font-semibold text-muted truncate">
-            {{ tile.label }}
-          </p>
-          <p class="text-xl font-bold tabular-nums text-foreground leading-tight">{{ tile.value }}</p>
-        </div>
-      </div>
-    </div>
+    <StatTiles class="grid-cols-2 md:grid-cols-4 mt-5" :tiles="statTiles" />
 
     <!-- ─── Loading Skeleton ────────────────────────────────────────────────── -->
-    <div v-if="loading" class="mt-5 bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-5 py-4 border-b border-border">
-        <div class="h-4 w-40 rounded skel" />
-      </div>
-      <div v-for="i in 3" :key="i" class="flex items-center gap-4 px-5 py-4 border-b border-border last:border-0">
-        <div class="w-8 h-8 rounded-md skel" />
-        <div class="h-3 w-32 rounded skel" />
-        <div class="h-5 w-24 rounded skel" />
-        <div class="h-3 w-40 rounded skel" />
-        <div class="flex-1" />
-        <div class="h-5 w-16 rounded-full skel" />
-        <div class="flex gap-1">
-          <div class="w-7 h-7 rounded-md skel" />
-          <div class="w-7 h-7 rounded-md skel" />
-          <div class="w-7 h-7 rounded-md skel" />
-        </div>
-      </div>
-    </div>
+    <SkeletonRows v-if="loading" class="mt-5" header="h-4 w-40" actions>
+      <div class="w-8 h-8 rounded-md skel" />
+      <div class="h-3 w-32 rounded skel" />
+      <div class="h-5 w-24 rounded skel" />
+      <div class="h-3 w-40 rounded skel" />
+      <div class="flex-1" />
+      <div class="h-5 w-16 rounded-full skel" />
+    </SkeletonRows>
 
     <!-- ─── Table ───────────────────────────────────────────────────────────── -->
-    <div v-else class="bg-surface rounded-xl border border-border overflow-hidden mt-5">
-      <!-- Table caption row -->
-      <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
-        <h2 class="text-sm font-semibold text-foreground">{{ t('adm.storage.stat.configured') }}</h2>
+    <CardSection v-else class="mt-5" :title="t('adm.storage.stat.configured')">
+      <template #badge>
         <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted">
           {{ counts.total }}
         </span>
-      </div>
+      </template>
 
       <p v-if="primary" class="px-5 py-3 text-xs text-muted border-b border-border">
         {{ t('adm.storage.primaryHint') }}
       </p>
 
-      <!-- Empty state -->
-      <div v-if="items.length === 0 && !primary" class="py-16 text-center">
-        <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
-          <ServerIcon class="w-6 h-6 text-muted" />
-        </div>
-        <p class="text-sm font-medium text-foreground">{{ t('adm.storage.empty') }}</p>
-        <p class="text-xs text-muted mt-1 mb-4">{{ t('adm.storage.emptyHint') }}</p>
-        <AppButton size="sm" @click="openCreate">
-          <PlusIcon class="w-4 h-4" />
-          {{ t('adm.storage.addTitle') }}
-        </AppButton>
-      </div>
+      <IconEmptyState
+        v-if="items.length === 0 && !primary"
+        :icon="ServerIcon"
+        :title="t('adm.storage.empty')"
+        :hint="t('adm.storage.emptyHint')"
+        :action-label="t('adm.storage.addTitle')"
+        @action="openCreate"
+      />
 
       <StorageBackendsTable
         v-else
@@ -100,7 +65,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         @edit="openEdit"
         @delete="openDelete"
       />
-    </div>
+    </CardSection>
 
     <StorageBackendDrawer
       :open="drawerOpen"
@@ -125,6 +90,10 @@ import { ref, computed, onMounted } from 'vue'
 import { ServerIcon, PlusIcon, CheckIcon, ArrowPathIcon, ExclamationCircleIcon } from '@heroicons/vue/24/outline'
 import SectionActions from '../../../components/SectionActions.vue'
 import AppButton from '../../../components/AppButton.vue'
+import CardSection from '../../../components/ui/CardSection.vue'
+import IconEmptyState from '../../../components/ui/IconEmptyState.vue'
+import SkeletonRows from '../../../components/ui/SkeletonRows.vue'
+import StatTiles, { type StatTile } from '../../../components/ui/StatTiles.vue'
 import StorageBackendsTable from '../../../components/StorageBackendsTable.vue'
 import StorageBackendDrawer from '../../../components/StorageBackendDrawer.vue'
 import StorageBackendDeleteDialog from '../../../components/StorageBackendDeleteDialog.vue'
@@ -177,34 +146,30 @@ function closeDrawer(): void {
 // The primary store counts with the records: it is one of the stores.
 const counts = computed(() => countStatuses(items.value, primary.value))
 
-const statTiles = computed(() => [
+const statTiles = computed<StatTile[]>(() => [
   {
     label: t('adm.storage.stat.configured'),
     value: counts.value.total,
     icon: ServerIcon,
-    iconBg: 'rgb(var(--color-primary) / 0.1)',
-    iconColor: 'rgb(var(--color-primary))',
+    tone: 'primary',
   },
   {
     label: t('adm.storage.status.healthy'),
     value: counts.value.healthy,
     icon: CheckIcon,
-    iconBg: 'rgb(var(--color-success-soft))',
-    iconColor: 'rgb(var(--color-success))',
+    tone: 'success',
   },
   {
     label: t('adm.storage.status.unknown'),
     value: counts.value.unknown,
     icon: ExclamationCircleIcon,
-    iconBg: 'rgb(var(--color-warning-soft))',
-    iconColor: 'rgb(var(--color-warning))',
+    tone: 'warning',
   },
   {
     label: t('adm.storage.status.unreachable'),
     value: counts.value.unreachable,
     icon: ExclamationCircleIcon,
-    iconBg: 'rgb(var(--color-danger-soft))',
-    iconColor: 'rgb(var(--color-danger))',
+    tone: 'danger',
   },
 ])
 

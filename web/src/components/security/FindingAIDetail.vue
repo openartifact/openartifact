@@ -5,13 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div>
-    <div v-if="loading && !analysis" class="flex justify-center py-8 text-muted" role="status">
-      <ArrowPathIcon class="h-5 w-5 animate-spin" aria-hidden="true" />
-      <span class="sr-only">{{ t('security.detail.loading') }}</span>
-    </div>
-    <p v-else-if="error" class="text-sm text-danger" role="alert">{{ error }}</p>
-    <div v-else-if="analysis" class="space-y-5" data-testid="ai-detail">
+  <FindingDetailShell :loading="loading && !analysis" :error="error">
+    <div v-if="analysis" class="space-y-5" data-testid="ai-detail">
       <div class="flex flex-wrap items-center gap-2">
         <StatusBadge :label="statusLabel" :variant="statusVariant" />
         <ArrowPathIcon v-if="active" class="h-3.5 w-3.5 animate-spin text-muted" aria-hidden="true" />
@@ -75,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {{ retriggering ? t('security.ai.triggering') : t('security.ai.retriggerLong') }}
       </AppButton>
     </div>
-  </div>
+  </FindingDetailShell>
 </template>
 
 <script setup lang="ts">
@@ -83,6 +78,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowPathIcon, SparklesIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../AppButton.vue'
 import StatusBadge from '../StatusBadge.vue'
+import FindingDetailShell from './FindingDetailShell.vue'
 import { getAIAnalysis, triggerAIAnalysis, type AIAnalysis } from '../../api/ai'
 import type { SecurityFinding } from '../../api/security'
 import { formatDateTime, timeAgo } from '../../lib/datetime'

@@ -5,13 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div>
-    <div v-if="detailLoading" class="flex justify-center py-8 text-muted" role="status">
-      <ArrowPathIcon class="h-5 w-5 animate-spin" aria-hidden="true" />
-      <span class="sr-only">{{ t('security.detail.loading') }}</span>
-    </div>
-    <p v-else-if="detailError" class="text-sm text-danger" role="alert">{{ detailError }}</p>
-    <div v-else-if="detail" class="space-y-4" data-testid="scan-detail">
+  <FindingDetailShell :loading="detailLoading" :error="detailError">
+    <div v-if="detail" class="space-y-4" data-testid="scan-detail">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <VulnScanStatus :status="detail.scan_status" :scan-error="detail.scan_error" :failed-scanners="detail.failed_scanners" />
         <div class="flex flex-wrap items-center gap-2">
@@ -46,12 +41,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @saved="onVexSaved"
       @deleted="onVexDeleted"
     />
-  </div>
+  </FindingDetailShell>
 </template>
 
 <script setup lang="ts">
 import { watch } from 'vue'
-import { ArrowPathIcon } from '@heroicons/vue/24/outline'
+import FindingDetailShell from './FindingDetailShell.vue'
 import ScanExportButtons from '../ScanExportButtons.vue'
 import VexDecisionDialog from '../VexDecisionDialog.vue'
 import VexDownloadButtons from '../VexDownloadButtons.vue'

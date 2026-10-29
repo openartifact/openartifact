@@ -15,6 +15,15 @@ const FALLBACK_COLOR = cssVar('muted')
 /** Fallback for SSO providers without a known brand. */
 const SSO_FALLBACK_COLOR = cssVar('primary')
 
+/** WCAG relative luminance (0 black .. 1 white) of an sRGB colour given as 0..255 channels. */
+export function relativeLuminance(r: number, g: number, b: number): number {
+  const lin = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
 /** Translucent tint of any CSS colour (hex or `rgb(var(--...))`). */
 export function tint(color: string, percent: number): string {
   return `color-mix(in srgb, ${color} ${percent}%, transparent)`

@@ -3,21 +3,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ref, computed } from 'vue'
-import { ApiError, csrfHeader, expireSession } from '../api/client'
+import { ApiError, apiErrorFromBody, csrfHeader, expireSession } from '../api/client'
 
 // Mirrors request()'s error handling for XHR uploads: JSON `{error, code}`
 // bodies become the message instead of the raw response text.
 function parseXhrError(xhr: XMLHttpRequest): ApiError {
-  let message = `HTTP ${xhr.status}`
-  let code: string | undefined
+  let body: unknown
   try {
-    const body = JSON.parse(xhr.responseText) as { error?: string; code?: string }
-    if (body.error) message = body.error
-    if (body.code) code = body.code
+    body = JSON.parse(xhr.responseText)
   } catch {
     // non-JSON body: keep the HTTP status message
   }
-  return new ApiError(message, xhr.status, code)
+  return apiErrorFromBody(xhr.status, body)
 }
 
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'failed' | 'cancelled'

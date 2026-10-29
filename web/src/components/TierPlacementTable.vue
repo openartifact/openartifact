@@ -5,17 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <section class="bg-surface rounded-xl border border-border overflow-hidden" :aria-label="t('tiering.placement.title')">
-    <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
-      <div class="min-w-0 mr-auto">
-        <h2 class="text-sm font-semibold text-foreground">{{ t('tiering.placement.title') }}</h2>
-        <p class="text-caption text-muted">{{ t('tiering.placement.description') }}</p>
-      </div>
+  <CardSection :title="t('tiering.placement.title')" :description="t('tiering.placement.description')">
+    <template #action>
       <AppButton size="sm" @click="addOpen = true">
         <PlusIcon class="w-4 h-4" aria-hidden="true" />
         {{ t('tiering.tier.addTitle') }}
       </AppButton>
-    </div>
+    </template>
 
     <div v-if="tiers.length === 0" class="py-12 text-center">
       <p class="text-sm font-medium text-foreground">{{ t('tiering.placement.empty') }}</p>
@@ -94,10 +90,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @confirm="confirmDelete"
       @close="deleteTarget = null"
     />
-  </section>
+  </CardSection>
 </template>
 
 <script setup lang="ts">
+import CardSection from './ui/CardSection.vue'
 import { computed, reactive, ref } from 'vue'
 import { PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'

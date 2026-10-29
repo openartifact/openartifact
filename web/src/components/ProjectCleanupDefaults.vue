@@ -59,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <span v-else class="text-sm text-muted">{{ p.enabled ? t('projects.cleanup.enabled') : t('projects.cleanup.disabled') }}</span>
             </td>
             <td v-if="canEdit" class="px-4 py-3" :class="ACTIONS_CELL">
-              <RowActions :actions="policyActions(p)" :subject="p.name" @action="(key) => onPolicyAction(key, p)" />
+              <RowActions :actions="rowActions(p.id)" :subject="p.name" @action="(key) => onPolicyAction(key, p)" />
             </td>
           </tr>
         </tbody>
@@ -68,22 +68,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <p v-if="!canEdit" class="mt-3 text-xs text-muted" data-testid="cleanup-readonly">{{ t('projects.cleanup.readOnly') }}</p>
 
-    <AdminDialog
-      drawer
-      max-width="max-w-md"
+    <CleanupPolicyDrawer
+      v-model="form"
       :open="drawerOpen"
-      :eyebrow="editing ? t('cleanup.editTitle') : t('cleanup.newLabel')"
-      :title="editing ? `${t('cleanup.editTitle')} · ${editing.name}` : t('cleanup.addTitle')"
+      :editing-name="editing?.name ?? null"
+      :saving="saving"
       @close="closeDrawer"
-    >
-      <CleanupPolicyForm v-model="form" />
-      <template #footer>
-        <AppButton variant="ghost" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
-        <AppButton :disabled="!formValid" :loading="saving" @click="save">
-          {{ editing ? t('common.save') : t('cleanup.create') }}
-        </AppButton>
-      </template>
-    </AdminDialog>
+      @save="save"
+    />
 
     <CleanupDryRunDialog
       :open="preview !== null"
@@ -92,35 +84,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @close="preview = null"
     />
 
-    <ConfirmDialog
-      :open="!!deleteTarget"
-      :title="t('cleanup.deleteTitle')"
-      :confirm-label="t('common.delete')"
+    <CleanupDeleteDialog
+      :name="deleteTarget?.name ?? null"
       :busy="deleting"
       @confirm="confirmDelete"
       @close="deleteTarget = null"
-    >
-      <p class="text-sm text-muted">
-        <span class="font-mono font-semibold text-foreground">{{ deleteTarget?.name }}</span>
-        {{ t('cleanup.deleteBody') }}
-      </p>
-    </ConfirmDialog>
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { EyeIcon, PencilSquareIcon, PlusIcon, TrashIcon } from '@heroicons/vue/20/solid'
-import AdminDialog from './AdminDialog.vue'
+import { ref, watch } from 'vue'
+import { PlusIcon } from '@heroicons/vue/20/solid'
 import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
-import CleanupPolicyForm from './CleanupPolicyForm.vue'
+import CleanupPolicyDrawer from './CleanupPolicyDrawer.vue'
 import CleanupDryRunDialog from './CleanupDryRunDialog.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
-import RowActions, { type RowAction } from './ui/RowActions.vue'
+import CleanupDeleteDialog from './CleanupDeleteDialog.vue'
+import RowActions from './ui/RowActions.vue'
 import TableScroller from './ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD, GROW_CELL } from './ui/tableStyles'
-import type { CleanupPreview } from '../api/generated'
 import {
   createProjectCleanupPolicy,
   deleteProjectCleanupPolicy,
@@ -128,15 +111,8 @@ import {
   listProjectCleanupPolicies,
   updateProjectCleanupPolicy,
 } from '../api/projects'
-import {
-  cleanupFormFrom,
-  cleanupFormValid,
-  cleanupPayload,
-  cleanupPolicyFromApi,
-  emptyCleanupForm,
-  type CleanupPolicyForm as FormState,
-  type CleanupPolicyView,
-} from '../lib/cleanupPolicy'
+import { cleanupPayload, cleanupPolicyFromApi, type CleanupPolicyView } from '../lib/cleanupPolicy'
+import { useCleanupPolicyPanel } from '../composables/useCleanupPolicyPanel'
 import { errorStatus } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
 import { t, tp } from '../i18n'
@@ -148,17 +124,21 @@ const items = ref<CleanupPolicyView[]>([])
 const loading = ref(true)
 const failed = ref(false)
 
-const drawerOpen = ref(false)
-const editing = ref<CleanupPolicyView | null>(null)
-const form = ref<FormState>(emptyCleanupForm())
-const saving = ref(false)
-const togglingId = ref<string | null>(null)
-const deleteTarget = ref<CleanupPolicyView | null>(null)
-const deleting = ref(false)
-const previewingId = ref<string | null>(null)
-const preview = ref<{ name: string; repositories: CleanupPreview[] } | null>(null)
-
-const formValid = computed(() => cleanupFormValid(form.value))
+const {
+  drawerOpen,
+  editing,
+  form,
+  formValid,
+  saving,
+  togglingId,
+  deleteTarget,
+  deleting,
+  previewingId,
+  preview,
+  openDrawer,
+  closeDrawer,
+  rowActions,
+} = useCleanupPolicyPanel()
 
 let generation = 0
 
@@ -178,17 +158,6 @@ async function load(): Promise<void> {
 
 function failure(err: unknown, fallback: string): string {
   return errorStatus(err) === 403 ? t('projects.cleanup.forbidden') : fallback
-}
-
-function openDrawer(policy?: CleanupPolicyView): void {
-  editing.value = policy ?? null
-  form.value = policy ? cleanupFormFrom(policy) : emptyCleanupForm()
-  drawerOpen.value = true
-}
-
-function closeDrawer(): void {
-  drawerOpen.value = false
-  editing.value = null
 }
 
 async function save(): Promise<void> {
@@ -253,14 +222,6 @@ async function confirmDelete(): Promise<void> {
 }
 
 watch(() => props.project, load, { immediate: true })
-
-function policyActions(p: { id: string }): RowAction[] {
-  return [
-    { key: 'dry-run', label: t('cleanup.dryRun'), icon: EyeIcon, loading: previewingId.value === p.id },
-    { key: 'edit', label: t('cleanup.editTitle'), icon: PencilSquareIcon },
-    { key: 'delete', label: t('cleanup.deleteTitle'), icon: TrashIcon, tone: 'danger' },
-  ]
-}
 
 function onPolicyAction(key: string, p: CleanupPolicyView): void {
   if (key === 'dry-run') void previewPolicy(p)

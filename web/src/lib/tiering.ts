@@ -10,16 +10,12 @@ import type { StoragePolicy, StoragePolicyInput } from '../api/tiering'
 import { tp, type TranslationKey } from '../i18n'
 import { formatNumber } from './intl'
 import { formatExactDuration } from './duration'
-import { formatBytes } from './quota'
+import { formatBytes, SIZE_UNITS } from './quota'
 
 export const SECONDS_PER_DAY = 86_400
 
-export const TIER_SIZE_UNITS = [
-  { label: 'KB', bytes: 1024 },
-  { label: 'MB', bytes: 1024 ** 2 },
-  { label: 'GB', bytes: 1024 ** 3 },
-  { label: 'TB', bytes: 1024 ** 4 },
-] as const
+/** The quota size units plus KB, the granularity tier policies can use. */
+export const TIER_SIZE_UNITS = [{ label: 'KB', bytes: 1024 }, ...SIZE_UNITS] as const
 
 type TierSizeUnit = (typeof TIER_SIZE_UNITS)[number]['label']
 

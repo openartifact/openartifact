@@ -93,42 +93,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import AppButton from '../../../components/AppButton.vue'
-import { ref } from 'vue'
-import { changePassword } from '../../../api/auth'
+import { usePasswordChange } from '../../../composables/usePasswordChange'
 import { useToastStore } from '../../../stores/toast'
 import { t } from '../../../i18n'
 
-const form = ref({ current_password: '', new_password: '', confirm_password: '' })
-const errors = ref<Record<string, string>>({})
-const loading = ref(false)
 const toasts = useToastStore()
+const { form, errors, loading, reset, submit } = usePasswordChange()
 
-async function handleChangePassword(): Promise<void> {
-  errors.value = {}
-  if (form.value.new_password.length < 12) {
-    errors.value.new_password = t('auth.passwordMinError')
-    return
-  }
-  if (form.value.new_password !== form.value.confirm_password) {
-    errors.value.confirm_password = t('auth.passwordMismatch')
-    return
-  }
-  if (form.value.new_password === form.value.current_password) {
-    errors.value.new_password = t('auth.passwordSame')
-    return
-  }
-  loading.value = true
-  try {
-    await changePassword({
-      current_password: form.value.current_password,
-      new_password: form.value.new_password,
-    })
-    toasts.success(t('auth.changePasswordSuccess'))
-    form.value = { current_password: '', new_password: '', confirm_password: '' }
-  } catch (err: unknown) {
-    toasts.error(err instanceof Error ? err.message : t('auth.passwordChangeFailed'))
-  } finally {
-    loading.value = false
-  }
+function handleChangePassword(): Promise<void> {
+  return submit(
+    () => {
+      toasts.success(t('auth.changePasswordSuccess'))
+      reset()
+    },
+    (message) => toasts.error(message),
+  )
 }
 </script>

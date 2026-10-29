@@ -14,11 +14,13 @@ export interface SigningKeyInput {
 
 /**
  * State and actions shared by the signing key panels (apk, nix): load the key, and generate or import a
- * replacement through a dialog. `messages` are the panel's own texts; `nameRule` is the key name pattern the
- * server also enforces.
+ * replacement through a dialog. `message` returns the panel's own text for a message; `nameRule` is the key
+ * name pattern the server also enforces.
  */
+export type SigningKeyMessage = 'loadFailed' | 'replaced' | 'replacedHint' | 'replaceFailed'
+
 export function useSigningKey<K>(opts: {
-  messages: { loadFailed: () => string; replaced: () => string; replacedHint: () => string; replaceFailed: () => string }
+  message: (which: SigningKeyMessage) => string
   nameRule: RegExp
   get: () => Promise<K>
   replace: (body: SigningKeyInput) => Promise<K>
@@ -46,7 +48,7 @@ export function useSigningKey<K>(opts: {
       key.value = (await opts.get()) as typeof key.value
     } catch (err) {
       secretRequired.value = err instanceof ApiError && err.status === 409 && err.code === 'secret_key_required'
-      loadError.value = err instanceof Error ? err.message : opts.messages.loadFailed()
+      loadError.value = err instanceof Error ? err.message : opts.message('loadFailed')
     } finally {
       loading.value = false
     }
@@ -72,9 +74,9 @@ export function useSigningKey<K>(opts: {
       loadError.value = ''
       saving.value = false
       close()
-      toasts.success(opts.messages.replaced(), opts.messages.replacedHint())
+      toasts.success(opts.message('replaced'), opts.message('replacedHint'))
     } catch (err) {
-      saveError.value = err instanceof Error ? err.message : opts.messages.replaceFailed()
+      saveError.value = err instanceof Error ? err.message : opts.message('replaceFailed')
     } finally {
       saving.value = false
     }
