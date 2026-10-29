@@ -57,6 +57,21 @@ func (m attestMode) extension() string {
 	return "intoto.json"
 }
 
+// writeAttestKeyError answers a failure to resolve the signing key. A missing
+// OPENARTIFACT_SECRET_KEY is the operator's to fix and says so (the key would
+// otherwise be stored as plaintext); anything else is a plain 500.
+func writeAttestKeyError(w http.ResponseWriter, log *logger.Logger, err error) {
+	if errors.Is(err, attest.ErrSecretKeyRequired) {
+		writeError(w, http.StatusConflict, "secret_key_required",
+			"OPENARTIFACT_SECRET_KEY must be set: the attestation signing key is only stored encrypted")
+
+		return
+	}
+
+	log.Errorw("attestation: signing key unavailable", "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "attestation signing key unavailable")
+}
+
 // attestedResponse signs predicate (a JSON document) about subjects and writes
 // the envelope or bundle as a download named filename. It answers the request
 // itself on every outcome.
@@ -70,9 +85,7 @@ func attestedResponse(ctx context.Context, w http.ResponseWriter, log *logger.Lo
 
 	signer, err := svc.Signer(ctx)
 	if err != nil {
-		log.Errorw("attestation: signing key unavailable", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "attestation signing key unavailable")
-
+		writeAttestKeyError(w, log, err)
 		return
 	}
 
@@ -177,9 +190,7 @@ func (h *AttestationHandler) info(w http.ResponseWriter, r *http.Request) (*atte
 
 	info, err := h.svc.Info(r.Context())
 	if err != nil {
-		h.log.Errorw("attestation: signing key unavailable", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "attestation signing key unavailable")
-
+		writeAttestKeyError(w, h.log, err)
 		return nil, false
 	}
 

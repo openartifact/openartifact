@@ -329,7 +329,7 @@ Signs SBOM and VEX attestations (`?attest=true`); see [SBOM and VEX](../security
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
-| `ATTESTATION_KEY_PATH` | `keyPath` | empty | Unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: an ECDSA P-256 key is generated on first use and stored encrypted in the database |
+| `ATTESTATION_KEY_PATH` | `keyPath` | empty | Unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: an ECDSA P-256 key is generated on first use and stored encrypted in the database (requires `OPENARTIFACT_SECRET_KEY`; without it the attestation endpoints answer `409 secret_key_required`) |
 
 The Dependency-Track integration has no file or environment settings: it is configured in **Settings > Dependency-Track** or through the API ([Dependency-Track](../security/dependency-track.md)).
 

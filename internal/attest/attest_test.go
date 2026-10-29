@@ -294,6 +294,49 @@ func TestServiceGeneratesEncryptedKeyOnceAcrossReplicas(t *testing.T) {
 	}
 }
 
+// TestServiceRefusesToGenerateWithoutSecretKey: without OPENARTIFACT_SECRET_KEY
+// the private key would be stored as plaintext PEM, so none is generated.
+func TestServiceRefusesToGenerateWithoutSecretKey(t *testing.T) {
+	if err := secretcrypto.Init(""); err != nil {
+		t.Fatal(err)
+	}
+
+	store := &memSettings{m: map[string]string{}}
+
+	for range 2 {
+		_, err := NewService("", store).Signer(context.Background())
+		if !errors.Is(err, ErrSecretKeyRequired) {
+			t.Fatalf("err = %v, want ErrSecretKeyRequired", err)
+		}
+	}
+
+	if len(store.m) != 0 {
+		t.Fatalf("a key was stored anyway: %v", store.m)
+	}
+
+	// A key file needs no database and keeps working.
+	keyPEM, err := GenerateKeyPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "key.pem")
+	if err := os.WriteFile(path, keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewService(path, store).Signer(context.Background()); err != nil {
+		t.Fatalf("key file: %v", err)
+	}
+
+	// A key stored earlier (legacy plaintext) still loads.
+	store.m[SettingPrivateKey] = string(keyPEM)
+
+	if _, err := NewService("", store).Signer(context.Background()); err != nil {
+		t.Fatalf("stored key: %v", err)
+	}
+}
+
 func TestServiceWithoutKeyOrStoreFails(t *testing.T) {
 	if _, err := NewService("", nil).Signer(context.Background()); err == nil {
 		t.Fatal("expected an error")

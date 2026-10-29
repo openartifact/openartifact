@@ -188,8 +188,8 @@ gpg:
 
 # Signing key of SBOM / VEX attestations (GET .../download?attest=true, see
 # docs/security/sbom.md). Unset: an ECDSA P-256 key is generated on first use
-# and stored encrypted in the database (needs OPENARTIFACT_SECRET_KEY to be
-# encrypted at rest). A key file is an unencrypted PKCS#8 / SEC1 PEM, ECDSA or
+# and stored encrypted in the database; that needs OPENARTIFACT_SECRET_KEY,
+# without it no key is generated and attestations answer 409. A key file is an unencrypted PKCS#8 / SEC1 PEM, ECDSA or
 # Ed25519; env: ATTESTATION_KEY_PATH.
 attestation:
   # keyPath: /etc/openartifact/attestation/key.pem
