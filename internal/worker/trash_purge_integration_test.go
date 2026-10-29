@@ -112,6 +112,8 @@ type purgeSeed struct {
 func newPurgeSeed(t *testing.T) *purgeSeed {
 	t.Helper()
 
+	registerMavenFixture(t)
+
 	return &purgeSeed{t: t, pg: newTrashPurgeTestDB(t), blobs: formattest.NewBlobStore()}
 }
 
@@ -170,24 +172,16 @@ func (s *purgeSeed) blob(content string, age time.Duration) (string, string) {
 	return id, sha
 }
 
-// maven inserts a maven row of repoID pointing at blobID and returns its id.
+// maven inserts a maven file of repoID pointing at blobID and returns its id.
 func (s *purgeSeed) maven(repoID, blobID string) string {
 	s.t.Helper()
 
 	s.seq++
 
-	var id string
-	if err := s.pg.GetDB().QueryRowContext(context.Background(),
-		`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id)
-		 VALUES ($1, 'g', $2, '1.0', 'jar', $3, $4) RETURNING id`,
-		repoID, fmt.Sprintf("a%d", s.seq), fmt.Sprintf("g/a%d/1.0/a%d-1.0.jar", s.seq, s.seq), blobID).Scan(&id); err != nil {
-		s.t.Fatalf("insert maven row: %v", err)
-	}
-
-	return id
+	return s.mavenFile(repoID, blobID, mvnRow{artifact: fmt.Sprintf("a%d", s.seq), version: "1.0", ext: "jar"})
 }
 
-// trash soft-deletes the row and back-dates the deletion by ago.
+// trash soft-deletes the file and back-dates the deletion by ago.
 func (s *purgeSeed) trash(repoID, id string, ago time.Duration) {
 	s.t.Helper()
 
@@ -196,13 +190,13 @@ func (s *purgeSeed) trash(repoID, id string, ago time.Duration) {
 		s.t.Fatalf("TrashRows = %v, %v; want a soft delete", soft, err)
 	}
 
-	s.exec(`UPDATE maven_artifacts SET deleted_at = now() - make_interval(secs => $2) WHERE id = $1`, id, ago.Seconds())
+	s.exec(`UPDATE package_files SET deleted_at = now() - make_interval(secs => $2) WHERE id = $1`, id, ago.Seconds())
 }
 
 func (s *purgeSeed) rowExists(id string) bool {
 	s.t.Helper()
 
-	return s.count(`SELECT COUNT(*) FROM maven_artifacts WHERE id = $1`, id) == 1
+	return s.count(`SELECT COUNT(*) FROM package_files WHERE id = $1`, id) == 1
 }
 
 func (s *purgeSeed) blobRowExists(sha string) bool {
