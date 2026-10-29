@@ -83,6 +83,8 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/v3/index.json", base.Compress(h.handleServiceIndex))
 	r.Put("/v3/package", h.handlePushPackage)
+	// dotnet nuget push appends a slash to the PackagePublish URL of the service index.
+	r.Put("/v3/package/", h.handlePushPackage)
 	r.Delete("/v3/package/{id}/{version}", h.handleDeletePackage)
 	r.Get("/v3/package/{id}/index.json", base.Compress(h.handleVersionIndex))
 	r.Get("/v3/package/{id}/{version}/{filename}", h.handleDownloadPackage)

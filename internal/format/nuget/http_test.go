@@ -65,6 +65,29 @@ func newTestHandler(t *testing.T) (*HTTPHandler, *nugetDB, *formattest.BlobStore
 
 func register(h *HTTPHandler) func(chi.Router) { return h.RegisterRepoRoutes }
 
+// dotnet nuget push sends PUT to the PackagePublish URL with a trailing slash.
+func TestPushAcceptsTrailingSlash(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("package", "x.nupkg")
+	_, _ = fw.Write(createNupkg(t, "Newtonsoft.Json.nuspec", sampleNuspec))
+	_ = mw.Close()
+
+	req := formattest.Request(http.MethodPut, "/repos/myrepo/v3/package/", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if w := formattest.Do(register(h), req); w.Code != http.StatusCreated {
+		t.Fatalf("push status = %d: %s", w.Code, w.Body.String())
+	}
+
+	if db.pkg == nil {
+		t.Fatal("the pushed package was not recorded")
+	}
+}
+
 func TestPushAndDeleteEmitEvents(t *testing.T) {
 	h, db, bs, pub := newTestHandler(t)
 
