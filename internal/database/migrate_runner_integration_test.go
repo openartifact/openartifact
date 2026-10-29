@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+
+	"github.com/openartifact/openartifact/migrations"
 )
 
 // newMigratorWithFS returns a Migrator over a custom migrations FS.
@@ -260,8 +262,21 @@ func TestApplyBaselineOnEmptyDatabase(t *testing.T) {
 		}
 	}
 
-	if got := mustScan[string](t, db, `SELECT string_agg(version, ',') FROM schema_migrations`); got != baselineVersion {
-		t.Errorf("schema_migrations = %q, want %q", got, baselineVersion)
+	// The baseline and every migration that follows it, each recorded once.
+	entries, err := migrations.FS.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var want []string
+
+	for _, e := range entries {
+		want = append(want, e.Name())
+	}
+
+	got := mustScan[string](t, db, `SELECT string_agg(version, ',' ORDER BY version) FROM schema_migrations`)
+	if got != strings.Join(want, ",") || !strings.HasPrefix(got, baselineVersion) {
+		t.Errorf("schema_migrations = %q, want the baseline and the later migrations %q", got, want)
 	}
 
 	for _, table := range []string{"packages", "package_versions", "package_files", "package_tags", "docker_manifests"} {
