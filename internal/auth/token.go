@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -188,10 +189,107 @@ func UpdateLastUsed(ctx context.Context, db UpdateLastUsedStore, tokenID string)
 	_ = db.UpdateTokenLastUsed(bgCtx, tokenID)
 }
 
-// tokenLastTouch maps token ID to the last time this process wrote last_used_at.
+// tokenTouchMaxEntries bounds the throttle table of one process. It holds an
+// entry per token that authenticated within the last interval at any moment, so
+// the bound is far above the working set; it only caps the growth over the
+// lifetime of a process that sees many tokens (CI tokens come and go).
+const tokenTouchMaxEntries = 10_000
+
+// touchThrottle remembers when this process last wrote last_used_at of each
+// token. Reads are lock-free (they run on every token-authenticated request);
+// the table is pruned when it outgrows max. An entry older than
+// tokenTouchInterval throttles nothing, and a token evicted early only costs
+// one extra write.
+type touchThrottle struct {
+	max     int
+	entries sync.Map // token ID → time.Time of the last write
+	count   atomic.Int64
+	pruning atomic.Bool
+}
+
+// tokenLastTouch is the throttle state of the process.
 //
 //nolint:gochecknoglobals // process-wide throttle state
-var tokenLastTouch sync.Map
+var tokenLastTouch = touchThrottle{max: tokenTouchMaxEntries}
+
+// last returns the time of the last write for the token.
+func (t *touchThrottle) last(id string) (time.Time, bool) {
+	v, ok := t.entries.Load(id)
+	if !ok {
+		return time.Time{}, false
+	}
+
+	at, _ := v.(time.Time)
+
+	return at, true
+}
+
+// record notes a write at the given time and prunes the table if a new token
+// pushed it over its bound.
+func (t *touchThrottle) record(id string, at time.Time) {
+	if _, loaded := t.entries.Swap(id, at); !loaded && t.count.Add(1) > int64(t.max) {
+		t.prune(at)
+	}
+}
+
+// prune drops the entries that no longer throttle anything and, if the table is
+// still over its bound, arbitrary ones down to half of it. One caller prunes at
+// a time; the others carry on.
+func (t *touchThrottle) prune(now time.Time) {
+	if !t.pruning.CompareAndSwap(false, true) {
+		return
+	}
+	defer t.pruning.Store(false)
+
+	t.entries.Range(func(id, v any) bool {
+		if at, _ := v.(time.Time); now.Sub(at) >= tokenTouchInterval {
+			t.drop(id)
+		}
+
+		return true
+	})
+
+	if t.count.Load() <= int64(t.max) {
+		return
+	}
+
+	keep := int64(t.max / 2)
+
+	t.entries.Range(func(id, _ any) bool {
+		if t.count.Load() <= keep {
+			return false
+		}
+
+		t.drop(id)
+
+		return true
+	})
+}
+
+// drop removes an entry and keeps the counter in step.
+func (t *touchThrottle) drop(id any) {
+	if _, loaded := t.entries.LoadAndDelete(id); loaded {
+		t.count.Add(-1)
+	}
+}
+
+// touch reports whether the token's usage must be written now: no write was
+// made in the last interval. The token comes from the auth cache, whose
+// LastUsedAt is stale for the whole cache TTL, so it only counts for a token
+// this process has not written yet.
+func (t *touchThrottle) touch(token *models.Token, now time.Time) bool {
+	if last, ok := t.last(token.ID); ok {
+		if now.Sub(last) < tokenTouchInterval {
+			return false
+		}
+	} else if token.LastUsedAt != nil && now.Sub(*token.LastUsedAt) < tokenTouchInterval {
+		return false
+	}
+
+	t.record(token.ID, now)
+
+	return true
+}
 
 // TouchTokenStore is the part of the database TouchToken needs.
 type TouchTokenStore interface {
@@ -204,15 +302,7 @@ type TouchTokenStore interface {
 // The token comes from the auth cache, whose LastUsedAt is stale for the whole
 // cache TTL, so the throttle is tracked per token ID in process memory instead.
 func TouchToken(ctx context.Context, db TouchTokenStore, token *models.Token) {
-	now := time.Now()
-	if last, ok := tokenLastTouch.Load(token.ID); ok {
-		if t, ok := last.(time.Time); ok && now.Sub(t) < tokenTouchInterval {
-			return
-		}
-	} else if token.LastUsedAt != nil && now.Sub(*token.LastUsedAt) < tokenTouchInterval {
-		return
+	if tokenLastTouch.touch(token, time.Now()) {
+		UpdateLastUsed(ctx, db, token.ID)
 	}
-
-	tokenLastTouch.Store(token.ID, now)
-	UpdateLastUsed(ctx, db, token.ID)
 }
