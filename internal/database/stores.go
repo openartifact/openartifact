@@ -67,6 +67,7 @@ type PostgresDB struct {
 	*NuGetStore
 	*CargoStore
 	*RubyGemsStore
+	*RawStore
 	// STORES-STRUCT
 }
 
@@ -131,6 +132,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		NuGetStore:           &NuGetStore{core: c},
 		CargoStore:           &CargoStore{core: c},
 		RubyGemsStore:        &RubyGemsStore{core: c},
+		RawStore:             &RawStore{core: c},
 		// STORES-INIT
 	}
 }
