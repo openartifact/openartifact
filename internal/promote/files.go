@@ -463,8 +463,8 @@ func copySideSQL(table, set string) string {
 		override = " || (" + set + ")"
 	}
 
-	return `INSERT INTO ` + table + ` SELECT (jsonb_populate_record(NULL::` + table + `, to_jsonb(x) || jsonb_build_object('id', $2::text)` +
-		override + `)).*
+	return `INSERT INTO ` + table + ` SELECT (jsonb_populate_record(NULL::` + table +
+		`, to_jsonb(x) || jsonb_build_object('id', $2::text)` + override + `)).*
 	  FROM ` + table + ` x
 	  JOIN package_files s ON s.id = x.id
 	  JOIN package_versions sv ON sv.id = s.version_id

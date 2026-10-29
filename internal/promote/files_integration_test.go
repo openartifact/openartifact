@@ -196,8 +196,10 @@ func TestPromoteGoCopiesTheWholeVersion(t *testing.T) {
 		t.Fatalf("forced = %+v, %v", forced, err)
 	}
 
+	wantMod := contentSHA("module example.com/shop")
+
 	if got := h.str(`SELECT b.sha256 FROM package_files f JOIN blobs b ON b.id = f.blob_id
-		WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.path = $2`, clash.ID, modSeed.path); got != contentSHA("module example.com/shop") {
+		WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.path = $2`, clash.ID, modSeed.path); got != wantMod {
 		t.Errorf("live go.mod digest = %q, want the source's", got)
 	}
 }
@@ -336,7 +338,8 @@ func TestPromoteDebRebuildsTheDistributionGraphInTheDestination(t *testing.T) {
 		path: "pool/main/libs/libshop6/libshop6_2.4.0-1_amd64.deb", filename: "libshop6_2.4.0-1_amd64.deb",
 		arch: "amd64", part: distID,
 	})
-	h.exec(`INSERT INTO deb_files (id, distribution_id, component_id, control_fields) VALUES ($1, $2, $3, '{"Depends": "libc6"}')`, id, distID, compID)
+	h.exec(`INSERT INTO deb_files (id, distribution_id, component_id, control_fields)
+		VALUES ($1, $2, $3, '{"Depends": "libc6"}')`, id, distID, compID)
 
 	res, err := promoteFiles(t, h, src, dst, sha, "", false)
 	if err != nil || len(res.Copied) != 1 || len(res.Regen) != 1 || res.Regen[0].Format != "deb" {
@@ -344,7 +347,8 @@ func TestPromoteDebRebuildsTheDistributionGraphInTheDestination(t *testing.T) {
 	}
 
 	if n := h.count(`SELECT COUNT(*) FROM debian_distributions
-		WHERE repository_id = $1 AND name = 'bookworm' AND codename = 'Bookworm' AND description = 'the stable distribution'`, dst.ID); n != 1 {
+		WHERE repository_id = $1 AND name = 'bookworm' AND codename = 'Bookworm'
+		  AND description = 'the stable distribution'`, dst.ID); n != 1 {
 		t.Errorf("destination has %d matching distributions, want a copy of the source's", n)
 	}
 
