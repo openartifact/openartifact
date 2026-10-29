@@ -78,6 +78,7 @@ func applyReplicaEnvOverrides(cfg *Config) {
 	overrideString(&r.AzureAccountKey, p+"AZURE_ACCOUNT_KEY")
 	overrideString(&r.AzureContainerName, p+"AZURE_CONTAINER_NAME")
 	overrideString(&r.AzureEndpoint, p+"AZURE_ENDPOINT")
+	overrideString(&r.SpoolPath, p+"SPOOL_PATH")
 	overrideString(&r.OCIUsername, p+"OCI_USERNAME")
 	overrideString(&r.OCIPassword, p+"OCI_PASSWORD")
 	overrideBool(&r.OCIInsecure, p+"OCI_INSECURE")

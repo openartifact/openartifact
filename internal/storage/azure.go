@@ -42,6 +42,8 @@ var (
 
 // AzureBlobStore implements BlobStore for Azure Blob Storage using the REST API.
 type AzureBlobStore struct {
+	// spoolDir holds Put spool files (os.TempDir when empty).
+	spoolDir      string
 	accountName   string
 	accountKey    []byte // decoded
 	containerName string
@@ -90,7 +92,13 @@ func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 		ttl = 5 * time.Minute
 	}
 
+	spool, err := prepareSpoolDir(cfg.SpoolPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &AzureBlobStore{
+		spoolDir:         spool,
 		accountName:      cfg.AzureAccountName,
 		accountKey:       key,
 		containerName:    cfg.AzureContainerName,
@@ -364,7 +372,7 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	// Spool to a private temp file: it yields the content length without
 	// buffering in memory and proves the bytes hash to the claimed digest
 	// before anything becomes visible.
-	spool, size, err := spoolVerified(data, sha, "", "azure-put-*.tmp")
+	spool, size, err := spoolVerified(data, sha, a.spoolDir, "azure-put-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("azure: %w", err)
 	}

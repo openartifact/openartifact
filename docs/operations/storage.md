@@ -52,11 +52,12 @@ Defaults: type `filesystem`, bucket `artifacts`, region `us-east-1`, path `/var/
 | `OPENARTIFACT_AZURE_ACCOUNT_KEY` | `azureAccountKey` | azure | required, base64 as shown by Azure |
 | `OPENARTIFACT_AZURE_CONTAINER_NAME` | `azureContainerName` | azure | required |
 | `OPENARTIFACT_AZURE_ENDPOINT` | `azureEndpoint` | azure | blob service URL for Azurite or a sovereign cloud; empty = `https://<account>.blob.core.windows.net`. With Azurite use `http://host:10000/devstoreaccount1` |
-| `STORAGE_STAGING_PATH` | `stagingPath` | oci | spool directory for [server-relayed presigned uploads](#presigned-uploads); default `<system temp dir>/openartifact-staging` |
+| `STORAGE_STAGING_PATH` | `stagingPath` | oci | spool directory for [server-relayed presigned uploads](#presigned-uploads); required (use a persistent directory) while uploads are relayed, since it also holds the signing key |
+| `STORAGE_SPOOL_PATH` | `spoolPath` | s3, azure, oci | directory where a blob is spooled while it is verified before upload; leftovers of a crash are swept at startup. Default: the system temp dir (not swept) |
 | `STORAGE_BUCKET` | `bucket` | oci | the repository name inside the registry |
 | `STORAGE_OCI_USERNAME` | `ociUsername` | oci | Basic auth, sent only to the registry host |
 | `STORAGE_OCI_PASSWORD` | `ociPassword` | oci | |
-| `STORAGE_OCI_INSECURE` | `ociInsecure` | oci | swaps in a plain HTTP transport for `http://` registries. It does not disable TLS verification |
+| `STORAGE_OCI_INSECURE` | `ociInsecure` | oci | allows an `http://` registry endpoint; without it such an endpoint is refused at startup. It never disables TLS verification |
 
 The Azure account endpoint defaults to `https://<account>.blob.core.windows.net/<container>`; `azureEndpoint` overrides the service URL (Azurite, sovereign clouds). Azure and OCI clients use a 30 s HTTP timeout.
 
@@ -289,7 +290,7 @@ Hosted raw repositories take uploads that bypass the API path of the server: the
 | `gcs` | presigned `PUT` through the S3-compatible API | same code path as S3; parts are not verifiable against the real service here, see the caveats below |
 | `azure` | service SAS `PUT` (block blob) | a single `PUT` is limited to 5000 MiB by Azure, so larger files must use multipart (staged blocks, committed at `complete`). `azureEndpoint` / `OPENARTIFACT_AZURE_ENDPOINT` points at Azurite or a sovereign cloud |
 | `filesystem` | short-lived HMAC-signed URL served by OpenArtifact itself | the URL uses the request origin, so the client must reach OpenArtifact at the address it called (an explicit `BASE_URL` overrides it); staging lives in `<path>/staging` |
-| `oci` (registry) | the same HMAC-signed URL | staging spool in `stagingPath` (`STORAGE_STAGING_PATH`, default `<tmp>/openartifact-staging`); the verified blob is then pushed to the registry. An OCI registry has no pre-authenticated upload URLs. To use Oracle Cloud Object Storage with presigned URLs, configure it as `type: s3` through its S3-compatibility endpoint |
+| `oci` (registry) | the same HMAC-signed URL | staging spool in `stagingPath` (`STORAGE_STAGING_PATH`, required: startup fails without it while uploads are relayed); the verified blob is then pushed to the registry. An OCI registry has no pre-authenticated upload URLs. To use Oracle Cloud Object Storage with presigned URLs, configure it as `type: s3` through its S3-compatibility endpoint |
 
 For the filesystem and OCI backends the URL is `<origin>/upload-relay/<id>/<part>?exp=<unix>&sig=<hex>`, where `<origin>` is the origin of the request that created the upload (scheme and host, with `X-Forwarded-*` believed only from `OPENARTIFACT_TRUSTED_PROXIES`) unless `BASE_URL` is set, which then always wins. The HMAC-SHA256 signature covers the upload id, part number, size and expiry and is keyed by a random key kept next to the staging data (`<staging>/.signing-key`, shared by replicas on a shared volume). The route needs no `Authorization` header: the signature is the credential, exactly like a presigned bucket URL. A part already uploaded is replaced by a new `PUT`; a finalized object is never overwritten. Once `complete` starts (or the last part arrives) the upload is sealed: relay PUTs are answered `409`, `complete` waits for PUTs that are still writing, and the published object never changes afterwards, so the bytes that were hashed are the bytes that get promoted. On the filesystem backend the staging directory must belong to one server or to replicas sharing the volume with working `flock` locks.
 

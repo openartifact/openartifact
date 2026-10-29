@@ -48,6 +48,13 @@ func sweepStaleUploadTemps(basePath string, minAge time.Duration) {
 		return
 	}
 
+	// Sidecar temps (blob-upload-meta-*.tmp) and PromoteStaging copy temps
+	// live in the shard directories.
+	shard, err := filepath.Glob(filepath.Join(basePath, "[0-9a-f][0-9a-f]", "blob-upload-*.tmp"))
+	if err == nil {
+		matches = append(matches, shard...)
+	}
+
 	cutoff := time.Now().Add(-minAge)
 
 	for _, m := range matches {
@@ -137,11 +144,36 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		metadata["_sha256"] = computedSHA256
 	}
 
+	// The sidecar is written before the blob becomes visible: a crash between
+	// the two leaves an orphan sidecar (harmless, List skips it), never a blob
+	// without metadata. A dedupe hit also restores a sidecar that is missing.
+	metaPath := blobPath + ".meta"
+
+	var metaData []byte
+
+	if metadata != nil {
+		metaData, err = json.Marshal(metadata)
+		if err != nil {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+
+			return "", fmt.Errorf("failed to encode blob metadata: %w", err)
+		}
+	}
+
 	// Verified content already present stays untouched: never replace an
 	// object other repositories resolve through the same address.
 	if _, statErr := os.Stat(blobPath); statErr == nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
+
+		if metaData != nil {
+			if _, mErr := os.Stat(metaPath); mErr != nil {
+				if err := writeFileAtomic(dir, metaPath, metaData); err != nil {
+					return "", fmt.Errorf("failed to write blob metadata: %w", err)
+				}
+			}
+		}
 
 		return id, nil
 	}
@@ -155,8 +187,17 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 
 	_ = tmpFile.Close()
 
+	if metaData != nil {
+		if err := writeFileAtomic(dir, metaPath, metaData); err != nil {
+			_ = os.Remove(tmpPath)
+
+			return "", fmt.Errorf("failed to write blob metadata: %w", err)
+		}
+	}
+
 	if err := os.Rename(tmpPath, blobPath); err != nil {
 		_ = os.Remove(tmpPath)
+
 		return "", fmt.Errorf("failed to move blob to final path: %w", err)
 	}
 
@@ -164,17 +205,6 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 	// this a crash can lose a blob the database already references.
 	if err := syncDir(dir); err != nil {
 		return "", fmt.Errorf("failed to sync blob directory: %w", err)
-	}
-
-	if metadata != nil {
-		metaData, err := json.Marshal(metadata)
-		if err != nil {
-			return "", fmt.Errorf("failed to encode blob metadata: %w", err)
-		}
-
-		if err := writeFileAtomic(dir, blobPath+".meta", metaData); err != nil {
-			return "", fmt.Errorf("failed to write blob metadata: %w", err)
-		}
 	}
 
 	return id, nil
@@ -569,20 +599,6 @@ func (fs *FilesystemStore) PromoteStaging(ctx context.Context, id, sha256hex, ve
 		return fmt.Errorf("failed to create blob directory: %w", err)
 	}
 
-	if err := os.Link(fs.objectPath(id), blobPath); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-
-		if err := copyIntoBlob(src, dir, blobPath); err != nil {
-			return err
-		}
-	}
-
-	if err := syncDir(dir); err != nil {
-		return fmt.Errorf("failed to sync blob directory: %w", err)
-	}
-
 	meta := make(map[string]string, len(metadata)+2)
 	maps.Copy(meta, metadata)
 
@@ -599,8 +615,24 @@ func (fs *FilesystemStore) PromoteStaging(ctx context.Context, id, sha256hex, ve
 		return fmt.Errorf("failed to encode blob metadata: %w", err)
 	}
 
+	// Sidecar first: a crash before the link leaves a harmless orphan sidecar,
+	// never a blob without metadata.
 	if err := writeFileAtomic(dir, blobPath+".meta", data); err != nil {
 		return fmt.Errorf("failed to write blob metadata: %w", err)
+	}
+
+	if err := os.Link(fs.objectPath(id), blobPath); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+
+		if err := copyIntoBlob(src, dir, blobPath); err != nil {
+			return err
+		}
+	}
+
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("failed to sync blob directory: %w", err)
 	}
 
 	return nil

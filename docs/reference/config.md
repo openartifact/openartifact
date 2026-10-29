@@ -96,7 +96,8 @@ This page lists every configuration key with its type, built-in default and the 
 | `storage.azureAccountKey` | `OPENARTIFACT_AZURE_ACCOUNT_KEY` | string | `empty` | **Secret.** `azureAccountKey` is the Azure storage account key. |
 | `storage.azureContainerName` | `OPENARTIFACT_AZURE_CONTAINER_NAME` | string | `empty` | `azureContainerName` is the Azure container name. |
 | `storage.azureEndpoint` | `OPENARTIFACT_AZURE_ENDPOINT` | string | `empty` | `azureEndpoint` is the blob service URL, for Azurite or a sovereign cloud; empty uses https://\<account>.blob.core.windows.net. |
-| `storage.stagingPath` | `STORAGE_STAGING_PATH` | string | `empty` | `stagingPath` is the spool directory for server-relayed presigned uploads on oci storage (filesystem uses \<path>/staging); empty means \<tmp>/openartifact-staging. |
+| `storage.stagingPath` | `STORAGE_STAGING_PATH` | string | `empty` | `stagingPath` is the spool directory for server-relayed presigned uploads on oci storage (filesystem uses \<path>/staging). Required for oci when uploads are relayed (it also holds the relay signing key); use a persistent directory. |
+| `storage.spoolPath` | `STORAGE_SPOOL_PATH` | string | `empty` | `spoolPath` is the directory where s3, azure and oci spool a blob to disk while verifying it before the upload; leftovers of a crash are swept from it at startup. Empty means the system temp dir (not swept). |
 | `storage.ociInsecure` | `STORAGE_OCI_INSECURE` | bool | `false` | `ociInsecure` allows plain HTTP to the OCI registry (dev and testing only). |
 | `storage.ociUsername` | `STORAGE_OCI_USERNAME` | string | `empty` | `ociUsername` is the OCI registry user. |
 | `storage.ociPassword` | `STORAGE_OCI_PASSWORD` | string | `empty` | **Secret.** `ociPassword` is the OCI registry password. |
@@ -123,6 +124,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `storage.replica.azureAccountKey` | `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_KEY` | string | `empty` | **Secret.** `azureAccountKey` is the Azure storage account key. |
 | `storage.replica.azureContainerName` | `OPENARTIFACT_STORAGE_REPLICA_AZURE_CONTAINER_NAME` | string | `empty` | `azureContainerName` is the Azure container name. |
 | `storage.replica.azureEndpoint` | `OPENARTIFACT_STORAGE_REPLICA_AZURE_ENDPOINT` | string | `empty` | `azureEndpoint` is the blob service URL, for Azurite or a sovereign cloud; empty uses https://\<account>.blob.core.windows.net. |
+| `storage.replica.spoolPath` | `OPENARTIFACT_STORAGE_REPLICA_SPOOL_PATH` | string | `empty` | `spoolPath` is the directory where s3, azure and oci spool a blob to disk while verifying it before the upload; leftovers of a crash are swept from it at startup. Empty means the system temp dir (not swept). |
 | `storage.replica.ociInsecure` | `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | bool | `false` | `ociInsecure` allows plain HTTP to the OCI registry (dev and testing only). |
 | `storage.replica.ociUsername` | `OPENARTIFACT_STORAGE_REPLICA_OCI_USERNAME` | string | `empty` | `ociUsername` is the OCI registry user. |
 | `storage.replica.ociPassword` | `OPENARTIFACT_STORAGE_REPLICA_OCI_PASSWORD` | string | `empty` | **Secret.** `ociPassword` is the OCI registry password. |
