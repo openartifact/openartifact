@@ -117,7 +117,7 @@ func (q *Queries) GetRepoComponentBlob(ctx context.Context, arg GetRepoComponent
 
 const listRepoComponents = `-- name: ListRepoComponents :many
 WITH qm AS MATERIALIZED (
-    SELECT CASE WHEN char_length($4::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $7::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $7::text) m LIMIT 2001) c) ELSE false END AS narrow
+    SELECT CASE WHEN char_length($6::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $9::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $9::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
@@ -138,41 +138,41 @@ FROM (
            f.filename AS filename, f.blob_id AS blob_id, NULL::text AS blob_key, f.created_at AS created_at, f.updated_at AS updated_at
     FROM (
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text AS pname, NULL::text AS pversion, NULL::text AS pformat FROM package_files f
-         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $2::text = '' AND $3::text = '' AND $4::text = ''
-         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= $2::timestamptz AND (f.created_at < $2::timestamptz OR f.id > $3::uuid) AND $4::text = '' AND $5::text = '' AND $6::text = ''
+         ORDER BY f.created_at DESC, f.id LIMIT ($7::int + $8::int))
         UNION ALL
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text <> '' AND ($2::text = '' OR pk.format = $2::text) AND pk.name = $3::text AND ($4::text = '' OR pk.name ILIKE $7::text OR v.version ILIKE $7::text)
-         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= $2::timestamptz AND (f.created_at < $2::timestamptz OR f.id > $3::uuid) AND $5::text <> '' AND ($4::text = '' OR pk.format = $4::text) AND pk.name = $5::text AND ($6::text = '' OR pk.name ILIKE $9::text OR v.version ILIKE $9::text)
+         ORDER BY f.created_at DESC, f.id LIMIT ($7::int + $8::int))
         UNION ALL
         -- a narrow q (at most 2000 matching versions, see qm): start from the trigram indexes of the version and the package name
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND $4::text <> '' AND (SELECT narrow FROM qm) AND ($2::text = '' OR pk.format = $2::text)
-           AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $7::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $7::text)
-         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= $2::timestamptz AND (f.created_at < $2::timestamptz OR f.id > $3::uuid) AND $5::text = '' AND $6::text <> '' AND (SELECT narrow FROM qm) AND ($4::text = '' OR pk.format = $4::text)
+           AND f.version_id IN (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $9::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $9::text)
+         ORDER BY f.created_at DESC, f.id LIMIT ($7::int + $8::int))
         UNION ALL
         -- a format filter, or a broad q: walk the listing index and filter (a format the repository has no package of is skipped by the EXISTS)
         (SELECT f.id, f.repository_id, f.version_id, f.filename, f.arch, f.attrs, f.size_bytes, f.blob_id, f.created_at, f.updated_at, NULL::text, NULL::text, NULL::text FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages pk ON pk.id = v.package_id
-         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND $3::text = '' AND ($2::text <> '' OR $4::text <> '') AND ($4::text = '' OR NOT (SELECT narrow FROM qm)) AND ($2::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = $1::uuid AND pg.format = $2::text)) AND ($2::text = '' OR pk.format = $2::text) AND ($4::text = '' OR pk.name ILIKE $7::text OR v.version ILIKE $7::text)
-         ORDER BY f.created_at DESC, f.id LIMIT ($5::int + $6::int))
+         WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND f.listed AND f.created_at <= $2::timestamptz AND (f.created_at < $2::timestamptz OR f.id > $3::uuid) AND $5::text = '' AND ($4::text <> '' OR $6::text <> '') AND ($6::text = '' OR NOT (SELECT narrow FROM qm)) AND ($4::text = '' OR EXISTS (SELECT 1 FROM packages pg WHERE pg.repository_id = $1::uuid AND pg.format = $4::text)) AND ($4::text = '' OR pk.format = $4::text) AND ($6::text = '' OR pk.name ILIKE $9::text OR v.version ILIKE $9::text)
+         ORDER BY f.created_at DESC, f.id LIMIT ($7::int + $8::int))
     ) f
     UNION ALL
     -- proxy cache: one row per cached upstream file of a proxy repository (any format); name = filename = upstream-relative path; the blob is resolved by sha256 and wins over the recorded size.
     SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, t.cache_key::text, ''::text, t.repo_format::text,
            ''::text, NULL::jsonb, NULL::bigint, t.size_bytes::bigint,
            t.cache_key::text, NULL::uuid, t.blob_key::text, t.created_at::timestamptz, t.updated_at::timestamptz
-    FROM (SELECT t.id, t.repository_id, t.cache_key, t.blob_key, t.content_type, t.status_code, t.size_bytes, t.hit_count, t.last_hit_at, t.expires_at, t.created_at, t.updated_at, r.format AS repo_format FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::text = '' OR $2::text = r.format) AND ($3::text = '' OR t.cache_key = $3::text) AND ($4::text = '' OR strpos(lower(t.cache_key), lower($4::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT ($5::int + $6::int)) t
+    FROM (SELECT t.id, t.repository_id, t.cache_key, t.blob_key, t.content_type, t.status_code, t.size_bytes, t.hit_count, t.last_hit_at, t.expires_at, t.created_at, t.updated_at, r.format AS repo_format FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id WHERE r.deleted_at IS NULL AND t.created_at <= $2::timestamptz AND (t.created_at < $2::timestamptz OR t.id > $3::uuid) AND t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL AND ($4::text = '' OR $4::text = r.format) AND ($5::text = '' OR t.cache_key = $5::text) AND ($6::text = '' OR strpos(lower(t.cache_key), lower($6::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT ($7::int + $8::int)) t
     UNION ALL
     -- docker: one row per tag (the registry image name is the repository name, plus the image path inside it); size = manifest size, blob = manifest blob, filename = manifest digest.
     SELECT t.id::uuid, t.repository_id::uuid, NULL::uuid, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text, 'docker'::text,
            ''::text, NULL::jsonb, COALESCE(dm.size, 0)::bigint, NULL::bigint,
            t.manifest_digest::text, dm.blob_id::uuid, NULL::text, t.created_at::timestamptz, t.updated_at::timestamptz
-    FROM (SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker') AND ($3::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $3::text) AND ($4::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($4::text)) > 0 OR strpos(lower(t.name), lower($4::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT ($5::int + $6::int)) t
+    FROM (SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by FROM docker_tags t WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.created_at <= $2::timestamptz AND (t.created_at < $2::timestamptz OR t.id > $3::uuid) AND ($4::text = '' OR $4::text = 'docker') AND ($5::text = '' OR (CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END) = $5::text) AND ($6::text = '' OR strpos(lower((CASE WHEN t.image = '' THEN (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) ELSE (SELECT r.name FROM repositories r WHERE r.id = t.repository_id) || '/' || t.image END)), lower($6::text)) > 0 OR strpos(lower(t.name), lower($6::text)) > 0) ORDER BY t.created_at DESC, t.id LIMIT ($7::int + $8::int)) t
     JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL
     LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL
     ) AS u
     ORDER BY u.created_at DESC, u.id
-    LIMIT $5::int OFFSET $6::int
+    LIMIT $7::int OFFSET $8::int
 ) AS p
 LEFT JOIN package_versions v ON v.id = p.version_id
 LEFT JOIN packages pk ON pk.id = v.package_id
@@ -182,13 +182,15 @@ ORDER BY p.created_at DESC, p.id
 `
 
 type ListRepoComponentsParams struct {
-	RepoID       string `db:"repo_id" json:"repo_id"`
-	FormatFilter string `db:"format_filter" json:"format_filter"`
-	NameFilter   string `db:"name_filter" json:"name_filter"`
-	Q            string `db:"q" json:"q"`
-	PageLimit    int32  `db:"page_limit" json:"page_limit"`
-	PageOffset   int32  `db:"page_offset" json:"page_offset"`
-	QPattern     string `db:"q_pattern" json:"q_pattern"`
+	RepoID       string    `db:"repo_id" json:"repo_id"`
+	AfterAt      time.Time `db:"after_at" json:"after_at"`
+	AfterID      string    `db:"after_id" json:"after_id"`
+	FormatFilter string    `db:"format_filter" json:"format_filter"`
+	NameFilter   string    `db:"name_filter" json:"name_filter"`
+	Q            string    `db:"q" json:"q"`
+	PageLimit    int32     `db:"page_limit" json:"page_limit"`
+	PageOffset   int32     `db:"page_offset" json:"page_offset"`
+	QPattern     string    `db:"q_pattern" json:"q_pattern"`
 }
 
 type ListRepoComponentsRow struct {
@@ -228,6 +230,15 @@ type ListRepoComponentsRow struct {
 // listed name; q is a case-insensitive substring match on the listed name or
 // version (on the name only for proxy cache entries).
 //
+// ListRepoComponents also pages by keyset: after_at/after_id are the
+// (created_at, id) of the last row of the previous page; with no cursor they
+// are a far-future timestamp and the zero uuid, which every row is before. after_at
+// is a typed timestamptz parameter, so the per-row filter compares timestamps
+// instead of parsing a text. Every branch keeps only the rows strictly after the
+// cursor in the listing order.
+// The condition is sargable on idx_package_files_listing and its siblings, so a
+// deep page starts at the cursor instead of walking page_offset rows.
+//
 // ListRepoComponentsByName is ListRepoComponents in (name, version, id) order
 // instead of newest first: its stage 1 sorts the repository's files by that
 // order, so it backs the browser's "sort by name" but not the default listing.
@@ -262,6 +273,8 @@ type ListRepoComponentsRow struct {
 func (q *Queries) ListRepoComponents(ctx context.Context, arg ListRepoComponentsParams) ([]ListRepoComponentsRow, error) {
 	rows, err := q.db.Query(ctx, listRepoComponents,
 		arg.RepoID,
+		arg.AfterAt,
+		arg.AfterID,
 		arg.FormatFilter,
 		arg.NameFilter,
 		arg.Q,

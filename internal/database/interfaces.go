@@ -101,8 +101,20 @@ type ComponentListOptions struct {
 	Query string
 	// SortByName orders by (name, version) instead of newest first.
 	SortByName bool
-	Page       int
-	Limit      int
+	// After, when set, continues the newest-first listing strictly after that row
+	// (keyset paging): Page is then ignored. It cannot be combined with SortByName.
+	After *ComponentCursor
+	// NoTotal skips counting the matching rows; the returned total is then 0.
+	NoTotal bool
+	Page    int
+	Limit   int
+}
+
+// ComponentCursor is a position in the newest-first package listing, the
+// (created_at, id) of a row: the listing order is created_at DESC, id ASC.
+type ComponentCursor struct {
+	CreatedAt time.Time
+	ID        string
 }
 
 // ComponentSearcher is implemented by stores that can filter and order a

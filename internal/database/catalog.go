@@ -362,9 +362,12 @@ func (p *CatalogStore) SearchComponents(ctx context.Context, repoID string, opts
 		return nil, 0, fmt.Errorf("failed to list packages: %w", err)
 	}
 
-	total, err := p.componentTotal(ctx, repoID, opts, len(rows))
-	if err != nil {
-		return nil, 0, err
+	total := 0
+	if !opts.NoTotal {
+		total, err = p.componentTotal(ctx, repoID, opts, len(rows))
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	components := make([]*models.Component, 0, len(rows))
@@ -420,6 +423,17 @@ func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts C
 // ListRepoComponentsByName.
 type componentRow = dbsqlc.ListRepoComponentsRow
 
+// componentAfterParams renders the keyset position for ListRepoComponents. With
+// no cursor it is a timestamp every row is before and the zero uuid, so the
+// keyset condition keeps every row.
+func componentAfterParams(c *ComponentCursor) (time.Time, string) {
+	if c == nil {
+		return time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), "00000000-0000-0000-0000-000000000000"
+	}
+
+	return c.CreatedAt, c.ID
+}
+
 // listComponentRows runs the newest-first or the by-name variant of the
 // package listing query.
 func (p *CatalogStore) listComponentRows(ctx context.Context, repoID string, opts ComponentListOptions) ([]componentRow, error) {
@@ -427,9 +441,14 @@ func (p *CatalogStore) listComponentRows(ctx context.Context, repoID string, opt
 	offset := toInt32((opts.Page - 1) * opts.Limit)
 
 	if !opts.SortByName {
+		afterAt, afterID := componentAfterParams(opts.After)
+		if opts.After != nil {
+			offset = 0
+		}
+
 		return p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
 			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query, QPattern: containsPattern(opts.Query),
-			PageLimit: limit, PageOffset: offset,
+			AfterAt: afterAt, AfterID: afterID, PageLimit: limit, PageOffset: offset,
 		})
 	}
 
