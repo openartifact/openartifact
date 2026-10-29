@@ -1,47 +1,111 @@
--- name: CreateRubyGem :one
-INSERT INTO rubygems_gems (repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, blob_id, yanked, download_count, size, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+-- rubygems on the generic package tables (the mapping is documented on
+-- RubyGemsStore in pkg_rubygems.go): one package per gem name, one version and
+-- one .gem file per (version, platform). The writes go through writePackage;
+-- these are the typed reads and updates.
 
 -- name: GetRubyGem :one
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND rg.name = $2 AND rg.version = $3 AND rg.platform = $4;
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version_key) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name);
 
 -- name: ListRubyGems :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL ORDER BY rg.name ASC, rg.version DESC;
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND v.deleted_at IS NULL
+ORDER BY p.name ASC, v.version DESC;
 
 -- name: ListRubyGemVersions :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND rg.name = $2 ORDER BY rg.version DESC;
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name)
+ORDER BY v.version DESC, f.arch;
 
 -- name: SearchRubyGems :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND (rg.name ILIKE $2 OR rg.description ILIKE $2 OR rg.summary ILIKE $2)
-ORDER BY rg.name ASC, rg.version DESC
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND v.deleted_at IS NULL
+  AND (p.name ILIKE $2 OR v.metadata->>'description' ILIKE $2 OR v.metadata->>'summary' ILIKE $2)
+ORDER BY p.name ASC, v.version DESC
 LIMIT 1000;
 
+-- The yanked flag lives in the version metadata; a yank applies to the platform
+-- builds of the version it names (every build when the platform is empty).
 -- name: YankRubyGem :exec
-UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND ($5::text = '' OR platform = $5) AND deleted_at IS NULL;
+UPDATE package_versions v
+SET metadata = jsonb_set(v.metadata, '{yanked}', to_jsonb(sqlc.arg(yanked)::boolean)), updated_at = now()
+FROM packages p
+WHERE p.id = v.package_id AND p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name)
+  AND v.version = sqlc.arg(version) AND v.deleted_at IS NULL
+  AND (sqlc.arg(platform)::text = '' OR EXISTS (
+        SELECT 1 FROM package_files f WHERE f.version_id = v.id AND f.arch = sqlc.arg(platform)::text AND f.deleted_at IS NULL));
 
 -- name: RubyGemsSpecsStamp :one
 -- Fingerprint of the listed (not yanked) gems of a repository: every specs
 -- index is derived from exactly this set, and a yank removes a row from it.
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(rg.id::text, 0)), 0)::text)::text AS stamp
-FROM rubygems_gems rg
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked;
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.listed AND v.deleted_at IS NULL
+  AND NOT COALESCE((v.metadata->>'yanked')::boolean, false);
 
 -- name: ListRubyGemSpecs :many
 -- The three columns the specs indexes are built from, for listed gems only.
-SELECT rg.name, rg.version, rg.platform
-FROM rubygems_gems rg
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked
-ORDER BY rg.name ASC, rg.version DESC;
+SELECT p.name, v.version, f.arch AS platform
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.listed AND v.deleted_at IS NULL
+  AND NOT COALESCE((v.metadata->>'yanked')::boolean, false)
+ORDER BY p.name ASC, v.version DESC;

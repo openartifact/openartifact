@@ -945,8 +945,8 @@ func (h *HTTPHandler) gemFileNameTaken(w http.ResponseWriter, r *http.Request, r
 	return false
 }
 
-// Widths of the rubygems_gems name, version and platform columns
-// (migrations/001_initial_schema.sql); a longer value fails the insert.
+// Widths of the gem name, version and platform (package_versions/package_files)
+// columns; a longer value fails the insert.
 const (
 	maxGemNameLen     = 255
 	maxGemVersionLen  = 100
