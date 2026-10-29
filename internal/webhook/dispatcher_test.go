@@ -10,11 +10,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -317,6 +319,109 @@ func TestProcessDropsDeliveriesOfDisabledWebhook(t *testing.T) {
 		if hits != tc.wantHits || db.delivery == nil || db.delivery.Status != tc.want {
 			t.Errorf("%s: hits=%d delivery=%+v, want hits=%d status=%s", tc.event, hits, db.delivery, tc.wantHits, tc.want)
 		}
+	}
+}
+
+// TestDeliverySendsDeliveryAndEventHeaders pins the idempotency headers and that
+// the signature still covers the body alone.
+func TestDeliverySendsDeliveryAndEventHeaders(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
+
+	got := make(chan *http.Request, 1)
+	bodies := make(chan []byte, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got <- r
+		bodies <- body
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	delivery := &models.WebhookDelivery{ID: "delivery-42", EventType: EventRepoCreated, Payload: map[string]any{"event": EventRepoCreated}}
+	NewDispatcher(&deliveryTestDB{}, log).deliver(&models.Webhook{
+		ID: "wh", URL: server.URL, ContentType: "application/json", SecretEnc: "s3cret", MaxRetries: 1, TimeoutSeconds: 1,
+	}, delivery)
+
+	req := <-got
+	body := <-bodies
+
+	if h := req.Header.Get("X-Oa-Delivery"); h != "delivery-42" {
+		t.Errorf("X-OA-Delivery = %q, want the delivery id", h)
+	}
+
+	if h := req.Header.Get("X-Oa-Event"); h != EventRepoCreated {
+		t.Errorf("X-OA-Event = %q, want %q", h, EventRepoCreated)
+	}
+
+	if want := "sha256=" + computeHMAC(body, []byte("s3cret")); req.Header.Get("X-Hub-Signature-256") != want {
+		t.Errorf("X-Hub-Signature-256 = %q, want the HMAC of the body alone (%q)", req.Header.Get("X-Hub-Signature-256"), want)
+	}
+}
+
+// TestProcessSkipsDeliveryWhoseLeaseCannotCoverAnAttempt pins that a delivery
+// that waited in the queue past (or nearly past) its claim lease is not sent:
+// another instance may hold or take the claim and would send it again.
+func TestProcessSkipsDeliveryWhoseLeaseCannotCoverAnAttempt(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
+
+	var hits atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	in := func(d time.Duration) *time.Time {
+		at := time.Now().Add(d)
+
+		return &at
+	}
+
+	for _, tc := range []struct {
+		name     string
+		lease    *time.Time
+		wantSent bool
+	}{
+		{"lease already expired", in(-time.Second), false},
+		{"lease ends inside the attempt timeout", in(10 * time.Second), false},
+		{"lease ends within the safety margin", in(32 * time.Second), false},
+		{"fresh lease", in(claimLease), true},
+		{"no lease", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hits.Store(0)
+
+			db := &disabledWebhookDB{wh: &models.Webhook{
+				ID: "wh", URL: server.URL, Enabled: true, ContentType: "application/json", MaxRetries: 3, TimeoutSeconds: 30,
+			}}
+			delivery := &models.WebhookDelivery{
+				ID: "d", WebhookID: "wh", EventType: EventRepoCreated, Status: "pending",
+				Payload: map[string]any{}, NextRetryAt: tc.lease,
+			}
+
+			NewDispatcher(db, log).process(delivery)
+
+			if sent := hits.Load() == 1; sent != tc.wantSent {
+				t.Fatalf("sent = %v, want %v", sent, tc.wantSent)
+			}
+
+			if !tc.wantSent && (db.delivery != nil || delivery.Status != "pending" || delivery.AttemptCount != 0) {
+				t.Fatalf("a skipped delivery must stay untouched and pending, got %+v (persisted %+v)", delivery, db.delivery)
+			}
+		})
 	}
 }
 
