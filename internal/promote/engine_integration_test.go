@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/quota"
 )
 
@@ -82,7 +83,7 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	for i := range n {
 		blob, sha := h.blob(fmt.Sprintf("artifact %d", i))
 		path := fmt.Sprintf("com/acme/shop/1.0.0/shop%d-1.0.0.jar", i)
-		h.row("maven_artifacts", env.src.ID, "blob_id", blob, mavenCols(i, path))
+		h.file(env.src.ID, blob, mavenSeed(i, path))
 
 		item := &models.ReleaseBundleItem{
 			ID: uuid.NewString(), BundleID: env.bundle.ID, SourceRepoID: env.src.ID,
@@ -106,11 +107,8 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	return env
 }
 
-func mavenCols(i int, path string) map[string]any {
-	return map[string]any{
-		"group_id": "com.acme", "artifact_id_coord": fmt.Sprintf("shop%d", i), "version": "1.0.0",
-		"extension": "jar", "repo_path": path,
-	}
+func mavenSeed(i int, path string) fileSeed {
+	return fileSeed{pkg: fmt.Sprintf("com.acme:shop%d", i), version: "1.0.0", path: path}
 }
 
 func (e *bundleEnv) reload() {
@@ -132,7 +130,7 @@ func (e *bundleEnv) params() Params {
 func (e *bundleEnv) assertUntouched() {
 	e.h.t.Helper()
 
-	if n := e.h.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, e.dst.ID); n != 0 {
+	if n := e.h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, e.dst.ID); n != 0 {
 		e.h.t.Errorf("target holds %d rows after a failed promotion", n)
 	}
 
@@ -186,7 +184,7 @@ func TestEnginePromoteRecordsAndCharges(t *testing.T) {
 		t.Errorf("blobs rows %d -> %d: bytes must be shared, not duplicated", blobsBefore, got)
 	}
 
-	shared := env.h.count(`SELECT COUNT(*) FROM maven_artifacts s JOIN maven_artifacts d ON d.blob_id = s.blob_id
+	shared := env.h.count(`SELECT COUNT(*) FROM package_files s JOIN package_files d ON d.blob_id = s.blob_id
 		WHERE s.repository_id = $1 AND d.repository_id = $2`, env.src.ID, env.dst.ID)
 	if shared != 2 {
 		t.Errorf("%d target rows reference the source's blobs, want 2", shared)
@@ -212,7 +210,7 @@ func TestEnginePromoteIsAtomic(t *testing.T) {
 
 	// The second item's coordinates are taken in the target by other content.
 	other, _ := env.h.blob("someone else's jar")
-	env.h.row("maven_artifacts", env.dst.ID, "blob_id", other, mavenCols(1, "com/acme/shop/1.0.0/shop1-1.0.0.jar"))
+	env.h.file(env.dst.ID, other, mavenSeed(1, "com/acme/shop/1.0.0/shop1-1.0.0.jar"))
 
 	_, err := env.engine.Promote(context.Background(), env.params())
 
@@ -226,7 +224,7 @@ func TestEnginePromoteIsAtomic(t *testing.T) {
 		t.Errorf("err = %v, want it to name item %s", err, env.shas[1])
 	}
 
-	if n := env.h.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, env.dst.ID); n != 1 {
+	if n := env.h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, env.dst.ID); n != 1 {
 		t.Errorf("target has %d rows, want only the pre-existing one: the first item's copy must roll back", n)
 	}
 
@@ -285,8 +283,8 @@ func TestEnginePromoteLicensePolicy(t *testing.T) {
 	src, dst := h.repo("pypi", false), h.repo("pypi", false)
 
 	blob, sha := h.blob("gpl wheel")
-	h.row("pypi_packages", src.ID, "blob_id", blob, map[string]any{
-		"name": "shop", "version": "1.0", "filename": "shop-1.0.whl", "package_type": "bdist_wheel", "license": "GPL-3.0",
+	h.file(src.ID, blob, fileSeed{
+		pkg: "shop", version: "1.0", path: "shop-1.0.whl", versionMeta: `{"license": "GPL-3.0"}`,
 	})
 
 	policy := &models.LicensePolicy{
@@ -310,7 +308,7 @@ func TestEnginePromoteLicensePolicy(t *testing.T) {
 		t.Fatalf("err = %v, want a LicenseBlockedError", err)
 	}
 
-	if n := h.count(`SELECT COUNT(*) FROM pypi_packages WHERE repository_id = $1`, dst.ID); n != 0 {
+	if n := h.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, dst.ID); n != 0 {
 		t.Errorf("target holds %d rows after a blocked promotion", n)
 	}
 }
@@ -435,10 +433,10 @@ func TestEngineNotifyDispatchesByKind(t *testing.T) {
 	regen := &fakeRegen{}
 	e := &Engine{regen: regen}
 	e.notify([]Regen{
-		{Kind: RegenDeb, RepoID: "r1"},
-		{Kind: RegenRPM, RepoID: "r2"},
-		{Kind: RegenMaven, RepoID: "r3", GroupID: "g", ArtifactID: "a"},
-		{Kind: RegenNPM, PackageID: "p1"},
+		{Kind: storage.RegenDeb, RepoID: "r1"},
+		{Kind: storage.RegenRPM, RepoID: "r2"},
+		{Kind: storage.RegenMaven, RepoID: "r3", GroupID: "g", ArtifactID: "a"},
+		{Kind: storage.RegenNPM, PackageID: "p1"},
 	})
 
 	want := []string{"deb:r1", "rpm:r2", "maven:r3:g:a", "npm:p1"}

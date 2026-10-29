@@ -22,6 +22,8 @@ import (
 func newBackupEngine(t *testing.T, db backup.EngineStore) *backup.Engine {
 	t.Helper()
 
+	registerBackupDescriptors(t)
+
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {
 		t.Fatal(err)

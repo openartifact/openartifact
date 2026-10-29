@@ -6,8 +6,6 @@
 
 package promote
 
-import "strings"
-
 const (
 	dockerImageMedia = "application/vnd.oci.image.manifest.v1+json"
 	dockerIndexMedia = "application/vnd.oci.image.index.v1+json"
@@ -112,70 +110,4 @@ func seedDockerManifest(h *harness, repoID, blobID string, spec dockerSpec) dock
 	}
 
 	return dockerSeed{id: manifestID, digest: digest, sha: sha, size: int64(size)}
-}
-
-// dockerFixture covers a multi-layer image: manifest, config and two layers,
-// one foreign layer reference, a subject, and a tag, in a non-default image.
-func dockerFixture() fixture {
-	return fixture{
-		format: "docker", version: "1.0", path: "team/app:1.0",
-		tables:  []string{"docker_manifests", "docker_tags"},
-		compare: []string{"docker_manifests", "docker_tags", "docker_blobs", "docker_blob_images", "docker_manifest_refs"},
-		// last_used_at is refreshed by the copy; manifest_id is the re-pointed parent id.
-		ignore: []string{"last_used_at", "manifest_id"},
-		seed: func(h *harness, repoID, blobID string) {
-			seedDockerManifest(h, repoID, blobID, dockerSpec{
-				image:   "team/app",
-				subject: "sha256:" + strings.Repeat("a", 64),
-				blobs:   []string{"docker config", "docker layer one", "docker layer two"},
-				foreign: []string{"sha256:" + strings.Repeat("f", 64)},
-				tags:    []string{"1.0"},
-			})
-		},
-		verify: func(h *harness, src, dst string) {
-			t := h.t
-
-			if n := h.count(`SELECT COUNT(*) FROM docker_blobs s JOIN docker_blobs d ON d.digest = s.digest AND d.blob_id = s.blob_id
-			                  WHERE s.repository_id = $1 AND d.repository_id = $2`, src, dst); n != 3 {
-				t.Errorf("dst holds %d of the 3 source docker_blobs rows with the same blobs row", n)
-			}
-
-			if n := h.count(
-				`SELECT COUNT(*) FROM docker_blobs WHERE repository_id = $1 AND last_used_at > now() - interval '1 hour'`,
-				dst,
-			); n != 3 {
-				t.Errorf("%d of 3 dst blobs were used recently, want all", n)
-			}
-
-			if n := h.count(`SELECT COUNT(*) FROM docker_blob_images WHERE repository_id = $1 AND image = 'team/app'`, dst); n != 3 {
-				t.Errorf("dst links %d blobs to the image, want 3", n)
-			}
-
-			if n := h.count(`SELECT COUNT(*) FROM docker_manifest_refs WHERE repository_id = $1 AND kind = 'blob'`, dst); n != 4 {
-				t.Errorf("dst has %d blob refs, want 4 (3 stored + 1 foreign)", n)
-			}
-
-			if n := h.count(`SELECT COUNT(*) FROM docker_manifest_refs WHERE repository_id = $1 AND kind = 'indexed'`, dst); n != 1 {
-				t.Errorf("dst has %d indexed markers, want 1", n)
-			}
-
-			want := h.str(`SELECT digest FROM docker_manifests WHERE repository_id = $1`, src)
-			if got := h.str(
-				`SELECT manifest_digest FROM docker_tags WHERE repository_id = $1 AND image = 'team/app' AND name = '1.0' AND deleted_at IS NULL`,
-				dst,
-			); got != want {
-				t.Errorf("dst tag 1.0 points at %q, want %q", got, want)
-			}
-
-			if got := h.str(
-				`SELECT subject_digest FROM docker_manifests WHERE repository_id = $1`,
-				dst,
-			); got != "sha256:"+strings.Repeat(
-				"a",
-				64,
-			) {
-				t.Errorf("dst subject_digest = %q", got)
-			}
-		},
-	}
 }

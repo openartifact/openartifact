@@ -77,6 +77,8 @@ func newHarness(t *testing.T) *harness {
 
 	log, pg := openDB(t, dsn, dbName)
 
+	registerFixtureDescriptors()
+
 	return &harness{t: t, pg: pg, log: log}
 }
 
@@ -286,8 +288,15 @@ func (h *harness) row(table, repoID, blobCol, blobID string, cols map[string]any
 	return id
 }
 
-// promoteOnce runs p in its own transaction, committing on success.
-func (h *harness) promoteOnce(p Promoter, req Request) (*Result, error) {
+// promoter names the format a promotion runs for; the engine picks the docker
+// promoter or the descriptor-driven one by it.
+type promoter struct{ format string }
+
+// promoterFor returns the promoter of format.
+func promoterFor(_ *testing.T, format string) promoter { return promoter{format: format} }
+
+// promoteOnce runs the promotion of p in its own transaction, committing on success.
+func (h *harness) promoteOnce(p promoter, req Request) (*Result, error) {
 	h.t.Helper()
 
 	ctx := context.Background()
@@ -297,7 +306,7 @@ func (h *harness) promoteOnce(p Promoter, req Request) (*Result, error) {
 		h.t.Fatalf("begin: %v", err)
 	}
 
-	res, err := p.Promote(ctx, tx, req)
+	res, err := promoteItem(ctx, tx, p.format, req)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
@@ -310,17 +319,54 @@ func (h *harness) promoteOnce(p Promoter, req Request) (*Result, error) {
 	return res, nil
 }
 
-// promoterFor returns the registered promoter of format.
-func promoterFor(t *testing.T, format string) Promoter {
-	t.Helper()
+// fileSeed is one package_files row with the version and package it lives in.
+type fileSeed struct {
+	pkg, version, versionKey string
+	// pkgAttrs, versionMeta, attrs and checksums are JSON; empty means {}.
+	pkgAttrs, versionMeta, attrs, checksums string
+	path, filename, role, arch, part        string
+	unitKey                                 string
+}
 
-	for _, p := range Promoters() {
-		if p.Format() == format {
-			return p
-		}
+func orJSON(s string) string {
+	if s == "" {
+		return "{}"
 	}
 
-	t.Fatalf("no promoter registered for %s", format)
+	return s
+}
 
-	return nil
+// file inserts the file of s into repoID with blobID as its content, creating
+// its package and live version when the repository lacks them (so it can be
+// called repeatedly), and returns the file id.
+func (h *harness) file(repoID, blobID string, s fileSeed) string {
+	h.t.Helper()
+
+	format := h.str(`SELECT format FROM repositories WHERE id = $1`, repoID)
+	if s.versionKey == "" {
+		s.versionKey = s.version
+	}
+
+	if s.role == "" {
+		s.role = rolePrimary
+	}
+
+	if s.filename == "" {
+		s.filename = s.path
+	}
+
+	pkgID := h.str(`INSERT INTO packages (repository_id, format, name, name_key, attrs) VALUES ($1, $2, $3, lower($3), $4::jsonb)
+		ON CONFLICT (repository_id, name_key) DO UPDATE SET name = EXCLUDED.name RETURNING id::text`,
+		repoID, format, s.pkg, orJSON(s.pkgAttrs))
+
+	versionID := h.str(`INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata)
+		VALUES ($1, $2, $3, $4, $5::jsonb)
+		ON CONFLICT (package_id, version_key) WHERE deleted_at IS NULL DO UPDATE SET version = EXCLUDED.version RETURNING id::text`,
+		pkgID, repoID, s.version, s.versionKey, orJSON(s.versionMeta))
+
+	return h.str(`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, size_bytes, role, listed, arch, part,
+		       attrs, checksums, unit_key)
+		SELECT $1, $2, $3, $4, b.id, b.size_bytes, $6, true, $7, $8, $9::jsonb, $10::jsonb, $11 FROM blobs b WHERE b.id = $5
+		RETURNING id::text`,
+		versionID, repoID, s.path, s.filename, blobID, s.role, s.arch, s.part, orJSON(s.attrs), orJSON(s.checksums), s.unitKey)
 }
