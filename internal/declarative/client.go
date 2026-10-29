@@ -14,10 +14,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // maxResponseBytes bounds what the engine reads from one API response.
 const maxResponseBytes = 64 << 20
+
+// defaultRequestTimeout bounds one API call, from sending the request to
+// reading the whole answer. A caller's context with an earlier deadline wins.
+// Without it a server that stops answering would hang the run forever: neither
+// http.DefaultClient nor the transport of a caller-supplied client sets an
+// overall timeout.
+const defaultRequestTimeout = 2 * time.Minute
 
 // Client is the minimal authenticated JSON client the engine talks to the
 // OpenArtifact REST API with.
@@ -25,16 +33,24 @@ type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
+	// timeout is the longest one call may take.
+	timeout time.Duration
 }
 
 // NewClient returns a client for the server at baseURL authenticated with an
-// API token. httpClient may be nil (http.DefaultClient).
+// API token. httpClient may be nil (http.DefaultClient). Every call is bounded
+// by defaultRequestTimeout, whichever http client carries it.
 func NewClient(baseURL, token string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 
-	return &Client{baseURL: strings.TrimSuffix(baseURL, "/"), token: token, http: httpClient}
+	return &Client{
+		baseURL: strings.TrimSuffix(baseURL, "/"),
+		token:   token,
+		http:    httpClient,
+		timeout: defaultRequestTimeout,
+	}
 }
 
 // APIError is a non-2xx answer from the server.
@@ -60,8 +76,12 @@ func IsStatus(err error, status int) bool {
 func PathEscape(s string) string { return url.PathEscape(s) }
 
 // Do sends a request with an optional JSON body and decodes a JSON answer into
-// out (nil to discard it). Answers outside 2xx become *APIError.
+// out (nil to discard it). Answers outside 2xx become *APIError. The call ends
+// with context.DeadlineExceeded after the client's timeout.
 func (c *Client) Do(ctx context.Context, method, path string, body, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
 	var rdr io.Reader
 
 	if body != nil {
