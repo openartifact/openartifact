@@ -110,12 +110,12 @@ func seedScopeData(t *testing.T, db *sql.DB) []uuid.UUID {
 		        CASE WHEN i %% 17 = 0 THEN now() END
 		 FROM generate_series(1, %d) AS i`, scopeTestRepos),
 		`INSERT INTO packages (repository_id, format, name, name_key, attrs)
-		 SELECT r.id, 'npm', n.name, n.name, '{"scope": ""}'
+		 SELECT r.id, 'npm', n.name, lower(n.name), '{"scope": ""}'
 		 FROM repositories r
 		 CROSS JOIN LATERAL (VALUES ('lib-' || (substr(r.name, 6)::int % 5)), ('pkg-' || substr(r.name, 6))) AS n(name)
 		 WHERE r.format = 'npm'`,
 		`INSERT INTO package_versions (package_id, repository_id, version, version_key, created_at)
-		 SELECT p.id, p.repository_id, v.version, v.version,
+		 SELECT p.id, p.repository_id, v.version, lower(v.version),
 		        now() - make_interval(secs => substr(r.name, 6)::int * 10 + v.delta)
 		 FROM packages p
 		 JOIN repositories r ON r.id = p.repository_id
@@ -139,7 +139,7 @@ func seedScopeData(t *testing.T, db *sql.DB) []uuid.UUID {
 		 JOIN repositories r ON r.id = p.repository_id
 		 WHERE p.format = 'raw'`,
 		`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, created_at)
-		 SELECT v.id, v.repository_id, p.name, p.name, '00000000-0000-0000-0000-0000000000b1', v.created_at
+		 SELECT v.id, v.repository_id, p.name, lower(p.name), '00000000-0000-0000-0000-0000000000b1', v.created_at
 		 FROM package_versions v
 		 JOIN packages p ON p.id = v.package_id
 		 WHERE p.format = 'raw'`,

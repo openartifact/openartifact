@@ -63,8 +63,8 @@ type Field struct {
 // InfoField is one display entry of the detail: Key is the label the API
 // returns, the value is read from the Field.
 type InfoField struct {
-	Key string
-	Field
+	Key  string
+	From Field
 }
 
 // Detail is how the artifact detail endpoint reads a format's metadata out of
@@ -111,7 +111,7 @@ func (d Detail) Resolve(doc Document) Resolved {
 	}
 
 	for _, f := range d.Info {
-		if v := f.Text(doc); v != "" {
+		if v := f.From.Text(doc); v != "" {
 			out.Info[f.Key] = v
 		}
 	}

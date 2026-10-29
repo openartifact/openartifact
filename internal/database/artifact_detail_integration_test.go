@@ -29,8 +29,8 @@ func registerDetailFixtures(t *testing.T) {
 		License:     v("manifest_json.license"),
 		SHA1:        storage.Field{Source: storage.FromChecksums, Path: "shasum"},
 		Info: []storage.InfoField{
-			{Key: "integrity", Field: storage.Field{Source: storage.FromChecksums, Path: "integrity"}},
-			{Key: "scope", Field: storage.Field{Source: storage.FromPackage, Path: "scope"}},
+			{Key: "integrity", From: storage.Field{Source: storage.FromChecksums, Path: "integrity"}},
+			{Key: "scope", From: storage.Field{Source: storage.FromPackage, Path: "scope"}},
 		},
 		Deps:    v("manifest_json"),
 		Decoder: "npm-manifest",
@@ -38,13 +38,13 @@ func registerDetailFixtures(t *testing.T) {
 	storage.Register("maven", storage.Storage{Detail: storage.Detail{
 		MD5: storage.Field{Source: storage.FromChecksums, Path: "md5"},
 		Info: []storage.InfoField{
-			{Key: "group_id", Field: storage.Field{Source: storage.FromPackage, Path: "group_id"}},
-			{Key: "classifier", Field: storage.Field{Source: storage.FromSide, Path: "classifier"}},
-			{Key: "snapshot", Field: storage.Field{Source: storage.FromSide, Path: "is_snapshot"}},
+			{Key: "group_id", From: storage.Field{Source: storage.FromPackage, Path: "group_id"}},
+			{Key: "classifier", From: storage.Field{Source: storage.FromSide, Path: "classifier"}},
+			{Key: "snapshot", From: storage.Field{Source: storage.FromSide, Path: "is_snapshot"}},
 		},
 	}})
 	storage.Register("go", storage.Storage{Detail: storage.Detail{
-		Info:    []storage.InfoField{{Key: "module_path", Field: storage.Field{Source: storage.FromColumns, Path: "name"}}},
+		Info:    []storage.InfoField{{Key: "module_path", From: storage.Field{Source: storage.FromColumns, Path: "name"}}},
 		Deps:    storage.Field{Source: storage.FromSibling, Path: "go_mod_content"},
 		Decoder: "go-mod",
 	}})

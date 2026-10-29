@@ -11,8 +11,10 @@ import (
 
 func TestDetailResolve(t *testing.T) {
 	doc := Document{
-		Package:   json.RawMessage(`{"scope":"acme","n":3}`),
-		Version:   json.RawMessage(`{"manifest_json":{"description":"d","license":{"type":"MIT"}},"keywords":["a","b"],"classifiers":["x","y"],"yanked":false,"nar_size":12345678901}`),
+		Package: json.RawMessage(`{"scope":"acme","n":3}`),
+		Version: json.RawMessage(
+			`{"manifest_json":{"description":"d","license":{"type":"MIT"}},"keywords":["a","b"],"classifiers":["x","y"],"yanked":false,"nar_size":12345678901}`,
+		),
 		File:      json.RawMessage(`{"installed_size":0}`),
 		Checksums: json.RawMessage(`{"shasum":"abc"}`),
 		Columns:   json.RawMessage(`{"download_count":7}`),
@@ -25,14 +27,14 @@ func TestDetailResolve(t *testing.T) {
 		SHA1:        Field{Source: FromChecksums, Path: "shasum"},
 		MD5:         Field{Source: FromChecksums, Path: "md5"},
 		Info: []InfoField{
-			{Key: "scope", Field: Field{Source: FromPackage, Path: "scope"}},
-			{Key: "keywords", Field: Field{Source: FromVersion, Path: "keywords"}},
-			{Key: "classifiers", Field: Field{Source: FromVersion, Path: "classifiers", Join: "\n"}},
-			{Key: "yanked", Field: Field{Source: FromVersion, Path: "yanked"}},
-			{Key: "nar_size", Field: Field{Source: FromVersion, Path: "nar_size"}},
-			{Key: "downloads", Field: Field{Source: FromColumns, Path: "download_count"}},
-			{Key: "installed_size", Field: Field{Source: FromFile, Path: "installed_size"}},
-			{Key: "missing", Field: Field{Source: FromSide, Path: "nothing"}},
+			{Key: "scope", From: Field{Source: FromPackage, Path: "scope"}},
+			{Key: "keywords", From: Field{Source: FromVersion, Path: "keywords"}},
+			{Key: "classifiers", From: Field{Source: FromVersion, Path: "classifiers", Join: "\n"}},
+			{Key: "yanked", From: Field{Source: FromVersion, Path: "yanked"}},
+			{Key: "nar_size", From: Field{Source: FromVersion, Path: "nar_size"}},
+			{Key: "downloads", From: Field{Source: FromColumns, Path: "download_count"}},
+			{Key: "installed_size", From: Field{Source: FromFile, Path: "installed_size"}},
+			{Key: "missing", From: Field{Source: FromSide, Path: "nothing"}},
 		},
 		Deps:    Field{Source: FromSibling, Path: "go_mod_content"},
 		Decoder: "go-mod",
