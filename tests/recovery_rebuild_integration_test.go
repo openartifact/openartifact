@@ -94,8 +94,10 @@ func reCompareTables(t *testing.T, srcDB, dstDB *database.PostgresDB) int {
 
 	populated := 0
 
-	for i := range recovery.Tables {
-		tbl := &recovery.Tables[i]
+	tables := recovery.NewRegistry().Tables()
+
+	for i := range tables {
+		tbl := &tables[i]
 
 		want := reRows(t, srcDB, tbl)
 		if got := reRows(t, dstDB, tbl); got != want {
