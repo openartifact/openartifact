@@ -8,8 +8,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/artifactpath"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/filerepo"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -34,10 +34,10 @@ var spec = filerepo.Spec[models.SBTArtifact, Store]{ //nolint:gochecknoglobals /
 	Format:    "sbt",
 	TrashKind: models.TrashKindSBT,
 	GroupKey:  "group",
-	Get: func(ctx context.Context, db Store, repoID string, c base.ArtifactPath) (*models.SBTArtifact, error) {
+	Get: func(ctx context.Context, db Store, repoID string, c artifactpath.Path) (*models.SBTArtifact, error) {
 		return db.GetSBTArtifact(ctx, repoID, c.Group, c.Module, c.Version, c.Filename)
 	},
-	New: func(repoID string, c base.ArtifactPath, size int64, sha256Hex string) *models.SBTArtifact {
+	New: func(repoID string, c artifactpath.Path, size int64, sha256Hex string) *models.SBTArtifact {
 		return &models.SBTArtifact{
 			RepositoryID: repoID,
 			GroupID:      c.Group,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/format/storage"
+	"github.com/openartifact/openartifact/internal/itempath"
 )
 
 // rolePrimary is the package_files.role of the files that count as artifacts
@@ -163,14 +164,23 @@ func (fp *filePromoter) sourceFiles(ctx context.Context, tx Tx, req Request) ([]
 		return nil, ErrItemNotFound
 	}
 
-	cands := make([]candidate, len(files))
-	for i, f := range files {
-		cands[i] = candidate{id: f.id, idents: nonEmpty(f.path, f.filename, f.id)}
-	}
+	loc := itempath.New(fp.format, req.Src.Name, req.Path)
 
 	kept := map[string]bool{}
-	for _, c := range narrow(cands, req.Path) {
-		kept[c.id] = true
+
+	for _, f := range files {
+		if loc.File(itempath.File{ID: f.id, Path: f.path, Filename: f.filename}) {
+			kept[f.id] = true
+		}
+	}
+
+	// A path that names none of the files (they moved or were renamed since the
+	// item was added) leaves the digest as the item's identity: every file
+	// holding the content is copied.
+	if len(kept) == 0 {
+		for _, f := range files {
+			kept[f.id] = true
+		}
 	}
 
 	var matched []srcFile

@@ -206,37 +206,3 @@ func (e *ItemError) Error() string {
 }
 
 func (e *ItemError) Unwrap() error { return e.Err }
-
-// candidate is a live source row holding the item's content, with the
-// identifiers Request.Path is matched against.
-type candidate struct {
-	id     string
-	idents []string
-}
-
-// narrow keeps the candidates whose identifiers equal path (ignoring a leading
-// slash); with no such candidate every candidate stays.
-func narrow(cands []candidate, path string) []candidate {
-	path = strings.TrimPrefix(path, "/")
-	if path == "" {
-		return cands
-	}
-
-	var hit []candidate
-
-	for _, c := range cands {
-		for _, id := range c.idents {
-			if strings.TrimPrefix(id, "/") == path {
-				hit = append(hit, c)
-
-				break
-			}
-		}
-	}
-
-	if len(hit) == 0 {
-		return cands
-	}
-
-	return hit
-}

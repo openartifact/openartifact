@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/artifactpath"
 )
 
 // ─── destination ──────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ func serveIvySBTListing(inner http.Handler, w http.ResponseWriter, r *http.Reque
 // ivySBTServerRow is name, version and file name of the listing row of the file
 // stored at repoPath, read with the server's own path parser.
 func ivySBTServerRow(format, repoPath string) (string, string, string) {
-	cur, _, _ := base.SplitArtifactPath(repoPath)
+	cur, _, _ := artifactpath.Split(repoPath)
 	filename := cur.Filename
 
 	if format == "ivy" {
@@ -529,7 +529,7 @@ func TestSplitIvySBTPathAgreesWithServer(t *testing.T) {
 	}
 
 	for _, p := range corpus {
-		want, _, wantOK := base.SplitArtifactPath(p)
+		want, _, wantOK := artifactpath.Split(p)
 		got, ok := splitIvySBTPath(p)
 
 		if ok != wantOK || got.group != want.Group || got.module != want.Module || got.version != want.Version ||

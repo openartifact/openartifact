@@ -375,13 +375,12 @@ func listedMatcher(f importFormat, p string) (string, func(ciPackage) bool, erro
 			return "", nil, fmt.Errorf("%w: %q is not a %s repository path", errBundlePath, p, f)
 		}
 
-		listed := c.filename
-		if f == formatIvy {
-			listed = ivyListedFilename(c.filename)
-		}
-
+		// The listing names the stored file name. An ivy server before the generic
+		// package tables listed it with its extension appended again.
 		return c.version, func(row ciPackage) bool {
-			return row.Filename == listed && row.Version == c.version && row.Name == c.group+":"+c.module
+			named := row.Filename == c.filename || f == formatIvy && row.Filename == ivyListedFilename(c.filename)
+
+			return named && row.Version == c.version && row.Name == c.group+":"+c.module
 		}, nil
 	case formatDeb, formatRPM:
 		return "", func(c ciPackage) bool { return c.Filename == path.Base(p) }, nil

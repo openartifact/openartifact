@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/itempath"
 )
 
 // PromotionPipeline methods
@@ -293,53 +294,43 @@ func (p *BundleStore) AddBundleItem(ctx context.Context, item *models.ReleaseBun
 	return err
 }
 
-// bundleItemStoredFilesSQL is true when the live package file of source
-// repository $1 stored as the blob with sha256 $2 is located by $3: its path,
-// its filename or its id, or the last element of $3 (a path under a directory
-// the client knows but the repository does not). $3 is empty for "any".
-const bundleItemStoredFilesSQL = `
-SELECT EXISTS (
-  SELECT 1
-    FROM package_files f
-    JOIN blobs b ON b.id = f.blob_id
-   WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND b.sha256 = $2
-     AND ($3 = '' OR $3 IN (f.path, f.filename, f.id::text) OR regexp_replace($3, '^.*/', '') = f.filename))`
+// bundleItemFilesSQL lists the live package files of repository $1 stored as
+// the blob with sha256 $2.
+const bundleItemFilesSQL = `
+SELECT f.id::text, f.path, f.filename
+  FROM package_files f
+  JOIN blobs b ON b.id = f.blob_id
+ WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND b.sha256 = $2`
 
-// bundleItemStoredDockerSQL is bundleItemStoredFilesSQL for the manifests of a
-// docker repository ($4 is the repository name): $3 may be the manifest id, its
-// digest, the image, the distribution name or any of those with a live tag.
-const bundleItemStoredDockerSQL = `
-SELECT EXISTS (
-  SELECT 1
-    FROM docker_manifests m
-    JOIN blobs b ON b.id = m.blob_id
-   WHERE m.repository_id = $1::uuid AND m.deleted_at IS NULL AND b.sha256 = $2
-     AND ($3 = ''
-          OR $3 IN (m.id::text, m.digest, b.sha256, m.image,
-                    $4 || '/' || m.image, $4 || '/' || m.image || '@' || m.digest, $4 || '/' || m.image || '/manifests/' || m.digest)
-          OR (m.image = '' AND $3 = $4)
-          OR EXISTS (SELECT 1 FROM docker_tags t
-                      WHERE t.repository_id = m.repository_id AND t.image = m.image
-                        AND t.manifest_digest = m.digest AND t.deleted_at IS NULL
-                        AND $3 IN (t.name, m.image || ':' || t.name, $4 || '/' || m.image || ':' || t.name,
-                                   $4 || '/' || m.image || '/manifests/' || t.name))))`
+// bundleItemManifestsSQL lists the live docker manifests of repository $1
+// stored as the blob with sha256 $2, with the names of their live tags.
+const bundleItemManifestsSQL = `
+SELECT m.id::text, m.image, m.digest, b.sha256,
+       COALESCE((SELECT jsonb_agg(t.name ORDER BY t.name)
+                   FROM docker_tags t
+                  WHERE t.repository_id = m.repository_id AND t.image = m.image
+                    AND t.manifest_digest = m.digest AND t.deleted_at IS NULL), '[]'::jsonb)
+  FROM docker_manifests m
+  JOIN blobs b ON b.id = m.blob_id
+ WHERE m.repository_id = $1::uuid AND m.deleted_at IS NULL AND b.sha256 = $2`
 
 // BundleItemStored reports whether repository repoID holds a live artifact of
-// the given format whose content digest is sha256 and which path (leading "/"
-// ignored) names. A bundle item that fails it would sign a claim about the
-// repository that the repository does not back.
+// the given format whose content digest is sha256 and which path names. The
+// path is read by itempath, the same reading the promotion engine resolves the
+// item by. A bundle item that fails it would sign a claim about the repository
+// that the repository does not back.
 func (p *BundleStore) BundleItemStored(ctx context.Context, repoID, repoName, format, sha256, path string) (bool, error) {
+	loc := itempath.New(format, repoName, path)
+
 	var (
 		stored bool
 		err    error
 	)
 
-	path = strings.TrimPrefix(path, "/")
-
 	if format == "docker" {
-		err = p.db.QueryRowContext(ctx, bundleItemStoredDockerSQL, repoID, sha256, path, repoName).Scan(&stored)
+		stored, err = p.manifestStored(ctx, repoID, sha256, loc)
 	} else {
-		err = p.db.QueryRowContext(ctx, bundleItemStoredFilesSQL, repoID, sha256, path).Scan(&stored)
+		stored, err = p.fileStored(ctx, repoID, sha256, loc)
 	}
 
 	if err != nil {
@@ -347,6 +338,56 @@ func (p *BundleStore) BundleItemStored(ctx context.Context, repoID, repoName, fo
 	}
 
 	return stored, nil
+}
+
+func (p *BundleStore) fileStored(ctx context.Context, repoID, sha256 string, loc itempath.Locator) (bool, error) {
+	rows, err := p.db.QueryContext(ctx, bundleItemFilesSQL, repoID, sha256)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var f itempath.File
+		if err := rows.Scan(&f.ID, &f.Path, &f.Filename); err != nil {
+			return false, err
+		}
+
+		if loc.File(f) {
+			return true, nil
+		}
+	}
+
+	return false, rows.Err()
+}
+
+func (p *BundleStore) manifestStored(ctx context.Context, repoID, sha256 string, loc itempath.Locator) (bool, error) {
+	rows, err := p.db.QueryContext(ctx, bundleItemManifestsSQL, repoID, sha256)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			m    itempath.Manifest
+			tags []byte
+		)
+
+		if err := rows.Scan(&m.ID, &m.Image, &m.Digest, &m.SHA256, &tags); err != nil {
+			return false, err
+		}
+
+		if err := json.Unmarshal(tags, &m.Tags); err != nil {
+			return false, fmt.Errorf("decode docker tags: %w", err)
+		}
+
+		if loc.Docker(m) {
+			return true, nil
+		}
+	}
+
+	return false, rows.Err()
 }
 
 // RemoveBundleItem deletes an item only while the bundle is still a draft. The
