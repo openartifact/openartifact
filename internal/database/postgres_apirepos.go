@@ -190,27 +190,6 @@ func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Reposito
 	return nil
 }
 
-// ReplaceGroupMembers atomically replaces the member list of a group
-// repository. An empty memberIDs slice clears the group.
-func (p *PostgresDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error {
-	tx, err := p.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	defer func() { _ = tx.Rollback() }()
-
-	if err := replaceGroupMembersTx(ctx, tx, groupRepoID, memberIDs); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit group members: %w", err)
-	}
-
-	return nil
-}
-
 // UpdateRepositoryAndMembers updates the repository row and replaces its group
 // members in one transaction, so a failure of either leaves neither applied.
 func (p *PostgresDB) UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
