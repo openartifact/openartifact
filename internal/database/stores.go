@@ -14,6 +14,7 @@ type PostgresDB struct {
 	*SettingsStore
 	*AuditStore
 	*ProxyCacheStore
+	*WebhookStore
 	// STORES-STRUCT
 }
 
@@ -25,6 +26,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		SettingsStore:   &SettingsStore{core: c},
 		AuditStore:      &AuditStore{core: c},
 		ProxyCacheStore: &ProxyCacheStore{core: c},
+		WebhookStore:    &WebhookStore{core: c},
 		// STORES-INIT
 	}
 }
