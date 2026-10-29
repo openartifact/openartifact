@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+
+	"github.com/openartifact/openartifact/migrations"
 )
 
 // newMigratorWithFS returns a Migrator over a custom migrations FS.
@@ -249,7 +251,8 @@ func TestApplyRefusesLegacyDatabase(t *testing.T) {
 	}
 }
 
-// An empty database gets the baseline, and a second start changes nothing.
+// An empty database gets the baseline and every migration after it, and a
+// second start changes nothing.
 func TestApplyBaselineOnEmptyDatabase(t *testing.T) {
 	db := scratchDB(t)
 	ctx := context.Background()
@@ -260,8 +263,26 @@ func TestApplyBaselineOnEmptyDatabase(t *testing.T) {
 		}
 	}
 
-	if got := mustScan[string](t, db, `SELECT string_agg(version, ',') FROM schema_migrations`); got != baselineVersion {
-		t.Errorf("schema_migrations = %q, want %q", got, baselineVersion)
+	entries, err := migrations.FS.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+
+	var shipped []string
+
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".sql") {
+			shipped = append(shipped, e.Name())
+		}
+	}
+
+	if shipped[0] != baselineVersion {
+		t.Fatalf("first shipped migration = %q, want %q", shipped[0], baselineVersion)
+	}
+
+	got := mustScan[string](t, db, `SELECT string_agg(version, ',' ORDER BY version COLLATE "C") FROM schema_migrations`)
+	if want := strings.Join(shipped, ","); got != want {
+		t.Errorf("schema_migrations = %q, want %q", got, want)
 	}
 
 	for _, table := range []string{"packages", "package_versions", "package_files", "package_tags", "docker_manifests"} {

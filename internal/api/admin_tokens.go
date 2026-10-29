@@ -7,7 +7,6 @@ package api
 import (
 	"context"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -227,6 +226,8 @@ func (h *AdminTokensHandler) handleAdminRevoke(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	auditAdmin(r, audit.ActionAuthTokenRevoked, "token", tokenID, "token "+token.Name+" of user "+token.UserID+" revoked")
+
 	writeNoContent(w)
 }
 
@@ -261,8 +262,15 @@ func (b *tokenCreateBody) validate(now time.Time) string {
 		return "too many scopes"
 	}
 
-	if slices.Contains(b.Scopes, "") {
-		return "scopes must not contain empty values"
+	for _, scope := range b.Scopes {
+		switch {
+		case scope == "":
+			return "scopes must not contain empty values"
+		case !isUUIDString(scope):
+			// Scopes are permission target ids (a uuid column): any other
+			// text would reach the database and come back as a 500.
+			return "scopes must be permission target ids"
+		}
 	}
 
 	if b.ExpiresAt != nil {
@@ -372,7 +380,7 @@ func issueToken(
 
 	var body tokenCreateBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

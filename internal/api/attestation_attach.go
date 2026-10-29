@@ -396,7 +396,7 @@ func (h *AttestationAttachHandler) handlePutSetting(w http.ResponseWriter, r *ht
 		Enabled bool `json:"enabled"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -504,7 +504,7 @@ func (h *AttestationAttachHandler) handleAttachVEX(w http.ResponseWriter, r *htt
 		Format     string `json:"format"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

@@ -126,7 +126,7 @@ func (h *AdminDeclarativeHandler) handlePut(w http.ResponseWriter, r *http.Reque
 		} `json:"items"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

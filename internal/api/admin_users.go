@@ -69,7 +69,7 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 		MustChangePassword bool    `json:"must_change_password"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -214,7 +214,7 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		Password           *string `json:"password"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -252,7 +252,12 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		// An empty string clears the address: stored as "" it would collide
+		// with every other cleared user on the unique email index (a 409).
 		user.Email = body.Email
+		if *body.Email == "" {
+			user.Email = nil
+		}
 
 		changed = append(changed, "email")
 	}

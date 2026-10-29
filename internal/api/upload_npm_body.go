@@ -51,9 +51,7 @@ func parseNPMPublishBody(r io.Reader) (*npmPublishBody, func(), error) {
 
 	cleanup := func() {
 		for _, a := range pub.Attachments {
-			if a.path != "" {
-				_ = os.Remove(a.path)
-			}
+			a.discard()
 		}
 	}
 
@@ -121,6 +119,12 @@ func readNPMAttachments(br *bufio.Reader, pub *npmPublishBody) error {
 	return forEachMember(br, func(name string) error {
 		att, err := readNPMAttachment(br)
 		if att != nil {
+			// A repeated name replaces the earlier entry; its spooled file is
+			// out of cleanup's reach afterwards, so remove it now.
+			if prev := pub.Attachments[name]; prev != nil {
+				prev.discard()
+			}
+
 			pub.Attachments[name] = att
 		}
 
@@ -182,6 +186,9 @@ func (a *npmAttachment) readData(br *bufio.Reader) error {
 		return err
 	}
 
+	// A repeated "data" key replaces the earlier value: drop its file first.
+	a.discard()
+
 	f, err := os.CreateTemp("", "npm-publish-*.tgz")
 	if err != nil {
 		return fmt.Errorf("spool npm attachment: %w", err)
@@ -211,6 +218,14 @@ func (a *npmAttachment) readData(br *bufio.Reader) error {
 	}
 
 	return nil
+}
+
+// discard removes the spooled tarball, if any.
+func (a *npmAttachment) discard() {
+	if a.path != "" {
+		_ = os.Remove(a.path)
+		a.path = ""
+	}
 }
 
 // validate reports the first problem with the attachment.

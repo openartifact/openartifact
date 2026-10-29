@@ -7,12 +7,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -172,7 +174,7 @@ func (h *DependencyTrackHandler) handlePutGlobal(w http.ResponseWriter, r *http.
 
 	var body dtrackSettingsRequest
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -214,7 +216,28 @@ func (h *DependencyTrackHandler) handlePutGlobal(w http.ResponseWriter, r *http.
 		return
 	}
 
+	auditAdmin(r, audit.ActionDependencyTrackConfigChanged, "dependency_track", "",
+		dtrackChangeDetails("global Dependency-Track settings", body.Enabled, body.APIKey))
+
 	writeJSON(w, http.StatusOK, settingsResponse(next))
+}
+
+// dtrackChangeDetails describes a settings write for the audit log. It names
+// whether the integration is on, and only reports that the API key was
+// replaced, cleared or left alone: the key is a secret, and the base URL may
+// carry credentials, so neither is written.
+func dtrackChangeDetails(what string, enabled bool, apiKey *string) string {
+	key := "api key unchanged"
+
+	switch {
+	case apiKey == nil:
+	case *apiKey == "":
+		key = "api key cleared"
+	default:
+		key = "api key replaced"
+	}
+
+	return fmt.Sprintf("%s updated: enabled=%t, %s", what, enabled, key)
 }
 
 func (h *DependencyTrackHandler) handleTestGlobal(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +365,7 @@ func (h *DependencyTrackHandler) handlePutRepo(w http.ResponseWriter, r *http.Re
 
 	var body dtrackOverrideRequest
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -392,6 +415,9 @@ func (h *DependencyTrackHandler) handlePutRepo(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	auditRepository(r, repo, audit.ActionDependencyTrackConfigChanged, "dependency_track", repo.ID,
+		dtrackChangeDetails("Dependency-Track override of "+repo.Name, body.Enabled, body.APIKey))
+
 	resp, err := h.repoResponse(ctx, repo.ID)
 	if err != nil {
 		h.log.Errorw("dependency-track: loading repository settings failed", "error", err)
@@ -421,6 +447,9 @@ func (h *DependencyTrackHandler) handleDeleteRepo(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, "not_found", "repository has no Dependency-Track override")
 		return
 	}
+
+	auditRepository(r, repo, audit.ActionDependencyTrackConfigChanged, "dependency_track", repo.ID,
+		"Dependency-Track override of "+repo.Name+" deleted")
 
 	writeNoContent(w)
 }
@@ -452,7 +481,7 @@ func (h *DependencyTrackHandler) handlePush(w http.ResponseWriter, r *http.Reque
 		ArtifactID string `json:"artifact_id"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

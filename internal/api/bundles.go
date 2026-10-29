@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -264,7 +265,7 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 		Stages      []models.PipelineStage `json:"stages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -348,7 +349,7 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 		Stages      *[]models.PipelineStage `json:"stages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -460,7 +461,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		Pipeline string `json:"pipeline"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -543,6 +544,8 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 
 		return
 	}
+
+	auditAdmin(r, audit.ActionBundleCreated, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" created")
 
 	writeJSON(w, http.StatusCreated, bundleToMap(bundle))
 }
@@ -770,7 +773,7 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 		Items []bundleItemInput `json:"items"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -892,7 +895,7 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	// The body is optional, but a present, malformed body is a client error
 	// rather than something to silently ignore.
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -937,7 +940,21 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 		bundle.GPGSignature = &signature.Signature
 	}
 
+	auditAdmin(r, audit.ActionBundleSealed, "bundle", bundle.ID, sealDetails(bundle, signature))
+
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
+}
+
+// sealDetails describes a seal for the audit log, naming the key that signed
+// the manifest.
+func sealDetails(bundle *models.ReleaseBundle, signature *models.BundleSignature) string {
+	details := "bundle " + bundle.Name + " " + bundle.Version + " sealed"
+
+	if signature == nil {
+		return details + ", unsigned"
+	}
+
+	return details + ", signed with GPG key " + signature.KeyFingerprint
 }
 
 // validatePromotionStage validates the requested stage against the bundle's
@@ -1075,7 +1092,7 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 		Notes      string `json:"notes"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -1128,6 +1145,8 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditAdmin(r, audit.ActionBundleArchived, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" archived")
 
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
 }

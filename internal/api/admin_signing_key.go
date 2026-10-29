@@ -115,7 +115,7 @@ func (h *signingKeyAdmin[I]) handleReplace(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

@@ -34,6 +34,7 @@ type AdminGroupsStore interface {
 	ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error)
 	ListUsersByGroup(ctx context.Context, groupID string) ([]*models.User, error)
 	RemoveUserFromGroup(ctx context.Context, userID string, groupID string) error
+	SetGroupMembers(ctx context.Context, groupID string, userIDs []string) error
 	UpdateGroup(ctx context.Context, group *models.Group) error
 }
 
@@ -70,7 +71,7 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 		Description *string `json:"description"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -136,7 +137,7 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 		Description *string `json:"description"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -171,7 +172,8 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminGroupsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	deleteAdminObject(w, r, h.evaluator, h.db.DeleteGroup, audit.ActionGroupDeleted, "group", "group deleted")
+	deleteAdminObject(w, r, h.evaluator, h.db.GetGroupByID, h.db.DeleteGroup,
+		audit.ActionGroupDeleted, "group", "group", "group deleted")
 }
 
 func (h *AdminGroupsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +241,7 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		Members []string `json:"members"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -250,51 +252,22 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	// Get current members
-	currentUsers, err := h.db.ListUsersByGroup(ctx, id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	// Build sets
-	currentSet := make(map[string]bool, len(currentUsers))
-	for _, u := range currentUsers {
-		currentSet[u.ID] = true
-	}
-
 	desiredSet := make(map[string]bool, len(body.Members))
 	for _, m := range body.Members {
 		desiredSet[m] = true
 	}
 
-	// Remove members not in desired set
-	for _, u := range currentUsers {
-		if !desiredSet[u.ID] {
-			if err := h.db.RemoveUserFromGroup(ctx, u.ID, id); err != nil {
-				h.log.Errorw("set members: remove failed", "error", err, "user", u.ID)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
+	// One transaction: an unknown user must not leave the group half replaced.
+	if err := h.db.SetGroupMembers(ctx, id, body.Members); err != nil {
+		if database.IsForeignKeyViolation(err) {
+			writeError(w, http.StatusBadRequest, "validation_failed", "members must be existing users")
+			return
 		}
-	}
 
-	// Add members not in current set
-	for _, m := range body.Members {
-		if !currentSet[m] {
-			if err := h.db.AddUserToGroup(ctx, m, id); err != nil {
-				if database.IsForeignKeyViolation(err) {
-					writeError(w, http.StatusBadRequest, "validation_failed", "unknown user: "+m)
-					return
-				}
+		h.log.Errorw("set members failed", "error", err, "group", id)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
-				h.log.Errorw("set members: add failed", "error", err, "user", m)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
-		}
+		return
 	}
 
 	auditAdmin(r, audit.ActionGroupMembersSet, "group", id, "group membership replaced: "+strconv.Itoa(len(desiredSet))+" members")
