@@ -20,6 +20,7 @@
   "auth.logoutFailed": "Não foi possível sair",
   "session.probeFailed": "Não foi possível verificar sua sessão",
   "session.probeFailedHint": "O servidor não respondeu. Navegar novamente repete a verificação.",
+  "session.expired": "Sua sessão expirou. Entre novamente.",
   "nav.repositories": "Repositórios",
   "nav.settings": "Configurações",
   "nav.security": "Segurança",

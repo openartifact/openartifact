@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { t } from '../i18n'
-import { SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsGroupId, type SettingsSection } from './settingsSections'
+import { listedSections, SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsGroupId, type SettingsSection } from './settingsSections'
 
 /** Fields a query can hit, best first (the order of `rank`). */
 export type SettingsMatchField = 'title' | 'keyword' | 'description' | 'id' | 'words'
@@ -72,7 +72,7 @@ function matchOne(section: SettingsSection, q: string, loose: boolean): Settings
  * matches come first; only when there is none anywhere does it fall back to
  * substrings. Ordered by rank (title first), then by registry order.
  */
-export function searchSettings(query: string, pool: readonly SettingsSection[] = SETTINGS_SECTIONS): SettingsMatch[] {
+export function searchSettings(query: string, pool: readonly SettingsSection[] = listedSections()): SettingsMatch[] {
   const q = query.trim()
   if (!q) return []
   for (const loose of [false, true]) {
@@ -103,30 +103,30 @@ export function hubGroups(isAdmin: boolean): HubGroup[] {
   if (isAdmin) {
     return SETTINGS_GROUPS.map((g) => ({
       ...g,
-      available: SETTINGS_SECTIONS.filter((s) => s.group === g.id),
+      available: listedSections().filter((s) => s.group === g.id),
       locked: [],
     })).filter((g) => g.available.length > 0)
   }
-  const open = SETTINGS_SECTIONS.filter((s) => !s.adminOnly)
+  const open = listedSections().filter((s) => !s.adminOnly)
   return SETTINGS_GROUPS.map((g) => {
     const isAccount = g.id === 'account'
     return {
       ...g,
       available: isAccount ? open : [],
-      locked: SETTINGS_SECTIONS.filter((s) => s.group === g.id && s.adminOnly),
+      locked: listedSections().filter((s) => s.group === g.id && s.adminOnly),
     }
   }).filter((g) => g.available.length > 0 || g.locked.length > 0)
 }
 
 /** Sections the role can open, in hub order. */
 export function openableSections(isAdmin: boolean): SettingsSection[] {
-  return SETTINGS_SECTIONS.filter((s) => isAdmin || !s.adminOnly)
+  return listedSections().filter((s) => isAdmin || !s.adminOnly)
 }
 
 /** Sections that match `query` but are closed to the role (the hub says how many). */
 export function lockedMatchCount(query: string, isAdmin: boolean): number {
   if (isAdmin) return 0
-  return searchSettings(query, SETTINGS_SECTIONS.filter((s) => s.adminOnly)).filter((m) => !m.loose).length
+  return searchSettings(query, listedSections().filter((s) => s.adminOnly)).filter((m) => !m.loose).length
 }
 
 /** The group a section is listed under for a role: non-administrators find personal tokens under "Your account". */

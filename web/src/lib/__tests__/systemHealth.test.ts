@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
+import { flushPromises } from '@vue/test-utils'
+import { useAiAvailable } from '../../composables/useAppVersion'
 import type { AdminSystemInfo } from '../../api/admin'
 import type { SecurityHealth } from '../../api/security'
 import { healthRows, healthSummary } from '../systemHealth'
@@ -62,6 +64,20 @@ describe('healthRows', () => {
     expect(byId(rows, 'jobs').status).toBe('warn')
     expect(byId(rows, 'unscanned').status).toBe('warn')
     expect(byId(healthRows(INFO, { health: HEALTH, error: '' }), 'jobs').detail).toContain('Nothing queued')
+  })
+})
+
+describe('healthRows on a build without AI analysis', () => {
+  it('has the AI row while the server has AI', () => {
+    expect(healthRows(INFO, { health: HEALTH, error: '' }).some((r) => r.id === 'ai')).toBe(true)
+  })
+
+  it('drops the AI row: nothing to report or set up there', async () => {
+    spyOn(globalThis, 'fetch').mockImplementation((async () =>
+      new Response(JSON.stringify({ version: '1', ai_available: false }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as never)
+    useAiAvailable()
+    await flushPromises()
+    expect(healthRows(INFO, { health: HEALTH, error: '' }).some((r) => r.id === 'ai')).toBe(false)
   })
 })
 

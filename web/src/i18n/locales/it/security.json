@@ -126,6 +126,7 @@
   "security.ai.retriggered": "Analisi messa in coda",
   "security.ai.retriggerFailed": "Impossibile rieseguire l'analisi",
   "security.ai.loadFailed": "Impossibile caricare le analisi AI",
+  "security.ai.unavailable": "L'analisi con IA non fa parte di questa build del server.",
   "security.ai.status.pending": "In attesa",
   "security.ai.status.processing": "In elaborazione",
   "security.ai.status.completed": "Completata",

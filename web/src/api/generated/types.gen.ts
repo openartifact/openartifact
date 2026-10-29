@@ -156,6 +156,10 @@ export type PublicSystemInfo = {
      * Whether the interactive API reference is served at /api/reference.
      */
     api_reference_enabled?: boolean;
+    /**
+     * Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI.
+     */
+    ai_available?: boolean;
 };
 
 export type SystemInfo = {
@@ -12008,24 +12012,6 @@ export type GetApiV1AuthSsoOidcBySlugLoginData = {
     url: '/api/v1/auth/sso/oidc/{slug}/login';
 };
 
-export type GetApiV1AuthSsoOidcBySlugLoginErrors = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoOidcBySlugLoginError = GetApiV1AuthSsoOidcBySlugLoginErrors[keyof GetApiV1AuthSsoOidcBySlugLoginErrors];
-
-export type GetApiV1AuthSsoOidcBySlugLoginResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoOidcBySlugLoginResponse = GetApiV1AuthSsoOidcBySlugLoginResponses[keyof GetApiV1AuthSsoOidcBySlugLoginResponses];
-
 export type GetApiV1AuthSsoOidcBySlugCallbackData = {
     body?: never;
     path: {
@@ -12037,24 +12023,6 @@ export type GetApiV1AuthSsoOidcBySlugCallbackData = {
     };
     url: '/api/v1/auth/sso/oidc/{slug}/callback';
 };
-
-export type GetApiV1AuthSsoOidcBySlugCallbackErrors = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoOidcBySlugCallbackError = GetApiV1AuthSsoOidcBySlugCallbackErrors[keyof GetApiV1AuthSsoOidcBySlugCallbackErrors];
-
-export type GetApiV1AuthSsoOidcBySlugCallbackResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoOidcBySlugCallbackResponse = GetApiV1AuthSsoOidcBySlugCallbackResponses[keyof GetApiV1AuthSsoOidcBySlugCallbackResponses];
 
 export type PostApiV1AuthSsoOidcBySlugLogoutData = {
     body?: never;
@@ -12096,24 +12064,6 @@ export type GetApiV1AuthSsoSamlBySlugLoginData = {
     url: '/api/v1/auth/sso/saml/{slug}/login';
 };
 
-export type GetApiV1AuthSsoSamlBySlugLoginErrors = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoSamlBySlugLoginError = GetApiV1AuthSsoSamlBySlugLoginErrors[keyof GetApiV1AuthSsoSamlBySlugLoginErrors];
-
-export type GetApiV1AuthSsoSamlBySlugLoginResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type GetApiV1AuthSsoSamlBySlugLoginResponse = GetApiV1AuthSsoSamlBySlugLoginResponses[keyof GetApiV1AuthSsoSamlBySlugLoginResponses];
-
 export type GetApiV1AuthSsoSamlBySlugMetadataData = {
     body?: never;
     path: {
@@ -12147,24 +12097,6 @@ export type PostApiV1AuthSsoSamlBySlugAcsData = {
     query?: never;
     url: '/api/v1/auth/sso/saml/{slug}/acs';
 };
-
-export type PostApiV1AuthSsoSamlBySlugAcsErrors = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type PostApiV1AuthSsoSamlBySlugAcsError = PostApiV1AuthSsoSamlBySlugAcsErrors[keyof PostApiV1AuthSsoSamlBySlugAcsErrors];
-
-export type PostApiV1AuthSsoSamlBySlugAcsResponses = {
-    /**
-     * Error
-     */
-    default: Error;
-};
-
-export type PostApiV1AuthSsoSamlBySlugAcsResponse = PostApiV1AuthSsoSamlBySlugAcsResponses[keyof PostApiV1AuthSsoSamlBySlugAcsResponses];
 
 export type PostApiV1RepositoriesByNameUploadsData = {
     body: PresignedUploadRequest;

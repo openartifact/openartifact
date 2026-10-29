@@ -2,8 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, it } from 'bun:test'
-import { SETTINGS_SECTIONS } from '../settingsSections'
+import { describe, expect, it, spyOn } from 'bun:test'
+import { flushPromises } from '@vue/test-utils'
+import { useAiAvailable } from '../../composables/useAppVersion'
+import { settingsSections } from '../navigation'
+import { findSettingsSection, SETTINGS_SECTIONS } from '../settingsSections'
 import { findRange, groupOf, hubGroups, lockedMatchCount, openableSections, searchSettings, siblingRail } from '../settingsSearch'
 
 const ids = (q: string, pool = SETTINGS_SECTIONS) => searchSettings(q, pool).map((m) => m.section.id)
@@ -118,5 +121,35 @@ describe('siblingRail', () => {
 
   it('keeps hub order when the id is unknown', () => {
     expect(siblingRail('nope', true)[0]!.id).toBe('account')
+  })
+})
+
+describe('a server build without AI analysis', () => {
+  // test/isolation.ts restores fetch and resets the shared system info after every test.
+  async function withoutAI(): Promise<void> {
+    spyOn(globalThis, 'fetch').mockImplementation((async () =>
+      new Response(JSON.stringify({ version: '1', ai_available: false }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as never)
+    useAiAvailable()
+    await flushPromises()
+  }
+
+  it('lists the AI section while the server has it', () => {
+    expect(openableSections(true).map((s) => s.id)).toContain('ai')
+    expect(ids('llm')).toContain('ai')
+  })
+
+  it('leaves it out of the hub, the search, the rail and the palette entries', async () => {
+    await withoutAI()
+    expect(openableSections(true).map((s) => s.id)).not.toContain('ai')
+    expect(hubGroups(true).flatMap((g) => g.available).map((s) => s.id)).not.toContain('ai')
+    expect(hubGroups(false).flatMap((g) => g.locked).map((s) => s.id)).not.toContain('ai')
+    expect(searchSettings('llm').map((m) => m.section.id)).not.toContain('ai')
+    expect(siblingRail('webhooks', true).flatMap((g) => g.sections).map((s) => s.id)).not.toContain('ai')
+    expect(settingsSections().map((s) => s.id)).not.toContain('ai')
+  })
+
+  it('still resolves the section by id, so a bookmarked /settings/ai shows the unavailable state', async () => {
+    await withoutAI()
+    expect(findSettingsSection('ai')?.id).toBe('ai')
   })
 })

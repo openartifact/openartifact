@@ -20,6 +20,7 @@
   "auth.logoutFailed": "Could not sign out",
   "session.probeFailed": "Couldn't verify your session",
   "session.probeFailedHint": "The server did not answer. Navigating again retries the check.",
+  "session.expired": "Your session has expired. Sign in again.",
   "nav.repositories": "Repositories",
   "nav.settings": "Settings",
   "nav.security": "Security",

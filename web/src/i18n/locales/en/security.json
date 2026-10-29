@@ -126,6 +126,7 @@
   "security.ai.retriggered": "Analysis queued",
   "security.ai.retriggerFailed": "Failed to re-run analysis",
   "security.ai.loadFailed": "Failed to load AI analyses",
+  "security.ai.unavailable": "AI analysis is not part of this server build.",
   "security.ai.status.pending": "Pending",
   "security.ai.status.processing": "Processing",
   "security.ai.status.completed": "Completed",

@@ -126,6 +126,7 @@
   "security.ai.retriggered": "分析已加入队列",
   "security.ai.retriggerFailed": "重新运行分析失败",
   "security.ai.loadFailed": "加载 AI 分析失败",
+  "security.ai.unavailable": "此服务器构建不包含 AI 分析。",
   "security.ai.status.pending": "等待中",
   "security.ai.status.processing": "处理中",
   "security.ai.status.completed": "已完成",

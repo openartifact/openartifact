@@ -148,7 +148,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <a
               v-for="provider in ssoProviders"
               :key="provider.slug"
-              :href="`/api/v1/auth/sso/${provider.kind}/${provider.slug}/login`"
+              :href="ssoLoginUrl(provider)"
               class="group h-10 rounded-md border border-border bg-surface hover:bg-surface-hover transition-colors flex items-center gap-2.5 px-3 text-sm"
             >
               <!-- Provider icon -->
@@ -206,6 +206,7 @@ import { ALL_FORMATS } from '../lib/formats'
 import { useBrandingStore } from '../stores/branding'
 import { ssoProviderColor } from '../lib/brandColors'
 import { safeNextPath } from '../lib/safeRedirect'
+import { ssoErrorMessage } from '../lib/ssoErrors'
 import AppButton from '../components/AppButton.vue'
 import BrandLogo from '../components/BrandLogo.vue'
 import LanguageSelect from '../components/LanguageSelect.vue'
@@ -226,11 +227,28 @@ const ssoProviders = ref<SSOProvider[]>([])
 
 const providerColor = ssoProviderColor
 
+/** The SSO login URL; the server brings the user back to the page they came for (`next`). */
+function ssoLoginUrl(provider: SSOProvider): string {
+  const url = `/api/v1/auth/sso/${provider.kind}/${provider.slug}/login`
+  const next = safeNextPath(route.query.next)
+  return next === '/' ? url : `${url}?redirect=${encodeURIComponent(next)}`
+}
+
 onMounted(async () => {
+  // A failed SSO login lands here as ?sso_error=<code>. Show it once and drop
+  // it from the address, so a reload does not repeat it.
+  const ssoError = ssoErrorMessage(route.query.sso_error)
+  if (ssoError) {
+    errorMsg.value = ssoError
+    const query = { ...route.query }
+    delete query.sso_error
+    await router.replace({ query })
+  }
+
   try {
     ssoProviders.value = await listSSOProviders()
   } catch {
-    errorMsg.value = t('login.ssoLoadFailed')
+    errorMsg.value ||= t('login.ssoLoadFailed')
   }
 })
 
