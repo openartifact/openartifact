@@ -38,6 +38,7 @@ type PostgresDB struct {
 	*TieringStore
 	*ReplicationStore
 	*TrashDB
+	*RepoMetadataStore
 	// STORES-STRUCT
 }
 
@@ -73,6 +74,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		TieringStore:         &TieringStore{core: c},
 		ReplicationStore:     &ReplicationStore{core: c},
 		TrashDB:              &TrashDB{core: c},
+		RepoMetadataStore:    &RepoMetadataStore{core: c},
 		// STORES-INIT
 	}
 }
