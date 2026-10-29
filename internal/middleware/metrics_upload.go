@@ -7,110 +7,27 @@ package middleware
 import (
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/ocipath"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
-
-// How an upload route is counted in openartifact_uploads_total.
-type uploadCount int
-
-const (
-	// countedByMiddleware: MetricsMiddleware counts it, from the HTTP status.
-	countedByMiddleware uploadCount = iota
-	// countedByHandler: the handler counts it itself (metrics.Registry.CountUpload),
-	// because the route is shared by several formats or the outcome is not the
-	// HTTP status (the presigned completion).
-	countedByHandler
-	// notAnUpload: a write route that publishes no package (yank, delete
-	// batches, upload negotiation, metadata).
-	notAnUpload
-)
-
-// uploadRoute classifies one write route.
-type uploadRoute struct {
-	count uploadCount
-	// method is the HTTP method that uploads (countedByMiddleware only); other
-	// methods on the same route are not counted.
-	method string
-	// format is the format label (countedByMiddleware only).
-	format string
-}
 
 // uploadRoutes classifies every PUT/POST/PATCH route of the server by its chi
-// route pattern (as chi.Context.RoutePattern reports it: no trailing slash). The table is the single place that says which route is a
-// hosted upload and under which metrics.Format* it is counted;
-// TestUploadRoutesClassified fails for a route that is missing here, so a new
-// format cannot forget to count its uploads.
-//
-//nolint:gochecknoglobals // immutable route table
-var uploadRoutes = map[string]uploadRoute{
-	// Native client protocols, counted from the response status.
-	"/repos/{name}/api/v1/crates/new":            {countedByMiddleware, http.MethodPut, metrics.FormatCargo},
-	"/repos/{name}/api/v1/gems":                  {countedByMiddleware, http.MethodPost, metrics.FormatRubyGems},
-	"/repos/{name}/charts":                       {countedByMiddleware, http.MethodPost, metrics.FormatHelm},
-	"/repos/{name}/legacy":                       {countedByMiddleware, http.MethodPost, metrics.FormatPyPI},
-	"/repos/{name}/v3/package":                   {countedByMiddleware, http.MethodPut, metrics.FormatNuGet},
-	"/repos/{name}/{platform}":                   {countedByMiddleware, http.MethodPost, metrics.FormatConda},
-	"/repos/{name}/os/{arch}/{filename}":         {countedByMiddleware, http.MethodPut, metrics.FormatPacman},
-	"/repos/{name}/api/v3/artifacts/collections": {countedByMiddleware, http.MethodPost, metrics.FormatAnsible},
-	"/repos/raw/{name}/*":                        {countedByMiddleware, http.MethodPut, metrics.FormatRaw},
-	"/repos/ivy/{name}/*":                        {countedByMiddleware, http.MethodPut, metrics.FormatIvy},
-	"/repos/sbt/{name}/*":                        {countedByMiddleware, http.MethodPut, metrics.FormatSBT},
-	ociWildcard:                                  {countedByMiddleware, "", metrics.FormatDocker},
-	conanV1Export:                                {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	conanV1Package:                               {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	conanV2Recipe:                                {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	conanV2Package:                               {countedByMiddleware, http.MethodPut, metrics.FormatConan},
-	terraformModule:                              {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
-	terraformProvider:                            {countedByMiddleware, http.MethodPut, metrics.FormatTerraform},
-	"/repos/maven/{name}/*":                      {count: countedByHandler}, // api.MavenUploadHandler
-	"/repos/{name}/*": {
-		count: countedByHandler,
-	}, // npm publish (api.NPMUploadHandler) and GOPROXY upload (CountUploads in cmd/server)
-	"/api/v1/repositories/{name}/debs": {count: countedByHandler}, // api.DebUploadHandler
-	"/api/v1/repositories/{name}/apks": {count: countedByHandler}, // formatapk.HTTPHandler
-
-	"/api/v1/repositories/{name}/packages":                 {count: countedByHandler}, // api.RPMUploadHandler
-	"/api/v1/repositories/{name}/uploads/{id}/complete":    {count: countedByHandler}, // api.PresignedUploadHandler (raw)
-	"/api/v1/repositories/{name}/comps":                    {count: notAnUpload},
-	"/api/v1/repositories/{name}/uploads":                  {count: notAnUpload}, // presigned upload negotiation
-	"/api/v1/repositories/{name}/uploads/{id}/parts":       {count: notAnUpload},
-	"/api/v1/repositories/{name}/uploads/{id}/abort":       {count: notAnUpload},
-	"/repos/{name}/-/package/{pkg}/dist-tags/{tag}":        {count: notAnUpload},
-	"/repos/{name}/api/v1/crates/{crate}/{version}/unyank": {count: notAnUpload},
-	conanV1UploadURLs:        {count: notAnUpload},
-	conanV1PackageUploadURLs: {count: notAnUpload},
-	conanV1PackagesDelete:    {count: notAnUpload},
-	conanV1RemoveFiles:       {count: notAnUpload},
-}
-
-// Terraform publishing routes, shared with the table above.
-const (
-	terraformModule   = "/repos/{name}/_api/modules/{mod}/{system}/{version}"
-	terraformProvider = "/repos/{name}/_api/providers/{type}/{version}/{os}/{arch}"
-)
-
-// Conan route patterns, shared with the table above.
-const (
-	conanV1Base              = "/repos/{name}/v1/conans/{pkg}/{version}/{user}/{channel}"
-	conanV1UploadURLs        = conanV1Base + "/upload_urls"
-	conanV1PackageUploadURLs = conanV1Base + "/packages/{pid}/upload_urls"
-	conanV1PackagesDelete    = conanV1Base + "/packages/delete"
-	conanV1RemoveFiles       = conanV1Base + "/remove_files"
-	conanV1Export            = "/repos/{name}/v1/files/{pkg}/{version}/{user}/{channel}/{rrev}/export/*"
-	conanV1Package           = "/repos/{name}/v1/files/{pkg}/{version}/{user}/{channel}/{rrev}/package/{pid}/{prev}/*"
-	conanV2Recipe            = "/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/files/*"
-	conanV2Package           = "/repos/{name}/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rrev}/packages/{pid}" +
-		"/revisions/{prev}/files/*"
-)
+// route pattern (as chi.Context.RoutePattern reports it: no trailing slash). The
+// table is the formats' repotype.Spec.Uploads, the single place that says which
+// route is a hosted upload; the route test fails for a route that is missing
+// there, so a new format cannot forget to count its uploads. The format label
+// of a counted route is the Spec name, which is the metrics.Format* value.
+var uploadRoutes = sync.OnceValue(repotype.UploadRoutes) //nolint:gochecknoglobals // computed once from the immutable registry
 
 // uploadFormat reports the format label of a request that MetricsMiddleware
 // counts as an upload. The decision depends only on the method and the route
 // pattern (and, for the registry, the endpoint the path addresses).
 func uploadFormat(r *http.Request, pattern string) (string, bool) {
-	route, ok := uploadRoutes[pattern]
-	if !ok || route.count != countedByMiddleware {
+	route, ok := uploadRoutes()[pattern]
+	if !ok || route.Count != repotype.CountedByMiddleware {
 		return "", false
 	}
 
@@ -118,7 +35,7 @@ func uploadFormat(r *http.Request, pattern string) (string, bool) {
 		return metrics.FormatDocker, isOCIUpload(r)
 	}
 
-	return route.format, r.Method == route.method
+	return route.Format, r.Method == route.Method
 }
 
 // isOCIUpload is true for the registry requests that finish pushing an object:
