@@ -17,13 +17,17 @@ url="$OA_URL/repos/maven/$REPO"
 cat > /tmp/settings.xml <<EOF
 <settings><servers><server><id>oa</id><username>smoke</username><password>$OA_TOKEN</password></server></servers></settings>
 EOF
-mkdir -p /tmp/src /tmp/out /tmp/x && cd /tmp/src
-echo "marker $PKG" > marker.txt
-jar cf /tmp/lib.jar marker.txt
-mvn -B -q -s /tmp/settings.xml -Dmaven.repo.local=/tmp/m2p deploy:deploy-file \
-  -Dfile=/tmp/lib.jar -DgroupId=com.smoke -DartifactId="$PKG" -Dversion="$VERSION" \
-  -Dpackaging=jar -DgeneratePom=true -DrepositoryId=oa -Durl="$url"
-mkdir -p /tmp/consumer && cat > /tmp/consumer/pom.xml <<EOP
+[ "$SMOKE_MODE" = install ] || {
+  mkdir -p /tmp/src && cd /tmp/src
+  echo "marker $PKG" > marker.txt
+  jar cf /tmp/lib.jar marker.txt
+  mvn -B -q -s /tmp/settings.xml -Dmaven.repo.local=/tmp/m2p deploy:deploy-file \
+    -Dfile=/tmp/lib.jar -DgroupId=com.smoke -DartifactId="$PKG" -Dversion="$VERSION" \
+    -Dpackaging=jar -DgeneratePom=true -DrepositoryId=oa -Durl="$url"
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # a consumer with its own, empty local repository
+  mkdir -p /tmp/consumer /tmp/out /tmp/x && cat > /tmp/consumer/pom.xml <<EOP
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.smoke</groupId><artifactId>consumer</artifactId><version>1</version>
@@ -33,9 +37,10 @@ mkdir -p /tmp/consumer && cat > /tmp/consumer/pom.xml <<EOP
   </dependency></dependencies>
 </project>
 EOP
-mvn -B -q -s /tmp/settings.xml -Dmaven.repo.local=/tmp/m2c -f /tmp/consumer/pom.xml \
-  dependency:copy-dependencies -DoutputDirectory=/tmp/out
-cd /tmp/x && jar xf "/tmp/out/$PKG-$VERSION.jar"
-[ "$(cat marker.txt)" = "marker $PKG" ]
+  mvn -B -q -s /tmp/settings.xml -Dmaven.repo.local=/tmp/m2c -f /tmp/consumer/pom.xml \
+    dependency:copy-dependencies -DoutputDirectory=/tmp/out
+  cd /tmp/x && jar xf "/tmp/out/$PKG-$VERSION.jar"
+  [ "$(cat marker.txt)" = "marker $PKG" ]
+}
 SCRIPT
 )"

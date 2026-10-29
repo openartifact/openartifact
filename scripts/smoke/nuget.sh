@@ -32,8 +32,9 @@ cat > /root/oa.config <<EOF
   </packageSourceCredentials>
 </configuration>
 EOF
-mkdir -p /tmp/p && cd /tmp/p
-cat > "$PKG.csproj" <<EOF
+[ "$SMOKE_MODE" = install ] || {
+  mkdir -p /tmp/p && cd /tmp/p
+  cat > "$PKG.csproj" <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>$tfm</TargetFramework>
@@ -45,21 +46,26 @@ cat > "$PKG.csproj" <<EOF
   <ItemGroup><None Include="marker.txt" Pack="true" PackagePath="/" /></ItemGroup>
 </Project>
 EOF
-echo "marker $PKG" > marker.txt
-echo "namespace Smoke { public static class Marker { public const string Value = \"$PKG\"; } }" > Marker.cs
-dotnet pack -c Release -o /tmp/out -v q
-dotnet nuget push "/tmp/out/$PKG.$VERSION.nupkg" --source oa --api-key smoke --configfile /root/oa.config
-mkdir -p /tmp/c && cd /tmp/c
-cp /root/oa.config nuget.config
-cat > c.csproj <<EOF
+  echo "marker $PKG" > marker.txt
+  echo "namespace Smoke { public static class Marker { public const string Value = \"$PKG\"; } }" > Marker.cs
+  dotnet pack -c Release -o /tmp/out -v q
+  dotnet nuget push "/tmp/out/$PKG.$VERSION.nupkg" --source oa --api-key smoke --configfile /root/oa.config
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # fresh nuget state: its own package folder and HTTP cache
+  export NUGET_HTTP_CACHE_PATH=/tmp/nuget-http-install
+  mkdir -p /tmp/c && cd /tmp/c
+  cp /root/oa.config nuget.config
+  cat > c.csproj <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>$tfm</TargetFramework></PropertyGroup>
   <ItemGroup><PackageReference Include="$PKG" Version="$VERSION" /></ItemGroup>
 </Project>
 EOF
-dotnet restore --packages /tmp/pkgs -v q
-dll="/tmp/pkgs/$PKG/$VERSION/lib/$tfm/$PKG.dll"
-ls "$dll"
-[ "$(cat "/tmp/pkgs/$PKG/$VERSION/marker.txt")" = "marker $PKG" ]
+  dotnet restore --packages /tmp/pkgs --no-cache -v q
+  dll="/tmp/pkgs/$PKG/$VERSION/lib/$tfm/$PKG.dll"
+  ls "$dll"
+  [ "$(cat "/tmp/pkgs/$PKG/$VERSION/marker.txt")" = "marker $PKG" ]
+}
 SCRIPT
 )"

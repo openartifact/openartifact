@@ -21,15 +21,21 @@ set -eu
 docker --version
 hp="${OA_URL#*://}"
 ref="$hp/$REPO:$VERSION"
-docker pull -q docker.io/library/busybox:latest >/dev/null
-docker run --name "$PKG" docker.io/library/busybox:latest sh -c "echo $PKG > /marker"
-docker commit -c 'CMD ["cat","/marker"]' "$PKG" "$ref" >/dev/null
-docker rm "$PKG" >/dev/null
 echo "$OA_TOKEN" | docker login "$hp" -u smoke --password-stdin >/dev/null
-docker push "$ref" >/dev/null
-docker rmi "$ref" >/dev/null
-docker pull -q "$ref" >/dev/null
-[ "$(docker run --rm "$ref")" = "$PKG" ]
+[ "$SMOKE_MODE" = install ] || {
+  docker pull -q docker.io/library/busybox:latest >/dev/null
+  docker run --name "$PKG" docker.io/library/busybox:latest sh -c "echo $PKG > /marker"
+  docker commit -c 'CMD ["cat","/marker"]' "$PKG" "$ref" >/dev/null
+  docker rm "$PKG" >/dev/null
+  docker push "$ref" >/dev/null
+  docker rmi "$ref" >/dev/null
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # the daemon is shared: make sure it holds no copy of the image, so the pull comes from the registry
+  docker rmi "$ref" >/dev/null 2>&1 || true
+  docker pull -q "$ref" >/dev/null
+  [ "$(docker run --rm "$ref")" = "$PKG" ]
+}
 docker logout "$hp" >/dev/null
 SCRIPT
 )" "${daemon[@]}"
