@@ -34,10 +34,23 @@ type rollupArgs struct {
 // q: the LIKE wildcards and the escape character of q are escaped, so a `%` or
 // `_` in the search term matches itself.
 func containsPattern(q string) string {
-	return "%" + likeEscaper.Replace(q) + "%"
-}
+	var b strings.Builder
 
-var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	b.Grow(len(q) + 2)
+	b.WriteByte('%')
+
+	for i := range len(q) {
+		if c := q[i]; c == '\\' || c == '%' || c == '_' {
+			b.WriteByte('\\')
+		}
+
+		b.WriteByte(q[i])
+	}
+
+	b.WriteByte('%')
+
+	return b.String()
+}
 
 // uuidText matches the text form of a uuid (the artifact_path of a package row).
 const uuidText = `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
@@ -101,7 +114,10 @@ func rollupQuery(opts rollupFilter) (string, []any) {
 
 	if hosted {
 		ctes = append(ctes, hostedRollupCTEs(a, opts.flagged)...)
-		parts = append(parts, "SELECT format, name, version_count, created_at, updated_at, package_id, NULL::text AS latest_version FROM hosted")
+		parts = append(
+			parts,
+			"SELECT format, name, version_count, created_at, updated_at, package_id, NULL::text AS latest_version FROM hosted",
+		)
 	}
 
 	if len(rowBranches) > 0 {
@@ -182,7 +198,9 @@ func hostedRollupCTEs(a rollupArgs, flagged bool) []string {
 	if a.pattern != "" {
 		byName := fmt.Sprintf(
 			"SELECT %s FROM packages pk JOIN package_versions v ON v.package_id = pk.id WHERE pk.repository_id = $1 AND v.deleted_at IS NULL%s",
-			cols, extra)
+			cols,
+			extra,
+		)
 		matched = fmt.Sprintf("%[1]s AND v.version ILIKE %[3]s\n\t\tUNION\n\t\t%[2]s AND pk.name ILIKE %[3]s", byVersion, byName, a.pattern)
 	}
 
@@ -250,7 +268,7 @@ func rowRollupCTEs(branches []catalogBranch, a rollupArgs, flagged bool) []strin
 
 	return []string{
 		fmt.Sprintf(`u AS (
-		SELECT * FROM (
+		SELECT u.repository_id, u.id, u.format, u.name, u.version, u.created_at, u.updated_at FROM (
 		%s
 		) u %s
 	)`, rows, where),

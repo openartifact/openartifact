@@ -56,7 +56,11 @@ func TestCatalogQueryIsLiteral(t *testing.T) {
 		{"a_b", "a_b"}, {"A_B", "a_b"}, {"_", "a_b"}, {"%", "50%off"}, {"0%o", "50%off"}, {`\`, `back\slash`}, {`k\s`, `back\slash`},
 	} {
 		for _, byName := range []bool{false, true} {
-			rows, total, err := f.pg.SearchComponents(ctx, f.repo, ComponentListOptions{Query: tc.q, SortByName: byName, Page: 1, Limit: 100})
+			rows, total, err := f.pg.SearchComponents(
+				ctx,
+				f.repo,
+				ComponentListOptions{Query: tc.q, SortByName: byName, Page: 1, Limit: 100},
+			)
 			if err != nil || total != 1 || len(rows) != 1 || rows[0].Name != tc.want {
 				t.Errorf("listing q=%q byName=%v: total %d rows %d err %v, want only %q", tc.q, byName, total, len(rows), err, tc.want)
 			}
@@ -118,12 +122,13 @@ func TestCatalogQueryNarrowAndBroad(t *testing.T) {
 	}
 }
 
-// TestCatalogRollupMatchingVersions: with q, the rollup counts and names the
-// matching versions of a package only, a package whose name matches counts all
-// of them, and the sort key and the timestamps follow the live versions.
-func TestCatalogRollupMatchingVersions(t *testing.T) {
+// rollupFixture seeds alpha (1.0.0, 2.0.0, 2.1.0, 10/20/30 bytes, an hour apart
+// from base) and beta (1.0.0, 5 bytes, between alpha's last two) and returns the
+// first page of the repository's rollup for the options given.
+func rollupFixture(t *testing.T) (*catalogFixture, time.Time, func(models.PackageRollupOptions) []models.PackageRollup) {
+	t.Helper()
+
 	f := newCatalogFixture(t)
-	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Microsecond).Add(-24 * time.Hour)
 
 	f.seedNPMVersion(t, "alpha", "1.0.0", 10, base)
@@ -136,13 +141,39 @@ func TestCatalogRollupMatchingVersions(t *testing.T) {
 
 		opts.RepoID, opts.RepoFormat, opts.Page, opts.Limit = f.repo, "npm", 1, 10
 
-		rows, _, err := f.pg.ListRepoPackageRollup(ctx, opts)
+		rows, _, err := f.pg.ListRepoPackageRollup(context.Background(), opts)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		return rows
 	}
+
+	return f, base, roll
+}
+
+// trashVersion trashes the version of the file seeded as key, the way the trash
+// does: the file, then the version it leaves without a live file.
+func trashVersion(t *testing.T, f *catalogFixture, key string) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	if _, err := f.db.ExecContext(ctx, `UPDATE package_files SET deleted_at = now() WHERE id = $1`, f.ids[key]); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.db.ExecContext(ctx, `UPDATE package_versions SET deleted_at = now()
+		WHERE id = (SELECT version_id FROM package_files WHERE id = $1)`, f.ids[key]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCatalogRollupMatchingVersions: with q, the rollup counts and names the
+// matching versions of a package only, a package whose name matches counts all
+// of them, and the sort key follows the live versions.
+func TestCatalogRollupMatchingVersions(t *testing.T) {
+	_, base, roll := rollupFixture(t)
 
 	// Newest first: alpha's newest version is 2.1.0 (+2h), beta's +1.5h.
 	if rows := roll(models.PackageRollupOptions{}); len(rows) != 2 || rows[0].Name != "alpha" || rows[0].LatestVersion != "2.1.0" ||
@@ -152,12 +183,16 @@ func TestCatalogRollupMatchingVersions(t *testing.T) {
 
 	// q on the version: only the matching versions count, and the newest of them is the latest.
 	rows := roll(models.PackageRollupOptions{Query: "2.0"})
-	if len(rows) != 1 || rows[0].Name != "alpha" || rows[0].LatestVersion != "2.0.0" || rows[0].VersionCount != 1 || rows[0].SizeBytes != 20 {
+	if len(rows) != 1 || rows[0].Name != "alpha" || rows[0].LatestVersion != "2.0.0" || rows[0].VersionCount != 1 ||
+		rows[0].SizeBytes != 20 {
 		t.Fatalf("version q rollup %+v", rows)
 	}
 
 	// q on the name: every version of the package matches.
-	if rows := roll(models.PackageRollupOptions{Query: "alp"}); len(rows) != 1 || rows[0].VersionCount != 3 || rows[0].LatestVersion != "2.1.0" {
+	if rows := roll(
+		models.PackageRollupOptions{Query: "alp"},
+	); len(rows) != 1 || rows[0].VersionCount != 3 ||
+		rows[0].LatestVersion != "2.1.0" {
 		t.Fatalf("name q rollup %+v", rows)
 	}
 
@@ -169,42 +204,44 @@ func TestCatalogRollupMatchingVersions(t *testing.T) {
 	if rows := roll(models.PackageRollupOptions{Format: "maven"}); len(rows) != 0 {
 		t.Fatalf("format without packages %+v", rows)
 	}
+}
 
-	// A file added to the latest version later moves updated_at (the version row is not touched).
+// TestCatalogRollupUpdatedAt: a change to a file of the latest version moves
+// the package's updated_at (the version row is not touched).
+func TestCatalogRollupUpdatedAt(t *testing.T) {
+	f, _, roll := rollupFixture(t)
 	touched := time.Now().UTC().Add(-time.Second)
 
-	if _, err := f.db.ExecContext(ctx, `UPDATE package_files SET attrs = '{"touched":true}' WHERE id = $1`, f.ids["alpha@2.1.0"]); err != nil {
+	if _, err := f.db.ExecContext(
+		context.Background(),
+		`UPDATE package_files SET attrs = '{"touched":true}' WHERE id = $1`,
+		f.ids["alpha@2.1.0"],
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	if rows := roll(models.PackageRollupOptions{Name: "alpha"}); len(rows) != 1 || rows[0].UpdatedAt.Before(touched) {
 		t.Fatalf("updated_at is not the file's after %v: %+v", touched, rows)
 	}
+}
 
-	// Trashed versions drop out of the count, the latest and the package count.
-	if _, err := f.db.ExecContext(ctx, `UPDATE package_files SET deleted_at = now() WHERE id = $1`, f.ids["alpha@2.1.0"]); err != nil {
-		t.Fatal(err)
-	}
+// TestCatalogRollupTrashed: trashed versions drop out of the version count, the
+// latest version and the package count, and a package left without a live
+// version is not listed.
+func TestCatalogRollupTrashed(t *testing.T) {
+	f, _, roll := rollupFixture(t)
+	ctx := context.Background()
 
-	if _, err := f.db.ExecContext(ctx, `UPDATE package_versions SET deleted_at = now()
-		WHERE id = (SELECT version_id FROM package_files WHERE id = $1)`, f.ids["alpha@2.1.0"]); err != nil {
-		t.Fatal(err)
-	}
+	trashVersion(t, f, "alpha@2.1.0")
 
-	if rows := roll(models.PackageRollupOptions{Name: "alpha"}); len(rows) != 1 || rows[0].LatestVersion != "2.0.0" || rows[0].VersionCount != 2 {
+	if rows := roll(
+		models.PackageRollupOptions{Name: "alpha"},
+	); len(rows) != 1 || rows[0].LatestVersion != "2.0.0" ||
+		rows[0].VersionCount != 2 {
 		t.Fatalf("after trash %+v", rows)
 	}
 
-	for _, id := range []string{"beta@1.0.0"} {
-		if _, err := f.db.ExecContext(ctx, `UPDATE package_files SET deleted_at = now() WHERE id = $1`, f.ids[id]); err != nil {
-			t.Fatal(err)
-		}
-
-		if _, err := f.db.ExecContext(ctx, `UPDATE package_versions SET deleted_at = now()
-			WHERE id = (SELECT version_id FROM package_files WHERE id = $1)`, f.ids[id]); err != nil {
-			t.Fatal(err)
-		}
-	}
+	trashVersion(t, f, "beta@1.0.0")
 
 	counts, err := f.pg.CountRepoPackageNames(ctx, []string{f.repo})
 	if err != nil || counts[f.repo] != 1 {

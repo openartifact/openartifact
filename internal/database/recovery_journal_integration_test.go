@@ -26,7 +26,8 @@ func TestRecoveryJournalSkipsDownloadCounts(t *testing.T) {
 		t.Helper()
 
 		var n int
-		if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM recovery_dirty WHERE table_name = 'package_files' AND row_key = $1`, id).Scan(&n); err != nil {
+		if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM recovery_dirty WHERE table_name = 'package_files' AND row_key = $1`, id).
+			Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 
@@ -48,7 +49,11 @@ func TestRecoveryJournalSkipsDownloadCounts(t *testing.T) {
 	reset()
 
 	for range 3 {
-		if _, err := f.db.ExecContext(ctx, `UPDATE package_files SET download_count = download_count + 1, updated_at = now() WHERE id = $1`, id); err != nil {
+		if _, err := f.db.ExecContext(
+			ctx,
+			`UPDATE package_files SET download_count = download_count + 1, updated_at = now() WHERE id = $1`,
+			id,
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
