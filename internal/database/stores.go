@@ -50,6 +50,7 @@ type PostgresDB struct {
 	*PermissionStore
 	*SSOStore
 	*ProjectStore
+	*DebStore
 	// STORES-STRUCT
 }
 
@@ -97,6 +98,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		PermissionStore:      &PermissionStore{core: c},
 		SSOStore:             &SSOStore{core: c},
 		ProjectStore:         &ProjectStore{core: c},
+		DebStore:             &DebStore{core: c},
 		// STORES-INIT
 	}
 }

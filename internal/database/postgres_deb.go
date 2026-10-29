@@ -17,7 +17,7 @@ import (
 
 // upsertDebian runs an idempotent "insert, or touch the existing row" upsert on a
 // (parent id, name) keyed debian table and stores the generated columns in the model.
-func (p *PostgresDB) upsertDebian(
+func (p *DebStore) upsertDebian(
 	ctx context.Context,
 	query, parentID, name, what string,
 	id *string,
@@ -31,7 +31,7 @@ func (p *PostgresDB) upsertDebian(
 }
 
 // GetOrCreateDebianDistribution returns the distribution, creating it atomically if missing.
-func (p *PostgresDB) GetOrCreateDebianDistribution(ctx context.Context, repoID, name string) (*models.DebianDistribution, error) {
+func (p *DebStore) GetOrCreateDebianDistribution(ctx context.Context, repoID, name string) (*models.DebianDistribution, error) {
 	m := &models.DebianDistribution{RepositoryID: repoID, Name: name}
 
 	err := p.upsertDebian(ctx, `INSERT INTO debian_distributions (repository_id, name) VALUES ($1, $2)
@@ -45,7 +45,7 @@ func (p *PostgresDB) GetOrCreateDebianDistribution(ctx context.Context, repoID, 
 }
 
 // GetOrCreateDebianComponent returns the component, creating it atomically if missing.
-func (p *PostgresDB) GetOrCreateDebianComponent(ctx context.Context, distID, name string) (*models.DebianComponent, error) {
+func (p *DebStore) GetOrCreateDebianComponent(ctx context.Context, distID, name string) (*models.DebianComponent, error) {
 	m := &models.DebianComponent{DistributionID: distID, Name: name}
 
 	err := p.upsertDebian(ctx, `INSERT INTO debian_components (distribution_id, name) VALUES ($1, $2)
@@ -59,7 +59,7 @@ func (p *PostgresDB) GetOrCreateDebianComponent(ctx context.Context, distID, nam
 }
 
 // GetOrCreateDebianArchitecture returns the architecture, creating it atomically if missing.
-func (p *PostgresDB) GetOrCreateDebianArchitecture(ctx context.Context, distID, name string) (*models.DebianArchitecture, error) {
+func (p *DebStore) GetOrCreateDebianArchitecture(ctx context.Context, distID, name string) (*models.DebianArchitecture, error) {
 	m := &models.DebianArchitecture{DistributionID: distID, Name: name}
 
 	err := p.upsertDebian(ctx, `INSERT INTO debian_architectures (distribution_id, name) VALUES ($1, $2)
@@ -73,7 +73,7 @@ func (p *PostgresDB) GetOrCreateDebianArchitecture(ctx context.Context, distID, 
 }
 
 // SetDebControlFields stores the control stanza, maintainer and homepage of a deb package.
-func (p *PostgresDB) SetDebControlFields(ctx context.Context, packageID, maintainer, homepage string, fields map[string]string) error {
+func (p *DebStore) SetDebControlFields(ctx context.Context, packageID, maintainer, homepage string, fields map[string]string) error {
 	raw, err := json.Marshal(fields)
 	if err != nil {
 		return fmt.Errorf("marshal control fields: %w", err)
@@ -90,7 +90,7 @@ func (p *PostgresDB) SetDebControlFields(ctx context.Context, packageID, maintai
 }
 
 // GetDebBlobInfo resolves a blobs.id UUID to its content sha256 and size ("" / 0 if unknown).
-func (p *PostgresDB) GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error) {
+func (p *DebStore) GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error) {
 	var (
 		sum  string
 		size int64
@@ -111,7 +111,7 @@ func (p *PostgresDB) GetDebBlobInfo(ctx context.Context, blobID string) (string,
 
 // ListDebPackageEntries returns package entries for a repository in a single
 // query. Empty dist/comp/arch act as wildcards.
-func (p *PostgresDB) ListDebPackageEntries(ctx context.Context, repoID, dist, comp, arch string) ([]models.DebPackageEntry, error) {
+func (p *DebStore) ListDebPackageEntries(ctx context.Context, repoID, dist, comp, arch string) ([]models.DebPackageEntry, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT dp.id, dp.name, dp.version, dp.arch, COALESCE(dp.filename, ''),
 		        dp.distribution_id, dd.name, dc.name,
