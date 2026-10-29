@@ -4,13 +4,18 @@
 
 # Code-change fuzzing: picks the native Go fuzz targets a change can affect (a
 # target whose package, or a package it imports, contains a changed file, and
-# whose coverage in the last batch run includes it, see
+# and whose coverage in the last batch run includes it, see
 # .clusterfuzzlite/select-targets.sh), builds only those (.clusterfuzzlite/build.sh)
 # and fuzzes them for 5 minutes, starting from the corpus of the daily batch
-# runs. A change to go.mod, go.sum or the fuzzing setup builds every target; a
-# change no target can see (a Go file nothing fuzzed imports) skips the build and
-# the run. 5 minutes, not the batch job's hour: the deep fuzzing is done daily on
-# main, a pull request only has to catch a regression in the code it touches.
+# runs. A change to go.mod or go.sum selects the targets that link a package of
+# a module whose requirement changed; a change to the go directive or the fuzzing
+# setup affects every target. At most FUZZ_MAX_TARGETS targets are built, the
+# nearest to the change first (the changed package, then its importers), so the
+# job stays well under half an hour whatever the change; the daily batch run
+# fuzzes all of them. A change no target can see (a Go file nothing fuzzed
+# imports) skips the build and the run. 5 minutes, not the batch job's hour: the
+# deep fuzzing is done daily on main, a pull request only has to catch a
+# regression in the code it touches.
 # Corpus and coverage report (cloned by the plan step) come from the public
 # openartifact/openartifact-fuzz-storage repository, read anonymously: this job
 # needs no secret, so it behaves the same for pull requests from forks. Until the
@@ -40,7 +45,10 @@ jobs:
   fuzz:
     name: fuzz (code change)
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # worst case (go.mod change): ~150 targets, 13-22 minutes to build, 5 to fuzz
+    timeout-minutes: 30 # worst case: FUZZ_MAX_TARGETS targets, a few minutes to build, 5 to fuzz
+    env:
+      # Upper bound of targets built and fuzzed (select-targets.sh); 0 = no limit.
+      FUZZ_MAX_TARGETS: "30"
     permissions:
       contents: read
       actions: read # find the latest main build to tell new crashes from old ones
@@ -69,6 +77,13 @@ jobs:
           # reach build.sh base64 encoded in CFL_EXTRA_FUZZ_TARGETS, the only kind of
           # variable ClusterFuzzLite forwards into the build container.
           git diff --name-only --no-renames -z HEAD^1 HEAD > "$RUNNER_TEMP/changed"
+          # A dependency bump selects the targets that link the changed modules, which
+          # needs the module sources (the import graph of the dependencies).
+          if ! git diff --quiet HEAD^1 HEAD -- go.mod go.sum; then
+            git diff -U0 --no-renames HEAD^1 HEAD -- go.mod go.sum > "$RUNNER_TEMP/gomod.diff"
+            export GOMOD_DIFF="$RUNNER_TEMP/gomod.diff"
+            go mod download
+          fi
           # Coverage of the last batch run (public repository, no credentials). Without
           # it (first run, outage) the import graph alone selects the targets.
           if git clone --quiet --depth 1 --branch gh-pages --single-branch \
@@ -81,10 +96,6 @@ jobs:
           echo "changed files: $(tr -cd '\0' < "$RUNNER_TEMP/changed" | wc -c)"
           selection=$(bash .clusterfuzzlite/select-targets.sh < "$RUNNER_TEMP/changed")
           case "$selection" in
-            all)
-              echo "mode=all" >> "$GITHUB_OUTPUT"
-              echo "go.mod, go.sum or the fuzzing setup changed: building every fuzz target"
-              ;;
             none)
               echo "mode=none" >> "$GITHUB_OUTPUT"
               echo "::notice title=Fuzzing skipped::no fuzz target covers a changed file"
