@@ -107,7 +107,9 @@ FROM scanners-${SCANNERS} AS scanners
 
 # ---- Runtime bases (shell-less, digest-pinned) ------------------------------
 FROM dhi.io/static:20250419-debian13@sha256:66e3dac42874997512a34ac68b59fa424a261394618b6ba0642454522aef4565 AS runtime-dhi
+LABEL org.opencontainers.image.base.name="dhi.io/static:20250419-debian13"
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless
+LABEL org.opencontainers.image.base.name="gcr.io/distroless/static-debian13:nonroot"
 
 # ---- Runtime stage ----------------------------------------------------------
 FROM runtime-${RUNTIME}
@@ -116,14 +118,13 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 LABEL org.opencontainers.image.title="OpenArtifact" \
-      org.opencontainers.image.description="Self-hosted artifact repository for many package formats: Maven, npm, PyPI, Docker/OCI, Helm, Debian, RPM, Go, Cargo, NuGet, RubyGems, Conda, Conan, Ivy, sbt and raw." \
+      org.opencontainers.image.description="Self-hosted artifact repository for many package formats: Maven, npm, PyPI, Docker/OCI, Helm, Debian, RPM, Alpine (apk), Pacman, Go, Cargo, NuGet, RubyGems, Composer, Conda, Conan, Ivy, sbt, Terraform, Ansible, Nix and raw." \
       org.opencontainers.image.vendor="OpenArtifact" \
       org.opencontainers.image.authors="The OpenArtifact Authors" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.url="https://github.com/openartifact/openartifact" \
       org.opencontainers.image.source="https://github.com/openartifact/openartifact" \
       org.opencontainers.image.documentation="https://github.com/openartifact/openartifact#readme" \
-      org.opencontainers.image.base.name="dhi.io/static:20250419-debian13" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}" \
       org.opencontainers.image.created="${BUILD_TIME}"

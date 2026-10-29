@@ -28,12 +28,60 @@ env:
   REF: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  # A tag can be pushed on a commit whose CI failed or is still running; nothing
+  # is published until the CI workflow succeeded on exactly that commit.
+  ci-gate:
+    name: CI succeeded on the tagged commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # list the CI runs of the commit
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Wait for a green CI run
+        run: |
+          sha=$(gh api "repos/$GH_REPO/commits/$REF" --jq .sha)
+          echo "tag $REF is commit $sha"
+          deadline=$((SECONDS + 80 * 60))
+          while :; do
+            runs=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=100" \
+              --jq '[.workflow_runs[] | {id, event, status, conclusion}]')
+            echo "$runs" | jq -c '.[]'
+            if [ "$(echo "$runs" | jq '[.[] | select(.conclusion == "success")] | length')" -gt 0 ]; then
+              echo "CI is green on $sha"
+              exit 0
+            fi
+            if [ "$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')" -eq 0 ]; then
+              if [ "$(echo "$runs" | jq length)" -eq 0 ]; then
+                echo "::error::no CI run found for $sha: push the commit to main or open a pull request first"
+              else
+                echo "::error::CI did not succeed on $sha"
+              fi
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::CI on $sha did not finish within 80 minutes"
+              exit 1
+            fi
+            sleep 60
+          done
+
   verify:
     name: verify (VERSION matches tag, tests)
+    needs: ci-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     outputs:
       prerelease: ${{ steps.check.outputs.prerelease }}
+      latest: ${{ steps.check.outputs.latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +100,16 @@ jobs:
             *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
             *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
           esac
+          # `latest` moves only when this tag is the highest stable version, so
+          # re-releasing an older tag (workflow_dispatch) never downgrades it.
+          highest=$(gh api --paginate "repos/$GH_REPO/git/matching-refs/tags/v" --jq '.[].ref | sub("^refs/tags/"; "")' |
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+          case "$tag" in
+            *-*) latest=false ;;
+            *)   if [ "$REF" = "$highest" ]; then latest=true; else latest=false; fi ;;
+          esac
+          echo "highest stable tag: ${highest:-none}; $REF moves latest: $latest"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -63,7 +121,7 @@ jobs:
 
   binaries:
     name: binaries (GoReleaser)
-    needs: verify
+    needs: [ci-gate, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -121,7 +179,7 @@ jobs:
 
   image:
     name: container image
-    needs: verify
+    needs: [ci-gate, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -131,7 +189,9 @@ jobs:
       attestations: write # store the build-provenance attestation
     env:
       LOCAL_TAG: openartifact:release-scan
+      LOCAL_TAG_ARM64: openartifact:release-scan-arm64
       BUILDX_CACHE: /tmp/buildx-cache
+      BUILDX_CACHE_ARM64: /tmp/buildx-cache-arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -167,10 +227,10 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ env.REF }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.REF }}
-            type=raw,value=latest,enable=${{ needs.verify.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.verify.outputs.latest == 'true' }}
           labels: &oci |
             org.opencontainers.image.title=OpenArtifact
-            org.opencontainers.image.description=Self-hosted artifact repository for many package formats: Maven, npm, PyPI, Docker/OCI, Helm, Debian, RPM, Go, Cargo, NuGet, RubyGems, Conda, Conan, Ivy, sbt and raw.
+            org.opencontainers.image.description=Self-hosted artifact repository for many package formats: Maven, npm, PyPI, Docker/OCI, Helm, Debian, RPM, Alpine (apk), Pacman, Go, Cargo, NuGet, RubyGems, Composer, Conda, Conan, Ivy, sbt, Terraform, Ansible, Nix and raw.
             org.opencontainers.image.vendor=OpenArtifact
             org.opencontainers.image.authors=The OpenArtifact Authors
             org.opencontainers.image.licenses=AGPL-3.0-or-later
@@ -207,6 +267,35 @@ jobs:
           format: table
           exit-code: "1"
 
+      # The arm64 image ships too: its Go binary and base layers can differ.
+      - name: Build image for scanning (linux/arm64, not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          tags: ${{ env.LOCAL_TAG_ARM64 }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          cache-to: type=local,dest=${{ env.BUILDX_CACHE_ARM64 }},mode=max
+
+      - name: Trivy gate, arm64 (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: ${{ env.LOCAL_TAG_ARM64 }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: push
         with:
@@ -223,7 +312,9 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
-          cache-from: type=local,src=${{ env.BUILDX_CACHE }}
+          cache-from: |
+            type=local,src=${{ env.BUILDX_CACHE }}
+            type=local,src=${{ env.BUILDX_CACHE_ARM64 }}
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
