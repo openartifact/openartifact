@@ -198,14 +198,56 @@ func (p *OSVStore) ApplyOSVAdvisories(ctx context.Context, advisories []models.O
 	return keys, nil
 }
 
-// osvChangedAdvisories keeps the advisories that are not stored yet or are
-// newer than the stored copy.
+// osvChangedAdvisories keeps the advisories that are not stored yet, are newer
+// than the stored copy, or affect an ecosystem the stored copy has no package
+// of. The last case is a record imported again after its ecosystem was added to
+// the mirror: an advisory of several ecosystems is stored with the packages of
+// the ecosystems configured at that time, and its modified time did not move.
 func osvChangedAdvisories(ctx context.Context, tx *sql.Tx, advisories []models.OSVAdvisory) ([]models.OSVAdvisory, error) {
 	ids := make([]string, len(advisories))
 	for i := range advisories {
 		ids[i] = advisories[i].ID
 	}
 
+	stored, err := osvStoredModified(ctx, tx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	ecosystems, err := osvStoredEcosystems(ctx, tx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	changed := make([]models.OSVAdvisory, 0, len(advisories))
+
+	for i := range advisories {
+		adv := &advisories[i]
+
+		// A copy older than the stored one never replaces it, whatever it adds.
+		m, ok := stored[adv.ID]
+		if !ok || adv.Modified.After(m) || (!adv.Modified.Before(m) && osvAddsEcosystem(adv, ecosystems[adv.ID])) {
+			changed = append(changed, *adv)
+		}
+	}
+
+	return changed, nil
+}
+
+// osvAddsEcosystem reports whether adv affects an ecosystem that has no stored
+// package among have.
+func osvAddsEcosystem(adv *models.OSVAdvisory, have map[string]bool) bool {
+	for i := range adv.Affected {
+		if !have[adv.Affected[i].Ecosystem] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// osvStoredModified returns the modified time of the stored advisories among ids.
+func osvStoredModified(ctx context.Context, tx *sql.Tx, ids []string) (map[string]time.Time, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT id, modified FROM osv_advisories WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("read stored osv advisories: %w", err)
@@ -231,15 +273,39 @@ func osvChangedAdvisories(ctx context.Context, tx *sql.Tx, advisories []models.O
 		return nil, fmt.Errorf("read stored osv advisories: %w", err)
 	}
 
-	changed := make([]models.OSVAdvisory, 0, len(advisories))
+	return stored, nil
+}
 
-	for i := range advisories {
-		if m, ok := stored[advisories[i].ID]; !ok || advisories[i].Modified.After(m) {
-			changed = append(changed, advisories[i])
+// osvStoredEcosystems returns, per advisory among ids, the ecosystems it has
+// stored affected packages in.
+func osvStoredEcosystems(ctx context.Context, tx *sql.Tx, ids []string) (map[string]map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT advisory_id, ecosystem FROM osv_affected WHERE advisory_id = ANY($1)`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read stored osv ecosystems: %w", err)
+	}
+	defer rows.Close()
+
+	have := make(map[string]map[string]bool, len(ids))
+
+	for rows.Next() {
+		var id, ecosystem string
+
+		if err := rows.Scan(&id, &ecosystem); err != nil {
+			return nil, fmt.Errorf("scan stored osv ecosystem: %w", err)
 		}
+
+		if have[id] == nil {
+			have[id] = map[string]bool{}
+		}
+
+		have[id][ecosystem] = true
 	}
 
-	return changed, nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read stored osv ecosystems: %w", err)
+	}
+
+	return have, nil
 }
 
 // osvReplaceAdvisories rewrites the changed advisories with their affected
