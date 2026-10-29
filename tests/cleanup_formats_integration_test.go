@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -147,7 +148,7 @@ func genericRowFor(format, name, version string, seq int) genericRow {
 	}
 
 	if strings.HasSuffix(version, "-SNAPSHOT") {
-		r.versionKey = version + "#" + fmt.Sprint(seq)
+		r.versionKey = version + "#" + strconv.Itoa(seq)
 	}
 
 	return r

@@ -104,12 +104,18 @@ func TestCleanupPolicySkipsBundledBlob(t *testing.T) {
 	}
 
 	if !e.blobExists(pinnedSHA) ||
-		e.countRows(`SELECT count(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.repository_id = $1 AND v.version = '1.0.0'`, repoID) != 1 {
+		e.countRows(
+			`SELECT count(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.repository_id = $1 AND v.version = '1.0.0'`,
+			repoID,
+		) != 1 {
 		t.Error("the version pinned by a release bundle was removed")
 	}
 
 	if e.blobExists(goneSHA) ||
-		e.countRows(`SELECT count(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.repository_id = $1 AND v.version = '1.1.0'`, repoID) != 0 {
+		e.countRows(
+			`SELECT count(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.repository_id = $1 AND v.version = '1.1.0'`,
+			repoID,
+		) != 0 {
 		t.Error("the unpinned old version was kept")
 	}
 }

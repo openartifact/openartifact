@@ -61,6 +61,8 @@ func (s *purgeSeed) deleteMavenWhere(cond string, args ...any) {
 		s.t.Fatal(err)
 	}
 
+	defer func() { _ = rows.Close() }()
+
 	var ids []string
 
 	for rows.Next() {
@@ -75,8 +77,6 @@ func (s *purgeSeed) deleteMavenWhere(cond string, args ...any) {
 	if err := rows.Err(); err != nil {
 		s.t.Fatal(err)
 	}
-
-	_ = rows.Close()
 
 	for _, id := range ids {
 		s.deleteMaven(id)

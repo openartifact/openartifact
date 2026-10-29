@@ -77,7 +77,6 @@ type staleEnv struct {
 	router http.Handler
 	repoID string
 	repo   string
-	seq    int
 }
 
 func newStaleEnv(
@@ -122,15 +121,6 @@ func (e *staleEnv) scan(query string, args ...any) string {
 	}
 
 	return out
-}
-
-// blob inserts a fresh blob row and returns its id.
-func (e *staleEnv) blob() string {
-	e.seq++
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%d", e.repoID, e.seq)))
-	sha := hex.EncodeToString(sum[:])
-
-	return e.scan(`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1::text, 5, $1::text) RETURNING id`, sha)
 }
 
 func (e *staleEnv) url(suffix string) string { return "/repos/" + e.repo + suffix }

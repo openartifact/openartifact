@@ -72,7 +72,9 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 		}
 
 		var v string
-		if err := s.pg.GetDB().QueryRowContext(ctx, `SELECT COALESCE(attrs->>'latest_version', '') FROM packages WHERE id = $1`, pkgID).Scan(&v); err != nil {
+		if err := s.pg.GetDB().
+			QueryRowContext(ctx, `SELECT COALESCE(attrs->>'latest_version', '') FROM packages WHERE id = $1`, pkgID).
+			Scan(&v); err != nil {
 			t.Fatal(err)
 		}
 
@@ -92,11 +94,22 @@ func TestNPMRegenerateComputesLatestFromLiveVersions(t *testing.T) {
 		},
 		{"deprecated is the last resort", func() { s.exec(`UPDATE package_versions SET deleted_at = now() WHERE id = $1`, pre) }, "2.0.0"},
 		{"an empty deprecation message is not a deprecation", func() {
-			s.exec(`UPDATE package_versions SET metadata = jsonb_build_object('manifest_json', '{"deprecated":""}'::jsonb) WHERE id = $1`, deprecated)
+			s.exec(
+				`UPDATE package_versions SET metadata = jsonb_build_object('manifest_json', '{"deprecated":""}'::jsonb) WHERE id = $1`,
+				deprecated,
+			)
 			s.exec(`UPDATE package_versions SET deleted_at = NULL WHERE id = $1`, stable)
 		}, "2.0.0"},
-		{"a restored version counts again", func() { s.exec(`UPDATE package_versions SET deleted_at = NULL WHERE id = $1`, trashed) }, "2.1.0"},
-		{"no live version clears latest", func() { s.exec(`UPDATE package_versions SET deleted_at = now() WHERE package_id = $1`, pkgID) }, ""},
+		{
+			"a restored version counts again",
+			func() { s.exec(`UPDATE package_versions SET deleted_at = NULL WHERE id = $1`, trashed) },
+			"2.1.0",
+		},
+		{
+			"no live version clears latest",
+			func() { s.exec(`UPDATE package_versions SET deleted_at = now() WHERE package_id = $1`, pkgID) },
+			"",
+		},
 	}
 
 	for _, st := range steps {
