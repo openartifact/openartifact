@@ -19,6 +19,11 @@ import (
 // maxLockDepth bounds the nesting walked in a v1 npm lockfile.
 const maxLockDepth = 64
 
+// NPMHooks reads the dependencies of npm.
+var NPMHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseNPM(parts) },
+}
+
 func parseNPM(parts []manifest.Part) (Result, error) {
 	var res Result
 
@@ -188,6 +193,11 @@ func lockLicense(v any) string {
 // cargoDep is a Cargo.toml dependency: a version string or a table.
 type cargoTable map[string]any
 
+// CargoHooks reads the dependencies of cargo.
+var CargoHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseCargo(parts) },
+}
+
 func parseCargo(parts []manifest.Part) (Result, error) {
 	var (
 		res      Result
@@ -297,6 +307,11 @@ func cargoReq(req string) (string, string) {
 	}
 
 	return "", req
+}
+
+// GoHooks reads the dependencies of go.
+var GoHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: parseGoMod,
 }
 
 func parseGoMod(filename string, parts []manifest.Part) (Result, error) {

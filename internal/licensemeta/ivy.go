@@ -8,7 +8,19 @@ import (
 	"encoding/xml"
 	"fmt"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/ai/manifest"
+	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
+
+// IvyHooks reads the licenses of ivy: the <info> of the module descriptor. The
+// descriptor is the authority, so it is expected whenever it is supported.
+var IvyHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Filter:      isIvyDescriptor,
+	Expected:    expectSupported,
+	MemberLimit: pkgmaven.MaxPOMBytes,
+	Parse:       func(_ string, parts []manifest.Part) (Result, error) { return parseIvy(parts[0].Body) },
+}
 
 // isIvyDescriptor reports whether the file name is a module descriptor of an
 // Ivy repository: ivy.xml, or ivy-<revision>.xml as the default Ivy pattern

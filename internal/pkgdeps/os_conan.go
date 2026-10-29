@@ -24,6 +24,11 @@ func fieldValue(text, key string) string {
 
 var debName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 
+// DebHooks reads the dependencies of deb.
+var DebHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseDeb(parts), nil },
+}
+
 func parseDeb(parts []manifest.Part) Result {
 	var res Result
 
@@ -89,6 +94,11 @@ func debRelations(field string) []Dep {
 	}
 
 	return out
+}
+
+// RPMHooks reads the dependencies of rpm.
+var RPMHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseRPM(parts), nil },
 }
 
 func parseRPM(parts []manifest.Part) Result {
@@ -188,6 +198,11 @@ func rpmRequire(line string) (Dep, bool) {
 
 var conanRef = regexp.MustCompile(`["']([A-Za-z0-9_][A-Za-z0-9_.+-]*)/(\[[^\]"']*\]|[^"'@#/\s\[]+)(?:[@#][^"']*)?["']`)
 
+// ConanHooks reads the dependencies of conan.
+var ConanHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseConan(parts), nil },
+}
+
 // parseConan scans the recipe for requires declarations; a recipe is Python,
 // so only its quoted name/version references are read, never executed.
 func parseConan(parts []manifest.Part) Result {
@@ -218,6 +233,11 @@ func parseConan(parts []manifest.Part) Result {
 	}
 
 	return res
+}
+
+// PacmanHooks reads the dependencies of pacman.
+var PacmanHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parsePacman(parts), nil },
 }
 
 // parsePacman reads the "depend = name>=ver" lines of a rendered .PKGINFO.

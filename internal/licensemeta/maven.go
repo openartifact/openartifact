@@ -35,6 +35,31 @@ func ParsePOM(pom *pkgmaven.POM) []string {
 	return out
 }
 
+// MavenHooks reads the licenses of maven: the pom, never the .xml files the
+// manifest rule takes for ivy. Only the .pom is expected to declare them, the
+// jar beside it is not.
+var MavenHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Filter:      isNotXML,
+	Expected:    expectPOM,
+	MemberLimit: pkgmaven.MaxPOMBytes,
+	Parse:       parsePOM,
+}
+
+// SBTHooks reads the licenses of sbt, which stores its modules as maven does.
+var SBTHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ManifestFormat: "maven",
+	Filter:         isNotXML,
+	Expected:       expectPOM,
+	MemberLimit:    pkgmaven.MaxPOMBytes,
+	Parse:          parsePOM,
+}
+
+func isNotXML(filename string) bool { return !strings.HasSuffix(strings.ToLower(filename), ".xml") }
+
+func expectPOM(filename string, _ bool) bool {
+	return strings.HasSuffix(strings.ToLower(filename), ".pom")
+}
+
 // parsePOM reads the licenses of a .pom, or of the pom a jar embeds under
 // META-INF/maven. A jar without one declares nothing.
 func parsePOM(filename string, parts []manifest.Part) (Result, error) {

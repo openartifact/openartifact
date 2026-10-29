@@ -14,6 +14,13 @@ import (
 	"github.com/openartifact/openartifact/internal/format/rubygems"
 )
 
+// RubyGemsHooks reads the licenses of rubygems from the gem's own metadata
+// parser, not through the manifest package.
+var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Expected: expectSupported,
+	Read:     readGem,
+}
+
 // readGem reads the licenses of a .gem from the gemspec in its metadata.gz.
 // It goes through the rubygems reader the upload path uses, not the manifest
 // extractor: a gem written by this registry's own tooling carries a binary

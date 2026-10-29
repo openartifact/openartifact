@@ -8,7 +8,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/ai/manifest"
 )
+
+// ComposerHooks reads the licenses of composer.
+var ComposerHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Expected: expectAlways,
+	Parse:    func(_ string, parts []manifest.Part) (Result, error) { return parseComposer(parts[0].Body) },
+}
 
 // parseComposer reads the "license" field of a composer.json: one identifier
 // or a list of them.

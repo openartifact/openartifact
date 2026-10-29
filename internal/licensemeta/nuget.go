@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/ai/manifest"
 )
 
 // nuspecLicenses are the license elements of a .nuspec.
@@ -49,6 +51,12 @@ var knownLicenseURLs = map[string]string{
 	"//www.gnu.org/licenses/lgpl-3.0":            "LGPL-3.0-only",
 	"//www.gnu.org/licenses/lgpl-3.0.html":       "LGPL-3.0-only",
 	"//www.gnu.org/licenses/lgpl-3.0.txt":        "LGPL-3.0-only",
+}
+
+// NuGetHooks reads the licenses of nuget.
+var NuGetHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Expected: expectAlways,
+	Parse:    func(_ string, parts []manifest.Part) (Result, error) { return parseNuspec(parts[0].Body) },
 }
 
 // parseNuspec reads the license of a .nuspec: <license type="expression"> (an

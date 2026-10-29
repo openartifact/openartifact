@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/ai/manifest"
 )
 
 // ParsePackageJSON reads the licenses of an npm manifest: a version object of
@@ -20,6 +22,12 @@ func ParsePackageJSON(manifest []byte) []string {
 	}
 
 	return res.Licenses
+}
+
+// NPMHooks reads the licenses of npm.
+var NPMHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Expected: expectAlways,
+	Parse:    func(_ string, parts []manifest.Part) (Result, error) { return parsePackageJSON([]byte(parts[0].Body)) },
 }
 
 // parsePackageJSON reads the "license" field (an SPDX string or the legacy

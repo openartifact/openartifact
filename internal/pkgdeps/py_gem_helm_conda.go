@@ -20,6 +20,11 @@ var (
 	pyExactEq = regexp.MustCompile(`^\(?\s*===?\s*([^\s,;)*]+)\s*\)?$`)
 )
 
+// PyPIHooks reads the dependencies of pypi.
+var PyPIHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parsePyPI(parts), nil },
+}
+
 // parsePyPI reads the Requires-Dist headers of a METADATA / PKG-INFO. A
 // requirement gated on an extra is optional and not part of the base install.
 func parsePyPI(parts []manifest.Part) Result {
@@ -86,6 +91,11 @@ func headerValues(text, key string) []string {
 	}
 
 	return out
+}
+
+// RubyGemsHooks reads the dependencies of rubygems.
+var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseGem(parts) },
 }
 
 func parseGem(parts []manifest.Part) (Result, error) {
@@ -161,6 +171,11 @@ type helmDeps struct {
 	} `yaml:"dependencies"`
 }
 
+// HelmHooks reads the dependencies of helm.
+var HelmHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseHelm(parts) },
+}
+
 func parseHelm(parts []manifest.Part) (Result, error) {
 	var res Result
 
@@ -219,6 +234,11 @@ func condaIndex(parts []manifest.Part) (string, bool) {
 	}
 
 	return "", false
+}
+
+// CondaHooks reads the dependencies of conda.
+var CondaHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseConda(parts) },
 }
 
 func parseConda(parts []manifest.Part) (Result, error) {

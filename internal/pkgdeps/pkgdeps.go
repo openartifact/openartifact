@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/ai/manifest"
+	"github.com/openartifact/openartifact/internal/registry"
 )
 
 const (
@@ -78,24 +79,47 @@ type Source struct {
 	Sibling func(name string) (io.ReadCloser, error)
 }
 
+// Hooks is what the package needs to know about one format to read its
+// dependencies. Each format has one exported value (NPMHooks, CargoHooks, ...)
+// defined next to its parser and handed to Register by internal/format/plugin;
+// a format with no value declares no dependencies this package reads (docker,
+// apk, raw, terraform), and Read reports it as ErrUnsupported.
+type Hooks struct {
+	// ManifestFormat is the format whose manifest rule extracts the files to
+	// parse; empty means the format itself. sbt reads like maven.
+	ManifestFormat string
+	// Parse turns the extracted manifest files into the dependency list. The
+	// filename is the package file's name as given.
+	Parse func(filename string, parts []manifest.Part) (Result, error)
+}
+
+// manifestFormat is the format name the manifest package knows the format by.
+func (h Hooks) manifestFormat(format string) string {
+	if h.ManifestFormat != "" {
+		return h.ManifestFormat
+	}
+
+	return format
+}
+
+var hooks registry.Registry[Hooks] //nolint:gochecknoglobals // the format hook table, filled by Register at startup
+
+// Register adds the hooks of a format. It panics when the format already has
+// some; it is meant to run once per format at startup.
+func Register(format string, h Hooks) { hooks.Register(format, h) }
+
 // Supported reports whether dependencies can be read from a file.
 func Supported(format, filename string) bool {
-	return manifest.Supported(jvmFormat(format), filename)
+	h, ok := hooks.Lookup(format)
+
+	return ok && manifest.Supported(h.manifestFormat(format), filename)
 }
 
 // Eligible reports whether the file is the one that represents a package in
 // its listing; maven keeps pom, jar and sources side by side and only the
 // descriptor is read.
 func Eligible(format, filename string) bool {
-	return manifest.AutoEligible(format, filename) && manifest.Supported(jvmFormat(format), filename)
-}
-
-func jvmFormat(format string) string {
-	if format == "sbt" {
-		return "maven"
-	}
-
-	return format
+	return manifest.AutoEligible(format, filename) && Supported(format, filename)
 }
 
 // Read returns the dependencies the package file declares.
@@ -104,7 +128,12 @@ func jvmFormat(format string) string {
 // no manifest; callers treat it as "no dependencies"), or an I/O or parse
 // failure.
 func Read(ctx context.Context, src Source) (Result, error) {
-	format := jvmFormat(src.Format)
+	h, ok := hooks.Lookup(src.Format)
+	if !ok {
+		return Result{}, ErrUnsupported
+	}
+
+	format := h.manifestFormat(src.Format)
 	if !manifest.Supported(format, src.Filename) {
 		return Result{}, ErrUnsupported
 	}
@@ -129,7 +158,7 @@ func Read(ctx context.Context, src Source) (Result, error) {
 		return Result{}, fmt.Errorf("read package manifest: %w", err)
 	}
 
-	res, err := parse(format, src.Filename, parts)
+	res, err := h.Parse(src.Filename, parts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -137,41 +166,6 @@ func Read(ctx context.Context, src Source) (Result, error) {
 	res.Deps = finish(res.Deps)
 
 	return res, nil
-}
-
-func parse(format, filename string, parts []manifest.Part) (Result, error) {
-	switch format {
-	case "cargo":
-		return parseCargo(parts)
-	case "composer":
-		return parseComposer(parts)
-	case "conan":
-		return parseConan(parts), nil
-	case "conda":
-		return parseConda(parts)
-	case "deb":
-		return parseDeb(parts), nil
-	case "go":
-		return parseGoMod(filename, parts)
-	case "helm":
-		return parseHelm(parts)
-	case "ivy", "maven", "sbt":
-		return parseJVM(filename, parts)
-	case "npm":
-		return parseNPM(parts)
-	case "nuget":
-		return parseNuGet(parts)
-	case "pacman":
-		return parsePacman(parts), nil
-	case "pypi":
-		return parsePyPI(parts), nil
-	case "rpm":
-		return parseRPM(parts), nil
-	case "rubygems":
-		return parseGem(parts)
-	}
-
-	return Result{}, ErrUnsupported
 }
 
 // part returns the body of the part with the given label.
