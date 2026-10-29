@@ -93,7 +93,8 @@ func (a *app) setupTelemetry() error {
 	// From here on application logs also go to the OTLP log provider, next
 	// to the configured output. The exporter error handler Setup installed
 	// keeps the logger without the bridge, so an export failure is never fed
-	// back into the export queue.
+	// back into the export queue. The bridge core scrubs URLs, paths and error
+	// text of every record before it is exported (telemetry.LogCore).
 	if otlp.Enabled && otlp.Logs {
 		log, err := a.log.Tee(telemetry.LogCore())
 		if err != nil {
