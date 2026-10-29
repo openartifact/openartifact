@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -299,6 +300,8 @@ func (h *LicenseHandler) handleCreatePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	auditLicensePolicy(r, policy, "created")
+
 	writeJSON(w, http.StatusCreated, licensePolicyToMap(policy))
 }
 
@@ -378,6 +381,8 @@ func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	auditLicensePolicy(r, policy, "updated")
+
 	writeJSON(w, http.StatusOK, licensePolicyToMap(policy))
 }
 
@@ -393,7 +398,22 @@ func (h *LicenseHandler) handleDeletePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	auditLicensePolicy(r, policy, "deleted")
+
 	writeNoContent(w)
+}
+
+// auditLicensePolicy records a change to a license policy: a repository's, or
+// a global one when the policy has no repository.
+func auditLicensePolicy(r *http.Request, policy *models.LicensePolicy, verb string) {
+	scope, repoID := "global", ""
+
+	if policy.RepositoryID != nil {
+		scope, repoID = "repository", *policy.RepositoryID
+	}
+
+	auditAdminIn(r, repoID, audit.ActionLicensePolicyChanged, "license_policy", policy.ID,
+		scope+" license policy "+policy.Name+" "+verb)
 }
 
 // repoPolicy resolves the license policy {id} of the repository {name} for an
@@ -493,6 +513,8 @@ func (h *LicenseHandler) handleCreateGlobalPolicy(w http.ResponseWriter, r *http
 		h.dbError(w, "create global license policy: db error", err)
 		return
 	}
+
+	auditLicensePolicy(r, policy, "created")
 
 	writeJSON(w, http.StatusCreated, licensePolicyToMap(policy))
 }

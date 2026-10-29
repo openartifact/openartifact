@@ -226,6 +226,8 @@ func (h *AdminTokensHandler) handleAdminRevoke(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	auditAdmin(r, audit.ActionAuthTokenRevoked, "token", tokenID, "token "+token.Name+" of user "+token.UserID+" revoked")
+
 	writeNoContent(w)
 }
 

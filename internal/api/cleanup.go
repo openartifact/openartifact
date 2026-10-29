@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -143,6 +144,9 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditRepository(r, repo, audit.ActionCleanupPolicyChanged, "cleanup_policy", policy.ID,
+		"cleanup policy "+policy.Name+" of "+repo.Name+" created")
+
 	writeJSON(w, http.StatusCreated, policyToMap(policy))
 }
 
@@ -271,6 +275,9 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditRepository(r, repo, audit.ActionCleanupPolicyChanged, "cleanup_policy", policy.ID,
+		"cleanup policy "+policy.Name+" of "+repo.Name+" updated")
+
 	writeJSON(w, http.StatusOK, policyToMap(policy))
 }
 
@@ -283,7 +290,7 @@ func (h *CleanupHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok = h.policyInRepo(w, r, repo, "delete cleanup policy: db error getting policy", id)
+	policy, ok := h.policyInRepo(w, r, repo, "delete cleanup policy: db error getting policy", id)
 	if !ok {
 		return
 	}
@@ -293,6 +300,9 @@ func (h *CleanupHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditRepository(r, repo, audit.ActionCleanupPolicyChanged, "cleanup_policy", id,
+		"cleanup policy "+policy.Name+" of "+repo.Name+" deleted")
 
 	writeNoContent(w)
 }
@@ -335,6 +345,9 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditRepository(r, repo, audit.ActionCleanupRunStarted, "cleanup_policy", id,
+		"run of cleanup policy "+policy.Name+" of "+repo.Name+" started")
 
 	// The run executes asynchronously; its outcome is recorded in last_run_*.
 	writeJSON(w, http.StatusAccepted, map[string]any{

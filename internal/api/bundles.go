@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -544,6 +545,8 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	auditAdmin(r, audit.ActionBundleCreated, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" created")
+
 	writeJSON(w, http.StatusCreated, bundleToMap(bundle))
 }
 
@@ -937,7 +940,21 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 		bundle.GPGSignature = &signature.Signature
 	}
 
+	auditAdmin(r, audit.ActionBundleSealed, "bundle", bundle.ID, sealDetails(bundle, signature))
+
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
+}
+
+// sealDetails describes a seal for the audit log, naming the key that signed
+// the manifest.
+func sealDetails(bundle *models.ReleaseBundle, signature *models.BundleSignature) string {
+	details := "bundle " + bundle.Name + " " + bundle.Version + " sealed"
+
+	if signature == nil {
+		return details + ", unsigned"
+	}
+
+	return details + ", signed with GPG key " + signature.KeyFingerprint
 }
 
 // validatePromotionStage validates the requested stage against the bundle's
@@ -1128,6 +1145,8 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditAdmin(r, audit.ActionBundleArchived, "bundle", bundle.ID, "bundle "+bundle.Name+" "+bundle.Version+" archived")
 
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
 }

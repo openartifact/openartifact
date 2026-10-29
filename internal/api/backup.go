@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/bgtask"
@@ -283,6 +284,8 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = tempFile.Close()
+
+	auditAdmin(r, audit.ActionBackupRestoreStarted, "backup", "", "restore of archive "+filename+" started")
 
 	// Start restore asynchronously; the task owns (and removes) the temp file
 	// once the restore finishes, and ends with the server.
