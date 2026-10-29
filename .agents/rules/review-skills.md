@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 - `golang-security`, `golang-safety`, `golang-concurrency`, `golang-context`: **reviews** of security-sensitive code (proxies and groups, auth/RBAC/projects, upload and format handlers, anything serving upstream- or uploader-controlled bytes) and of workers, locks and goroutines.
 - `golang-performance`, `golang-benchmark`: performance reviews and before optimizing hot paths (measure first with benchmarks/pprof).
-- `golang-database`: writing or reviewing queries, transactions, row locks, advisory locks and migrations-adjacent Go code.
+- `golang-database`: writing or reviewing queries, transactions, row locks, advisory locks and migrations-adjacent Go code. That includes `storage.Storage` descriptors: their SQL fragments (`NameExpr`, `VersionExpr`, `ProtectExpr`, ...) are compile-time constants over the aliases `f`, `v`, `p`, never built from request data.
 - `golang-observability`: metrics (label cardinality), slog logging, tracing.
 - `golang-testing`: writing or reviewing tests; the repo uses the standard `testing` package (no testify) and the test rules in this file.
 - `golang-troubleshooting`: debugging a concrete failure (flaky test, deadlock, leak, panic), not reviews.
