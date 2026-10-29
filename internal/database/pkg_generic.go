@@ -402,3 +402,8 @@ func pruneEmpty(ctx context.Context, q *dbsqlc.Queries, versionIDs []string) err
 
 	return nil
 }
+
+// isNoRows reports a "no rows" result of either driver layer.
+func isNoRows(err error) bool {
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows)
+}

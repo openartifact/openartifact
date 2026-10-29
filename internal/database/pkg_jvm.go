@@ -6,11 +6,8 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 )
@@ -19,10 +16,6 @@ import (
 // primitives do not cover: an upload to an existing path repoints the live
 // file at the new content instead of failing (snapshot overwrite, republish),
 // and an unpublish hard-deletes one file by id.
-
-func isNoRows(err error) bool {
-	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows)
-}
 
 // upsertPackageFile writes w, which has exactly one file whose blob is the
 // existing blobs row blobID, in one transaction. A live file already at the

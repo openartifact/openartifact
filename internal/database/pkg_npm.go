@@ -6,12 +6,8 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -53,10 +49,6 @@ import (
 
 // NPMStore owns the npm packages, versions and dist-tags.
 type NPMStore struct{ *core }
-
-func isNoRows(err error) bool {
-	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows)
-}
 
 // npmTarballPath is the repository-unique locator of a tarball.
 func npmTarballPath(fullName, filename string) string {

@@ -222,7 +222,7 @@ func (p *NixStore) ListNixPaths(ctx context.Context, repoID string) ([]*models.N
 // DeleteNixPath hard-deletes one live path (its narinfo file); the version and
 // the package go with it.
 func (p *NixStore) DeleteNixPath(ctx context.Context, repoID, id string) error {
-	if err := p.deleteLiveFiles(ctx, repoID, []string{id}); err != nil {
+	if err := p.deleteLiveFilesByID(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete nix path: %w", err)
 	}
 

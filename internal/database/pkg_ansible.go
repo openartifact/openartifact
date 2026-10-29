@@ -229,7 +229,7 @@ func (p *AnsibleStore) ListAnsibleCollectionNames(
 // DeleteAnsibleCollection hard-deletes a live collection version file; the
 // version and the collection go with their last file.
 func (p *AnsibleStore) DeleteAnsibleCollection(ctx context.Context, repoID, id string) error {
-	if err := p.deleteLiveFiles(ctx, repoID, []string{id}); err != nil {
+	if err := p.deleteLiveFilesByID(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete ansible collection: %w", err)
 	}
 

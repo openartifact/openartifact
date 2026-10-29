@@ -6,12 +6,8 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -213,11 +209,6 @@ func (p *PyPIStore) ListPyPIPackageVersions(ctx context.Context, repoID, name st
 	}
 
 	return mapRowsErr(rows, pypiPackageFromRow)
-}
-
-// isNoRows reports a "no rows" result of either driver layer.
-func isNoRows(err error) bool {
-	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows)
 }
 
 // mapRowsErr converts rows with a decoding mapper; no rows give nil.

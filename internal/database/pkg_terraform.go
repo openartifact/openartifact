@@ -206,7 +206,7 @@ func (p *TerraformStore) ListTerraformModules(ctx context.Context, repoID string
 
 // DeleteTerraformModule hard-deletes one live module version file.
 func (p *TerraformStore) DeleteTerraformModule(ctx context.Context, repoID, id string) error {
-	if err := p.deleteLiveFiles(ctx, repoID, []string{id}); err != nil {
+	if err := p.deleteLiveFilesByID(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete terraform module: %w", err)
 	}
 
@@ -322,7 +322,7 @@ func (p *TerraformStore) ListTerraformProviders(ctx context.Context, repoID stri
 // DeleteTerraformProvider hard-deletes one live provider platform file; the
 // version goes with its last platform.
 func (p *TerraformStore) DeleteTerraformProvider(ctx context.Context, repoID, id string) error {
-	if err := p.deleteLiveFiles(ctx, repoID, []string{id}); err != nil {
+	if err := p.deleteLiveFilesByID(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete terraform provider: %w", err)
 	}
 
