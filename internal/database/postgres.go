@@ -87,15 +87,6 @@ type core struct {
 	lockSlots chan struct{}
 }
 
-// PostgresDB is the PostgreSQL database: the composition root that embeds one
-// store per domain (see stores.go). Consumers never depend on this type but on
-// the small interfaces they declare themselves; PostgresDB satisfies them
-// through the promoted store methods.
-type PostgresDB struct {
-	*core
-	// STORES-STRUCT
-}
-
 func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) {
 	poolCfg, err := poolConfig(cfg)
 	if err != nil {
@@ -1629,56 +1620,6 @@ func (p *PostgresDB) ListNPMVersionsByRepo(ctx context.Context, repoID string) (
 	return versions, nil
 }
 
-// UpsertBlob inserts a blob row keyed by sha256 and returns its id, using ON
-// CONFLICT to handle concurrent uploads safely.
-func (p *PostgresDB) UpsertBlob(ctx context.Context, sha256, blobKey string, sizeBytes int64) (string, error) {
-	if err := validateBlobSHA256(sha256); err != nil {
-		return "", err
-	}
-
-	var blobID string
-	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO blobs (sha256, size_bytes, blob_key)
-		 VALUES ($1, $2, $3)
-		 ON CONFLICT (sha256) DO UPDATE SET
-		     size_bytes = CASE WHEN blobs.size_bytes = 0 THEN EXCLUDED.size_bytes ELSE blobs.size_bytes END
-		 RETURNING id`,
-		sha256, sizeBytes, blobKey,
-	).Scan(&blobID)
-	if err != nil {
-		return "", fmt.Errorf("upsert blob: %w", err)
-	}
-	return blobID, nil
-}
-
-func (p *PostgresDB) ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error) {
-	var exists bool
-	err := p.db.QueryRowContext(
-		ctx,
-		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id =
-			$2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1
-			AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
-		sha256,
-		repositoryID,
-	).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("failed to check artifact existence: %w", err)
-	}
-
-	return exists, nil
-}
-
-// BlobReferenceCount returns the number of rows, across every package table
-// that stores a blob_id FK into the global blobs table, referencing the blob
-// identified by sha256. A count of 0 means the blob is safe to delete from
-// storage (see SafeDeleteBlob in internal/storage/refcount.go). A blob that
-// does not exist in the blobs table is still checked against the tables that
-// reference storage objects by sha256 alone (generated metadata, deltas,
-// release bundles, proxy cache).
-func (p *PostgresDB) BlobReferenceCount(ctx context.Context, sha256 string) (int, error) {
-	return blobRefCount(ctx, p.db, sha256)
-}
-
 // blobRefSpecs lists every (table, condition) that references blob alias b. It
 // is the single source of truth for both the reference sum (blobRefSumExpr,
 // point lookups by sha) and the anti-join (blobUnreferencedExpr, orphan scan);
@@ -1719,8 +1660,7 @@ var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // 
 	{"package_deltas", "delta_sha256 = b.sha256"},
 }
 
-// blobRefSumExpr is the SQL sum of every reference to blob alias b.
-var blobRefSumExpr = buildBlobRefExpr(" +\n", "(SELECT COUNT(*) FROM %s WHERE %s)") //nolint:gochecknoglobals // built once, read-only
+//nolint:gochecknoglobals // built once, read-only
 
 // blobUnreferencedExpr is true when no table references blob alias b. NOT
 // EXISTS short-circuits at the first hit and never counts, unlike
@@ -1742,26 +1682,6 @@ func buildBlobRefExpr(sep, format string) string {
 // rowQuerier is satisfied by *sql.DB and *sql.Tx.
 type rowQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func blobRefCount(ctx context.Context, q rowQuerier, sha256 string) (int, error) {
-	var count int
-
-	err := q.QueryRowContext(ctx,
-		`SELECT
-			`+blobRefSumExpr+`
-		 FROM (SELECT $1::text AS sha256, (SELECT id FROM blobs WHERE sha256 = $1::text) AS id) b`,
-		sha256,
-	).Scan(&count)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil
-	}
-
-	if err != nil {
-		return 0, fmt.Errorf("failed to count blob references: %w", err)
-	}
-
-	return count, nil
 }
 
 // Package delta methods

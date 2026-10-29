@@ -97,20 +97,6 @@ func (p *core) upsertBlobWithMediaType(ctx context.Context, sha256, blobKey, med
 	return blobID, nil
 }
 
-// EnsureBlob ensures the global blobs table has a row for sha256 (creating
-// it if it does not exist yet) and returns its
-// blobs.id. Manifests are stored directly in the blob store without a
-// per-repo registry row (unlike docker_blobs), so this is the manifest
-// handlers' entry point into upsertBlobWithMediaType.
-func (p *PostgresDB) EnsureBlob(ctx context.Context, sha256, mediaType string, size int64) (string, error) {
-	blobID, err := p.upsertBlobWithMediaType(ctx, sha256, sha256, mediaType, size)
-	if err != nil {
-		return "", fmt.Errorf("failed to ensure blob: %w", err)
-	}
-
-	return blobID, nil
-}
-
 func (p *PostgresDB) GetDockerBlob(ctx context.Context, repoID, digest string) (*models.DockerBlob, error) {
 	row, err := p.q.GetDockerBlob(ctx, dbsqlc.GetDockerBlobParams{
 		RepositoryID: repoID,
