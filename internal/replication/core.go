@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -176,13 +178,23 @@ func defaultJitter(d time.Duration) time.Duration {
 	return half + rand.N(half+1) //nolint:gosec // retry jitter, not a secret
 }
 
+// truncateError returns err's text, at most maxErrorLen bytes plus an ellipsis,
+// fit for the last_error text column: Postgres rejects invalid UTF-8 and NUL
+// there, and a rejected write leaves the operation's lease in place until it
+// expires. Bytes that are not valid UTF-8 (an upstream body echoed in the
+// error) become U+FFFD, NULs are dropped, and the cut never splits a rune.
 func truncateError(err error) string {
-	msg := err.Error()
-	if len(msg) > maxErrorLen {
-		msg = msg[:maxErrorLen] + "..."
+	msg := strings.ReplaceAll(strings.ToValidUTF8(err.Error(), "\uFFFD"), "\x00", "")
+	if len(msg) <= maxErrorLen {
+		return msg
 	}
 
-	return msg
+	cut := maxErrorLen
+	for cut > 0 && !utf8.RuneStart(msg[cut]) {
+		cut--
+	}
+
+	return msg[:cut] + "..."
 }
 
 // isNotFound reports whether err means the blob does not exist.

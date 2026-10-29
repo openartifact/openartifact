@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -329,6 +330,56 @@ func TestTruncatedErrorsAreStored(t *testing.T) {
 
 	if op := r.queue.op(id); op == nil || len(op.LastError) > maxErrorLen+3 {
 		t.Fatalf("stored error length: %+v", op)
+	}
+}
+
+// TestTruncateErrorStaysValidUTF8 pins that the text stored with a failed
+// operation is valid UTF-8 without NUL however the error is cut: Postgres
+// rejects anything else in the text column and the operation's lease stays
+// until it expires.
+func TestTruncateErrorStaysValidUTF8(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		msg  string
+	}{
+		// "é" is two bytes; an odd offset puts the 500-byte cut inside one.
+		{"cut splits a two-byte rune", "x" + strings.Repeat("é", 400)},
+		{"cut splits a three-byte rune", strings.Repeat("€", 300)},
+		{"cut splits a four-byte rune", "xy" + strings.Repeat("😀", 200)},
+		{"invalid bytes", "bad \xff\xfe bytes " + strings.Repeat("y", 600)},
+		{"nul byte", "nul \x00 byte"},
+		{"short invalid", "\xc3"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := truncateError(errors.New(tc.msg))
+
+			if !utf8.ValidString(got) {
+				t.Fatalf("truncateError produced invalid UTF-8: %q", got)
+			}
+
+			if strings.ContainsRune(got, 0) {
+				t.Fatalf("truncateError kept a NUL byte: %q", got)
+			}
+
+			if len(got) > maxErrorLen+len("...") {
+				t.Fatalf("truncateError length = %d, want at most %d", len(got), maxErrorLen+len("..."))
+			}
+		})
+	}
+
+	if got := truncateError(errors.New("plain")); got != "plain" {
+		t.Fatalf("short ASCII error changed: %q", got)
+	}
+
+	got := truncateError(errors.New(strings.Repeat("é", 400)))
+	if !strings.HasSuffix(got, "é...") {
+		t.Fatalf("a cut on a rune boundary should keep whole runes, got suffix %q", got[len(got)-8:])
 	}
 }
 
