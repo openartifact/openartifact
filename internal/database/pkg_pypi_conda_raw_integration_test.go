@@ -556,7 +556,7 @@ func TestRawPrefixListingUsesPathIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if strings.Contains(plan.String(), "Seq Scan") || !strings.Contains(plan.String(), "Index Cond: (repository_id") {
-		t.Errorf("prefix listing is not an index scan on repository_id:\n%s", plan.String())
+	if strings.Contains(plan.String(), "Seq Scan") || !strings.Contains(plan.String(), "idx_package_files_path_prefix") {
+		t.Errorf("prefix listing does not use idx_package_files_path_prefix:\n%s", plan.String())
 	}
 }
