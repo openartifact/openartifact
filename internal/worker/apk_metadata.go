@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -367,7 +366,7 @@ func apkBlobAttrs(repoID, path, sum string) map[string]string {
 }
 
 // listApkMetadata returns path -> blob sha256 of the generated index rows.
-func listApkMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listApkMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "apk worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, repoID)
 }

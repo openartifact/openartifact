@@ -55,8 +55,6 @@ func TestSAMLRequestTracker_Rejects(t *testing.T) {
 }
 
 type assertionDB struct {
-	sAMLProviderconsumeAssertionStore
-
 	mu   sync.Mutex
 	seen map[string]bool
 	exp  time.Time

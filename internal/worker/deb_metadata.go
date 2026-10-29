@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -24,7 +23,7 @@ import (
 )
 
 // listOldMetadata returns path -> blob sha256 of the generated dists/ metadata rows.
-func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listOldMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "deb worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'dists/%' OR path = 'public.key')`,
 		repoID,

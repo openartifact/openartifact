@@ -62,7 +62,7 @@ const (
 )
 
 // PolicyLister reads the license policies that apply to a repository
-// (its own and the global ones). database.Database implements it.
+// (its own and the global ones). *database.PostgresDB implements it.
 type PolicyLister interface {
 	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
 }

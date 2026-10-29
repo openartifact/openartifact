@@ -16,8 +16,6 @@ import (
 	"strings"
 	"testing"
 
-	"errors"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -30,6 +28,7 @@ import (
 // policyDB is a pypiDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*pypiDB
+
 	lister policytest.Lister
 }
 
@@ -46,8 +45,6 @@ type pypiDB struct {
 	pkgs      []*models.PyPIPackage
 	createErr error
 }
-
-var errNotImplemented = errors.New("not implemented")
 
 // ListLicensePolicies is not exercised by the tests.
 func (*pypiDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {

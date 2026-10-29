@@ -25,16 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// oidcRowDBStore is what oidcRowDB is used as.
-type oidcRowDBStore interface {
-	ExchangeWithRetryStore
-	LoadOIDCProviderStore
-	exchangeErrStore
-}
-
 type oidcRowDB struct {
-	oidcRowDBStore
-
 	row *models.SSOProvider
 }
 

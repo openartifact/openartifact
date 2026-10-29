@@ -20,7 +20,7 @@ import (
 )
 
 // manifestFakeDB is a minimal in-memory Database for manifest-path tests
-// (push, get, referrers, delete). Embeds BaseMockDB so any method these
+// (push, get, referrers, delete). Embeds the handler store so any method these
 // tests don't exercise returns a descriptive error instead of panicking.
 // Manifests and tags are scoped per (image, digest|name) like the real tables,
 // and the create/upsert methods are idempotent like the real queries.

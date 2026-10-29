@@ -39,8 +39,6 @@ var errBlobGone = errors.New("blob gone: /secret/internal/path")
 
 // aiFakeDB records analyses and serves a fixed package listing.
 type aiFakeDB struct {
-	startWorkerStore
-
 	mu       sync.Mutex
 	blobs    map[string]*models.ComponentBlob
 	listing  []*models.Component

@@ -287,6 +287,7 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 // debPolicyDB is a debAPIDB whose license policies are those of a policytest Case.
 type debPolicyDB struct {
 	*debAPIDB
+
 	lister policytest.Lister
 }
 

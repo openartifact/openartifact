@@ -38,7 +38,7 @@ type fakeTrashDBStore interface {
 	auth.EvaluatorStore
 }
 
-// fakeTrashDB is a database.Database + database.TrashStore double. It records
+// fakeTrashDB is a double of the repositories store and database.TrashStore. It records
 // what the handlers asked of it.
 type fakeTrashDB struct {
 	fakeTrashDBStore

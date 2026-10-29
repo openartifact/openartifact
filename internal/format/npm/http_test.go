@@ -21,7 +21,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// tarballMockDB provides just enough of database.Database for handleTarball.
+// tarballMockDB provides just enough of the database for handleTarball.
 type tarballMockDB struct {
 	HTTPStore
 

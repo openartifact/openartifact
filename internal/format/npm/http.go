@@ -38,6 +38,7 @@ type HTTPStore interface {
 
 type HTTPHandler struct {
 	*base.Handler
+
 	DB HTTPStore
 }
 

@@ -33,8 +33,6 @@ type failingSettingsDBStore interface {
 
 type failingSettingsDB struct{ failingSettingsDBStore }
 
-var errNotImplemented = errors.New("not implemented")
-
 // GetSystemSetting is not exercised by the tests.
 func (*failingSettingsDB) GetSystemSetting(context.Context, string) (string, error) {
 	return "", errNotImplemented

@@ -15,17 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// sessionMockDBStore is what sessionMockDB is used as.
-type sessionMockDBStore interface {
-	CreateSessionStore
-	DeleteSessionStore
-	TouchSessionStore
-	ValidateSessionStore
-}
-
 type sessionMockDB struct {
-	sessionMockDBStore
-
 	sessions map[string]*models.Session
 }
 

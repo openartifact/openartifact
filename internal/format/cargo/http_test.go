@@ -15,8 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"errors"
-
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
@@ -27,6 +25,7 @@ import (
 // policyDB is a cargoDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*cargoDB
+
 	lister policytest.Lister
 }
 
@@ -143,8 +142,6 @@ type cargoDB struct {
 	summaries []*models.CargoCrateSummary
 	total     int
 }
-
-var errNotImplemented = errors.New("not implemented")
 
 // ListLicensePolicies is not exercised by the tests.
 func (*cargoDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {

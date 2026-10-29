@@ -67,6 +67,7 @@ type HTTPStore interface {
 // HTTPHandler serves hosted Ansible collection repositories.
 type HTTPHandler struct {
 	*base.Handler
+
 	DB HTTPStore
 }
 

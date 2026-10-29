@@ -22,15 +22,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/nix"
 )
 
-// nixKeyMockDBStore is what nixKeyMockDB is used as.
-type nixKeyMockDBStore interface {
-	signingKeyAdminStore
-	nixkeys.Store
-}
-
 type nixKeyMockDB struct {
-	nixKeyMockDBStore
-
 	repos map[string]*models.Repository
 	keys  map[string]*models.NixSigningKey
 }

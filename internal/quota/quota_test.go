@@ -13,16 +13,7 @@ import (
 	"testing"
 )
 
-// reserveMockDBStore is what reserveMockDB is used as.
-type reserveMockDBStore interface {
-	EnforceStore
-	ReleaseNStore
-	ReleaseStore
-}
-
 type reserveMockDB struct {
-	reserveMockDBStore
-
 	ok       bool
 	err      error
 	released int64

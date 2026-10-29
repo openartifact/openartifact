@@ -284,8 +284,6 @@ var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // 
 	{"package_deltas", "delta_sha256 = b.sha256"},
 }
 
-//nolint:gochecknoglobals // built once, read-only
-
 // blobUnreferencedExpr is true when no table references blob alias b. NOT
 // EXISTS short-circuits at the first hit and never counts, unlike
 // blobRefSumExpr = 0.

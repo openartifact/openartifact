@@ -21,6 +21,7 @@ import (
 // policyDB is a condaDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*condaDB
+
 	lister policytest.Lister
 }
 

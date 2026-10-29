@@ -22,15 +22,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// apkKeyMockDBStore is what apkKeyMockDB is used as.
-type apkKeyMockDBStore interface {
-	signingKeyAdminStore
-	apkkeys.Store
-}
-
 type apkKeyMockDB struct {
-	apkKeyMockDBStore
-
 	repos map[string]*models.Repository
 	keys  map[string]*models.ApkSigningKey
 }

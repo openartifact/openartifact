@@ -23,6 +23,7 @@ import (
 // policyDB is a nugetDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*nugetDB
+
 	lister policytest.Lister
 }
 

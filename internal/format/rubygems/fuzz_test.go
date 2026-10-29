@@ -307,8 +307,6 @@ type fuzzGemsDB struct {
 	artifacts int
 }
 
-var errNotImplemented = errors.New("not implemented")
-
 // ListLicensePolicies is not exercised by the tests.
 func (*fuzzGemsDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
 	return nil, nil

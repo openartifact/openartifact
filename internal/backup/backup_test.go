@@ -27,11 +27,10 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// fakeDB embeds databasetest.BaseMockDB (stub-everything) and overrides only the
-// handful of methods this test actually drives. Every other Database method
-// returns BaseMockDB's "not implemented" error, which every backup/restore
-// helper here already treats as "log a warning and skip" — exactly the
-// caveat behavior described in the assignment.
+// fakeDB embeds the engine's store interfaces (nil) and overrides only the
+// handful of methods this test actually drives. A method it does not drive
+// panics unless a stub answers "not implemented", which every backup/restore
+// helper here treats as "log a warning and skip".
 type fakeDB struct {
 	testEngineStore
 

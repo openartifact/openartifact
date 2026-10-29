@@ -12,15 +12,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// quotaRowDBStore is what quotaRowDB is used as.
-type quotaRowDBStore interface {
-	PrecheckStore
-	RoomStore
-}
-
 type quotaRowDB struct {
-	quotaRowDBStore
-
 	q   *models.StorageQuota
 	err error
 }

@@ -14,8 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"errors"
-
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
@@ -33,8 +31,6 @@ type condaDB struct {
 	pkg  *models.CondaPackage
 	pkgs []*models.CondaPackage
 }
-
-var errNotImplemented = errors.New("not implemented")
 
 // ListLicensePolicies is not exercised by the tests.
 func (*condaDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {

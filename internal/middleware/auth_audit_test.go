@@ -18,17 +18,8 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// authAuditDBStore is what authAuditDB is used as.
-type authAuditDBStore interface {
-	audit.LoggerStore
-	auth.CreateSessionStore
-	AuthAuditMiddlewareStore
-}
-
 // authAuditDB captures audit rows and serves a minimal user/session store.
 type authAuditDB struct {
-	authAuditDBStore
-
 	events   chan *models.AuditLog
 	sessions map[string]*models.Session
 	users    map[string]*models.User

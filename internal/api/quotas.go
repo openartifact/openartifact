@@ -30,6 +30,7 @@ type QuotasStore interface {
 
 type QuotasHandler struct {
 	repoAccess
+
 	db QuotasStore
 }
 

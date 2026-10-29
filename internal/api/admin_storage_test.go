@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,8 @@ import (
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+var errNotImplemented = errors.New("not implemented")
 
 type storageUpdateMockDB struct {
 	AdminStorageStore

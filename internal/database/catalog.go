@@ -17,7 +17,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// CatalogStore is the format-independent package listing: the unioned view over every per-format package table (see ListRepoComponents), repository size/security aggregates and the package rollups. A new package table needs a branch here (.agents/rules/package-listing.md).
+// CatalogStore is the format-independent package listing: the unioned view over
+// every per-format package table (see ListRepoComponents), repository
+// size/security aggregates and the package rollups. A new package table needs a
+// branch here (.agents/rules/package-listing.md).
 type CatalogStore struct{ *core }
 
 // RepoCatalogStats returns the catalog figures of the repositories in repoIDs

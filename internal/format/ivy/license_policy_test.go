@@ -18,6 +18,7 @@ import (
 // policyDB is an ivyDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*ivyDB
+
 	lister policytest.Lister
 }
 

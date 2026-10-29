@@ -37,12 +37,10 @@ func (*repositoriesListMockDB) CountRepoPackageNames(context.Context, []string) 
 	return map[string]int64{}, nil
 }
 
-
 // RepoCatalogStats is not exercised by the tests.
 func (*repositoriesListMockDB) RepoCatalogStats(context.Context, []string, bool) (map[string]models.RepoStats, error) {
 	return map[string]models.RepoStats{}, nil
 }
-
 
 // ListProjectGrantsByUser is not exercised by the tests.
 func (*repositoriesListMockDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {

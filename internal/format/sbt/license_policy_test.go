@@ -18,6 +18,7 @@ import (
 // policyDB is an sbtDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*sbtDB
+
 	lister policytest.Lister
 }
 

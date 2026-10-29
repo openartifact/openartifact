@@ -36,18 +36,10 @@ type purgeQuotaCall struct {
 	count  int
 }
 
-// trashPurgeDBStore is what trashPurgeDB is used as.
-type trashPurgeDBStore interface {
-	audit.LoggerStore
-	TrashPurgeStore
-}
-
 // trashPurgeDB is a database.TrashStore over an in-memory list of expired
 // items. Blob references, orphans and quota calls are recorded or scripted so
 // tests can observe what the worker does through storage.SafeDeleteBlob.
 type trashPurgeDB struct {
-	trashPurgeDBStore
-
 	mu sync.Mutex
 
 	expired  []models.TrashRef

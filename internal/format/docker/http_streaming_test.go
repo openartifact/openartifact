@@ -24,7 +24,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// fakeDB satisfies database.Database by embedding the interface; only the
+// fakeDB satisfies the handler store by embedding the interface; only the
 // handful of methods used by the blob-upload paths are implemented. Any other
 // call panics, which keeps the fake honest about what the handlers touch.
 type fakeDB struct {

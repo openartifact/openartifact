@@ -21,8 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"errors"
-
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
@@ -39,8 +37,6 @@ type ansibleDB struct {
 
 	limit, used int64
 }
-
-var errNotImplemented = errors.New("not implemented")
 
 // ListLicensePolicies is not exercised by the tests.
 func (*ansibleDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {

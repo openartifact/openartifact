@@ -380,7 +380,7 @@ type dBStore interface {
 	YankRubyGem(ctx context.Context, repoID string, name string, version string, platform string, yanked bool) error
 }
 
-// DB is a database.Database fake serving one repository, with quarantine
+// DB is a database fake serving one repository, with quarantine
 // lookups and a zero blob reference count (so SafeDeleteBlob removes blobs).
 // Embed it in a per-format mock that adds the format's package methods.
 type DB struct {

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -23,7 +22,6 @@ import (
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/rpm"
-	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // RPMetadataStore is the part of the database RPMetadataWorker needs.
@@ -263,7 +261,7 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 
 // PackagesForMetadata returns every package of the repository with the data its
 // metadata needs, completing rows stored by older versions from their blobs.
-func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID string) ([]rpm.Package, error) {
 	packages, err := w.db.ListRpmPackagesForMetadata(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("rpm worker: loading packages: %w", err)
@@ -279,7 +277,7 @@ func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID strin
 // archive sizes were stored correctly, updates the in-memory packages and
 // persists the result. Failures are logged and leave the package as it was
 // rather than failing the regeneration.
-func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []pkgrpm.Package) {
+func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []rpm.Package) {
 	for i := range packages {
 		pkg := &packages[i]
 		if pkg.WeakDepsParsed && pkg.SizesParsed {
@@ -309,14 +307,14 @@ func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, 
 	}
 }
 
-func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (*pkgrpm.Package, error) {
+func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (*rpm.Package, error) {
 	rc, err := w.blobStore.Get(ctx, sha256)
 	if err != nil {
 		return nil, fmt.Errorf("opening blob: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
-	parsed, err := pkgrpm.ParseRPM(rc)
+	parsed, err := rpm.ParseRPM(rc)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rpm: %w", err)
 	}
@@ -336,7 +334,7 @@ func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
 		return
 	}
 
-	ids, err := sq.ScanStrings(rows)
+	ids, err := database.ScanStrings(rows)
 	if err != nil {
 		w.log.Warnw("listing stale rpm repos failed", "error", err)
 		return
@@ -350,13 +348,13 @@ func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
 }
 
 // buildMetadata renders every generated metadata file, keyed by repo-relative path.
-func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, packages []pkgrpm.Package) (map[string][]byte, error) {
+func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, packages []rpm.Package) (map[string][]byte, error) {
 	revision := strconv.FormatInt(time.Now().Unix(), 10)
 	ts := time.Now().Unix()
 
 	type kind struct {
 		name  string
-		write func(io.Writer, []pkgrpm.Package) error
+		write func(io.Writer, []rpm.Package) error
 	}
 
 	// Typical uncompressed XML bytes per package, used only to size the xz dictionary.
@@ -438,7 +436,7 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 // listOldRPMMetadata returns path -> blob sha256 of the metadata rows this
 // worker generates (repodata/* and public.key). comps.xml is uploaded by users
 // and is deliberately excluded.
-func listOldRPMMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listOldRPMMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "rpm worker", "repository_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata
 		WHERE repository_id = $1 AND (path LIKE 'repodata/%' OR path = 'public.key')`,

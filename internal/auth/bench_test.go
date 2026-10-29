@@ -308,15 +308,7 @@ func BenchmarkValidateSession(b *testing.B) {
 	}
 }
 
-// benchSessionDBStore is what benchSessionDB is used as.
-type benchSessionDBStore interface {
-	CreateSessionStore
-	ValidateSessionStore
-}
-
 type benchSessionDB struct {
-	benchSessionDBStore
-
 	sessions map[string]*models.Session
 }
 

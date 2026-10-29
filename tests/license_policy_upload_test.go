@@ -39,6 +39,7 @@ func blockAllowListPolicy() policytest.Case {
 // at the same depth as an embedded policytest.Lister's, which would be ambiguous.
 type policyDB struct {
 	*MockDatabase
+
 	lister policytest.Lister
 }
 

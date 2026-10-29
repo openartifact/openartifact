@@ -29,6 +29,7 @@ import (
 // policyDB is a gemsDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*gemsDB
+
 	lister policytest.Lister
 }
 

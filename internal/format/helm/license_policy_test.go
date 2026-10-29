@@ -20,6 +20,7 @@ import (
 // policyDB is a helmDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*helmDB
+
 	lister policytest.Lister
 }
 

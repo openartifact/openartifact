@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/group"
@@ -739,7 +738,7 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 // listOldGroupMetadata returns path -> blob sha256 of the group's generated
 // rows: all of them for the shared index (so regenerating it drops the
 // variants), those under scope for a variant.
-func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope string) (map[string]string, error) {
+func listOldGroupMetadata(ctx context.Context, tx database.Transaction, groupID, scope string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "group worker", "repository_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND ($2 = '' OR starts_with(path, $2))`,
 		groupID,
@@ -749,7 +748,7 @@ func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope
 
 // replaceOwners swaps the group's owner table for owners; rows under a path
 // prefix of keep stay.
-func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
+func replaceOwners(ctx context.Context, tx database.Transaction, groupID, scope string, owners map[string]groupOwner, keep []string) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))
@@ -797,7 +796,7 @@ func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string
 // schedules the follow-up run).
 func markGenerated(
 	ctx context.Context,
-	tx sq.Transaction,
+	tx database.Transaction,
 	groupID string,
 	st *models.GroupMetadataState,
 	dists []string,

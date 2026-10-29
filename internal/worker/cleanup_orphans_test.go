@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"database/sql"
-	"errors"
 
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -29,8 +28,6 @@ type orphanListerDB struct {
 	calls  int
 	minAge time.Duration
 }
-
-var errNotImplemented = errors.New("not implemented")
 
 // GetDB is not exercised by the tests.
 func (*orphanListerDB) GetDB() *sql.DB { return nil }

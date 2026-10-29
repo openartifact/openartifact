@@ -21,16 +21,7 @@ func sha256ForString(s string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// tokenMockDBStore is what tokenMockDB is used as.
-type tokenMockDBStore interface {
-	CreateTokenStore
-	UpdateLastUsedStore
-	ValidateTokenStore
-}
-
 type tokenMockDB struct {
-	tokenMockDBStore
-
 	tokens     map[string]*models.Token
 	tokensByID map[string]*models.Token
 	users      map[string]*models.User

@@ -8,8 +8,6 @@ import (
 	"context"
 	"testing"
 
-	"errors"
-
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -100,7 +98,7 @@ func TestEvaluateAnonymousReadTargetStillWorksForPrivate(t *testing.T) {
 
 func TestEvaluateAuthenticatedUnaffectedByPublic(t *testing.T) {
 	// An authenticated principal without targets gets nothing from the
-	// public flag; mock returns no targets (BaseMockDB errors), so use a
+	// public flag; mock returns no targets (the unstubbed double errors), so use a
 	// legacy principal check plus a user lookup that yields no targets.
 	db := &userTargetsDB{publicRepoMockDB: *newPublicRepoDB()}
 	e := NewEvaluator(db, nil, false)
@@ -117,8 +115,6 @@ func TestEvaluateAuthenticatedUnaffectedByPublic(t *testing.T) {
 }
 
 type userTargetsDB struct{ publicRepoMockDB }
-
-var errNotImplemented = errors.New("not implemented")
 
 // ListProjectGrantsByUser is not exercised by the tests.
 func (*userTargetsDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {

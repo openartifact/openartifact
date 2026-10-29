@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -431,7 +430,7 @@ func pacmanEntries(pkgs []*models.PacmanPackage, lists map[string]string, arch s
 }
 
 // listPacmanMetadata returns path -> blob sha256 of the generated metadata rows.
-func listPacmanMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+func listPacmanMetadata(ctx context.Context, tx database.Transaction, repoID string) (map[string]string, error) {
 	return queryMetadataSums(ctx, tx, "pacman worker", "repo_metadata",
 		`SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'os/%' OR path = 'public.key')`,
 		repoID,

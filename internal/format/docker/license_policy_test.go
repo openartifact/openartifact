@@ -16,6 +16,7 @@ import (
 // policyDB is a regFakeDB whose license policies are those of a policytest Case.
 type policyDB struct {
 	*regFakeDB
+
 	lister policytest.Lister
 }
 

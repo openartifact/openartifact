@@ -34,7 +34,7 @@ const (
 	errorTTL = 3 * time.Second
 )
 
-// SettingStore reads and writes system settings (database.Database satisfies it).
+// SettingStore reads and writes system settings (*database.PostgresDB satisfies it).
 // errNoStore is returned by mutations on a manager without a settings store.
 var errNoStore = errors.New("branding: no settings store")
 

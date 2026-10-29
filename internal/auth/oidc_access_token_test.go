@@ -32,18 +32,10 @@ const (
 
 var errAccessTokenDB = errors.New("db unavailable")
 
-// accessTokenDBStore is what accessTokenDB is used as.
-type accessTokenDBStore interface {
-	OIDCIssuersStore
-	VerifyOIDCAccessTokenStore
-}
-
 // accessTokenDB serves the SSO provider rows and the subject-to-user links the
 // access token verifier reads. Disabled providers are filtered out like the
 // real ListEnabledSSOProviders does.
 type accessTokenDB struct {
-	accessTokenDBStore
-
 	providers []*models.SSOProvider
 	users     map[string]*models.User // key: slug + "|" + subject
 	listErr   error

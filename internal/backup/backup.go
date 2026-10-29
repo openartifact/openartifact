@@ -36,7 +36,7 @@ var ErrMissingBlobSHA256 = errors.New("record has no blob sha256")
 
 // bulkListLimit caps single-call DB list methods that have no true cursor
 // pagination (a large fixed page rather than looping). Tables genuinely too
-// big for this would need real pagination added to the Database interface.
+// big for this would need real pagination added to the store.
 const bulkListLimit = 100000
 
 // maxManifestSize bounds the manifest entry read into memory from an

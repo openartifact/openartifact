@@ -135,12 +135,10 @@ func (*MockDatabase) CountRepoPackageNames(context.Context, []string) (map[strin
 	return map[string]int64{}, nil
 }
 
-
 // RepoCatalogStats is not exercised by the tests.
 func (*MockDatabase) RepoCatalogStats(context.Context, []string, bool) (map[string]models.RepoStats, error) {
 	return map[string]models.RepoStats{}, nil
 }
-
 
 // GetDebBlobInfo is not exercised by the tests.
 func (*MockDatabase) GetDebBlobInfo(context.Context, string) (string, int64, error) {
@@ -166,7 +164,7 @@ var errNotImplemented = errors.New("not implemented")
 
 // GetPasswordExpiry is not exercised by the tests.
 func (*MockDatabase) GetPasswordExpiry(context.Context, string) (*time.Time, error) {
-	return nil, nil //nolint:nilnil // no expiry
+	return nil, nil
 }
 
 func newMockDatabase() *MockDatabase {
