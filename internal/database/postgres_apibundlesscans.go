@@ -37,7 +37,7 @@ const vulnScanByIDSelect = `
 	WHERE sj.scan_type = 'vuln' AND ref.repository_id = $1 AND vr.id = $2`
 
 // GetVulnScanResultByID returns the vuln scan result with the given ID scoped to repoID, or nil.
-func (p *PostgresDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
+func (p *VulnStore) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
 	result, err := scanVulnResult(p.db.QueryRowContext(ctx, vulnScanByIDSelect, repoID, id))
 
 	return orNotFound(result, err, "get vuln scan result by id")
@@ -45,7 +45,7 @@ func (p *PostgresDB) GetVulnScanResultByID(ctx context.Context, repoID, id strin
 
 // DeleteVulnScanResult deletes a vuln scan result (and its owning scan job)
 // by ID, scoped to repoID. Returns ErrVulnScanNotFound when nothing matched.
-func (p *PostgresDB) DeleteVulnScanResult(ctx context.Context, repoID, id string) error {
+func (p *VulnStore) DeleteVulnScanResult(ctx context.Context, repoID, id string) error {
 	return p.execMatching(ctx, "delete vuln scan result", ErrVulnScanNotFound, `
 		DELETE FROM scan_jobs sj
 		USING vuln_results vr, artifact_refs ref
@@ -55,7 +55,7 @@ func (p *PostgresDB) DeleteVulnScanResult(ctx context.Context, repoID, id string
 
 // SetVulnScanQuarantine sets the quarantined flag of exactly one vuln scan
 // result (by ID, scoped to repoID). Returns ErrVulnScanNotFound when nothing matched.
-func (p *PostgresDB) SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error {
+func (p *VulnStore) SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error {
 	return p.execMatching(ctx, "set vuln scan quarantine", ErrVulnScanNotFound, `
 		UPDATE vuln_results vr SET quarantined = $3
 		FROM scan_jobs sj, artifact_refs ref

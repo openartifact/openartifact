@@ -28,6 +28,7 @@ type PostgresDB struct {
 	*LicenseStore
 	*SBOMStore
 	*VEXStore
+	*VulnStore
 	// STORES-STRUCT
 }
 
@@ -53,6 +54,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		LicenseStore:         &LicenseStore{core: c},
 		SBOMStore:            &SBOMStore{core: c},
 		VEXStore:             &VEXStore{core: c},
+		VulnStore:            &VulnStore{core: c},
 		// STORES-INIT
 	}
 }

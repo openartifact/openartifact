@@ -7,13 +7,19 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 )
+
+// VulnStore owns vulnerability scan results, the vulnerability overview and the security findings views.
+type VulnStore struct{ *core }
 
 // ErrInvalidVulnScanFilter is returned by ListVulnScanOverview for a severity,
 // status, scanner, sort or priority it does not know, and for a page size below 1.
@@ -235,7 +241,7 @@ func vulnOverviewQuery(params models.VulnScanListParams) (string, []any, error) 
 
 // ListVulnScanOverview returns one page of vulnerability scans across all
 // repositories, worst first. See vulnOverviewQuery.
-func (p *PostgresDB) ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error) {
+func (p *VulnStore) ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error) {
 	query, args, err := vulnOverviewQuery(params)
 	if err != nil {
 		return nil, err
@@ -344,7 +350,7 @@ func scanVulnOverviewRow(row rowScanner) (*models.VulnScanOverviewRow, error) {
 
 // VulnScanOverviewSummary counts the overview's scans in one pass, all of them
 // or those of one repository.
-func (p *PostgresDB) VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error) {
+func (p *VulnStore) VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error) {
 	where, args := "", []any{}
 
 	if repoName != "" {
@@ -372,4 +378,509 @@ func (p *PostgresDB) VulnScanOverviewSummary(ctx context.Context, repoName strin
 	}
 
 	return s, nil
+}
+
+// vulnScanStatusToJob/FromJob map VulnScanResult.ScanStatus's "scanning" onto
+// scan_jobs' "running" (the CHECK-constrained vocabulary), and back.
+func vulnScanStatusToJob(status string) string {
+	if status == "scanning" {
+		return "running"
+	}
+
+	return status
+}
+
+// CreateVulnScanResult creates or updates a vulnerability scan result.
+func (p *VulnStore) CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error {
+	vulnsJSON, err := json.Marshal(result.Vulnerabilities)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vulnerabilities: %w", err)
+	}
+
+	var scannedAt time.Time
+	if result.ScannedAt != nil {
+		scannedAt = *result.ScannedAt
+	}
+
+	err = p.db.QueryRowContext(ctx, `
+		WITH ref AS (
+			INSERT INTO artifact_refs (repository_id, artifact_path, format)
+			VALUES ($1, $2, COALESCE((SELECT format FROM repositories WHERE id = $1), 'unknown'))
+			ON CONFLICT (repository_id, artifact_path) DO UPDATE SET artifact_path = EXCLUDED.artifact_path
+			RETURNING id
+		), job AS (
+			INSERT INTO scan_jobs (artifact_ref_id, scan_type, scanner, status, error_message, completed_at)
+			SELECT ref.id, 'vuln', $3, $4, NULLIF($5, ''), $6 FROM ref
+			ON CONFLICT (artifact_ref_id, scan_type, scanner) DO UPDATE SET
+				status = EXCLUDED.status, error_message = EXCLUDED.error_message,
+				completed_at = EXCLUDED.completed_at, updated_at = now()
+			RETURNING id
+		)
+		INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count,
+			quarantined, package_name, package_version, ecosystem, failed_scanners, kev_count, max_epss)
+		SELECT job.id, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19 FROM job
+		ON CONFLICT (scan_job_id) DO UPDATE SET
+			vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
+			critical_count = EXCLUDED.critical_count, high_count = EXCLUDED.high_count,
+			medium_count = EXCLUDED.medium_count, low_count = EXCLUDED.low_count,
+			quarantined = EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
+			package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem,
+			failed_scanners = EXCLUDED.failed_scanners, kev_count = EXCLUDED.kev_count, max_epss = EXCLUDED.max_epss
+		RETURNING id`,
+		result.RepositoryID, result.ArtifactID, result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, scannedAt,
+		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount,
+		result.Quarantined, result.PackageName, result.PackageVersion, result.Ecosystem, nonNilStrings(result.FailedScanners),
+		toInt32(result.KEVCount), result.MaxEPSS,
+	).Scan(&result.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create vuln scan result: %w", err)
+	}
+
+	return nil
+}
+
+// GetVulnScanResult gets a vulnerability scan result by repo and artifact
+// ID. scan_jobs' UNIQUE(artifact_ref_id, scan_type, scanner) allows more
+// than one scanner (osv/trivy/grype/...) to have scanned the same artifact,
+// so this orders by most-recently-created and takes the first row instead
+// of letting QueryRowContext pick an arbitrary one nondeterministically.
+func (p *VulnStore) GetVulnScanResult(ctx context.Context, repoID, artifactID string) (*models.VulnScanResult, error) {
+	result, err := scanVulnResult(p.db.QueryRowContext(ctx, `
+		SELECT `+vulnResultColumns+`
+		FROM vuln_results vr
+		JOIN scan_jobs sj ON sj.id = vr.scan_job_id
+		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+		WHERE sj.scan_type = 'vuln' AND ref.repository_id = $1 AND ref.artifact_path = $2
+		ORDER BY sj.created_at DESC
+		LIMIT 1`,
+		repoID, artifactID,
+	))
+
+	return orNotFound(result, err, "get vuln scan result")
+}
+
+// UpdateVulnScanResult updates a vulnerability scan result.
+func (p *VulnStore) UpdateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error {
+	vulnsJSON, err := json.Marshal(result.Vulnerabilities)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vulnerabilities: %w", err)
+	}
+
+	var scannedAt time.Time
+	if result.ScannedAt != nil {
+		scannedAt = *result.ScannedAt
+	}
+
+	_, err = p.db.ExecContext(ctx, `
+		WITH res AS (
+			UPDATE vuln_results SET vulnerabilities = $1, vuln_count = $2, critical_count = $3,
+			       high_count = $4, medium_count = $5, low_count = $6, quarantined = $7,
+			       failed_scanners = $13, kev_count = $14, max_epss = $15
+			WHERE id = $11
+			RETURNING scan_job_id
+		)
+		UPDATE scan_jobs sj SET scanner = $8, status = $9, error_message = NULLIF($10, ''), completed_at = $12, updated_at = now()
+		FROM res WHERE sj.id = res.scan_job_id`,
+		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Quarantined,
+		result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, result.ID, scannedAt,
+		nonNilStrings(result.FailedScanners), toInt32(result.KEVCount), result.MaxEPSS,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update vuln scan result: %w", err)
+	}
+
+	return nil
+}
+
+// ListVulnScanResults lists all vulnerability scan results for a repository.
+func (p *VulnStore) ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error) {
+	query := `
+		SELECT ` + vulnResultColumns + `
+		FROM vuln_results vr
+		JOIN scan_jobs sj ON sj.id = vr.scan_job_id
+		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+		WHERE sj.scan_type = 'vuln' AND ref.repository_id = $1`
+	if vulnerableOnly {
+		query += ` AND vr.vuln_count > 0`
+	}
+
+	query += ` ORDER BY sj.created_at DESC`
+
+	rows, err := p.db.QueryContext(ctx, query, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list vuln scan results: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]*models.VulnScanResult, 0)
+
+	for rows.Next() {
+		result, err := scanVulnResult(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan vuln scan result: %w", err)
+		}
+
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
+}
+
+// QuarantineVulnArtifact updates the quarantine status of a vulnerable artifact.
+func (p *VulnStore) QuarantineVulnArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error {
+	_, err := p.db.ExecContext(ctx, `
+		WITH target AS (
+			SELECT vr.id AS result_id, sj.id AS job_id
+			FROM vuln_results vr
+			JOIN scan_jobs sj ON sj.id = vr.scan_job_id
+			JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+			WHERE sj.scan_type = 'vuln' AND ref.repository_id = $2 AND ref.artifact_path = $3
+		), upd1 AS (
+			UPDATE vuln_results SET quarantined = $1
+			WHERE id = (SELECT result_id FROM target)
+			RETURNING id
+		)
+		UPDATE scan_jobs SET updated_at = now() WHERE id = (SELECT job_id FROM target)`,
+		quarantined, repoID, artifactID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to quarantine vuln artifact: %w", err)
+	}
+
+	return nil
+}
+
+// ErrInvalidFindingFilter is returned by ListSecurityFindings for a type,
+// severity or status it does not know, and for a page size below 1.
+var ErrInvalidFindingFilter = errors.New("invalid security finding filter")
+
+// noScanTime is what the security queries return for "no scan": the Unix epoch.
+// No scan finished then, so it never collides with a real time.
+//
+//nolint:gochecknoglobals // immutable sentinel
+var noScanTime = time.Unix(0, 0)
+
+// scanTimePtr maps a security query time to nil when it is the noScanTime sentinel.
+func scanTimePtr(t time.Time) *time.Time {
+	if !t.After(noScanTime) {
+		return nil
+	}
+
+	return &t
+}
+
+// severityRanks maps a severity label to the rank the security_results view uses.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var severityRanks = map[string]int32{
+	models.FindingSeverityCritical: 4,
+	models.FindingSeverityHigh:     3,
+	models.FindingSeverityMedium:   2,
+	models.FindingSeverityLow:      1,
+}
+
+// vexStatusByRank is the inverse of the vex_rank column of the view.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var vexStatusByRank = map[int32]string{
+	1: models.VEXAffected,
+	2: models.VEXUnderInvestigation,
+	3: models.VEXFixed,
+	4: models.VEXNotAffected,
+}
+
+func optionalText(s string) *string {
+	if s == "" {
+		return nil
+	}
+
+	return &s
+}
+
+// scopeProjects returns the project ids as a non-nil slice (a nil slice would
+// bind as SQL NULL, which matches nothing in ANY()).
+func scopeProjects(s models.FindingScope) []string {
+	if s.ProjectIDs == nil {
+		return []string{}
+	}
+
+	return s.ProjectIDs
+}
+
+// validFindingParams reports whether p only holds values the view knows.
+func validFindingParams(p models.FindingListParams) (*int32, bool) {
+	if p.Limit < 1 || len(p.Types) == 0 {
+		return nil, false
+	}
+
+	switch p.Sort {
+	case "", models.FindingSortSeverity, models.FindingSortPriority:
+	default:
+		return nil, false
+	}
+
+	for _, t := range p.Types {
+		switch t {
+		case models.FindingVuln, models.FindingLicense, models.FindingSecret, models.FindingAI:
+		default:
+			return nil, false
+		}
+	}
+
+	switch p.Status {
+	case "", models.FindingStatusOpen, models.FindingStatusQuarantined, models.FindingStatusSuppressed:
+	default:
+		return nil, false
+	}
+
+	if p.Severity == "" {
+		return nil, true
+	}
+
+	rank, ok := severityRanks[p.Severity]
+	if !ok {
+		return nil, false
+	}
+
+	return &rank, true
+}
+
+// sortName is the order of a list: severity unless priority was asked for.
+func sortName(s string) string {
+	if s == models.FindingSortPriority {
+		return s
+	}
+
+	return models.FindingSortSeverity
+}
+
+// ListSecurityFindings returns one keyset page of the findings of every
+// requested type, worst first (by severity, or by exploit priority with
+// Sort priority), then newest scan, then id.
+func (p *VulnStore) ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error) {
+	rank, ok := validFindingParams(params)
+	if !ok {
+		return nil, ErrInvalidFindingFilter
+	}
+
+	arg := dbsqlc.ListSecurityFindingsParams{
+		Kinds:         params.Types,
+		ScopeAll:      params.Scope.All,
+		ScopeProjects: scopeProjects(params.Scope),
+		Repo:          optionalText(params.Repo),
+		Project:       optionalText(params.Project),
+		SeverityRank:  rank,
+		Status:        optionalText(params.Status),
+		PageLimit:     int32(params.Limit + 1), //nolint:gosec // G115: the page size is bounded by the handler
+		SortPriority:  params.Sort == models.FindingSortPriority,
+		EpssThreshold: params.EPSSThreshold,
+		Kev:           params.KEV,
+		EpssMin:       params.EPSSMin,
+		// The cursor parameters are cast even when unused; a placeholder keeps the uuid cast valid.
+		AfterID: "00000000-0000-0000-0000-000000000000",
+		AfterAt: noScanTime,
+	}
+
+	if params.PriorityRank != nil {
+		pr := int32(*params.PriorityRank) //nolint:gosec // G115: a rank is 0..6
+		arg.PriorityRank = &pr
+	}
+
+	if params.Q != "" {
+		like := "%" + escapeLike(params.Q) + "%"
+		arg.Q = &like
+	}
+
+	if c := params.After; c != nil {
+		arg.HasCursor = true
+		arg.AfterRank = int32(c.Rank) //nolint:gosec // G115: a rank is 0..6
+		arg.AfterAt = c.ScannedAt
+		arg.AfterID = c.ID
+	}
+
+	rows, err := p.q.ListSecurityFindings(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("list security findings: %w", err)
+	}
+
+	page := &models.FindingPage{Findings: make([]*models.Finding, 0, len(rows))}
+
+	for i, r := range rows {
+		if i == params.Limit {
+			last := page.Findings[len(page.Findings)-1]
+			page.Next = &models.FindingCursor{
+				Sort: sortName(params.Sort), Rank: last.SortRank, ScannedAt: last.ScannedAt, ID: last.ID,
+			}
+
+			break
+		}
+
+		page.Findings = append(page.Findings, findingFromRow(r))
+	}
+
+	if err := p.resolveFindingPackages(ctx, page.Findings); err != nil {
+		return nil, err
+	}
+
+	return page, nil
+}
+
+// resolveFindingPackages replaces the package name of findings recorded against
+// a package row id (scans started from a package page use the row id as
+// artifact_id, and the view then has nothing but that id to show) with the
+// row's name and version. An id that no longer resolves (purged package) is
+// blanked: the API never returns a bare id as a package name.
+func (p *VulnStore) resolveFindingPackages(ctx context.Context, findings []*models.Finding) error {
+	var ids []string
+
+	for _, f := range findings {
+		if f.PackageName == f.ArtifactID && isUUID(f.ArtifactID) {
+			ids = append(ids, f.ArtifactID)
+		}
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	rows, err := p.q.ResolveComponentNames(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("resolve finding packages: %w", err)
+	}
+
+	type key struct{ repo, id string }
+
+	names := make(map[key]dbsqlc.ResolveComponentNamesRow, len(rows))
+	for _, r := range rows {
+		names[key{r.RepositoryID, r.ID}] = r
+	}
+
+	for _, f := range findings {
+		if f.PackageName != f.ArtifactID || !isUUID(f.ArtifactID) {
+			continue
+		}
+
+		r, ok := names[key{f.RepositoryID, f.ArtifactID}]
+		if !ok {
+			f.PackageName, f.PackageVersion = "", ""
+
+			continue
+		}
+
+		f.PackageName, f.PackageVersion = r.Name, r.Version
+	}
+
+	return nil
+}
+
+func findingFromRow(r dbsqlc.ListSecurityFindingsRow) *models.Finding {
+	return &models.Finding{
+		ID:             r.ID,
+		Type:           r.Kind,
+		RepositoryID:   r.RepositoryID,
+		Repository:     r.RepositoryName,
+		Format:         r.RepositoryFormat,
+		ArtifactID:     r.ArtifactID,
+		PackageName:    r.PackageName,
+		PackageVersion: r.PackageVersion,
+		Scanner:        r.Scanner,
+		ScanStatus:     r.ScanStatus,
+		Critical:       int(r.Critical),
+		High:           int(r.High),
+		Medium:         int(r.Medium),
+		Low:            int(r.Low),
+		Quarantined:    r.Quarantined,
+		Status:         r.Status,
+		VEXStatus:      vexStatusByRank[r.VexRank],
+		SeverityRank:   int(r.SeverityRank),
+		KEVCount:       int(r.KevCount),
+		MaxEPSS:        r.MaxEpss,
+		SortRank:       int(r.SortRank),
+		Title:          r.Title,
+		ScannedAt:      r.ScannedAt,
+	}
+}
+
+// SecurityFindingsSummary counts the findings of the filter's scope per type and
+// how many of its repositories were scanned.
+func (p *VulnStore) SecurityFindingsSummary(ctx context.Context, f models.FindingFilter) (*models.FindingsSummary, error) {
+	rows, err := p.q.SecurityFindingsSummary(ctx, dbsqlc.SecurityFindingsSummaryParams{
+		ScopeAll:      f.Scope.All,
+		ScopeProjects: scopeProjects(f.Scope),
+		Repo:          optionalText(f.Repo),
+		Project:       optionalText(f.Project),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("security findings summary: %w", err)
+	}
+
+	out := &models.FindingsSummary{ByType: map[string]models.FindingTypeSummary{}}
+
+	for _, t := range models.FindingTypes() {
+		out.ByType[t] = models.FindingTypeSummary{}
+	}
+
+	for _, r := range rows {
+		out.ByType[r.Kind] = models.FindingTypeSummary{
+			Total: int(r.Total), Critical: int(r.Critical), High: int(r.High),
+			Medium: int(r.Medium), Low: int(r.Low), Quarantined: int(r.Quarantined),
+		}
+	}
+
+	cov, err := p.q.SecurityScanCoverage(ctx, dbsqlc.SecurityScanCoverageParams{
+		ScopeAll:      f.Scope.All,
+		ScopeProjects: scopeProjects(f.Scope),
+		Repo:          optionalText(f.Repo),
+		Project:       optionalText(f.Project),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("security scan coverage: %w", err)
+	}
+
+	out.TotalRepositories = int(cov.TotalRepositories)
+	out.ScannedRepositories = int(cov.ScannedRepositories)
+	out.LastScanAt = scanTimePtr(cov.LastScanAt)
+
+	return out, nil
+}
+
+// SecurityHealthStats returns the instance-wide scan queue and coverage numbers.
+func (p *VulnStore) SecurityHealthStats(ctx context.Context) (*models.SecurityHealthStats, error) {
+	r, err := p.q.SecurityHealthStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("security health stats: %w", err)
+	}
+
+	return &models.SecurityHealthStats{
+		ScansPending:          int(r.ScansPending),
+		ScansFailed24h:        int(r.ScansFailed24h),
+		LastScanAt:            scanTimePtr(r.LastScanAt),
+		UnscannedRepositories: int(r.UnscannedRepositories),
+	}, nil
+}
+
+// RepoSecuritySummary returns the counts-only security state of a repository,
+// narrowed to a package (and version) when given.
+func (p *VulnStore) RepoSecuritySummary(ctx context.Context, repoID, packageName, version string) (*models.RepoSecuritySummary, error) {
+	r, err := p.q.RepoSecuritySummary(ctx, dbsqlc.RepoSecuritySummaryParams{
+		RepositoryID:   repoID,
+		PackageName:    optionalText(packageName),
+		PackageVersion: optionalText(version),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repository security summary: %w", err)
+	}
+
+	return &models.RepoSecuritySummary{
+		ScannedAt:               scanTimePtr(r.ScannedAt),
+		VulnCritical:            int(r.VulnCritical),
+		VulnHigh:                int(r.VulnHigh),
+		VulnMedium:              int(r.VulnMedium),
+		VulnLow:                 int(r.VulnLow),
+		LicenseViolations:       int(r.LicenseViolations),
+		SecretCount:             int(r.SecretCount),
+		AIQuarantineRecommended: int(r.AiQuarantineRecommended),
+		AIReviewRequired:        int(r.AiReviewRequired),
+		Quarantined:             int(r.Quarantined),
+	}, nil
 }
