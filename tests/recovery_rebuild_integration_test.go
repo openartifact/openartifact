@@ -112,6 +112,44 @@ func reCompareTables(t *testing.T, srcDB, dstDB *database.PostgresDB) []string {
 	return populated
 }
 
+// reRequirePopulated fails when the fixture no longer covers the generic tables
+// and the side tables of the formats that have one.
+func reRequirePopulated(t *testing.T, populated []string) {
+	t.Helper()
+
+	for _, name := range []string{
+		"packages", "package_versions", "package_files", "package_tags",
+		"maven_files", "rpm_files", "deb_files", "debian_distributions", "debian_components", "debian_architectures",
+	} {
+		if !slices.Contains(populated, name) {
+			t.Errorf("table %s carried no rows; the fixture no longer covers it (populated: %v)", name, populated)
+		}
+	}
+}
+
+// reAssertGenericCounts requires the generic package tables to be populated
+// and equally sized after the rebuild.
+func reAssertGenericCounts(t *testing.T, srcDB, dstDB *database.PostgresDB) {
+	t.Helper()
+
+	for _, table := range []string{"packages", "package_versions", "package_files", "package_tags"} {
+		var want, got int
+
+		q := `SELECT COUNT(*) FROM ` + table
+		if err := srcDB.GetDB().QueryRowContext(context.Background(), q).Scan(&want); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := dstDB.GetDB().QueryRowContext(context.Background(), q).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+
+		if got != want || want == 0 {
+			t.Errorf("%s: %d rows after the rebuild, %d before (a populated table is required)", table, got, want)
+		}
+	}
+}
+
 // TestRecoveryRebuildAllFormats publishes through the real handlers, lets the
 // journal mirror every row into the blob store, rebuilds an empty database from
 // that store alone and requires identical rows and identical served bytes.
@@ -208,34 +246,8 @@ func TestRecoveryRebuildAllFormats(t *testing.T) {
 		t.Fatalf("rebuild exit %d: %s", code, b)
 	}
 
-	// The fixture must keep covering the generic tables and the side tables of the formats that have one.
-	populated := reCompareTables(t, srcDB, dstDB)
-	for _, name := range []string{
-		"packages", "package_versions", "package_files", "package_tags",
-		"maven_files", "rpm_files", "deb_files", "debian_distributions", "debian_components", "debian_architectures",
-	} {
-		if !slices.Contains(populated, name) {
-			t.Errorf("table %s carried no rows; the fixture no longer covers it (populated: %v)", name, populated)
-		}
-	}
-
-	// The generic package tables, the rows every format but docker lives in.
-	for _, table := range []string{"packages", "package_versions", "package_files", "package_tags"} {
-		var want, got int
-
-		q := `SELECT COUNT(*) FROM ` + table
-		if err := srcDB.GetDB().QueryRowContext(context.Background(), q).Scan(&want); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := dstDB.GetDB().QueryRowContext(context.Background(), q).Scan(&got); err != nil {
-			t.Fatal(err)
-		}
-
-		if got != want || want == 0 {
-			t.Errorf("%s: %d rows after the rebuild, %d before (a populated table is required)", table, got, want)
-		}
-	}
+	reRequirePopulated(t, reCompareTables(t, srcDB, dstDB))
+	reAssertGenericCounts(t, srcDB, dstDB)
 
 	for _, g := range gets {
 		wantCode, want := reGet(g.e.src, g.path)
@@ -413,7 +425,8 @@ func TestRecoveryRebuildServedMetadata(t *testing.T) {
 	reRegenerate(t, dstDB, bs, mvn.dst, deb.dst)
 
 	var arch string
-	if err := srcDB.GetDB().QueryRowContext(context.Background(), `SELECT arch FROM package_files WHERE repository_id = $1 AND arch <> '' LIMIT 1`, deb.src.repoID).Scan(&arch); err != nil {
+	if err := srcDB.GetDB().QueryRowContext(context.Background(),
+		`SELECT arch FROM package_files WHERE repository_id = $1 AND arch <> '' LIMIT 1`, deb.src.repoID).Scan(&arch); err != nil {
 		t.Fatal(err)
 	}
 

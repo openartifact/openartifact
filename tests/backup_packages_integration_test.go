@@ -56,7 +56,8 @@ func (s pkgSeed) file(version, path, sha, part string, size int64) string {
 	blob := s.scan(`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1, $2, $3)
 		ON CONFLICT (sha256) DO UPDATE SET size_bytes = blobs.size_bytes RETURNING id::text`, sha, size, "blobs/"+sha)
 
-	return s.scan(`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, size_bytes, part, attrs, checksums, unit_key)
+	return s.scan(`INSERT INTO package_files
+		(version_id, repository_id, path, filename, blob_id, size_bytes, part, attrs, checksums, unit_key)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, '{"k":"v"}'::jsonb, jsonb_build_object('sha256', $8::text), $3) RETURNING id::text`,
 		version, s.repo, path, path[strings.LastIndex(path, "/")+1:], blob, size, part, sha)
 }
@@ -117,27 +118,33 @@ func seedBackupPackages(t *testing.T, pg *database.PostgresDB) {
 	gone := npm.file(trashed, "lodash/-/lodash-0.9.0.tgz", sha("3"), "", 33)
 	npm.exec(`UPDATE package_files SET deleted_at = now() WHERE id = $1`, gone)
 	npm.exec(`UPDATE package_versions SET deleted_at = now() WHERE id = $1`, trashed)
-	npm.exec(`INSERT INTO package_tags (package_id, tag, version, unit_key) VALUES ($1, 'latest', '2.0.0', 'lodash#latest'), ($1, 'next', '1.0.0', 'lodash#next')`, lodash)
+	npm.exec(`INSERT INTO package_tags (package_id, tag, version, unit_key)
+		VALUES ($1, 'latest', '2.0.0', 'lodash#latest'), ($1, 'next', '1.0.0', 'lodash#next')`, lodash)
 
 	mvn := newPkgRepo(t, pg, "bk-maven", "maven")
 	app := mvn.pkg("com.x:app", `{"group_id":"com.x","artifact_id":"app"}`)
 	mv := mvn.version(app, "1.0", "1.0", `{}`)
 	jar := mvn.file(mv, "com/x/app/1.0/app-1.0.jar", sha("4"), "", 44)
 	pom := mvn.file(mv, "com/x/app/1.0/app-1.0.pom", sha("5"), "", 55)
-	mvn.exec(`INSERT INTO maven_files (id, classifier, extension, md5, sha1) VALUES ($1, '', 'jar', 'm', 's'), ($2, 'sources', 'pom', 'm2', 's2')`, jar, pom)
+	mvn.exec(`INSERT INTO maven_files (id, classifier, extension, md5, sha1)
+		VALUES ($1, '', 'jar', 'm', 's'), ($2, 'sources', 'pom', 'm2', 's2')`, jar, pom)
 
 	deb := newPkgRepo(t, pg, "bk-deb", "deb")
-	dist := deb.scan(`INSERT INTO debian_distributions (repository_id, name, codename) VALUES ($1, 'stable', 'bookworm') RETURNING id::text`, deb.repo)
+	dist := deb.scan(`INSERT INTO debian_distributions (repository_id, name, codename)
+		VALUES ($1, 'stable', 'bookworm') RETURNING id::text`, deb.repo)
 	comp := deb.scan(`INSERT INTO debian_components (distribution_id, name) VALUES ($1, 'main') RETURNING id::text`, dist)
 	deb.exec(`INSERT INTO debian_architectures (distribution_id, name) VALUES ($1, 'amd64'), ($1, 'all')`, dist)
 	hello := deb.pkg("hello", `{}`)
 	dv := deb.version(hello, "1.0", "1.0|amd64|"+comp, `{"license":"MIT"}`)
 	df := deb.file(dv, "pool/main/h/hello/hello_1.0_amd64.deb", sha("6"), dist, 66)
-	deb.exec(`INSERT INTO deb_files (id, distribution_id, component_id, control_fields) VALUES ($1, $2, $3, '{"Package":"hello"}'::jsonb)`, df, dist, comp)
+	deb.exec(`INSERT INTO deb_files (id, distribution_id, component_id, control_fields)
+		VALUES ($1, $2, $3, '{"Package":"hello"}'::jsonb)`, df, dist, comp)
 }
 
 // canonical queries compare a repository's rows independent of ids; versions and
 // files of the deb repository embed companion ids, which are replaced by names.
+//
+//nolint:gochecknoglobals // read-only table of canonical queries shared by the subtests
 var canonicalQueries = map[string]string{
 	"packages": `SELECT concat_ws('|', p.format, p.name, p.name_key, p.attrs::text) FROM packages p
 		WHERE p.repository_id = r.id`,
@@ -165,8 +172,8 @@ func canonicalRows(t *testing.T, db *sql.DB, query, name string) []string {
 	t.Helper()
 
 	rows, err := db.QueryContext(context.Background(),
-		"SELECT row FROM (SELECT * FROM (SELECT id FROM repositories WHERE name = $1) r CROSS JOIN LATERAL ("+
-			query+") AS q(row)) s ORDER BY row", name)
+		"SELECT q.row FROM (SELECT id FROM repositories WHERE name = $1) r CROSS JOIN LATERAL ("+
+			query+") AS q(row) ORDER BY q.row", name)
 	if err != nil {
 		t.Fatalf("canonical rows of %s: %v", name, err)
 	}
