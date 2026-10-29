@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
+	"github.com/openartifact/openartifact/internal/publicurl"
 )
 
 const (
@@ -84,7 +85,7 @@ func (s *Server) getPackage(ctx context.Context, in getPackageIn) (packageDetail
 			SHA256:      c.SHA256,
 			Size:        c.PackageSize,
 			CreatedAt:   formatTime(c.CreatedAt),
-			DownloadURL: s.downloadURL(repo.Name, c.ID),
+			DownloadURL: s.downloadURL(ctx, repo.Name, c.ID),
 		})
 	}
 
@@ -130,10 +131,19 @@ func (s *Server) findPackageVersions(ctx context.Context, repo *models.Repositor
 	return matches, true, nil
 }
 
-// downloadURL builds the REST download URL of a package; absolute when a base
-// URL is configured.
-func (s *Server) downloadURL(repoName, id string) string {
-	return s.baseURL + "/api/v1/repositories/" + url.PathEscape(repoName) + "/packages/" + url.PathEscape(id) + "/download"
+// origin is the server origin the caller reached: BASE_URL when the operator
+// set one, else the one publicurl derived from the HTTP request the tool call
+// arrived in (the stateless Streamable HTTP transport hands the handler the
+// request's own context). Empty when neither exists, which yields relative
+// download paths.
+func (s *Server) origin(ctx context.Context) string {
+	return publicurl.FromContext(ctx, s.baseURL)
+}
+
+// downloadURL builds the REST download URL of a package; absolute when an
+// origin is known.
+func (s *Server) downloadURL(ctx context.Context, repoName, id string) string {
+	return s.origin(ctx) + "/api/v1/repositories/" + url.PathEscape(repoName) + "/packages/" + url.PathEscape(id) + "/download"
 }
 
 func (s *Server) getVulnerabilities(ctx context.Context, in vulnerabilitiesIn) (vulnerabilitiesResult, error) {
@@ -349,10 +359,12 @@ func (s *Server) clientSetup(ctx context.Context, in clientSetupIn) (clientSetup
 		return clientSetupResult{}, err
 	}
 
+	origin := s.origin(ctx)
+
 	return clientSetupResult{
 		Repository: repo.Name,
 		Format:     repo.Format,
-		BaseURL:    clientsetup.RepoBaseURL(repo.Format, s.baseURL, repo.Name),
-		Clients:    clientsetup.Snippets(repo.Format, s.baseURL, repo.Name, repo.RepoType),
+		BaseURL:    clientsetup.RepoBaseURL(repo.Format, origin, repo.Name),
+		Clients:    clientsetup.Snippets(repo.Format, origin, repo.Name, repo.RepoType),
 	}, nil
 }

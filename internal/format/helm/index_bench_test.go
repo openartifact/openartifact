@@ -58,7 +58,7 @@ func BenchmarkBuildHelmIndex(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				_ = buildHelmIndex(charts, "myrepo", "http://localhost:8080")
+				_ = buildHelmIndex(charts)
 			}
 		})
 	}
@@ -76,7 +76,7 @@ func BenchmarkHelmIndexYAML(b *testing.B) {
 			var size int
 
 			for b.Loop() {
-				out, err := yaml.Marshal(buildHelmIndex(charts, "myrepo", "http://localhost:8080"))
+				out, err := yaml.Marshal(buildHelmIndex(charts))
 				if err != nil {
 					b.Fatal(err)
 				}

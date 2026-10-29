@@ -235,9 +235,9 @@ func TestUploadReadDownloadDelete(t *testing.T) {
 		t.Errorf("branch version = %q, want dev-master", db.rows[1].Version)
 	}
 
-	// packages.json names the metadata URL and every package.
+	// packages.json names the metadata URL (path-absolute) and every package.
 	doc := decode(t, do(h, http.MethodGet, root+"packages.json", nil))
-	if doc["metadata-url"] != "http://localhost:8080/repos/myrepo/p2/%package%.json" ||
+	if doc["metadata-url"] != "/repos/myrepo/p2/%package%.json" ||
 		fmt.Sprint(doc["available-packages"]) != "[acme/tools]" {
 		t.Errorf("packages.json = %v", doc)
 	}

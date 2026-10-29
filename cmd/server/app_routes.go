@@ -225,7 +225,9 @@ func (a *app) registerUploadRoutes() {
 
 // newFormatHandlers builds the native protocol handler of every format.
 func (a *app) newFormatHandlers() {
-	log, db, served, baseURL := a.log, a.db, a.store.served, a.cfg.BaseURL
+	// baseURL is BASE_URL as an override only: unset, the handlers derive the
+	// origin of the URLs they hand to clients from each request.
+	log, db, served, baseURL := a.log, a.db, a.store.served, a.cfg.ClientBaseURL()
 	f := &a.web.formats
 
 	f.rpm = formatrpm.NewHTTPHandler(log, db, served)
@@ -328,7 +330,7 @@ func (a *app) registerFormatRoutes() {
 
 	w := &a.workers
 	repoDispatch := repodispatch.New(a.log, a.db, w.proxySvc, a.web.evaluator, a.hostedRouters()).
-		WithBaseURL(a.cfg.BaseURL).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys).WithNixKeys(w.nixKeys)
+		WithBaseURL(a.cfg.ClientBaseURL()).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys).WithNixKeys(w.nixKeys)
 
 	a.mountRepoRoutes(repoDispatch)
 	a.mountIsolatedRepoRoutes(repoDispatch)

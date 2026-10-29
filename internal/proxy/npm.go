@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -45,11 +46,20 @@ const maxConcurrentPackuments = 8
 // packument before revalidating (as for hosted npm repositories).
 const packumentMaxAge = 60
 
-// SetBaseURL sets the server base URL that rewritten tarball URLs point at
-// (the value hosted npm repositories use). Call it before serving requests.
+// SetBaseURL sets BASE_URL, the explicit override of the origin rewritten
+// tarball URLs point at ("" derives it from each request). Call it before
+// serving requests.
 func (s *Service) SetBaseURL(baseURL string) {
 	s.baseURL = strings.TrimRight(baseURL, "/")
 	s.refreshTerraformMinter()
+}
+
+// publicBase is the origin of the absolute URLs rewritten metadata hands to the
+// client for r: BASE_URL when set, else the request's origin (see
+// base.Handler.PublicBase). Call it before the response headers are written and
+// fold the result into the document's validator.
+func (s *Service) publicBase(w http.ResponseWriter, r *http.Request) string {
+	return publicurl.Resolve(w, r, s.baseURL)
 }
 
 func (s *Service) serveNPM(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
@@ -130,13 +140,15 @@ func verifyJSONObject(spool io.ReadSeeker) error {
 var errNotPackument = errors.New("upstream answer is not a packument")
 
 func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgnpm.Path, abbreviated bool) {
-	tarballBase := s.baseURL + "/repos/" + repo.Name
+	// dist.tarball is absolute (pacote keeps it verbatim), so the origin is
+	// part of the validator below and the rewrite happens at serve time.
+	tarballBase := s.publicBase(w, r) + "/repos/" + repo.Name
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: npmPackumentDoc(p.Package, abbreviated),
 		maxAge:  packumentMaxAge,
 		vary:    "Accept",
-		// The rendered document depends on the cached blob and the server URL;
+		// The rendered document depends on the cached blob and the origin of the tarball URLs;
 		// a version manifest and a packument of the same blob differ by path.
 		etag: func(blobKey string) string {
 			sum := sha256.Sum256([]byte(blobKey + "\x00" + tarballBase + "\x00" + p.Version))

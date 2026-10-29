@@ -155,7 +155,7 @@ func TestComposerProxy_RootIsGeneratedAndOwnedByTheProxy(t *testing.T) {
 		t.Fatalf("packages.json = %d", w.Code)
 	}
 
-	if body := w.Body.String(); !strings.Contains(body, `"metadata-url":"`+composerBase+`/repos/packagist/p2/%package%.json"`) ||
+	if body := w.Body.String(); !strings.Contains(body, `"metadata-url":"/repos/packagist/p2/%package%.json"`) ||
 		strings.Contains(body, "available-packages") || strings.Contains(body, f.upstream.URL) {
 		t.Errorf("packages.json = %s", body)
 	}

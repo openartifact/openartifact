@@ -120,7 +120,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request, repo
 		"sha1":    row.SHA1,
 		"sha256":  row.SHA256,
 		"size":    row.SizeBytes,
-		"url":     h.distURL(repo.Name, row),
+		"url":     distURL(h.PublicBase(w, r), repo.Name, row),
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusCreated)

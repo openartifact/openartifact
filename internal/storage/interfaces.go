@@ -126,9 +126,14 @@ type StorageConfig struct {
 	// on oci storage (filesystem uses <path>/staging); empty means
 	// <tmp>/openartifact-staging.
 	StagingPath string `yaml:"stagingPath"`
-	// PublicURL is the public base URL of this server (BASE_URL), set by the
-	// config loader; server-relayed upload URLs point at it.
+	// PublicURL is the public base URL of this server (BASE_URL) when the
+	// operator set one, filled in by the config loader; server-relayed upload
+	// URLs point at it.
 	PublicURL string `yaml:"-"`
+	// PublicURLFromRequest, set by the config loader when no BASE_URL is
+	// configured, lets server-relayed upload URLs point at the origin of the
+	// request that asks for them (internal/publicurl) instead of PublicURL.
+	PublicURLFromRequest bool `yaml:"-"`
 	// OCIInsecure allows plain HTTP to the OCI registry (dev and testing only).
 	OCIInsecure bool `yaml:"ociInsecure"`
 	// OCIUsername is the OCI registry user.

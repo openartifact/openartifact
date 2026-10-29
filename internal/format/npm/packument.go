@@ -19,11 +19,11 @@ func BuildPackument(
 	repoName, packageName string,
 	versions []*models.NPMVersion,
 	distTags map[string]string,
-	baseURL string,
+	origin string,
 ) ([]byte, error) {
 	sorted := newestPerVersion(versions)
 
-	w := newPackumentWriter(repoName, packageName, baseURL, estimatePackumentSize(sorted, 320))
+	w := newPackumentWriter(repoName, packageName, origin, estimatePackumentSize(sorted, 320))
 
 	w.buf = append(w.buf, `{"_id":`...)
 	w.buf = appendJSONString(w.buf, packageName)
@@ -118,8 +118,8 @@ func (w *packumentWriter) times(versions, all []*models.NPMVersion) {
 // rewrite the packument gets: the publisher's dist.tarball/integrity/shasum are
 // replaced by the server-computed values, so the single-version endpoint never
 // advertises a publisher-chosen tarball URL.
-func BuildVersionManifest(repoName, packageName string, v *models.NPMVersion, baseURL string) ([]byte, error) {
-	w := newPackumentWriter(repoName, packageName, baseURL, len(v.ManifestJSON)+320)
+func BuildVersionManifest(repoName, packageName string, v *models.NPMVersion, origin string) ([]byte, error) {
+	w := newPackumentWriter(repoName, packageName, origin, len(v.ManifestJSON)+320)
 
 	if err := w.version(v, nil); err != nil {
 		return nil, err

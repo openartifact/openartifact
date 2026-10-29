@@ -69,10 +69,11 @@ const indexMaxAge = 60
 // indexETag derives the validator of index.yaml from the chart-set stamp
 // (HelmIndexStamp) instead of the rendered body, which embeds a generation
 // timestamp and so differs on every request. Chart rows are immutable, so the
-// stamp changes exactly when a chart is added or removed; the repository and
-// base URL shape the chart URLs.
-func indexETag(repoID, repoName, baseURL, stamp string) string {
-	sum := sha256.Sum256([]byte(repoID + "\x00" + repoName + "\x00" + baseURL + "\x00" + stamp))
+// stamp changes exactly when a chart is added or removed; the repository name
+// is mixed in. Chart URLs are relative to the repository URL, so no origin
+// takes part.
+func indexETag(repoID, repoName, stamp string) string {
+	sum := sha256.Sum256([]byte(repoID + "\x00" + repoName + "\x00" + stamp))
 
 	return `"` + hex.EncodeToString(sum[:16]) + `"`
 }
@@ -104,23 +105,23 @@ func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 	// Revalidation is answered from the stamp alone: no chart is loaded and
 	// nothing is rendered.
-	etag := indexETag(repo.ID, repoName, h.BaseURL, stamp)
+	etag := indexETag(repo.ID, repoName, stamp)
 	// The rendered index is cached under the stamp-derived ETag, so a changed
 	// chart set can never be served from an old rendering, and the charts are
 	// loaded and marshalled once per change instead of once per request.
 	h.ServeRendered(w, r, repo.Public, etag, etag, indexMaxAge, func(ctx context.Context) (*base.Rendered, error) {
-		return h.renderIndex(ctx, repo.ID, repoName)
+		return h.renderIndex(ctx, repo.ID)
 	}, "failed to render index.yaml", "repo", repoName)
 }
 
 // renderIndex loads the live charts of a repository and renders index.yaml.
-func (h *HTTPHandler) renderIndex(ctx context.Context, repoID, repoName string) (*base.Rendered, error) {
+func (h *HTTPHandler) renderIndex(ctx context.Context, repoID string) (*base.Rendered, error) {
 	charts, err := h.DB.ListHelmCharts(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("list helm charts: %w", err)
 	}
 
-	indexYAML, err := yaml.Marshal(buildHelmIndex(charts, repoName, h.BaseURL))
+	indexYAML, err := yaml.Marshal(buildHelmIndex(charts))
 	if err != nil {
 		return nil, fmt.Errorf("marshal index.yaml: %w", err)
 	}
@@ -739,7 +740,7 @@ type HelmChartEntry struct {
 	Keywords    []string            `yaml:"keywords,omitempty"`
 }
 
-func buildHelmIndex(charts []*models.HelmChart, repoName, baseURL string) *HelmIndex {
+func buildHelmIndex(charts []*models.HelmChart) *HelmIndex {
 	entries := make(map[string][]HelmChartEntry)
 
 	for _, chart := range charts {
@@ -750,7 +751,7 @@ func buildHelmIndex(charts []*models.HelmChart, repoName, baseURL string) *HelmI
 			Description: chart.Description,
 			Digest:      chart.Digest,
 			URLs: []string{
-				fmt.Sprintf("%s/repos/%s/charts/%s.tgz", baseURL, url.PathEscape(repoName), url.PathEscape(chart.Name+"-"+chart.Version)),
+				"charts/" + url.PathEscape(chart.Name+"-"+chart.Version) + ".tgz",
 			},
 			Created:     chart.CreatedAt.UTC().Format(time.RFC3339),
 			Home:        chart.Home,

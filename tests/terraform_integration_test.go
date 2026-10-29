@@ -142,7 +142,7 @@ func TestTerraformModuleAndProviderRoundTrip(t *testing.T) {
 
 	mint := srv.must(http.MethodGet, "/repos/tf/vpc/aws/1.0.0/download", nil, http.StatusNoContent)
 
-	link := strings.TrimPrefix(mint.Header().Get("X-Terraform-Get"), "http://localhost")
+	link := mint.Header().Get("X-Terraform-Get")
 	if got := srv.must(http.MethodGet, link, nil, http.StatusOK).Body.Bytes(); !bytes.Equal(got, module) {
 		t.Fatalf("ticket download returned %d bytes, want %d", len(got), len(module))
 	}
@@ -179,13 +179,13 @@ func TestTerraformModuleAndProviderRoundTrip(t *testing.T) {
 		t.Fatalf("package description = %s (%v)", desc.Body, err)
 	}
 
-	sums := srv.must(http.MethodGet, strings.TrimPrefix(pkg.Sums, "http://localhost"), nil, http.StatusOK)
+	sums := srv.must(http.MethodGet, pkg.Sums, nil, http.StatusOK)
 	if strings.Count(sums.Body.String(), "\n") != 2 ||
 		!strings.Contains(sums.Body.String(), hex.EncodeToString(sum[:])+"  terraform-provider-aws_1.2.3_linux_amd64.zip") {
 		t.Fatalf("SHA256SUMS = %q", sums.Body)
 	}
 
-	srv.must(http.MethodGet, strings.TrimPrefix(pkg.Sig, "http://localhost"), nil, http.StatusOK)
+	srv.must(http.MethodGet, pkg.Sig, nil, http.StatusOK)
 
 	srv.must(http.MethodDelete, "/repos/tf/_api/providers/aws/1.2.3/darwin/arm64", nil, http.StatusOK)
 	srv.must(http.MethodDelete, "/repos/tf/_api/providers/aws/1.2.3", nil, http.StatusOK)

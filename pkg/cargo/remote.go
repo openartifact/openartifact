@@ -255,9 +255,11 @@ func DownloadURL(dl, crate, version, cksum string) string {
 	).Replace(dl)
 }
 
-// RenderConfig is the config.json a proxy or group repository serves: dl and
-// api point at the repository, and a private repository makes cargo send its
-// token with every request.
+// RenderConfig is the config.json a hosted, proxy or group repository serves:
+// dl and api point at the repository under baseURL, the origin the client
+// reached (absolute: cargo concatenates the dl template and never resolves it
+// against the index URL), and a private repository makes cargo send its token
+// with every request.
 func RenderConfig(baseURL, repoName string, public bool) []byte {
 	repoURL := strings.TrimRight(baseURL, "/") + "/repos/" + repoName
 

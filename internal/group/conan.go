@@ -226,6 +226,13 @@ func (h *Handler) serveConanFirstMap(
 	be Backend,
 	rewriteURLs bool,
 ) {
+	// The members answer with URLs under the origin this request reached (they
+	// resolve it from the same request), which the rewrite replaces per request.
+	var origin string
+	if rewriteURLs {
+		origin = h.publicBase(w, r)
+	}
+
 	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
 		ask:         jsonAsk(relPath, "", 1),
 		what:        "conan file map",
@@ -243,8 +250,8 @@ func (h *Handler) serveConanFirstMap(
 			}
 
 			if rewriteURLs {
-				from := pkgconan.RepoURL(h.baseURL, d.member.Name) + "/v1/files/"
-				to := pkgconan.RepoURL(h.baseURL, grp.Name) + "/v1/files/"
+				from := pkgconan.RepoURL(origin, d.member.Name) + "/v1/files/"
+				to := pkgconan.RepoURL(origin, grp.Name) + "/v1/files/"
 
 				for name, u := range m {
 					if rest, ok := strings.CutPrefix(u, from); ok {

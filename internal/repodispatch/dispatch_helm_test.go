@@ -72,8 +72,8 @@ func helmEnv(t *testing.T) (http.Handler, string) {
 	// The hosted router has the route shapes of the real helm handler.
 	hosted := chi.NewRouter()
 	hosted.Get("/index.yaml", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, "apiVersion: v1\nentries:\n  local:\n  - name: local\n    version: 2.0.0\n    urls:\n    - "+
-			helmBase+"/repos/local/charts/local-2.0.0.tgz\n")
+		_, _ = io.WriteString(w, "apiVersion: v1\nentries:\n  local:\n  - name: local\n    version: 2.0.0\n"+
+			"    urls:\n    - charts/local-2.0.0.tgz\n")
 	})
 	hosted.Get("/charts/{filename}", func(w http.ResponseWriter, r *http.Request) {
 		if chi.URLParam(r, "filename") != "local-2.0.0.tgz" {
@@ -124,9 +124,9 @@ func chartURLs(t *testing.T, w *httptest.ResponseRecorder) map[string]string {
 func TestHelmProxyAndGroupThroughDispatch(t *testing.T) {
 	h, chart := helmEnv(t)
 
-	t.Run("proxy rewrites chart URLs to itself and serves the chart", func(t *testing.T) {
+	t.Run("proxy rewrites chart URLs relative to itself and serves the chart", func(t *testing.T) {
 		urls := chartURLs(t, npmGet(h, "/repos/mirror/index.yaml"))
-		if urls["remote"] != helmBase+"/repos/mirror/charts/remote-1.0.0.tgz" {
+		if urls["remote"] != "charts/remote-1.0.0.tgz" {
 			t.Errorf("urls = %v", urls)
 		}
 
@@ -137,8 +137,8 @@ func TestHelmProxyAndGroupThroughDispatch(t *testing.T) {
 
 	t.Run("group merges the hosted and the proxy member", func(t *testing.T) {
 		urls := chartURLs(t, npmGet(h, "/repos/all/index.yaml"))
-		if urls["local"] != helmBase+"/repos/all/charts/local-2.0.0.tgz" ||
-			urls["remote"] != helmBase+"/repos/all/charts/remote-1.0.0.tgz" {
+		if urls["local"] != "charts/local-2.0.0.tgz" ||
+			urls["remote"] != "charts/remote-1.0.0.tgz" {
 			t.Errorf("urls = %v", urls)
 		}
 	})

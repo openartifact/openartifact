@@ -113,10 +113,11 @@ func (h *HTTPHandler) v1Resolve(w http.ResponseWriter, r *http.Request, s *scope
 
 // fileURL is the URL a Conan 1 client transfers one file of the revision from or
 // to. It is absolute (the client resolves a relative one against the remote URL,
-// which has no trailing slash).
-func (h *HTTPHandler) fileURL(s *scope, rrev, pid, prev, filename string) string {
+// which has no trailing slash) and built on origin, the one the client reached
+// (see base.Handler.PublicBase). The URL maps are not cacheable documents: no
+// validator is sent for them.
+func fileURL(origin string, s *scope, rrev, pid, prev, filename string) string {
 	user, channel, _ := strings.Cut(s.recipe.UserChannel, "/")
-	origin := strings.TrimRight(h.BaseURL, "/")
 
 	var b strings.Builder
 
@@ -195,10 +196,11 @@ func (h *HTTPHandler) writeV1URLs(w http.ResponseWriter, r *http.Request, names 
 	}
 
 	urls := make(map[string]string, len(t.files))
+	origin := h.PublicBase(w, r)
 
 	for _, f := range t.files {
 		if names == nil || slices.Contains(names, f.Filename) {
-			urls[f.Filename] = h.fileURL(s, t.rrev, s.pid, t.prev, f.Filename)
+			urls[f.Filename] = fileURL(origin, s, t.rrev, s.pid, t.prev, f.Filename)
 		}
 	}
 
@@ -254,8 +256,10 @@ func (h *HTTPHandler) handleV1UploadURLs(w http.ResponseWriter, r *http.Request)
 	}
 
 	urls := make(map[string]string, len(sizes))
+	origin := h.PublicBase(w, r)
+
 	for name := range sizes {
-		urls[name] = h.fileURL(s, rrev, s.pid, prev, name)
+		urls[name] = fileURL(origin, s, rrev, s.pid, prev, name)
 	}
 
 	h.writeJSON(w, urls)

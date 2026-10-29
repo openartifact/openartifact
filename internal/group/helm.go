@@ -101,7 +101,7 @@ func (h *Handler) serveHelm(
 				return nil, errNoDocument
 			}
 
-			return mergeHelmIndexes(h.baseURL+"/repos/"+grp.Name+"/"+helmChartsDir, indexes)
+			return mergeHelmIndexes(indexes)
 		},
 	})
 
@@ -139,11 +139,11 @@ func dropHostedCharts(hosted, proxies []*pkghelm.Index) {
 	}
 }
 
-// mergeHelmIndexes merges indexes and points every chart URL at chartBase
-// (BASE_URL/repos/<group>/charts/) plus the chart's file name. Member indexes
+// mergeHelmIndexes merges indexes and points every chart URL at the relative
+// reference charts/<file>, which helm resolves against the group's URL. Member indexes
 // are what this server rendered: their URLs end in the file a charts/<file>
 // request resolves through the member.
-func mergeHelmIndexes(chartBase string, indexes []*pkghelm.Index) ([]byte, error) {
+func mergeHelmIndexes(indexes []*pkghelm.Index) ([]byte, error) {
 	merged := pkghelm.MergeIndexes(indexes)
 
 	merged.RewriteURLs(func(cv pkghelm.ChartVersion) []string {
@@ -155,7 +155,7 @@ func mergeHelmIndexes(chartBase string, indexes []*pkghelm.Index) ([]byte, error
 				continue
 			}
 
-			if u := chartBase + url.PathEscape(file); !slices.Contains(out, u) {
+			if u := helmChartsDir + url.PathEscape(file); !slices.Contains(out, u) {
 				out = append(out, u)
 			}
 		}

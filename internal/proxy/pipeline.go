@@ -356,7 +356,7 @@ func writeBody(w http.ResponseWriter, r *http.Request, contentType string, body 
 	w.WriteHeader(http.StatusOK)
 
 	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
+		_, _ = w.Write(body) //nolint:gosec // G705: package metadata whose request-derived part is a validated host, never HTML
 	}
 }
 

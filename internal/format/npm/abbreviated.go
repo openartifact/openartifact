@@ -43,11 +43,11 @@ func BuildAbbreviatedPackument(
 	repoName, packageName string,
 	versions []*models.NPMVersion,
 	distTags map[string]string,
-	baseURL string,
+	origin string,
 ) ([]byte, error) {
 	sorted := newestPerVersion(versions)
 
-	w := newPackumentWriter(repoName, packageName, baseURL, estimatePackumentSize(sorted, 320)*2/3)
+	w := newPackumentWriter(repoName, packageName, origin, estimatePackumentSize(sorted, 320)*2/3)
 
 	w.buf = append(w.buf, `{"_id":`...)
 	w.buf = appendJSONString(w.buf, packageName)

@@ -80,7 +80,7 @@ func NewOCIBlobStore(cfg StorageConfig) (*OCIBlobStore, error) {
 	}
 
 	return &OCIBlobStore{
-		relay:    newRelay(stagingDir, cfg.PublicURL),
+		relay:    openRelay(stagingDir, cfg.PublicURL, cfg.PublicURLFromRequest),
 		client:   newStreamingHTTPClient(transport),
 		base:     strings.TrimRight(cfg.Endpoint, "/"),
 		repo:     cfg.Bucket,

@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
+	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -83,25 +84,29 @@ func (h *HTTPHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	config := map[string]any{
-		"dl":  fmt.Sprintf("%s/repos/%s/api/v1/crates", h.BaseURL, repoName),
-		"api": fmt.Sprintf("%s/repos/%s", h.BaseURL, repoName),
-	}
+	// dl and api are absolute: cargo concatenates the dl template and does not
+	// resolve it against the index URL, so they carry the origin the client
+	// reached (BASE_URL when set). The body is the validator's input, so the
+	// ETag differs per origin; a private repository tells cargo to send its
+	// token with every request instead of trying anonymously first.
+	body := pkgcargo.RenderConfig(h.PublicBase(w, r), repoName, repo.Public)
 
-	// A private repository needs credentials for the index and the downloads
-	// too; this tells cargo to send its token with every request instead of
-	// trying anonymously first.
-	if !repo.Public {
-		config["auth-required"] = true
+	if base.Revalidate(w, r, repo.Public, base.ContentETag(body), configMaxAge) {
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if encErr := json.NewEncoder(w).Encode(config); encErr != nil {
-		_ = encErr // response header already written
+	if r.Method != http.MethodHead {
+		//nolint:gosec // G705: a JSON document whose only request-derived part is a validated host, not HTML
+		_, _ = w.Write(body)
 	}
 }
+
+// configMaxAge is how long shared caches may reuse a public repository's
+// config.json before revalidating.
+const configMaxAge = 300
 
 // indexMaxAge is how long shared caches may reuse a public repository's sparse
 // index entry before revalidating.

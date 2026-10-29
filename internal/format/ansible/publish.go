@@ -212,7 +212,11 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		Size:       row.SizeBytes,
 	}))
 
-	base.WriteJSON(w, http.StatusAccepted, []byte(`{"task":`+strconv.Quote(h.apiPath(repo.Name)+"/imports/collections/"+row.ID+"/")+`}`))
+	base.WriteJSON(
+		w,
+		http.StatusAccepted,
+		[]byte(`{"task":`+strconv.Quote(apiPath(h.PublicBase(w, r), repo.Name)+"/imports/collections/"+row.ID+"/")+`}`),
+	)
 }
 
 func writeConflict(w http.ResponseWriter, col *ansible.Collection) {

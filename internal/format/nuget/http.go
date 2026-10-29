@@ -131,8 +131,12 @@ func (h *HTTPHandler) resolveRepoInfo(w http.ResponseWriter, r *http.Request) *m
 	return repo
 }
 
-func (h *HTTPHandler) repoBaseURL(r *http.Request) string {
-	return fmt.Sprintf("%s/repos/%s", h.BaseURL, urlparams.Vars(r)["name"])
+// repoBaseURL is the repository's root URL as the client reached it (BASE_URL
+// when set, else the request's origin). NuGet clients take the service index
+// @ids as full URLs, so every URL built from it is absolute and its document's
+// validator must carry it (registrationETag).
+func (h *HTTPHandler) repoBaseURL(w http.ResponseWriter, r *http.Request) string {
+	return h.PublicBase(w, r) + "/repos/" + urlparams.Vars(r)["name"]
 }
 
 func registrationIndexURL(baseURL, id string) string {
@@ -161,7 +165,7 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 
 	index := map[string]any{
 		"version": "3.0.0",
@@ -764,7 +768,9 @@ const registrationMaxAge = 60
 // registrationETag identifies the registration index of one package: it
 // changes when a version is added, removed or republished and never because of
 // download counters. Rows are immutable and a republish is a new row with a new
-// id, so the ids identify the content.
+// id, so the ids identify the content. baseURL is the repository root the URLs
+// of the document are built on, origin included: a document for one origin must
+// never revalidate (or be served from the render cache) for another.
 func registrationETag(repoID, baseURL, packageID string, pkgs []*models.NuGetPackage) string {
 	buf := make([]byte, 0, 64+len(pkgs)*48)
 
@@ -802,7 +808,7 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 
 	// The validator comes from the rows already loaded, before any dependency
 	// groups are resolved or JSON is built.
@@ -896,7 +902,7 @@ func (h *HTTPHandler) handleRegistrationLeaf(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 	leaf := registrationLeafURL(baseURL, packageID, pkg.Version)
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
@@ -984,7 +990,7 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := h.repoBaseURL(r)
+	baseURL := h.repoBaseURL(w, r)
 	groups := groupByPackage(packages)
 	data := make([]map[string]any, len(groups))
 

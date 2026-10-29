@@ -12,6 +12,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/urlparams"
 )
@@ -21,7 +22,7 @@ import (
 
 // pathPrefix is the path of the server's base URL (the part before /repos
 // when the server is published under a prefix).
-func (h *HTTPHandler) pathPrefix() string { return PathPrefix(h.BaseURL) }
+func (h *HTTPHandler) pathPrefix() string { return publicurl.PathPrefix(h.BaseURL) }
 
 // moduleCoords reads and validates {mod}/{system} from the URL. A name no
 // upload could have used cannot exist, so it is a 404.
@@ -306,7 +307,7 @@ func (h *HTTPHandler) mintURL(w http.ResponseWriter, t ticket, filename string) 
 
 	t.expires = h.now().Add(ticketTTL)
 
-	return h.BaseURL + ticketPath + encodeTicket(h.ticketKey, t) + "/" + filename, true
+	return h.pathPrefix() + ticketPath + encodeTicket(h.ticketKey, t) + "/" + filename, true
 }
 
 // providerType reads and validates {type} from the URL.

@@ -13,9 +13,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
 
@@ -23,8 +23,8 @@ import (
 // https://repo.packagist.org); clients configure {"type": "composer", "url":
 // ".../repos/REPO"}.
 //
-//   - packages.json is generated: a metadata-url pointing at this repository's
-//     own p2 documents. It carries no "available-packages" (an upstream cannot be
+//   - packages.json is generated: a path-absolute metadata-url pointing at this
+//     repository's own p2 documents. It carries no "available-packages" (an upstream cannot be
 //     enumerated) and no list or search endpoint: Packagist serves those from
 //     another host than its metadata, so they are not part of the mirror.
 //   - p2/VENDOR/NAME.json and p2/VENDOR/NAME~dev.json are fetched upstream and
@@ -78,9 +78,10 @@ func (s *Service) serveComposer(w http.ResponseWriter, r *http.Request, repo *mo
 	}
 }
 
-// composerRoot is the absolute URL of the repository, without a trailing slash.
-func (s *Service) composerRoot(repo *models.Repository) string {
-	return strings.TrimSuffix(s.baseURL, "/") + "/repos/" + url.PathEscape(repo.Name)
+// composerRepoPath is the path of the repository below an origin or prefix,
+// without a trailing slash.
+func composerRepoPath(repo *models.Repository) string {
+	return "/repos/" + url.PathEscape(repo.Name)
 }
 
 func composerKey(name string, dev bool) string {
@@ -96,8 +97,13 @@ func composerDistKey(p pkgcomposer.Path) string {
 }
 
 func (s *Service) serveComposerRoot(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
+	// metadata-url is path-absolute: Composer resolves a value starting with "/"
+	// against the scheme and host of the repository URL
+	// (ComposerRepository::canonicalizeUrl), so the document names no origin.
+	prefix := publicurl.PathPrefix(s.baseURL)
+
 	s.serveGeneratedJSON(w, r, repo, nil,
-		[]byte(`{"packages":[],"metadata-url":"`+s.composerRoot(repo)+`/p2/%package%.json"}`), composerMaxAge)
+		[]byte(`{"packages":[],"metadata-url":"`+prefix+composerRepoPath(repo)+`/p2/%package%.json"}`), composerMaxAge)
 }
 
 // composerDoc is the upstream p2 document of name, cached verbatim.
@@ -131,12 +137,14 @@ func composerVerifyDocument(name string) func(io.ReadSeeker) error {
 }
 
 func (s *Service) serveComposerMetadata(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcomposer.Path) {
-	root := s.composerRoot(repo)
+	// dist.url is downloaded by Composer as-is, so it is absolute and its origin
+	// is part of the validator below; the rewrite happens at serve time.
+	root := s.publicBase(w, r) + composerRepoPath(repo)
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: composerDoc(p.Name, p.Dev),
 		maxAge:  composerMaxAge,
-		// What is served depends on the cached document and on the server's URL.
+		// What is served depends on the cached document and on the origin of the dist URLs.
 		etag: func(blobKey string) string {
 			sum := sha256.Sum256([]byte(blobKey + "\x00" + root))
 			return `"` + hex.EncodeToString(sum[:16]) + `"`

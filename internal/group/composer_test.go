@@ -160,7 +160,7 @@ func TestComposerGroup_PackagesJSONIsTheGroups(t *testing.T) {
 	f.set("mirror", "packages.json", 200, `{"packages":[],"metadata-url":"y"}`)
 
 	w := f.get(http.MethodGet, "packages.json")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"metadata-url":"`+composerBase+`/repos/all/p2/%package%.json"`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"metadata-url":"/repos/all/p2/%package%.json"`) {
 		t.Fatalf("packages.json = %d %s", w.Code, w.Body.String())
 	}
 

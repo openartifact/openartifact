@@ -126,7 +126,8 @@ type Service struct {
 	flights   flightGroup
 	tokens    tokenCache // docker upstream bearer tokens
 
-	// baseURL is the server URL rewritten metadata points at (npm tarballs).
+	// baseURL is BASE_URL when the operator set one, "" otherwise; read it
+	// through publicBase (the origin rewritten metadata points at).
 	baseURL string
 
 	// dockerDigestTTL is how long a docker manifest or blob addressed by digest

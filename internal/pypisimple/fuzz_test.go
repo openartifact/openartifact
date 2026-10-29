@@ -435,7 +435,7 @@ func FuzzParseIndex(f *testing.F) {
 func fuzzCheckIndexRoundTrip(t *testing.T, names []string) {
 	t.Helper()
 
-	href := func(name string) string { return ProjectURL("repo", name) }
+	href := ProjectURL
 
 	for _, format := range []Format{HTML, JSON} {
 		out, err := RenderIndex(format, names, href)
@@ -716,12 +716,12 @@ func FuzzParsePath(f *testing.F) {
 // names: every name must stay one path segment, and a file URL that names a
 // servable file must be routed back to it.
 func FuzzLinks(f *testing.F) {
-	f.Add("repo", "demo", "demo-1.0.tar.gz")
-	f.Add("re/po", "../x", "a b?c#d%2f")
-	f.Add("", "", "")
+	f.Add("demo", "demo-1.0.tar.gz")
+	f.Add("../x", "a b?c#d%2f")
+	f.Add("", "")
 
-	f.Fuzz(func(t *testing.T, repo, project, filename string) {
-		fuzzCheckLinkSegments(t, repo, project, filename)
+	f.Fuzz(func(t *testing.T, project, filename string) {
+		fuzzCheckLinkSegments(t, project, filename)
 
 		if ValidName(project) && NormalizeName(project) == project && SafeFilename(filename) {
 			kind, gotProject, gotFilename := ParsePath("files/" + project + "/" + filename)
@@ -736,30 +736,30 @@ func FuzzLinks(f *testing.F) {
 	})
 }
 
-// fuzzCheckLinkSegments asserts the repo, project and file names each stay one
-// path segment of the URLs built from them.
-func fuzzCheckLinkSegments(t *testing.T, repo, project, filename string) {
+// fuzzCheckLinkSegments asserts the project and file names each stay one
+// path segment of the relative references built from them.
+func fuzzCheckLinkSegments(t *testing.T, project, filename string) {
 	t.Helper()
 
-	for _, u := range []string{ProjectURL(repo, project), FileURL(repo, project, filename)} {
+	for _, u := range []string{ProjectURL(project), FileURL(project, filename)} {
 		if _, err := url.Parse(u); err != nil {
 			t.Fatalf("%q does not parse as a URL: %v", u, err)
 		}
 	}
 
-	segs := strings.Split(FileURL(repo, project, filename), "/")
-	if len(segs) != 6 || segs[0] != "" || segs[1] != "repos" || segs[3] != "files" {
-		t.Fatalf("FileURL(%q, %q, %q) = %q: a name escaped its segment", repo, project, filename, strings.Join(segs, "/"))
+	segs := strings.Split(FileURL(project, filename), "/")
+	if len(segs) != 5 || segs[0] != ".." || segs[1] != ".." || segs[2] != "files" {
+		t.Fatalf("FileURL(%q, %q) = %q: a name escaped its segment", project, filename, strings.Join(segs, "/"))
 	}
 
-	for i, want := range map[int]string{2: repo, 4: project, 5: filename} {
+	for i, want := range map[int]string{3: project, 4: filename} {
 		if got, err := url.PathUnescape(segs[i]); err != nil || got != want {
 			t.Fatalf("FileURL segment %d unescapes to %q (%v), want %q", i, got, err, want)
 		}
 	}
 
-	if segs = strings.Split(ProjectURL(repo, project), "/"); len(segs) != 6 || segs[5] != "" || segs[3] != "simple" {
-		t.Fatalf("ProjectURL(%q, %q) = %q: a name escaped its segment", repo, project, strings.Join(segs, "/"))
+	if segs = strings.Split(ProjectURL(project), "/"); len(segs) != 2 || segs[1] != "" {
+		t.Fatalf("ProjectURL(%q) = %q: a name escaped its segment", project, strings.Join(segs, "/"))
 	}
 }
 

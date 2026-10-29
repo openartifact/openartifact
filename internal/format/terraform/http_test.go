@@ -19,11 +19,10 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/gpg"
 )
-
-const registryHost = "http://registry.test"
 
 func jsonOf[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 	t.Helper()
@@ -42,16 +41,16 @@ func hexSHA(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// ticketPathOf turns an absolute ticket URL into the path a client requests.
+// ticketPathOf checks that link is a path-absolute ticket reference (no
+// origin: the client resolves it against the document URL) and returns it.
 func ticketPathOf(t *testing.T, link string) string {
 	t.Helper()
 
-	path, ok := strings.CutPrefix(link, registryHost)
-	if !ok || !strings.HasPrefix(path, ticketPath) {
-		t.Fatalf("%q is not a ticket URL on %s", link, registryHost)
+	if !strings.HasPrefix(link, ticketPath) {
+		t.Fatalf("%q is not a path-absolute ticket URL", link)
 	}
 
-	return path
+	return link
 }
 
 func TestDiscovery(t *testing.T) {
@@ -185,6 +184,48 @@ func TestModuleVersionDetails(t *testing.T) {
 	}
 }
 
+// The download link is a path-absolute reference: it carries the path prefix of
+// an explicit BASE_URL but never an origin, and not the request's Host either.
+func TestModuleDownloadLinkHasNoOrigin(t *testing.T) {
+	for _, tc := range []struct{ baseURL, prefix string }{
+		{"", ""},
+		{"https://example.com", ""},
+		{"https://example.com/artifacts/", "/artifacts"},
+	} {
+		t.Run(tc.baseURL, func(t *testing.T) {
+			f := newModuleFixture(t)
+			f.e.h.BaseURL = tc.baseURL
+
+			var links []string
+
+			for _, host := range []string{"a.example", "b.example:8443"} {
+				req := formattest.Request(http.MethodGet, "/repos/myrepo/vpc/aws/1.0.0/download", nil)
+				req.Host = host
+				req = req.WithContext(
+					middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "ci", Credential: auth.CredentialNone}),
+				)
+
+				w := httptest.NewRecorder()
+				f.e.router().ServeHTTP(w, req)
+
+				if w.Code != http.StatusNoContent {
+					t.Fatalf("status %d: %s", w.Code, w.Body)
+				}
+
+				links = append(links, w.Header().Get("X-Terraform-Get"))
+			}
+
+			if !strings.HasPrefix(links[0], tc.prefix+ticketPath) || strings.Contains(links[0], "://") {
+				t.Fatalf("X-Terraform-Get = %q, want a path-absolute reference under %q", links[0], tc.prefix)
+			}
+
+			if links[0] != links[1] {
+				t.Fatalf("link depends on the Host: %q vs %q", links[0], links[1])
+			}
+		})
+	}
+}
+
 func TestModuleDownloadMintsTicketForArchive(t *testing.T) {
 	f := newModuleFixture(t)
 	e := f.e
@@ -200,7 +241,7 @@ func TestModuleDownloadMintsTicketForArchive(t *testing.T) {
 	}
 
 	link := w.Header().Get("X-Terraform-Get")
-	if !strings.HasPrefix(link, registryHost+ticketPath) || !strings.HasSuffix(link, "/vpc-aws-1.0.0.zip") {
+	if !strings.HasPrefix(link, ticketPath) || !strings.HasSuffix(link, "/vpc-aws-1.0.0.zip") {
 		t.Fatalf("X-Terraform-Get = %q", link)
 	}
 

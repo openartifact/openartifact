@@ -196,6 +196,14 @@ func TestLoad_BaseURL(t *testing.T) {
 		if cfg.BaseURL != "https://example.com" {
 			t.Errorf("expected BASE_URL=https://example.com, got %s", cfg.BaseURL)
 		}
+
+		// A configured BASE_URL is the explicit override for package-client URLs
+		// and for the relay's upload URLs.
+		if cfg.ClientBaseURL() != "https://example.com" || cfg.Storage.PublicURL != "https://example.com" ||
+			cfg.Storage.PublicURLFromRequest {
+			t.Errorf("client base = %q, storage public = %q (from request %v)",
+				cfg.ClientBaseURL(), cfg.Storage.PublicURL, cfg.Storage.PublicURLFromRequest)
+		}
 	})
 
 	t.Run("base url default", func(t *testing.T) {
@@ -207,6 +215,13 @@ func TestLoad_BaseURL(t *testing.T) {
 
 		if cfg.BaseURL != "http://localhost:8080" {
 			t.Errorf("expected default BASE_URL=http://localhost:8080, got %s", cfg.BaseURL)
+		}
+
+		// The default is for SSO callbacks and webhooks only: package-client
+		// URLs follow the request when BASE_URL was not configured.
+		if cfg.ClientBaseURL() != "" || cfg.Storage.PublicURL != "" || !cfg.Storage.PublicURLFromRequest {
+			t.Errorf("client base = %q, storage public = %q (from request %v), want none and from request",
+				cfg.ClientBaseURL(), cfg.Storage.PublicURL, cfg.Storage.PublicURLFromRequest)
 		}
 	})
 }

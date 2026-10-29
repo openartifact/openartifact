@@ -63,8 +63,9 @@ func New(log *logger.Logger, db database.Database, proxySvc *proxy.Service, auth
 	}
 }
 
-// WithBaseURL sets the server base URL that rewritten metadata (npm tarball
-// URLs) points at: the same value the hosted format handlers use.
+// WithBaseURL sets the explicit BASE_URL override (empty when the operator set
+// none) for the origin of rewritten metadata such as npm tarball URLs; without
+// it the origin follows the request (see internal/publicurl).
 func (d *Dispatcher) WithBaseURL(baseURL string) *Dispatcher {
 	d.proxy.SetBaseURL(baseURL)
 	d.group.SetBaseURL(baseURL)

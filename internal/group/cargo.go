@@ -60,7 +60,8 @@ func (h *Handler) serveCargo(
 }
 
 func (h *Handler) serveCargoConfig(w http.ResponseWriter, r *http.Request, grp *models.Repository) {
-	body := pkgcargo.RenderConfig(h.baseURL, grp.Name, grp.Public)
+	// The body carries the origin the client reached, so its content ETag differs per origin.
+	body := pkgcargo.RenderConfig(h.publicBase(w, r), grp.Name, grp.Public)
 	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), cargoConfigMaxAge, false)
 }
 

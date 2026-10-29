@@ -44,7 +44,7 @@ func NewFilesystemBlobStore(cfg StorageConfig) (*FilesystemStore, error) {
 		return nil, err
 	}
 
-	store.relay = newRelay(filepath.Join(cfg.Path, filesystemStagingDir), cfg.PublicURL)
+	store.relay = openRelay(filepath.Join(cfg.Path, filesystemStagingDir), cfg.PublicURL, cfg.PublicURLFromRequest)
 
 	return store, nil
 }
