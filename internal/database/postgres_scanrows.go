@@ -205,7 +205,7 @@ func mapSlice[R, T any](in []R, f func(R) T) []T {
 
 // execMatching runs a write statement and returns notFound when it matched no
 // row; a failure is wrapped as "failed to <action>".
-func (p *PostgresDB) execMatching(ctx context.Context, action string, notFound error, query string, args ...any) error {
+func (p *core) execMatching(ctx context.Context, action string, notFound error, query string, args ...any) error {
 	res, err := p.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to %s: %w", action, err)

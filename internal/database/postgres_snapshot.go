@@ -56,7 +56,7 @@ const snapshotMaxConns = 4
 type backupSnapshot struct {
 	*PostgresDB // the view: db and pool/q are bound to the snapshot
 
-	parent  *PostgresDB
+	parent  *core
 	leaseID string
 	ttl     time.Duration
 
@@ -93,7 +93,7 @@ func (p *PostgresDB) BeginBackupSnapshot(ctx context.Context, leaseTTL time.Dura
 		return nil, fmt.Errorf("register backup lease: %w", err)
 	}
 
-	s := &backupSnapshot{parent: p, leaseID: leaseID, ttl: leaseTTL}
+	s := &backupSnapshot{parent: p.core, leaseID: leaseID, ttl: leaseTTL}
 
 	if err := s.open(ctx); err != nil {
 		s.Release()
@@ -138,12 +138,12 @@ func (s *backupSnapshot) open(ctx context.Context) error {
 		return fmt.Errorf("record backup lease snapshot: %w", err)
 	}
 
-	s.PostgresDB = &PostgresDB{
+	s.PostgresDB = newPostgresDB(&core{
 		db:   openSnapshotDB(p, snapshotID),
 		pool: tx,
 		q:    dbsqlc.New(tx),
 		log:  p.log,
-	}
+	})
 
 	return nil
 }
@@ -241,7 +241,7 @@ func (s *backupSnapshot) Release() {
 // ended: reads through it see the snapshot, and a connection that dies is
 // replaced by one that joins the same snapshot (valid until the coordinator
 // transaction ends).
-func openSnapshotDB(p *PostgresDB, snapshotID string) *sql.DB {
+func openSnapshotDB(p *core, snapshotID string) *sql.DB {
 	cfg := p.rawPool.Config().ConnConfig.Copy()
 
 	inner := stdlib.GetConnector(*cfg, stdlib.OptionAfterConnect(func(ctx context.Context, c *pgx.Conn) error {

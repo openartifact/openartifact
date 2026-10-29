@@ -53,8 +53,10 @@ func idString(v any) string {
 	return s
 }
 
-// PostgresDB implements the Database interface for PostgreSQL.
-type PostgresDB struct {
+// core is the connection state every domain store shares: the pools, the
+// sqlc queries, the logger and the cross-store caches and settings. A backup
+// snapshot view (BeginBackupSnapshot) is a second core bound to the snapshot.
+type core struct {
 	db *sql.DB
 	// pool is what the pgx-native queries run on: the shared pool, or the single
 	// transaction of a backup snapshot (see BeginBackupSnapshot).
@@ -83,6 +85,15 @@ type PostgresDB struct {
 	// would deadlock. Keeping holders at half the pool leaves the rest for
 	// their callbacks. nil means the pool is unbounded.
 	lockSlots chan struct{}
+}
+
+// PostgresDB is the PostgreSQL database: the composition root that embeds one
+// store per domain (see stores.go). Consumers never depend on this type but on
+// the small interfaces they declare themselves; PostgresDB satisfies them
+// through the promoted store methods.
+type PostgresDB struct {
+	*core
+	// STORES-STRUCT
 }
 
 func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) {
@@ -117,7 +128,7 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 		lockSlots = make(chan struct{}, max(1, cfg.MaxOpenConns/2))
 	}
 
-	return &PostgresDB{
+	return newPostgresDB(&core{
 		db:        db,
 		pool:      pool,
 		rawPool:   pool,
@@ -125,7 +136,7 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 		log:       log,
 		lockSlots: lockSlots,
 		authCache: authCache{ttl: time.Duration(cfg.AuthCacheTTLMillis) * time.Millisecond},
-	}, nil
+	}), nil
 }
 
 // sqlIdleTimeout is how long a surplus database/sql connection may sit idle
@@ -150,19 +161,19 @@ func configureSQLPool(db *sql.DB, cfg DatabaseConfig) {
 }
 
 // GetDB returns the underlying sql.DB connection.
-func (p *PostgresDB) GetDB() *sql.DB {
+func (p *core) GetDB() *sql.DB {
 	return p.db
 }
 
 // PoolStat reads the statistics of the shared pgx pool (for the
 // openartifact_db_pool_* metrics). It must not be called on a backup snapshot
 // view, which has no pool of its own.
-func (p *PostgresDB) PoolStat() *pgxpool.Stat {
+func (p *core) PoolStat() *pgxpool.Stat {
 	return p.rawPool.Stat()
 }
 
 // Close closes the database connection.
-func (p *PostgresDB) Close() error {
+func (p *core) Close() error {
 	if p.rawPool != nil {
 		p.rawPool.Close()
 		if p.log != nil {
@@ -173,12 +184,12 @@ func (p *PostgresDB) Close() error {
 }
 
 // Ping checks if the database is accessible.
-func (p *PostgresDB) Ping(ctx context.Context) error {
+func (p *core) Ping(ctx context.Context) error {
 	return p.db.PingContext(ctx)
 }
 
 // BeginTx starts a new transaction.
-func (p *PostgresDB) BeginTx(ctx context.Context) (Transaction, error) {
+func (p *core) BeginTx(ctx context.Context) (Transaction, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -188,7 +199,7 @@ func (p *PostgresDB) BeginTx(ctx context.Context) (Transaction, error) {
 }
 
 // Migrate runs database migrations.
-func (p *PostgresDB) Migrate(ctx context.Context) error {
+func (p *core) Migrate(ctx context.Context) error {
 	return NewMigrator(p.db).Apply(ctx)
 }
 

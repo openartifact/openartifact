@@ -15,7 +15,7 @@ import (
 
 // acquireLockSlot reserves one of the blob-lock slots (see lockSlots) and
 // returns the function that gives it back.
-func (p *PostgresDB) acquireLockSlot(ctx context.Context) (func(), error) {
+func (p *core) acquireLockSlot(ctx context.Context) (func(), error) {
 	if p.lockSlots == nil {
 		return func() {}, nil
 	}

@@ -79,13 +79,13 @@ func (c *authCache) invalidate() {
 // AuthCacheTTL is the configured lifetime of auth-derived cache entries (0:
 // caching disabled). Other caches that derive from the same permission data,
 // such as the search handler's readable-repository sets, follow it.
-func (p *PostgresDB) AuthCacheTTL() time.Duration { return p.authCache.ttl }
+func (p *core) AuthCacheTTL() time.Duration { return p.authCache.ttl }
 
 // AuthCacheGeneration changes whenever a write made through this PostgresDB
 // invalidated the auth cache. A value derived from permission data is current
 // only while the generation read before deriving it is unchanged. It never
 // changes while the cache is disabled (TTL 0).
-func (p *PostgresDB) AuthCacheGeneration() uint64 {
+func (p *core) AuthCacheGeneration() uint64 {
 	p.authCache.mu.Lock()
 	defer p.authCache.mu.Unlock()
 

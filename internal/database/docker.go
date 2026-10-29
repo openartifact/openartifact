@@ -75,7 +75,7 @@ func (p *PostgresDB) CreateDockerBlob(ctx context.Context, blob *models.DockerBl
 // writer's media_type stays (a later writer, possibly another tenant storing
 // the same bytes, never overwrites it), and a size recorded as 0 is corrected
 // by the first writer that knows the real one.
-func (p *PostgresDB) upsertBlobWithMediaType(ctx context.Context, sha256, blobKey, mediaType string, sizeBytes int64) (string, error) {
+func (p *core) upsertBlobWithMediaType(ctx context.Context, sha256, blobKey, mediaType string, sizeBytes int64) (string, error) {
 	if err := validateBlobSHA256(sha256); err != nil {
 		return "", err
 	}
