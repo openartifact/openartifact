@@ -11,7 +11,6 @@ import (
 	"database/sql"
 	"slices"
 	"testing"
-
 )
 
 func queryStrings(t *testing.T, db *sql.DB, q string, args ...any) []string {
