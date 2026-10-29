@@ -19,9 +19,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -35,11 +36,17 @@ type purgeQuotaCall struct {
 	count  int
 }
 
+// trashPurgeDBStore is what trashPurgeDB is used as.
+type trashPurgeDBStore interface {
+	audit.LoggerStore
+	TrashPurgeStore
+}
+
 // trashPurgeDB is a database.TrashStore over an in-memory list of expired
 // items. Blob references, orphans and quota calls are recorded or scripted so
 // tests can observe what the worker does through storage.SafeDeleteBlob.
 type trashPurgeDB struct {
-	databasetest.BaseMockDB
+	trashPurgeDBStore
 
 	mu sync.Mutex
 
@@ -58,6 +65,9 @@ type trashPurgeDB struct {
 	quota         []purgeQuotaCall
 	audits        []*models.AuditLog
 }
+
+// GetDB is not exercised by the tests.
+func (*trashPurgeDB) GetDB() *sql.DB { return nil }
 
 func newTrashPurgeDB() *trashPurgeDB {
 	return &trashPurgeDB{

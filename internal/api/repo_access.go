@@ -14,7 +14,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// repoAccessStore is the part of the database repoAccess uses needs.
+// repoAccessStore is the part of the database repoAccess needs.
 type repoAccessStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 }

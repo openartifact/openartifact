@@ -25,7 +25,7 @@ func (a workerAnalyzer) Enabled() bool { return a.w.Enabled() }
 
 func (a workerAnalyzer) Queue(req AIAnalysisRequest) { a.w.Notify(worker.AIAnalysisRequest(req)) }
 
-// testAnalyzerStore is the part of the database newTestAnalyzer uses needs.
+// testAnalyzerStore is the part of the database newTestAnalyzer needs.
 type testAnalyzerStore interface {
 	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)

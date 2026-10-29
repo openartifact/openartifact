@@ -21,7 +21,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AdminAIStore is the part of the database AdminAIHandler uses needs.
+// AdminAIStore is the part of the database AdminAIHandler needs.
 type AdminAIStore interface {
 	GetSystemSetting(ctx context.Context, key string) (string, error)
 	SetSystemSetting(ctx context.Context, key string, value string) error

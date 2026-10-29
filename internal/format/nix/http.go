@@ -68,7 +68,7 @@ type KeyProvider interface {
 	SecretKeyForRepo(ctx context.Context, repo *models.Repository) (*nix.SecretKey, error)
 }
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateNixPath(ctx context.Context, p *models.NixPath) error

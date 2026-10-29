@@ -11,12 +11,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
+// reserveMockDBStore is what reserveMockDB is used as.
+type reserveMockDBStore interface {
+	EnforceStore
+	ReleaseNStore
+	ReleaseStore
+}
+
 type reserveMockDB struct {
-	databasetest.BaseMockDB
+	reserveMockDBStore
 
 	ok       bool
 	err      error

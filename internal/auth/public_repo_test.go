@@ -8,12 +8,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type publicRepoMockDB struct {
-	databasetest.BaseMockDB
+	EvaluatorStore
 
 	repos  map[string]*models.Repository
 	target *models.PermissionTarget
@@ -116,6 +117,13 @@ func TestEvaluateAuthenticatedUnaffectedByPublic(t *testing.T) {
 }
 
 type userTargetsDB struct{ publicRepoMockDB }
+
+var errNotImplemented = errors.New("not implemented")
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*userTargetsDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
 
 func (m *userTargetsDB) GetPermissionTargetsForPrincipal(_ context.Context, _ string, _ []string) ([]*models.PermissionTarget, error) {
 	return nil, nil

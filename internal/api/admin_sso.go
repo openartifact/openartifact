@@ -33,7 +33,7 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
-// AdminSSOStore is the part of the database AdminSSOHandler uses needs.
+// AdminSSOStore is the part of the database AdminSSOHandler needs.
 type AdminSSOStore interface {
 	CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
 	CreateSystemSettingIfAbsent(ctx context.Context, key string, value string) (bool, error)

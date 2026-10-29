@@ -13,15 +13,26 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
 
+// emptyListsDBStore is what emptyListsDB is used as.
+type emptyListsDBStore interface {
+	BackupStore
+	BundlesStore
+	CleanupStore
+	LicenseStore
+	SBOMStore
+	SecretsStore
+	VulnStore
+	auth.EvaluatorStore
+}
+
 // emptyListsDB answers every list a handler reads with an empty, non-nil slice,
 // the way the Postgres layer does for a repository with no rows.
 type emptyListsDB struct {
-	databasetest.BaseMockDB
+	emptyListsDBStore
 }
 
 func (*emptyListsDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {

@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/backup/backuptest"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -33,7 +33,7 @@ import (
 // helper here already treats as "log a warning and skip" — exactly the
 // caveat behavior described in the assignment.
 type fakeDB struct {
-	databasetest.BaseMockDB
+	testEngineStore
 
 	salt   string
 	nextID int64
@@ -55,6 +55,11 @@ type fakeDB struct {
 	snapshots   int                // snapshots taken
 	released    int                // snapshots released
 }
+
+var errNotImplemented = errors.New("not implemented")
+
+// ReconcileAllStorageUsage is not exercised by the tests.
+func (*fakeDB) ReconcileAllStorageUsage(context.Context) (int64, error) { return 0, errNotImplemented }
 
 func newFakeDB(salt string) *fakeDB {
 	return &fakeDB{
@@ -94,17 +99,17 @@ func (f *fakeDB) BeginBackupSnapshot(context.Context, time.Duration) (database.S
 
 // snapshotOf is BeginBackupSnapshot for a type that embeds the fake and
 // overrides some reads: the snapshot must read through the outer type.
-func (f *fakeDB) snapshotOf(reader database.Database) (database.SnapshotReader, error) {
+func (f *fakeDB) snapshotOf(reader database.SnapshotReads) (database.SnapshotReader, error) {
 	if f.snapshotErr != nil {
 		return nil, f.snapshotErr
 	}
 
 	f.snapshots++
 
-	return &databasetest.LiveSnapshot{
-		Database:  reader,
-		Blobs:     slices.Clone(f.blobs),
-		OnRelease: func() { f.released++ },
+	return &backuptest.LiveSnapshot{
+		SnapshotReads: reader,
+		Blobs:         slices.Clone(f.blobs),
+		OnRelease:     func() { f.released++ },
 	}, nil
 }
 
@@ -255,9 +260,10 @@ func (f *fakeDB) EnsureBlob(_ context.Context, sha256Hex, _ string, _ int64) (st
 	return sha256Hex, nil
 }
 
-// testEngineStore is the part of the database newTestEngine uses needs.
+// testEngineStore is the part of the database newTestEngine needs.
 type testEngineStore interface {
 	EngineStore
+	database.SnapshotReads // read through the in-memory snapshot
 }
 
 func newTestEngine(t *testing.T, db testEngineStore) (*Engine, storage.BlobStore) {

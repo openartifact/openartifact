@@ -26,7 +26,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// VulnStore is the part of the database VulnHandler uses needs.
+// VulnStore is the part of the database VulnHandler needs.
 type VulnStore interface {
 	repoAccessStore
 	CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error

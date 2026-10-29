@@ -17,6 +17,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -36,6 +38,16 @@ type stackDB struct {
 	providers []*models.SSOProvider
 	linked    map[string]*models.User // "slug/sub" -> user
 }
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*stackDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// UpdateTokenLastUsed is not exercised by the tests.
+func (*stackDB) UpdateTokenLastUsed(context.Context, string) error { return errNotImplemented }
 
 func (d *stackDB) GetUserByID(_ context.Context, id string) (*models.User, error) {
 	return d.users[id], nil

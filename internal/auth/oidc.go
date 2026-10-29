@@ -91,7 +91,7 @@ func (p *OIDCProvider) IsOAuth2() bool {
 	return p.Cfg.Type == models.OIDCTypeGitHub || p.Cfg.Type == models.OIDCTypeOAuth2
 }
 
-// LoadOIDCProviderStore is the part of the database LoadOIDCProvider uses needs.
+// LoadOIDCProviderStore is the part of the database LoadOIDCProvider needs.
 type LoadOIDCProviderStore interface {
 	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
 }
@@ -367,7 +367,7 @@ func (p *OIDCProvider) EndSession(idTokenHint, postLogoutRedirectURI string) (st
 	return u.String(), true
 }
 
-// ExchangeWithRetryStore is the part of the database ExchangeWithRetry uses needs.
+// ExchangeWithRetryStore is the part of the database ExchangeWithRetry needs.
 type ExchangeWithRetryStore interface {
 	LoadOIDCProviderStore
 }

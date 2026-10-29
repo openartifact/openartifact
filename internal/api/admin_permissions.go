@@ -27,7 +27,7 @@ var validActions = map[string]bool{
 	"read": true, "write": true, "delete": true, "manage": true, "annotate": true,
 }
 
-// AdminPermissionsStore is the part of the database AdminPermissionsHandler uses needs.
+// AdminPermissionsStore is the part of the database AdminPermissionsHandler needs.
 type AdminPermissionsStore interface {
 	CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error
 	CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error)

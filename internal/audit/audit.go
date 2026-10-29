@@ -106,7 +106,7 @@ type entry struct {
 	span trace.SpanContext
 }
 
-// LoggerStore is the part of the database Logger uses needs.
+// LoggerStore is the part of the database Logger needs.
 type LoggerStore interface {
 	InsertAuditLog(ctx context.Context, event *models.AuditLog) error
 }

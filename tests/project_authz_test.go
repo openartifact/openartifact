@@ -19,8 +19,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/branding"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -33,11 +33,25 @@ const (
 	pzGroupEng = "3f1b2c4d-0000-4000-8000-0000000000e1"
 )
 
+// pzDBStore is what pzDB is used as.
+type pzDBStore interface {
+	api.CleanupStore
+	api.ProjectsStore
+	api.QuotasStore
+	api.RepositoriesStore
+	auth.CreateSessionStore
+	auth.CreateTokenStore
+	auth.EvaluatorStore
+	auth.SettingStore
+	branding.SettingStore
+	middleware.RBACMiddlewareStore
+}
+
 // pzDB is an in-memory store behind the real RBAC middleware and the real
 // projects handler. admins are the user IDs holding a manage permission
 // target; members is keyed projectID -> userID -> role.
 type pzDB struct {
-	databasetest.BaseMockDB
+	pzDBStore
 
 	mu       sync.Mutex
 	admins   map[string]bool

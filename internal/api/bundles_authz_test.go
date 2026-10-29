@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -27,10 +26,16 @@ const (
 	authzPipeID   = "bbbbbbbb-0000-4000-8000-000000000001"
 )
 
+// authzMockDBStore is what authzMockDB is used as.
+type authzMockDBStore interface {
+	BundlesStore
+	auth.EvaluatorStore
+}
+
 // authzMockDB is a small in-memory store for the bundle authorization matrix:
 // three repositories, permission targets per user id and one bundle per name.
 type authzMockDB struct {
-	databasetest.BaseMockDB
+	authzMockDBStore
 
 	repos   []*models.Repository
 	targets map[string][]*models.PermissionTarget // by user id

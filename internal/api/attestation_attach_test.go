@@ -22,7 +22,6 @@ import (
 	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/docker"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -34,8 +33,16 @@ import (
 
 const attachManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+// attachDBStore is what attachDB is used as.
+type attachDBStore interface {
+	AttestationAttachStore
+	AttestationAttacherStore
+	auth.EvaluatorStore
+	sbom.GeneratorStore
+}
+
 type attachDB struct {
-	databasetest.BaseMockDB
+	attachDBStore
 
 	mu      sync.Mutex
 	format  string

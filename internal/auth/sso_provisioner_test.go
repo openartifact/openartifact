@@ -14,13 +14,12 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type provMockDB struct {
-	databasetest.BaseMockDB
+	ProvisionerStore
 
 	usersByExtID   map[string]*models.User
 	usersByEmail   map[string]*models.User

@@ -23,7 +23,7 @@ import (
 // ErrUnsupportedSpec is returned for a document format or spec version the generator cannot emit.
 var ErrUnsupportedSpec = errors.New("unsupported SBOM spec version")
 
-// GeneratorStore is the part of the database Generator uses needs.
+// GeneratorStore is the part of the database Generator needs.
 type GeneratorStore interface {
 	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
 	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)

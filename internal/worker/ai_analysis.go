@@ -37,7 +37,7 @@ type aiRuntime struct {
 	autoAnalyze bool
 }
 
-// AIAnalysisStore is the part of the database AIAnalysisWorker uses needs.
+// AIAnalysisStore is the part of the database AIAnalysisWorker needs.
 type AIAnalysisStore interface {
 	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)

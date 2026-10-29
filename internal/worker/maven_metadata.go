@@ -27,7 +27,7 @@ import (
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
 
-// MavenMetadataStore is the part of the database MavenMetadataWorker uses needs.
+// MavenMetadataStore is the part of the database MavenMetadataWorker needs.
 type MavenMetadataStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	GetDB() *sql.DB

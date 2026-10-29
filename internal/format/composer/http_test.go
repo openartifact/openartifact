@@ -21,6 +21,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
@@ -36,6 +38,13 @@ type composerDB struct {
 	rows []*models.ComposerPackage
 
 	limit, used int64
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// ListLicensePolicies is not exercised by the tests.
+func (*composerDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *composerDB) ReserveStorageUsage(_ context.Context, _ string, size int64, _ int) (bool, error) {

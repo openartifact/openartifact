@@ -15,12 +15,26 @@ import (
 	"strings"
 	"testing"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
+
+// policyDB is a cargoDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*cargoDB
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
 
 // TestTransformCargoIndexDeps exercises the publish-API -> registry-index
 // dependency schema translation: "version_req" -> "req", and a
@@ -128,6 +142,13 @@ type cargoDB struct {
 	// summaries and total are what SearchCargoCrateSummaries answers with.
 	summaries []*models.CargoCrateSummary
 	total     int
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// ListLicensePolicies is not exercised by the tests.
+func (*cargoDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *cargoDB) CreateCargoCrate(_ context.Context, c *models.CargoCrate) error {
@@ -274,7 +295,7 @@ func TestDownloadQuarantine(t *testing.T) {
 	}
 }
 
-// publishCrateStore is the part of the database publishCrate uses needs.
+// publishCrateStore is the part of the database publishCrate needs.
 type publishCrateStore interface {
 	publishCrateDataStore
 }
@@ -299,7 +320,7 @@ func plainCrate(t *testing.T) []byte {
 	return crateWith(t, "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n")
 }
 
-// publishCrateDataStore is the part of the database publishCrateData uses needs.
+// publishCrateDataStore is the part of the database publishCrateData needs.
 type publishCrateDataStore interface {
 	HTTPStore
 }
@@ -346,7 +367,7 @@ func TestPublishLicensePolicy(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := publishCrate(t, c.DB(inner), bs, pub, `{"name":"demo","vers":"0.1.0","license":"`+s.license+`"}`)
+				w := publishCrate(t, policyDB{inner, c.Lister()}, bs, pub, `{"name":"demo","vers":"0.1.0","license":"`+s.license+`"}`)
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 
 				assertStored(t, c, w.Code, inner, bs, pub)
@@ -386,7 +407,7 @@ func TestPublishLicensePolicyExpressionWithDeniedIdentifier(t *testing.T) {
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
-	w := publishCrate(t, c.DB(inner), bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT OR GPL-3.0"}`)
+	w := publishCrate(t, policyDB{inner, c.Lister()}, bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT OR GPL-3.0"}`)
 	c.AssertResponse(t, w.Code, w.Body.Bytes())
 	assertStored(t, policytest.Case{Want: policytest.Blocked}, w.Code, inner, bs, pub)
 }
@@ -404,7 +425,7 @@ func TestPublishLicensePolicyNoLicenseAdmitted(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := publishCrate(t, c.DB(inner), bs, pub, meta)
+			w := publishCrate(t, policyDB{inner, c.Lister()}, bs, pub, meta)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -504,7 +525,7 @@ func TestPublishLicensePolicyReadsTheCrate(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := publishCrateData(t, c.DB(inner), bs, pub, tc.meta, crateWith(t, tc.toml))
+			w := publishCrateData(t, policyDB{inner, c.Lister()}, bs, pub, tc.meta, crateWith(t, tc.toml))
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -554,7 +575,7 @@ func TestPublishUnderivableLicenses(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := publishCrateData(t, c.DB(inner), bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT"}`, crate)
+				w := publishCrateData(t, policyDB{inner, c.Lister()}, bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT"}`, crate)
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 
 				stored := len(inner.crates) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0

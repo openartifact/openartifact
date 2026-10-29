@@ -12,15 +12,20 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/scanexport"
 )
 
 const exportScanID = "55555555-5555-5555-5555-555555555555"
 
+// scanExportMockDBStore is what scanExportMockDB is used as.
+type scanExportMockDBStore interface {
+	SecretsStore
+	VulnStore
+}
+
 type scanExportMockDB struct {
-	databasetest.BaseMockDB
+	scanExportMockDBStore
 
 	// pages is served in order, one per ListVulnScanOverview call.
 	pages     []*models.VulnScanOverviewPage

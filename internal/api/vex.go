@@ -29,7 +29,7 @@ const (
 	maxStatementLen = 4096
 )
 
-// VEXStore is the part of the database VEXHandler uses needs.
+// VEXStore is the part of the database VEXHandler needs.
 type VEXStore interface {
 	repoAccessStore
 	storedArtifactMetadataStore

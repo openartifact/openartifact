@@ -36,7 +36,7 @@ type DTrackPusher interface {
 	Enqueue(j dtrack.Job) bool
 }
 
-// DependencyTrackStore is the part of the database DependencyTrackHandler uses needs.
+// DependencyTrackStore is the part of the database DependencyTrackHandler needs.
 type DependencyTrackStore interface {
 	repoAccessStore
 	DeleteRepositoryDependencyTrack(ctx context.Context, repoID string) (bool, error)
@@ -546,7 +546,7 @@ func (h *DependencyTrackHandler) handleListPushes(w http.ResponseWriter, r *http
 
 // ---- document sources --------------------------------------------------------
 
-// DTrackSourcesStore is the part of the database DTrackSources uses needs.
+// DTrackSourcesStore is the part of the database DTrackSources needs.
 type DTrackSourcesStore interface {
 	storedArtifactMetadataStore
 }

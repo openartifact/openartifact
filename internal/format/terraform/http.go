@@ -48,7 +48,7 @@ const versionsMaxAge = 60
 // ticketPath is the bare-router prefix of the credential-free download URLs.
 const ticketPath = "/terraform/dl/"
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error

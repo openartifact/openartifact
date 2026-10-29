@@ -32,7 +32,7 @@ const (
 	CompressionXZ
 )
 
-// StreamPackagesStore is the part of the database StreamPackages uses needs.
+// StreamPackagesStore is the part of the database StreamPackages needs.
 type StreamPackagesStore interface {
 	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
 }
@@ -100,7 +100,7 @@ func StreamPackages(
 	}
 }
 
-// StreamReleaseStore is the part of the database StreamRelease uses needs.
+// StreamReleaseStore is the part of the database StreamRelease needs.
 type StreamReleaseStore interface {
 	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
 	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)

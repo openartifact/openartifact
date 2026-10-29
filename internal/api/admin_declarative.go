@@ -34,7 +34,7 @@ var declarativeKinds = map[string]bool{
 	"SSOProvider": true, "Webhook": true, "StorageTier": true, "TierPolicy": true,
 }
 
-// AdminDeclarativeStore is the part of the database AdminDeclarativeHandler uses needs.
+// AdminDeclarativeStore is the part of the database AdminDeclarativeHandler needs.
 type AdminDeclarativeStore interface {
 	DeleteDeclarativeObject(ctx context.Context, kind string, name string) (bool, error)
 	ListDeclarativeObjects(ctx context.Context) ([]models.DeclarativeObject, error)

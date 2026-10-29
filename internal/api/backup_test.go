@@ -14,16 +14,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// backupMockDBStore is what backupMockDB is used as.
+type backupMockDBStore interface {
+	BackupStore
+	auth.EvaluatorStore
+}
+
 // backupMockDB serves backup jobs like the uuid-keyed table: a lookup by an
 // id that is not a UUID is an error, an unknown UUID is "no such job".
 type backupMockDB struct {
-	databasetest.BaseMockDB
+	backupMockDBStore
 
 	jobs []*models.BackupJob
 }

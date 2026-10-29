@@ -26,7 +26,7 @@ import (
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
-// RPMetadataStore is the part of the database RPMetadataWorker uses needs.
+// RPMetadataStore is the part of the database RPMetadataWorker needs.
 type RPMetadataStore interface {
 	metadataBlobsStore
 	BeginTx(ctx context.Context) (database.Transaction, error)

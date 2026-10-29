@@ -27,7 +27,7 @@ import (
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,64}$`)
 
-// AdminUsersStore is the part of the database AdminUsersHandler uses needs.
+// AdminUsersStore is the part of the database AdminUsersHandler needs.
 type AdminUsersStore interface {
 	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
 	DeleteSessionsByUser(ctx context.Context, userID string) error

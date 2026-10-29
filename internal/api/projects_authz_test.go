@@ -104,6 +104,16 @@ type projectsMockDB struct {
 	tokenStore tokenStore
 }
 
+// ListGroupsByUser is not exercised by the tests.
+func (*projectsMockDB) ListGroupsByUser(context.Context, string) ([]*models.Group, error) {
+	return nil, errNotImplemented
+}
+
+// ResolveAuditNames is not exercised by the tests.
+func (*projectsMockDB) ResolveAuditNames(context.Context, models.AuditNameRefs) (*models.AuditNames, error) {
+	return nil, errNotImplemented
+}
+
 func (db *projectsMockDB) GetPermissionTargetsForPrincipal(
 	_ context.Context,
 	userID string,

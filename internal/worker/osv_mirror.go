@@ -74,7 +74,7 @@ type OSVMirrorStats struct {
 	Busy bool
 }
 
-// OSVMirrorStore is the part of the database OSVMirrorWorker uses needs.
+// OSVMirrorStore is the part of the database OSVMirrorWorker needs.
 type OSVMirrorStore interface {
 	GetDB() *sql.DB
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)

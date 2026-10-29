@@ -14,13 +14,22 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// benchRBACDBStore is what benchRBACDB is used as.
+type benchRBACDBStore interface {
+	auth.CreateProjectTokenStore
+	auth.CreateSessionStore
+	auth.CreateTokenStore
+	auth.EvaluatorStore
+	auth.SettingStore
+	RBACMiddlewareStore
+}
+
 type benchRBACDB struct {
-	databasetest.BaseMockDB
+	benchRBACDBStore
 
 	targets  []*models.PermissionTarget
 	repos    map[string]*models.Repository

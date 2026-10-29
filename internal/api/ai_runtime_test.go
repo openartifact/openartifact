@@ -20,7 +20,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -28,8 +27,16 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// aiRuntimeDBStore is what aiRuntimeDB is used as.
+type aiRuntimeDBStore interface {
+	AIStore
+	AdminAIStore
+	auth.EvaluatorStore
+	worker.AIAnalysisStore
+}
+
 type aiRuntimeDB struct {
-	databasetest.BaseMockDB
+	aiRuntimeDBStore
 
 	mu       sync.Mutex
 	settings map[string]string

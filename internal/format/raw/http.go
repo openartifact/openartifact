@@ -38,7 +38,7 @@ import (
 // maxRawUploadBytes bounds a single raw upload.
 const maxRawUploadBytes = 5 << 30
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

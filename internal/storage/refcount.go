@@ -17,7 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 )
 
-// SafeDeleteBlobStore is the part of the database SafeDeleteBlob uses needs.
+// SafeDeleteBlobStore is the part of the database SafeDeleteBlob needs.
 type SafeDeleteBlobStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 }
@@ -143,7 +143,7 @@ var orphanCursor struct { //nolint:gochecknoglobals // process-wide sweep positi
 // OrphanBatch bounds how many orphan blobs one CollectOrphanBlobs call removes.
 const OrphanBatch = 500
 
-// CollectOrphanBlobsStore is the part of the database CollectOrphanBlobs uses needs.
+// CollectOrphanBlobsStore is the part of the database CollectOrphanBlobs needs.
 type CollectOrphanBlobsStore interface {
 	collectOrphanWindowStore
 }
@@ -171,7 +171,7 @@ func CollectOrphanBlobs(
 	return removed, err
 }
 
-// CollectOrphanBlobsSweepStore is the part of the database CollectOrphanBlobsSweep uses needs.
+// CollectOrphanBlobsSweepStore is the part of the database CollectOrphanBlobsSweep needs.
 type CollectOrphanBlobsSweepStore interface {
 	collectOrphanWindowStore
 }
@@ -207,7 +207,7 @@ func CollectOrphanBlobsSweep(
 	return total, errors.Join(errs...)
 }
 
-// collectOrphanWindowStore is the part of the database collectOrphanWindow uses needs.
+// collectOrphanWindowStore is the part of the database collectOrphanWindow needs.
 type collectOrphanWindowStore interface {
 	SafeDeleteBlobStore
 }
@@ -262,7 +262,7 @@ func collectOrphanWindow(
 	return removed, next, errors.Join(errs...)
 }
 
-// ReclaimMetadataBlobStore is the part of the database ReclaimMetadataBlob uses needs.
+// ReclaimMetadataBlobStore is the part of the database ReclaimMetadataBlob needs.
 type ReclaimMetadataBlobStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	GetDB() *sql.DB

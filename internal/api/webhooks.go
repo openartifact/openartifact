@@ -23,7 +23,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// WebhooksStore is the part of the database WebhooksHandler uses needs.
+// WebhooksStore is the part of the database WebhooksHandler needs.
 type WebhooksStore interface {
 	repoAccessStore
 	CreateWebhook(ctx context.Context, wh *models.Webhook) error

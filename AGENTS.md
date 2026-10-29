@@ -27,7 +27,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `internal/middleware` | RBAC, CSRF, audit, CORS, logging |
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
 | `internal/passwd` | Local-password policy and Argon2id hashing; imports nothing from the server so `cmd/resetpw` stays small (`tests/binary_deps_test.go` guards the import graphs of `oa` and `resetpw`) |
-| `internal/database` | `Database` interface (`interfaces.go`), Postgres impl (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
+| `internal/database` | `PostgresDB` composition root (`stores.go`) over one store type per domain (`blob_refs.go`, `repositories.go`, `users.go`, `pkg_<format>.go`, ...; each a `struct{ *core }`), sqlc code in `dbsqlc/`, queries in `queries/*.sql`. Consumers declare the small interface they need; there is no whole-database interface |
 | `internal/storage` | Blob stores: filesystem, S3, GCS, Azure, OCI; `SafeDeleteBlob` refcounting |
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, AI analysis |
 | `internal/{backup,webhook,proxy,search,vuln,sbom,license,secrets,quarantine,quota,cron,ai,mcp,audit,metrics,config}` | Feature subsystems |
@@ -92,7 +92,7 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck, deadcode and act
 - **Config:** every key settable by YAML must have an env override in `internal/config`, and be documented in `.env.example` and `openartifact.example.yaml`. Server read/write timeouts default to 0 (large uploads).
 - Errors: use `writeError` with the shared codes; never leak `err.Error()` from DB/upstream to clients.
 - Tests: assert behavior, not mock round-trips; no fixed sleeps — poll with deadlines.
-- **No dead code:** `make deadcode` (CI `go` job) must report nothing, and there is no allowlist. Code only tests call goes in a `_test.go` file or a `*test` support package (`databasetest`, `formattest`, ...), never in a production file; don't export hooks for tests. Details: `docs/development/README.md#dead-code-gate`.
+- **No dead code:** `make deadcode` (CI `go` job) must report nothing, and there is no allowlist. Code only tests call goes in a `_test.go` file or a `*test` support package (`formattest`, `backuptest`, ...), never in a production file; don't export hooks for tests. Details: `docs/development/README.md#dead-code-gate`.
 - **Timestamps:** DB upserts must not persist zero `time.Time`; default `created_at`/`updated_at` to now when the caller leaves them unset.
 - **Client auth:** format routes accept API tokens (Bearer, or Basic with the token as password); account passwords work only for the UI login. Use tokens in examples and smoke tests.
 

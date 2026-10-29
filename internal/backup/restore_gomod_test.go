@@ -9,13 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type gomodRestoreDB struct {
-	*databasetest.BaseMockDB
+	EngineStore
 
 	created []*models.GoModule
 }
@@ -35,7 +34,7 @@ func TestRestoreGoModuleSkipsRowsWithoutZipDigest(t *testing.T) {
 		t.Fatalf("logger: %v", err)
 	}
 
-	db := &gomodRestoreDB{BaseMockDB: &databasetest.BaseMockDB{}}
+	db := &gomodRestoreDB{}
 	e := NewEngine(db, nil, log, t.TempDir())
 
 	legacy := &models.GoModule{ModulePath: "example.com/b", Version: "v1.0.0", ZipBlobKey: strings.Repeat("a", 64)}

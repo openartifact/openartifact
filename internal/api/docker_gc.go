@@ -37,7 +37,7 @@ type DockerGCHandler struct {
 	runner DockerGCRunner
 }
 
-// DockerGCHandlerStore is the part of the database NewDockerGCHandler uses needs.
+// DockerGCHandlerStore is the part of the database NewDockerGCHandler needs.
 type DockerGCHandlerStore interface {
 	repoAccessStore
 }

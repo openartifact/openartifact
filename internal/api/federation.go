@@ -111,7 +111,7 @@ type FederationHandler struct {
 	kick func()
 }
 
-// FederationHandlerStore is the part of the database NewFederationHandler uses needs.
+// FederationHandlerStore is the part of the database NewFederationHandler needs.
 type FederationHandlerStore interface {
 	repoAccessStore
 }

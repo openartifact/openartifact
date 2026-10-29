@@ -24,7 +24,7 @@ var ErrExceeded = errors.New(Message)
 // the repository trash.
 const Message = "repository storage quota exceeded (bytes of trashed items count until purged; see the repository trash)"
 
-// EnforceStore is the part of the database Enforce uses needs.
+// EnforceStore is the part of the database Enforce needs.
 type EnforceStore interface {
 	EnforceNStore
 }
@@ -38,7 +38,7 @@ func Enforce(ctx context.Context, db EnforceStore, repoID string, size int64) er
 	return EnforceN(ctx, db, repoID, size, 1)
 }
 
-// EnforceNStore is the part of the database EnforceN uses needs.
+// EnforceNStore is the part of the database EnforceN needs.
 type EnforceNStore interface {
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 }
@@ -68,7 +68,7 @@ func EnforceN(ctx context.Context, db EnforceNStore, repoID string, size int64, 
 	return nil
 }
 
-// ChargeNStore is the part of the database ChargeN uses needs.
+// ChargeNStore is the part of the database ChargeN needs.
 type ChargeNStore interface {
 	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 }
@@ -84,7 +84,7 @@ func ChargeN(ctx context.Context, db ChargeNStore, repoID string, size int64, co
 	return nil
 }
 
-// ReleaseStore is the part of the database Release uses needs.
+// ReleaseStore is the part of the database Release needs.
 type ReleaseStore interface {
 	ReleaseNStore
 }
@@ -96,7 +96,7 @@ func Release(ctx context.Context, db ReleaseStore, repoID string, size int64) er
 	return ReleaseN(ctx, db, repoID, size, 1)
 }
 
-// ReleaseNStore is the part of the database ReleaseN uses needs.
+// ReleaseNStore is the part of the database ReleaseN needs.
 type ReleaseNStore interface {
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 }
@@ -133,7 +133,7 @@ func WriteExceeded(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`{"error":"` + Message + `","code":"quota_exceeded"}` + "\n"))
 }
 
-// RoomStore is the part of the database Room uses needs.
+// RoomStore is the part of the database Room needs.
 type RoomStore interface {
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 }
@@ -154,7 +154,7 @@ func Room(ctx context.Context, db RoomStore, repoID string) (int64, bool, error)
 	return max(q.MaxSizeBytes-q.CurrentSizeBytes, 0), true, nil
 }
 
-// PrecheckStore is the part of the database Precheck uses needs.
+// PrecheckStore is the part of the database Precheck needs.
 type PrecheckStore interface {
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 }

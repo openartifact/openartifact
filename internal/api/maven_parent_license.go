@@ -22,7 +22,7 @@ import (
 // maxParentRescan bounds how many unresolved poms one parent upload re-evaluates.
 const maxParentRescan = 500
 
-// pomSourcesStore is the part of the database pomSources uses needs.
+// pomSourcesStore is the part of the database pomSources needs.
 type pomSourcesStore interface {
 	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
 	ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error)
@@ -60,7 +60,7 @@ func pomSources(ctx context.Context, db pomSourcesStore, repoID string) ([]*mode
 	return sources, nil
 }
 
-// repoPOMLookupStore is the part of the database repoPOMLookup uses needs.
+// repoPOMLookupStore is the part of the database repoPOMLookup needs.
 type repoPOMLookupStore interface {
 	pomSourcesStore
 	sourcePOMBlobStore
@@ -110,7 +110,7 @@ func repoPOMLookup(db repoPOMLookupStore, blobs storage.BlobStore, repoID string
 	}
 }
 
-// sourcePOMBlobStore is the part of the database sourcePOMBlob uses needs.
+// sourcePOMBlobStore is the part of the database sourcePOMBlob needs.
 type sourcePOMBlobStore interface {
 	GetLatestSnapshotFile(
 		ctx context.Context,
@@ -187,7 +187,7 @@ func readStoredPOM(ctx context.Context, blobs storage.BlobStore, sha string) (*p
 	return pom, nil
 }
 
-// inheritedPOMLicensesStore is the part of the database inheritedPOMLicenses uses needs.
+// inheritedPOMLicensesStore is the part of the database inheritedPOMLicenses needs.
 type inheritedPOMLicensesStore interface {
 	repoPOMLookupStore
 }
@@ -205,7 +205,7 @@ func inheritedPOMLicenses(
 	return licensemeta.InheritPOMLicenses(ctx, parent, repoPOMLookup(db, blobs, repoID)) //nolint:wrapcheck // callers only log it
 }
 
-// recordPOMLicensesStore is the part of the database recordPOMLicenses uses needs.
+// recordPOMLicensesStore is the part of the database recordPOMLicenses needs.
 type recordPOMLicensesStore interface {
 	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
 	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
@@ -231,7 +231,7 @@ func recordPOMLicenses(
 	return nil
 }
 
-// reevaluateWaitingPOMsStore is the part of the database reevaluateWaitingPOMs uses needs.
+// reevaluateWaitingPOMsStore is the part of the database reevaluateWaitingPOMs needs.
 type reevaluateWaitingPOMsStore interface {
 	pomSourcesStore
 	reevaluateUnresolvedPOMsStore
@@ -270,7 +270,7 @@ func reevaluateWaitingPOMs(
 	return total, nil
 }
 
-// reevaluateUnresolvedPOMsStore is the part of the database reevaluateUnresolvedPOMs uses needs.
+// reevaluateUnresolvedPOMsStore is the part of the database reevaluateUnresolvedPOMs needs.
 type reevaluateUnresolvedPOMsStore interface {
 	LicenseStore
 	mavenArtifactsByIDStore
@@ -356,7 +356,7 @@ func reevaluateUnresolvedPOMs(
 	return updated, nil
 }
 
-// mavenArtifactsByIDStore is the part of the database mavenArtifactsByID uses needs.
+// mavenArtifactsByIDStore is the part of the database mavenArtifactsByID needs.
 type mavenArtifactsByIDStore interface {
 	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
 }
@@ -375,7 +375,7 @@ func mavenArtifactsByID(ctx context.Context, db mavenArtifactsByIDStore, repoID 
 	return out, nil
 }
 
-// quarantineSiblingsStore is the part of the database quarantineSiblings uses needs.
+// quarantineSiblingsStore is the part of the database quarantineSiblings needs.
 type quarantineSiblingsStore interface {
 	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
 	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)

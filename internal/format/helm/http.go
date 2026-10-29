@@ -39,7 +39,7 @@ import (
 
 const maxHelmUploadBytes = 100 << 20
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateHelmChart(ctx context.Context, chart *models.HelmChart) error

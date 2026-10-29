@@ -12,7 +12,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AuthPurgeStore is the part of the database AuthPurgeWorker uses needs.
+// AuthPurgeStore is the part of the database AuthPurgeWorker needs.
 type AuthPurgeStore interface {
 	GetDB() *sql.DB
 }

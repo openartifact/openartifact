@@ -62,7 +62,7 @@ func (h *ProjectsHandler) handleListActivity(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, activityPage(r.Context(), h.db, h.log, page, perPage))
 }
 
-// activityPageStore is the part of the database activityPage uses needs.
+// activityPageStore is the part of the database activityPage needs.
 type activityPageStore interface {
 	activityEntriesStore
 }

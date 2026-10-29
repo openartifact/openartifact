@@ -34,7 +34,7 @@ const storageTestTimeout = 10 * time.Second
 
 var storageBackendNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
-// AdminStorageStore is the part of the database AdminStorageHandler uses needs.
+// AdminStorageStore is the part of the database AdminStorageHandler needs.
 type AdminStorageStore interface {
 	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
 	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error

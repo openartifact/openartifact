@@ -10,15 +10,23 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
+// benchWorkerDBStore is what benchWorkerDB is used as.
+type benchWorkerDBStore interface {
+	DebMetadataStore
+	MavenMetadataStore
+	RPMetadataStore
+}
+
 // benchWorkerDB serves just the lookups the worker bodies benchmarked here make.
 type benchWorkerDB struct {
-	databasetest.BaseMockDB
+	benchWorkerDBStore
 
 	components    []models.DebianComponent
 	architectures []models.DebianArchitecture
@@ -29,6 +37,9 @@ type benchWorkerDB struct {
 	meta    map[string]*models.RepoMetadata
 	upserts int
 }
+
+// GetDB is not exercised by the tests.
+func (*benchWorkerDB) GetDB() *sql.DB { return nil }
 
 func (d *benchWorkerDB) GetDebianComponentsByDist(context.Context, string) ([]models.DebianComponent, error) {
 	return d.components, nil
@@ -41,7 +52,7 @@ func (d *benchWorkerDB) GetDebianArchitecturesByDist(context.Context, string) ([
 func (d *benchWorkerDB) ListMavenGARefs(context.Context, string, string, string) (*models.MavenGARefs, error) {
 	// Derived once per artifact list so benchmarks measure the worker, not the mock.
 	if d.refs == nil || d.refsFor != len(d.artifacts) {
-		d.refs, d.refsFor = databasetest.MavenGARefsFromArtifacts(d.artifacts), len(d.artifacts)
+		d.refs, d.refsFor = formattest.MavenGARefsFromArtifacts(d.artifacts), len(d.artifacts)
 	}
 
 	return d.refs, nil

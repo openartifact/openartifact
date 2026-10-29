@@ -16,7 +16,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// RepositoryActivityStore is the part of the database RepositoryActivityHandler uses needs.
+// RepositoryActivityStore is the part of the database RepositoryActivityHandler needs.
 type RepositoryActivityStore interface {
 	activityPageStore
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)

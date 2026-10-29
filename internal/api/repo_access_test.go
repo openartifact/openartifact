@@ -12,14 +12,24 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// repoAccessDBStore is what repoAccessDB is used as.
+type repoAccessDBStore interface {
+	repoAccessStore
+	auth.EvaluatorStore
+}
+
 type repoAccessDB struct {
-	databasetest.BaseMockDB
+	repoAccessDBStore
+}
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*repoAccessDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
 }
 
 func (*repoAccessDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {

@@ -19,7 +19,7 @@ const (
 	presignedUploadSweepTimeout  = 2 * time.Minute
 )
 
-// PresignedUploadStore is the part of the database PresignedUploadWorker uses needs.
+// PresignedUploadStore is the part of the database PresignedUploadWorker needs.
 type PresignedUploadStore interface {
 	DeletePresignedUpload(ctx context.Context, id string) error
 	ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error)

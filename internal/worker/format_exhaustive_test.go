@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -72,7 +71,7 @@ func TestCleanupFormatTablesCoverEveryFormat(t *testing.T) {
 }
 
 type staleMarkDB struct {
-	databasetest.BaseMockDB
+	CleanupStore
 
 	marked []string
 }

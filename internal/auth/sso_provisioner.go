@@ -39,7 +39,7 @@ type SSOClaims struct {
 	GroupsPresent bool
 }
 
-// ProvisionerStore is the part of the database Provisioner uses needs.
+// ProvisionerStore is the part of the database Provisioner needs.
 type ProvisionerStore interface {
 	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
 	GetGroupByName(ctx context.Context, name string) (*models.Group, error)

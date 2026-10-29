@@ -15,13 +15,19 @@ import (
 
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// authAuditDBStore is what authAuditDB is used as.
+type authAuditDBStore interface {
+	audit.LoggerStore
+	auth.CreateSessionStore
+	AuthAuditMiddlewareStore
+}
+
 // authAuditDB captures audit rows and serves a minimal user/session store.
 type authAuditDB struct {
-	databasetest.BaseMockDB
+	authAuditDBStore
 
 	events   chan *models.AuditLog
 	sessions map[string]*models.Session

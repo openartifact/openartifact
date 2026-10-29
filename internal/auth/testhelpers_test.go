@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -22,8 +21,15 @@ func sha256ForString(s string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// tokenMockDBStore is what tokenMockDB is used as.
+type tokenMockDBStore interface {
+	CreateTokenStore
+	UpdateLastUsedStore
+	ValidateTokenStore
+}
+
 type tokenMockDB struct {
-	databasetest.BaseMockDB
+	tokenMockDBStore
 
 	tokens     map[string]*models.Token
 	tokensByID map[string]*models.Token

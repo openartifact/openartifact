@@ -19,7 +19,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -29,7 +28,7 @@ import (
 // handful of methods used by the blob-upload paths are implemented. Any other
 // call panics, which keeps the fake honest about what the handlers touch.
 type fakeDB struct {
-	database.Database
+	testHandlerStore
 
 	repo   *models.Repository
 	upload *models.DockerUpload
@@ -118,7 +117,7 @@ func (f *fakeDB) DeleteDockerUpload(_ context.Context, repositoryID, uploadUUID 
 	return nil
 }
 
-// testHandlerStore is the part of the database newTestHandler uses needs.
+// testHandlerStore is the part of the database newTestHandler needs.
 type testHandlerStore interface {
 	HTTPStore
 }

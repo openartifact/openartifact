@@ -16,15 +16,20 @@ import (
 	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// apkKeyMockDBStore is what apkKeyMockDB is used as.
+type apkKeyMockDBStore interface {
+	signingKeyAdminStore
+	apkkeys.Store
+}
+
 type apkKeyMockDB struct {
-	databasetest.BaseMockDB
+	apkKeyMockDBStore
 
 	repos map[string]*models.Repository
 	keys  map[string]*models.ApkSigningKey

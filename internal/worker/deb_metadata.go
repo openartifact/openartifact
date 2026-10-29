@@ -31,7 +31,7 @@ func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map
 	)
 }
 
-// DebMetadataStore is the part of the database DebMetadataWorker uses needs.
+// DebMetadataStore is the part of the database DebMetadataWorker needs.
 type DebMetadataStore interface {
 	metadataBlobsStore
 	BeginTx(ctx context.Context) (database.Transaction, error)

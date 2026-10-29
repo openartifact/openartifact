@@ -307,6 +307,13 @@ type fuzzGemsDB struct {
 	artifacts int
 }
 
+var errNotImplemented = errors.New("not implemented")
+
+// ListLicensePolicies is not exercised by the tests.
+func (*fuzzGemsDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 func (d *fuzzGemsDB) CreateRubyGem(_ context.Context, g *models.RubyGem) error {
 	if err := pgRejects(g); err != nil {
 		return err

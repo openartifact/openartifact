@@ -76,7 +76,7 @@ func plainTextProblem(label, s string) string {
 	return ""
 }
 
-// storedArtifactMetadataStore is the part of the database storedArtifactMetadata uses needs.
+// storedArtifactMetadataStore is the part of the database storedArtifactMetadata needs.
 type storedArtifactMetadataStore interface {
 	ListArtifactProperties(ctx context.Context, repoID string, artifactID string) (map[string]string, error)
 }

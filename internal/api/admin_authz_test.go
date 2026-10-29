@@ -22,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/passwd"
@@ -45,10 +44,19 @@ const (
 
 type permAssignKey struct{ target, ptype, pid string }
 
+// authzFakeDBStore is what authzFakeDB is used as.
+type authzFakeDBStore interface {
+	AdminPermissionsStore
+	AdminTokensStore
+	AdminUsersStore
+	AuthStore
+	auth.EvaluatorStore
+}
+
 // authzFakeDB is a small stateful in-memory database for the user, token and
 // permission-target handlers. fail makes the named method return an error.
 type authzFakeDB struct {
-	databasetest.BaseMockDB
+	authzFakeDBStore
 
 	users       map[string]*models.User
 	tokens      map[string]*models.Token

@@ -5,6 +5,7 @@
 package sbt
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +14,18 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 )
+
+// policyDB is an sbtDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*sbtDB
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
 
 const (
 	descriptorURL  = "/repos/myrepo/org.example/mod/1.0/mod-1.0.pom"
@@ -30,7 +43,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 			db := &sbtDB{DB: formattest.NewDB()}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
-			h := NewHTTPHandler(formattest.NewLogger(t), c.DB(db), bs, "http://localhost")
+			h := NewHTTPHandler(formattest.NewLogger(t), policyDB{db, c.Lister()}, bs, "http://localhost")
 			h.SetPublisher(pub)
 
 			code, body := putDescriptor(h, descriptorBody)
@@ -53,7 +66,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 
 func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
-	db := &policytest.DB{Database: &sbtDB{DB: formattest.NewDB()}, Policies: []*models.LicensePolicy{policy}}
+	db := policyDB{&sbtDB{DB: formattest.NewDB()}, policytest.Case{Policies: []*models.LicensePolicy{policy}}.Lister()}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
 
 	// A non-descriptor file and a descriptor without a license are both undeclared.

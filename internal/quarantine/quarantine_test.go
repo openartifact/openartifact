@@ -12,13 +12,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 type quarantineDB struct {
-	databasetest.BaseMockDB
-
 	repoID  string
 	keys    map[string]bool
 	err     error
@@ -84,7 +80,7 @@ func TestEnforceFailsClosedOnDatabaseError(t *testing.T) {
 }
 
 func TestEnforceIgnoresDatabasesWithoutSupportAndEmptyKeys(t *testing.T) {
-	if rw := enforce(&databasetest.BaseMockDB{}, "r1", "a"); rw.Code != 0 {
+	if rw := enforce(nil, "r1", "a"); rw.Code != 0 {
 		t.Errorf("database without quarantine support must not block (status %d)", rw.Code)
 	}
 

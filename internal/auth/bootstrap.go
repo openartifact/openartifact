@@ -73,7 +73,7 @@ func (o *BootstrapOptions) suppliesAnything() bool {
 	return o.AdminPasswordFile != "" || o.AdminPassword != "" || o.AdminTokenFile != ""
 }
 
-// BootstrapIfEmptyStore is the part of the database BootstrapIfEmpty uses needs.
+// BootstrapIfEmptyStore is the part of the database BootstrapIfEmpty needs.
 type BootstrapIfEmptyStore interface {
 	createBootstrapAdminStore
 	CountUsers(ctx context.Context) (int, error)
@@ -114,7 +114,7 @@ func BootstrapIfEmpty(ctx context.Context, db BootstrapIfEmptyStore, log *logger
 	return createBootstrapAdmin(ctx, db, log, opts)
 }
 
-// createBootstrapAdminStore is the part of the database createBootstrapAdmin uses needs.
+// createBootstrapAdminStore is the part of the database createBootstrapAdmin needs.
 type createBootstrapAdminStore interface {
 	CreateBootstrapAdmin(ctx context.Context, spec database.BootstrapAdmin) (bool, error)
 }

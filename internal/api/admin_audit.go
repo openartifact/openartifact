@@ -15,7 +15,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AdminAuditStore is the part of the database AdminAuditHandler uses needs.
+// AdminAuditStore is the part of the database AdminAuditHandler needs.
 type AdminAuditStore interface {
 	auditExportStore
 	resolveAuditEntriesStore

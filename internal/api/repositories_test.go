@@ -13,18 +13,40 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// repositoriesListMockDBStore is what repositoriesListMockDB is used as.
+type repositoriesListMockDBStore interface {
+	RepositoriesStore
+	auth.EvaluatorStore
+}
+
 type repositoriesListMockDB struct {
-	databasetest.BaseMockDB
+	repositoriesListMockDBStore
 
 	repos       []*models.Repository
 	targets     []*models.PermissionTarget
 	countCalled bool
+}
+
+// CountRepoPackageNames is not exercised by the tests.
+func (*repositoriesListMockDB) CountRepoPackageNames(context.Context, []string) (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+
+
+// RepoCatalogStats is not exercised by the tests.
+func (*repositoriesListMockDB) RepoCatalogStats(context.Context, []string, bool) (map[string]models.RepoStats, error) {
+	return map[string]models.RepoStats{}, nil
+}
+
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*repositoriesListMockDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
 }
 
 func (db *repositoriesListMockDB) ListRepositories(_ context.Context, page, limit int, _ string) ([]*models.Repository, error) {

@@ -26,7 +26,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// SBOMStore is the part of the database SBOMHandler uses needs.
+// SBOMStore is the part of the database SBOMHandler needs.
 type SBOMStore interface {
 	repoAccessStore
 	storedArtifactMetadataStore

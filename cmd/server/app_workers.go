@@ -332,7 +332,7 @@ func autoGenerateGPGKey(ctx context.Context, svc *gpgkeys.Service, log *logger.L
 	}
 }
 
-// groupRefresherStore is the part of the database groupRefresher uses needs.
+// groupRefresherStore is the part of the database groupRefresher needs.
 type groupRefresherStore interface {
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 }
@@ -355,7 +355,7 @@ func (g groupRefresher) NotifyStale(repoID string) {
 	g.hosted.NotifyStale(repoID)
 }
 
-// workerSetbuildOSVMirrorStore is the part of the database workerSetbuildOSVMirror uses needs.
+// workerSetbuildOSVMirrorStore is the part of the database workerSetbuildOSVMirror needs.
 type workerSetbuildOSVMirrorStore interface {
 	GetDB() *sql.DB
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)

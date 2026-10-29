@@ -95,7 +95,7 @@ func Try(store storage.BlobStore, w http.ResponseWriter, r *http.Request, blob B
 	return ok && rd.TryRedirect(w, r, blob)
 }
 
-// StoreStore is the part of the database Store uses needs.
+// StoreStore is the part of the database Store needs.
 type StoreStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 }
@@ -116,7 +116,7 @@ type Store struct {
 
 var _ Redirector = (*Store)(nil)
 
-// WrapStore is the part of the database Wrap uses needs.
+// WrapStore is the part of the database Wrap needs.
 type WrapStore interface {
 	StoreStore
 }

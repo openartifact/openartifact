@@ -17,7 +17,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// QuotasStore is the part of the database QuotasHandler uses needs.
+// QuotasStore is the part of the database QuotasHandler needs.
 type QuotasStore interface {
 	repoAccessStore
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)

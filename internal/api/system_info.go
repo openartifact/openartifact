@@ -27,7 +27,7 @@ const (
 	healthProbeTimeout = 3 * time.Second
 )
 
-// SystemInfoStore is the part of the database SystemInfoHandler uses needs.
+// SystemInfoStore is the part of the database SystemInfoHandler needs.
 type SystemInfoStore interface {
 	Ping(ctx context.Context) error
 }

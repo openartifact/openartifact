@@ -38,7 +38,7 @@ func isApkIndexPath(path string) bool {
 	return len(parts) == 4 && parts[3] == formatapk.IndexName
 }
 
-// ApkMetadataStore is the part of the database ApkMetadataWorker uses needs.
+// ApkMetadataStore is the part of the database ApkMetadataWorker needs.
 type ApkMetadataStore interface {
 	metadataBlobsStore
 	BeginTx(ctx context.Context) (database.Transaction, error)

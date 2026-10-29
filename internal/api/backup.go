@@ -25,7 +25,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// BackupStore is the part of the database BackupHandler uses needs.
+// BackupStore is the part of the database BackupHandler needs.
 type BackupStore interface {
 	repoAccessStore
 	CreateBackupJob(ctx context.Context, job *models.BackupJob) error

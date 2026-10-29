@@ -60,7 +60,7 @@ type RPMPackageLoader interface {
 	PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 }
 
-// GroupMetadataStore is the part of the database GroupMetadataWorker uses needs.
+// GroupMetadataStore is the part of the database GroupMetadataWorker needs.
 type GroupMetadataStore interface {
 	metadataBlobsStore
 	BeginTx(ctx context.Context) (database.Transaction, error)

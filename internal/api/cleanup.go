@@ -28,7 +28,7 @@ type CleanupRunner interface {
 	PreviewPolicy(ctx context.Context, policyID string) (*worker.CleanupPreview, error)
 }
 
-// CleanupStore is the part of the database CleanupHandler uses needs.
+// CleanupStore is the part of the database CleanupHandler needs.
 type CleanupStore interface {
 	repoAccessStore
 	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error

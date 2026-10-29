@@ -35,7 +35,7 @@ type Authorizer interface {
 	Evaluate(ctx context.Context, principal auth.Principal, repoName, artifactPath, action string) (bool, error)
 }
 
-// DispatcherStore is the part of the database Dispatcher uses needs.
+// DispatcherStore is the part of the database Dispatcher needs.
 type DispatcherStore interface {
 	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
 	GetGroupPackageOwner(ctx context.Context, groupID string, path string) (string, bool, error)

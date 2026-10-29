@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -159,7 +158,7 @@ func TestEventTypeValues(t *testing.T) {
 }
 
 type deliveryTestDB struct {
-	*databasetest.BaseMockDB
+	DispatcherStore
 
 	delivery *models.WebhookDelivery
 }
@@ -183,7 +182,7 @@ func newResponseDelivery(t *testing.T, body string) (*deliveryTestDB, *models.We
 		t.Fatal(err)
 	}
 
-	db := &deliveryTestDB{BaseMockDB: &databasetest.BaseMockDB{}}
+	db := &deliveryTestDB{}
 	delivery := &models.WebhookDelivery{Payload: map[string]any{"event": "test"}}
 	NewDispatcher(db, log).deliver(&models.Webhook{
 		ID:             "webhook",
@@ -234,7 +233,7 @@ func TestDeliveryNetworkErrorEventuallyFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := &deliveryTestDB{BaseMockDB: &databasetest.BaseMockDB{}}
+	db := &deliveryTestDB{}
 	d := NewDispatcher(db, log)
 	wh := &models.Webhook{ID: "w", URL: "http://127.0.0.1:1/", ContentType: "application/json", MaxRetries: 2, TimeoutSeconds: 1}
 	delivery := &models.WebhookDelivery{Payload: map[string]any{}}
@@ -259,7 +258,7 @@ func TestEnqueueDeduplicatesInflight(t *testing.T) {
 
 func TestDeliveryBlocksLoopbackByDefault(t *testing.T) {
 	log, _ := logger.New("error", "json", "stderr")
-	db := &deliveryTestDB{BaseMockDB: &databasetest.BaseMockDB{}}
+	db := &deliveryTestDB{}
 	delivery := &models.WebhookDelivery{Payload: map[string]any{}}
 	NewDispatcher(db, log).deliver(&models.Webhook{ID: "w", URL: "http://127.0.0.1:1/", MaxRetries: 1, TimeoutSeconds: 1}, delivery)
 	if delivery.Status != "failed" {
@@ -311,7 +310,6 @@ func TestProcessDropsDeliveriesOfDisabledWebhook(t *testing.T) {
 				TimeoutSeconds: 1,
 			},
 		}
-		db.BaseMockDB = &databasetest.BaseMockDB{}
 		delivery := &models.WebhookDelivery{ID: "d", WebhookID: "wh", EventType: tc.event, Payload: map[string]any{}}
 
 		NewDispatcher(db, log).process(delivery)
@@ -340,7 +338,7 @@ func TestDeliveryDoesNotFollowRedirects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db := &deliveryTestDB{BaseMockDB: &databasetest.BaseMockDB{}}
+	db := &deliveryTestDB{}
 	delivery := &models.WebhookDelivery{Payload: map[string]any{"event": "test"}}
 	NewDispatcher(db, log).deliver(&models.Webhook{
 		ID: "webhook", URL: redirector.URL, ContentType: "application/json", MaxRetries: 1, TimeoutSeconds: 1,

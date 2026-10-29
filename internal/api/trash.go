@@ -34,7 +34,7 @@ const (
 	emptyTrashBatch    = 100
 )
 
-// TrashStore is the part of the database TrashHandler uses needs.
+// TrashStore is the part of the database TrashHandler needs.
 type TrashStore interface {
 	collectOrphansAsyncStore
 	reclaimMetadataBlobsStore

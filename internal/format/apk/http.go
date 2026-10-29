@@ -55,7 +55,7 @@ type KeyProvider interface {
 // Regenerator schedules the regeneration of a repository's indexes.
 type Regenerator interface{ NotifyStale(repoID string) }
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateApkPackage(ctx context.Context, p *models.ApkPackage) error

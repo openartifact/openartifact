@@ -67,7 +67,7 @@ const (
 
 var sha256HexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// PresignedUploadStore is the part of the database PresignedUploadHandler uses needs.
+// PresignedUploadStore is the part of the database PresignedUploadHandler needs.
 type PresignedUploadStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	ClaimPresignedUpload(ctx context.Context, repoID string, id string, lease time.Duration) (bool, error)

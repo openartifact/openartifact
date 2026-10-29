@@ -118,7 +118,7 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 	return "", false
 }
 
-// authorizeProjectRouteStore is the part of the database authorizeProjectRoute uses needs.
+// authorizeProjectRouteStore is the part of the database authorizeProjectRoute needs.
 type authorizeProjectRouteStore interface {
 	authorizeProjectsRootStore
 	writeAccessDeniedStore
@@ -172,7 +172,7 @@ func authorizeProjectRoute(
 	return false
 }
 
-// authorizeProjectsRootStore is the part of the database authorizeProjectsRoot uses needs.
+// authorizeProjectsRootStore is the part of the database authorizeProjectsRoot needs.
 type authorizeProjectsRootStore interface {
 	writeAccessDeniedStore
 }

@@ -36,7 +36,7 @@ type Backend struct {
 	ServeMember func(w http.ResponseWriter, r *http.Request, member *models.Repository, relPath string)
 }
 
-// HandlerStore is the part of the database Handler uses needs.
+// HandlerStore is the part of the database Handler needs.
 type HandlerStore interface {
 	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
 	GetGroupPackageOwner(ctx context.Context, groupID string, path string) (string, bool, error)

@@ -25,7 +25,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// BundlesStore is the part of the database BundlesHandler uses needs.
+// BundlesStore is the part of the database BundlesHandler needs.
 type BundlesStore interface {
 	repoAccessStore
 	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error

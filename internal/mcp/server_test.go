@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
@@ -40,8 +39,19 @@ const (
 
 var errDB = errors.New("pq: password authentication failed for user \"oa_internal\" at 10.1.2.3:5432")
 
+// mockDBStore is what mockDB is used as.
+type mockDBStore interface {
+	auth.CreateSessionStore
+	auth.CreateTokenStore
+	auth.EvaluatorStore
+	MetadataStore
+	ServerStore
+	testAnalyzerStore
+	middleware.RBACMiddlewareStore
+}
+
 type mockDB struct {
-	databasetest.BaseMockDB
+	mockDBStore
 
 	repos      []*models.Repository
 	components []*models.Component

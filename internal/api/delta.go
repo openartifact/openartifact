@@ -69,7 +69,7 @@ type deltaCall struct {
 	err   error
 }
 
-// DeltaStore is the part of the database DeltaHandler uses needs.
+// DeltaStore is the part of the database DeltaHandler needs.
 type DeltaStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreatePackageDelta(ctx context.Context, delta *models.PackageDelta) error

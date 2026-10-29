@@ -91,7 +91,7 @@ func GuardRelease(r *http.Request, repo *models.Repository, format, version stri
 	return ErrImmutableRelease
 }
 
-// GuardReleaseByNameStore is the part of the database GuardReleaseByName uses needs.
+// GuardReleaseByNameStore is the part of the database GuardReleaseByName needs.
 type GuardReleaseByNameStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 }

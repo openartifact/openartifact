@@ -22,12 +22,18 @@ import (
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// oidcRowDBStore is what oidcRowDB is used as.
+type oidcRowDBStore interface {
+	ExchangeWithRetryStore
+	LoadOIDCProviderStore
+	exchangeErrStore
+}
+
 type oidcRowDB struct {
-	databasetest.BaseMockDB
+	oidcRowDBStore
 
 	row *models.SSOProvider
 }
@@ -116,7 +122,7 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	return f
 }
 
-// exchangeErrStore is the part of the database exchangeErr uses needs.
+// exchangeErrStore is the part of the database exchangeErr needs.
 type exchangeErrStore interface {
 	ExchangeWithRetryStore
 }

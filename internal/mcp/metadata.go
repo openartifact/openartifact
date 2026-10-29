@@ -25,7 +25,7 @@ import (
 // the endpoint is unauthenticated, so it must not hit the database per request.
 const issuerCacheTTL = 30 * time.Second
 
-// MetadataStore is the part of the database MetadataHandler uses needs.
+// MetadataStore is the part of the database MetadataHandler needs.
 type MetadataStore interface {
 	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
 }

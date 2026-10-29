@@ -34,6 +34,22 @@ func blockAllowListPolicy() policytest.Case {
 	}
 }
 
+// policyDB is a MockDatabase whose license policies are those of a policytest
+// Case. It declares ListLicensePolicies itself: MockDatabase's own method sits
+// at the same depth as an embedded policytest.Lister's, which would be ambiguous.
+type policyDB struct {
+	*MockDatabase
+	lister policytest.Lister
+}
+
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
+
+func withPolicies(db *MockDatabase, c policytest.Case) policyDB {
+	return policyDB{MockDatabase: db, lister: c.Lister()}
+}
+
 // buildLicensedNPMPublishBody is buildPublishBody with extra manifest fields
 // (license / licenses) merged into the published version manifest.
 func buildLicensedNPMPublishBody(t *testing.T, packageName, version string, extra map[string]any) []byte {
@@ -115,7 +131,7 @@ func TestNPMPublish_LicensePolicy(t *testing.T) {
 				bs := newMockBlobStore()
 				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
-				router := newLicensedNPMRouter(c.DB(db), bs)
+				router := newLicensedNPMRouter(withPolicies(db, c), bs)
 				rec := publishNPM(t, router, buildLicensedNPMPublishBody(t, "lodash", "1.0.0", extra))
 
 				c.AssertResponse(t, rec.Code, rec.Body.Bytes())
@@ -191,7 +207,7 @@ func TestNPMPublish_LicensePolicyReadsTheTarball(t *testing.T) {
 			tarball := buildTarballBytes(t, pkgJSON)
 			rec := publishNPM(
 				t,
-				newLicensedNPMRouter(c.DB(db), bs),
+				newLicensedNPMRouter(withPolicies(db, c), bs),
 				buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, tc.manifest),
 			)
 
@@ -255,7 +271,7 @@ func TestNPMPublish_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 	bs := newMockBlobStore()
 	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
-	router := newLicensedNPMRouter(blockAllowListPolicy().DB(db), bs)
+	router := newLicensedNPMRouter(withPolicies(db, blockAllowListPolicy()), bs)
 
 	rec := publishNPM(t, router, buildPublishBody(t, "lodash", "1.0.0"))
 	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
@@ -300,7 +316,7 @@ func TestRPMUpload_LicensePolicy(t *testing.T) {
 			seedTestRepo(db, "repo-lic", "lic-repo")
 
 			pub := &recordingPublisher{}
-			rec := uploadRPMWithLicense(t, c.DB(db), bs, pub, "GPLv3+")
+			rec := uploadRPMWithLicense(t, withPolicies(db, c), bs, pub, "GPLv3+")
 
 			c.AssertResponse(t, rec.Code, rec.Body.Bytes())
 
@@ -338,7 +354,7 @@ func TestRPMUpload_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 	bs := newMockBlobStore()
 	seedTestRepo(db, "repo-lic", "lic-repo")
 
-	rec := uploadRPMWithLicense(t, blockAllowListPolicy().DB(db), bs, nil, "")
+	rec := uploadRPMWithLicense(t, withPolicies(db, blockAllowListPolicy()), bs, nil, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -380,7 +396,7 @@ func TestMavenUpload_LicensePolicy(t *testing.T) {
 			mock.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
 
 			pub := &mavenRecordingPublisher{}
-			router := newLicensedMavenRouter(t, c.DB(mock), pub)
+			router := newLicensedMavenRouter(t, withPolicies(mock, c), pub)
 
 			// The jar goes up first and is not license-bearing.
 			if code := mavenDo(router, http.MethodPut, base+".jar", []byte("jar-bytes")); code != http.StatusCreated {
@@ -421,7 +437,7 @@ func TestMavenUpload_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 	mock := newMockDatabase()
 	mock.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
 
-	router := newLicensedMavenRouter(t, blockAllowListPolicy().DB(mock), &mavenRecordingPublisher{})
+	router := newLicensedMavenRouter(t, withPolicies(mock, blockAllowListPolicy()), &mavenRecordingPublisher{})
 
 	code := mavenDo(router, http.MethodPut, "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.pom", mavenPom(""))
 	if code != http.StatusCreated {
@@ -448,7 +464,7 @@ func TestMavenUpload_LicensePolicyReadsThePOM(t *testing.T) {
 
 				log, _ := logger.New("info", "json", "stdout")
 				router := chi.NewRouter()
-				api.NewMavenUploadHandler(log, c.DB(db), bs, nil).Register(router)
+				api.NewMavenUploadHandler(log, withPolicies(db, c), bs, nil).Register(router)
 
 				req := httptest.NewRequestWithContext(context.Background(), http.MethodPut,
 					"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.pom", strings.NewReader(pom))
@@ -490,7 +506,7 @@ func TestNPMPublish_UnderivableLicenses(t *testing.T) {
 				bs := newMockBlobStore()
 				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
-				rec := publishNPM(t, newLicensedNPMRouter(c.DB(db), bs),
+				rec := publishNPM(t, newLicensedNPMRouter(withPolicies(db, c), bs),
 					buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, map[string]any{"license": "MIT"}))
 
 				c.AssertResponse(t, rec.Code, rec.Body.Bytes())
@@ -519,7 +535,7 @@ func TestMavenUpload_UnparsablePOMUnderBlockPolicy(t *testing.T) {
 
 			log, _ := logger.New("info", "json", "stdout")
 			router := chi.NewRouter()
-			api.NewMavenUploadHandler(log, c.DB(db), bs, nil).Register(router)
+			api.NewMavenUploadHandler(log, withPolicies(db, c), bs, nil).Register(router)
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPut,
 				"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.pom", strings.NewReader("<project><unclosed>"))

@@ -149,7 +149,7 @@ func TestEnforce(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/upload", nil)
 
-			stopped := licensepolicy.Enforce(rec, req, c.DB(nil), testLog(), "repo-1", "GPL-3.0")
+			stopped := licensepolicy.Enforce(rec, req, c.Lister(), testLog(), "repo-1", "GPL-3.0")
 
 			if stopped != c.Stopped() {
 				t.Fatalf("Enforce returned %v, want %v", stopped, c.Stopped())
@@ -383,7 +383,7 @@ func TestRefuseUnderivable(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/upload", nil)
 
-			stopped := licensepolicy.RefuseUnderivable(rec, req, c.DB(nil), testLog(), "repo-1")
+			stopped := licensepolicy.RefuseUnderivable(rec, req, c.Lister(), testLog(), "repo-1")
 
 			if stopped != c.Stopped() {
 				t.Fatalf("RefuseUnderivable returned %v, want %v", stopped, c.Stopped())

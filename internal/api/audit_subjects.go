@@ -39,7 +39,7 @@ type resolvedAudit struct {
 	subject   *responses.AuditSubject
 }
 
-// resolveAuditEntriesStore is the part of the database resolveAuditEntries uses needs.
+// resolveAuditEntriesStore is the part of the database resolveAuditEntries needs.
 type resolveAuditEntriesStore interface {
 	ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error)
 }
@@ -270,7 +270,7 @@ func auditSubjectOf(l *models.AuditLog, d auditDetails, names *models.AuditNames
 	return s
 }
 
-// activityEntriesStore is the part of the database activityEntries uses needs.
+// activityEntriesStore is the part of the database activityEntries needs.
 type activityEntriesStore interface {
 	resolveAuditEntriesStore
 }

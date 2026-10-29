@@ -21,7 +21,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// SecretsStore is the part of the database SecretsHandler uses needs.
+// SecretsStore is the part of the database SecretsHandler needs.
 type SecretsStore interface {
 	repoAccessStore
 	CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error

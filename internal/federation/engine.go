@@ -29,7 +29,7 @@ type Notifier interface {
 	NotifyNPM(packageID string)
 }
 
-// OptionsStore is the part of the database Options uses needs.
+// OptionsStore is the part of the database Options needs.
 type OptionsStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
@@ -30,6 +32,13 @@ type condaDB struct {
 	// pkg is the most recently stored package, nil after it was deleted.
 	pkg  *models.CondaPackage
 	pkgs []*models.CondaPackage
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// ListLicensePolicies is not exercised by the tests.
+func (*condaDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *condaDB) find(name, version, build, platform, ext string) *models.CondaPackage {

@@ -62,7 +62,7 @@ type BlobOptions struct {
 	LastModified bool
 }
 
-// ServeRepoMetadataStore is the part of the database ServeRepoMetadata uses needs.
+// ServeRepoMetadataStore is the part of the database ServeRepoMetadata needs.
 type ServeRepoMetadataStore interface {
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
 }

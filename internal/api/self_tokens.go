@@ -16,7 +16,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// SelfTokensStore is the part of the database SelfTokensHandler uses needs.
+// SelfTokensStore is the part of the database SelfTokensHandler needs.
 type SelfTokensStore interface {
 	issueTokenStore
 	GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error)

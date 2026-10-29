@@ -41,7 +41,7 @@ const FormatName = "ansible"
 // metadata before revalidating.
 const metadataMaxAge = 60
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error

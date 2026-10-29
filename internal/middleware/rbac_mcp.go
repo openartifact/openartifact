@@ -45,7 +45,7 @@ func isMCPPath(urlPath string, cfg RBACConfig) bool {
 	return cfg.MCPPath != "" && (urlPath == cfg.MCPPath || strings.HasPrefix(urlPath, cfg.MCPPath+"/"))
 }
 
-// resolveMCPPrincipalStore is the part of the database resolveMCPPrincipal uses needs.
+// resolveMCPPrincipalStore is the part of the database resolveMCPPrincipal needs.
 type resolveMCPPrincipalStore interface {
 	principalForUserStore
 	tokenPrincipalStore
@@ -171,7 +171,7 @@ func gateMCP(
 	return true
 }
 
-// serveMCPStore is the part of the database serveMCP uses needs.
+// serveMCPStore is the part of the database serveMCP needs.
 type serveMCPStore interface {
 	resolveMCPPrincipalStore
 }

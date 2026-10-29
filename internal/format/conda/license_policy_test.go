@@ -8,6 +8,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"context"
 	"net/http"
 	"testing"
 
@@ -16,6 +17,18 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 )
+
+// policyDB is a condaDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*condaDB
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
 
 func infoTar(t *testing.T, indexJSON string) []byte {
 	t.Helper()
@@ -87,7 +100,7 @@ func TestUploadLicensePolicy(t *testing.T) {
 			db := &condaDB{DB: formattest.NewDB()}
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
-			h := NewHTTPHandler(formattest.NewLogger(t), c.DB(db), bs, "http://localhost")
+			h := NewHTTPHandler(formattest.NewLogger(t), policyDB{db, c.Lister()}, bs, "http://localhost")
 			h.SetPublisher(pub)
 
 			w := formattest.Do(h.RegisterRepoRoutes,
@@ -114,7 +127,7 @@ func TestUploadWithoutLicenseAdmittedUnderLicensePolicy(t *testing.T) {
 	policy := policytest.Policy("block", []string{"MIT"}, nil)
 	h := NewHTTPHandler(
 		formattest.NewLogger(t),
-		&policytest.DB{Database: db, Policies: []*models.LicensePolicy{policy}},
+		policyDB{db, policytest.Case{Policies: []*models.LicensePolicy{policy}}.Lister()},
 		formattest.NewBlobStore(),
 		"http://localhost",
 	)

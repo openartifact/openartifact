@@ -21,7 +21,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -36,10 +35,17 @@ const (
 	secFindingID = "9a000000-0000-4000-8000-000000000001"
 )
 
+// securityMockDBStore is what securityMockDB is used as.
+type securityMockDBStore interface {
+	SecurityStore
+	auth.EvaluatorStore
+	sbom.GeneratorStore
+}
+
 // securityMockDB serves the findings, summary, health and repository summary
 // queries and records what the handlers asked.
 type securityMockDB struct {
-	databasetest.BaseMockDB
+	securityMockDBStore
 
 	admins   map[string]bool
 	grants   map[string][]*models.ProjectGrant // by user ID

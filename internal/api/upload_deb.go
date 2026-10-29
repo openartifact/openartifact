@@ -55,7 +55,7 @@ var (
 	debSegmentRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*$`)
 )
 
-// DebUploadStore is the part of the database DebUploadHandler uses needs.
+// DebUploadStore is the part of the database DebUploadHandler needs.
 type DebUploadStore interface {
 	ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error)
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)

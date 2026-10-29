@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -26,7 +25,7 @@ import (
 // Manifests and tags are scoped per (image, digest|name) like the real tables,
 // and the create/upsert methods are idempotent like the real queries.
 type manifestFakeDB struct {
-	databasetest.BaseMockDB
+	testHandlerStore
 
 	repo *models.Repository
 

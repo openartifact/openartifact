@@ -28,6 +28,11 @@ type npmPublishDB struct {
 	versions []*models.NPMVersion
 }
 
+// ListLicensePolicies is not exercised by the tests.
+func (*npmPublishDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 func (d *npmPublishDB) ReserveStorageUsage(context.Context, string, int64, int) (bool, error) {
 	return true, nil
 }

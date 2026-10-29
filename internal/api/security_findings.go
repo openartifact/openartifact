@@ -38,7 +38,7 @@ const (
 	findingPriorityCursorTag = "p"
 )
 
-// SecurityStore is the part of the database SecurityHandler uses needs.
+// SecurityStore is the part of the database SecurityHandler needs.
 type SecurityStore interface {
 	storedArtifactMetadataStore
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)

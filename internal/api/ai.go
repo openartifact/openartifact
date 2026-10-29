@@ -21,7 +21,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AIStore is the part of the database AIHandler uses needs.
+// AIStore is the part of the database AIHandler needs.
 type AIStore interface {
 	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
 	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)

@@ -45,7 +45,7 @@ const (
 	maxCompsSize     = 10 * 1024 * 1024
 )
 
-// RPMUploadStore is the part of the database RPMUploadHandler uses needs.
+// RPMUploadStore is the part of the database RPMUploadHandler needs.
 type RPMUploadStore interface {
 	DebUploadStore
 	CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) error

@@ -23,7 +23,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// OIDCStore is the part of the database OIDCHandler uses needs.
+// OIDCStore is the part of the database OIDCHandler needs.
 type OIDCStore interface {
 	completeLogoutStore
 	establishSSOSessionStore
@@ -337,7 +337,7 @@ func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	completeLogout(w, r, h.db, h.log, h.baseURL, urlparams.Vars(r)["slug"])
 }
 
-// completeLogoutStore is the part of the database completeLogout uses needs.
+// completeLogoutStore is the part of the database completeLogout needs.
 type completeLogoutStore interface {
 	rpLogoutURLStore
 	DeleteSession(ctx context.Context, tokenHash string) error
@@ -373,7 +373,7 @@ func completeLogout(w http.ResponseWriter, r *http.Request, db completeLogoutSto
 	writeNoContent(w)
 }
 
-// rpLogoutURLStore is the part of the database rpLogoutURL uses needs.
+// rpLogoutURLStore is the part of the database rpLogoutURL needs.
 type rpLogoutURLStore interface {
 	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
 	GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error)

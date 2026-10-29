@@ -16,7 +16,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// metadataBlobsStore is the part of the database metadataBlobs uses needs.
+// metadataBlobsStore is the part of the database metadataBlobs needs.
 type metadataBlobsStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	GetDB() *sql.DB

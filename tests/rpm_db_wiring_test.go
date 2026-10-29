@@ -18,18 +18,78 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/audit"
+	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/deb"
+	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/format/helm"
+	"github.com/openartifact/openartifact/internal/format/maven"
+	"github.com/openartifact/openartifact/internal/format/npm"
+	"github.com/openartifact/openartifact/internal/format/pypi"
 	"github.com/openartifact/openartifact/internal/format/rpm"
+	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// mockDatabaseStore is what MockDatabase is used as.
+type mockDatabaseStore interface {
+	database.SnapshotReads
+	api.AdminAuditStore
+	api.AdminDeclarativeStore
+	api.AdminGPGStore
+	api.AdminGroupsStore
+	api.AdminPermissionsStore
+	api.AdminSSOStore
+	api.AdminStorageStore
+	api.AdminTokensStore
+	api.AdminUsersStore
+	api.AuthStore
+	api.MavenUploadStore
+	api.NPMUploadStore
+	api.OIDCStore
+	api.RPMUploadStore
+	api.RepositoriesStore
+	api.SAMLStore
+	api.SelfTokensStore
+	audit.LoggerStore
+	auth.CreateSessionStore
+	auth.CreateTokenStore
+	auth.DeleteSessionStore
+	auth.EvaluatorStore
+	auth.LookupSessionSSOStore
+	auth.RevokeAllSessionsStore
+	auth.RevokeOtherSessionsStore
+	auth.TouchSessionStore
+	auth.UpdateLastUsedStore
+	auth.ValidateSessionStore
+	auth.ValidateTokenStore
+	backup.EngineStore
+	deb.HTTPStore
+	helm.HTTPStore
+	maven.HTTPStore
+	npm.HTTPStore
+	pypi.HTTPStore
+	rpm.HTTPStore
+	middleware.RBACMiddlewareStore
+	presign.WrapStore
+	worker.DebMetadataStore
+	worker.MavenMetadataStore
+	worker.NPMMetadataStore
+}
+
 type MockDatabase struct {
-	databasetest.BaseMockDB
+	mockDatabaseStore
 
 	mu                      sync.Mutex
 	repositories            map[string]*models.Repository
@@ -68,6 +128,45 @@ type MockDatabase struct {
 	quotaArtifacts    int   // artifacts currently reserved
 	quotaReserveCalls int   // successful reservations ever made
 	quotaReleaseCalls int   // releases ever made
+}
+
+// CountRepoPackageNames is not exercised by the tests.
+func (*MockDatabase) CountRepoPackageNames(context.Context, []string) (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+
+
+// RepoCatalogStats is not exercised by the tests.
+func (*MockDatabase) RepoCatalogStats(context.Context, []string, bool) (map[string]models.RepoStats, error) {
+	return map[string]models.RepoStats{}, nil
+}
+
+
+// GetDebBlobInfo is not exercised by the tests.
+func (*MockDatabase) GetDebBlobInfo(context.Context, string) (string, int64, error) {
+	return "", 0, errNotImplemented
+}
+
+// SetSessionSSO is not exercised by the tests.
+func (*MockDatabase) SetSessionSSO(context.Context, string, string, string) error {
+	return errNotImplemented
+}
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*MockDatabase) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
+// GetSessionSSO is not exercised by the tests.
+func (*MockDatabase) GetSessionSSO(context.Context, string) (*models.SessionSSO, error) {
+	return nil, errNotImplemented
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// GetPasswordExpiry is not exercised by the tests.
+func (*MockDatabase) GetPasswordExpiry(context.Context, string) (*time.Time, error) {
+	return nil, nil //nolint:nilnil // no expiry
 }
 
 func newMockDatabase() *MockDatabase {
@@ -510,7 +609,7 @@ func (m *MockDatabase) ListMavenGARefs(ctx context.Context, repoID, groupID, art
 		}
 	}
 
-	return databasetest.MavenGARefsFromArtifacts(result), nil
+	return formattest.MavenGARefsFromArtifacts(result), nil
 }
 
 func (m *MockDatabase) GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error) {

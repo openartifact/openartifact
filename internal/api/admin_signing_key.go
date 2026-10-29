@@ -27,7 +27,7 @@ type signingKeyService[I any] interface {
 	Import(ctx context.Context, repo *models.Repository, private, keyName, by string) (*I, error)
 }
 
-// signingKeyAdminStore is the part of the database signingKeyAdmin uses needs.
+// signingKeyAdminStore is the part of the database signingKeyAdmin needs.
 type signingKeyAdminStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 }

@@ -54,7 +54,7 @@ const (
 	webhookResponseTruncatedMarker = "\n[response body truncated]"
 )
 
-// DispatcherStore is the part of the database Dispatcher uses needs.
+// DispatcherStore is the part of the database Dispatcher needs.
 type DispatcherStore interface {
 	ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error)
 	CreateWebhookDelivery(ctx context.Context, delivery *models.WebhookDelivery) error

@@ -40,7 +40,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error

@@ -23,7 +23,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)

@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
@@ -36,6 +38,13 @@ type ansibleDB struct {
 	rows []*models.AnsibleCollection
 
 	limit, used int64
+}
+
+var errNotImplemented = errors.New("not implemented")
+
+// ListLicensePolicies is not exercised by the tests.
+func (*ansibleDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
 }
 
 func (d *ansibleDB) ReserveStorageUsage(_ context.Context, _ string, size int64, _ int) (bool, error) {

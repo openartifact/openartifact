@@ -22,7 +22,7 @@ import (
 // token this server accepts (unknown issuer, wrong audience, unknown user…).
 var ErrAccessTokenNotAccepted = errors.New("oidc access token not accepted")
 
-// OIDCIssuersStore is the part of the database OIDCIssuers uses needs.
+// OIDCIssuersStore is the part of the database OIDCIssuers needs.
 type OIDCIssuersStore interface {
 	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
 }
@@ -82,7 +82,7 @@ func unverifiedIssuer(raw string) (string, bool) {
 	return claims.Iss, true
 }
 
-// VerifyOIDCAccessTokenStore is the part of the database VerifyOIDCAccessToken uses needs.
+// VerifyOIDCAccessTokenStore is the part of the database VerifyOIDCAccessToken needs.
 type VerifyOIDCAccessTokenStore interface {
 	verifyAccessTokenWithStore
 	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
@@ -125,7 +125,7 @@ func VerifyOIDCAccessToken(ctx context.Context, db VerifyOIDCAccessTokenStore, b
 	return nil, ErrAccessTokenNotAccepted
 }
 
-// verifyAccessTokenWithStore is the part of the database verifyAccessTokenWith uses needs.
+// verifyAccessTokenWithStore is the part of the database verifyAccessTokenWith needs.
 type verifyAccessTokenWithStore interface {
 	GetUserByExternalID(ctx context.Context, externalID string, providerSlug string) (*models.User, error)
 }

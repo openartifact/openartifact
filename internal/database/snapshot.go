@@ -54,16 +54,10 @@ type BlobDeletionStore interface {
 	PurgeExpiredBackupLeases(ctx context.Context) (int64, error)
 }
 
-// SnapshotReader reads the database as of one instant: every call sees the same
-// committed state, however long the backup takes and whatever is written
-// meanwhile. It is read-only by construction (only read methods are listed, and
-// the underlying transactions are READ ONLY).
-//
-// A snapshot also holds a lease: while it is open, the sweeper deletes no blob
-// bytes the snapshot can still see (a blob deleted, or a tier copy retired,
-// after the snapshot was taken stays readable). Release ends both; a crashed
-// holder's lease expires on its own.
-type SnapshotReader interface {
+// SnapshotReads are the table reads of a SnapshotReader. A test double of a
+// snapshot over an in-memory fake implements these through the fake and the
+// blob listing and lease itself.
+type SnapshotReads interface {
 	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
 	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
 	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
@@ -128,6 +122,19 @@ type SnapshotReader interface {
 	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
 	ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error) // repoID="" = global
 	SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error)
+}
+
+// SnapshotReader reads the database as of one instant: every call sees the same
+// committed state, however long the backup takes and whatever is written
+// meanwhile. It is read-only by construction (only read methods are listed, and
+// the underlying transactions are READ ONLY).
+//
+// A snapshot also holds a lease: while it is open, the sweeper deletes no blob
+// bytes the snapshot can still see (a blob deleted, or a tier copy retired,
+// after the snapshot was taken stays readable). Release ends both; a crashed
+// holder's lease expires on its own.
+type SnapshotReader interface {
+	SnapshotReads
 
 	// ListBlobsAfter returns up to limit stored objects with sha256 > after, in
 	// sha256 order: blobs rows plus the generated metadata and deltas that

@@ -13,17 +13,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type compsDB struct {
-	databasetest.BaseMockDB
+	RPMUploadStore
 
 	meta map[string]*models.RepoMetadata
 }
+
+// GetDB is not exercised by the tests.
+func (*compsDB) GetDB() *sql.DB { return nil }
 
 func (d *compsDB) GetRepositoryByName(context.Context, string) (*models.Repository, error) {
 	return &models.Repository{ID: "r1", Name: "rpms", Format: "rpm", RepoType: "hosted"}, nil

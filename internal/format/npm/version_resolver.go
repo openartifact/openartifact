@@ -11,7 +11,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// VersionResolverStore is the part of the database VersionResolver uses needs.
+// VersionResolverStore is the part of the database VersionResolver needs.
 type VersionResolverStore interface {
 	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
 	GetNPMVersion(ctx context.Context, packageID string, version string) (*models.NPMVersion, error)

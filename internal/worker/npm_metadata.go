@@ -20,7 +20,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/npm"
 )
 
-// NPMMetadataStore is the part of the database NPMMetadataWorker uses needs.
+// NPMMetadataStore is the part of the database NPMMetadataWorker needs.
 type NPMMetadataStore interface {
 	GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error)
 	UpdateNPMPackageLatestVersion(ctx context.Context, packageID string, latestVersion string) error

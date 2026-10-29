@@ -24,7 +24,7 @@ import (
 
 var groupNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,64}$`)
 
-// AdminGroupsStore is the part of the database AdminGroupsHandler uses needs.
+// AdminGroupsStore is the part of the database AdminGroupsHandler needs.
 type AdminGroupsStore interface {
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
 	CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error)

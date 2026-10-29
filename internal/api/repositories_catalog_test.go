@@ -36,6 +36,11 @@ type catalogDB struct {
 	repo        *models.Repository
 }
 
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*catalogDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
 func (db *catalogDB) RepoCatalogStats(_ context.Context, ids []string, _ bool) (map[string]models.RepoStats, error) {
 	db.statsCalls++
 

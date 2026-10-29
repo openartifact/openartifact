@@ -60,7 +60,7 @@ type ReferrerRegistry interface {
 	) (string, error)
 }
 
-// AttestationAttacherStore is the part of the database AttestationAttacher uses needs.
+// AttestationAttacherStore is the part of the database AttestationAttacher needs.
 type AttestationAttacherStore interface {
 	storedArtifactMetadataStore
 	GetDockerTag(ctx context.Context, repoID string, image string, name string) (*models.DockerTag, error)
@@ -326,7 +326,7 @@ func (a *AttestationAttacher) OnScan(ctx context.Context, repoID, artifactID str
 
 // ---- HTTP ---------------------------------------------------------------
 
-// AttestationAttachStore is the part of the database AttestationAttachHandler uses needs.
+// AttestationAttachStore is the part of the database AttestationAttachHandler needs.
 type AttestationAttachStore interface {
 	repoAccessStore
 	GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error)

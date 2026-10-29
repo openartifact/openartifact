@@ -67,7 +67,7 @@ func validFormatList() string {
 	return strings.Join(repotype.SortedNames(), ", ")
 }
 
-// RepositoriesStore is the part of the database RepositoriesHandler uses needs.
+// RepositoriesStore is the part of the database RepositoriesHandler needs.
 type RepositoriesStore interface {
 	collectOrphansAsyncStore
 	reclaimMetadataBlobsStore
@@ -1307,7 +1307,7 @@ func (h *RepositoriesHandler) hardDeleteRepository(ctx context.Context, w http.R
 	return true
 }
 
-// reclaimMetadataBlobsStore is the part of the database reclaimMetadataBlobs uses needs.
+// reclaimMetadataBlobsStore is the part of the database reclaimMetadataBlobs needs.
 type reclaimMetadataBlobsStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	GetDB() *sql.DB
@@ -1372,7 +1372,7 @@ func (h *RepositoriesHandler) collectOrphansAsync() {
 	collectOrphansAsync(h.tasks, h.db, h.blobStore, h.log)
 }
 
-// collectOrphansAsyncStore is the part of the database collectOrphansAsync uses needs.
+// collectOrphansAsyncStore is the part of the database collectOrphansAsync needs.
 type collectOrphansAsyncStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 }

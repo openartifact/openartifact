@@ -17,7 +17,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/dtrack"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -27,8 +26,14 @@ import (
 
 const dtSecretKey = "odt_super_secret_value"
 
+// dtDBStore is what dtDB is used as.
+type dtDBStore interface {
+	DependencyTrackStore
+	auth.EvaluatorStore
+}
+
 type dtDB struct {
-	databasetest.BaseMockDB
+	dtDBStore
 
 	mu       sync.Mutex
 	settings map[string]string

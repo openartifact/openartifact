@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -20,7 +19,7 @@ const secretScanID = "66666666-6666-4666-8666-666666666666"
 
 // secretScanStoreDB keeps secret scans per repository, like the real store.
 type secretScanStoreDB struct {
-	databasetest.BaseMockDB
+	SecretsStore
 
 	scans map[string][]*models.SecretScanResult
 }

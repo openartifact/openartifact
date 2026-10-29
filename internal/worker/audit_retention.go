@@ -44,7 +44,7 @@ type AuditRetentionStats struct {
 	Busy bool
 }
 
-// AuditRetentionStore is the part of the database AuditRetentionWorker uses needs.
+// AuditRetentionStore is the part of the database AuditRetentionWorker needs.
 type AuditRetentionStore interface {
 	GetDB() *sql.DB
 }

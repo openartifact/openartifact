@@ -47,7 +47,7 @@ import (
 // repository after it was looked up.
 var errMountSourceGone = errors.New("mount source blob no longer exists")
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

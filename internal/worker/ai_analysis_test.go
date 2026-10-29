@@ -23,7 +23,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -40,7 +39,7 @@ var errBlobGone = errors.New("blob gone: /secret/internal/path")
 
 // aiFakeDB records analyses and serves a fixed package listing.
 type aiFakeDB struct {
-	databasetest.BaseMockDB
+	startWorkerStore
 
 	mu       sync.Mutex
 	blobs    map[string]*models.ComponentBlob
@@ -220,7 +219,7 @@ func testLog(t *testing.T) *logger.Logger {
 	return log
 }
 
-// startWorkerStore is the part of the database startWorker uses needs.
+// startWorkerStore is the part of the database startWorker needs.
 type startWorkerStore interface {
 	AIAnalysisStore
 }

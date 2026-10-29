@@ -26,6 +26,18 @@ import (
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
 )
 
+// policyDB is a gemsDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*gemsDB
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
+
 var errCreateFailed = errors.New("create failed")
 
 type gemsDB struct {
@@ -369,7 +381,7 @@ func TestIsPrerelease(t *testing.T) {
 	}
 }
 
-// pushWithLicensesStore is the part of the database pushWithLicenses uses needs.
+// pushWithLicensesStore is the part of the database pushWithLicenses needs.
 type pushWithLicensesStore interface {
 	HTTPStore
 }
@@ -429,7 +441,7 @@ func TestPushLicensePolicy(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := pushWithLicenses(t, c.DB(inner), bs, pub, []string{"GPL-3.0"})
+			w := pushWithLicenses(t, policyDB{inner, c.Lister()}, bs, pub, []string{"GPL-3.0"})
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertGemStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -445,7 +457,7 @@ func TestPushLicensePolicyNoLicenseAdmitted(t *testing.T) {
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 
-	w := pushWithLicenses(t, c.DB(inner), bs, pub, nil)
+	w := pushWithLicenses(t, policyDB{inner, c.Lister()}, bs, pub, nil)
 	c.AssertResponse(t, w.Code, w.Body.Bytes())
 	assertGemStored(t, c, w.Code, inner, bs, pub)
 }

@@ -58,7 +58,7 @@ const (
 	quotaReconcileInterval = 6 * time.Hour
 )
 
-// CleanupStore is the part of the database CleanupWorker uses needs.
+// CleanupStore is the part of the database CleanupWorker needs.
 type CleanupStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

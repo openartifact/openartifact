@@ -20,7 +20,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AdminTokensStore is the part of the database AdminTokensHandler uses needs.
+// AdminTokensStore is the part of the database AdminTokensHandler needs.
 type AdminTokensStore interface {
 	issueTokenStore
 	GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error)
@@ -278,7 +278,7 @@ func (b *tokenCreateBody) validate(now time.Time) string {
 	return ""
 }
 
-// authorizeTokenScopesStore is the part of the database authorizeTokenScopes uses needs.
+// authorizeTokenScopesStore is the part of the database authorizeTokenScopes needs.
 type authorizeTokenScopesStore interface {
 	GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error)
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
@@ -338,7 +338,7 @@ func authorizeTokenScopes(
 	return 0, "", ""
 }
 
-// issueTokenStore is the part of the database issueToken uses needs.
+// issueTokenStore is the part of the database issueToken needs.
 type issueTokenStore interface {
 	authorizeTokenScopesStore
 	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)

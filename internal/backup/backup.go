@@ -129,7 +129,7 @@ func redactedStorageConfig(raw []byte) []byte {
 	return out
 }
 
-// EngineStore is the part of the database Engine uses needs.
+// EngineStore is the part of the database Engine needs.
 type EngineStore interface {
 	AddBundleItem(ctx context.Context, item *models.ReleaseBundleItem) error
 	AddGroupMember(ctx context.Context, groupRepoID string, memberRepoID string, priority int) error

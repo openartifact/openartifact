@@ -25,7 +25,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AdminGPGStore is the part of the database AdminGPGHandler uses needs.
+// AdminGPGStore is the part of the database AdminGPGHandler needs.
 type AdminGPGStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 }

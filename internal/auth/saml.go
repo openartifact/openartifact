@@ -71,7 +71,7 @@ type SAMLProvider struct {
 	fingerprint string
 }
 
-// LoadSAMLProviderStore is the part of the database LoadSAMLProvider uses needs.
+// LoadSAMLProviderStore is the part of the database LoadSAMLProvider needs.
 type LoadSAMLProviderStore interface {
 	CreateSystemSettingIfAbsent(ctx context.Context, key string, value string) (bool, error)
 	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
@@ -442,7 +442,7 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 	}
 }
 
-// SAMLProviderParseCallbackStore is the part of the database SAMLProviderParseCallback uses needs.
+// SAMLProviderParseCallbackStore is the part of the database SAMLProviderParseCallback needs.
 type SAMLProviderParseCallbackStore interface {
 	sAMLProviderconsumeAssertionStore
 	sAMLProviderparseIDPInitiatedStore
@@ -501,7 +501,7 @@ func (p *SAMLProvider) ParseCallback(
 	return assertion, nil
 }
 
-// sAMLProviderparseIDPInitiatedStore is the part of the database SAMLProviderparseIDPInitiated uses needs.
+// sAMLProviderparseIDPInitiatedStore is the part of the database SAMLProviderparseIDPInitiated needs.
 type sAMLProviderparseIDPInitiatedStore interface {
 	sAMLProviderconsumeAssertionStore
 }
@@ -571,7 +571,7 @@ func classifySAMLParseError(err error) error {
 	return err
 }
 
-// sAMLProviderconsumeAssertionStore is the part of the database SAMLProviderconsumeAssertion uses needs.
+// sAMLProviderconsumeAssertionStore is the part of the database SAMLProviderconsumeAssertion needs.
 type sAMLProviderconsumeAssertionStore interface {
 	ConsumeSAMLAssertion(ctx context.Context, providerSlug string, assertionID string, expiresAt time.Time) (bool, error)
 }

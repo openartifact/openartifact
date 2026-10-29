@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -27,7 +26,7 @@ var errMavenGuardDB = errors.New("pq: connection refused to 10.0.0.5:5432")
 // lookup of the immutable-releases guard is the second one of a delete (the
 // first resolves the repository id); failGuardLookup makes it fail.
 type mavenGuardDB struct {
-	databasetest.BaseMockDB
+	deleteMavenStore
 
 	immutable       bool
 	failGuardLookup bool
@@ -48,7 +47,7 @@ func (d *mavenGuardDB) GetMavenArtifactByPath(_ context.Context, _, _ string) (*
 	return &models.MavenArtifact{ID: "art-1", GroupID: "com.acme", ArtifactCoord: "app", Version: "1.0.0"}, nil
 }
 
-// deleteMavenStore is the part of the database deleteMaven uses needs.
+// deleteMavenStore is the part of the database deleteMaven needs.
 type deleteMavenStore interface {
 	MavenUploadStore
 }

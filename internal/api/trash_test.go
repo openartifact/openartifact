@@ -20,7 +20,6 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
@@ -32,10 +31,17 @@ const (
 	trashPkgName = "com.acme:lib"
 )
 
+// fakeTrashDBStore is what fakeTrashDB is used as.
+type fakeTrashDBStore interface {
+	RepositoriesStore
+	TrashStore
+	auth.EvaluatorStore
+}
+
 // fakeTrashDB is a database.Database + database.TrashStore double. It records
 // what the handlers asked of it.
 type fakeTrashDB struct {
-	databasetest.BaseMockDB
+	fakeTrashDBStore
 
 	targets []*models.PermissionTarget
 	repos   map[string]*models.Repository
@@ -63,6 +69,11 @@ type fakeTrashDB struct {
 	decrements     []int
 	trashedNames   map[string]bool
 	createErr      error
+}
+
+// GetRepoMetadataByRepo is not exercised by the tests.
+func (*fakeTrashDB) GetRepoMetadataByRepo(context.Context, string) ([]models.RepoMetadata, error) {
+	return nil, errNotImplemented
 }
 
 func (db *fakeTrashDB) GetPermissionTargetsForPrincipal(context.Context, string, []string) ([]*models.PermissionTarget, error) {
@@ -775,6 +786,11 @@ type captureCreateDB struct {
 	*fakeTrashDB
 
 	created *models.Repository
+}
+
+// GetProject is not exercised by the tests.
+func (*captureCreateDB) GetProject(context.Context, string) (*models.Project, error) {
+	return nil, errNotImplemented
 }
 
 func (c *captureCreateDB) CreateRepositoryWithMembers(_ context.Context, repo *models.Repository, _ []string) error {

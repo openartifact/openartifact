@@ -51,7 +51,7 @@ const metadataMaxAge = 60
 // under its content-addressed URL.
 const distMaxAge = 3600
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error

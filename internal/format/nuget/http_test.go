@@ -20,6 +20,18 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
+// policyDB is a nugetDB whose license policies are those of a policytest Case.
+type policyDB struct {
+	*nugetDB
+	lister policytest.Lister
+}
+
+// ListLicensePolicies answers the case's policies; the double has its own, so the embedded
+// Lister would be ambiguous.
+func (d policyDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
+	return d.lister.ListLicensePolicies(ctx, repoID)
+}
+
 type nugetDB struct {
 	*formattest.DB
 	quotaFake
@@ -166,7 +178,7 @@ func nuspecWithLicense(licenseXML string) string {
 </package>`
 }
 
-// pushNuspecStore is the part of the database pushNuspec uses needs.
+// pushNuspecStore is the part of the database pushNuspec needs.
 type pushNuspecStore interface {
 	HTTPStore
 }
@@ -225,7 +237,7 @@ func TestPushLicensePolicy(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := pushNuspec(t, c.DB(inner), bs, pub, nuspec)
+			w := pushNuspec(t, policyDB{inner, c.Lister()}, bs, pub, nuspec)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertNupkgStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -249,7 +261,7 @@ func TestPushLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 			bs := formattest.NewBlobStore()
 			pub := &formattest.Publisher{}
 
-			w := pushNuspec(t, c.DB(inner), bs, pub, nuspec)
+			w := pushNuspec(t, policyDB{inner, c.Lister()}, bs, pub, nuspec)
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertNupkgStored(t, c, w.Code, inner, bs, pub)
 		})
@@ -271,7 +283,7 @@ func TestPushLicensePolicyLicenseURL(t *testing.T) {
 				bs := formattest.NewBlobStore()
 				pub := &formattest.Publisher{}
 
-				w := pushNuspec(t, c.DB(inner), bs, pub, nuspecWithLicense(`<licenseUrl>`+url+`</licenseUrl>`))
+				w := pushNuspec(t, policyDB{inner, c.Lister()}, bs, pub, nuspecWithLicense(`<licenseUrl>`+url+`</licenseUrl>`))
 				c.AssertResponse(t, w.Code, w.Body.Bytes())
 				assertNupkgStored(t, c, w.Code, inner, bs, pub)
 			})

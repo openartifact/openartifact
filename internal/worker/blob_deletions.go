@@ -59,7 +59,7 @@ type BlobDeletionStats struct {
 	Pending int64
 }
 
-// BlobDeletionSweeperStore is the part of the database BlobDeletionSweeper uses needs.
+// BlobDeletionSweeperStore is the part of the database BlobDeletionSweeper needs.
 type BlobDeletionSweeperStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 }

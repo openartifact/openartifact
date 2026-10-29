@@ -144,7 +144,7 @@ const (
 	maxActorNameLen = 128
 )
 
-// AuthAuditMiddlewareStore is the part of the database AuthAuditMiddleware uses needs.
+// AuthAuditMiddlewareStore is the part of the database AuthAuditMiddleware needs.
 type AuthAuditMiddlewareStore interface {
 	actorFromSessionStore
 }
@@ -261,7 +261,7 @@ func setActor(ev *audit.AuditEvent, a auditActorInfo, actorType string) {
 	}
 }
 
-// actorFromSessionStore is the part of the database actorFromSession uses needs.
+// actorFromSessionStore is the part of the database actorFromSession needs.
 type actorFromSessionStore interface {
 	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
 	GetUserByID(ctx context.Context, id string) (*models.User, error)

@@ -44,7 +44,7 @@ const maxConcurrentNPMPublishes = 4
 // maxNPMDistTagBody caps the dist-tag PUT body, a JSON string holding a version.
 const maxNPMDistTagBody int64 = 1 << 10
 
-// NPMUploadStore is the part of the database NPMUploadHandler uses needs.
+// NPMUploadStore is the part of the database NPMUploadHandler needs.
 type NPMUploadStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateNPMPackage(ctx context.Context, p *models.NPMPackage) (*models.NPMPackage, error)

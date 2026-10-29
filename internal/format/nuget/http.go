@@ -60,7 +60,7 @@ const (
 // would be stored but never retrievable through the URL routes.
 var validPackageID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error

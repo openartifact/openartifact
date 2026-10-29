@@ -51,7 +51,7 @@ type ssoSessionParams struct {
 	IDToken string
 }
 
-// establishSSOSessionStore is the part of the database establishSSOSession uses needs.
+// establishSSOSessionStore is the part of the database establishSSOSession needs.
 type establishSSOSessionStore interface {
 	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)
 	DeleteSession(ctx context.Context, tokenHash string) error

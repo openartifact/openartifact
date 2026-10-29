@@ -22,7 +22,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// SAMLStore is the part of the database SAMLHandler uses needs.
+// SAMLStore is the part of the database SAMLHandler needs.
 type SAMLStore interface {
 	establishSSOSessionStore
 	ConsumeSAMLAssertion(ctx context.Context, providerSlug string, assertionID string, expiresAt time.Time) (bool, error)

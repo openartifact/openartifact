@@ -34,7 +34,7 @@ const (
 	projectGroupRoleMessage = "role must be maintainer, developer, or viewer"
 )
 
-// ProjectsStore is the part of the database ProjectsHandler uses needs.
+// ProjectsStore is the part of the database ProjectsHandler needs.
 type ProjectsStore interface {
 	activityPageStore
 	auditExportStore

@@ -14,8 +14,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
+	"github.com/openartifact/openartifact/internal/branding"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -52,12 +53,32 @@ func TestValidFormatsMatchDatabaseConstraint(t *testing.T) {
 	}
 }
 
+// repoCreateMockDBStore is what repoCreateMockDB is used as.
+type repoCreateMockDBStore interface {
+	AdminAuditStore
+	AuthStore
+	DebUploadStore
+	MavenUploadStore
+	ProjectsStore
+	RPMUploadStore
+	RepositoriesStore
+	audit.LoggerStore
+	auth.EvaluatorStore
+	auth.SettingStore
+	branding.SettingStore
+}
+
 type repoCreateMockDB struct {
-	databasetest.BaseMockDB
+	repoCreateMockDBStore
 
 	createErr error
 	targets   []*models.PermissionTarget
 	created   *models.Repository
+}
+
+// GetProject is not exercised by the tests.
+func (*repoCreateMockDB) GetProject(context.Context, string) (*models.Project, error) {
+	return nil, errNotImplemented
 }
 
 func (db *repoCreateMockDB) CreateRepositoryWithMembers(_ context.Context, repo *models.Repository, _ []string) error {

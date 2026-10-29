@@ -23,7 +23,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// LicenseStore is the part of the database LicenseHandler uses needs.
+// LicenseStore is the part of the database LicenseHandler needs.
 type LicenseStore interface {
 	inheritedPOMLicensesStore
 	repoAccessStore

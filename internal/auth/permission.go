@@ -59,7 +59,7 @@ func (p Principal) IsToken() bool {
 	return p.TokenKind != ""
 }
 
-// EvaluatorStore is the part of the database Evaluator uses needs.
+// EvaluatorStore is the part of the database Evaluator needs.
 type EvaluatorStore interface {
 	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)

@@ -12,12 +12,19 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// sessionMockDBStore is what sessionMockDB is used as.
+type sessionMockDBStore interface {
+	CreateSessionStore
+	DeleteSessionStore
+	TouchSessionStore
+	ValidateSessionStore
+}
+
 type sessionMockDB struct {
-	databasetest.BaseMockDB
+	sessionMockDBStore
 
 	sessions map[string]*models.Session
 }

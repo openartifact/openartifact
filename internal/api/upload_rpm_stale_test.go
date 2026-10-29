@@ -15,16 +15,25 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type staleUploadDB struct {
-	databasetest.BaseMockDB
+	RPMUploadStore
 
 	stale []string
+}
+
+// ListLicensePolicies is not exercised by the tests.
+func (*staleUploadDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
+// GetOrCreateStorageQuota is not exercised by the tests.
+func (*staleUploadDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
+	return nil, errNotImplemented
 }
 
 func (d *staleUploadDB) GetRepositoryByName(context.Context, string) (*models.Repository, error) {

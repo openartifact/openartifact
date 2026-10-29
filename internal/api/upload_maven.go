@@ -43,7 +43,7 @@ import (
 
 const MaxMavenUploadBytes int64 = 1 << 30 // 1 GiB
 
-// MavenUploadStore is the part of the database MavenUploadHandler uses needs.
+// MavenUploadStore is the part of the database MavenUploadHandler needs.
 type MavenUploadStore interface {
 	inheritedPOMLicensesStore
 	quarantineSiblingsStore

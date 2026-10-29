@@ -50,6 +50,11 @@ type npmMemDB struct {
 	fail         map[string]error // method name -> error to return
 }
 
+// ListLicensePolicies is not exercised by the tests.
+func (*npmMemDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	return nil, nil
+}
+
 // failure returns the error injected for the named database method.
 func (d *npmMemDB) failure(method string) error {
 	d.mu.Lock()
@@ -1129,6 +1134,19 @@ type npmRBACDB struct {
 
 	tokens  map[string]*models.Token
 	targets map[string][]*models.PermissionTarget // user ID -> targets
+}
+
+// ListProjectGrantsByUser is not exercised by the tests.
+func (*npmRBACDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
+// UpdateTokenLastUsed is not exercised by the tests.
+func (*npmRBACDB) UpdateTokenLastUsed(context.Context, string) error { return errNotImplemented }
+
+// ListGroupsByUser is not exercised by the tests.
+func (*npmRBACDB) ListGroupsByUser(context.Context, string) ([]*models.Group, error) {
+	return nil, errNotImplemented
 }
 
 func (d *npmRBACDB) GetTokenByHash(_ context.Context, hash string) (*models.Token, error) {

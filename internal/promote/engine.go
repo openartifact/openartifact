@@ -30,7 +30,7 @@ type Regenerator interface {
 	NotifyPacmanStale(repoID string)
 }
 
-// EngineStore is the part of the database Engine uses needs.
+// EngineStore is the part of the database Engine needs.
 type EngineStore interface {
 	BeginTx(ctx context.Context) (database.Transaction, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

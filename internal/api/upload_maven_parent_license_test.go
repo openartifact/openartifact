@@ -15,15 +15,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// mavenRepoDBStore is what mavenRepoDB is used as.
+type mavenRepoDBStore interface {
+	LicenseStore
+	MavenUploadStore
+}
+
 // mavenRepoDB is an in-memory hosted maven repository with license scans.
 type mavenRepoDB struct {
-	databasetest.BaseMockDB
+	mavenRepoDBStore
 
 	policies []*models.LicensePolicy
 	// freePolicyReads is how many policy reads answer "no policies" first: the

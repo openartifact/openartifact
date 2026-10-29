@@ -18,7 +18,6 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -53,7 +52,7 @@ func (e *memExporter) all() []sdklog.Record {
 // rowDB records inserted rows and fails every insert when err is set. With
 // block set, every insert first waits until block is closed.
 type rowDB struct {
-	databasetest.BaseMockDB
+	LoggerStore
 
 	mu    sync.Mutex
 	rows  []*models.AuditLog

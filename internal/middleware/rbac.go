@@ -104,7 +104,7 @@ type routeScope struct {
 	bundles bool
 }
 
-// RBACMiddlewareStore is the part of the database RBACMiddleware uses needs.
+// RBACMiddlewareStore is the part of the database RBACMiddleware needs.
 type RBACMiddlewareStore interface {
 	authorizeProjectRouteStore
 	resolvePrincipalStore
@@ -358,7 +358,7 @@ func passwordChangeBlocked(r *http.Request, principal *auth.Principal) bool {
 		(r.URL.Path != "/api/v1/auth/change-password" && r.URL.Path != "/api/v1/auth/logout")
 }
 
-// writeAccessDeniedStore is the part of the database writeAccessDenied uses needs.
+// writeAccessDeniedStore is the part of the database writeAccessDenied needs.
 type writeAccessDeniedStore interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 }
@@ -422,7 +422,7 @@ func writeAccessDenied(
 	})
 }
 
-// principalForUserStore is the part of the database principalForUser uses needs.
+// principalForUserStore is the part of the database principalForUser needs.
 type principalForUserStore interface {
 	ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error)
 }
@@ -459,7 +459,7 @@ type principalUser struct {
 	serviceProject string
 }
 
-// resolvePrincipalStore is the part of the database resolvePrincipal uses needs.
+// resolvePrincipalStore is the part of the database resolvePrincipal needs.
 type resolvePrincipalStore interface {
 	sessionPrincipalStore
 	tokenPrincipalStore
@@ -516,7 +516,7 @@ func resolvePrincipal(
 	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
 }
 
-// sessionPrincipalStore is the part of the database sessionPrincipal uses needs.
+// sessionPrincipalStore is the part of the database sessionPrincipal needs.
 type sessionPrincipalStore interface {
 	principalForUserStore
 	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
@@ -553,7 +553,7 @@ func sessionPrincipal(ctx context.Context, r *http.Request, db sessionPrincipalS
 	return p
 }
 
-// tokenPrincipalStore is the part of the database tokenPrincipal uses needs.
+// tokenPrincipalStore is the part of the database tokenPrincipal needs.
 type tokenPrincipalStore interface {
 	principalForUserStore
 	GetTokenByHash(ctx context.Context, hash string) (*models.Token, error)

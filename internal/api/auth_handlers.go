@@ -245,7 +245,7 @@ func limiterKey(prefix, username string) string {
 	return prefix + key
 }
 
-// AuthStore is the part of the database AuthHandler uses needs.
+// AuthStore is the part of the database AuthHandler needs.
 type AuthStore interface {
 	completeLogoutStore
 	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)

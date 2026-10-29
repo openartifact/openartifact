@@ -63,7 +63,7 @@ type PurgeStats struct {
 	Capped bool
 }
 
-// TrashPurgeStore is the part of the database TrashPurgeWorker uses needs.
+// TrashPurgeStore is the part of the database TrashPurgeWorker needs.
 type TrashPurgeStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

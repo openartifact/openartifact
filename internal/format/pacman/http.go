@@ -48,7 +48,7 @@ type Regenerator interface {
 	NotifyStale(repoID string)
 }
 
-// HTTPStore is the part of the database HTTPHandler uses needs.
+// HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error

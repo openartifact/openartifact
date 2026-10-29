@@ -25,7 +25,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
-// PacmanMetadataStore is the part of the database PacmanMetadataWorker uses needs.
+// PacmanMetadataStore is the part of the database PacmanMetadataWorker needs.
 type PacmanMetadataStore interface {
 	metadataBlobsStore
 	BeginTx(ctx context.Context) (database.Transaction, error)

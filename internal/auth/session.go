@@ -44,7 +44,7 @@ func SessionAbsoluteLifetime() time.Duration {
 	return max(sessionAbsoluteLifetime, SessionDuration)
 }
 
-// CreateSessionStore is the part of the database CreateSession uses needs.
+// CreateSessionStore is the part of the database CreateSession needs.
 type CreateSessionStore interface {
 	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)
 }
@@ -100,7 +100,7 @@ func decodeSessionCookie(cookieValue string) ([]byte, bool) {
 	return raw, err == nil && len(raw) == 32
 }
 
-// ValidateSessionStore is the part of the database ValidateSession uses needs.
+// ValidateSessionStore is the part of the database ValidateSession needs.
 type ValidateSessionStore interface {
 	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
 }
@@ -135,7 +135,7 @@ func ValidateSession(ctx context.Context, db ValidateSessionStore, cookieValue s
 	return session, nil
 }
 
-// TouchSessionStore is the part of the database TouchSession uses needs.
+// TouchSessionStore is the part of the database TouchSession needs.
 type TouchSessionStore interface {
 	UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error
 }
@@ -158,7 +158,7 @@ func TouchSession(ctx context.Context, db TouchSessionStore, session *models.Ses
 	return db.UpdateSessionLastSeen(ctx, session.ID, expiresAt)
 }
 
-// RevokeAllSessionsStore is the part of the database RevokeAllSessions uses needs.
+// RevokeAllSessionsStore is the part of the database RevokeAllSessions needs.
 type RevokeAllSessionsStore interface {
 	DeleteSessionsByUser(ctx context.Context, userID string) error
 }
@@ -169,7 +169,7 @@ func RevokeAllSessions(ctx context.Context, db RevokeAllSessionsStore, userID st
 	return db.DeleteSessionsByUser(ctx, userID)
 }
 
-// RevokeOtherSessionsStore is the part of the database RevokeOtherSessions uses needs.
+// RevokeOtherSessionsStore is the part of the database RevokeOtherSessions needs.
 type RevokeOtherSessionsStore interface {
 	DeleteOtherSessionsByUser(ctx context.Context, userID string, keepTokenHash string) error
 	DeleteSessionsByUser(ctx context.Context, userID string) error
@@ -188,7 +188,7 @@ func RevokeOtherSessions(ctx context.Context, db RevokeOtherSessionsStore, userI
 	return db.DeleteOtherSessionsByUser(ctx, userID, hex.EncodeToString(hashBytes[:]))
 }
 
-// DeleteSessionStore is the part of the database DeleteSession uses needs.
+// DeleteSessionStore is the part of the database DeleteSession needs.
 type DeleteSessionStore interface {
 	DeleteSession(ctx context.Context, tokenHash string) error
 }
@@ -206,7 +206,7 @@ func DeleteSession(ctx context.Context, db DeleteSessionStore, cookieValue strin
 	return db.DeleteSession(ctx, tokenHash)
 }
 
-// AttachSSOSessionStore is the part of the database AttachSSOSession uses needs.
+// AttachSSOSessionStore is the part of the database AttachSSOSession needs.
 type AttachSSOSessionStore interface {
 	SetSessionSSO(ctx context.Context, sessionID string, providerSlug string, encryptedIDToken string) error
 }
@@ -229,7 +229,7 @@ type SessionSSOInfo struct {
 	IDToken      string
 }
 
-// LookupSessionSSOStore is the part of the database LookupSessionSSO uses needs.
+// LookupSessionSSOStore is the part of the database LookupSessionSSO needs.
 type LookupSessionSSOStore interface {
 	GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error)
 }

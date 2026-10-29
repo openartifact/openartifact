@@ -27,7 +27,6 @@ import (
 	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -41,8 +40,16 @@ const (
 	attestSBOMID = "22222222-2222-2222-2222-222222222222"
 )
 
+// attestDBStore is what attestDB is used as.
+type attestDBStore interface {
+	SBOMStore
+	VEXStore
+	auth.EvaluatorStore
+	sbom.GeneratorStore
+}
+
 type attestDB struct {
-	databasetest.BaseMockDB
+	attestDBStore
 
 	report *models.SBOMReport
 }

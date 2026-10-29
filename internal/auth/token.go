@@ -59,7 +59,7 @@ func NewTokenSecret(kind string) (string, string, error) {
 	return prefix + body, lookupDigest(body), nil
 }
 
-// CreateTokenStore is the part of the database CreateToken uses needs.
+// CreateTokenStore is the part of the database CreateToken needs.
 type CreateTokenStore interface {
 	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)
 }
@@ -98,7 +98,7 @@ func CreateToken(
 	return tokenString, saved, nil
 }
 
-// CreateProjectTokenStore is the part of the database CreateProjectToken uses needs.
+// CreateProjectTokenStore is the part of the database CreateProjectToken needs.
 type CreateProjectTokenStore interface {
 	CreateProjectToken(ctx context.Context, spec database.ProjectTokenSpec) (*models.Token, error)
 }
@@ -121,7 +121,7 @@ func CreateProjectToken(ctx context.Context, db CreateProjectTokenStore, spec da
 	return tokenString, saved, nil
 }
 
-// ValidateTokenStore is the part of the database ValidateToken uses needs.
+// ValidateTokenStore is the part of the database ValidateToken needs.
 type ValidateTokenStore interface {
 	GetTokenByHash(ctx context.Context, hash string) (*models.Token, error)
 	GetUserByID(ctx context.Context, id string) (*models.User, error)
@@ -173,7 +173,7 @@ func ValidateToken(ctx context.Context, db ValidateTokenStore, tokenString strin
 // tokenTouchInterval throttles last_used_at writes to once per interval per token.
 const tokenTouchInterval = time.Minute
 
-// UpdateLastUsedStore is the part of the database UpdateLastUsed uses needs.
+// UpdateLastUsedStore is the part of the database UpdateLastUsed needs.
 type UpdateLastUsedStore interface {
 	UpdateTokenLastUsed(ctx context.Context, tokenID string) error
 }
@@ -193,7 +193,7 @@ func UpdateLastUsed(ctx context.Context, db UpdateLastUsedStore, tokenID string)
 //nolint:gochecknoglobals // process-wide throttle state
 var tokenLastTouch sync.Map
 
-// TouchTokenStore is the part of the database TouchToken uses needs.
+// TouchTokenStore is the part of the database TouchToken needs.
 type TouchTokenStore interface {
 	UpdateLastUsedStore
 }

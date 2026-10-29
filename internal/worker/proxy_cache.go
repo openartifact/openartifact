@@ -63,7 +63,7 @@ const unreferencedCacheKeysSQL = `
 	SELECT k FROM unnest($1::text[]) AS k
 	WHERE NOT EXISTS (SELECT 1 FROM proxy_cache_entries WHERE blob_key = k)`
 
-// ProxyCacheStore is the part of the database ProxyCacheWorker uses needs.
+// ProxyCacheStore is the part of the database ProxyCacheWorker needs.
 type ProxyCacheStore interface {
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DeleteExpiredProxyCacheEntries(ctx context.Context) (int64, error)

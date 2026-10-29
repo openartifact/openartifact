@@ -129,7 +129,7 @@ type auditExportRow interface {
 	record() []string
 }
 
-// auditExportStore is the part of the database auditExport uses needs.
+// auditExportStore is the part of the database auditExport needs.
 type auditExportStore interface {
 	ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error)
 }

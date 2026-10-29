@@ -16,12 +16,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type auditCaptureDB struct {
-	databasetest.BaseMockDB
+	audit.LoggerStore
 
 	events chan *models.AuditLog
 }

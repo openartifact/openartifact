@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/nixkeys"
@@ -23,8 +22,14 @@ import (
 	"github.com/openartifact/openartifact/pkg/nix"
 )
 
+// nixKeyMockDBStore is what nixKeyMockDB is used as.
+type nixKeyMockDBStore interface {
+	signingKeyAdminStore
+	nixkeys.Store
+}
+
 type nixKeyMockDB struct {
-	databasetest.BaseMockDB
+	nixKeyMockDBStore
 
 	repos map[string]*models.Repository
 	keys  map[string]*models.NixSigningKey
