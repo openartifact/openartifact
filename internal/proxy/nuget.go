@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
 
@@ -785,4 +786,22 @@ func (s *Service) serveNuGetSearch(w http.ResponseWriter, r *http.Request, repo 
 
 	w.Header().Set("Cache-Control", "private, no-cache")
 	writeBody(w, r, nugetJSON, doc)
+}
+
+// nugetPackageDir is the key prefix of NuGet's flat container; everything
+// outside it is metadata.
+const nugetPackageDir = "v3/package/"
+
+// nugetImmutable reports whether key is a package file of the flat container:
+// not version lists or registrations.
+func nugetImmutable(key string) bool {
+	return strings.HasPrefix(key, nugetPackageDir) && (strings.HasSuffix(key, ".nupkg") || strings.HasSuffix(key, ".nuspec"))
+}
+
+// NuGetHooks is the proxy hooks of the nuget format.
+var NuGetHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve:      (*Service).serveNuGet,
+	Immutable:  nugetImmutable,
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, nugetPackageDir) },
+	BlobPath:   presign.NuGetBlobPath,
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/pkg/conda"
 )
 
@@ -248,4 +249,21 @@ func (s *Service) badCondaIndex(ctx context.Context, repo *models.Repository, ke
 // files that outgrow the common metadata limit.
 func isCondaIndexKey(key string) bool {
 	return strings.Contains(key[strings.LastIndexByte(key, '/')+1:], "repodata")
+}
+
+// condaImmutable reports whether name is a conda package file.
+func condaImmutable(name string) bool {
+	return strings.HasSuffix(name, conda.ExtConda) || strings.HasSuffix(name, conda.ExtTarBz2)
+}
+
+// CondaHooks is the proxy hooks of the conda format.
+var CondaHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveConda,
+	// Package files, verified against the repodata digest; repodata moves.
+	Immutable: func(key string) bool { return condaImmutable(keyName(key)) },
+	// channeldata.json; repodata is capped by IsLargeMetadata instead.
+	IsMetadata:      func(key string) bool { return !condaImmutable(keyName(key)) },
+	IsLargeMetadata: isCondaIndexKey,
+	PackageExts:     []string{conda.ExtConda, conda.ExtTarBz2},
+	BlobPath:        presign.CondaBlobPath,
 }

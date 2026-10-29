@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/publicurl"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
@@ -233,4 +234,13 @@ func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository,
 			return verr //nolint:wrapcheck // logged by store
 		},
 	}}, nil
+}
+
+// NPMHooks is the proxy hooks of the npm format.
+var NPMHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveNPM,
+	// Tarballs (<pkg>/-/<file>), not packuments.
+	Immutable:  func(key string) bool { return strings.HasSuffix(keyName(key), ".tgz") && strings.Contains(key, "/-/") },
+	IsMetadata: func(key string) bool { return !strings.Contains(key, "/-/") },
+	BlobPath:   presign.NPMBlobPath,
 }

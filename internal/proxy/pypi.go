@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 )
 
@@ -209,4 +210,13 @@ func (s *Service) locatePyPIFile(ctx context.Context, repo *models.Repository, p
 	}
 
 	return download{url: dl.String(), opts: fetchOpts{wantSHA256: want, unverified: want == ""}}, nil
+}
+
+// PyPIHooks is the proxy hooks of the pypi format.
+var PyPIHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).servePyPI,
+	// Distribution files (and their PEP 658 metadata), not the index pages.
+	Immutable:  func(key string) bool { return strings.HasPrefix(key, "files/") },
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, "files/") },
+	BlobPath:   presign.PyPIBlobPath,
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgconan "github.com/openartifact/openartifact/pkg/conan"
 )
 
@@ -463,4 +464,20 @@ func headerSafeToken(s string) bool {
 	}
 
 	return true
+}
+
+// conanRevisionFile reports whether key is the file list or a file of a
+// recipe or package revision.
+func conanRevisionFile(key string) bool {
+	return strings.Contains(key, "/revisions/") && (strings.HasSuffix(key, "/files") || strings.Contains(key, "/files/"))
+}
+
+// ConanHooks is the proxy hooks of the conan format.
+var ConanHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveConan,
+	// File lists and files below a revision, which a digest of its content
+	// names; revision lists and latest move.
+	Immutable:  conanRevisionFile,
+	IsMetadata: func(key string) bool { return !strings.Contains(key, "/files/") },
+	BlobPath:   presign.ConanBlobPath,
 }

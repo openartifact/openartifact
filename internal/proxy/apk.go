@@ -150,3 +150,22 @@ func verifyApkPackage(spool io.ReadSeeker, sums []string) error {
 
 	return nil
 }
+
+// APKHooks is the proxy hooks of the apk format.
+var APKHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Fetch: (*Service).fetchAPK,
+	// Packages whose checksum matched the upstream index; see apkFetchOpts.
+	Immutable:  apkPackageKey,
+	IsMetadata: apkIndexKey,
+}
+
+// fetchAPK is Hooks.Fetch of apk: a package is verified against the checksum
+// of the upstream index.
+func (s *Service) fetchAPK(ctx context.Context, repo *models.Repository, key, target string) (*models.ProxyCacheEntry, error) {
+	o, err := s.apkFetchOpts(ctx, repo, key)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.fetchURL(ctx, repo, key, target, o)
+}

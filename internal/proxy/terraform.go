@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/quarantine"
 )
@@ -1150,4 +1151,15 @@ func (s *Service) serveTFProviderFile(w http.ResponseWriter, r *http.Request, re
 	key := tfProviderFileKey(d.A, d.B, d.File)
 
 	s.serveTFCached(w, r, repo, key, s.fetchDoc(repo, tfFileDoc(repo, key, target, "terraform provider file", o)))
+}
+
+// TerraformHooks is the proxy hooks of the terraform format.
+var TerraformHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveTerraform,
+	// Provider zips, checked against the SHA256SUMS and package document
+	// checksums; module archives have no checksum upstream (see terraform.go).
+	Immutable:   tfProviderZipKey,
+	IsMetadata:  func(key string) bool { return !tfArchiveKey(key) },
+	PackageExts: tfArchiveExts,
+	BlobPath:    presign.TerraformBlobPath,
 }

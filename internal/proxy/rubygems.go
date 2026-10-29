@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/pkg/compactindex"
 )
 
@@ -407,4 +408,31 @@ func byteRange(r *http.Request, size int64, etag string) (int64, int64, int) {
 	}
 
 	return start, end - start + 1, http.StatusPartialContent
+}
+
+// rubygemsPackageDir is the key prefix of gem files; everything outside it is
+// the compact index, gemspecs or legacy specs.
+const rubygemsPackageDir = "gems/"
+
+// RubyGemsHooks is the proxy hooks of the rubygems format.
+var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveRubyGems,
+	// gems/<file>.gem, whose bytes are checked against the checksum of their
+	// info line.
+	Immutable: func(key string) bool {
+		return strings.HasPrefix(key, rubygemsPackageDir) && strings.HasSuffix(keyName(key), ".gem")
+	},
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, rubygemsPackageDir) },
+	WriteEntry: func(
+		s *Service, w http.ResponseWriter, r *http.Request, repo *models.Repository, entry *models.ProxyCacheEntry, key string, body io.Reader,
+	) bool {
+		if !rubygemsCompact(key) {
+			return false
+		}
+
+		s.writeCompactEntry(w, r, repo, entry, body)
+
+		return true
+	},
+	BlobPath: presign.RubyGemsBlobPath,
 }

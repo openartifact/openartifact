@@ -5,11 +5,13 @@
 package proxy
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 )
 
 // pacmanDBSuffixes are the file name endings of a sync database: the name pacman
@@ -62,4 +64,25 @@ func pacmanNotModified(w http.ResponseWriter, r *http.Request, entry *models.Pro
 	w.WriteHeader(http.StatusNotModified)
 
 	return true
+}
+
+// PacmanHooks is the proxy hooks of the pacman format. Package files have no
+// immutable rule: a mirror may republish a package file name, so they use the
+// repository TTL.
+var PacmanHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	IsMetadata:  isPacmanDatabase,
+	PackageExts: []string{".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar.bz2", ".pkg.tar.lz4", ".pkg.tar"},
+	CapTTL: func(key string, ttl time.Duration) time.Duration {
+		if isPacmanDatabase(key) {
+			return min(ttl, pacmanDBMaxTTL)
+		}
+
+		return ttl
+	},
+	WriteEntry: func(
+		_ *Service, w http.ResponseWriter, r *http.Request, _ *models.Repository, entry *models.ProxyCacheEntry, key string, _ io.Reader,
+	) bool {
+		return pacmanNotModified(w, r, entry, key)
+	},
+	BlobPath: presign.PacmanBlobPath,
 }

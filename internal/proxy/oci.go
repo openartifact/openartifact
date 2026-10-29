@@ -653,3 +653,11 @@ func (d *digester) matches(digest string) bool {
 
 	return true
 }
+
+// DockerHooks is the proxy hooks of the docker format. Docker is served by
+// ServeOCI, not by path: it has no Serve hook, and its manifests are sized by
+// the OCI path, so it has no metadata rule.
+var DockerHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	// Blobs and manifests addressed by digest; tags move.
+	Immutable: func(key string) bool { return digestRE.MatchString(keyName(key)) },
+}
