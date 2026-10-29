@@ -17,7 +17,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -64,6 +63,9 @@ const (
 	nugetMetaMaxAge = 60
 
 	nugetIndexKey = "v3/index.json"
+
+	// nugetJSON is the content type of the NuGet documents served.
+	nugetJSON = "application/json"
 
 	// maxNuGetIndexCache bounds the parsed service indexes kept in memory.
 	maxNuGetIndexCache = 64
@@ -268,14 +270,27 @@ func (c *nugetIndexCache) put(blobKey string, idx *pkgnuget.ServiceIndex) {
 	c.m[blobKey] = idx
 }
 
+// nugetIndexDoc is the upstream service index, fetched from the repository's
+// upstream_url itself.
+func nugetIndexDoc(repo *models.Repository) metaDoc {
+	return metaDoc{
+		key:   nugetIndexKey,
+		url:   func(string) (string, error) { return repo.UpstreamURL, nil },
+		opts:  staticOpts(fetchOpts{accept: "application/json", verify: verifyNuGetObject}),
+		limit: maxNuGetDocBytes,
+		what:  "nuget service index",
+		bad:   badDocUpstream,
+	}
+}
+
 // resolveNuGetIndex returns the cache entry and the parsed form of the
 // upstream service index, fetching it when absent or expired (and serving it
 // stale when the upstream is down). An index the upstream does not have or
 // that is unusable is an upstream error, not a missing file.
 func (s *Service) resolveNuGetIndex(ctx context.Context, repo *models.Repository) (*resolution, *pkgnuget.ServiceIndex, error) {
-	res, err := s.resolveWith(ctx, repo, nugetIndexKey, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchURL(fctx, repo, nugetIndexKey, repo.UpstreamURL, fetchOpts{accept: "application/json", verify: verifyNuGetObject})
-	})
+	d := nugetIndexDoc(repo)
+
+	res, err := s.resolveDoc(ctx, repo, d)
 	if errors.Is(err, errNotFound) {
 		err = errUpstream
 	}
@@ -288,24 +303,17 @@ func (s *Service) resolveNuGetIndex(ctx context.Context, repo *models.Repository
 		return res, idx, nil
 	}
 
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
+	res, body, release, err := s.loadDoc(ctx, repo, d, res)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	doc, err := s.readNuGetDoc(ctx, res.entry)
-	if err != nil {
-		s.packuments.Release()
-		s.log.Errorw("failed to read cached nuget service index", "repo", repo.Name, "error", err)
+	idx, perr := parseNuGetIndex(body)
 
-		return nil, nil, errInternal
-	}
+	release()
 
-	idx, err := pkgnuget.ParseServiceIndex(doc)
-	s.packuments.Release()
-
-	if err != nil {
-		s.log.Warnw("unusable upstream nuget service index", "repo", repo.Name, "error", err)
-		return nil, nil, errUpstream
+	if perr != nil {
+		return nil, nil, s.unusableDoc(ctx, repo, d, perr)
 	}
 
 	s.nuget.put(res.entry.BlobKey, idx)
@@ -313,21 +321,14 @@ func (s *Service) resolveNuGetIndex(ctx context.Context, repo *models.Repository
 	return res, idx, nil
 }
 
-// readNuGetDoc loads a cached metadata blob, decompressing it when the
-// upstream sent it gzipped.
-func (s *Service) readNuGetDoc(ctx context.Context, entry *models.ProxyCacheEntry) ([]byte, error) {
-	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
+// parseNuGetIndex parses a cached service index body, which may be gzipped.
+func parseNuGetIndex(body []byte) (*pkgnuget.ServiceIndex, error) {
+	doc, err := gunzipDoc(body)
 	if err != nil {
-		return nil, fmt.Errorf("open cached nuget document: %w", err)
-	}
-	defer func() { base.CloseLog(rc, s.log) }()
-
-	body, err := io.ReadAll(io.LimitReader(rc, maxNuGetDocBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read cached nuget document: %w", err)
+		return nil, err
 	}
 
-	return gunzipDoc(body)
+	return pkgnuget.ParseServiceIndex(doc) //nolint:wrapcheck // logged by unusableDoc
 }
 
 // gunzipDoc returns b decompressed when it is gzip data, b itself otherwise.
@@ -428,17 +429,6 @@ func nugetETag(parts ...string) string {
 	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
-func writeNuGetJSON(w http.ResponseWriter, r *http.Request, body []byte) {
-	h := w.Header()
-	h.Set("Content-Type", "application/json")
-	h.Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
-}
-
 func (s *Service) serveNuGetIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
 	res, idx, err := s.resolveNuGetIndex(r.Context(), repo)
 	if err != nil {
@@ -446,34 +436,15 @@ func (s *Service) serveNuGetIndex(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
-	repoURL := s.nugetRepoURL(repo)
-
-	if res.stale {
-		w.Header().Set("Warning", staleWarning)
-	}
-
-	if base.Revalidate(w, r, repo.Public, nugetETag(res.entry.BlobKey, repoURL), nugetMetaMaxAge) {
-		return
-	}
-
-	body, err := idx.Render(repoURL)
+	body, err := idx.Render(s.nugetRepoURL(repo))
 	if err != nil {
-		s.failNuGetDoc(w, repo, nugetIndexKey, err)
+		s.log.Errorw("failed to render nuget document", "repo", repo.Name, "path", nugetIndexKey, "error", err)
+		s.failWithoutValidators(w, r, errInternal)
+
 		return
 	}
 
-	writeNuGetJSON(w, r, body)
-}
-
-// failNuGetDoc answers an internal error after validators were set: they must
-// not describe the error response.
-func (s *Service) failNuGetDoc(w http.ResponseWriter, repo *models.Repository, key string, err error) {
-	s.log.Errorw("failed to render nuget document", "repo", repo.Name, "path", key, "error", err)
-
-	h := w.Header()
-	h.Del("ETag")
-	h.Del("Cache-Control")
-	http.Error(w, "internal error", http.StatusInternalServerError)
+	s.serveGenerated(w, r, repo, res, body, nugetJSON, nugetMetaMaxAge)
 }
 
 // nugetDocURL is where the upstream serves the metadata document p names, ""
@@ -497,39 +468,41 @@ func nugetDocURL(idx *pkgnuget.ServiceIndex, p nugetPath) string {
 	return ""
 }
 
-// resolveNuGetDoc returns the cache entry of the metadata document p names,
-// fetching it from the upstream resource idx names when absent or expired.
-func (s *Service) resolveNuGetDoc(
-	ctx context.Context,
-	repo *models.Repository,
-	idx *pkgnuget.ServiceIndex,
-	p nugetPath,
-) (*resolution, error) {
-	key := p.key()
+// nugetDoc is the metadata document p names, fetched from the upstream resource
+// idx names; the cached copy is whatever bytes arrived (possibly gzipped).
+func (s *Service) nugetDoc(repo *models.Repository, idx *pkgnuget.ServiceIndex, p nugetPath) metaDoc {
+	return metaDoc{
+		key: p.key(),
+		locate: func(fctx context.Context) (string, error) {
+			target := nugetDocURL(idx, p)
 
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target := nugetDocURL(idx, p)
+			if p.kind == nugetRegPage {
+				var err error
 
-		if p.kind == nugetRegPage {
-			var err error
-
-			if target, err = s.nugetPageURL(fctx, repo, idx, p); err != nil {
-				return nil, err
+				if target, err = s.nugetPageURL(fctx, repo, idx, p); err != nil {
+					return "", err
+				}
 			}
-		}
 
-		if target == "" {
-			return nil, errNotFound
-		}
+			if target == "" {
+				return "", errNotFound
+			}
 
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept: "application/json",
-			// Credentials go only to the configured upstream, never to a
-			// host the service index points at.
-			noAuth: !sameOriginStr(repo.UpstreamURL, target),
-			verify: verifyNuGetObject,
-		})
-	})
+			return target, nil
+		},
+		opts: func(_ context.Context, target string) fetchOpts {
+			return fetchOpts{
+				accept: "application/json",
+				// Credentials go only to the configured upstream, never to a
+				// host the service index points at.
+				noAuth: !sameOriginStr(repo.UpstreamURL, target),
+				verify: verifyNuGetObject,
+			}
+		},
+		limit: maxNuGetDocBytes,
+		what:  "nuget document",
+		bad:   badDocUpstream,
+	}
 }
 
 // nugetPageURL finds, in the cached registration index of p's package, the
@@ -537,29 +510,17 @@ func (s *Service) resolveNuGetDoc(
 // not list is errNotFound without a negative cache entry: the index may
 // simply be stale.
 func (s *Service) nugetPageURL(ctx context.Context, repo *models.Repository, idx *pkgnuget.ServiceIndex, p nugetPath) (string, error) {
-	res, err := s.resolveNuGetDoc(ctx, repo, idx, nugetPath{kind: nugetRegIndex, id: p.id})
+	pages, _, err := parseDoc(ctx, s, repo, s.nugetDoc(repo, idx, nugetPath{kind: nugetRegIndex, id: p.id}),
+		func(body []byte, _ *resolution) ([]pkgnuget.Page, error) {
+			doc, gerr := gunzipDoc(body)
+			if gerr != nil {
+				return nil, gerr
+			}
+
+			return pkgnuget.ParsePages(doc) //nolint:wrapcheck // logged by parseDoc
+		})
 	if err != nil {
 		return "", err
-	}
-
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return "", aerr //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	doc, err := s.readNuGetDoc(ctx, res.entry)
-	if err != nil {
-		s.packuments.Release()
-		s.log.Errorw("failed to read cached nuget registration", "repo", repo.Name, "package", p.id, "error", err)
-
-		return "", errInternal
-	}
-
-	pages, err := pkgnuget.ParsePages(doc)
-	s.packuments.Release()
-
-	if err != nil {
-		s.log.Warnw("unreadable upstream nuget registration", "repo", repo.Name, "package", p.id, "error", err)
-		return "", errUpstream
 	}
 
 	target, ok := pkgnuget.PageURL(pages, p.lower, p.upper)
@@ -579,39 +540,29 @@ func (s *Service) serveNuGetDoc(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
-	docRes, err := s.resolveNuGetDoc(r.Context(), repo, idx, p)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
+	if idxRes.stale {
+		w.Header().Set("Warning", staleWarning)
 	}
 
 	repoURL := s.nugetRepoURL(repo)
 
-	if idxRes.stale || docRes.stale {
-		w.Header().Set("Warning", staleWarning)
-	}
+	s.serveRendered(w, r, repo, renderedDoc{
+		metaDoc: s.nugetDoc(repo, idx, p),
+		maxAge:  nugetMetaMaxAge,
+		// The rendering depends on the service index and the repository URL
+		// as well as on the cached document.
+		etag: func(blobKey string) string { return nugetETag(blobKey, idxRes.entry.BlobKey, repoURL) },
+		render: func(body []byte, _ *resolution) ([]byte, string, error) {
+			doc, gerr := gunzipDoc(body)
+			if gerr != nil {
+				return nil, "", gerr
+			}
 
-	if base.Revalidate(w, r, repo.Public, nugetETag(docRes.entry.BlobKey, idxRes.entry.BlobKey, repoURL), nugetMetaMaxAge) {
-		return
-	}
+			out, rerr := renderNuGetDoc(doc, p, idx, repoURL)
 
-	if aerr := s.packuments.Acquire(r.Context()); aerr != nil {
-		return
-	}
-
-	doc, err := s.readNuGetDoc(r.Context(), docRes.entry)
-	if err == nil {
-		doc, err = renderNuGetDoc(doc, p, idx, repoURL)
-	}
-
-	s.packuments.Release()
-
-	if err != nil {
-		s.failNuGetDoc(w, repo, p.key(), err)
-		return
-	}
-
-	writeNuGetJSON(w, r, doc)
+			return out, nugetJSON, rerr
+		},
+	})
 }
 
 // renderNuGetDoc points the URLs of an upstream metadata document at this
@@ -632,45 +583,41 @@ func renderNuGetDoc(doc []byte, p nugetPath, idx *pkgnuget.ServiceIndex, repoURL
 }
 
 func (s *Service) serveNuGetPackageFile(w http.ResponseWriter, r *http.Request, repo *models.Repository, p nugetPath) {
-	key := p.key()
-	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchNuGetPackageFile(fctx, repo, p, key)
+	s.serveDownload(w, r, repo, p.key(), func(ctx context.Context) (download, error) {
+		return s.locateNuGetPackageFile(ctx, repo, p)
 	})
 }
 
-// fetchNuGetPackageFile downloads the .nupkg or .nuspec p names from the
-// flat container the service index advertises.
-func (s *Service) fetchNuGetPackageFile(
-	ctx context.Context,
-	repo *models.Repository,
-	p nugetPath,
-	key string,
-) (*models.ProxyCacheEntry, error) {
+// locateNuGetPackageFile finds the .nupkg or .nuspec p names in the flat
+// container the service index advertises.
+func (s *Service) locateNuGetPackageFile(ctx context.Context, repo *models.Repository, p nugetPath) (download, error) {
 	_, idx, err := s.resolveNuGetIndex(ctx, repo)
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
 	if idx.PackageBase == "" {
-		return nil, errNotFound
+		return download{}, errNotFound
 	}
 
-	target := idx.PackageBase + p.id + "/" + p.version + "/" + p.file
-	o := fetchOpts{noAuth: !sameOriginStr(repo.UpstreamURL, target), verify: verifyNuspec}
+	d := download{
+		url:  idx.PackageBase + p.id + "/" + p.version + "/" + p.file,
+		opts: fetchOpts{verify: verifyNuspec},
+	}
 
 	if strings.HasSuffix(p.file, ".nupkg") {
 		digest, derr := s.nugetDigest(ctx, repo, idx, p)
 		if derr != nil {
-			return nil, derr
+			return download{}, derr
 		}
 
-		o.verify = func(spool io.ReadSeeker) error { return verifyNupkg(spool, digest) }
+		d.opts.verify = func(spool io.ReadSeeker) error { return verifyNupkg(spool, digest) }
 		// Without a published hash (leaf or catalog entry missing) only the
 		// structure is checked. A size alone does not vouch for the content.
-		o.unverified = len(digest.Hash) == 0
+		d.opts.unverified = len(digest.Hash) == 0
 	}
 
-	return s.fetchURL(ctx, repo, key, target, o)
+	return d, nil
 }
 
 // nugetDigest looks up what the upstream publishes about a package: the
@@ -686,7 +633,15 @@ func (s *Service) nugetDigest(
 ) (pkgnuget.Digest, error) {
 	leafPath := nugetPath{kind: nugetRegLeaf, id: p.id, version: p.version}
 
-	res, err := s.resolveNuGetDoc(ctx, repo, idx, leafPath)
+	catalog, _, err := parseDoc(ctx, s, repo, s.nugetDoc(repo, idx, leafPath),
+		func(body []byte, _ *resolution) (string, error) {
+			leaf, gerr := gunzipDoc(body)
+			if gerr != nil {
+				return "", gerr
+			}
+
+			return pkgnuget.CatalogEntryURL(leaf), nil
+		})
 	if errors.Is(err, errNotFound) {
 		return pkgnuget.Digest{}, nil
 	}
@@ -694,21 +649,6 @@ func (s *Service) nugetDigest(
 	if err != nil {
 		return pkgnuget.Digest{}, err
 	}
-
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return pkgnuget.Digest{}, aerr //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	leaf, err := s.readNuGetDoc(ctx, res.entry)
-	if err != nil {
-		s.packuments.Release()
-		s.log.Errorw("failed to read cached nuget registration leaf", "repo", repo.Name, "path", leafPath.key(), "error", err)
-
-		return pkgnuget.Digest{}, errInternal
-	}
-
-	catalog := pkgnuget.CatalogEntryURL(leaf)
-	s.packuments.Release()
 
 	if catalog == "" || catalog == nugetDocURL(idx, leafPath) {
 		return pkgnuget.Digest{}, nil
@@ -840,5 +780,5 @@ func (s *Service) serveNuGetSearch(w http.ResponseWriter, r *http.Request, repo 
 	}
 
 	w.Header().Set("Cache-Control", "private, no-cache")
-	writeNuGetJSON(w, r, doc)
+	writeBody(w, r, nugetJSON, doc)
 }

@@ -495,7 +495,7 @@ func TestNuGetProxy_CorruptCachedDocumentIs500WithoutValidators(t *testing.T) {
 		t.Fatalf("a document that cannot be rendered = %d, want 500", w.Code)
 	}
 
-	if w.Header().Get("ETag") != "" || w.Header().Get("Cache-Control") != "" || strings.Contains(w.Body.String(), "json") {
+	if w.Header().Get("ETag") != "" || w.Header().Get("Cache-Control") != "no-store" || strings.Contains(w.Body.String(), "json") {
 		t.Errorf("error answer carries validators or detail: %v %q", w.Header(), w.Body.String())
 	}
 }
