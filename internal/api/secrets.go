@@ -75,7 +75,7 @@ func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		Metadata   map[string]any `json:"metadata"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -168,7 +168,7 @@ func (h *SecretsHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		Quarantined bool `json:"quarantined"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

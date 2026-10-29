@@ -347,7 +347,7 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -471,7 +471,7 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := decodeJSON(r, &patch); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

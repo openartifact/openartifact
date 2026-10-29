@@ -235,7 +235,7 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		Scanners       []string `json:"scanners"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -495,7 +495,7 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		Quarantined bool `json:"quarantined"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

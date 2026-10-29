@@ -101,7 +101,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		Metadata   map[string]any `json:"metadata"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request
 		Quarantined bool `json:"quarantined"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -259,7 +259,7 @@ func (h *LicenseHandler) handleCreatePolicy(w http.ResponseWriter, r *http.Reque
 		Enabled         bool     `json:"enabled"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -362,7 +362,7 @@ func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Reque
 
 	var body licensePolicyPatch
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -454,7 +454,7 @@ func (h *LicenseHandler) handleCreateGlobalPolicy(w http.ResponseWriter, r *http
 		Enabled         bool     `json:"enabled"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

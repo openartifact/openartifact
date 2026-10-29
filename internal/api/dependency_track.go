@@ -172,7 +172,7 @@ func (h *DependencyTrackHandler) handlePutGlobal(w http.ResponseWriter, r *http.
 
 	var body dtrackSettingsRequest
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -342,7 +342,7 @@ func (h *DependencyTrackHandler) handlePutRepo(w http.ResponseWriter, r *http.Re
 
 	var body dtrackOverrideRequest
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -452,7 +452,7 @@ func (h *DependencyTrackHandler) handlePush(w http.ResponseWriter, r *http.Reque
 		ArtifactID string `json:"artifact_id"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

@@ -153,7 +153,7 @@ func (h *RepositoriesHandler) handleCreateInProject(w http.ResponseWriter, r *ht
 
 	var body createRepositoryBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -178,7 +178,12 @@ func (h *RepositoriesHandler) handleTransfer(w http.ResponseWriter, r *http.Requ
 	var body struct {
 		ToProject string `json:"to_project"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.ToProject == "" {
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadBody(w, err, "bad_request", "to_project is required")
+		return
+	}
+
+	if body.ToProject == "" {
 		writeError(w, http.StatusBadRequest, "bad_request", "to_project is required")
 		return
 	}

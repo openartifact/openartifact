@@ -292,7 +292,7 @@ func (h *VEXHandler) handleUpsertStatement(w http.ResponseWriter, r *http.Reques
 		ActionStatement string `json:"action_statement"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

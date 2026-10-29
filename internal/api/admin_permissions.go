@@ -75,7 +75,7 @@ func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Re
 		Actions          []string `json:"actions"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 		Actions          []string `json:"actions"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 		PrincipalID   string `json:"principal_id"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

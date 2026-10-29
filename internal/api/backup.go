@@ -73,7 +73,7 @@ func (h *BackupHandler) handleCreateBackup(w http.ResponseWriter, r *http.Reques
 		Type string `json:"type"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

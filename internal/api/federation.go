@@ -271,9 +271,13 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 		Enabled *bool `json:"enabled"`
 	}
 
-	if err := decodeJSON(r, &body); err != nil || body.Enabled == nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: enabled is required")
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadBody(w, err, "bad_request", "invalid JSON body: enabled is required")
+		return
+	}
 
+	if body.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: enabled is required")
 		return
 	}
 
@@ -368,8 +372,7 @@ func (h *FederationHandler) handleCreatePeer(w http.ResponseWriter, r *http.Requ
 
 	var body peerBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -419,8 +422,7 @@ func (h *FederationHandler) handleUpdatePeer(w http.ResponseWriter, r *http.Requ
 
 	var body peerBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -555,8 +557,7 @@ func (h *FederationHandler) handleCreateToken(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-
+		writeBadJSON(w, err)
 		return
 	}
 

@@ -94,7 +94,7 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 		WarnThresholdPercent *int   `json:"warn_threshold_percent"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

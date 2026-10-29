@@ -71,7 +71,7 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 		Description *string `json:"description"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 		Description *string `json:"description"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -241,7 +241,7 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		Members []string `json:"members"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

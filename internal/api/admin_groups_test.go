@@ -129,3 +129,25 @@ func TestDeleteGroupMissingIsNotFoundAndNotAudited(t *testing.T) {
 		})
 	}
 }
+
+// A JSON body over the 1 MiB cap is refused with 413 and its own code, not
+// decoded as far as it goes and reported as a syntax error (or accepted).
+func TestAdminJSONBodyOverCapIsRequestEntityTooLarge(t *testing.T) {
+	log := newFixTestLogger(t)
+	db := &groupDeleteMockDB{}
+	r := chi.NewRouter()
+	NewAdminGroupsHandler(db, log, auth.NewEvaluator(db, log, false)).Register(r)
+
+	// A complete value followed by padding: the prefix alone decodes fine.
+	body := `{"name":"team"}` + strings.Repeat(" ", int(maxRequestBodyBytes))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/groups", strings.NewReader(body))
+	req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+
+	rw := httptest.NewRecorder()
+	r.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rw.Body.String(), "request_entity_too_large") {
+		t.Fatalf("POST over the cap = %d %s, want 413 request_entity_too_large", rw.Code, rw.Body.String())
+	}
+}

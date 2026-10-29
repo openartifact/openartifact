@@ -115,7 +115,7 @@ func (h *ProjectsHandler) handleCreateToken(w http.ResponseWriter, r *http.Reque
 
 	var body projectTokenBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeBadBody(w, err, "bad_request", "invalid request body")
 		return
 	}
 
