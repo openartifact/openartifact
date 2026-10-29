@@ -488,21 +488,13 @@ func blobFor(blobs []blobInfo, row Row, col string) (blobInfo, bool) {
 }
 
 func (c *tableCodec) Backfill(ctx context.Context, tx *sql.Tx, repoID string) error {
-	event := EventArtifactAdded
-	if c.spec.kind == KindRef {
-		event = EventRefMoved
-	}
-
-	_, err := tx.ExecContext(ctx,
-		//nolint:gosec // expressions come from the static spec
-		`SELECT federation_record($1::uuid, `+c.spec.backfillKey+`, $2, $3, `+c.spec.backfillRef+`, false, t.updated_at)
-		   FROM `+c.spec.table+` t WHERE t.repository_id = $1::uuid AND t.deleted_at IS NULL`,
-		repoID, c.spec.kind, event)
-	if err != nil {
-		return fmt.Errorf("backfill %s: %w", c.spec.table, err)
-	}
-
-	return nil
+	return backfillUnits(ctx, tx, repoID, backfillSource{
+		table: c.spec.table,
+		kind:  c.spec.kind,
+		key:   c.spec.backfillKey,
+		ref:   c.spec.backfillRef,
+		from:  c.spec.table + " t WHERE " + liveRowsOfRepo,
+	})
 }
 
 func newTableCodec(spec tableSpec) *tableCodec { return &tableCodec{spec: spec} }

@@ -160,13 +160,8 @@ func startProviders(
 			sdktrace.WithResource(res),
 			sdktrace.WithSampler(sampler(o.SampleRatio)),
 		)
-		uninstall := Install(tp)
 
-		stops = append(stops, func(ctx context.Context) error {
-			uninstall()
-
-			return tp.Shutdown(ctx)
-		})
+		stops = append(stops, shutdownWith(tp, Install(tp)))
 	}
 
 	if o.Metrics && gatherer != nil {
@@ -177,11 +172,7 @@ func startProviders(
 
 		otel.SetMeterProvider(mp)
 
-		stops = append(stops, func(ctx context.Context) error {
-			otel.SetMeterProvider(metricnoop.NewMeterProvider())
-
-			return mp.Shutdown(ctx)
-		})
+		stops = append(stops, shutdownWith(mp, func() { otel.SetMeterProvider(metricnoop.NewMeterProvider()) }))
 	}
 
 	// One log provider serves both the application (logs) and the
@@ -195,14 +186,20 @@ func startProviders(
 
 		otel.SetLoggerProvider(lp)
 
-		stops = append(stops, func(ctx context.Context) error {
-			otel.SetLoggerProvider(lognoop.NewLoggerProvider())
-
-			return lp.Shutdown(ctx)
-		})
+		stops = append(stops, shutdownWith(lp, func() { otel.SetLoggerProvider(lognoop.NewLoggerProvider()) }))
 	}
 
 	return stops, nil
+}
+
+// shutdownWith returns the stop function of an installed provider: it runs
+// uninstall (which restores the global no-op provider), then shuts p down.
+func shutdownWith[P interface{ Shutdown(context.Context) error }](p P, uninstall func()) func(context.Context) error {
+	return func(ctx context.Context) error {
+		uninstall()
+
+		return p.Shutdown(ctx)
+	}
 }
 
 func sampler(ratio float64) sdktrace.Sampler {
@@ -249,36 +246,46 @@ func newTraceExporter(ctx context.Context, o OTLPConfig) (sdktrace.SpanExporter,
 	proto, _ := o.NormalizedProtocol()
 
 	if proto == ProtocolHTTP {
-		opts := []otlptracehttp.Option{}
-		if ep.hostPort != "" {
-			opts = append(opts, otlptracehttp.WithEndpoint(ep.hostPort), otlptracehttp.WithURLPath(ep.path+"/v1/traces"))
-		}
-
-		if o.Insecure || ep.plaintext {
-			opts = append(opts, otlptracehttp.WithInsecure())
-		}
-
-		if len(o.Headers) > 0 {
-			opts = append(opts, otlptracehttp.WithHeaders(o.Headers))
-		}
-
-		return otlptracehttp.New(ctx, opts...)
+		return otlptracehttp.New(ctx, exporterOptions(o, ep, "/v1/traces",
+			otlptracehttp.WithEndpoint, otlptracehttp.WithURLPath, otlptracehttp.WithInsecure, otlptracehttp.WithHeaders)...)
 	}
 
-	opts := []otlptracegrpc.Option{}
+	return otlptracegrpc.New(ctx, exporterOptions(o, ep, "",
+		otlptracegrpc.WithEndpoint, nil, otlptracegrpc.WithInsecure, otlptracegrpc.WithHeaders)...)
+}
+
+// exporterOptions builds the options of an OTLP exporter from the
+// configuration. The trace, metric and log exporter packages (HTTP and gRPC
+// alike) each have their own Option type, so their constructors come in as
+// arguments: withURLPath is nil for gRPC, which has no URL path, and the HTTP
+// path is the endpoint's prefix followed by signalPath.
+func exporterOptions[O any](
+	o OTLPConfig,
+	ep endpoint,
+	signalPath string,
+	withEndpoint, withURLPath func(string) O,
+	withInsecure func() O,
+	withHeaders func(map[string]string) O,
+) []O {
+	var opts []O
+
 	if ep.hostPort != "" {
-		opts = append(opts, otlptracegrpc.WithEndpoint(ep.hostPort))
+		opts = append(opts, withEndpoint(ep.hostPort))
+
+		if withURLPath != nil {
+			opts = append(opts, withURLPath(ep.path+signalPath))
+		}
 	}
 
 	if o.Insecure || ep.plaintext {
-		opts = append(opts, otlptracegrpc.WithInsecure())
+		opts = append(opts, withInsecure())
 	}
 
 	if len(o.Headers) > 0 {
-		opts = append(opts, otlptracegrpc.WithHeaders(o.Headers))
+		opts = append(opts, withHeaders(o.Headers))
 	}
 
-	return otlptracegrpc.New(ctx, opts...)
+	return opts
 }
 
 func newMeterProvider(ctx context.Context, o OTLPConfig, res *resource.Resource, g prometheus.Gatherer) (*sdkmetric.MeterProvider, error) {
@@ -292,35 +299,11 @@ func newMeterProvider(ctx context.Context, o OTLPConfig, res *resource.Resource,
 	proto, _ := o.NormalizedProtocol()
 
 	if proto == ProtocolHTTP {
-		opts := []otlpmetrichttp.Option{}
-		if ep.hostPort != "" {
-			opts = append(opts, otlpmetrichttp.WithEndpoint(ep.hostPort), otlpmetrichttp.WithURLPath(ep.path+"/v1/metrics"))
-		}
-
-		if o.Insecure || ep.plaintext {
-			opts = append(opts, otlpmetrichttp.WithInsecure())
-		}
-
-		if len(o.Headers) > 0 {
-			opts = append(opts, otlpmetrichttp.WithHeaders(o.Headers))
-		}
-
-		exp, err = otlpmetrichttp.New(ctx, opts...)
+		exp, err = otlpmetrichttp.New(ctx, exporterOptions(o, ep, "/v1/metrics",
+			otlpmetrichttp.WithEndpoint, otlpmetrichttp.WithURLPath, otlpmetrichttp.WithInsecure, otlpmetrichttp.WithHeaders)...)
 	} else {
-		opts := []otlpmetricgrpc.Option{}
-		if ep.hostPort != "" {
-			opts = append(opts, otlpmetricgrpc.WithEndpoint(ep.hostPort))
-		}
-
-		if o.Insecure || ep.plaintext {
-			opts = append(opts, otlpmetricgrpc.WithInsecure())
-		}
-
-		if len(o.Headers) > 0 {
-			opts = append(opts, otlpmetricgrpc.WithHeaders(o.Headers))
-		}
-
-		exp, err = otlpmetricgrpc.New(ctx, opts...)
+		exp, err = otlpmetricgrpc.New(ctx, exporterOptions(o, ep, "",
+			otlpmetricgrpc.WithEndpoint, nil, otlpmetricgrpc.WithInsecure, otlpmetricgrpc.WithHeaders)...)
 	}
 
 	if err != nil {
@@ -353,35 +336,11 @@ func newLoggerProvider(
 	proto, _ := o.NormalizedProtocol()
 
 	if proto == ProtocolHTTP {
-		opts := []otlploghttp.Option{}
-		if ep.hostPort != "" {
-			opts = append(opts, otlploghttp.WithEndpoint(ep.hostPort), otlploghttp.WithURLPath(ep.path+"/v1/logs"))
-		}
-
-		if o.Insecure || ep.plaintext {
-			opts = append(opts, otlploghttp.WithInsecure())
-		}
-
-		if len(o.Headers) > 0 {
-			opts = append(opts, otlploghttp.WithHeaders(o.Headers))
-		}
-
-		exp, err = otlploghttp.New(ctx, opts...)
+		exp, err = otlploghttp.New(ctx, exporterOptions(o, ep, "/v1/logs",
+			otlploghttp.WithEndpoint, otlploghttp.WithURLPath, otlploghttp.WithInsecure, otlploghttp.WithHeaders)...)
 	} else {
-		opts := []otlploggrpc.Option{}
-		if ep.hostPort != "" {
-			opts = append(opts, otlploggrpc.WithEndpoint(ep.hostPort))
-		}
-
-		if o.Insecure || ep.plaintext {
-			opts = append(opts, otlploggrpc.WithInsecure())
-		}
-
-		if len(o.Headers) > 0 {
-			opts = append(opts, otlploggrpc.WithHeaders(o.Headers))
-		}
-
-		exp, err = otlploggrpc.New(ctx, opts...)
+		exp, err = otlploggrpc.New(ctx, exporterOptions(o, ep, "",
+			otlploggrpc.WithEndpoint, nil, otlploggrpc.WithInsecure, otlploggrpc.WithHeaders)...)
 	}
 
 	if err != nil {

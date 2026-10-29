@@ -7,7 +7,6 @@ package worker
 import (
 	"context"
 	"database/sql"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -18,32 +17,24 @@ import (
 // revoked API tokens (and the service accounts of project tokens) and finished webhook deliveries so those tables do not
 // grow without bound.
 type AuthPurgeWorker struct {
+	*lifecycle
+
 	db       database.Database
 	log      *logger.Logger
 	interval time.Duration
-	stopCh   chan struct{}
-	doneCh   chan struct{}
-	stopOnce sync.Once
 	started  bool
 
 	// webhookRetentionDays: age after which finished webhook deliveries are
 	// deleted; 0 keeps them.
 	webhookRetentionDays int
-	ctx                  context.Context //nolint:containedctx // worker lifetime context, cancelled by Stop
-	cancel               context.CancelFunc
 }
 
 func NewAuthPurgeWorker(db database.Database, log *logger.Logger) *AuthPurgeWorker {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &AuthPurgeWorker{
-		db:       db,
-		log:      log,
-		interval: time.Hour,
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
-		ctx:      ctx,
-		cancel:   cancel,
+		lifecycle: newLifecycle(),
+		db:        db,
+		log:       log,
+		interval:  time.Hour,
 	}
 }
 
@@ -82,7 +73,7 @@ func (w *AuthPurgeWorker) purgeSafely() {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(w.ctx, time.Minute)
+	ctx, cancel := context.WithTimeout(w.runCtx, time.Minute)
 	defer cancel()
 
 	sqlDB := w.db.GetDB()
@@ -139,19 +130,5 @@ func (w *AuthPurgeWorker) purgeWebhookDeliveries(ctx context.Context, sqlDB *sql
 }
 
 func (w *AuthPurgeWorker) Stop() {
-	w.stopOnce.Do(func() { close(w.stopCh) })
-
-	if !w.started {
-		w.cancel()
-		return
-	}
-
-	select {
-	case <-w.doneCh:
-	case <-time.After(10 * time.Second):
-		w.cancel()
-		<-w.doneCh
-	}
-
-	w.cancel()
+	w.stopGracefully(w.started)
 }

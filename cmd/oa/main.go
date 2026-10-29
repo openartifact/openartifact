@@ -351,9 +351,9 @@ func main() {
 
 	// ── Declarative configuration ─────────────────────────────────────────
 	case "apply":
-		os.Exit(handleApply(args, client, *outFmt))
+		os.Exit(handleDecl(args, client, *outFmt, true))
 	case "diff":
-		os.Exit(handleDiff(args, client, *outFmt))
+		os.Exit(handleDecl(args, client, *outFmt, false))
 	case "export":
 		os.Exit(handleExport(args, client))
 

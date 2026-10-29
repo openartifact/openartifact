@@ -44,17 +44,9 @@ func validatePropertyKey(key string) string {
 		return "property key must not be empty"
 	case len(key) > maxPropertyKeyLen:
 		return "property key is too long (max 255 bytes)"
-	case !utf8.ValidString(key):
-		return "property key must be valid UTF-8"
 	}
 
-	for _, r := range key {
-		if r < 0x20 || r == 0x7f {
-			return "property key must not contain control characters"
-		}
-	}
-
-	return ""
+	return plainTextProblem("property key", key)
 }
 
 // decodeProperties reads a properties request body and validates it. The body

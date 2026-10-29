@@ -16,23 +16,7 @@ import (
 )
 
 func (h *ProjectsHandler) handleListGroups(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.loadAccess(w, r, auth.ProjectActionRead)
-	if !ok {
-		return
-	}
-
-	groups, err := h.db.ListProjectGroups(r.Context(), access.project.ID)
-	if err != nil {
-		h.dbError(w, "list project groups", err)
-		return
-	}
-
-	result := make([]responses.ProjectGroupResponse, 0, len(groups))
-	for _, g := range groups {
-		result = append(result, projectGroupToResponse(g))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"groups": result})
+	writeProjectList(h, w, r, "groups", "list project groups", h.db.ListProjectGroups, projectGroupToResponse)
 }
 
 // findGroup resolves the {group} URL segment: a group ID, or an exact group

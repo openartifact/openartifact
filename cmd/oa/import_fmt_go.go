@@ -23,9 +23,6 @@ func init() { //nolint:gochecknoinits // every format registers itself with the 
 		format: formatGo, nexus: []string{"go"}, artifactory: []string{"go"},
 		importable: importableGo, match: matchSHA,
 		upload: uploadGo,
-		remove: func(context.Context, *importTarget, string, sourceAsset, uploadResult) error {
-			return errNoRemove(formatGo)
-		},
 	})
 }
 

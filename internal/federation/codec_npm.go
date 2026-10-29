@@ -494,23 +494,19 @@ func hardDeleteNPMVersion(ctx context.Context, tx *sql.Tx, id, pkgID, version st
 // --- Backfill ---------------------------------------------------------------
 
 func (npmCodec) Backfill(ctx context.Context, tx *sql.Tx, repoID string) error {
-	_, err := tx.ExecContext(ctx,
-		`SELECT federation_record($1::uuid, p.full_name || '@' || t.version, $2, $3, federation_blob_sha(t.blob_id), false, t.updated_at)
-		   FROM npm_versions t JOIN npm_packages p ON p.id = t.package_id
-		  WHERE p.repository_id = $1::uuid AND t.deleted_at IS NULL`,
-		repoID, KindArtifact, EventArtifactAdded)
-	if err != nil {
-		return fmt.Errorf("backfill npm_versions: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx,
-		`SELECT federation_record($1::uuid, p.full_name || '#' || t.tag, $2, $3, t.version, false, t.updated_at)
-		   FROM npm_dist_tags t JOIN npm_packages p ON p.id = t.package_id
-		  WHERE p.repository_id = $1::uuid`,
-		repoID, KindRef, EventRefMoved)
-	if err != nil {
-		return fmt.Errorf("backfill npm_dist_tags: %w", err)
-	}
-
-	return nil
+	return backfillUnits(ctx, tx, repoID,
+		backfillSource{
+			table: "npm_versions",
+			kind:  KindArtifact,
+			key:   "p.full_name || '@' || t.version",
+			ref:   "federation_blob_sha(t.blob_id)",
+			from:  "npm_versions t JOIN npm_packages p ON p.id = t.package_id WHERE p.repository_id = $1::uuid AND t.deleted_at IS NULL",
+		},
+		backfillSource{
+			table: "npm_dist_tags",
+			kind:  KindRef,
+			key:   "p.full_name || '#' || t.tag",
+			ref:   "t.version",
+			from:  "npm_dist_tags t JOIN npm_packages p ON p.id = t.package_id WHERE p.repository_id = $1::uuid",
+		})
 }

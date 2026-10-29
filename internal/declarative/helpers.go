@@ -227,64 +227,61 @@ const identsCacheKey = "declarative.idents"
 // groups call it so later lookups see the new objects.
 func (e *Env) ForgetIdents() { delete(e.Cache, identsCacheKey) }
 
-// UserID resolves a username to its id.
-func (e *Env) UserID(ctx context.Context, username string) (string, error) {
+func usersOf(ids *Idents) map[string]string { return ids.Users }
+
+func groupsOf(ids *Idents) map[string]string { return ids.Groups }
+
+// principalID resolves name in the principals that pick selects (kind names
+// them in the error) to its id.
+func (e *Env) principalID(ctx context.Context, pick func(*Idents) map[string]string, kind, name string) (string, error) {
 	ids, err := e.idents(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	id, ok := ids.Users[username]
+	id, ok := pick(ids)[name]
 	if !ok {
-		return "", fmt.Errorf("%w: user %q", ErrPrincipalNotFound, username)
+		return "", fmt.Errorf("%w: %s %q", ErrPrincipalNotFound, kind, name)
 	}
 
 	return id, nil
+}
+
+// principalNames returns id to name for the principals that pick selects.
+func (e *Env) principalNames(ctx context.Context, pick func(*Idents) map[string]string) (map[string]string, error) {
+	ids, err := e.idents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	byName := pick(ids)
+	out := make(map[string]string, len(byName))
+
+	for n, id := range byName {
+		out[id] = n
+	}
+
+	return out, nil
+}
+
+// UserID resolves a username to its id.
+func (e *Env) UserID(ctx context.Context, username string) (string, error) {
+	return e.principalID(ctx, usersOf, "user", username)
 }
 
 // GroupID resolves a group name to its id.
 func (e *Env) GroupID(ctx context.Context, name string) (string, error) {
-	ids, err := e.idents(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	id, ok := ids.Groups[name]
-	if !ok {
-		return "", fmt.Errorf("%w: group %q", ErrPrincipalNotFound, name)
-	}
-
-	return id, nil
+	return e.principalID(ctx, groupsOf, "group", name)
 }
 
 // UserNames returns id to username for every user.
 func (e *Env) UserNames(ctx context.Context) (map[string]string, error) {
-	ids, err := e.idents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make(map[string]string, len(ids.Users))
-	for n, id := range ids.Users {
-		out[id] = n
-	}
-
-	return out, nil
+	return e.principalNames(ctx, usersOf)
 }
 
 // GroupNames returns id to name for every group.
 func (e *Env) GroupNames(ctx context.Context) (map[string]string, error) {
-	ids, err := e.idents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make(map[string]string, len(ids.Groups))
-	for n, id := range ids.Groups {
-		out[id] = n
-	}
-
-	return out, nil
+	return e.principalNames(ctx, groupsOf)
 }
 
 func (e *Env) idents(ctx context.Context) (*Idents, error) {

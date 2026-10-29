@@ -117,23 +117,6 @@ func (h *AdminStorageHandler) Register(r chi.Router) {
 	r.Post("/api/v1/admin/storage/{name}/test", h.handleTest)
 }
 
-func (h *AdminStorageHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return false
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return false
-	}
-
-	return true
-}
-
 // writeStorageWriteError maps persistence errors to 409 on unique violations.
 func (h *AdminStorageHandler) writeStorageWriteError(w http.ResponseWriter, err error, action string) {
 	if database.UniqueViolationConstraint(err) != "" {
@@ -301,7 +284,7 @@ func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any)
 }
 
 func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -340,7 +323,7 @@ func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -390,7 +373,7 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AdminStorageHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -447,7 +430,7 @@ func (h *AdminStorageHandler) backendUsage(ctx context.Context) (backendUsageByI
 }
 
 func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -575,7 +558,7 @@ func storageLocation(raw []byte) (map[string]any, bool) {
 }
 
 func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -631,7 +614,7 @@ type storageTestResult struct {
 }
 
 func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 

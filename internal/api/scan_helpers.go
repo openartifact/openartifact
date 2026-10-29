@@ -56,13 +56,21 @@ func validateArtifactID(id string) string {
 		return "artifact_id is required"
 	case len(id) > maxArtifactIDLen:
 		return "artifact_id is too long"
-	case !utf8.ValidString(id):
-		return "artifact_id must be valid UTF-8"
 	}
 
-	for _, r := range id {
+	return plainTextProblem("artifact_id", id)
+}
+
+// plainTextProblem returns a message when s, named label in it, is not valid
+// UTF-8 or holds control characters, or "" when it is plain text.
+func plainTextProblem(label, s string) string {
+	if !utf8.ValidString(s) {
+		return label + " must be valid UTF-8"
+	}
+
+	for _, r := range s {
 		if r < 0x20 || r == 0x7f {
-			return "artifact_id must not contain control characters"
+			return label + " must not contain control characters"
 		}
 	}
 

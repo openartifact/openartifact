@@ -63,6 +63,12 @@ type candidate struct {
 	licenses []string
 }
 
+// artifact describes the candidate's package as served under path with the
+// content digest sha.
+func (c candidate) artifact(path, sha string) Artifact {
+	return Artifact{Name: c.name, Version: c.version, Path: path, SHA256: sha, Size: c.size}
+}
+
 // Promote implements Promoter.
 func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, error) {
 	cands, err := p.candidates(ctx, tx, req)
@@ -73,7 +79,7 @@ func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 	res := &Result{}
 
 	for _, c := range cands {
-		art := Artifact{Name: c.name, Version: c.version, Path: pathOf(c), SHA256: req.SHA256, Size: c.size}
+		art := c.artifact(pathOf(c), req.SHA256)
 		res.QuarantineKeys = append(res.QuarantineKeys, c.id)
 		res.QuarantineKeys = append(res.QuarantineKeys, c.idents...)
 
@@ -82,27 +88,12 @@ func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 			return nil, err
 		}
 
-		existing := dest.sha
-
-		if existing != "" && existing != req.SHA256 {
-			if !req.Force {
-				return nil, req.conflict(p.spec.format, c.name, c.version)
-			}
-
-			if err := req.displace(ctx, tx, p.spec.kind, dest.id); err != nil {
-				return nil, err
-			}
-
-			res.Replaced = append(
-				res.Replaced,
-				Artifact{Name: c.name, Version: c.version, Path: pathOf(c), SHA256: existing, Size: dest.size},
-			)
-			existing = ""
+		toCopy, err := req.settleDest(ctx, tx, res, p.spec.kind, p.spec.format, art, dest, dest.sha == req.SHA256)
+		if err != nil {
+			return nil, err
 		}
 
-		if existing == req.SHA256 {
-			res.Existing = append(res.Existing, art)
-
+		if !toCopy {
 			continue
 		}
 
@@ -110,9 +101,7 @@ func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 			return nil, err
 		}
 
-		res.Copied = append(res.Copied, art)
-		res.Usage.Bytes += c.size
-		res.Usage.Artifacts++
+		res.addCopied(art, c.size)
 		res.Licenses = append(res.Licenses, c.licenses...)
 	}
 

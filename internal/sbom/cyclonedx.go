@@ -249,8 +249,8 @@ func (g *Generator) GenerateCycloneDX(
 		return nil, fmt.Errorf("%w: CycloneDX %q", ErrUnsupportedSpec, spec)
 	}
 
-	in := newInput(format, artifactID, metadata)
-	if err := g.loadSBOM(ctx, repoID, in); err != nil {
+	in, err := g.sbomInput(ctx, repoID, format, artifactID, metadata)
+	if err != nil {
 		return nil, err
 	}
 

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
@@ -263,28 +264,6 @@ func (c ctxReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-// capReader fails with ErrTooLarge after n bytes instead of silently
-// truncating, so a decompression bomb is reported rather than half-read.
-type capReader struct {
-	r io.Reader
-	n int64
-}
-
-func (c *capReader) Read(p []byte) (int, error) {
-	if c.n <= 0 {
-		return 0, ErrTooLarge
-	}
-
-	if int64(len(p)) > c.n {
-		p = p[:c.n]
-	}
-
-	n, err := c.r.Read(p)
-	c.n -= int64(n)
-
-	return n, err
-}
-
 // readText reads up to l.n bytes of r. Extra input is ignored, or an
 // ErrTooLarge in strict mode.
 func readText(r io.Reader, l limits) (string, error) {
@@ -341,7 +320,7 @@ func openAt(ctx context.Context, open func() (io.ReadCloser, error)) (*readerAt,
 		_ = os.Remove(f.Name())
 	}
 
-	n, err := io.Copy(f, &capReader{r: ctxReader{ctx: ctx, r: rc}, n: maxSpoolBytes + 1})
+	n, err := io.Copy(f, limitio.Capped(ctxReader{ctx: ctx, r: rc}, maxSpoolBytes+1, ErrTooLarge))
 	if err != nil && !errors.Is(err, ErrTooLarge) {
 		release()
 		return nil, fmt.Errorf("spool artifact: %w", err)

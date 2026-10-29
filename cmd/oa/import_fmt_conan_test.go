@@ -991,7 +991,7 @@ func TestImportConanRegistration(t *testing.T) {
 		)
 	}
 
-	err := def.remove(context.Background(), nil, "dst", sourceAsset{}, uploadResult{})
+	err := (*importTarget)(nil).remove(context.Background(), formatConan, "dst", sourceAsset{}, uploadResult{})
 	if !errors.Is(err, errImportUsage) || !strings.Contains(err.Error(), "cannot remove") {
 		t.Fatalf("remove = %v, want errNoRemove", err)
 	}

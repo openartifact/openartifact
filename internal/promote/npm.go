@@ -101,7 +101,7 @@ func (npmPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, er
 	res := &Result{}
 
 	for _, r := range rows {
-		art := Artifact{Name: r.name, Version: r.version, Path: r.filename, SHA256: req.SHA256, Size: r.size}
+		art := r.artifact(r.filename, req.SHA256)
 		res.QuarantineKeys = append(res.QuarantineKeys, r.id, r.name, r.name+"@"+r.version, r.name+"/-/"+r.filename, r.filename)
 
 		dest, err := npmDestination(ctx, tx, req, r)
@@ -109,37 +109,23 @@ func (npmPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, er
 			return nil, err
 		}
 
-		if dest.id != "" && dest.sha != req.SHA256 {
-			if !req.Force {
-				return nil, req.conflict("npm", r.name, r.version)
-			}
-
-			if err := req.displace(ctx, tx, models.TrashKindNPM, dest.id); err != nil {
-				return nil, err
-			}
-
-			res.Replaced = append(
-				res.Replaced,
-				Artifact{Name: r.name, Version: r.version, Path: r.filename, SHA256: dest.sha, Size: dest.size},
-			)
-			dest = destRow{}
+		toCopy, err := req.settleDest(ctx, tx, res, models.TrashKindNPM, "npm", art, dest, dest.sha == req.SHA256)
+		if err != nil {
+			return nil, err
 		}
 
-		switch {
-		case dest.id != "":
-			res.Existing = append(res.Existing, art)
-		default:
-			pkgID, err := npmCopy(ctx, tx, req, r)
-			if err != nil {
-				return nil, err
-			}
-
-			res.Copied = append(res.Copied, art)
-			res.Usage.Bytes += r.size
-			res.Usage.Artifacts++
-			res.Licenses = append(res.Licenses, r.licenses...)
-			res.Regen = append(res.Regen, Regen{Kind: RegenNPM, PackageID: pkgID})
+		if !toCopy {
+			continue
 		}
+
+		pkgID, err := npmCopy(ctx, tx, req, r)
+		if err != nil {
+			return nil, err
+		}
+
+		res.addCopied(art, r.size)
+		res.Licenses = append(res.Licenses, r.licenses...)
+		res.Regen = append(res.Regen, Regen{Kind: RegenNPM, PackageID: pkgID})
 	}
 
 	return res, nil

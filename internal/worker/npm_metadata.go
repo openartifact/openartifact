@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/pkg/logger"
+	"github.com/openartifact/openartifact/pkg/npm"
 )
 
 type NPMMetadataWorker struct {
@@ -151,28 +152,12 @@ func compareSemver(a, b string) int {
 
 	ai, bi := strings.Split(aPre, "."), strings.Split(bPre, ".")
 	for i := 0; i < len(ai) && i < len(bi); i++ {
-		if c := comparePreIdent(ai[i], bi[i]); c != 0 {
+		if c := npm.ComparePrerelease(ai[i], bi[i]); c != 0 {
 			return c
 		}
 	}
 
 	return cmp.Compare(len(ai), len(bi))
-}
-
-func comparePreIdent(a, b string) int {
-	an, aErr := strconv.ParseUint(a, 10, 64)
-	bn, bErr := strconv.ParseUint(b, 10, 64)
-
-	switch {
-	case aErr == nil && bErr == nil:
-		return cmp.Compare(an, bn)
-	case aErr == nil:
-		return -1
-	case bErr == nil:
-		return 1
-	}
-
-	return strings.Compare(a, b)
 }
 
 func semverParts(v string) ([3]uint64, string) {

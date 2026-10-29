@@ -59,6 +59,19 @@ func (r *Runner) Go(fn func(ctx context.Context)) {
 	}()
 }
 
+// Sleep waits for d and returns nil, or returns ctx.Err() as soon as ctx ends.
+func Sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Shutdown cancels the lifecycle context and waits for the running tasks, at
 // most timeout. It reports whether every task returned in time and is safe to
 // call more than once.

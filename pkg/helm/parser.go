@@ -15,6 +15,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/openartifact/openartifact/internal/limitio"
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
@@ -26,48 +27,12 @@ var (
 	ErrChartYAMLTooLarge = errors.New("chart.yaml exceeds max size")
 )
 
-// readAllLimited reads at most max+1 bytes from r and errors if the
-// result exceeds max, without ever allocating more than max+1 bytes.
-func readAllLimited(r io.Reader, limit int64, tooLarge error) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, err
-	}
-
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("%w: max %d bytes", tooLarge, limit)
-	}
-
-	return data, nil
-}
-
 // maxUnpackedChartSize bounds the decompressed bytes scanned while looking for
 // Chart.yaml, so a gzip bomb cannot burn CPU before the entry is found.
 const maxUnpackedChartSize = 1 << 30 // 1 GiB
 
 // ErrChartTooLarge reports a chart whose unpacked size exceeds the scan limit.
 var ErrChartTooLarge = errors.New("chart exceeds max unpacked size")
-
-// cappedReader fails with ErrChartTooLarge once n bytes have been read.
-type cappedReader struct {
-	r io.Reader
-	n int64
-}
-
-func (c *cappedReader) Read(p []byte) (int, error) {
-	if c.n <= 0 {
-		return 0, ErrChartTooLarge
-	}
-
-	if int64(len(p)) > c.n {
-		p = p[:c.n]
-	}
-
-	n, err := c.r.Read(p)
-	c.n -= int64(n)
-
-	return n, err
-}
 
 // ChartMetadata represents the metadata from Chart.yaml.
 type ChartMetadata struct {
@@ -95,7 +60,7 @@ func ParseChart(r io.Reader) (map[string]any, error) {
 	defer func() { _ = gr.Close() }()
 
 	// Read tar archive
-	tr := tar.NewReader(&cappedReader{r: gr, n: maxUnpackedChartSize})
+	tr := tar.NewReader(limitio.Capped(gr, maxUnpackedChartSize, ErrChartTooLarge))
 
 	var metadata *ChartMetadata
 
@@ -112,7 +77,7 @@ func ParseChart(r io.Reader) (map[string]any, error) {
 		// Only the chart root's Chart.yaml (<chart>/Chart.yaml) counts; nested
 		// subchart manifests (<chart>/charts/<sub>/Chart.yaml) must not win.
 		if header.Typeflag == tar.TypeReg && isRootChartYAML(header.Name) {
-			data, err := readAllLimited(tr, maxChartYAMLSize, ErrChartYAMLTooLarge)
+			data, err := limitio.ReadAll(tr, maxChartYAMLSize, ErrChartYAMLTooLarge)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read Chart.yaml: %w", err)
 			}

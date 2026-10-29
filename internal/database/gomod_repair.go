@@ -134,7 +134,7 @@ func (p *PostgresDB) ListGomodSiblingZipKeys(ctx context.Context) ([]string, err
 		return nil, fmt.Errorf("list sibling go zip blobs: %w", err)
 	}
 
-	return scanStrings(rows)
+	return ScanStrings(rows)
 }
 
 // UnreferencedBlobKeys returns the subset of ids (blob store keys) that no
@@ -147,10 +147,11 @@ func (p *PostgresDB) UnreferencedBlobKeys(ctx context.Context, ids []string) ([]
 		return nil, fmt.Errorf("filter unreferenced blob keys: %w", err)
 	}
 
-	return scanStrings(rows)
+	return ScanStrings(rows)
 }
 
-func scanStrings(rows *sql.Rows) ([]string, error) {
+// ScanStrings drains a single-text-column result set into a slice and closes rows.
+func ScanStrings(rows *sql.Rows) ([]string, error) {
 	defer func() { _ = rows.Close() }()
 
 	var out []string

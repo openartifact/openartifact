@@ -5,6 +5,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"regexp"
 )
@@ -24,4 +25,19 @@ func ValidateBlobID(id string) error {
 	}
 
 	return nil
+}
+
+// existsByID answers ExistsBySHA256 for a store that keys every blob by its
+// sha256: the blob is found under that id or not at all.
+func existsByID(ctx context.Context, s BlobStore, sha256 string) (string, bool, error) {
+	if err := ValidateBlobID(sha256); err != nil {
+		return "", false, err
+	}
+
+	exists, err := s.Exists(ctx, sha256)
+	if err != nil || !exists {
+		return "", false, err
+	}
+
+	return sha256, true, nil
 }

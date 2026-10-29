@@ -7,6 +7,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/scanexport"
@@ -24,10 +25,18 @@ const (
 
 // exportFormat reads ?format (default json). ok is false for an unknown value.
 func exportFormat(r *http.Request) (string, bool) {
-	switch f := strings.ToLower(r.URL.Query().Get("format")); f {
-	case "":
+	return queryExportFormat(r, exportFormatSARIF, exportFormatCSV, exportFormatJSON)
+}
+
+// queryExportFormat reads ?format, defaulting to json, and accepts only the
+// values in allowed. ok is false for any other value.
+func queryExportFormat(r *http.Request, allowed ...string) (string, bool) {
+	f := strings.ToLower(r.URL.Query().Get("format"))
+	if f == "" {
 		return exportFormatJSON, true
-	case exportFormatSARIF, exportFormatCSV, exportFormatJSON:
+	}
+
+	if slices.Contains(allowed, f) {
 		return f, true
 	}
 

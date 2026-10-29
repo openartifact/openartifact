@@ -54,6 +54,47 @@ func ssoProviderUnavailable(w http.ResponseWriter, err error) bool {
 	return false
 }
 
+// ssoUpstreamFailure is the provider-specific load failure of a SSO flow: the
+// sentinel for an IdP that cannot be reached and the answer it maps to.
+type ssoUpstreamFailure struct {
+	err     error
+	status  int
+	code    string
+	message string
+}
+
+func oidcDiscoveryFailure() ssoUpstreamFailure {
+	return ssoUpstreamFailure{
+		err: auth.ErrOIDCDiscoveryFailed, status: http.StatusBadGateway,
+		code: "oidc_discovery_failed", message: "OIDC discovery failed",
+	}
+}
+
+func samlMetadataFailure() ssoUpstreamFailure {
+	return ssoUpstreamFailure{
+		err: auth.ErrIDPMetadataUnavailable, status: http.StatusServiceUnavailable,
+		code: "idp_metadata_unavailable", message: "IdP metadata unavailable",
+	}
+}
+
+// writeSSOLoadError maps a provider load failure onto the HTTP response shared
+// by the login and callback/ACS paths: 404 for an unknown or disabled
+// provider, the upstream failure's answer when the IdP is unreachable, else a
+// 500 logged under flow.
+func writeSSOLoadError(w http.ResponseWriter, log *logger.Logger, flow, slug string, err error, upstream ssoUpstreamFailure) {
+	if ssoProviderUnavailable(w, err) {
+		return
+	}
+
+	if errors.Is(err, upstream.err) {
+		writeError(w, upstream.status, upstream.code, upstream.message)
+		return
+	}
+
+	log.Errorw(flow+": load provider", "slug", slug, "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
+}
+
 func (h *OIDCHandler) RegisterPublic(public chi.Router) {
 	public.Get("/api/v1/auth/sso/oidc/{slug}/login", h.handleLogin)
 	public.Get("/api/v1/auth/sso/oidc/{slug}/callback", h.handleCallback)
@@ -66,7 +107,7 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		h.writeLoadError(w, "oidc login", slug, err)
+		writeSSOLoadError(w, h.log, "oidc login", slug, err, oidcDiscoveryFailure())
 		return
 	}
 
@@ -112,22 +153,6 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	//nolint:gosec // G710: redirect URL is validated against configured provider URLs
 	http.Redirect(w, r, provider.AuthURL(state, nonce, codeChallenge), http.StatusFound)
-}
-
-// writeLoadError maps a provider load failure onto the HTTP response shared
-// by login and callback.
-func (h *OIDCHandler) writeLoadError(w http.ResponseWriter, flow, slug string, err error) {
-	if ssoProviderUnavailable(w, err) {
-		return
-	}
-
-	if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
-		writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
-		return
-	}
-
-	h.log.Errorw(flow+": load provider", "slug", slug, "error", err)
-	writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
 }
 
 // writeSSOLoginDenied answers a policy rejection (ErrSSOLoginDenied) with the
@@ -204,7 +229,7 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		h.writeLoadError(w, "oidc callback", slug, err)
+		writeSSOLoadError(w, h.log, "oidc callback", slug, err, oidcDiscoveryFailure())
 		return
 	}
 

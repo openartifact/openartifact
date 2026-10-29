@@ -114,6 +114,41 @@ func register(c Codec) {
 	codecs[c.Format()] = c
 }
 
+// liveRowsOfRepo is the predicate (table alias t) of the live rows of repository $1.
+const liveRowsOfRepo = "t.repository_id = $1::uuid AND t.deleted_at IS NULL"
+
+// backfillSource describes one federation_record call over a table: key and ref
+// are the SQL expressions producing the unit key and its content_ref (see
+// migration 071) and from is the FROM (and WHERE) clause selecting the rows.
+type backfillSource struct {
+	table string // names the source in error messages
+	kind  string // KindArtifact or KindRef
+	key   string
+	ref   string
+	from  string
+}
+
+// backfillUnits registers the rows of each source in the change log of the
+// repository, with the row's updated_at as the stamp.
+func backfillUnits(ctx context.Context, tx *sql.Tx, repoID string, sources ...backfillSource) error {
+	for _, s := range sources {
+		event := EventArtifactAdded
+		if s.kind == KindRef {
+			event = EventRefMoved
+		}
+
+		_, err := tx.ExecContext(ctx,
+			//nolint:gosec // expressions come from the static sources
+			`SELECT federation_record($1::uuid, `+s.key+`, $2, $3, `+s.ref+`, false, t.updated_at) FROM `+s.from,
+			repoID, s.kind, event)
+		if err != nil {
+			return fmt.Errorf("backfill %s: %w", s.table, err)
+		}
+	}
+
+	return nil
+}
+
 // CodecFor returns the codec of a repository format.
 func CodecFor(format string) (Codec, error) {
 	c, ok := codecs[format]

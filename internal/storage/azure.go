@@ -456,20 +456,8 @@ func (a *AzureBlobStore) GetFrom(ctx context.Context, id string, offset int64) (
 		return nil, err
 	}
 
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		_ = resp.Body.Close()
-
-		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
-	case http.StatusRequestedRangeNotSatisfiable:
-		_ = resp.Body.Close()
-
-		return nil, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
-	case http.StatusPartialContent:
-		return resp.Body, nil
-	case http.StatusOK:
-		// The service ignored the range: skip the prefix ourselves.
-		return skipTo(resp.Body, offset)
+	if rc, handled, err := rangedBody(resp, id, offset); handled {
+		return rc, err
 	}
 
 	defer func() { _ = resp.Body.Close() }()
@@ -664,20 +652,7 @@ func (a *AzureBlobStore) List(ctx context.Context, token string, limit int) ([]s
 
 // ExistsBySHA256 checks if a blob with the given SHA-256 hash exists.
 func (a *AzureBlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (string, bool, error) {
-	if err := ValidateBlobID(sha256); err != nil {
-		return "", false, err
-	}
-
-	exists, err := a.Exists(ctx, sha256)
-	if err != nil {
-		return "", false, err
-	}
-
-	if exists {
-		return sha256, true, nil
-	}
-
-	return "", false, nil
+	return existsByID(ctx, a, sha256)
 }
 
 // HealthCheck verifies that the Azure container is accessible.

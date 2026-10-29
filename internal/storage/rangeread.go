@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 )
 
 // ErrOffsetOutOfRange is returned by a ranged read whose offset is negative or
@@ -66,6 +67,31 @@ func skipTo(rc io.ReadCloser, offset int64) (io.ReadCloser, error) {
 	}
 
 	return rc, nil
+}
+
+// rangedBody turns the answer to a ranged GET of blob id into the reader the
+// caller returns. handled is false for a status that is none of the answers a
+// ranged read expects: resp is then untouched and the caller reports it.
+func rangedBody(resp *http.Response, id string, offset int64) (io.ReadCloser, bool, error) {
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		_ = resp.Body.Close()
+
+		return nil, true, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
+	case http.StatusRequestedRangeNotSatisfiable:
+		_ = resp.Body.Close()
+
+		return nil, true, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
+	case http.StatusPartialContent:
+		return resp.Body, true, nil
+	case http.StatusOK:
+		// The service ignored the range: skip the prefix ourselves.
+		rc, err := skipTo(resp.Body, offset)
+
+		return rc, true, err
+	}
+
+	return nil, false, nil
 }
 
 // rangeHeader is the Range header value that reads from offset to the end.

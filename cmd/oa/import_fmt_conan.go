@@ -62,12 +62,9 @@ func init() {
 		present:     presentConan,
 		units:       conanUnits,
 		upload:      uploadConan,
-		// OpenArtifact deletes whole revisions only, which would also destroy
-		// files that were stored correctly. A re-run uploads the bad file again
-		// over the stored one instead.
-		remove: func(context.Context, *importTarget, string, sourceAsset, uploadResult) error {
-			return errNoRemove(formatConan)
-		},
+		// No remove: OpenArtifact deletes whole revisions only, which would also
+		// destroy files that were stored correctly. A re-run uploads the bad file
+		// again over the stored one instead.
 	})
 }
 

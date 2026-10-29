@@ -276,19 +276,8 @@ func (o *OCIBlobStore) GetFrom(ctx context.Context, id string, offset int64) (io
 		return nil, fmt.Errorf("oci: get %s: %w", id, err)
 	}
 
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		_ = resp.Body.Close()
-
-		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
-	case http.StatusRequestedRangeNotSatisfiable:
-		_ = resp.Body.Close()
-
-		return nil, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
-	case http.StatusPartialContent:
-		return resp.Body, nil
-	case http.StatusOK:
-		return skipTo(resp.Body, offset)
+	if rc, handled, err := rangedBody(resp, id, offset); handled {
+		return rc, err
 	}
 
 	body, _ := io.ReadAll(resp.Body)
@@ -436,20 +425,7 @@ func (o *OCIBlobStore) GetSize(ctx context.Context, id string) (int64, error) {
 // ExistsBySHA256 checks whether a blob with the given SHA-256 hash exists.
 // In OCI, blobs are natively addressed by digest, so this is equivalent to Exists.
 func (o *OCIBlobStore) ExistsBySHA256(ctx context.Context, sha256hex string) (string, bool, error) {
-	if err := ValidateBlobID(sha256hex); err != nil {
-		return "", false, err
-	}
-
-	exists, err := o.Exists(ctx, sha256hex)
-	if err != nil {
-		return "", false, err
-	}
-
-	if exists {
-		return sha256hex, true, nil
-	}
-
-	return "", false, nil
+	return existsByID(ctx, o, sha256hex)
 }
 
 // PresignURL returns ErrPresignNotSupported; OCI registries do not support presigned URLs.

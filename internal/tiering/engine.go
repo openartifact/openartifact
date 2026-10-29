@@ -619,40 +619,39 @@ func (e *Engine) recoverMoves(ctx context.Context, st *PassStats, budget *int) e
 }
 
 func (e *Engine) promote(ctx context.Context, snap *Snapshot, st *PassStats, budget *int) error {
-	policies, err := e.loadPolicies(ctx, snap)
-	if err != nil {
-		return err
-	}
-
-	e.mu.Lock()
-	cursor := e.promoCursor
-	e.mu.Unlock()
-
-	next, scanned, err := e.scanPromotions(ctx, snap, policies, cursor, e.cfg.MaxScanRows, e.visit(ctx, st, budget))
-
-	e.mu.Lock()
-	e.promoCursor = next
-	e.mu.Unlock()
-
-	st.Scanned += scanned
-
-	return err
+	return e.runScan(ctx, snap, st, budget, &e.promoCursor, e.scanPromotions)
 }
 
 func (e *Engine) applyPolicies(ctx context.Context, snap *Snapshot, st *PassStats, budget *int) error {
+	return e.runScan(ctx, snap, st, budget, &e.policyCursor, e.scanPolicies)
+}
+
+// scanFunc is scanPolicies or scanPromotions.
+type scanFunc func(
+	ctx context.Context,
+	snap *Snapshot,
+	policies []*Policy,
+	cursor string,
+	maxRows int,
+	visit func(ds []decision) int,
+) (string, int, error)
+
+// runScan resumes scan from the saved cursor (guarded by e.mu), executes the
+// decisions it yields within the budget and saves the cursor it ends at.
+func (e *Engine) runScan(ctx context.Context, snap *Snapshot, st *PassStats, budget *int, cursor *string, scan scanFunc) error {
 	policies, err := e.loadPolicies(ctx, snap)
 	if err != nil {
 		return err
 	}
 
 	e.mu.Lock()
-	cursor := e.policyCursor
+	from := *cursor
 	e.mu.Unlock()
 
-	next, scanned, err := e.scanPolicies(ctx, snap, policies, cursor, e.cfg.MaxScanRows, e.visit(ctx, st, budget))
+	next, scanned, err := scan(ctx, snap, policies, from, e.cfg.MaxScanRows, e.visit(ctx, st, budget))
 
 	e.mu.Lock()
-	e.policyCursor = next
+	*cursor = next
 	e.mu.Unlock()
 
 	st.Scanned += scanned

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -66,33 +65,24 @@ const unreferencedCacheKeysSQL = `
 	WHERE NOT EXISTS (SELECT 1 FROM proxy_cache_entries WHERE blob_key = k)`
 
 type ProxyCacheWorker struct {
+	*lifecycle
+
 	db        database.Database
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	interval  time.Duration
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	stopOnce  sync.Once
-	startOnce sync.Once
 	started   bool
-	ctx       context.Context //nolint:containedctx // worker lifetime context, cancelled by Stop
-	cancel    context.CancelFunc
 }
 
 // NewProxyCacheWorker creates the eviction worker. blobStore may be nil, in
 // which case only database rows are evicted.
 func NewProxyCacheWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger) *ProxyCacheWorker {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &ProxyCacheWorker{
+		lifecycle: newLifecycle(),
 		db:        db,
 		blobStore: blobStore,
 		log:       log,
 		interval:  5 * time.Minute,
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
-		ctx:       ctx,
-		cancel:    cancel,
 	}
 }
 
@@ -100,21 +90,7 @@ func (w *ProxyCacheWorker) Start() {
 	w.startOnce.Do(func() {
 		w.started = true
 
-		go func() {
-			defer close(w.doneCh)
-
-			ticker := time.NewTicker(w.interval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ticker.C:
-					w.evictSafely()
-				case <-w.stopCh:
-					return
-				}
-			}
-		}()
+		go w.runEvery(w.interval, w.evictSafely)
 	})
 }
 
@@ -125,7 +101,7 @@ func (w *ProxyCacheWorker) evictSafely() {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(w.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(w.runCtx, 2*time.Minute)
 	defer cancel()
 
 	n, err := w.evict(ctx)
@@ -256,19 +232,5 @@ func (w *ProxyCacheWorker) deleteRowsOnly(ctx context.Context) int64 {
 }
 
 func (w *ProxyCacheWorker) Stop() {
-	w.stopOnce.Do(func() { close(w.stopCh) })
-
-	if !w.started {
-		w.cancel()
-		return
-	}
-
-	select {
-	case <-w.doneCh:
-	case <-time.After(10 * time.Second):
-		w.cancel()
-		<-w.doneCh
-	}
-
-	w.cancel()
+	w.stopGracefully(w.started)
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
@@ -137,6 +138,21 @@ func isNotFound(err error) bool {
 	_, ok := errors.AsType[*types.NotFound](err)
 
 	return ok
+}
+
+// hasS3Code reports whether err is an S3 API error with the given error code.
+func hasS3Code(err error, code string) bool {
+	apiErr, ok := errors.AsType[smithy.APIError](err)
+
+	return ok && apiErr.ErrorCode() == code
+}
+
+// hasS3Status reports whether err carries an HTTP response with the given
+// status; S3-compatible backends sometimes answer with the status alone.
+func hasS3Status(err error, status int) bool {
+	respErr, ok := errors.AsType[*awshttp.ResponseError](err)
+
+	return ok && respErr.HTTPStatusCode() == status
 }
 
 // Put uploads data to S3. The metadata map must contain a "sha256" key.
@@ -279,7 +295,7 @@ func (s *S3BlobStore) GetFrom(ctx context.Context, id string, offset int64) (io.
 			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 		}
 
-		if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "InvalidRange" {
+		if hasS3Code(err, "InvalidRange") {
 			return nil, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
 		}
 

@@ -124,35 +124,22 @@ func (p *exprParser) peekOp(op string) bool {
 	return p.pos < len(p.toks) && strings.EqualFold(p.toks[p.pos], op)
 }
 
-func (p *exprParser) parseOr(b *strings.Builder) bool {
-	if !p.parseAnd(b) {
+func (p *exprParser) parseOr(b *strings.Builder) bool { return p.parseChain(b, "OR", p.parseAnd) }
+
+func (p *exprParser) parseAnd(b *strings.Builder) bool { return p.parseChain(b, "AND", p.parseAtom) }
+
+// parseChain parses operand (op operand)*, writing the operator between the operands.
+func (p *exprParser) parseChain(b *strings.Builder, op string, operand func(*strings.Builder) bool) bool {
+	if !operand(b) {
 		return false
 	}
 
-	for p.peekOp("OR") {
+	for p.peekOp(op) {
 		p.pos++
 
-		b.WriteString(" OR ")
+		b.WriteString(" " + op + " ")
 
-		if !p.parseAnd(b) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (p *exprParser) parseAnd(b *strings.Builder) bool {
-	if !p.parseAtom(b) {
-		return false
-	}
-
-	for p.peekOp("AND") {
-		p.pos++
-
-		b.WriteString(" AND ")
-
-		if !p.parseAtom(b) {
+		if !operand(b) {
 			return false
 		}
 	}

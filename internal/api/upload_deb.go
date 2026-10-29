@@ -470,19 +470,6 @@ func (h *DebUploadHandler) hardDelete(ctx context.Context, repoID, repoName, pac
 	return nil
 }
 
-// writeDeleteError maps a delete failure to its HTTP answer.
-func (h *DebUploadHandler) writeDeleteError(w http.ResponseWriter, err error, packageID string) {
-	switch {
-	case errors.Is(err, database.ErrTrashNotFound):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
-	case errors.Is(err, trash.ErrImmutableRelease):
-		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
-	default:
-		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
-		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
-	}
-}
-
 func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
@@ -524,7 +511,7 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := trash.GuardReleaseByName(r, h.db, repoName, "deb", comp.Version); err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 
@@ -539,7 +526,7 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return h.hardDelete(r.Context(), repoID, repoName, packageID, sha, size)
 	})
 	if err != nil {
-		h.writeDeleteError(w, err, packageID)
+		writePackageDeleteError(w, h.log, err, packageID)
 		return
 	}
 

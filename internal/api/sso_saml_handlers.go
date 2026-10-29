@@ -67,18 +67,7 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		if ssoProviderUnavailable(w, err) {
-			return
-		}
-
-		if errors.Is(err, auth.ErrIDPMetadataUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, "idp_metadata_unavailable", "IdP metadata unavailable")
-			return
-		}
-
-		h.log.Errorw("saml login: load provider", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
-
+		writeSSOLoadError(w, h.log, "saml login", slug, err, samlMetadataFailure())
 		return
 	}
 
@@ -213,18 +202,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		if ssoProviderUnavailable(w, err) {
-			return
-		}
-
-		if errors.Is(err, auth.ErrIDPMetadataUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, "idp_metadata_unavailable", "IdP metadata unavailable")
-			return
-		}
-
-		h.log.Errorw("saml acs: load provider", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
-
+		writeSSOLoadError(w, h.log, "saml acs", slug, err, samlMetadataFailure())
 		return
 	}
 

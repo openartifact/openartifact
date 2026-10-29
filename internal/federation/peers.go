@@ -329,39 +329,18 @@ func (s *Store) ListPeers(ctx context.Context, repoID string) ([]*Peer, error) {
 
 // DeletePeer removes a peer and its deferred units.
 func (s *Store) DeletePeer(ctx context.Context, repoID, id string) error {
-	if _, err := uuid.Parse(id); err != nil {
-		return ErrNotFound
-	}
-
-	res, err := s.db.ExecContext(ctx, `DELETE FROM federation_peers WHERE id = $1::uuid AND repo_id = $2::uuid`, id, repoID)
-	if err != nil {
-		return fmt.Errorf("delete peer: %w", err)
-	}
-
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-
-	return nil
+	return s.execOwned(ctx, "delete peer", `DELETE FROM federation_peers WHERE id = $1::uuid AND repo_id = $2::uuid`, repoID, id)
 }
 
 // RequestResync flags a peer for a full resync: its cursor is reset to the
 // start of the remote log and every unit is merged again (idempotently) on the
 // next pull. Existing deferred units are retried at once.
 func (s *Store) RequestResync(ctx context.Context, repoID, id string) error {
-	if _, err := uuid.Parse(id); err != nil {
-		return ErrNotFound
-	}
-
-	res, err := s.db.ExecContext(ctx,
+	err := s.execOwned(ctx, "request resync",
 		`UPDATE federation_peers SET resync_requested = true, error_count = 0, last_error = '', next_attempt_at = NULL
-		  WHERE id = $1::uuid AND repo_id = $2::uuid`, id, repoID)
+		  WHERE id = $1::uuid AND repo_id = $2::uuid`, repoID, id)
 	if err != nil {
-		return fmt.Errorf("request resync: %w", err)
-	}
-
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
+		return err
 	}
 
 	_, err = s.db.ExecContext(ctx, `UPDATE federation_deferred SET next_attempt_at = now() WHERE peer_id = $1::uuid`, id)

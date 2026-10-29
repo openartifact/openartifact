@@ -39,6 +39,17 @@ func nameVersion(nameCol string) func(string) (string, []any, bool) {
 	}
 }
 
+// nameVersionInfo is the info builder of the formats keyed by name and version:
+// file derives the artifact path from them and blobCol holds the blob whose
+// digest is reported.
+func nameVersionInfo(nameCol, blobCol string, file func(name, version string) string) func(Row) *ArtifactInfo {
+	return func(r Row) *ArtifactInfo {
+		name, version := r.Str(nameCol), r.Str("version")
+
+		return &ArtifactInfo{Name: name, Version: version, Path: file(name, version), SHA256: r.Str(blobCol)}
+	}
+}
+
 func rawSpec() tableSpec {
 	return tableSpec{
 		format:      "raw",
@@ -108,14 +119,7 @@ func helmSpec() tableSpec {
 		backfillKey: "t.name || '@' || t.version",
 		backfillRef: "federation_blob_sha(t.blob_id)",
 		blobCols:    []string{"blob_id"},
-		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{
-				Name:    r.Str("name"),
-				Version: r.Str("version"),
-				Path:    r.Str("name") + "-" + r.Str("version") + ".tgz",
-				SHA256:  r.Str("blob_id"),
-			}
-		},
+		info:        nameVersionInfo("name", "blob_id", func(name, version string) string { return name + "-" + version + ".tgz" }),
 	}
 }
 
@@ -129,14 +133,7 @@ func cargoSpec() tableSpec {
 		backfillRef: "federation_blob_sha(t.blob_id)",
 		blobCols:    []string{"blob_id"},
 		exclude:     []string{"download_count"},
-		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{
-				Name:    r.Str("name"),
-				Version: r.Str("version"),
-				Path:    r.Str("name") + "-" + r.Str("version") + ".crate",
-				SHA256:  r.Str("blob_id"),
-			}
-		},
+		info:        nameVersionInfo("name", "blob_id", func(name, version string) string { return name + "-" + version + ".crate" }),
 	}
 }
 
@@ -150,14 +147,7 @@ func nugetSpec() tableSpec {
 		backfillRef: "federation_blob_sha(t.blob_id)",
 		blobCols:    []string{"blob_id"},
 		exclude:     []string{"download_count"},
-		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{
-				Name:    r.Str("package_id"),
-				Version: r.Str("version"),
-				Path:    r.Str("package_id") + "." + r.Str("version") + ".nupkg",
-				SHA256:  r.Str("blob_id"),
-			}
-		},
+		info:        nameVersionInfo("package_id", "blob_id", func(name, version string) string { return name + "." + version + ".nupkg" }),
 	}
 }
 
@@ -170,13 +160,10 @@ func goSpec() tableSpec {
 		backfillKey: "t.module_path || '@' || t.version",
 		backfillRef: "federation_blob_sha(COALESCE(t.zip_blob_id, t.mod_blob_id))",
 		blobCols:    []string{"zip_blob_id", "mod_blob_id"},
-		info: func(r Row) *ArtifactInfo {
-			return &ArtifactInfo{
-				Name:    r.Str("module_path"),
-				Version: r.Str("version"),
-				Path:    r.Str("module_path") + "/@v/" + r.Str("version") + ".zip",
-				SHA256:  r.Str("zip_blob_id"),
-			}
-		},
+		info: nameVersionInfo(
+			"module_path",
+			"zip_blob_id",
+			func(name, version string) string { return name + "/@v/" + version + ".zip" },
+		),
 	}
 }

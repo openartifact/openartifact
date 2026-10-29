@@ -17,6 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/bgtask"
 )
 
 const (
@@ -70,19 +72,7 @@ type retrier struct {
 }
 
 func newRetrier(maxRetries int, maxWait time.Duration) *retrier {
-	return &retrier{max: maxRetries, maxWait: maxWait, sleep: sleepContext, jitter: halfJitter, now: time.Now}
-}
-
-func sleepContext(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return &retrier{max: maxRetries, maxWait: maxWait, sleep: bgtask.Sleep, jitter: halfJitter, now: time.Now}
 }
 
 // halfJitter spreads d over [d/2, d] so concurrent workers do not retry in step.

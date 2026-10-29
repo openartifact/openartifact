@@ -22,13 +22,15 @@ type debPromoter struct{}
 
 func (debPromoter) Format() string { return "deb" }
 
+func (debPromoter) trashKind() models.TrashKind { return models.TrashKindDeb }
+
 // debRow is a live source deb_packages row holding the item's content.
 type debRow struct {
-	candidate
+	packageFile
 
 	distID, compID string
 	dist, comp     string
-	arch, filename string
+	arch           string
 }
 
 // poolPath is the pool path the package is served under ("" without a file name).
@@ -100,12 +102,9 @@ func (p debPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 		return nil, err
 	}
 
-	res := &Result{}
-
-	for _, row := range narrowRows(rows, func(r *debRow) candidate { return r.candidate }, req.Path) {
-		if err := p.promoteRow(ctx, tx, req, row, res); err != nil {
-			return nil, err
-		}
+	res, err := promoteDebRpmRows(ctx, tx, req, p, narrowRows(rows, func(r *debRow) candidate { return r.candidate }, req.Path))
+	if err != nil {
+		return nil, err
 	}
 
 	if len(res.Copied) > 0 {
@@ -152,37 +151,6 @@ func (debPromoter) sources(ctx context.Context, tx Tx, req Request) ([]*debRow, 
 	}
 
 	return out, nil
-}
-
-// promoteRow copies one source row unless the destination already holds it.
-func (p debPromoter) promoteRow(ctx context.Context, tx Tx, req Request, row *debRow, res *Result) error {
-	art := Artifact{Name: row.name, Version: row.version, Path: row.filename, SHA256: req.SHA256, Size: row.size}
-	res.QuarantineKeys = append(res.QuarantineKeys, row.quarantineKeys()...)
-
-	dest, err := p.destination(ctx, tx, req, row)
-	if err != nil {
-		return err
-	}
-
-	if err := dest.replace(ctx, tx, req, models.TrashKindDeb, "deb", row.name, row.version, res); err != nil {
-		return err
-	}
-
-	switch {
-	case dest.same:
-		res.Existing = append(res.Existing, art)
-	default:
-		if err := p.copyRow(ctx, tx, req, row); err != nil {
-			return err
-		}
-
-		res.Copied = append(res.Copied, art)
-		res.Usage.Bytes += row.size
-		res.Usage.Artifacts++
-		res.Licenses = append(res.Licenses, row.licenses...)
-	}
-
-	return nil
 }
 
 // destination collects what the destination holds for the source row: the

@@ -502,7 +502,7 @@ func (s *TrivyScanner) parseTrivyOutput(data []byte) ([]models.Vulnerability, er
 			vuln.CVSS = cvssScore
 
 			// Map trivy severity to our format
-			vuln.Severity = mapTrivySeverity(tv.Severity, cvssScore)
+			vuln.Severity = mapScannerSeverity(tv.Severity, cvssScore)
 
 			vulns = append(vulns, vuln)
 		}
@@ -515,8 +515,9 @@ func (s *TrivyScanner) parseTrivyOutput(data []byte) ([]models.Vulnerability, er
 	return vulns, nil
 }
 
-// mapTrivySeverity maps Trivy severity to OpenArtifact severity format.
-func mapTrivySeverity(severity string, cvssScore float64) string {
+// mapScannerSeverity maps the severity a scanner (Trivy, Grype) reports to the
+// OpenArtifact severity format; an unrecognised one is derived from the CVSS score.
+func mapScannerSeverity(severity string, cvssScore float64) string {
 	sev := strings.ToUpper(severity)
 	switch sev {
 	case "CRITICAL":
@@ -677,7 +678,7 @@ func (s *GrypeScanner) parseGrypeOutput(data []byte) ([]models.Vulnerability, er
 		vuln.CVSS = cvssScore
 
 		// Map severity
-		vuln.Severity = mapGrypeSeverity(match.Vulnerability.Severity, cvssScore)
+		vuln.Severity = mapScannerSeverity(match.Vulnerability.Severity, cvssScore)
 
 		// Extract fixed version
 		if len(match.Vulnerability.Fix.Versions) > 0 {
@@ -695,27 +696,6 @@ func (s *GrypeScanner) parseGrypeOutput(data []byte) ([]models.Vulnerability, er
 	}
 
 	return vulns, nil
-}
-
-// mapGrypeSeverity maps grype severity to our format.
-func mapGrypeSeverity(severity string, cvssScore float64) string {
-	sev := strings.ToUpper(severity)
-	switch sev {
-	case "CRITICAL":
-		return "CRITICAL"
-	case "HIGH":
-		return "HIGH"
-	case "MEDIUM":
-		return "MEDIUM"
-	case "LOW":
-		return "LOW"
-	default:
-		if cvssScore > 0 {
-			return cvssScoreToSeverity(cvssScore)
-		}
-
-		return "UNKNOWN"
-	}
 }
 
 // mapEcosystem maps internal ecosystem names to OSV ecosystem names.

@@ -24,6 +24,26 @@ type Store struct {
 // NewStore returns a Store over db.
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
+// execOwned runs a statement on the row id ($1) of repository repoID ($2) and
+// gives ErrNotFound when id is not a uuid or no row matched. what names the
+// operation in the error.
+func (s *Store) execOwned(ctx context.Context, what, query, repoID, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return ErrNotFound
+	}
+
+	res, err := s.db.ExecContext(ctx, query, id, repoID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // formatTables are the unit tables of each federated format. Enabling
 // federation locks them against writers for the instant between registering
 // the repository and backfilling its rows, so no concurrent change slips

@@ -7,11 +7,10 @@ package recovery
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"fmt"
 	"sync"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/pglock"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -56,7 +55,7 @@ func NewWorker(j *Journal, log *logger.Logger, interval time.Duration) *Worker {
 		stopCh: make(chan struct{}), doneCh: make(chan struct{}),
 		runCtx: runCtx, cancel: cancel,
 	}
-	w.lock = func(ctx context.Context) (func(), bool, error) { return tryAdvisoryLock(ctx, w.db, journalLockKey) }
+	w.lock = func(ctx context.Context) (func(), bool, error) { return pglock.Try(ctx, w.db, journalLockKey) }
 
 	return w
 }
@@ -163,41 +162,4 @@ func (w *Worker) runPass() {
 	}
 
 	w.RunPass(w.runCtx)
-}
-
-// tryAdvisoryLock takes a session advisory lock on a pinned connection. It
-// returns acquired=false (and a nil error) when another session holds it; the
-// release func is always non-nil.
-func tryAdvisoryLock(ctx context.Context, db *sql.DB, key string) (func(), bool, error) {
-	noop := func() {}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return noop, false, fmt.Errorf("pin connection for advisory lock: %w", err)
-	}
-
-	var locked bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", key).Scan(&locked); err != nil {
-		_ = conn.Close()
-
-		return noop, false, fmt.Errorf("advisory lock query: %w", err)
-	}
-
-	if !locked {
-		_ = conn.Close()
-
-		return noop, false, nil
-	}
-
-	return func() {
-		uctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if _, err := conn.ExecContext(uctx, "SELECT pg_advisory_unlock(hashtext($1))", key); err != nil {
-			// Unlock failed: drop the physical connection so the session lock dies with it.
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-
-		_ = conn.Close()
-	}, true, nil
 }

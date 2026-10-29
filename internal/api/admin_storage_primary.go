@@ -179,7 +179,7 @@ func (p *primaryStore) response(ctx context.Context, usage *responses.StorageBac
 }
 
 func (h *AdminStorageHandler) handleGetPrimary(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -202,7 +202,7 @@ func (h *AdminStorageHandler) handleGetPrimary(w http.ResponseWriter, r *http.Re
 // handleTestPrimary probes the primary store now, through the process's own
 // store (the one that serves every request), and refreshes the cached status.
 func (h *AdminStorageHandler) handleTestPrimary(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *AdminStorageHandler) handleTestPrimary(w http.ResponseWriter, r *http.R
 // pointing the request at it. Without such a record it answers the 405 (or
 // the error) itself and returns false.
 func (h *AdminStorageHandler) legacyPrimaryRecord(w http.ResponseWriter, r *http.Request) bool {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return false
 	}
 
@@ -266,7 +266,7 @@ func (h *AdminStorageHandler) handlePrimaryDelete(w http.ResponseWriter, r *http
 
 // handlePrimaryReadOnly answers the writes the primary store does not accept.
 func (h *AdminStorageHandler) handlePrimaryReadOnly(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 
