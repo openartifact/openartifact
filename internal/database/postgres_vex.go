@@ -13,6 +13,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// VEXStore owns VEX statements.
+type VEXStore struct{ *core }
+
 // ErrVEXStatementNotFound is returned when a VEX statement does not exist in the repository.
 var ErrVEXStatementNotFound = errors.New("VEX statement not found")
 
@@ -34,7 +37,7 @@ func vexFromRow(r dbsqlc.VexStatement) *models.VEXStatement {
 
 // UpsertVEXStatement records (or replaces) the decision for
 // (RepositoryID, ArtifactID, VulnID) and fills the stored row back into s.
-func (p *PostgresDB) UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error {
+func (p *VEXStore) UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error {
 	row, err := p.q.UpsertVEXStatement(ctx, vexStatementParams(s))
 
 	return storeRow(s, row, err, "upsert VEX statement", vexFromRow)
@@ -55,14 +58,14 @@ func vexStatementParams(s *models.VEXStatement) dbsqlc.UpsertVEXStatementParams 
 
 // ListVEXStatements lists the decisions of a repository, optionally only those
 // of one artifact (artifactID != "").
-func (p *PostgresDB) ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error) {
+func (p *VEXStore) ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error) {
 	rows, err := p.q.ListVEXStatements(ctx, dbsqlc.ListVEXStatementsParams{RepositoryID: repoID, ArtifactID: artifactID})
 
 	return mapRows(rows, err, "list VEX statements", vexFromRow)
 }
 
 // DeleteVEXStatement deletes a decision scoped to repoID; ErrVEXStatementNotFound when absent.
-func (p *PostgresDB) DeleteVEXStatement(ctx context.Context, repoID, id string) error {
+func (p *VEXStore) DeleteVEXStatement(ctx context.Context, repoID, id string) error {
 	n, err := p.q.DeleteVEXStatement(ctx, dbsqlc.DeleteVEXStatementParams{RepositoryID: repoID, ID: id})
 	if err != nil {
 		return fmt.Errorf("failed to delete VEX statement: %w", err)

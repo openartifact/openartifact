@@ -27,6 +27,7 @@ type PostgresDB struct {
 	*SecretScanStore
 	*LicenseStore
 	*SBOMStore
+	*VEXStore
 	// STORES-STRUCT
 }
 
@@ -51,6 +52,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		SecretScanStore:      &SecretScanStore{core: c},
 		LicenseStore:         &LicenseStore{core: c},
 		SBOMStore:            &SBOMStore{core: c},
+		VEXStore:             &VEXStore{core: c},
 		// STORES-INIT
 	}
 }
