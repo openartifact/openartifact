@@ -11,7 +11,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // The group pipeline.
@@ -126,17 +125,6 @@ func (c *collection) partial() bool { return len(c.failed) > 0 }
 
 // fail records that m's document could not be used.
 func (c *collection) fail(m *models.Repository) { c.failed = append(c.failed, m) }
-
-// hostedFailed reports that a hosted member is missing from the merge.
-func (c *collection) hostedFailed() bool {
-	for _, m := range c.failed {
-		if m.RepoType != repotype.Proxy {
-			return true
-		}
-	}
-
-	return false
-}
 
 // collect asks members in order for ask's document.
 func (h *Handler) collect(r *http.Request, sess *mergeSession, members []*models.Repository, ask memberAsk, be Backend) collection {
