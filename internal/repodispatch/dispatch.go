@@ -130,11 +130,11 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 				return
 			}
 
-			// A hosted apk repository serves a mirror tree of free-form paths
+			// A hosted repository of a format mounted on the dispatcher (apk) serves a mirror tree of free-form paths
 			// (<branch>/<repo>/<arch>/<file>) that no route of the shared
 			// /repos/{name} router can express without shadowing the other
 			// formats, so it is served here by the format's own router.
-			if repo != nil && repo.Format == "apk" {
+			if repo != nil && repotype.MountOf(repo.Format) == repotype.MountDispatcher {
 				_, tail := middleware.RepoAndPath(r.URL.Path)
 				d.serveMember(w, r, repo, strings.TrimPrefix(tail, "/"))
 
@@ -148,7 +148,7 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 
 		// Docker proxies and groups speak the registry protocol under /v2/
 		// (OCIMiddleware); they have no /repos/{name}/... files.
-		if repo.Format == "docker" {
+		if repotype.MountOf(repo.Format) == repotype.MountOCI {
 			http.NotFound(w, r)
 			return
 		}
@@ -187,20 +187,6 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// restUploadEndpoint is the REST upload endpoint (relative to
-// /api/v1/repositories/{name}/) of the hosted formats that are not uploaded
-// through a route under /repos/{name}; "" for every other format.
-func restUploadEndpoint(format string) string {
-	switch format {
-	case "deb":
-		return "debs"
-	case "rpm":
-		return "packages"
-	default:
-		return ""
-	}
-}
-
 // wrongUploadHint answers a POST or PUT to /repos/{name}/upload of a hosted
 // deb or rpm repository with the real endpoint. No route exists there, so the
 // shared catch-alls of other formats (conda upload, npm publish) would
@@ -211,7 +197,7 @@ func wrongUploadHint(repo *models.Repository, r *http.Request) string {
 		return ""
 	}
 
-	endpoint := restUploadEndpoint(repo.Format)
+	endpoint := repotype.RestUploadEndpoint(repo.Format)
 	if endpoint == "" {
 		return ""
 	}
@@ -247,7 +233,7 @@ func (d *Dispatcher) OCIMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if repo == nil || repo.Format != "docker" {
+		if repo == nil || repotype.MountOf(repo.Format) != repotype.MountOCI {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -275,7 +261,7 @@ func (d *Dispatcher) serveDockerMember(w http.ResponseWriter, r *http.Request, m
 		return
 	}
 
-	h, ok := d.hosted["docker"]
+	h, ok := d.hosted[member.Format]
 	if !ok {
 		ocipath.WriteError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
 		return
@@ -312,7 +298,7 @@ func (d *Dispatcher) authorize(r *http.Request, member *models.Repository, relPa
 
 // serveMember serves relPath from one group member.
 func (d *Dispatcher) serveMember(w http.ResponseWriter, r *http.Request, member *models.Repository, relPath string) {
-	if member.Format == "docker" {
+	if repotype.MountOf(member.Format) == repotype.MountOCI {
 		d.serveDockerMember(w, r, member, relPath)
 		return
 	}

@@ -6,9 +6,11 @@ package api
 
 import (
 	"context"
+	"errors"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 )
 
 // TrashRegenerator schedules the metadata refresh a restored item needs: a
@@ -83,65 +85,39 @@ func (w *workerRegenerator) NotifyNPMStale(packageID string) {
 }
 
 // regenerateRestored refreshes the generated metadata of the repository an
-// item was restored into, by format: rpm marks the repository stale and
-// notifies the worker, deb, apk and pacman only notify it, npm marks the packument stale and
-// notifies, maven notifies per artifact, and every other format computes its
-// indexes live from the tables. Failures are logged: the restore itself
-// already succeeded.
+// item was restored into, through the Restored hook of its format. Formats
+// without one compute their indexes live from the tables; restoring a whole
+// repository changes no index. Failures are logged: the restore itself already
+// succeeded.
 func (h *TrashHandler) regenerateRestored(ctx context.Context, item *models.TrashItem) {
-	if h.regen == nil {
+	if h.workers == nil || item.Kind == models.TrashKindRepository {
 		return
 	}
 
-	switch item.Kind { //nolint:exhaustive // only these kinds have generated metadata
-	case models.TrashKindDeb:
-		// No stale flag exists for deb: the worker refresh is the whole job.
-		h.regen.NotifyDebStale(item.RepositoryID)
-	case models.TrashKindPacman:
-		h.regen.NotifyPacmanStale(item.RepositoryID)
-	case models.TrashKindApk:
-		h.regen.NotifyApkStale(item.RepositoryID)
-	case models.TrashKindRPM:
-		h.markRepoStale(ctx, item)
-		h.regen.NotifyRPMStale(item.RepositoryID)
-	case models.TrashKindMaven:
-		groupID, artifactID, ok := h.regenKeys(ctx, item)
-		if ok {
-			h.regen.NotifyMavenStale(item.RepositoryID, groupID, artifactID)
-		}
-	case models.TrashKindNPM:
-		packageID, _, ok := h.regenKeys(ctx, item)
-		if ok {
-			// Flip the packument's stale marker first so its ETag changes at once.
-			h.markPackumentStale(ctx, item, packageID)
-			h.regen.NotifyNPMStale(packageID)
-		}
+	hooks, ok := lifecycle.Lookup(item.Format)
+	if !ok || hooks.Restored == nil {
+		return
 	}
+
+	hooks.Restored(ctx, &lifecycle.Env{
+		Log:                h.log,
+		Workers:            h.workers,
+		MarkRepoStale:      h.db.MarkRepoStale,
+		MarkPackumentStale: h.db.MarkPackumentStale,
+	}, lifecycle.Restoration{
+		RepositoryID:   item.RepositoryID,
+		RepositoryName: item.RepositoryName,
+		Kind:           item.Kind,
+		RegenKeys: func(ctx context.Context) (string, string, error) {
+			store, _ := h.db.(database.TrashOps)
+			if store == nil {
+				return "", "", errNoRegenKeys
+			}
+
+			return store.RegenKeys(ctx, item.Kind, item.ID) //nolint:wrapcheck // the caller logs it with context
+		},
+	})
 }
 
-func (h *TrashHandler) markRepoStale(ctx context.Context, item *models.TrashItem) {
-	if err := h.db.MarkRepoStale(ctx, item.RepositoryID); err != nil {
-		h.log.Warnw("trash restore: mark repository stale failed", "repository", item.RepositoryName, "kind", item.Kind, "error", err)
-	}
-}
-
-func (h *TrashHandler) markPackumentStale(ctx context.Context, item *models.TrashItem, packageID string) {
-	if err := h.db.MarkPackumentStale(ctx, packageID); err != nil {
-		h.log.Warnw("trash restore: mark packument stale failed", "repository", item.RepositoryName, "package_id", packageID, "error", err)
-	}
-}
-
-func (h *TrashHandler) regenKeys(ctx context.Context, item *models.TrashItem) (string, string, bool) {
-	store, _ := h.db.(database.TrashOps)
-	if store == nil {
-		return "", "", false
-	}
-
-	a, b, err := store.RegenKeys(ctx, item.Kind, item.ID)
-	if err != nil {
-		h.log.Warnw("trash restore: resolve regeneration keys failed", "repository", item.RepositoryName, "kind", item.Kind, "error", err)
-		return "", "", false
-	}
-
-	return a, b, true
-}
+// errNoRegenKeys: the store cannot resolve the keys a regeneration needs.
+var errNoRegenKeys = errors.New("store cannot resolve regeneration keys")

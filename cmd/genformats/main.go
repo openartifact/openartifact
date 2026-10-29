@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
@@ -36,7 +37,7 @@ func main() {
 	root := flag.String("root", ".", "repository root")
 	flag.Parse()
 
-	registerClientSetup()
+	formats.Register()
 
 	if err := run(*root, *check); err != nil {
 		fmt.Fprintln(os.Stderr, "genformats:", err)
@@ -118,7 +119,7 @@ func render() []byte {
 			list *[]string
 		}{
 			{s.Proxy, &proxy}, {s.Group, &group}, {s.Federation, &federation},
-			{s.Signing == repotype.SigningGPG, &gpg}, {s.Isolated, &isolated}, {s.OSVEcosystem != "", &osv},
+			{s.Signing == repotype.SigningGPG, &gpg}, {s.Mount == repotype.MountIsolated, &isolated}, {s.OSVEcosystem != "", &osv},
 		} {
 			if sel.on {
 				*sel.list = append(*sel.list, s.Name)

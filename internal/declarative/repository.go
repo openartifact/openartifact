@@ -193,7 +193,7 @@ func repoValidateType(o *Object, repoType, format string) []error {
 		}
 	}
 
-	if _, ok := o.Spec["sign_packages"]; ok && (repoType != repoTypeHosted || format != "rpm") {
+	if _, ok := o.Spec["sign_packages"]; ok && (repoType != repoTypeHosted || !repotype.PackageSigning(format)) {
 		add("sign_packages is only valid for hosted rpm repositories")
 	}
 
@@ -382,7 +382,7 @@ func (r *repoAPI) spec() map[string]any {
 	case repoTypeGroup:
 		s["merge_proxy_versions"] = r.MergeProxyVersions
 	case repoTypeHosted:
-		if r.Format == "rpm" {
+		if repotype.PackageSigning(r.Format) {
 			s["sign_packages"] = r.SignPackages
 		}
 	}

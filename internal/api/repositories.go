@@ -666,7 +666,7 @@ func (h *RepositoriesHandler) createRepository(
 		return
 	}
 
-	if body.SignPackages && (repoType != "hosted" || body.Format != "rpm") {
+	if body.SignPackages && (repoType != "hosted" || !repotype.PackageSigning(body.Format)) {
 		writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
 		return
 	}
@@ -908,7 +908,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.SignPackages != nil {
-		if *body.SignPackages && (repo.RepoType != "hosted" || repo.Format != "rpm") {
+		if *body.SignPackages && (repo.RepoType != "hosted" || !repotype.PackageSigning(repo.Format)) {
 			writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
 			return
 		}

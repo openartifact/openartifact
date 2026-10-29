@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -13,75 +14,15 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/dtrack"
-	formatansible "github.com/openartifact/openartifact/internal/format/ansible"
-	formatapk "github.com/openartifact/openartifact/internal/format/apk"
-	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
-	formatcomposer "github.com/openartifact/openartifact/internal/format/composer"
-	formatconan "github.com/openartifact/openartifact/internal/format/conan"
-	formatconda "github.com/openartifact/openartifact/internal/format/conda"
-	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
-	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
-	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
-	formathelm "github.com/openartifact/openartifact/internal/format/helm"
-	formativy "github.com/openartifact/openartifact/internal/format/ivy"
-	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
-	formatnix "github.com/openartifact/openartifact/internal/format/nix"
-	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
-	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
-	formatpacman "github.com/openartifact/openartifact/internal/format/pacman"
-	formatpypi "github.com/openartifact/openartifact/internal/format/pypi"
-	formatraw "github.com/openartifact/openartifact/internal/format/raw"
-	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
-	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
-	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
-	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
+	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/license"
-	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/repodispatch"
-	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
 	"github.com/openartifact/openartifact/internal/storage"
-	"github.com/openartifact/openartifact/internal/webhook"
 )
-
-// formatHandlers are the native protocol handlers of every repository format.
-type formatHandlers struct {
-	rpm       *formatrpm.HTTPHandler
-	apk       *formatapk.HTTPHandler
-	deb       *formatdeb.HTTPHandler
-	pacman    *formatpacman.HTTPHandler
-	nix       *formatnix.HTTPHandler
-	ansible   *formatansible.HTTPHandler
-	helm      *formathelm.HTTPHandler
-	pypi      *formatpypi.HTTPHandler
-	nuget     *formatnuget.HTTPHandler
-	npm       *formatnpm.HTTPHandler
-	cargo     *formatcargo.HTTPHandler
-	composer  *formatcomposer.HTTPHandler
-	rubygems  *formatrubygems.HTTPHandler
-	raw       *formatraw.HTTPHandler
-	conda     *formatconda.HTTPHandler
-	conan     *formatconan.HTTPHandler
-	ivy       *formativy.HTTPHandler
-	sbt       *formatsbt.HTTPHandler
-	maven     *formatmaven.HTTPHandler
-	docker    *formatdocker.HTTPHandler
-	gomod     *formatgomod.HTTPHandler
-	terraform *formatterraform.HTTPHandler
-}
-
-// uploadHandlers are the API upload handlers that announce uploads through the
-// publisher.
-type uploadHandlers struct {
-	rpm       *api.RPMUploadHandler
-	deb       *api.DebUploadHandler
-	presigned *api.PresignedUploadHandler
-	npm       *api.NPMUploadHandler
-	maven     *api.MavenUploadHandler
-}
 
 // publicHandlers are the handlers that register on both the bare router
 // (public part) and the authenticated one.
@@ -152,7 +93,7 @@ func (a *app) newAuthedRouter() {
 }
 
 // registerAdminRoutes registers the account, administration and project
-// routes, search and the package upload APIs.
+// routes and search.
 func (a *app) registerAdminRoutes() {
 	cfg, db, log := a.cfg, a.db, a.log
 	w := &a.web
@@ -191,27 +132,92 @@ func (a *app) registerAdminRoutes() {
 
 	searchHandler := search.NewHandler(db.GetDB(), evaluator, log, search.WithAuthCache(db))
 	authedAPI.Get("/api/v1/search", searchHandler.ServeHTTP)
-
-	a.registerUploadRoutes()
 }
 
-// registerUploadRoutes registers the deb, rpm and presigned upload APIs.
-func (a *app) registerUploadRoutes() {
+// newFormatHandlers builds the native protocol handler of every format.
+func (a *app) newFormatHandlers() error {
+	hosted, err := plugin.BuildHosted(a.formatDeps())
+	if err != nil {
+		return a.fail("failed to build the format handlers", err)
+	}
+
+	// The registry stores the attestations beside the images they describe.
+	referrers, ok := hosted["docker"].(api.ReferrerRegistry)
+	if !ok {
+		return a.fail("failed to build the format handlers", errNoReferrerRegistry)
+	}
+
+	a.web.hosted, a.web.referrers = hosted, referrers
+
+	return nil
+}
+
+// errNoReferrerRegistry: the docker handler cannot store referrers.
+var errNoReferrerRegistry = errors.New("the docker handler is not a referrer registry")
+
+// formatDeps are the services the formats' handlers are built from. A service
+// this process lacks (the route tests build none) is left out, not passed as a
+// typed nil.
+func (a *app) formatDeps() *plugin.Deps {
+	log, db, blobStore, wk := a.log, a.db, a.store.blobs, &a.workers
+
+	deps := &plugin.Deps{
+		Log: log,
+		DB:  db,
+		// The served store is read from with presigned redirects; writers use
+		// the plain one.
+		Served: a.store.served,
+		Blobs:  blobStore,
+		// BaseURL is BASE_URL as an override only: unset, the handlers derive the
+		// origin of the URLs they hand to clients from each request.
+		BaseURL:         a.cfg.ClientBaseURL(),
+		Metrics:         a.reg,
+		HMACKey:         a.web.hmacKey,
+		DockerUploadDir: dockerUploadDir(a.cfg),
+		Workers:         wk.metadata,
+		Proxy:           wk.proxySvc,
+		CountUploads: func(format string, next http.HandlerFunc) http.HandlerFunc {
+			return middleware.CountUploads(a.reg, format, next)
+		},
+		REST: a.restUploadHandlers(),
+	}
+
+	if a.web.evaluator != nil {
+		deps.DockerAuthorizer = a.web.evaluator
+	}
+
+	if wk.apkKeys != nil {
+		deps.APKKeys = wk.apkKeys
+	}
+
+	if wk.nixKeys != nil {
+		deps.NixKeys = wk.nixKeys
+	}
+
+	if wk.gpgKeys != nil {
+		deps.GPG = wk.gpgKeys
+	}
+
+	return deps
+}
+
+// restUploadHandlers builds the REST upload handlers of internal/api, by the
+// format they upload to. Their formats mount them (plugin.Deps.REST): they
+// register on the authenticated API router, or on the repository mount for npm.
+func (a *app) restUploadHandlers() map[string]any {
 	db, log, blobStore, reg := a.db, a.log, a.store.blobs, a.reg
-	u, wk := &a.web.uploads, &a.workers
+	wk := &a.workers
 
-	u.rpm = api.NewRPMUploadHandler(log, db, blobStore, reg)
-	u.rpm.SetDebWorker(wk.deb)
-	u.rpm.SetRPMWorker(wk.rpm)
-	u.rpm.SetPackageDeleter(wk.cleanup)
-	u.rpm.SetKeyResolver(wk.gpgKeys)
-	u.rpm.Register(a.web.authed)
+	rpm := api.NewRPMUploadHandler(log, db, blobStore, reg)
+	rpm.SetDebWorker(wk.deb)
+	rpm.SetRPMWorker(wk.rpm)
+	rpm.SetPackageDeleter(wk.cleanup)
+	rpm.SetKeyResolver(wk.gpgKeys)
 
-	u.deb = api.NewDebUploadHandler(log, db, blobStore, reg)
-	u.deb.SetDebWorker(wk.deb)
-	u.deb.Register(a.web.authed)
+	deb := api.NewDebUploadHandler(log, db, blobStore, reg)
+	deb.SetDebWorker(wk.deb)
 
-	u.presigned = api.NewPresignedUploadHandler(
+	raw := api.NewPresignedUploadHandler(
 		log,
 		db,
 		blobStore,
@@ -220,205 +226,56 @@ func (a *app) registerUploadRoutes() {
 		a.cfg.Storage.PresignMaxPendingUploads,
 		reg,
 	)
-	u.presigned.Register(a.web.authed)
-}
 
-// newFormatHandlers builds the native protocol handler of every format.
-func (a *app) newFormatHandlers() {
-	// baseURL is BASE_URL as an override only: unset, the handlers derive the
-	// origin of the URLs they hand to clients from each request.
-	log, db, served, baseURL := a.log, a.db, a.store.served, a.cfg.ClientBaseURL()
-	f := &a.web.formats
+	npm := api.NewNPMUploadHandler(log, db, blobStore, reg)
+	npm.SetNPMWorker(wk.npm)
 
-	f.rpm = formatrpm.NewHTTPHandler(log, db, served)
-	f.deb = formatdeb.NewHTTPHandler(log, db, served)
-	f.helm = formathelm.NewHTTPHandler(log, db, served, baseURL)
-	f.pypi = formatpypi.NewHTTPHandler(log, db, served, baseURL)
-	f.nuget = formatnuget.NewHTTPHandler(log, db, served, baseURL)
-	f.npm = formatnpm.NewHTTPHandler(log, db, served, baseURL)
-	f.cargo = formatcargo.NewHTTPHandler(log, db, served, baseURL)
-	f.composer = formatcomposer.NewHTTPHandler(log, db, served, baseURL).WithMetrics(a.reg)
-	f.rubygems = formatrubygems.NewHTTPHandler(log, db, served, baseURL)
-	f.raw = formatraw.NewHTTPHandler(log, db, served, baseURL)
-	f.conda = formatconda.NewHTTPHandler(log, db, served, baseURL)
-	f.pacman = formatpacman.NewHTTPHandler(log, db, served, baseURL)
-	f.pacman.SetRegenerator(a.workers.pacman)
-	f.nix = formatnix.NewHTTPHandler(log, db, served, baseURL).WithKeys(a.workers.nixKeys).WithMetrics(a.reg)
-	f.ansible = formatansible.NewHTTPHandler(log, db, served, baseURL)
-	f.conan = formatconan.NewHTTPHandler(log, db, served, baseURL)
-	f.ivy = formativy.NewHTTPHandler(log, db, served, baseURL)
-	f.sbt = formatsbt.NewHTTPHandler(log, db, served, baseURL)
-	f.maven = formatmaven.NewHTTPHandler(log, db, served)
-	f.apk = formatapk.NewHTTPHandler(log, db, served, baseURL).
-		WithKeys(a.workers.apkKeys).WithRegenerator(a.workers.apk).WithMetrics(a.reg)
-	f.apk.RegisterAPIRoutes(a.web.authed)
+	maven := api.NewMavenUploadHandler(log, db, blobStore, reg)
+	maven.SetMavenWorker(wk.maven)
 
-	f.terraform = formatterraform.NewHTTPHandler(log, db, served, baseURL).WithTicketKey(a.web.hmacKey)
-	// Not WithSigner(a.workers.gpgKeys) unconditionally: a nil *Service in the
-	// interface is not a nil resolver. Without workers (the route tests) the
-	// provider download endpoint answers 503, as for an unsigned repository.
-	if a.workers.gpgKeys != nil {
-		f.terraform.WithSigner(a.workers.gpgKeys)
-	}
-	// Same for the proxy service: the tickets of proxy repositories are minted
-	// by it and redeemed through the hosted handler's credential-free route.
-	if a.workers.proxySvc != nil {
-		a.workers.proxySvc.WithTerraformTicketKey(a.web.hmacKey)
-		f.terraform.WithProxy(a.workers.proxySvc)
-	}
-
-	// All repo-scoped format handlers, including the npm publish/unpublish
-	// catch-all, share the /repos/{name} subrouter. A sibling /repos/{x}/*
-	// route outside it is shadowed by the mount and 404s.
-	a.web.uploads.npm = api.NewNPMUploadHandler(log, db, a.store.blobs, a.reg)
-	a.web.uploads.npm.SetNPMWorker(a.workers.npm)
-	f.gomod = formatgomod.NewHTTPHandler(log, db, served, baseURL)
-
-	f.docker = formatdocker.NewHTTPHandler(log, db, served)
-	f.docker.SetUploadDir(dockerUploadDir(a.cfg))
-	f.docker.SetAuthorizer(a.web.evaluator)
+	return map[string]any{"rpm": rpm, "deb": deb, "raw": raw, "npm": npm, "maven": maven}
 }
 
 // hostedRouters returns in-memory routers of the hosted handlers per format.
-// Proxy and group repositories are served by the dispatcher in front of the
-// per-format routes; hosted repositories fall through to them, and groups read
-// their hosted members through these routers.
 func (a *app) hostedRouters() map[string]http.Handler {
-	f := &a.web.formats
-
-	routers := map[string]*chi.Mux{}
-	for _, name := range repotype.Names() {
-		routers[name] = chi.NewRouter()
-	}
-
-	f.maven.RegisterRepoRoutes(routers["maven"])
-	f.ivy.RegisterRepoRoutes(routers["ivy"])
-	f.sbt.RegisterRepoRoutes(routers["sbt"])
-	f.raw.RegisterRepoRoutes(routers["raw"])
-	f.npm.RegisterRepoRoutes(routers["npm"])
-	f.nuget.RegisterRepoRoutes(routers["nuget"])
-	f.cargo.RegisterRepoRoutes(routers["cargo"])
-	f.composer.RegisterRepoRoutes(routers["composer"])
-	f.pypi.RegisterRepoRoutes(routers["pypi"])
-	f.helm.RegisterRepoRoutes(routers["helm"])
-	f.conan.RegisterRepoRoutes(routers["conan"])
-	f.rubygems.RegisterRepoRoutes(routers["rubygems"])
-	// Read-only view of the GOPROXY handler: group members are only ever read.
-	f.gomod.RegisterRepoRoutes(routers["go"])
-	f.docker.RegisterRoutes(routers["docker"])
-	f.deb.RegisterRepoRoutes(routers["deb"])
-	f.rpm.RegisterRepoRoutes(routers["rpm"])
-	f.pacman.RegisterRepoRoutes(routers["pacman"])
-	f.nix.RegisterRepoRoutes(routers["nix"])
-	f.ansible.RegisterRepoRoutes(routers["ansible"])
-	f.conda.RegisterRepoRoutes(routers["conda"])
-	f.apk.RegisterRepoRoutes(routers["apk"])
-	f.terraform.RegisterRepoRoutes(routers["terraform"])
-
-	hosted := make(map[string]http.Handler, len(routers))
-	for name, r := range routers {
-		hosted[name] = r
-	}
-
-	return hosted
+	return plugin.ReadRouters(a.web.hosted)
 }
 
 // registerFormatRoutes mounts the repository protocol handlers behind the
 // proxy/group dispatcher.
-func (a *app) registerFormatRoutes() {
-	a.newFormatHandlers()
+func (a *app) registerFormatRoutes() error {
+	if err := a.newFormatHandlers(); err != nil {
+		return err
+	}
 
 	w := &a.workers
 	repoDispatch := repodispatch.New(a.log, a.db, w.proxySvc, a.web.evaluator, a.hostedRouters()).
 		WithBaseURL(a.cfg.ClientBaseURL()).WithGroupMetadata(a.store.blobs, w.groupMeta).WithApkKeys(w.apkKeys).WithNixKeys(w.nixKeys)
 
-	a.mountRepoRoutes(repoDispatch)
-	a.mountIsolatedRepoRoutes(repoDispatch)
+	if err := a.mountFormats(repoDispatch); err != nil {
+		return a.fail("failed to mount the format handlers", err)
+	}
+
+	return nil
 }
 
-// mountRepoRoutes registers every repo-scoped format handler on the single
-// /repos/{name} subrouter and dispatches the shared PUT /* catch-all.
-func (a *app) mountRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
-	f, npmUpload := &a.web.formats, a.web.uploads.npm
-	reg := a.reg
+// mountFormats mounts every format where its Spec places it, then the REST
+// upload endpoints. The isolated mounts go before the API routes: a route on a
+// path an isolated mount also serves would be overridden by it.
+func (a *app) mountFormats(repoDispatch *repodispatch.Dispatcher) error {
+	authed, hosted := a.web.authed, a.web.hosted
 
-	a.web.authed.Route("/repos/{name}", func(r chi.Router) {
-		r.Use(repoDispatch.Middleware)
-		r.Use(f.npm.ShadowGuard)
-		// The module "latest" document is GET /{module}/{system}, which chi
-		// cannot hold next to conda's /{platform}/{filename}; the guard serves
-		// it for terraform repositories only.
-		r.Use(f.terraform.LatestGuard)
-		// The binary cache paths (/<hash>.narinfo, /nar/<file>) likewise clash with
-		// the wildcard routes below; the guard serves them for nix repositories only.
-		r.Use(f.nix.Guard)
-		// The composer paths (/p2/..., /packages/upload/..., /dists/...) clash with the
-		// parameter routes of other formats too; the guard serves them for composer
-		// repositories only.
-		r.Use(f.composer.Guard)
-		f.rpm.RegisterRepoRoutes(r)
-		f.deb.RegisterRepoRoutes(r)
-		f.helm.RegisterRepoRoutes(r)
-		f.pypi.RegisterRepoRoutes(r)
-		f.nuget.RegisterRepoRoutes(r)
-		f.npm.RegisterRepoRoutes(r)
-		f.cargo.RegisterRepoRoutes(r)
-		f.rubygems.RegisterRepoRoutes(r)
-		f.conda.RegisterRepoRoutes(r)
-		f.pacman.RegisterRepoRoutes(r)
-		f.ansible.RegisterRepoRoutes(r)
-		f.conan.RegisterRepoRoutes(r)
-		f.gomod.RegisterRepoRoutes(r)
-		f.terraform.RegisterRepoRoutes(r)
-		npmUpload.RegisterRepoRoutes(r)
-		// npm publish and GOPROXY upload both need PUT "/*"; dispatch by tail.
-		// npmUpload counts its own uploads; the GOPROXY branch is counted here.
-		goUpload := middleware.CountUploads(reg, metrics.FormatGo, f.gomod.HandlePut)
-		r.Put("/*", func(w http.ResponseWriter, req *http.Request) {
-			if formatgomod.IsUploadPath(chi.URLParam(req, "*")) {
-				goUpload(w, req)
-				return
-			}
+	if err := plugin.MountShared(authed, hosted, repoDispatch.Middleware); err != nil {
+		return err //nolint:wrapcheck // the caller reports it
+	}
 
-			npmUpload.HandlePublish(w, req)
-		})
-	})
-	a.log.Infow("Repository HTTP handlers registered", "prefix", "/repos/{name}")
-}
+	plugin.MountIsolated(authed, hosted, repoDispatch.Middleware)
+	plugin.MountOCI(authed, hosted, repoDispatch.OCIMiddleware)
+	plugin.RegisterAPIRoutes(authed, hosted)
 
-// mountIsolatedRepoRoutes registers the wildcard handlers that would shadow
-// other routes on /repos/{name}, each on a prefix of its own, and the OCI
-// registry.
-func (a *app) mountIsolatedRepoRoutes(repoDispatch *repodispatch.Dispatcher) {
-	f, authedAPI := &a.web.formats, a.web.authed
+	a.log.Infow("Repository HTTP handlers registered")
 
-	// Wildcard handlers isolated to avoid shadowing specific routes.
-	authedAPI.Route("/repos/raw/{name}", func(r chi.Router) {
-		r.Use(repoDispatch.Middleware)
-		f.raw.RegisterRepoRoutes(r)
-	})
-	a.log.Infow("Raw handler registered", "prefix", "/repos/raw/{name}")
-
-	// Maven, SBT, Ivy use wildcard paths that shadow other handlers — isolate them.
-	authedAPI.Route("/repos/maven/{name}", func(r chi.Router) {
-		r.Use(repoDispatch.Middleware)
-		f.maven.RegisterRepoRoutes(r)
-	})
-	authedAPI.Route("/repos/sbt/{name}", func(r chi.Router) {
-		r.Use(repoDispatch.Middleware)
-		f.sbt.RegisterRepoRoutes(r)
-	})
-	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) {
-		r.Use(repoDispatch.Middleware)
-		f.ivy.RegisterRepoRoutes(r)
-	})
-	a.log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")
-	// The registry (/v2/...) sits behind the dispatcher too: docker proxy and
-	// group repositories are served there, hosted ones by dockerHTTP.
-	authedAPI.Group(func(r chi.Router) {
-		r.Use(repoDispatch.OCIMiddleware)
-		f.docker.RegisterRoutes(r)
-	})
+	return nil
 }
 
 // registerRepositoryRoutes registers repository management: the repositories
@@ -450,7 +307,7 @@ func (a *app) registerRepositoryRoutes() {
 	api.NewTrashHandler(db, log, evaluator).
 		WithBlobStore(a.store.blobs).
 		WithPublisher(w.webhook).
-		WithRegenerator(regenerator()).
+		WithWorkers(w.metadata).
 		WithGroupMetadata(w.groupMeta).
 		WithTasks(a.tasks).
 		RegisterAuthed(authedAPI)
@@ -468,7 +325,7 @@ func (a *app) registerRepositoryRoutes() {
 func (a *app) registerSupplyChainRoutes() {
 	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 
-	a.buildSupplyChain(a.web.formats.docker)
+	a.buildSupplyChain(a.web.referrers)
 
 	sbomGen, attestSvc := a.feat.sbomGen, a.workers.scan.attest
 	attestHandler := api.NewAttestationHandler(attestSvc, log, evaluator)
@@ -505,7 +362,7 @@ func (a *app) registerWebhooksAndBackup() {
 }
 
 // registerScanningRoutes registers license, secret and vulnerability scanning,
-// quotas, properties, AI and delta routes, and the maven upload API.
+// quotas, properties, AI and delta routes.
 func (a *app) registerScanningRoutes() {
 	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 	blobStore := a.store.blobs
@@ -530,10 +387,6 @@ func (a *app) registerScanningRoutes() {
 	a.registerAIRoutes(authedAPI)
 	deltaHandler := api.NewDeltaHandler(log, db, blobStore)
 	deltaHandler.Register(authedAPI)
-
-	a.web.uploads.maven = api.NewMavenUploadHandler(log, db, blobStore, a.reg)
-	a.web.uploads.maven.SetMavenWorker(a.workers.maven)
-	a.web.uploads.maven.Register(authedAPI)
 }
 
 // registerVulnRoutes builds the vulnerability scanning services
@@ -560,18 +413,12 @@ func (a *app) onScanned(repoID, artifactID string) {
 // mount of the authenticated router.
 func (a *app) finishRoutes() {
 	w := &a.web
-	router, authedAPI, f, u := w.router, w.authed, &w.formats, &w.uploads
+	router, authedAPI := w.router, w.authed
 
 	// Every handler that stores or removes artifacts announces artifact.uploaded /
 	// artifact.deleted through the webhook dispatcher. The download-only rpm and
 	// deb HTTP handlers do not publish events.
-	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
-		u.rpm, u.deb, u.presigned, u.npm, u.maven,
-		f.helm, f.pypi, f.nuget, f.npm, f.cargo, f.composer, f.rubygems, f.raw,
-		f.conda, f.pacman, f.nix, f.ansible, f.conan, f.ivy, f.sbt, f.maven, f.docker, f.gomod, f.terraform,
-	} {
-		h.SetPublisher(a.feat.dtPublisher)
-	}
+	plugin.SetPublisher(w.hosted, a.feat.dtPublisher)
 
 	// The MCP server, when enabled and built in (feature_mcp.go).
 	a.mountMCP(authedAPI)
@@ -592,7 +439,7 @@ func (a *app) finishRoutes() {
 	// Terraform service discovery and the signed download URLs are fetched
 	// without credentials (the URL signature is the credential), so they sit
 	// outside the authenticated router.
-	f.terraform.RegisterPublicRoutes(router)
+	plugin.RegisterPublicRoutes(router, w.hosted)
 
 	// Peer endpoints authenticate with their own per-repository bearer token,
 	// so they sit outside the RBAC/CSRF chain of authedAPI.

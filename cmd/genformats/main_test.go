@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/formats"
 )
 
-// TestMain registers the client setup builders, as main does.
+// TestMain registers the formats, as main does.
 func TestMain(m *testing.M) {
-	registerClientSetup()
+	formats.Register()
 
 	os.Exit(m.Run())
 }

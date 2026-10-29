@@ -16,25 +16,6 @@ import (
 // repository root.
 const clientSetupFile = "web/src/lib/clientsetup.generated.ts"
 
-// registerClientSetup registers the snippet builder of every format. genformats
-// is a standalone tool that does not run the format plugins, so it names the
-// builders itself; a format missing here would be generated as the bare-URL
-// fallback.
-func registerClientSetup() {
-	for format, b := range map[string]clientsetup.Builder{
-		"npm": clientsetup.NPMBuilder, "docker": clientsetup.DockerBuilder, "pypi": clientsetup.PyPIBuilder,
-		"maven": clientsetup.MavenBuilder, "helm": clientsetup.HelmBuilder, "deb": clientsetup.DebBuilder,
-		"rpm": clientsetup.RPMBuilder, "pacman": clientsetup.PacmanBuilder, "nix": clientsetup.NixBuilder,
-		"cargo": clientsetup.CargoBuilder, "composer": clientsetup.ComposerBuilder, "go": clientsetup.GoBuilder,
-		"nuget": clientsetup.NuGetBuilder, "rubygems": clientsetup.RubyGemsBuilder, "raw": clientsetup.RawBuilder,
-		"conda": clientsetup.CondaBuilder, "conan": clientsetup.ConanBuilder, "apk": clientsetup.APKBuilder,
-		"terraform": clientsetup.TerraformBuilder, "ansible": clientsetup.AnsibleBuilder,
-		"sbt": clientsetup.SBTBuilder, "ivy": clientsetup.IvyBuilder,
-	} {
-		clientsetup.Register(format, b)
-	}
-}
-
 // tsString renders s as a single-quoted TypeScript string literal.
 func tsString(s string) string {
 	return "'" + strings.NewReplacer(

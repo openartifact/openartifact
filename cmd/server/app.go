@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/dtrack"
+	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -350,7 +351,9 @@ type webStack struct {
 	// tickets are signed with.
 	hmacKey []byte
 
-	public  publicHandlers
-	formats formatHandlers
-	uploads uploadHandlers
+	public publicHandlers
+	// hosted is the hosted handler of every format, by format name.
+	hosted map[string]plugin.Hosted
+	// referrers is the docker registry as the attestation attacher uses it.
+	referrers api.ReferrerRegistry
 }

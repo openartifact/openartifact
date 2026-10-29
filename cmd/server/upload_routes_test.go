@@ -122,7 +122,9 @@ func routeTestApp(t *testing.T) *app {
 
 	a.store.blobs = storage.NewMetricsBlobStore(fsStore, a.reg)
 
-	a.newFormatHandlers()
+	if err := a.newFormatHandlers(); err != nil {
+		t.Fatal(err)
+	}
 
 	return a
 }
@@ -134,11 +136,10 @@ func uploadRouteTable(t *testing.T) chi.Router {
 	t.Helper()
 
 	a := routeTestApp(t)
-	a.registerUploadRoutes()
 
-	dispatcher := repodispatch.New(a.log, a.db, nil, nil, a.hostedRouters())
-	a.mountRepoRoutes(dispatcher)
-	a.mountIsolatedRepoRoutes(dispatcher)
+	if err := a.mountFormats(repodispatch.New(a.log, a.db, nil, nil, a.hostedRouters())); err != nil {
+		t.Fatal(err)
+	}
 
 	return a.web.authed
 }

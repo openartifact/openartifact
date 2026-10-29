@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -63,17 +64,13 @@ type Store interface {
 	MarkRepoStale(ctx context.Context, repositoryID string) error
 }
 
-// Refresher schedules the regeneration (and so the re-signing) of a repository's metadata.
-type Refresher interface{ NotifyStale(repoID string) }
-
 // Service implements gpg.Resolver on top of the database-managed keys.
 type Service struct {
 	db     Store
 	log    *logger.Logger
 	config gpg.Signer
-	rpm    Refresher
-	deb    Refresher
-	pacman Refresher
+	// workers are the metadata workers the format lifecycles notify.
+	workers *lifecycle.Workers
 
 	// autoAlgorithm is the type of the key AutoGenerate creates.
 	autoAlgorithm gpg.Algorithm
@@ -84,10 +81,10 @@ func New(db Store, log *logger.Logger, config gpg.Signer) *Service {
 	return &Service{db: db, log: log, config: config, autoAlgorithm: gpg.AlgorithmRSA4096}
 }
 
-// SetRefreshers wires the rpm, deb and pacman metadata workers; any may be nil.
-func (s *Service) SetRefreshers(rpm, deb, pacman Refresher) {
-	s.rpm, s.deb, s.pacman = rpm, deb, pacman
-}
+// SetWorkers wires the metadata workers that regenerate, and so re-sign, a
+// repository's metadata after a key change. A format without a worker in ws is
+// not refreshed.
+func (s *Service) SetWorkers(ws *lifecycle.Workers) { s.workers = ws }
 
 // ConfigSigner returns the file/env-configured signer, or nil.
 func (s *Service) ConfigSigner() gpg.Signer { return s.config }
@@ -594,10 +591,11 @@ func (s *Service) refreshFollowers(ctx context.Context) {
 }
 
 // refresh re-renders the metadata of the repositories so their signatures
-// follow the new key assignment. Formats that store no signature need nothing:
-// a terraform repository signs SHA256SUMS and publishes its signing key per
-// request, so it follows the assignment by itself.
+// follow the new key assignment, through the stale hook of each format. Formats
+// that store no signature have none: a terraform repository signs SHA256SUMS and
+// publishes its signing key per request, so it follows the assignment by itself.
 func (s *Service) refresh(ctx context.Context, repos []models.GPGSigningRepo) {
+	env := &lifecycle.Env{Log: s.log, Workers: s.workers, MarkRepoStale: s.db.MarkRepoStale}
 	seen := make(map[string]struct{}, len(repos))
 
 	for _, r := range repos {
@@ -607,30 +605,14 @@ func (s *Service) refresh(ctx context.Context, repos []models.GPGSigningRepo) {
 
 		seen[r.ID] = struct{}{}
 
-		switch r.Format {
-		case "rpm":
-			s.refreshRPM(ctx, r.ID)
-		case "deb":
-			if s.deb != nil {
-				s.deb.NotifyStale(r.ID)
-			}
-		case "pacman":
-			if s.pacman != nil {
-				s.pacman.NotifyStale(r.ID)
-			}
+		hooks, ok := lifecycle.Lookup(r.Format)
+		if !ok || hooks.Stale == nil {
+			continue
+		}
+
+		if err := hooks.Stale(ctx, env, r.ID); err != nil {
+			s.log.Warnw("gpg: refreshing repository metadata failed; it is re-signed on its next change",
+				"repository_id", r.ID, "format", r.Format, "error", err)
 		}
 	}
-}
-
-func (s *Service) refreshRPM(ctx context.Context, repoID string) {
-	if s.rpm == nil {
-		return
-	}
-
-	if err := s.db.MarkRepoStale(ctx, repoID); err != nil {
-		s.log.Warnw("gpg: marking rpm repository stale failed; it is re-signed on its next change", "repository_id", repoID, "error", err)
-		return
-	}
-
-	s.rpm.NotifyStale(repoID)
 }

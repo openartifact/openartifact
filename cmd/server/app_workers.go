@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/nixkeys"
@@ -48,6 +49,9 @@ type workerSet struct {
 	groupMeta *worker.GroupMetadataWorker
 	maven     *worker.MavenMetadataWorker
 	npm       *worker.NPMMetadataWorker
+	// metadata is the metadata workers as the format lifecycles and handlers
+	// reach them (formats' plugin.Deps.Workers).
+	metadata *lifecycle.Workers
 
 	proxyCache          *worker.ProxyCacheWorker
 	authPurge           *worker.AuthPurgeWorker
@@ -152,11 +156,11 @@ func (a *app) startMetadataWorkers() {
 	w.apkKeys.SetRefresher(groupRefresher{db: db, hosted: w.apk, group: w.groupMeta})
 
 	// A key change re-signs a group through the group worker, not the hosted ones.
-	w.gpgKeys.SetRefreshers(
-		groupRefresher{db: db, hosted: w.rpm, group: w.groupMeta},
-		groupRefresher{db: db, hosted: w.deb, group: w.groupMeta},
-		groupRefresher{db: db, hosted: w.pacman, group: w.groupMeta},
-	)
+	keyWorkers := lifecycle.NewWorkers()
+	keyWorkers.Bind("rpm", groupRefresher{db: db, hosted: w.rpm, group: w.groupMeta})
+	keyWorkers.Bind("deb", groupRefresher{db: db, hosted: w.deb, group: w.groupMeta})
+	keyWorkers.Bind("pacman", groupRefresher{db: db, hosted: w.pacman, group: w.groupMeta})
+	w.gpgKeys.SetWorkers(keyWorkers)
 
 	a.background(w.groupMeta.RegenerateStale)
 
@@ -181,9 +185,6 @@ func (a *app) startHousekeepingWorkers() {
 
 	// Initialize cleanup worker
 	w.cleanup = worker.NewCleanupWorker(db, blobStore, log)
-	w.cleanup.SetMetadataNotifiers(w.rpm, w.deb)
-	w.cleanup.SetPacmanNotifier(w.pacman)
-	w.cleanup.SetApkNotifier(w.apk)
 
 	w.presignedUpload = worker.NewPresignedUploadWorker(db, blobStore, cfg.Storage.PresignUploadTTL, log)
 	a.start(w.presignedUpload.Start)
@@ -192,9 +193,19 @@ func (a *app) startHousekeepingWorkers() {
 	// blobs only they referenced. Also runs on demand from the admin API.
 	w.dockerGC = worker.NewDockerGCWorker(db, blobStore, log, cfg.Workers.DockerGCInterval, cfg.Workers.DockerGCGracePeriod)
 
-	// A cleanup run refreshes the maven metadata and npm packuments of what it
-	// removed and collects the docker manifests it left untagged.
-	w.cleanup.SetRegenNotifiers(w.maven, w.npm, w.dockerGC)
+	// The workers the format lifecycles notify: a cleanup run refreshes the
+	// indexes, maven metadata and npm packuments of what it removed and collects
+	// the docker manifests it left untagged; a trash restore and the format
+	// handlers (pacman, apk) use them too.
+	w.metadata = lifecycle.NewWorkers()
+	w.metadata.Bind("rpm", w.rpm)
+	w.metadata.Bind("deb", w.deb)
+	w.metadata.Bind("pacman", w.pacman)
+	w.metadata.Bind("apk", w.apk)
+	w.metadata.Bind("maven", w.maven)
+	w.metadata.Bind("npm", w.npm)
+	w.metadata.Bind("docker", w.dockerGC)
+	w.cleanup.SetLifecycleWorkers(w.metadata)
 	a.start(w.cleanup.Start)
 	a.start(w.dockerGC.Start)
 

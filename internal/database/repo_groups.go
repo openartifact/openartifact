@@ -13,6 +13,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // RepoGroupStore owns group repository membership and the stale/owner state of generated group metadata.
@@ -57,14 +58,14 @@ func (p *RepoGroupStore) GetGroupMetadataState(ctx context.Context, groupID stri
 	return &st, nil
 }
 
-// ListMetadataGroupsOfMember returns the ids of the apk, deb, pacman or rpm group repositories
-// that list memberRepoID as a member.
+// ListMetadataGroupsOfMember returns the ids of the group repositories of the formats with generated
+// group metadata (repotype.GeneratedGroupMetadata) that list memberRepoID as a member.
 func (p *RepoGroupStore) ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT g.id FROM repository_group_members gm
 		JOIN repositories g ON g.id = gm.group_repo_id
 		WHERE gm.member_repo_id = $1 AND g.deleted_at IS NULL AND g.repo_type = 'group'
-		AND g.format IN ('apk', 'deb', 'pacman', 'rpm')`, memberRepoID)
+		AND g.format = ANY($2::text[])`, memberRepoID, repotype.GeneratedGroupMetadataFormats())
 	if err != nil {
 		return nil, fmt.Errorf("list groups of member: %w", err)
 	}
@@ -72,14 +73,14 @@ func (p *RepoGroupStore) ListMetadataGroupsOfMember(ctx context.Context, memberR
 	return collectRows(rows, "scan group id", "list groups of member", scanString)
 }
 
-// ListStaleMetadataGroups returns the apk, deb, pacman or rpm group repositories whose merged
-// metadata is stale or was never generated.
+// ListStaleMetadataGroups returns the group repositories of the formats with generated group metadata
+// whose merged metadata is stale or was never generated.
 func (p *RepoGroupStore) ListStaleMetadataGroups(ctx context.Context) ([]string, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT r.id FROM repositories r
 		LEFT JOIN group_metadata_state s ON s.repository_id = r.id
-		WHERE r.deleted_at IS NULL AND r.repo_type = 'group' AND r.format IN ('apk', 'deb', 'pacman', 'rpm')
-		  AND (s.repository_id IS NULL OR s.stale)`)
+		WHERE r.deleted_at IS NULL AND r.repo_type = 'group' AND r.format = ANY($1::text[])
+		  AND (s.repository_id IS NULL OR s.stale)`, repotype.GeneratedGroupMetadataFormats())
 	if err != nil {
 		return nil, fmt.Errorf("list stale metadata groups: %w", err)
 	}

@@ -11,9 +11,9 @@
 // accepted).
 //
 // Adding a format starts here: add one Spec to the registry, then follow the
-// checklist in docs/development/README.md. The exhaustiveness tests in this
-// package and next to every per-format switch fail, naming the place, until the
-// new format is handled everywhere.
+// checklist in docs/development/README.md. internal/formats then registers the
+// format's plugin (internal/format/plugin), which the server mounts from this
+// Spec; a test there fails until the plugin and the Spec agree.
 package repotype
 
 import (
@@ -73,6 +73,63 @@ const (
 	VersionGem Versioning = "gem"
 )
 
+// Mount is where a format's hosted routes are served.
+type Mount string
+
+const (
+	// MountShared formats are served under /repos/{repo}/..., on the one
+	// subrouter every shared format registers its routes on.
+	MountShared Mount = ""
+	// MountGuarded formats are served on the shared /repos/{repo} subrouter too,
+	// but only through the handler's guard middleware: their paths (nix
+	// /<hash>.narinfo, composer /p2/...) clash with the parameter routes of the
+	// other formats, so the guard serves them for repositories of the format
+	// only and no route of the format is registered there.
+	MountGuarded Mount = "guarded"
+	// MountIsolated formats are served under /repos/<format>/{repo}/..., so the
+	// format name can never be a repository name.
+	MountIsolated Mount = "isolated"
+	// MountDispatcher formats have no route of their own: the repository
+	// dispatcher serves their hosted repositories itself (apk: free-form
+	// <branch>/<repo>/<arch>/<file> paths that no route of the shared
+	// subrouter can express without shadowing other formats).
+	MountDispatcher Mount = "dispatcher"
+	// MountOCI is the registry protocol under /v2/ (docker).
+	MountOCI Mount = "oci"
+)
+
+// UploadCount says who counts a write route in openartifact_uploads_total.
+type UploadCount int
+
+const (
+	// CountedByMiddleware routes are counted by the metrics middleware from the
+	// HTTP status, under the format's name.
+	CountedByMiddleware UploadCount = iota
+	// CountedByHandler routes are counted by the handler itself
+	// (metrics.Registry.CountUpload): the route is shared by several formats or
+	// the outcome is not the HTTP status (the presigned completion).
+	CountedByHandler
+	// NotAnUpload routes publish no package (yank, delete batches, upload
+	// negotiation, metadata).
+	NotAnUpload
+)
+
+// UploadRoute classifies one write route (PUT, POST or PATCH) of a format by
+// its chi route pattern, as chi.Context.RoutePattern reports it (no trailing
+// slash). A route that writes and is not listed here is a test failure, so a new
+// format cannot forget to count its uploads.
+type UploadRoute struct {
+	Pattern string
+	Count   UploadCount
+	// Method is the HTTP method that uploads (CountedByMiddleware only); other
+	// methods on the same route are not counted. "" is the OCI registry route,
+	// which the middleware classifies by the endpoint the path addresses.
+	Method string
+	// Format is the owning format, set by UploadRoutes; leave it empty in a
+	// Spec. It is the format label of a CountedByMiddleware route.
+	Format string
+}
+
 // Spec describes one package format. Name is the repository format id: the
 // value of repositories.format and of the API's format field.
 type Spec struct {
@@ -94,10 +151,21 @@ type Spec struct {
 	DefaultUpstream string
 	// Signing is how the format's metadata is signed.
 	Signing Signing
-	// Isolated formats are served under /repos/<format>/{repo}/..., so the
-	// format name can never be a repository name. Every other format is served
-	// under /repos/{repo}/....
-	Isolated bool
+	// Mount is where the format's hosted routes are served. The isolated
+	// formats (MountIsolated) are served under /repos/<format>/{repo}/..., so
+	// the format name can never be a repository name.
+	Mount Mount
+	// RestUploadEndpoint is the REST upload endpoint, relative to
+	// /api/v1/repositories/{repo}/, of a format that is not uploaded through a
+	// route under /repos/{repo} (deb: "debs", rpm: "packages"); "" for every
+	// other format. A POST to /repos/{repo}/upload of such a repository is
+	// answered with this hint.
+	RestUploadEndpoint string
+	// PackageSigning is set for the formats whose hosted repositories can sign
+	// the packages they store, not only their metadata (rpm sign_packages).
+	PackageSigning bool
+	// Uploads classifies the format's write routes for the upload counter.
+	Uploads []UploadRoute
 	// Versioning is the version scheme.
 	Versioning Versioning
 	// PURLType is the Package URL type of the format's packages, "" for
@@ -125,104 +193,104 @@ type Spec struct {
 //nolint:gochecknoglobals // immutable registry
 var specs = [...]Spec{
 	{
-		Name: "ansible", PackageTables: []string{"ansible_collections"},
+		Name: "ansible", Uploads: ansibleUploads, PackageTables: []string{"ansible_collections"},
 		Proxy: true, Group: true, DefaultUpstream: "https://galaxy.ansible.com", Versioning: VersionSemver,
 	},
 	{
-		Name: "apk", PackageTables: []string{"apk_packages"},
+		Name: "apk", Mount: MountDispatcher, Uploads: apkUploads, PackageTables: []string{"apk_packages"},
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningRSA, PURLType: "apk",
 	},
 	{
-		Name: "cargo", PackageTables: []string{"cargo_crates"},
+		Name: "cargo", Uploads: cargoUploads, PackageTables: []string{"cargo_crates"},
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://index.crates.io",
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
 	{
-		Name: "composer", PackageTables: []string{"composer_packages"},
+		Name: "composer", Mount: MountGuarded, PackageTables: []string{"composer_packages"},
 		Proxy: true, Group: true, DefaultUpstream: "https://repo.packagist.org",
 		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,
 	},
 	{
-		Name: "conan", PackageTables: []string{"conan_packages"},
+		Name: "conan", Uploads: conanUploads, PackageTables: []string{"conan_packages"},
 		Proxy: true, Group: true, DefaultUpstream: "https://center2.conan.io", PURLType: "conan",
 	},
 	{
-		Name: "conda", PackageTables: []string{"conda_packages"},
+		Name: "conda", Uploads: condaUploads, PackageTables: []string{"conda_packages"},
 		Proxy: true, Group: true, PURLType: "conda",
 	},
 	{
-		Name: "deb", PackageTables: []string{"deb_packages"},
+		Name: "deb", RestUploadEndpoint: "debs", Uploads: debUploads, PackageTables: []string{"deb_packages"},
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
 		PURLType: "deb", OSVEcosystem: "Debian", GrypeScan: true, DistroScoped: true,
 	},
 	{
-		Name: "docker", PackageTables: []string{"docker_manifests", "docker_tags"},
+		Name: "docker", Mount: MountOCI, Uploads: dockerUploads, PackageTables: []string{"docker_manifests", "docker_tags"},
 		Proxy: true, Group: true, Federation: true,
 		DefaultUpstream: DockerHubUpstream, PURLType: "docker",
 	},
 	{
-		Name: "go", PackageTables: []string{"gomod_modules"},
+		Name: "go", Uploads: goUploads, PackageTables: []string{"gomod_modules"},
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://proxy.golang.org",
 		Versioning: VersionSemver, PURLType: "golang", OSVEcosystem: "Go", GrypeScan: true,
 	},
 	{
-		Name: "helm", PackageTables: []string{"helm_charts"},
+		Name: "helm", Uploads: helmUploads, PackageTables: []string{"helm_charts"},
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "helm", OSVEcosystem: "Helm",
 	},
 	{
-		Name: "ivy", PackageTables: []string{"ivy_artifacts"},
-		Proxy: true, Group: true, Isolated: true, Versioning: VersionMaven, PURLType: "maven",
+		Name: "ivy", Uploads: ivyUploads, PackageTables: []string{"ivy_artifacts"},
+		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
-		Name: "maven", PackageTables: []string{"maven_artifacts"},
-		Proxy: true, Group: true, Federation: true, Isolated: true,
+		Name: "maven", Uploads: mavenUploads, PackageTables: []string{"maven_artifacts"},
+		Proxy: true, Group: true, Federation: true, Mount: MountIsolated,
 		Versioning: VersionMaven, PURLType: "maven", OSVEcosystem: "Maven", GrypeScan: true,
 	},
 	{
-		Name: "nix", PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
+		Name: "nix", Mount: MountGuarded, PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
 		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
 	},
 	{
-		Name: "npm", PackageTables: []string{"npm_packages", "npm_versions"},
+		Name: "npm", Uploads: npmUploads, PackageTables: []string{"npm_packages", "npm_versions"},
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "npm", OSVEcosystem: "npm", GrypeScan: true,
 	},
 	{
-		Name: "nuget", PackageTables: []string{"nuget_packages"},
+		Name: "nuget", Uploads: nugetUploads, PackageTables: []string{"nuget_packages"},
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://api.nuget.org/v3/index.json",
 		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
 	},
 	{
-		Name: "pacman", PackageTables: []string{"pacman_packages"},
+		Name: "pacman", Uploads: pacmanUploads, PackageTables: []string{"pacman_packages"},
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
 		Signing: SigningGPG, PURLType: "alpm",
 	},
 	{
-		Name: "pypi", PackageTables: []string{"pypi_packages"},
+		Name: "pypi", Uploads: pypiUploads, PackageTables: []string{"pypi_packages"},
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://pypi.org/simple",
 		Versioning: VersionPEP440, PURLType: "pypi", OSVEcosystem: "PyPI", GrypeScan: true,
 	},
 	{
-		Name: "raw", PackageTables: []string{"raw_artifacts"},
-		Proxy: true, Group: true, Federation: true, Isolated: true,
+		Name: "raw", Uploads: rawUploads, PackageTables: []string{"raw_artifacts"},
+		Proxy: true, Group: true, Federation: true, Mount: MountIsolated,
 	},
 	{
-		Name: "rpm", PackageTables: []string{"rpm_packages"},
+		Name: "rpm", RestUploadEndpoint: "packages", PackageSigning: true, Uploads: rpmUploads, PackageTables: []string{"rpm_packages"},
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
 		PURLType: "rpm", OSVEcosystem: "Red Hat", GrypeScan: true, DistroScoped: true,
 	},
 	{
-		Name: "rubygems", PackageTables: []string{"rubygems_gems"},
+		Name: "rubygems", Uploads: rubygemsUploads, PackageTables: []string{"rubygems_gems"},
 		Proxy: true, Group: true, DefaultUpstream: "https://rubygems.org",
 		Versioning: VersionGem, PURLType: "gem", OSVEcosystem: "RubyGems", GrypeScan: true,
 	},
 	{
-		Name: "sbt", PackageTables: []string{"sbt_artifacts"},
-		Proxy: true, Group: true, Isolated: true, Versioning: VersionMaven, PURLType: "maven",
+		Name: "sbt", Uploads: sbtUploads, PackageTables: []string{"sbt_artifacts"},
+		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
-		Name: "terraform", PackageTables: []string{"terraform_modules", "terraform_providers"},
+		Name: "terraform", Uploads: terraformUploads, PackageTables: []string{"terraform_modules", "terraform_providers"},
 		Proxy: true, Group: true, DefaultUpstream: "https://registry.terraform.io",
 		Signing: SigningGPG, Versioning: VersionSemver,
 	},
@@ -331,7 +399,45 @@ func DefaultUpstreamURL(format string) string {
 func Isolated(format string) bool {
 	s, _ := Lookup(format)
 
-	return s.Isolated
+	return s.Mount == MountIsolated
+}
+
+// MountOf is where format's hosted routes are served; MountShared for an
+// unknown format.
+func MountOf(format string) Mount {
+	s, _ := Lookup(format)
+
+	return s.Mount
+}
+
+// RestUploadEndpoint is the REST upload endpoint of format (Spec.RestUploadEndpoint),
+// "" when the format is uploaded through its native routes.
+func RestUploadEndpoint(format string) string {
+	s, _ := Lookup(format)
+
+	return s.RestUploadEndpoint
+}
+
+// PackageSigning reports whether hosted repositories of format can sign the
+// packages they store (Spec.PackageSigning).
+func PackageSigning(format string) bool {
+	s, _ := Lookup(format)
+
+	return s.PackageSigning
+}
+
+// GeneratedGroupMetadataFormats returns the formats whose groups serve
+// generated metadata (GeneratedGroupMetadata), sorted by name.
+func GeneratedGroupMetadataFormats() []string {
+	var out []string
+
+	for i := range specs {
+		if specs[i].GeneratedGroupMetadata {
+			out = append(out, specs[i].Name)
+		}
+	}
+
+	return out
 }
 
 // ReservedName reports names that can never be repository names: they collide

@@ -50,7 +50,10 @@ func (a *app) buildHTTP() (*api.HTTPServer, error) {
 
 	a.newAuthedRouter()
 	a.registerAdminRoutes()
-	a.registerFormatRoutes()
+	if err := a.registerFormatRoutes(); err != nil {
+		return nil, err
+	}
+
 	a.registerRepositoryRoutes()
 	a.registerSupplyChainRoutes()
 	a.registerDependencyTrack()
