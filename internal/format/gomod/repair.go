@@ -22,7 +22,7 @@ import (
 )
 
 // OpenArtifact <= 0.4.1 uploaded every Go module zip with an empty digest, so
-// all gomod_modules rows pointed at ONE blobs row (sha256 = ''), whose object
+// all go module zip files pointed at ONE blobs row (sha256 = ''), whose object
 // is the first zip ever uploaded. The real zips of later uploads were still
 // written to the blob store under their true sha256, just without a blobs
 // row. RepairZipBlobs recovers them: it matches the orphaned objects to the
