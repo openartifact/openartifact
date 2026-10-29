@@ -12,6 +12,11 @@ import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 )
 
+// ComposerHooks reads the dependencies of composer.
+var ComposerHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	Parse: func(_ string, parts []manifest.Part) (Result, error) { return parseComposer(parts) },
+}
+
 // parseComposer reads the require map of composer.json: package to version
 // constraint. Platform requirements (php, ext-*, lib-*) name no package and
 // require-dev is not part of what the package ships.

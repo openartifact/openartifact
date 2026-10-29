@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/ai/manifest"
+	"github.com/openartifact/openartifact/internal/registry"
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
 
@@ -68,20 +69,60 @@ type Result struct {
 // Empty reports whether the artifact declares no license.
 func (r Result) Empty() bool { return len(r.Licenses) == 0 }
 
-// Supported reports whether licenses can be read from a file of this format.
-func Supported(format, filename string) bool {
-	switch format {
-	case "cargo", "composer", "npm", "nuget", "pypi":
-		return manifest.Supported(format, filename)
-	case "ivy":
-		return isIvyDescriptor(filename)
-	case "maven", "sbt":
-		return manifest.Supported("maven", filename) && !strings.HasSuffix(strings.ToLower(filename), ".xml")
-	case "rubygems":
-		return manifest.Supported(format, filename)
+// Hooks is what the package needs to know about one format to read its
+// licenses. Each format has one exported value (NPMHooks, PyPIHooks, ...)
+// defined next to its parser and handed to Register by internal/format/plugin;
+// a format with no value declares no licenses this package reads, and Supported
+// and Expected report false for it.
+type Hooks struct {
+	// ManifestFormat is the format whose manifest rule extracts the metadata
+	// file; empty means the format itself. sbt reads like maven.
+	ManifestFormat string
+	// Filter narrows the files the manifest rule accepts: a file is supported
+	// only when the rule accepts it and Filter (when set) does too. Maven and
+	// sbt leave out the .xml files their rule takes for ivy, ivy keeps only its
+	// module descriptors.
+	Filter func(filename string) bool
+	// Expected reports whether a file of the format is a package that declares
+	// its own license metadata; supported is what Supported says about the file.
+	Expected func(filename string, supported bool) bool
+	// MemberLimit bounds one metadata file read from an artifact; zero means
+	// memberLimit.
+	MemberLimit int64
+	// Parse turns the extracted metadata files into the declared licenses.
+	// Unused when Read is set.
+	Parse func(filename string, parts []manifest.Part) (Result, error)
+	// Read reads the licenses of a format whose metadata the manifest package
+	// does not extract (rubygems: the gem's own parser); nil means extract with
+	// the manifest rule and Parse.
+	Read func(ctx context.Context, open func() (io.ReadCloser, error)) (Result, error)
+}
+
+var hooks registry.Registry[Hooks] //nolint:gochecknoglobals // the format hook table, filled by Register at startup
+
+// Register adds the hooks of a format. It panics when the format already has
+// some; it is meant to run once per format at startup.
+func Register(format string, h Hooks) { hooks.Register(format, h) }
+
+// manifestFormat is the format name the manifest package knows the format by.
+func (h Hooks) manifestFormat(format string) string {
+	if h.ManifestFormat != "" {
+		return h.ManifestFormat
 	}
 
-	return false
+	return format
+}
+
+// supported reports whether licenses can be read from a file of the format.
+func (h Hooks) supported(format, filename string) bool {
+	return manifest.Supported(h.manifestFormat(format), filename) && (h.Filter == nil || h.Filter(filename))
+}
+
+// Supported reports whether licenses can be read from a file of this format.
+func Supported(format, filename string) bool {
+	h, ok := hooks.Lookup(format)
+
+	return ok && h.supported(format, filename)
 }
 
 // Expected reports whether a file of this format is a package that declares
@@ -93,16 +134,9 @@ func Supported(format, filename string) bool {
 // module descriptor is for the artifacts of an Ivy module. Every format
 // Expected holds is also Supported.
 func Expected(format, filename string) bool {
-	switch format {
-	case "cargo", "composer", "npm", "nuget", "pypi":
-		return true
-	case "ivy", "rubygems":
-		return Supported(format, filename)
-	case "maven", "sbt":
-		return strings.HasSuffix(strings.ToLower(filename), ".pom")
-	}
+	h, ok := hooks.Lookup(format)
 
-	return false
+	return ok && h.Expected != nil && h.Expected(filename, h.supported(format, filename))
 }
 
 // Read reads the licenses of an artifact; open returns a fresh reader over its
@@ -110,21 +144,22 @@ func Expected(format, filename string) bool {
 // ErrNoMetadata, ErrUnsafe, or an I/O or parse failure (the file is not the
 // archive its name says, the metadata is not well formed).
 func Read(ctx context.Context, format, filename string, open func() (io.ReadCloser, error)) (Result, error) {
-	if !Supported(format, filename) {
+	h, ok := hooks.Lookup(format)
+	if !ok || !h.supported(format, filename) {
 		return Result{}, ErrUnsupported
 	}
 
-	if format == "rubygems" {
-		return readGem(ctx, open)
+	if h.Read != nil {
+		return h.Read(ctx, open)
 	}
 
-	limit := int64(memberLimit)
-	if format == "ivy" || format == "maven" || format == "sbt" {
-		limit = pkgmaven.MaxPOMBytes
+	limit := h.MemberLimit
+	if limit == 0 {
+		limit = memberLimit
 	}
 
 	parts, err := manifest.ExtractParts(ctx, manifest.Source{
-		Format:      jvmFormat(format),
+		Format:      h.manifestFormat(format),
 		Filename:    filename,
 		Open:        open,
 		MemberLimit: limit,
@@ -141,42 +176,19 @@ func Read(ctx context.Context, format, filename string, open func() (io.ReadClos
 		return Result{}, fmt.Errorf("read artifact metadata: %w", err)
 	}
 
-	return parse(format, filename, parts)
-}
-
-// jvmFormat maps sbt onto the maven extractor (the manifest package reads .pom
-// and .jar of both the same way).
-func jvmFormat(format string) string {
-	if format == "sbt" {
-		return "maven"
-	}
-
-	return format
+	return h.Parse(filename, parts)
 }
 
 // Unsafe reports whether err means the artifact must be refused.
 func Unsafe(err error) bool { return errors.Is(err, ErrUnsafe) }
 
-func parse(format, filename string, parts []manifest.Part) (Result, error) {
-	switch format {
-	case "pypi":
-		return parsePyPI(parts[0].Body), nil
-	case "npm":
-		return parsePackageJSON([]byte(parts[0].Body))
-	case "cargo":
-		return parseCargo(parts[0].Body)
-	case "composer":
-		return parseComposer(parts[0].Body)
-	case "nuget":
-		return parseNuspec(parts[0].Body)
-	case "maven", "sbt":
-		return parsePOM(filename, parts)
-	case "ivy":
-		return parseIvy(parts[0].Body)
-	}
+// expectAlways is the Expected rule of a format whose every package file
+// declares its own license metadata.
+func expectAlways(string, bool) bool { return true }
 
-	return Result{}, ErrUnsupported
-}
+// expectSupported is the Expected rule of a format whose supported files are
+// exactly the packages that declare their own license metadata.
+func expectSupported(_ string, supported bool) bool { return supported }
 
 // base is the file name of an artifact path.
 func base(filename string) string {

@@ -33,6 +33,12 @@ func atDepthOne(file string) func(string) bool {
 	}
 }
 
+// NPMRule is the manifest rule of npm.
+var NPMRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".tgz", ".tar.gz"},
+	Extract:  extractNPM,
+}
+
 func extractNPM(ctx context.Context, src Source) ([]section, error) {
 	slots := []slot{{label: "package.json", match: atDepthOne("package.json"), unique: true}}
 	if src.Deps {
@@ -44,6 +50,12 @@ func extractNPM(ctx context.Context, src Source) ([]section, error) {
 	return tarManifest(ctx, src, compGzip, slots)
 }
 
+// CargoRule is the manifest rule of cargo.
+var CargoRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".crate"},
+	Extract:  extractCargo,
+}
+
 func extractCargo(ctx context.Context, src Source) ([]section, error) {
 	slots := []slot{{label: "Cargo.toml", match: atDepthOne("Cargo.toml"), unique: true}}
 	if src.Deps {
@@ -51,6 +63,12 @@ func extractCargo(ctx context.Context, src Source) ([]section, error) {
 	}
 
 	return tarManifest(ctx, src, compGzip, slots)
+}
+
+// ComposerRule is the manifest rule of composer.
+var ComposerRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".zip"},
+	Extract:  extractComposer,
 }
 
 // extractComposer reads composer.json of a dist zip: from the archive root or,
@@ -80,6 +98,12 @@ func extractComposer(ctx context.Context, src Source) ([]section, error) {
 	return []section{{label: "composer.json", body: body}}, nil
 }
 
+// HelmRule is the manifest rule of helm.
+var HelmRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".tgz", ".tar.gz"},
+	Extract:  extractHelm,
+}
+
 func extractHelm(ctx context.Context, src Source) ([]section, error) {
 	slots := []slot{
 		{label: "Chart.yaml", match: atDepthOne("Chart.yaml")},
@@ -90,6 +114,12 @@ func extractHelm(ctx context.Context, src Source) ([]section, error) {
 	}
 
 	return tarManifest(ctx, src, compGzip, slots)
+}
+
+// PyPIRule is the manifest rule of pypi.
+var PyPIRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".whl", ".zip", ".egg", ".tar.gz", ".tgz", ".tar.bz2"},
+	Extract:  extractPyPI,
 }
 
 func extractPyPI(ctx context.Context, src Source) ([]section, error) {
@@ -128,6 +158,31 @@ func extractPyPI(ctx context.Context, src Source) ([]section, error) {
 	}
 }
 
+// MavenRule is the manifest rule of maven: the descriptor and the jar.
+var MavenRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes:     []string{".pom", ".jar"},
+	Extract:      extractJVM,
+	AutoEligible: isJVMDescriptor,
+}
+
+// IvyRule is the manifest rule of ivy: MavenRule plus the ivy.xml descriptors.
+var IvyRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes:     []string{".pom", ".xml", ".jar"},
+	Extract:      extractJVM,
+	AutoEligible: isJVMDescriptor,
+}
+
+// SBTRule is the manifest rule of sbt, which stores its modules like ivy.
+var SBTRule = IvyRule //nolint:gochecknoglobals // immutable format hook value
+
+// isJVMDescriptor reports whether the file is the module descriptor of a
+// multi-file JVM package: a .pom or an ivy.xml.
+func isJVMDescriptor(filename string) bool {
+	base := path.Base(filename)
+
+	return strings.HasSuffix(base, ".pom") || base == "ivy.xml"
+}
+
 func extractJVM(ctx context.Context, src Source) ([]section, error) {
 	name := strings.ToLower(path.Base(src.Filename))
 
@@ -153,6 +208,12 @@ func isEmbeddedPOM(name string) bool {
 	return len(parts) == 3 && parts[2] == "pom.xml"
 }
 
+// NuGetRule is the manifest rule of nuget.
+var NuGetRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".nupkg"},
+	Extract:  extractNuGet,
+}
+
 func extractNuGet(ctx context.Context, src Source) ([]section, error) {
 	return zipManifest(ctx, src, []slot{{
 		label:  ".nuspec",
@@ -162,6 +223,12 @@ func extractNuGet(ctx context.Context, src Source) ([]section, error) {
 			return ok && hasSuffixFold(f, ".nuspec")
 		},
 	}})
+}
+
+// GoRule is the manifest rule of go.
+var GoRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".mod", ".zip"},
+	Extract:  extractGoMod,
 }
 
 func extractGoMod(ctx context.Context, src Source) ([]section, error) {
@@ -182,6 +249,12 @@ func extractGoMod(ctx context.Context, src Source) ([]section, error) {
 			return at >= 0 && !strings.Contains(dir[at:], "/")
 		},
 	}})
+}
+
+// RubyGemsRule is the manifest rule of rubygems.
+var RubyGemsRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".gem"},
+	Extract:  extractGem,
 }
 
 func extractGem(ctx context.Context, src Source) ([]section, error) {
@@ -215,6 +288,12 @@ func cleanName(n string) string {
 	return c
 }
 
+// CondaRule is the manifest rule of conda.
+var CondaRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: []string{".tar.bz2", ".conda"},
+	Extract:  extractConda,
+}
+
 func extractConda(ctx context.Context, src Source) ([]section, error) {
 	if !hasSuffixFold(src.Filename, ".conda") {
 		return tarManifest(ctx, src, compBzip2, condaInfoSlots())
@@ -246,6 +325,12 @@ func extractConda(ctx context.Context, src Source) ([]section, error) {
 
 // conanSiblings are the recipe files worth sending next to the manifest.
 func conanSiblings() []string { return []string{"conanfile.py", "conandata.yml"} }
+
+// ConanRule is the manifest rule of conan.
+var ConanRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: nil,
+	Extract:  extractConan,
+}
 
 func extractConan(ctx context.Context, src Source) ([]section, error) {
 	var parts []section
@@ -288,6 +373,12 @@ func debFieldOrder() []string {
 	}
 }
 
+// DebRule is the manifest rule of deb.
+var DebRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: nil,
+	Extract:  extractDeb,
+}
+
 func extractDeb(ctx context.Context, src Source) ([]section, error) {
 	ra, err := openAt(ctx, src.Open)
 	if err != nil {
@@ -328,6 +419,12 @@ func extractDeb(ctx context.Context, src Source) ([]section, error) {
 	}
 
 	return []section{{label: "control", body: b.String()}}, nil
+}
+
+// PacmanRule is the manifest rule of pacman.
+var PacmanRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: nil,
+	Extract:  extractPacman,
 }
 
 // extractPacman renders the .PKGINFO of a pacman package (zstd, xz or gzip
@@ -373,6 +470,12 @@ func extractPacman(ctx context.Context, src Source) ([]section, error) {
 
 // maxRPMDeps bounds the dependency lines rendered from an rpm header.
 const maxRPMDeps = 200
+
+// RPMRule is the manifest rule of rpm.
+var RPMRule = Rule{ //nolint:gochecknoglobals // immutable format hook value
+	Suffixes: nil,
+	Extract:  extractRPM,
+}
 
 func extractRPM(ctx context.Context, src Source) ([]section, error) {
 	rc, err := src.Open()
