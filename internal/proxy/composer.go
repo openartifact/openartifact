@@ -13,11 +13,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
 
@@ -98,26 +96,19 @@ func composerDistKey(p pkgcomposer.Path) string {
 }
 
 func (s *Service) serveComposerRoot(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	s.writeGeneratedJSON(w, r, repo, nil,
-		[]byte(`{"packages":[],"metadata-url":"`+s.composerRoot(repo)+`/p2/%package%.json"}`), composerMaxAge)
+	s.serveGenerated(w, r, repo, nil,
+		[]byte(`{"packages":[],"metadata-url":"`+s.composerRoot(repo)+`/p2/%package%.json"}`), jsonMediaType, composerMaxAge)
 }
 
-// composerDocument returns the cached upstream p2 document of name, fetching it
-// when it is absent or expired, and its bytes.
-func (s *Service) composerDocument(ctx context.Context, repo *models.Repository, name string, dev bool) (*resolution, []byte, error) {
-	key := composerKey(name, dev)
-
-	res, err := s.resolveWith(ctx, repo, key, s.fetchKey(repo, key, jsonDocOpts(composerVerifyDocument(name))))
-	if err != nil {
-		return nil, nil, err
+// composerDoc is the upstream p2 document of name, cached verbatim.
+func composerDoc(name string, dev bool) metaDoc {
+	return metaDoc{
+		key:   composerKey(name, dev),
+		opts:  staticOpts(jsonDocOpts(composerVerifyDocument(name))),
+		limit: composerMaxDoc,
+		what:  "composer document",
+		bad:   badDocInternal,
 	}
-
-	body, err := s.readComposerDocument(ctx, repo, res)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return res, body, nil
 }
 
 // composerVerifyDocument refuses an upstream answer that is not the p2 document
@@ -139,57 +130,22 @@ func composerVerifyDocument(name string) func(io.ReadSeeker) error {
 	}
 }
 
-// readComposerDocument loads a cached document under the document gate.
-func (s *Service) readComposerDocument(ctx context.Context, repo *models.Repository, res *resolution) ([]byte, error) {
-	if err := s.packuments.Acquire(ctx); err != nil {
-		return nil, err //nolint:wrapcheck // caller checks for cancellation
-	}
-	defer s.packuments.Release()
-
-	body, err := s.readCachedDoc(ctx, res.entry, composerMaxDoc)
-	if err != nil {
-		s.log.Errorw("failed to read cached composer document", "repo", repo.Name, "key", res.entry.CacheKey, "error", err)
-		return nil, errInternal
-	}
-
-	return body, nil
-}
-
 func (s *Service) serveComposerMetadata(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcomposer.Path) {
-	res, doc, err := s.composerDocument(r.Context(), repo, p.Name, p.Dev)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
 	root := s.composerRoot(repo)
 
-	// What is served depends on the cached document and on the server's URL.
-	sum := sha256.Sum256([]byte(res.entry.BlobKey + "\x00" + root))
-
-	if res.stale {
-		w.Header().Set("Warning", staleWarning)
-	}
-
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, composerMaxAge) {
-		return
-	}
-
-	body, err := pkgcomposer.RenderSource(doc, p.Name, root)
-	if err != nil {
-		s.log.Errorw("unusable cached composer document", "repo", repo.Name, "key", res.entry.CacheKey, "error", err)
-		s.failWithoutValidators(w, r, errInternal)
-
-		return
-	}
-
-	w.Header().Set("Content-Type", jsonMediaType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	s.serveRendered(w, r, repo, renderedDoc{
+		metaDoc: composerDoc(p.Name, p.Dev),
+		maxAge:  composerMaxAge,
+		// What is served depends on the cached document and on the server's URL.
+		etag: func(blobKey string) string {
+			sum := sha256.Sum256([]byte(blobKey + "\x00" + root))
+			return `"` + hex.EncodeToString(sum[:16]) + `"`
+		},
+		render: func(doc []byte, _ *resolution) ([]byte, string, error) {
+			out, err := pkgcomposer.RenderSource(doc, p.Name, root)
+			return out, jsonMediaType, err
+		},
+	})
 }
 
 func (s *Service) serveComposerDist(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcomposer.Path) {
@@ -199,8 +155,8 @@ func (s *Service) serveComposerDist(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchComposerDist(fctx, repo, p, key)
+	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
+		return s.locateComposerDist(ctx, repo, p)
 	})
 }
 
@@ -216,7 +172,18 @@ func (s *Service) composerPublishedDist(ctx context.Context, repo *models.Reposi
 	}
 
 	for _, dev := range devs {
-		_, doc, err := s.composerDocument(ctx, repo, p.Name, dev)
+		d, _, err := parseDoc(ctx, s, repo, composerDoc(p.Name, dev), func(doc []byte, _ *resolution) (*pkgcomposer.Dist, error) {
+			versions, perr := pkgcomposer.ParseDocument(doc, p.Name)
+			if perr != nil {
+				return nil, perr //nolint:wrapcheck // logged by parseDoc
+			}
+
+			if d, ok := pkgcomposer.FindDist(versions, p.Version); ok {
+				return &d, nil
+			}
+
+			return nil, nil //nolint:nilnil // not listed: the other document may list it
+		})
 		if errors.Is(err, errNotFound) {
 			continue
 		}
@@ -225,47 +192,34 @@ func (s *Service) composerPublishedDist(ctx context.Context, repo *models.Reposi
 			return pkgcomposer.Dist{}, err
 		}
 
-		versions, perr := pkgcomposer.ParseDocument(doc, p.Name)
-		if perr != nil {
-			s.log.Errorw("cached composer document is unusable", "repo", repo.Name, "package", p.Name, "error", perr)
-			return pkgcomposer.Dist{}, errInternal
-		}
-
-		if d, ok := pkgcomposer.FindDist(versions, p.Version); ok {
-			return d, nil
+		if d != nil {
+			return *d, nil
 		}
 	}
 
 	return pkgcomposer.Dist{}, errNotFound
 }
 
-// fetchComposerDist downloads the dist the upstream's documents publish for the
-// version of p and caches it. The reference in the request must be the one that
-// dist has (a stale or forged URL is errNotFound, without a negative cache
-// entry: the document may simply be stale).
-func (s *Service) fetchComposerDist(
-	ctx context.Context,
-	repo *models.Repository,
-	p pkgcomposer.Path,
-	key string,
-) (*models.ProxyCacheEntry, error) {
+// locateComposerDist finds the dist the upstream's documents publish for the
+// version of p. The reference in the request must be the one that dist has (a
+// stale or forged URL is errNotFound, without a negative cache entry: the
+// document may simply be stale). It is cached only when its SHA-1 matches a
+// non-empty "shasum".
+func (s *Service) locateComposerDist(ctx context.Context, repo *models.Repository, p pkgcomposer.Path) (download, error) {
 	dist, err := s.composerPublishedDist(ctx, repo, p)
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
 	if dist.ProxyRef() != p.Ref {
-		return nil, errNotFound
+		return download{}, errNotFound
 	}
 
-	return s.fetchURL(ctx, repo, key, dist.URL, fetchOpts{
-		// Credentials go only to the configured upstream, never to the host a
-		// document points a dist at.
-		noAuth: !sameOriginStr(repo.UpstreamURL, dist.URL),
+	return download{url: dist.URL, opts: fetchOpts{
 		verify: func(spool io.ReadSeeker) error {
 			return pkgcomposer.VerifySHA1(spool, dist.SHA1) //nolint:wrapcheck // logged by store
 		},
-	})
+	}}, nil
 }
 
 // composerDistImmutable reports whether key is the dist of a released version:

@@ -193,7 +193,7 @@ func (s *Service) tfReadDoc(ctx context.Context, entry *models.ProxyCacheEntry, 
 	}
 	defer s.packuments.Release()
 
-	return s.readCachedDoc(ctx, entry, limit)
+	return s.readBlobCapped(ctx, entry.BlobKey, "terraform document", int(limit))
 }
 
 var (

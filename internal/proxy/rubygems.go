@@ -203,7 +203,7 @@ func (s *Service) rubygemsInfoLine(ctx context.Context, repo *models.Repository,
 
 	defer s.packuments.Release()
 
-	doc, err := s.readCachedDoc(ctx, res.entry, compactindex.MaxInfoBytes)
+	doc, err := s.readBlobCapped(ctx, res.entry.BlobKey, "gem info", compactindex.MaxInfoBytes)
 	if err != nil {
 		s.log.Errorw("failed to read cached gem info", "repo", repo.Name, "gem", gem, "error", err)
 		return nil, errInternal

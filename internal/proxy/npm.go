@@ -14,11 +14,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -96,26 +94,22 @@ func npmPackumentURL(baseURL, pkg string) (string, error) {
 	return u.String(), nil
 }
 
-// resolveNPMPackument returns the cache entry of pkg's packument, fetching it
-// upstream when it is absent or expired (and serving stale when the upstream
-// is down).
-func (s *Service) resolveNPMPackument(ctx context.Context, repo *models.Repository, pkg string, abbreviated bool) (*resolution, error) {
-	key := npmPackumentKey(pkg, abbreviated)
+// npmPackumentDoc is the upstream packument of pkg, full or abbreviated: refused
+// unless it is a JSON object.
+func npmPackumentDoc(pkg string, abbreviated bool) metaDoc {
+	accept := "application/json"
+	if abbreviated {
+		accept = pkgnpm.UpstreamAccept
+	}
 
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, err := npmPackumentURL(repo.UpstreamURL, pkg)
-		if err != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-			return nil, errInternal
-		}
-
-		accept := "application/json"
-		if abbreviated {
-			accept = pkgnpm.UpstreamAccept
-		}
-
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{accept: accept, verify: verifyJSONObject})
-	})
+	return metaDoc{
+		key:   npmPackumentKey(pkg, abbreviated),
+		url:   func(upstream string) (string, error) { return npmPackumentURL(upstream, pkg) },
+		opts:  staticOpts(fetchOpts{accept: accept, verify: verifyJSONObject}),
+		limit: maxPackumentBytes,
+		what:  "packument",
+		bad:   badDocUpstream,
+	}
 }
 
 // verifyJSONObject refuses an upstream packument that is not a JSON object
@@ -135,110 +129,30 @@ func verifyJSONObject(spool io.ReadSeeker) error {
 
 var errNotPackument = errors.New("upstream answer is not a packument")
 
-// readNPMPackument loads the cached packument blob.
-func (s *Service) readNPMPackument(ctx context.Context, entry *models.ProxyCacheEntry) ([]byte, error) {
-	rc, err := s.blobStore.Get(ctx, entry.BlobKey)
-	if err != nil {
-		return nil, fmt.Errorf("open cached packument: %w", err)
-	}
-	defer func() { base.CloseLog(rc, s.log) }()
-
-	body, err := io.ReadAll(io.LimitReader(rc, maxPackumentBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read cached packument: %w", err)
-	}
-
-	if len(body) > maxPackumentBytes {
-		return nil, errInternal
-	}
-
-	return body, nil
-}
-
 func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgnpm.Path, abbreviated bool) {
-	res, err := s.resolveNPMPackument(r.Context(), repo, p.Package, abbreviated)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
 	tarballBase := s.baseURL + "/repos/" + repo.Name
-	h := w.Header()
 
-	// The rendered document depends on the cached blob and the server URL; a
-	// version manifest and a packument of the same blob differ by path.
-	sum := sha256.Sum256([]byte(res.entry.BlobKey + "\x00" + tarballBase + "\x00" + p.Version))
+	s.serveRendered(w, r, repo, renderedDoc{
+		metaDoc: npmPackumentDoc(p.Package, abbreviated),
+		maxAge:  packumentMaxAge,
+		vary:    "Accept",
+		// The rendered document depends on the cached blob and the server URL;
+		// a version manifest and a packument of the same blob differ by path.
+		etag: func(blobKey string) string {
+			sum := sha256.Sum256([]byte(blobKey + "\x00" + tarballBase + "\x00" + p.Version))
+			return `"` + hex.EncodeToString(sum[:]) + `"`
+		},
+		render: func(body []byte, res *resolution) ([]byte, string, error) {
+			out, err := renderNPM(body, p, tarballBase)
 
-	h.Add("Vary", "Accept")
+			ct := "application/json"
+			if abbreviated && strings.HasPrefix(res.entry.ContentType, pkgnpm.AbbreviatedContentType) {
+				ct = pkgnpm.AbbreviatedContentType
+			}
 
-	if res.stale {
-		h.Set("Warning", staleWarning)
-	}
-
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:])+`"`, packumentMaxAge) {
-		return
-	}
-
-	body, err := s.renderCachedPackument(r.Context(), res.entry, p, tarballBase)
-	if errors.Is(err, context.Canceled) {
-		h.Del("ETag")
-		h.Del("Cache-Control")
-
-		return
-	}
-
-	switch {
-	case errors.Is(err, errNoVersion):
-		h.Del("ETag")
-		h.Del("Cache-Control")
-		http.NotFound(w, r)
-
-		return
-	case err != nil:
-		s.log.Errorw("failed to render npm packument", "repo", repo.Name, "package", p.Package, "error", err)
-		h.Del("ETag")
-		h.Del("Cache-Control")
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	ct := "application/json"
-	if abbreviated && strings.HasPrefix(res.entry.ContentType, pkgnpm.AbbreviatedContentType) {
-		ct = pkgnpm.AbbreviatedContentType
-	}
-
-	h.Set("Content-Type", ct)
-	h.Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
-}
-
-var errNoVersion = errors.New("version not found")
-
-// renderCachedPackument reads the cached packument and renders it for the
-// client, holding one of the bounded packument slots while the whole document
-// is in memory.
-func (s *Service) renderCachedPackument(
-	ctx context.Context,
-	entry *models.ProxyCacheEntry,
-	p pkgnpm.Path,
-	tarballBase string,
-) ([]byte, error) {
-	if err := s.packuments.Acquire(ctx); err != nil {
-		return nil, err //nolint:wrapcheck // caller checks for cancellation
-	}
-	defer s.packuments.Release()
-
-	body, err := s.readNPMPackument(ctx, entry)
-	if err != nil {
-		return nil, err
-	}
-
-	return renderNPM(body, p, tarballBase)
+			return out, ct, err
+		},
+	})
 }
 
 // renderNPM points the packument's tarball URLs at this repository and, for a
@@ -259,75 +173,52 @@ func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string) ([]byte, error) {
 	}
 
 	if !found {
-		return nil, errNoVersion
+		return nil, errNotFound
 	}
 
 	return manifest, nil
 }
 
 func (s *Service) serveNPMTarball(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgnpm.Path) {
-	key := p.Package + "/-/" + p.File
-	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchNPMTarball(fctx, repo, p, key)
+	s.serveDownload(w, r, repo, p.Package+"/-/"+p.File, func(ctx context.Context) (download, error) {
+		return s.locateNPMTarball(ctx, repo, p)
 	})
 }
 
-// fetchNPMTarball downloads p.File from the URL its version's dist object in
-// the packument names, and caches it only when it matches dist.integrity /
-// dist.shasum. A file no version of the packument lists is errNotFound
-// without a negative cache entry: the packument may simply be stale.
-func (s *Service) fetchNPMTarball(
-	ctx context.Context,
-	repo *models.Repository,
-	p pkgnpm.Path,
-	key string,
-) (*models.ProxyCacheEntry, error) {
-	res, err := s.resolveNPMPackument(ctx, repo, p.Package, false)
+// locateNPMTarball finds p.File in the cached packument: the URL its version's
+// dist object names, cached only when the bytes match dist.integrity /
+// dist.shasum. A file no version of the packument lists is errNotFound.
+func (s *Service) locateNPMTarball(ctx context.Context, repo *models.Repository, p pkgnpm.Path) (download, error) {
+	dist, _, err := parseDoc(ctx, s, repo, npmPackumentDoc(p.Package, false),
+		func(doc []byte, _ *resolution) (*pkgnpm.Dist, error) {
+			dist, found, ferr := pkgnpm.FindTarball(doc, p.Package, p.File)
+			if ferr != nil || !found {
+				return nil, ferr //nolint:wrapcheck // logged by parseDoc
+			}
+
+			return &dist, nil
+		})
 	if err != nil {
-		return nil, err
+		return download{}, err
 	}
 
-	doc, err := s.readNPMPackument(ctx, res.entry)
-	if err != nil {
-		s.log.Errorw("failed to read cached npm packument", "repo", repo.Name, "package", p.Package, "error", err)
-		return nil, errInternal
-	}
-
-	dist, found, err := pkgnpm.FindTarball(doc, p.Package, p.File)
-	if err != nil {
-		s.log.Warnw("unreadable upstream npm packument", "repo", repo.Name, "package", p.Package, "error", err)
-		return nil, errUpstream
-	}
-
-	if !found {
-		return nil, errNotFound
+	if dist == nil {
+		return download{}, errNotFound
 	}
 
 	var vouched bool
 
-	return s.fetchURL(ctx, repo, key, dist.Tarball, fetchOpts{
-		// Credentials go only to the configured upstream, never to a
-		// host a packument points at.
-		noAuth:  !sameOriginStr(repo.UpstreamURL, dist.Tarball),
+	return download{url: dist.Tarball, opts: fetchOpts{
 		vouched: &vouched,
 		verify: func(spool io.ReadSeeker) error {
 			if _, serr := spool.Seek(0, io.SeekStart); serr != nil {
 				return fmt.Errorf("rewind spool: %w", serr)
 			}
 
-			ok, verr := pkgnpm.VerifyDist(spool, dist)
+			ok, verr := pkgnpm.VerifyDist(spool, *dist)
 			vouched = ok
 
 			return verr //nolint:wrapcheck // logged by store
 		},
-	})
-}
-
-// sameOriginStr reports whether the URL strings a and b share scheme, host and
-// port; an unparsable URL is never the same origin.
-func sameOriginStr(a, b string) bool {
-	ua, errA := url.Parse(a)
-	ub, errB := url.Parse(b)
-
-	return errA == nil && errB == nil && sameOrigin(ua, ub)
+	}}, nil
 }

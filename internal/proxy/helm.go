@@ -8,18 +8,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pathseg"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 )
@@ -59,7 +56,7 @@ const (
 	helmProvExt   = ".prov"
 )
 
-var errNotHelmIndex = errors.New("upstream answer is not a helm index")
+var errNotHelmIndex = fmt.Errorf("%w: upstream answer is not a helm index", errUnusableDoc)
 
 func (s *Service) serveHelm(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
 	rel := strings.TrimPrefix(relPath, "/")
@@ -106,22 +103,14 @@ func verifyHelmIndex(spool io.ReadSeeker) error {
 	return nil
 }
 
-// resolveHelmIndex returns the cache entry of the upstream index.yaml,
-// fetching it when absent or expired (and serving stale when the upstream is
-// down).
-func (s *Service) resolveHelmIndex(ctx context.Context, repo *models.Repository) (*resolution, error) {
-	return s.resolveWith(ctx, repo, helmIndexKey, s.fetchKey(repo, helmIndexKey, fetchOpts{verify: verifyHelmIndex}))
-}
-
-// loadHelmIndex reads the body of the resolved index, holding one of the
-// bounded in-memory document slots; the caller must call release once it is
-// done parsing and rendering the body (release is nil when err != nil). When
-// the cache row outlived its blob the row is dropped and the index refetched
-// once, with the slot given up for the duration of the network fetch.
-func (s *Service) loadHelmIndex(ctx context.Context, repo *models.Repository, res *resolution) (*resolution, []byte, func(), error) {
-	return s.loadCachedBody(ctx, repo, helmIndexKey, res, maxHelmIndexBytes, "helm index", func() (*resolution, error) {
-		return s.resolveHelmIndex(ctx, repo)
-	})
+// helmIndexDoc is the upstream index.yaml: refused unless it parses as one (an
+// HTML error page served with 200, a truncated document).
+var helmIndexDoc = metaDoc{ //nolint:gochecknoglobals // read-only descriptor
+	key:   helmIndexKey,
+	opts:  staticOpts(fetchOpts{verify: verifyHelmIndex}),
+	limit: maxHelmIndexBytes,
+	what:  "helm index",
+	bad:   badDocUpstream,
 }
 
 // helmIndexETag identifies one rendering of a cached index: the upstream body
@@ -132,63 +121,15 @@ func (s *Service) helmIndexETag(repo *models.Repository, blobKey string) string 
 }
 
 func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	res, err := s.resolveHelmIndex(r.Context(), repo)
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	h := w.Header()
-
-	if res.stale {
-		h.Set("Warning", staleWarning)
-	}
-
-	if base.Revalidate(w, r, repo.Public, s.helmIndexETag(repo, res.entry.BlobKey), helmIndexMaxAge) {
-		return
-	}
-
-	loaded, body, release, err := s.loadHelmIndex(r.Context(), repo, res)
-	if err != nil {
-		s.failWithoutValidators(w, r, err)
-		return
-	}
-
-	if loaded.entry.BlobKey != res.entry.BlobKey {
-		// The cached blob was gone and the index refetched: the validator
-		// must describe the body actually served.
-		h.Set("ETag", s.helmIndexETag(repo, loaded.entry.BlobKey))
-	}
-
-	out, err := s.renderHelmIndex(repo, body)
-	release()
-
-	if err != nil {
-		if errors.Is(err, errNotHelmIndex) {
-			// Do not keep serving a body that does not parse until its TTL ends.
-			s.log.Warnw("upstream helm index unparsable", "repo", repo.Name, "error", err)
-
-			if derr := s.db.DeleteProxyCacheEntry(r.Context(), repo.ID, helmIndexKey); derr != nil {
-				s.log.Errorw("failed to drop unparsable proxy cache entry", "repo", repo.Name, "path", helmIndexKey, "error", derr)
-			}
-
-			err = errUpstream
-		} else {
-			s.log.Errorw("failed to render helm index", "repo", repo.Name, "error", err)
-		}
-
-		s.failWithoutValidators(w, r, err)
-
-		return
-	}
-
-	h.Set("Content-Type", "application/yaml")
-	h.Set("Content-Length", strconv.Itoa(len(out)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(out)
-	}
+	s.serveRendered(w, r, repo, renderedDoc{
+		metaDoc: helmIndexDoc,
+		maxAge:  helmIndexMaxAge,
+		etag:    func(blobKey string) string { return s.helmIndexETag(repo, blobKey) },
+		render: func(body []byte, _ *resolution) ([]byte, string, error) {
+			out, err := s.renderHelmIndex(repo, body)
+			return out, "application/yaml", err
+		},
+	})
 }
 
 // helmUpstreamBase is the upstream repository URL with a trailing slash:
@@ -272,57 +213,40 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 
 func (s *Service) serveHelmChart(w http.ResponseWriter, r *http.Request, repo *models.Repository, file string) {
 	key := helmChartsDir + file
-	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchHelmChart(fctx, repo, file, key)
+	s.serveDownload(w, r, repo, key, func(ctx context.Context) (download, error) {
+		return s.locateHelmChart(ctx, repo, file, key)
 	})
 }
 
-// fetchHelmChart downloads file from the URL the cached index lists for it and
-// caches it only when it matches the entry's digest. A file no version of the
-// index lists is errNotFound without a negative cache entry: the index may
-// simply be stale.
-func (s *Service) fetchHelmChart(ctx context.Context, repo *models.Repository, file, key string) (*models.ProxyCacheEntry, error) {
-	res, err := s.resolveHelmIndex(ctx, repo)
+// locateHelmChart finds file in the cached index: where it lives upstream and
+// the digest it must have; bytes that do not match are refused and never
+// cached. A file no version of the index lists is errNotFound.
+func (s *Service) locateHelmChart(ctx context.Context, repo *models.Repository, file, key string) (download, error) {
+	ix, _, err := parseDoc(ctx, s, repo, helmIndexDoc, func(body []byte, _ *resolution) (*pkghelm.Index, error) {
+		return pkghelm.ParseIndex(body)
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	_, body, release, err := s.loadHelmIndex(ctx, repo, res)
-	if err != nil {
-		return nil, err
-	}
-
-	ix, err := pkghelm.ParseIndex(body)
-	release()
-	if err != nil {
-		s.log.Warnw("unreadable upstream helm index", "repo", repo.Name, "error", err)
-		return nil, errUpstream
+		return download{}, err
 	}
 
 	upstream, err := helmUpstreamBase(repo.UpstreamURL)
 	if err != nil {
 		s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-		return nil, errInternal
+		return download{}, errInternal
 	}
 
 	target, digest, found := locateHelmFile(ix, upstream, file)
 	if !found {
-		return nil, errNotFound
+		return download{}, errNotFound
 	}
 
 	want, ok := helmDigest(digest)
 	if !ok {
 		s.log.Warnw("upstream helm index lists an unusable digest, refusing", "repo", repo.Name, "path", key, "digest", digest)
-		return nil, errVerify
+		return download{}, errVerify
 	}
 
-	return s.fetchURL(ctx, repo, key, target.String(), fetchOpts{
-		// Credentials go only to the configured upstream, never to a host
-		// an index points at.
-		noAuth:     !sameOrigin(target, upstream),
-		wantSHA256: want,
-		unverified: want == "",
-	})
+	return download{url: target.String(), opts: fetchOpts{wantSHA256: want, unverified: want == ""}}, nil
 }
 
 // locateHelmFile returns where the charts/<file> of the index lives upstream
