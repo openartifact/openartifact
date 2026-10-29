@@ -175,6 +175,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `auth.hmacKey` | `AUTH_HMAC_KEY` | string | `empty` | **Secret.** `hmacKey` signs OIDC and SAML login state. Unset: a random key is generated once and persisted in system_settings (shared by replicas); a configured value wins. |
 | `auth.samlSpCert` | `OPENARTIFACT_SAML_SP_CERT` | string | `empty` | `samlSpCert` is the PEM certificate of the SAML service provider. Unset: a self-signed pair is generated once and persisted encrypted in system_settings (shared by replicas); regenerating it means re-registering the certificate at the identity provider. |
 | `auth.samlSpKey` | `OPENARTIFACT_SAML_SP_KEY` | string | `empty` | **Secret.** `samlSpKey` is the PEM private key of the SAML service provider. Unset together with the certificate: a self-signed pair is generated (see samlSpCert). Stored unencrypted while `OPENARTIFACT_SECRET_KEY` is unset. |
+| `auth.argon2MaxConcurrent` | `OPENARTIFACT_ARGON2_MAX_CONCURRENT` | int | `0` | `argon2MaxConcurrent` caps the password hashes and verifications running at once, each of which holds 64 MiB until it ends; further logins wait. 0 (default): the CPU count clamped to 2..4 (256 MiB at most). |
 
 ## bootstrap
 

@@ -167,6 +167,7 @@ auth:
   allowAnonymousRead: false
   legacyApiKeyEnabled: false  # default false; true accepts server.apiKey (deprecated, full admin)
   sessionDurationHours: 24
+  argon2MaxConcurrent: 0  # concurrent password hashes (64 MiB each; more logins wait); 0 = CPU count clamped to 2..4; env OPENARTIFACT_ARGON2_MAX_CONCURRENT
   # hmacKey: "CHANGE_ME"  # optional; unset = random key generated once, persisted in system_settings
   # samlSpCert: ""         # PEM SAML SP certificate; unset = self-signed pair generated once, persisted encrypted
   # samlSpKey: ""          # PEM SAML SP key; regenerating means re-registering the cert at the IdP
