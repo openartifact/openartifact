@@ -41,24 +41,3 @@ func (p *PostgresDB) ListPermissionAssignments(ctx context.Context) ([]*models.P
 		},
 	)
 }
-
-// ListUserGroupMemberships returns every user-to-group membership, including
-// the ones an SSO login manages.
-func (p *PostgresDB) ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT user_id, group_id, is_sso_managed FROM auth_user_groups ORDER BY group_id, user_id`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user group memberships: %w", err)
-	}
-
-	return collectRows(
-		rows,
-		"failed to scan user group membership",
-		"failed to list user group memberships",
-		func(row rowScanner) (*models.UserGroup, error) {
-			v := &models.UserGroup{}
-
-			return v, row.Scan(&v.UserID, &v.GroupID, &v.SSOManaged) //nolint:wrapcheck // collectRows wraps
-		},
-	)
-}

@@ -10,9 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -205,72 +202,6 @@ func scanSSOProviderRows(rows *sql.Rows) ([]*models.SSOProvider, error) {
 	}
 
 	return providers, nil
-}
-
-func (p *PostgresDB) SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error {
-	// Cached auth lookups must not outlive this write.
-	defer p.authCache.invalidate()
-
-	tx, err := p.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	_, err = tx.ExecContext(ctx,
-		`DELETE FROM auth_user_groups WHERE user_id=$1 AND is_sso_managed=TRUE`,
-		userID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete sso-managed groups: %w", err)
-	}
-
-	for _, groupID := range groupIDs {
-		_, err = tx.ExecContext(ctx,
-			`INSERT INTO auth_user_groups (user_id, group_id, is_sso_managed) VALUES ($1, $2, TRUE) ON CONFLICT DO NOTHING`,
-			userID, groupID,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to insert sso group membership: %w", err)
-		}
-	}
-
-	if err := revokeExcessProjectTokens(ctx, tx, ""); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit sso group sync: %w", err)
-	}
-
-	return nil
-}
-
-func (p *PostgresDB) GetGroupByName(ctx context.Context, name string) (*models.Group, error) {
-	return p.getGroup(ctx, "name", name)
-}
-
-func (p *PostgresDB) GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error) {
-	existing, err := p.GetGroupByName(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-
-	if existing != nil {
-		return existing, nil
-	}
-
-	now := time.Now().UTC()
-	desc := "Auto-created by SSO group sync"
-	g := &models.Group{
-		ID:          uuid.New().String(),
-		Name:        name,
-		Description: &desc,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	return p.CreateGroup(ctx, g)
 }
 
 func (p *PostgresDB) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
