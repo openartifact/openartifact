@@ -155,15 +155,15 @@ func rollupSizesQuery(repoFormat string) string {
 }
 
 // lastPublishedQuery is the time of the newest row of every repository in $1.
-// Each table is probed by its (repository_id, created_at DESC, id) index, and
-// only for the repositories of its format.
+// Each branch is probed by its (repository_id, created_at DESC, id) index, and
+// only for the repositories it applies to.
 func lastPublishedQuery() string {
 	parts := make([]string, 0, len(catalogBranches()))
 
 	for _, b := range catalogBranches() {
 		scope := ""
-		if b.format != "" {
-			scope = " WHERE cr.format = '" + b.format + "'"
+		if c := b.repoScope(); c != "" {
+			scope = " WHERE " + c
 		}
 
 		parts = append(parts, fmt.Sprintf(
@@ -188,7 +188,7 @@ func packageCountQuery() string {
 }
 
 // recentPackagesQuery is the newest package versions of the repositories in $1:
-// each table contributes its newest $2 rows per repository of its format (its
+// each branch contributes its newest $2 rows per repository it applies to (its
 // (repository_id, created_at DESC, id) index serves that), and the union is cut
 // to the newest $3 distinct (repository, name, version). Proxy cache entries
 // are fetched files, not publications, so they are left out.
@@ -196,7 +196,7 @@ func recentPackagesQuery() string {
 	var hosted []catalogBranch
 
 	for _, b := range catalogBranches() {
-		if b.format != "" {
+		if b.scope != scopeProxy {
 			hosted = append(hosted, b)
 		}
 	}
@@ -209,8 +209,8 @@ func recentPackagesQuery() string {
 				FROM %s WHERE %s AND %s = cr.id
 				ORDER BY t.created_at DESC, t.id LIMIT $2
 			) x
-			WHERE cr.id = ANY($1::uuid[]) AND cr.format = '%s'`,
-			b.formatExpr(), b.name, b.version, b.from, b.live, b.repo, b.format)
+			WHERE cr.id = ANY($1::uuid[]) AND %s`,
+			b.formatExpr(), b.name, b.version, b.from, b.live, b.repo, b.repoScope())
 	})
 
 	return `SELECT repository, format, name, version, max(created_at) AS created_at

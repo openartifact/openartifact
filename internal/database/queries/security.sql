@@ -24,71 +24,11 @@ WITH q_candidates AS MATERIALIZED (
 ), q_match AS MATERIALIZED (
     SELECT p.repository_id, p.id
     FROM (
-        SELECT t.repository_id::uuid AS repository_id, t.id::uuid AS id, t.name::text AS name, t.version::text AS version
-        FROM deb_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM rpm_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT np.repository_id, t.id, np.full_name::text, t.version::text
-        FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM pypi_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id_coord)::text, t.version::text
-        FROM maven_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, (t.organisation || ':' || t.module)::text, t.revision::text
-        FROM ivy_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, (t.group_id || ':' || t.artifact_id)::text, t.version::text
-        FROM sbt_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.package_id::text, t.version::text
-        FROM nuget_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.module_path::text, t.version::text
-        FROM gomod_modules t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM cargo_crates t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM rubygems_gems t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM conda_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM composer_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, (t.namespace || '.' || t.name)::text, t.version::text
-        FROM ansible_collections t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM pacman_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.store_hash::text
-        FROM nix_paths t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM conan_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, (t.branch || '/' || t.repo || '/' || t.name)::text, t.version::text
-        FROM apk_packages t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, ('modules/' || t.name || '/' || t.system)::text, t.version::text
-        FROM terraform_modules t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, ('providers/' || t.type)::text, t.version::text
-        FROM terraform_providers t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.name::text, t.version::text
-        FROM helm_charts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
-        UNION ALL
-        SELECT t.repository_id, t.id, t.path::text, ''::text
-        FROM raw_artifacts t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
+        SELECT f.repository_id::uuid AS repository_id, f.id::uuid AS id, pk.name::text AS name, v.version::text AS version
+        FROM package_files f
+        JOIN package_versions v ON v.id = f.version_id
+        JOIN packages pk ON pk.id = v.package_id
+        WHERE f.id IN (SELECT unnest(ids) FROM q_candidates)
         UNION ALL
         SELECT t.repository_id, t.id, t.cache_key::text, ''::text
         FROM proxy_cache_entries t WHERE t.id IN (SELECT unnest(ids) FROM q_candidates)
