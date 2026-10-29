@@ -96,7 +96,7 @@ func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, pkg
 
 	var out Outcome
 
-	seen := make(map[string]struct{})
+	lists := make([][]models.Vulnerability, 0, len(results))
 
 	for _, res := range results {
 		if res.err != nil {
@@ -114,18 +114,10 @@ func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, pkg
 			continue
 		}
 
-		for _, v := range res.vulns {
-			if v.ID != "" {
-				if _, dup := seen[v.ID]; dup {
-					continue
-				}
-
-				seen[v.ID] = struct{}{}
-			}
-
-			out.Vulnerabilities = append(out.Vulnerabilities, v)
-		}
+		lists = append(lists, res.vulns)
 	}
+
+	out.Vulnerabilities = mergeFindings(lists...)
 
 	slices.SortStableFunc(out.Failures, func(a, b *ScanError) int { return strings.Compare(a.Scanner, b.Scanner) })
 
