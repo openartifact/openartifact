@@ -53,7 +53,7 @@ help:
 	@echo "  vet             - Run go vet"
 	@echo "  sec             - Run gosec security scanner"
 	@echo "  check           - Run fmt + vet + lint (pre-commit gate)"
-	@echo "  generate        - Run sqlc generate (DB codegen) and regenerate web/src/lib/formats.generated.ts"
+	@echo "  generate        - Run sqlc generate (DB codegen) and regenerate the web/src/lib/*.generated.ts files"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
 	@echo "  docs-check      - Fail when docs/reference is out of date"
 	@echo "  dup             - Fail when Go duplication (dupl -t 75) grows past .github/dup-baseline.json"
@@ -141,7 +141,7 @@ check: fmt vet lint
 generate:
 	@echo "Running sqlc generate..."
 	$(GO) tool -modfile=tools/go.mod sqlc generate
-	@echo "Generating web format constants from internal/repotype..."
+	@echo "Generating web format constants and client setup templates..."
 	$(GO) generate ./internal/repotype
 
 docs-gen:
