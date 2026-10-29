@@ -70,7 +70,8 @@ func hostedBranch() catalogBranch {
 		scope:     scopeHosted,
 		formatSQL: "pk.format::text",
 		from: "package_files t JOIN package_versions v ON v.id = t.version_id " +
-			"JOIN packages pk ON pk.id = v.package_id",
+			"JOIN packages pk ON pk.id = v.package_id " +
+			"JOIN repositories hr ON hr.id = t.repository_id AND hr.deleted_at IS NULL",
 		repo: "t.repository_id", live: "t.deleted_at IS NULL AND t.listed",
 		name: "pk.name", version: "v.version", blob: "t.blob_id", blobKey: "NULL::text",
 		prefSize: "t.size_bytes::bigint", fbSize: nullBigint,
