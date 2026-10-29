@@ -111,8 +111,8 @@ func reservedWrite(t *testing.T, pg *PostgresDB, repo string, size int64, write 
 	}
 }
 
-// requireReleased requires a delete to have returned one reservation entry.
-func requireReleased(t *testing.T, pg *PostgresDB, repo string, want int) {
+// requireMiscReleased requires a delete to have returned one reservation entry.
+func requireMiscReleased(t *testing.T, pg *PostgresDB, repo string, want int) {
 	t.Helper()
 
 	if n := pendingEntries(t, pg, repo); n != want {
@@ -213,7 +213,7 @@ func TestHelmStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one round
 	}
 
 	requireGeneric(t, pg, repo, genericRows{2, 2, 2})
-	requireReleased(t, pg, repo, 1)
+	requireMiscReleased(t, pg, repo, 1)
 
 	if err := pg.DeleteHelmChart(ctx, repo, "web", "1.0.0"); err != nil {
 		t.Fatal(err)
@@ -365,7 +365,7 @@ func TestNuGetStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one roun
 	}
 
 	requireGeneric(t, pg, repo, genericRows{2, 2, 2})
-	requireReleased(t, pg, repo, 2) // each delete returns its reservation
+	requireMiscReleased(t, pg, repo, 2) // each delete returns its reservation
 }
 
 func TestAnsibleStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one round trip checks every typed read of the store
@@ -478,7 +478,7 @@ func TestAnsibleStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one ro
 	}
 
 	requireGeneric(t, pg, repo, genericRows{2, 2, 2})
-	requireReleased(t, pg, repo, 1)
+	requireMiscReleased(t, pg, repo, 1)
 
 	if err := pg.DeleteAnsibleCollection(ctx, repo, c1.ID); err != nil {
 		t.Fatal(err)
