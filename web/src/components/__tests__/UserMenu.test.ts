@@ -57,7 +57,7 @@ describe('UserMenu', () => {
     session.user = makeUser()
     expect((await mountMenu()).wrapper.get('[data-testid="user-menu-role"]').text()).toBe('Member')
     session.user = null
-    expect((await mountMenu()).wrapper.get('[data-testid="user-menu"]').text()).toContain('?')
+    expect((await mountMenu()).wrapper.get('[data-testid="user-menu"] [data-initial]').attributes('data-initial')).toBe('?')
   })
 
   it('links the profile and the personal access tokens, and closes on navigation', async () => {
