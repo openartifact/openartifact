@@ -79,7 +79,7 @@ oa artifact upload --branch v3.20 --apk-repo main --arch x86_64 REPO my-pkg-1.0-
 
 - `DELETE <branch>/<repo>/<arch>/<name>-<version>.apk` (`curl -X DELETE`) deletes one package; it goes to the [trash](../operations/trash.md).
 - The file name must be the canonical `<name>-<version>.apk`.
-- The arch directory must equal the architecture in `.PKGINFO`. A `noarch` package is stored in the arch directory you name (the path of the `PUT`, or the `arch` field / `--arch` of the REST upload, which is required for `noarch`); upload it to every architecture directory that should offer it.
+- The arch directory must equal the architecture in `.PKGINFO`. A `noarch` package is stored in the arch directory you name (the path of the `PUT`, or the `arch` field / `--arch` of the REST upload, which is required for `noarch`); upload it to every architecture directory that should offer it. As in Alpine's own mirrors, the directory's index lists it with the architecture of the directory (`apk index --rewrite-arch`), so `apk` downloads it from `<arch>/` and not from a `noarch/` directory; the `.apk` file itself stays `noarch`.
 - The package is validated: the gzip segments, `.PKGINFO`, the `datahash` of the data segment and the tar layout. A malformed package is `400`.
 - The same name and version in the same directory is `409 CONFLICT`: packages are immutable.
 - Quotas, license policy (the `license` of `.PKGINFO`), quarantine, scanning, webhooks and the [immutable releases](../operations/trash.md#immutable-releases) guard apply as for other hosted formats; downloads are counted. Every version counts as a release.

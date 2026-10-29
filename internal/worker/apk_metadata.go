@@ -179,12 +179,16 @@ func ApkPackageDirs(rows []*models.ApkPackage) map[string][]apk.Package {
 	return byDir
 }
 
-// ApkRowPackage is the index entry of a stored package.
+// ApkRowPackage is the index entry of a stored package. Its architecture is the
+// one of the directory (what Alpine's `apk index --rewrite-arch` writes): a
+// noarch package lives in each arch directory, and apk fetches a package from
+// <repo>/<arch of its index entry>/, so an A:noarch entry would send apk to a
+// noarch directory that does not exist. The package file itself stays noarch.
 func ApkRowPackage(row *models.ApkPackage) apk.Package {
 	return apk.Package{
 		Name:             row.Name,
 		Version:          row.Version,
-		Arch:             row.PkgArch,
+		Arch:             row.Arch,
 		Description:      row.Description,
 		URL:              row.URL,
 		License:          row.License,
