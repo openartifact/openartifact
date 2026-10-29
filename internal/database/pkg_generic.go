@@ -25,6 +25,10 @@ import (
 // computes name_key, version_key, path and the JSON columns and the generic
 // subsystems (listing, trash, quota, search, ...) read the result.
 
+// errBlobIDCount reports a writePackageTx call whose blob ids do not pair up
+// with the files.
+var errBlobIDCount = errors.New("blob ids do not match the files")
+
 // Roles of a package_files row. Only a primary file counts as an artifact for
 // quota and listing statistics.
 const (
@@ -202,6 +206,10 @@ func (p *core) writePackageTx(
 	blobIDs []*string,
 	pkgAttrs, verMeta json.RawMessage,
 ) (*PackageWritten, error) {
+	if len(blobIDs) != len(w.Files) {
+		return nil, fmt.Errorf("%w: %d blob ids for %d files", errBlobIDCount, len(blobIDs), len(w.Files))
+	}
+
 	pkgID, err := q.UpsertPackage(ctx, dbsqlc.UpsertPackageParams{
 		RepositoryID: w.RepoID,
 		Format:       w.Format,
@@ -240,7 +248,7 @@ func (p *core) writePackageTx(
 		}
 	}
 
-	for i := range w.Files {
+	for i, blobID := range blobIDs {
 		f := &w.Files[i]
 
 		attrs, err := jsonOrEmpty(f.Attrs)
@@ -263,7 +271,7 @@ func (p *core) writePackageTx(
 			RepositoryID:  w.RepoID,
 			Path:          f.Path,
 			Filename:      f.Filename,
-			BlobID:        blobIDs[i],
+			BlobID:        blobID,
 			SizeBytes:     f.SizeBytes,
 			Role:          role,
 			Listed:        !f.Unlisted,
@@ -297,8 +305,8 @@ func (p *core) liveVersion(
 	w *PackageWrite,
 	pkgID string,
 	verMeta json.RawMessage,
-) (id string, created bool, err error) {
-	id, err = q.GetLiveVersionID(ctx, dbsqlc.GetLiveVersionIDParams{PackageID: pkgID, VersionKey: w.VersionKey})
+) (string, bool, error) {
+	id, err := q.GetLiveVersionID(ctx, dbsqlc.GetLiveVersionIDParams{PackageID: pkgID, VersionKey: w.VersionKey})
 	if err == nil {
 		return id, false, nil
 	}

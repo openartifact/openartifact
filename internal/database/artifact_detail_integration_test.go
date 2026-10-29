@@ -109,28 +109,18 @@ func (f *detailFixture) seedGo(t *testing.T) {
 	})
 }
 
-func TestArtifactDetailReadsGenericTables(t *testing.T) {
-	registerFixtures(t)
+type detailCase struct {
+	name    string
+	repo    string
+	id      string
+	resolve bool
+	ok      func(d *models.ComponentDetail) bool
+}
 
-	pg := newQuotaTestDB(t, 4)
-	db := pg.GetDB()
-	f := &detailFixture{
-		pg:        pg,
-		npmRepo:   seedRepo(t, db, "detail-npm", "npm"),
-		mavenRepo: seedRepo(t, db, "detail-maven", "maven"),
-		goRepo:    seedRepo(t, db, "detail-go", "go"),
-	}
-	f.seedNPM(t)
-	f.seedMaven(t)
-	f.seedGo(t)
+// detailCases are the expectations on the seeded fixture.
+func detailCases(f *detailFixture) []detailCase {
+	return []detailCase{
 
-	cases := []struct {
-		name    string
-		repo    string
-		id      string
-		resolve bool
-		ok      func(d *models.ComponentDetail) bool
-	}{
 		{"npm columns", f.npmRepo, f.npmFile[0], true, func(d *models.ComponentDetail) bool {
 			return d.Format == "npm" && d.Name == "@acme/widget" && d.Version == "1.0.0" &&
 				d.Filename == "widget-1.0.0.tgz" && d.SizeBytes == 11
@@ -150,6 +140,24 @@ func TestArtifactDetailReadsGenericTables(t *testing.T) {
 		{"unlisted file resolves nothing", f.goRepo, f.goFiles[1], false, nil},
 		{"id is scoped to its repository", f.mavenRepo, f.npmFile[0], false, nil},
 	}
+}
+
+func TestArtifactDetailReadsGenericTables(t *testing.T) {
+	registerFixtures(t)
+
+	pg := newQuotaTestDB(t, 4)
+	db := pg.GetDB()
+	f := &detailFixture{
+		pg:        pg,
+		npmRepo:   seedRepo(t, db, "detail-npm", "npm"),
+		mavenRepo: seedRepo(t, db, "detail-maven", "maven"),
+		goRepo:    seedRepo(t, db, "detail-go", "go"),
+	}
+	f.seedNPM(t)
+	f.seedMaven(t)
+	f.seedGo(t)
+
+	cases := detailCases(f)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
