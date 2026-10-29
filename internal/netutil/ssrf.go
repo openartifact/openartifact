@@ -58,25 +58,28 @@ func blockedIP(ip netip.Addr) bool {
 	return false
 }
 
-// safeDialer dials with a 10s timeout and refuses, at connection time, any
-// address blockedIP rejects, so a DNS answer that changes between a check and
-// the dial cannot get around the policy.
-func safeDialer() *net.Dialer {
-	return &net.Dialer{
-		Timeout: 10 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			ap, err := netip.ParseAddrPort(address)
-			if err != nil {
-				return err
-			}
-
-			if blockedIP(ap.Addr()) {
-				return ErrBlockedAddress
-			}
-
-			return nil
-		},
+// dialControl is a net.Dialer Control hook that refuses, at connection time,
+// any address blockedIP rejects (loopback, private, link-local and cloud
+// metadata unless OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS allows the private
+// ones). It runs for the address actually being dialed, after name
+// resolution, so a DNS answer that changes between a check and the dial
+// cannot get around the policy.
+func dialControl(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return err
 	}
+
+	if blockedIP(ap.Addr()) {
+		return ErrBlockedAddress
+	}
+
+	return nil
+}
+
+// safeDialer dials with a 10s timeout through dialControl.
+func safeDialer() *net.Dialer {
+	return &net.Dialer{Timeout: 10 * time.Second, Control: dialControl}
 }
 
 // blockedAddr applies the policy to ip itself, without looking inside
