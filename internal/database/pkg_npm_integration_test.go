@@ -40,6 +40,8 @@ func npmUpdatedAt(t *testing.T, pg *PostgresDB, pkgID string) time.Time {
 
 // TestNPMStoreRoundTrip writes through the typed store, reads back through every
 // typed read and checks the generic rows the mapping promises.
+//
+//nolint:gocyclo,cyclop // one scenario: write, every read, ETag moves, delete
 func TestNPMStoreRoundTrip(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
@@ -252,7 +254,10 @@ func TestNPMStoreRoundTrip(t *testing.T) {
 		t.Errorf("package_tags left = %d, want 0", n)
 	}
 
-	if n := npmCount(t, pg, `SELECT count(*) FROM quota_pending WHERE repository_id = $1 AND size_bytes = 10 AND artifact_count = 1`, repo.ID); n != 1 {
+	if n := npmCount(t, pg,
+		`SELECT count(*) FROM quota_pending WHERE repository_id = $1 AND size_bytes = 10 AND artifact_count = 1`,
+		repo.ID,
+	); n != 1 {
 		t.Errorf("release entries after delete = %d, want 1", n)
 	}
 
