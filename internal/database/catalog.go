@@ -381,7 +381,8 @@ func (p *CatalogStore) GetRepoComponentDetail(ctx context.Context, repoID, id st
 }
 
 // ListComponentsByRepo lists the packages of one repository across every
-// format (see ListRepoComponents in queries/components.sql for the mapping). formatFilter, when non-empty, restricts the result to one format.
+// format (see ListRepoComponents in queries/components.sql for the mapping).
+// formatFilter, when non-empty, restricts the result to one format.
 func (p *CatalogStore) ListComponentsByRepo(
 	ctx context.Context,
 	repoID, formatFilter string,
