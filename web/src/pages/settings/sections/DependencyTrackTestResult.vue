@@ -4,8 +4,9 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+<!-- The outcome of a connection test: the server's version and permissions, or why it failed. -->
 <template>
-  <div class="rounded-xl border border-success/30 bg-success-soft p-4 space-y-2" role="status" data-testid="dt-test-result">
+  <div v-if="result" class="rounded-xl border border-success/30 bg-success-soft p-4 space-y-2" role="status" data-testid="dt-test-result">
     <p class="text-sm font-semibold text-success">{{ t('adm.dt.testOk') }}</p>
     <p class="text-xs text-foreground">
       {{ t('adm.dt.testVersion') }}: <span class="font-mono">{{ result.version }}</span>
@@ -25,6 +26,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
   </div>
+  <div v-if="error" class="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger" role="alert">
+    <p class="font-semibold">{{ t('adm.dt.testFailed') }}</p>
+    <p class="text-xs mt-0.5 font-mono break-all">{{ error }}</p>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -32,7 +37,7 @@ import { computed } from 'vue'
 import type { DependencyTrackTest } from '../../../api/dependencyTrack'
 import { t } from '../../../i18n'
 
-const props = defineProps<{ result: DependencyTrackTest }>()
-const permissions = computed(() => props.result.permissions ?? [])
-const missing = computed(() => props.result.missing_permissions ?? [])
+const props = defineProps<{ result: DependencyTrackTest | null; error: string }>()
+const permissions = computed(() => props.result?.permissions ?? [])
+const missing = computed(() => props.result?.missing_permissions ?? [])
 </script>

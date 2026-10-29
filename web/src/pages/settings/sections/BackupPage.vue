@@ -21,61 +21,40 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </SectionActions>
 
     <!-- Stat Tiles -->
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-      <div
-        v-for="tile in statTiles"
-        :key="tile.label"
-        class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3"
-      >
-        <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" :style="{ background: tile.iconBg }">
-          <component :is="tile.icon" class="w-5 h-5" :style="{ color: tile.iconColor }" aria-hidden="true" />
-        </div>
-        <div class="min-w-0">
-          <p class="text-micro font-mono font-semibold text-muted truncate">{{ tile.label }}</p>
-          <p class="text-xl font-bold tabular-nums text-foreground leading-tight">{{ tile.value }}</p>
-        </div>
-      </div>
-    </div>
+    <StatTiles class="grid-cols-2 md:grid-cols-3" :tiles="statTiles" />
 
     <!-- Loading Skeleton -->
-    <div v-if="loading" class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-5 py-4 border-b border-border">
-        <div class="h-4 w-32 rounded skel" />
-      </div>
-      <div v-for="i in 3" :key="i" class="flex items-center gap-4 px-5 py-4 border-b border-border last:border-0">
-        <div class="h-5 w-20 rounded-full skel" />
-        <div class="h-5 w-20 rounded-full skel" />
-        <div class="h-3 w-24 rounded skel" />
-        <div class="h-3 w-28 rounded skel" />
-      </div>
-    </div>
+    <SkeletonRows v-if="loading" header="h-4 w-32">
+      <div class="h-5 w-20 rounded-full skel" />
+      <div class="h-5 w-20 rounded-full skel" />
+      <div class="h-3 w-24 rounded skel" />
+      <div class="h-3 w-28 rounded skel" />
+    </SkeletonRows>
 
     <div v-else-if="loadError && items.length === 0" class="bg-surface rounded-xl border border-border px-5 py-8 text-center text-danger" role="alert">
       {{ loadError }}
     </div>
 
     <!-- Table -->
-    <div v-else class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
-        <h2 class="text-sm font-semibold text-foreground">{{ t('adm.backup.jobs') }}</h2>
+    <CardSection v-else :title="t('adm.backup.jobs')">
+      <template #badge>
         <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted">{{ items.length }}</span>
-        <span v-if="polling" class="ml-auto flex items-center gap-1.5 text-caption text-muted font-mono" role="status">
+      </template>
+      <template v-if="polling" #action>
+        <span class="flex items-center gap-1.5 text-caption text-muted font-mono" role="status">
           <span class="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" aria-hidden="true" />
           {{ t('adm.backup.autoRefreshing') }}
         </span>
-      </div>
+      </template>
 
-      <div v-if="items.length === 0" class="py-16 text-center">
-        <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
-          <ArchiveBoxIcon class="w-6 h-6 text-muted" aria-hidden="true" />
-        </div>
-        <p class="text-sm font-medium text-foreground">{{ t('adm.backup.empty') }}</p>
-        <p class="text-xs text-muted mt-1 mb-4">{{ t('adm.backup.emptyHint') }}</p>
-        <AppButton size="sm" @click="openCreateModal">
-          <PlusIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('adm.backup.create') }}
-        </AppButton>
-      </div>
+      <IconEmptyState
+        v-if="items.length === 0"
+        :icon="ArchiveBoxIcon"
+        :title="t('adm.backup.empty')"
+        :hint="t('adm.backup.emptyHint')"
+        :action-label="t('adm.backup.create')"
+        @action="openCreateModal"
+      />
 
       <TableScroller v-else>
       <table class="w-full">
@@ -140,7 +119,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </tbody>
       </table>
       </TableScroller>
-    </div>
+    </CardSection>
 
     <!-- Create backup -->
     <AdminDialog :open="createModalOpen" max-width="max-w-sm" :title="t('adm.backup.create')" @close="closeCreateModal">
@@ -237,6 +216,10 @@ import { t } from '../../../i18n'
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import AdminDialog from '../../../components/AdminDialog.vue'
+import CardSection from '../../../components/ui/CardSection.vue'
+import IconEmptyState from '../../../components/ui/IconEmptyState.vue'
+import SkeletonRows from '../../../components/ui/SkeletonRows.vue'
+import StatTiles, { type StatTile } from '../../../components/ui/StatTiles.vue'
 import TableScroller from '../../../components/ui/TableScroller.vue'
 import { ACTIONS_CELL, ACTIONS_HEAD } from '../../../components/ui/tableStyles'
 import {
@@ -282,27 +265,24 @@ const lastBackup = computed<BackupJob | undefined>(() =>
   items.value.find((j) => j.status === 'completed'),
 )
 
-const statTiles = computed(() => [
+const statTiles = computed<StatTile[]>(() => [
   {
     label: t('adm.backup.stat.total'),
     value: String(items.value.length),
     icon: ArchiveBoxIcon,
-    iconBg: 'rgb(var(--color-primary) / 0.1)',
-    iconColor: 'rgb(var(--color-primary))',
+    tone: 'primary',
   },
   {
     label: t('adm.backup.stat.last'),
     value: lastBackup.value ? formatDate(lastBackup.value.created_at) : '—',
     icon: ServerStackIcon,
-    iconBg: 'rgb(var(--color-success-soft))',
-    iconColor: 'rgb(var(--color-success))',
+    tone: 'success',
   },
   {
     label: t('adm.backup.stat.lastSize'),
     value: lastBackup.value?.size_bytes ? formatBytes(lastBackup.value.size_bytes) : '—',
     icon: CircleStackIcon,
-    iconBg: 'rgb(var(--color-warning-soft))',
-    iconColor: 'rgb(var(--color-warning))',
+    tone: 'warning',
   },
 ])
 

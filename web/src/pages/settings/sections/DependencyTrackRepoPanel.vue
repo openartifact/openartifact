@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div class="max-w-sm">
       <label for="dt-repo" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.repository') }}</label>
-      <select id="dt-repo" v-model="repo" :class="inputClass" @change="onRepoChange">
+      <select id="dt-repo" v-model="repo" :class="MONO_INPUT_CLASS" @change="onRepoChange">
         <option value="">{{ t('adm.dt.selectRepo') }}</option>
         <option v-for="r in repos" :key="r.name" :value="r.name">{{ r.name }}</option>
       </select>
@@ -59,46 +59,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <div class="grid grid-cols-2 gap-x-4 gap-y-4">
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-ovr-url" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.baseUrl') }}</label>
-            <input id="dt-ovr-url" v-model="form.base_url" type="text" :class="inputClass" />
-          </div>
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-ovr-key" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.apiKey') }}</label>
-            <input id="dt-ovr-key" v-model="apiKey" type="password" autocomplete="new-password" :placeholder="t('adm.dt.apiKeyPlaceholder')" :class="inputClass" />
-            <div class="flex items-center gap-3 mt-1">
-              <span class="text-caption" :class="apiKeySet ? 'text-success' : 'text-muted'">
-                {{ apiKeySet ? t('adm.dt.apiKeyStored') : t('adm.dt.apiKeyNone') }}
-              </span>
-              <button
-                v-if="apiKeySet"
-                type="button"
-                class="text-caption font-medium text-muted hover:text-danger transition-colors"
-                :disabled="saving"
-                @click="saveOverride('')"
-              >
-                {{ t('adm.dt.removeKey') }}
-              </button>
-            </div>
-          </div>
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-ovr-name" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.projectName') }}</label>
-            <input id="dt-ovr-name" v-model="form.project_name" type="text" :placeholder="t('adm.dt.projectNamePlaceholder')" :class="inputClass" />
-          </div>
-          <div class="col-span-2 sm:col-span-1">
-            <label for="dt-ovr-version" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.projectVersion') }}</label>
-            <input id="dt-ovr-version" v-model="form.project_version" type="text" :placeholder="t('adm.dt.projectVersionPlaceholder')" :class="inputClass" />
-          </div>
-          <p class="col-span-2 text-caption text-muted -mt-2">{{ t('adm.dt.templateHint') }}</p>
+          <DependencyTrackFields v-model:form="form" v-model:api-key="apiKey" :api-key-set="apiKeySet" :saving="saving" @remove-key="saveOverride('')" />
           <div class="col-span-2 sm:col-span-1">
             <label for="dt-ovr-auto" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.autoPush') }}</label>
-            <select id="dt-ovr-auto" v-model="form.auto_push" :class="inputClass">
+            <select id="dt-ovr-auto" v-model="form.auto_push" :class="MONO_INPUT_CLASS">
               <option v-for="o in triOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
             </select>
           </div>
           <div class="col-span-2 sm:col-span-1">
             <label for="dt-ovr-vex" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.pushVex') }}</label>
-            <select id="dt-ovr-vex" v-model="form.push_vex" :class="inputClass">
+            <select id="dt-ovr-vex" v-model="form.push_vex" :class="MONO_INPUT_CLASS">
               <option v-for="o in triOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
             </select>
           </div>
@@ -113,11 +83,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </form>
 
-      <DependencyTrackTestResult v-if="testResult" :result="testResult" />
-      <div v-if="testError" class="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger" role="alert">
-        <p class="font-semibold">{{ t('adm.dt.testFailed') }}</p>
-        <p class="text-xs mt-0.5 font-mono break-all">{{ testError }}</p>
-      </div>
+      <DependencyTrackTestResult :result="testResult" :error="testError" />
 
       <!-- Manual push -->
       <form class="rounded-lg border border-border p-4 space-y-3" @submit.prevent="push">
@@ -128,7 +94,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="flex items-end gap-2">
           <div class="flex-1 max-w-md">
             <label for="dt-artifact-id" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.dt.artifactId') }}</label>
-            <input id="dt-artifact-id" v-model="artifactId" type="text" :placeholder="t('adm.dt.artifactIdPlaceholder')" :class="inputClass" />
+            <input id="dt-artifact-id" v-model="artifactId" type="text" :placeholder="t('adm.dt.artifactIdPlaceholder')" :class="MONO_INPUT_CLASS" />
           </div>
           <AppButton type="submit" size="sm" :loading="pushing" :disabled="artifactId.trim() === ''">{{ t('adm.dt.pushButton') }}</AppButton>
         </div>
@@ -182,6 +148,7 @@ import AppToggle from '../../../components/AppToggle.vue'
 import StatusBadge from '../../../components/StatusBadge.vue'
 import TableScroller from '../../../components/ui/TableScroller.vue'
 import { GROW_CELL } from '../../../components/ui/tableStyles'
+import DependencyTrackFields from './DependencyTrackFields.vue'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'
 import { useToastStore } from '../../../stores/toast'
 import { listAllRepositories } from '../../../api/repositories'
@@ -200,10 +167,8 @@ import type {
   DependencyTrackTest,
 } from '../../../api/dependencyTrack'
 import { formatDateTime } from '../../../lib/datetime'
+import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
 import { t } from '../../../i18n'
-
-const inputClass =
-  'w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors'
 
 // Pushes are polled while one is queued/running, at most MAX_POLLS times.
 const POLL_MS = 3000

@@ -13,23 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div>
     <PageHeader :title="name" :crumbs="crumbs">
       <template v-if="repo" #meta>
-        <FormatBadge :format="repo.format" />
-        <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
-        <span class="text-xs text-muted" aria-hidden="true">·</span>
-        <span class="inline-flex items-center gap-1 text-xs text-muted">
-          <EyeIcon v-if="repo.public" class="w-3.5 h-3.5" aria-hidden="true" />
-          <EyeSlashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
-          {{ repo.public ? t('repos.public') : t('repos.private') }}
-        </span>
-        <span
-          v-if="repo.federated"
-          class="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted"
-          :title="t('federation.badgeTitle')"
-          data-testid="federated-badge"
-        >
-          <ArrowsRightLeftIcon class="w-3 h-3" aria-hidden="true" />
-          {{ t('federation.badge') }}
-        </span>
+        <RepoMeta :repo="repo" />
       </template>
       <template v-if="$slots.actions" #actions>
         <slot name="actions" />
@@ -42,10 +26,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowsRightLeftIcon, EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import PageHeader from './PageHeader.vue'
 import SectionTabs, { type SectionTab } from './SectionTabs.vue'
-import FormatBadge from './FormatBadge.vue'
+import RepoMeta from './RepoMeta.vue'
 import type { Repository } from '../api/repositories'
 import type { Crumb } from '../lib/crumbs'
 import { showsFederation } from '../lib/federation'

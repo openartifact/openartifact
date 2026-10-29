@@ -120,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="form.base_url"
                 type="text"
                 placeholder="https://api.openai.com/v1"
-                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
+                :class="MONO_INPUT_CLASS"
               />
               <p class="text-caption text-muted mt-1">{{ t('adm.ai.baseUrlHint') }}</p>
             </div>
@@ -158,7 +158,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     type="text"
                     list="model-suggestions"
                     :placeholder="PROVIDERS[form.provider]?.defaultModels?.[0] ?? 'gpt-4o'"
-                    class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
+                    :class="MONO_INPUT_CLASS"
                   />
                   <datalist id="model-suggestions">
                     <option v-for="m in modelSuggestions" :key="m" :value="m" />
@@ -190,7 +190,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="128"
                 max="128000"
                 step="128"
-                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
+                :class="MONO_INPUT_CLASS"
               />
               <p class="text-caption text-muted mt-1">{{ t('adm.ai.maxTokensHint') }}</p>
             </div>
@@ -204,7 +204,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="5"
                 max="300"
                 step="5"
-                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
+                :class="MONO_INPUT_CLASS"
               />
               <p class="text-caption text-muted mt-1">{{ t('adm.ai.timeoutHint') }}</p>
             </div>
@@ -315,6 +315,7 @@ import type { AIConfig, TestResult } from '../../../api/adminAi'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
 import { aiProviderColor, tint } from '../../../lib/brandColors'
+import { MONO_INPUT_CLASS } from '../../../lib/formClasses'
 import { aiBrandIcon } from '../../../lib/brandIcons'
 import { t } from '../../../i18n'
 

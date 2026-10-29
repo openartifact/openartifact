@@ -109,17 +109,23 @@ export function peerFormValid(form: PeerForm, mode: 'create' | 'edit'): boolean 
   return Object.keys(validatePeerForm(form, mode)).length === 0
 }
 
+/** The optional TLS fields of the form that are filled in, trimmed, as request body fields. */
+function filledTlsFields(form: PeerForm): Pick<CreateFederationPeerRequest, 'ca_pem' | 'client_cert' | 'client_key'> {
+  const fields: Pick<CreateFederationPeerRequest, 'ca_pem' | 'client_cert' | 'client_key'> = {}
+  if (form.caPem.trim()) fields.ca_pem = form.caPem.trim()
+  if (form.clientCert.trim()) fields.client_cert = form.clientCert.trim()
+  if (form.clientKey.trim()) fields.client_key = form.clientKey.trim()
+  return fields
+}
+
 /** Request body for a new peer; optional TLS fields are sent only when filled in. */
 export function peerCreateBody(form: PeerForm): CreateFederationPeerRequest {
-  const body: CreateFederationPeerRequest = {
+  return {
     name: form.name.trim(),
     base_url: form.baseUrl.trim(),
     token: form.token.trim(),
+    ...filledTlsFields(form),
   }
-  if (form.caPem.trim()) body.ca_pem = form.caPem.trim()
-  if (form.clientCert.trim()) body.client_cert = form.clientCert.trim()
-  if (form.clientKey.trim()) body.client_key = form.clientKey.trim()
-  return body
 }
 
 /** PATCH body holding only what changed against `peer`; secrets are sent only when newly entered. */
@@ -129,10 +135,7 @@ export function peerUpdateBody(form: PeerForm, peer: FederationPeer): UpdateFede
   if (form.baseUrl.trim() !== peer.base_url) body.base_url = form.baseUrl.trim()
   if (form.enabled !== peer.enabled) body.enabled = form.enabled
   if (form.token.trim()) body.token = form.token.trim()
-  if (form.caPem.trim()) body.ca_pem = form.caPem.trim()
-  if (form.clientCert.trim()) body.client_cert = form.clientCert.trim()
-  if (form.clientKey.trim()) body.client_key = form.clientKey.trim()
-  return body
+  return { ...body, ...filledTlsFields(form) }
 }
 
 /**

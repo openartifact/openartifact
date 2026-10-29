@@ -123,16 +123,19 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 }
 
 async function apiError(res: Response): Promise<ApiError> {
-  let message = `HTTP ${res.status}`
-  let code: string | undefined
+  let body: unknown
   try {
-    const body = (await res.json()) as { error?: string; code?: string }
-    if (body.error) message = body.error
-    if (body.code) code = body.code
+    body = await res.json()
   } catch {
     // non-JSON error body: keep the HTTP status message
   }
-  return new ApiError(message, res.status, code)
+  return apiErrorFromBody(res.status, body)
+}
+
+/** The error of a failed response: the JSON `{error, code}` body's text and code, else "HTTP <status>". */
+export function apiErrorFromBody(status: number, body: unknown): ApiError {
+  const { error, code } = (body ?? {}) as { error?: string; code?: string }
+  return new ApiError(error || `HTTP ${status}`, status, code || undefined)
 }
 
 /** Headers of a request whose body is `JSON.stringify(...)`. */

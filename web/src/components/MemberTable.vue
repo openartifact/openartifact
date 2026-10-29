@@ -301,16 +301,19 @@ async function addMember(): Promise<void> {
     toasts.success(t('projects.members.added'))
     emit('changed')
   } catch (err) {
-    const status = errorStatus(err)
-    toasts.error(
-      status === 404 ? t('projects.members.userNotFound')
-      : status === 409 ? t('projects.members.alreadyMember')
-      : status === 403 ? t('projects.members.forbidden')
-      : t('projects.members.addFailed'),
-    )
+    toastAccessError(err, t('projects.members.addFailed'), {
+      404: t('projects.members.userNotFound'),
+      409: t('projects.members.alreadyMember'),
+    })
   } finally {
     adding.value = false
   }
+}
+
+/** Toasts why a member or group change failed: the text for its status, "forbidden" for a 403, else `fallback`. */
+function toastAccessError(err: unknown, fallback: string, byStatus: Record<number, string> = {}): void {
+  const status = errorStatus(err)
+  toasts.error((status !== undefined ? byStatus[status] : undefined) ?? (status === 403 ? t('projects.members.forbidden') : fallback))
 }
 
 async function changeMemberRole(member: ProjectMember, role: ProjectMemberRole): Promise<void> {
@@ -319,12 +322,7 @@ async function changeMemberRole(member: ProjectMember, role: ProjectMemberRole):
     await updateProjectMember(name.value, member.user_id, { role })
     toasts.success(t('projects.members.roleUpdated'))
   } catch (err) {
-    const status = errorStatus(err)
-    toasts.error(
-      status === 409 ? t('projects.members.protected')
-      : status === 403 ? t('projects.members.forbidden')
-      : t('projects.members.roleUpdateFailed'),
-    )
+    toastAccessError(err, t('projects.members.roleUpdateFailed'), { 409: t('projects.members.protected') })
   }
   // Reload either way so the select reflects what the server holds.
   emit('changed')
@@ -343,12 +341,7 @@ async function confirmRemoveMember(): Promise<void> {
     removeMemberTarget.value = null
     emit('changed')
   } catch (err) {
-    const status = errorStatus(err)
-    toasts.error(
-      status === 409 ? t('projects.members.protected')
-      : status === 403 ? t('projects.members.forbidden')
-      : t('projects.members.removeFailed'),
-    )
+    toastAccessError(err, t('projects.members.removeFailed'), { 409: t('projects.members.protected') })
   } finally {
     removingMember.value = false
   }
@@ -370,12 +363,7 @@ async function attachGroup(): Promise<void> {
     toasts.success(t('projects.groups.attached'))
     emit('changed')
   } catch (err) {
-    const status = errorStatus(err)
-    toasts.error(
-      status === 404 ? t('projects.groups.notFound')
-      : status === 403 ? t('projects.members.forbidden')
-      : t('projects.groups.attachFailed'),
-    )
+    toastAccessError(err, t('projects.groups.attachFailed'), { 404: t('projects.groups.notFound') })
   } finally {
     attaching.value = false
   }
@@ -387,7 +375,7 @@ async function changeGroupRole(grant: ProjectGroup, role: ProjectGroupRole): Pro
     await setProjectGroup(name.value, grant.group_id, { role })
     toasts.success(t('projects.groups.roleUpdated'))
   } catch (err) {
-    toasts.error(errorStatus(err) === 403 ? t('projects.members.forbidden') : t('projects.groups.roleUpdateFailed'))
+    toastAccessError(err, t('projects.groups.roleUpdateFailed'))
   }
   emit('changed')
 }
@@ -405,7 +393,7 @@ async function confirmRemoveGroup(): Promise<void> {
     removeGroupTarget.value = null
     emit('changed')
   } catch (err) {
-    toasts.error(errorStatus(err) === 403 ? t('projects.members.forbidden') : t('projects.groups.removeFailed'))
+    toastAccessError(err, t('projects.groups.removeFailed'))
   } finally {
     removingGroup.value = false
   }

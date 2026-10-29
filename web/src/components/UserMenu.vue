@@ -24,14 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <ChevronDownIcon class="hidden h-3.5 w-3.5 text-muted lg:block" aria-hidden="true" />
     </PopoverButton>
 
-    <transition
-      enter-active-class="motion-safe:transition motion-safe:duration-100 motion-safe:ease-out"
-      enter-from-class="motion-safe:opacity-0 motion-safe:scale-95"
-      enter-to-class="motion-safe:opacity-100 motion-safe:scale-100"
-      leave-active-class="motion-safe:transition motion-safe:duration-75 motion-safe:ease-in"
-      leave-from-class="motion-safe:opacity-100 motion-safe:scale-100"
-      leave-to-class="motion-safe:opacity-0 motion-safe:scale-95"
-    >
+    <PopupTransition>
       <PopoverPanel
         v-slot="{ close }"
         class="absolute right-0 z-40 mt-2 w-64 origin-top-right rounded-md border border-border bg-surface shadow-lg focus:outline-none"
@@ -82,7 +75,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </li>
         </ul>
       </PopoverPanel>
-    </transition>
+    </PopupTransition>
   </Popover>
 
   <AboutDialog :open="aboutOpen" @close="closeAbout" />
@@ -99,6 +92,7 @@ import {
   TicketIcon,
   UserCircleIcon,
 } from '@heroicons/vue/24/outline'
+import PopupTransition from './ui/PopupTransition.vue'
 import ThemeToggle from './ThemeToggle.vue'
 import LanguageSelect from './LanguageSelect.vue'
 import AboutDialog from './AboutDialog.vue'
