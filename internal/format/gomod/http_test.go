@@ -99,6 +99,7 @@ func newTestRouter(t *testing.T) (http.Handler, *gomodDB, *formattest.BlobStore,
 	t.Helper()
 
 	db := &gomodDB{DB: formattest.NewDB()}
+	db.Repo.Format = "go"
 	bs := formattest.NewBlobStore()
 	pub := &formattest.Publisher{}
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
@@ -516,5 +517,25 @@ func TestQuarantinedVersionHiddenFromListLatestInfo(t *testing.T) {
 
 	if got := latestInfo(t, router, testModule); got != "v1.0.0" {
 		t.Errorf("@latest = %q, want v1.0.0", got)
+	}
+}
+
+// TestUploadRejectsOtherFormats: the shared PUT route reaches every hosted
+// repository, so a repository of another format (or none) never takes a module.
+func TestUploadRejectsOtherFormats(t *testing.T) {
+	for _, format := range []string{"pypi", "raw", "npm", ""} {
+		t.Run("format "+format, func(t *testing.T) {
+			router, db, bs, pub := newTestRouter(t)
+			db.Repo.Format = format
+
+			w := serve(router, http.MethodPut, "/repos/myrepo/"+testModule+"/@v/v1.0.0", moduleZip(t, testModule, "v1.0.0"))
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404; body = %s", w.Code, w.Body.String())
+			}
+
+			if len(db.mods) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+				t.Errorf("a rejected upload left mods=%d blobs=%d events=%d", len(db.mods), len(bs.Blobs), len(pub.Events()))
+			}
+		})
 	}
 }

@@ -63,12 +63,12 @@ Each item:
 |---|---|---|
 | `source_repo_id` | yes | UUID of an existing repository (the `id` of `GET /api/v1/repository/{repo}`). |
 | `sha256` | yes | 64 hex characters (case-insensitive, stored lowercase); unique within the bundle. |
-| `artifact_path` | yes | Path of the artifact (at most 1024 bytes). |
-| `format` | no | Defaults to the source repository's format. |
+| `artifact_path` | yes | Path of the artifact (at most 1024 bytes): its path or filename in the source repository (a leading `/` is ignored), its file id, or for docker its digest, image, tag or distribution name. |
+| `format` | no | Defaults to the source repository's format; any other value is `400`. |
 | `size_bytes` | no | Non-negative. |
 | `component_id` | no | Optional id stored with the item. |
 
-The server checks that the source repository exists but does not verify that the digest is stored there.
+The server checks that the source repository exists and that it holds a live artifact stored as `sha256` and located by `artifact_path`; otherwise the request is `400 validation_failed` and nothing is added. The signed manifest therefore only states what the repository backs.
 
 ```sh
 curl -X POST HOST/api/v1/bundles -H "Authorization: Bearer <TOKEN>" \
@@ -85,7 +85,7 @@ curl -X POST HOST/api/v1/bundles/shop/2.4.0/seal -H "Authorization: Bearer <TOKE
 
 ### Signing a bundle
 
-`POST .../seal` with `{"gpg_key_id": "<key id | fingerprint | config>"}` (a key from [`GET /api/v1/admin/gpg/keys`](../security/signing.md#managing-keys); `config` is the `gpg.keyPath` key) signs the bundle manifest before sealing. The manifest is deterministic JSON (`schema: openartifact.release-bundle/v1`, name, version, description, items ordered by SHA-256), so it can be re-fetched and verified at any time:
+`POST .../seal` with `{"gpg_key_id": "<key id | fingerprint | config>"}` (a stored key from [`GET /api/v1/admin/gpg/keys`](../security/signing.md#managing-keys)) signs the bundle manifest before sealing. Choosing a key needs the global `manage` permission or a `gpg.bundleSigners` grant for that user and key ([signing](../security/signing.md#signing-release-bundles)); anyone else gets `403`. The `gpg.keyPath` key (`config`) signs package metadata and is never used for bundles (`403`). The manifest is deterministic JSON (`schema: openartifact.release-bundle/v1`, name, version, description, items ordered by SHA-256), so it can be re-fetched and verified at any time:
 
 ```sh
 curl -X POST HOST/api/v1/bundles/shop/2.4.0/seal -H "Authorization: Bearer <TOKEN>" \
@@ -110,7 +110,7 @@ Bundles involve several repositories (the sources of the items and the target of
 | Promote | `read` on every source repository and `write` on the target repository. No ownership is needed, so a release engineer can promote a bundle a build job created. `?force=true` stays administrator-only. |
 | List all bundles (`GET /api/v1/bundles`), every `/api/v1/pipelines` route | Administrator. |
 
-Pipelines are the operator's gate: a bundle can only be promoted when it has a pipeline and a stage defined by an administrator. A CI token attaches a pipeline by name (`pipeline` on create) without being allowed to list or edit pipelines. Signing at seal time (`gpg_key_id`) is allowed to whoever can seal; hand out the key id to the jobs that should sign, since listing keys is administrator-only.
+Pipelines are the operator's gate: a bundle can only be promoted when it has a pipeline and a stage defined by an administrator. A CI token attaches a pipeline by name (`pipeline` on create) without being allowed to list or edit pipelines. Signing at seal time (`gpg_key_id`) is limited to administrators and to users named for that key in `gpg.bundleSigners`; a CI job that should sign needs such a grant. Ownership is decided on the user id, not the username. Creating, sealing (with the signing fingerprint) and archiving a bundle are audit events (`bundle.created`, `bundle.sealed`, `bundle.archived`).
 
 A deploy token with `read` and `write` on the build and release repositories is therefore enough for a CI job to upload, assemble, seal and promote; see [CI integration](../integrations/ci.md#least-privilege-ci-token).
 

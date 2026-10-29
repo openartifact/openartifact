@@ -71,6 +71,8 @@ var (
 			"a blob-lock transaction pins one connection and its callback needs another",
 	)
 
+	errBundleSigner = errors.New(`gpg.bundleSigners entries must be "<key id or fingerprint>=<username>"`)
+
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
 	errPresignMaxPending = errors.New("storage.presignMaxPendingUploads must not be negative")
@@ -490,6 +492,11 @@ type GPGConfig struct {
 	// AutoGenerate generates an RSA-4096 global signing key at startup when
 	// no key exists yet. It needs OPENARTIFACT_SECRET_KEY and is replica-safe.
 	AutoGenerate bool `yaml:"autoGenerate"`
+	// BundleSigners lets users other than administrators seal release bundles
+	// with a stored key: each entry is "<key id or fingerprint>=<username>".
+	// Administrators (global manage) may use any stored key; the key at
+	// keyPath never signs bundles (see docs/security/signing.md).
+	BundleSigners []string `yaml:"bundleSigners"`
 }
 
 // AttestationConfig configures the signing key of SBOM and VEX attestations.
@@ -875,6 +882,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.GPG.KeyPath, "GPG_KEY_PATH")
 	overrideString(&cfg.GPG.Passphrase, "GPG_PASSPHRASE")
 	overrideBool(&cfg.GPG.AutoGenerate, "GPG_AUTO_GENERATE")
+	overrideSlice(&cfg.GPG.BundleSigners, "GPG_BUNDLE_SIGNERS")
 
 	// Attestation signing key
 	overrideString(&cfg.Attest.KeyPath, "ATTESTATION_KEY_PATH")
@@ -1144,7 +1152,23 @@ func (c *Config) validateFeatures() error {
 		return err
 	}
 
+	if err := c.GPG.validate(); err != nil {
+		return err
+	}
+
 	return c.validatePresign()
+}
+
+// validate rejects bundle signer entries that are not "<key>=<username>".
+func (g GPGConfig) validate() error {
+	for _, e := range g.BundleSigners {
+		key, user, ok := strings.Cut(e, "=")
+		if !ok || strings.TrimSpace(key) == "" || strings.TrimSpace(user) == "" {
+			return fmt.Errorf("%w: %q", errBundleSigner, e)
+		}
+	}
+
+	return nil
 }
 
 // minTieringOpenConns is the smallest explicit database pool a tier mover can

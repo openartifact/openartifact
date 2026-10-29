@@ -77,8 +77,22 @@ func IsUploadPath(tail string) bool {
 }
 
 // HandlePut serves a GOPROXY upload. Callers route here only when
-// IsUploadPath matched the request tail.
+// IsUploadPath matched the request tail. The shared PUT route reaches every
+// hosted repository, so a repository of another format answers 404.
 func (h *HTTPHandler) HandlePut(w http.ResponseWriter, r *http.Request) {
+	repo, err := h.ResolveRepo(r.Context(), urlparams.Vars(r)["name"])
+	if err != nil {
+		h.Log.Errorw("failed to resolve repo", "name", urlparams.Vars(r)["name"], "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if repo == nil || repo.Format != "go" {
+		http.NotFound(w, r)
+		return
+	}
+
 	h.dispatchPut(w, r)
 }
 

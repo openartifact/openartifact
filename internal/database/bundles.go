@@ -146,7 +146,7 @@ func (p *BundleStore) CreateReleaseBundle(ctx context.Context, b *models.Release
 // (creator_id/sealer_id/archiver_id) resolved back to usernames
 // via a join against auth_users so callers keep seeing plain username strings.
 const releaseBundleSelect = `SELECT rb.id, rb.name, rb.version, COALESCE(rb.description,''), rb.state, rb.pipeline_id, rb.current_stage,
-	        COALESCE(uc.username,''), rb.sealed_at, us.username, rb.archived_at, ua.username,
+	        COALESCE(uc.username,''), COALESCE(rb.creator_id::text,''), rb.sealed_at, us.username, rb.archived_at, ua.username,
 	        rb.gpg_key_id, rb.gpg_signature, rb.created_at, rb.updated_at
 	 FROM release_bundles rb
 	 LEFT JOIN auth_users uc ON uc.id = rb.creator_id
@@ -159,7 +159,7 @@ func (p *BundleStore) GetReleaseBundle(ctx context.Context, name, version string
 	err := p.db.QueryRowContext(ctx,
 		releaseBundleSelect+` WHERE rb.name=$1 AND rb.version=$2`, name, version,
 	).Scan(&b.ID, &b.Name, &b.Version, &b.Description, &b.State, &b.PipelineID, &b.CurrentStage,
-		&b.CreatedBy, &b.SealedAt, &b.SealedBy, &b.ArchivedAt, &b.ArchivedBy,
+		&b.CreatedBy, &b.CreatorID, &b.SealedAt, &b.SealedBy, &b.ArchivedAt, &b.ArchivedBy,
 		&b.GPGKeyID, &b.GPGSignature, &b.CreatedAt, &b.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -178,7 +178,7 @@ func (p *BundleStore) GetReleaseBundleByID(ctx context.Context, id string) (*mod
 	err := p.db.QueryRowContext(ctx,
 		releaseBundleSelect+` WHERE rb.id=$1`, id,
 	).Scan(&b.ID, &b.Name, &b.Version, &b.Description, &b.State, &b.PipelineID, &b.CurrentStage,
-		&b.CreatedBy, &b.SealedAt, &b.SealedBy, &b.ArchivedAt, &b.ArchivedBy,
+		&b.CreatedBy, &b.CreatorID, &b.SealedAt, &b.SealedBy, &b.ArchivedAt, &b.ArchivedBy,
 		&b.GPGKeyID, &b.GPGSignature, &b.CreatedAt, &b.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -257,7 +257,7 @@ func (p *BundleStore) ListReleaseBundles(
 	for rows.Next() {
 		b := &models.ReleaseBundle{}
 		if err := rows.Scan(&b.ID, &b.Name, &b.Version, &b.Description, &b.State, &b.PipelineID, &b.CurrentStage,
-			&b.CreatedBy, &b.SealedAt, &b.SealedBy, &b.ArchivedAt, &b.ArchivedBy,
+			&b.CreatedBy, &b.CreatorID, &b.SealedAt, &b.SealedBy, &b.ArchivedAt, &b.ArchivedBy,
 			&b.GPGKeyID, &b.GPGSignature, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan release bundle: %w", err)
 		}
@@ -291,6 +291,62 @@ func (p *BundleStore) AddBundleItem(ctx context.Context, item *models.ReleaseBun
 	)
 
 	return err
+}
+
+// bundleItemStoredFilesSQL is true when the live package file of source
+// repository $1 stored as the blob with sha256 $2 is located by $3: its path,
+// its filename or its id, or the last element of $3 (a path under a directory
+// the client knows but the repository does not). $3 is empty for "any".
+const bundleItemStoredFilesSQL = `
+SELECT EXISTS (
+  SELECT 1
+    FROM package_files f
+    JOIN blobs b ON b.id = f.blob_id
+   WHERE f.repository_id = $1::uuid AND f.deleted_at IS NULL AND b.sha256 = $2
+     AND ($3 = '' OR $3 IN (f.path, f.filename, f.id::text) OR regexp_replace($3, '^.*/', '') = f.filename))`
+
+// bundleItemStoredDockerSQL is bundleItemStoredFilesSQL for the manifests of a
+// docker repository ($4 is the repository name): $3 may be the manifest id, its
+// digest, the image, the distribution name or any of those with a live tag.
+const bundleItemStoredDockerSQL = `
+SELECT EXISTS (
+  SELECT 1
+    FROM docker_manifests m
+    JOIN blobs b ON b.id = m.blob_id
+   WHERE m.repository_id = $1::uuid AND m.deleted_at IS NULL AND b.sha256 = $2
+     AND ($3 = ''
+          OR $3 IN (m.id::text, m.digest, b.sha256, m.image,
+                    $4 || '/' || m.image, $4 || '/' || m.image || '@' || m.digest, $4 || '/' || m.image || '/manifests/' || m.digest)
+          OR (m.image = '' AND $3 = $4)
+          OR EXISTS (SELECT 1 FROM docker_tags t
+                      WHERE t.repository_id = m.repository_id AND t.image = m.image
+                        AND t.manifest_digest = m.digest AND t.deleted_at IS NULL
+                        AND $3 IN (t.name, m.image || ':' || t.name, $4 || '/' || m.image || ':' || t.name,
+                                   $4 || '/' || m.image || '/manifests/' || t.name))))`
+
+// BundleItemStored reports whether repository repoID holds a live artifact of
+// the given format whose content digest is sha256 and which path (leading "/"
+// ignored) names. A bundle item that fails it would sign a claim about the
+// repository that the repository does not back.
+func (p *BundleStore) BundleItemStored(ctx context.Context, repoID, repoName, format, sha256, path string) (bool, error) {
+	var (
+		stored bool
+		err    error
+	)
+
+	path = strings.TrimPrefix(path, "/")
+
+	if format == "docker" {
+		err = p.db.QueryRowContext(ctx, bundleItemStoredDockerSQL, repoID, sha256, path, repoName).Scan(&stored)
+	} else {
+		err = p.db.QueryRowContext(ctx, bundleItemStoredFilesSQL, repoID, sha256, path).Scan(&stored)
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("check bundle item %s in repository %s: %w", sha256, repoID, err)
+	}
+
+	return stored, nil
 }
 
 // RemoveBundleItem deletes an item only while the bundle is still a draft. The

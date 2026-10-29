@@ -170,6 +170,11 @@ func (d *presignUploadDB) DecrementStorageUsage(_ context.Context, _ string, siz
 	return nil
 }
 
+// ListProjectGrantsByUser: no project grants.
+func (*presignUploadDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
+	return nil, nil
+}
+
 func (d *presignUploadDB) GetPermissionTargetsForPrincipal(
 	_ context.Context,
 	userID string,
@@ -920,6 +925,36 @@ func TestPresignedUpload_CompleteBoundToCreator(t *testing.T) {
 	// The creator gets the replay.
 	if rw := f.callAs(t, userPrincipal("writer", "writer-1"), completePath(resp.ID), nil); rw.Code != http.StatusOK {
 		t.Errorf("creator replay = %d", rw.Code)
+	}
+}
+
+// TestPresignedUpload_CompleteIsBoundToTheCreatorsUserID: a user who has the
+// creator's username (the name was released and taken again) is not the creator.
+func TestPresignedUpload_CompleteIsBoundToTheCreatorsUserID(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+	content := []byte("data")
+
+	rw := f.callAs(t, userPrincipal("writer", "writer-1"), "/api/v1/repositories/files/uploads",
+		CreatePresignedUploadRequest{Path: "a.bin", Size: int64(len(content)), SHA256: digestOf(content)})
+	if rw.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", rw.Code, rw.Body.String())
+	}
+
+	var resp CreatePresignedUploadResponse
+	_ = json.Unmarshal(rw.Body.Bytes(), &resp)
+	f.store.staged[resp.ID] = content
+	f.db.targets["writer-2"] = f.db.targets["writer-1"] // may write, but is not the creator
+
+	if rw := f.callAs(t, userPrincipal("writer", "writer-2"), completePath(resp.ID), nil); rw.Code != http.StatusForbidden {
+		t.Fatalf("a user with the creator's username completed the upload: %d %s", rw.Code, rw.Body.String())
+	}
+
+	if len(f.db.artifacts) != 0 || f.db.claims != 0 {
+		t.Error("a forbidden complete must not claim or record anything")
+	}
+
+	if rw := f.callAs(t, userPrincipal("writer", "writer-1"), completePath(resp.ID), nil); rw.Code != http.StatusCreated {
+		t.Fatalf("the creator could not complete: %d %s", rw.Code, rw.Body.String())
 	}
 }
 

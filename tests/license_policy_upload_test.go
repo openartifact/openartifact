@@ -130,7 +130,7 @@ func TestNPMPublish_LicensePolicy(t *testing.T) {
 			t.Run(mname+"/"+c.Name, func(t *testing.T) {
 				db := newMockDatabase()
 				bs := newMockBlobStore()
-				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 				router := newLicensedNPMRouter(withPolicies(db, c), bs)
 				rec := publishNPM(t, router, buildLicensedNPMPublishBody(t, "lodash", "1.0.0", extra))
@@ -200,7 +200,7 @@ func TestNPMPublish_LicensePolicyReadsTheTarball(t *testing.T) {
 			c := policytest.Case{Want: tc.want, Policies: deny}
 			db := newMockDatabase()
 			bs := newMockBlobStore()
-			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 			pkgJSON := map[string]any{"name": "lodash", "version": "1.0.0"}
 			maps.Copy(pkgJSON, tc.tarball)
@@ -248,7 +248,7 @@ func TestNPMPublish_RejectsUnsafeTarballs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			db := newMockDatabase()
 			bs := newMockBlobStore()
-			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 			rec := publishNPM(
 				t,
@@ -270,7 +270,7 @@ func TestNPMPublish_RejectsUnsafeTarballs(t *testing.T) {
 func TestNPMPublish_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := newLicensedNPMRouter(withPolicies(db, blockAllowListPolicy()), bs)
 
@@ -505,7 +505,7 @@ func TestNPMPublish_UnderivableLicenses(t *testing.T) {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
 				db := newMockDatabase()
 				bs := newMockBlobStore()
-				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 				rec := publishNPM(t, newLicensedNPMRouter(withPolicies(db, c), bs),
 					buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, map[string]any{"license": "MIT"}))

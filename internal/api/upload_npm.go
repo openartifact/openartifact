@@ -122,10 +122,17 @@ func (h *NPMUploadHandler) HandlePublish(w http.ResponseWriter, r *http.Request)
 	h.handlePublish(w, r)
 }
 
+// resolveRepo loads the npm repository called name. The shared PUT and DELETE
+// routes reach every hosted repository, so a repository of another format
+// resolves to nil like a missing one: no npm handler may act on it.
 func (h *NPMUploadHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
 		return nil, err
+	}
+
+	if repo != nil && repo.Format != "npm" {
+		return nil, nil //nolint:nilnil // not an npm repository is "not found"
 	}
 
 	return repo, nil
@@ -1322,14 +1329,8 @@ func npmDecodePackageName(raw string) string {
 	return s
 }
 
+// isUniqueViolation reports whether err is the store's duplicate sentinel or a
+// PostgreSQL unique_violation. It decides on the error's type, never its text.
 func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	msg := err.Error()
-
-	return strings.Contains(msg, "already exists") ||
-		strings.Contains(msg, "unique") ||
-		strings.Contains(msg, "23505")
+	return errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err)
 }

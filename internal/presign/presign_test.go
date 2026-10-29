@@ -244,6 +244,64 @@ func TestTryRedirect_SignsFilenameAndContentType(t *testing.T) {
 	}
 }
 
+// TestTryRedirect_ContentTypeIsAllowlisted: the signed Content-Type is one a
+// browser cannot render as a page, whatever the uploader chose, and the
+// response is always an attachment.
+func TestTryRedirect_ContentTypeIsAllowlisted(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantType string
+		wantDisp string
+	}{
+		{"archive kept", "application/zip", "application/zip", "attachment; filename=f.bin"},
+		{"parameters dropped", "application/gzip; charset=binary", "application/gzip", "attachment; filename=f.bin"},
+		{"case folded", "Application/Java-Archive", "application/java-archive", "attachment; filename=f.bin"},
+		{"vendor package type kept", "application/vnd.debian.binary-package", "application/vnd.debian.binary-package", "attachment; filename=f.bin"},
+		{"json kept", "application/json", "application/json", "attachment; filename=f.bin"},
+		{"html", "text/html", "application/octet-stream", "attachment; filename=f.bin"},
+		{"html with charset", "text/html; charset=utf-8", "application/octet-stream", "attachment; filename=f.bin"},
+		{"svg", "image/svg+xml", "application/octet-stream", "attachment; filename=f.bin"},
+		{"xhtml", "application/xhtml+xml", "application/octet-stream", "attachment; filename=f.bin"},
+		{"xml", "application/xml", "application/octet-stream", "attachment; filename=f.bin"},
+		{"vendor xml", "application/vnd.foo+xml", "application/octet-stream", "attachment; filename=f.bin"},
+		{"javascript", "text/javascript", "application/octet-stream", "attachment; filename=f.bin"},
+		{"unparsable", "text/html;;;=", "application/octet-stream", "attachment; filename=f.bin"},
+		{"no override stays unset", "", "", "attachment; filename=f.bin"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			inner := &fakeStore{}
+			s := Wrap(inner, nil, Settings{Downloads: true, TTL: time.Minute}, nil, testLogger(t))
+
+			if try(t, s, http.MethodGet, Blob{SHA256: testSHA, Size: 10, Filename: "f.bin", ContentType: tc.in}) == nil {
+				t.Fatal("no redirect")
+			}
+
+			got := inner.signed[len(inner.signed)-1]
+			if got.ContentType != tc.wantType || got.ContentDisposition != tc.wantDisp {
+				t.Errorf("signed type %q disposition %q, want %q / %q", got.ContentType, got.ContentDisposition, tc.wantType, tc.wantDisp)
+			}
+		})
+	}
+}
+
+// TestTryRedirect_NoFilenameStillAttachment: a blob without a filename is not
+// rendered inline either.
+func TestTryRedirect_NoFilenameStillAttachment(t *testing.T) {
+	inner := &fakeStore{}
+	s := Wrap(inner, nil, Settings{Downloads: true, TTL: time.Minute}, nil, testLogger(t))
+
+	if try(t, s, http.MethodGet, Blob{SHA256: testSHA, Size: 10}) == nil {
+		t.Fatal("no redirect")
+	}
+
+	if got := inner.signed[len(inner.signed)-1].ContentDisposition; got != "attachment" {
+		t.Errorf("ContentDisposition = %q, want attachment", got)
+	}
+}
+
 func TestWrap_UnsupportedBackend(t *testing.T) {
 	local, err := storage.NewFilesystemStore(t.TempDir())
 	if err != nil {

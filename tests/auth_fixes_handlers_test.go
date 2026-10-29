@@ -686,9 +686,18 @@ func TestHandlerLogin_PerUsernameFailureLimit(t *testing.T) {
 		}
 	}
 
+	// Past the limit a username is no longer locked for everyone (that would
+	// let anyone lock the owner out); an address that has not logged in as it
+	// before gets three tries a minute.
+	for i := range 3 {
+		if rw := loginFrom(router, fmt.Sprintf("198.51.200.%d:5000", i+1), "bruteforced", "wrong-guess"); rw.Code != http.StatusUnauthorized {
+			t.Fatalf("throttled try %d: expected 401, got %d", i+1, rw.Code)
+		}
+	}
+
 	rw := loginFrom(router, "198.51.100.200:5000", "bruteforced", "the-real-password-1")
 	if rw.Code != http.StatusTooManyRequests {
-		t.Fatalf("locked username must get 429 even with the right password, got %d", rw.Code)
+		t.Fatalf("a new address must get 429 past the throttle even with the right password, got %d", rw.Code)
 	}
 
 	if rw.Header().Get("Retry-After") == "" {
@@ -708,6 +717,10 @@ func TestHandlerLogin_PerUsernameFailureLimit(t *testing.T) {
 	// A username that does not exist is throttled identically (no oracle).
 	for i := range loginDistributedLimit {
 		loginFrom(router, fmt.Sprintf("203.0.%d.%d:5000", i/250, i%250+1), "ghost-account", "guess")
+	}
+
+	for i := range 3 {
+		loginFrom(router, fmt.Sprintf("203.0.114.%d:5000", i+1), "ghost-account", "guess")
 	}
 
 	if rw = loginFrom(router, "203.0.113.250:5000", "ghost-account", "guess"); rw.Code != http.StatusTooManyRequests {

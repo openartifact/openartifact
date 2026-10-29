@@ -294,7 +294,7 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	createdBy := currentPrincipal(r).Username
+	createdBy := uploadOwner(currentPrincipal(r))
 
 	h.createUpload(w, r, repo, &models.PresignedUpload{
 		RepositoryID: repo.ID,
@@ -460,11 +460,22 @@ func (c *headCapture) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// uploadOwner is what an upload stores as its creator: the user id, which
+// cannot be taken over by another user who later gets the same username, or the
+// username for a principal that has no user row (a legacy admin).
+func uploadOwner(p *auth.Principal) string {
+	if p.UserID != nil && *p.UserID != "" {
+		return "id:" + *p.UserID
+	}
+
+	return p.Username
+}
+
 // authorizeCompleter lets only the creator of an upload, or an administrator,
 // complete it.
 func (h *PresignedUploadHandler) authorizeCompleter(w http.ResponseWriter, r *http.Request, up *models.PresignedUpload) bool {
 	p := currentPrincipal(r)
-	if p.Username == up.CreatedBy {
+	if up.CreatedBy != "" && uploadOwner(p) == up.CreatedBy {
 		return true
 	}
 

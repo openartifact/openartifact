@@ -84,6 +84,7 @@ func TestNPMPublishHonorsImportCreatedAt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := &npmPublishDB{DB: formattest.NewDB()}
+			db.Repo.Format = "npm"
 			h := NewNPMUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
 
 			payload := []byte("tarball-bytes")
