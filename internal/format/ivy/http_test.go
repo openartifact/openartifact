@@ -58,7 +58,7 @@ func (d *ivyDB) CreateIvyArtifact(_ context.Context, a *models.IvyArtifact) erro
 func (d *ivyDB) GetIvyArtifact(_ context.Context, _, org, module, revision, name, _ string) (*models.IvyArtifact, error) {
 	row := d.rows[rowKey(org, module, revision, name)]
 	if row == nil {
-		return nil, nil // not found is (nil, nil) in the Database contract
+		return nil, nil // not found is (nil, nil) in the store contract
 	}
 
 	cp := *row // a copy, as a database returns: callers keep the old blob key after an overwrite

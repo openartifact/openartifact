@@ -506,7 +506,7 @@ type packageExport struct {
 // list-by-repo (or composable) method round-trips.
 //
 // Soft-deleted data (the trash: repositories and package rows with deleted_at
-// set) is not part of a backup. The export goes through the Database list
+// set) is not part of a backup. The export goes through the store list
 // methods, which treat trashed rows as nonexistent, so a trashed repository
 // is skipped with its contents and a restore brings back live data only.
 // Repository settings trash_retention_days and immutable_releases round-trip

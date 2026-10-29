@@ -24,7 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 )
 
-// memDB is an in-memory nuget_packages table with the semantics of the real
+// memDB is an in-memory store of nuget packages with the semantics of the real
 // queries: lookups match the full (id, version) key, creating a key twice
 // yields database.ErrDuplicate, and a search pages over distinct package ids
 // returning every version of the packages on the page.
