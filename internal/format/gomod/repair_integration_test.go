@@ -212,7 +212,7 @@ func (w *leakWorld) putZip(z []byte) string {
 	return key
 }
 
-// leakRow inserts a gomod_modules row pointing at the shared "" blobs row.
+// leakRow inserts a module version (zip and go.mod file) whose zip points at the shared "" blobs row.
 // firstZip, when non-nil, is the zip the "" row's blob_key points at (the
 // first upload); it is created together with the row.
 func (w *leakWorld) leakRow(repoID, module, version string, firstZip []byte) {
@@ -241,8 +241,25 @@ func (w *leakWorld) leakRow(repoID, module, version string, firstZip []byte) {
 		w.t.Fatalf("insert mod blob: %v", err)
 	}
 
-	w.exec(`INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id)
-	        VALUES ($1, $2, $3, $4, $5, $6)`, repoID, module, version, goMod, w.emptyBlobID, modBlobID)
+	var pkgID, verID string
+	if err := w.pg.GetDB().QueryRowContext(context.Background(),
+		`INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, 'go', $2, $2)
+		 ON CONFLICT (repository_id, name_key) DO UPDATE SET name = EXCLUDED.name RETURNING id`, repoID, module).Scan(&pkgID); err != nil {
+		w.t.Fatalf("insert package: %v", err)
+	}
+
+	if err := w.pg.GetDB().QueryRowContext(context.Background(),
+		`INSERT INTO package_versions (package_id, repository_id, version, version_key) VALUES ($1, $2, $3, $3) RETURNING id`,
+		pkgID, repoID, version).Scan(&verID); err != nil {
+		w.t.Fatalf("insert version: %v", err)
+	}
+
+	w.exec(`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, role, listed, unit_key)
+	        VALUES ($1, $2, $3, $4, $5, 'primary', true, $6)`,
+		verID, repoID, module+"/@v/"+version+".zip", version+".zip", w.emptyBlobID, module+"@"+version)
+	w.exec(`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, role, listed, attrs)
+	        VALUES ($1, $2, $3, $4, $5, 'mod', false, jsonb_build_object('go_mod_content', $6::text))`,
+		verID, repoID, module+"/@v/"+version+".mod", version+".mod", modBlobID, goMod)
 }
 
 func (w *leakWorld) get(repo, module, version string) (int, []byte) {
@@ -417,7 +434,8 @@ func TestRepairRelinksIdenticalZipsAcrossReposAndTrashedRows(t *testing.T) {
 	w.leakRow(repo2, modB, "v1.0.0", nil)
 	w.leakRow(repo3, modB, "v1.0.0", nil)
 	w.putZip(zipB)
-	w.exec(`UPDATE gomod_modules SET deleted_at = now() WHERE repository_id = $1`, repo3)
+	w.exec(`UPDATE package_files SET deleted_at = now() WHERE repository_id = $1`, repo3)
+	w.exec(`UPDATE package_versions SET deleted_at = now() WHERE repository_id = $1`, repo3)
 
 	res := w.repair()
 	if res.Affected != 3 || res.Repaired != 3 || len(res.Unrepairable) != 0 {
@@ -428,7 +446,7 @@ func TestRepairRelinksIdenticalZipsAcrossReposAndTrashedRows(t *testing.T) {
 
 	var trashedHash string
 	if err := w.pg.GetDB().QueryRowContext(context.Background(),
-		`SELECT b.sha256 FROM gomod_modules gm JOIN blobs b ON b.id = gm.zip_blob_id WHERE gm.repository_id = $1`, repo3).
+		`SELECT b.sha256 FROM package_files f JOIN blobs b ON b.id = f.blob_id WHERE f.repository_id = $1 AND f.role = 'primary'`, repo3).
 		Scan(&trashedHash); err != nil {
 		t.Fatalf("trashed row: %v", err)
 	}

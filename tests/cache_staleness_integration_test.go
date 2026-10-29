@@ -415,15 +415,20 @@ func TestCachedSpecsStayCurrentRubyGems(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(
-				`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake',$2,'ruby',$3,5)`,
-				e.repoID,
-				version,
-			)
+			sha := fmt.Sprintf("%064x", len(version)*7919+int(version[0]))
+			gem := &models.RubyGem{
+				RepositoryID: e.repoID, Name: "rake", Version: version, Platform: "ruby",
+				BlobKey: sha, ChecksumSHA256: sha, Size: 5,
+			}
+
+			if err := e.pg.CreateRubyGem(context.Background(), gem); err != nil {
+				t.Fatalf("CreateRubyGem(%s): %v", version, err)
+			}
 		}
 	}
 	gem := func() string {
-		return e.id(`SELECT id FROM rubygems_gems WHERE repository_id = $1 AND version = '1.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '1.0'`, e.repoID)
 	}
 	setYanked := func(version string, yanked bool) {
 		if err := e.pg.YankRubyGem(context.Background(), e.repoID, "rake", version, "ruby", yanked); err != nil {
@@ -447,7 +452,10 @@ func TestCachedSpecsStayCurrentRubyGems(t *testing.T) {
 
 	add("0.9")()
 	add("1.0")()
-	e.exec(`UPDATE rubygems_gems SET version = '1.0.pre' WHERE repository_id = $1 AND version = '0.9'`, e.repoID)
+	e.exec(
+		`UPDATE package_versions SET version = '1.0.pre', version_key = '1.0.pre' WHERE repository_id = $1 AND version = '0.9'`,
+		e.repoID,
+	)
 
 	steps := []staleStep{
 		{name: "publish", do: add("2.0"), changes: []string{"specs", "latest"}},
@@ -474,15 +482,20 @@ func TestCachedIndexStaysCurrentCargo(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(
-				`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`,
-				e.repoID,
-				version,
-			)
+			sha := fmt.Sprintf("%064x", len(version)*7919+int(version[0])+int(version[2]))
+			crate := &models.CargoCrate{
+				RepositoryID: e.repoID, Name: "serde", Version: version, MetadataJSON: []byte(`{}`),
+				BlobKey: sha, Checksum: sha, SizeBytes: 5,
+			}
+
+			if err := e.pg.CreateCargoCrate(context.Background(), crate); err != nil {
+				t.Fatalf("CreateCargoCrate(%s): %v", version, err)
+			}
 		}
 	}
 	crate := func() string {
-		return e.id(`SELECT id FROM cargo_crates WHERE repository_id = $1 AND version = '1.1.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '1.1.0'`, e.repoID)
 	}
 	setYanked := func(method, verb string) func() {
 		return func() {
@@ -500,7 +513,7 @@ func TestCachedIndexStaysCurrentCargo(t *testing.T) {
 		{name: "yank", do: setYanked(http.MethodDelete, "yank"), changes: []string{"index"}},
 		{name: "unyank", do: setYanked(http.MethodPut, "unyank"), changes: []string{"index"}},
 		{name: "download count", do: func() {
-			e.exec(`UPDATE cargo_crates SET download_count = download_count + 1, updated_at = now() WHERE repository_id = $1`, e.repoID)
+			e.exec(`UPDATE package_files SET download_count = download_count + 1, updated_at = now() WHERE repository_id = $1`, e.repoID)
 		}},
 	}
 	steps = append(steps, e.policySteps("serde-1.1.0.crate", e.url("/api/v1/crates/serde/1.1.0/download"))...)
