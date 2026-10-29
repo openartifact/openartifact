@@ -54,26 +54,25 @@ func ansibleFromRow(row dbsqlc.ListAnsibleCollectionVersionsRow) (*models.Ansibl
 		return nil, fmt.Errorf("decode ansible collection metadata: %w", err)
 	}
 
-	if meta.Dependencies == nil {
-		meta.Dependencies = map[string]string{}
+	c := &models.AnsibleCollection{
+		ID:           row.ID,
+		RepositoryID: row.RepositoryID,
+		Namespace:    row.Namespace,
+		Name:         row.Name,
+		Version:      row.Version,
+		Filename:     row.Filename,
+		BlobKey:      row.BlobKey,
+		SizeBytes:    row.SizeBytes,
+		SHA256:       row.Sha256,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
 	}
 
-	return &models.AnsibleCollection{
-		ID:              row.ID,
-		RepositoryID:    row.RepositoryID,
-		Namespace:       row.Namespace,
-		Name:            row.Name,
-		Version:         row.Version,
-		Filename:        row.Filename,
-		BlobKey:         row.BlobKey,
-		SizeBytes:       row.SizeBytes,
-		SHA256:          row.Sha256,
-		Dependencies:    meta.Dependencies,
-		Metadata:        meta.Metadata,
-		RequiresAnsible: meta.RequiresAnsible,
-		CreatedAt:       row.CreatedAt,
-		UpdatedAt:       row.UpdatedAt,
-	}, nil
+	// The version-level fields come from the stored metadata; a version
+	// without dependencies reads an empty map, never nil.
+	c.Dependencies, c.Metadata, c.RequiresAnsible = nonNilMap(meta.Dependencies), meta.Metadata, meta.RequiresAnsible
+
+	return c, nil
 }
 
 // CreateAnsibleCollection stores one collection version. A live version with
