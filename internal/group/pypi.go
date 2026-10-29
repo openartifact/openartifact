@@ -27,6 +27,23 @@ const (
 	pypiMemberAccept = pypisimple.ContentTypeJSON + ", text/html;q=0.1"
 )
 
+// PyPIHooks is the pypi group: merged project pages, files first-hit. A file is authorized with the path its member serves it under.
+var PyPIHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		return h.servePyPI(w, r, grp, readable, relPath, be)
+	},
+	PackageRef: pypiRef,
+	AuthPath:   pypiAuthPath,
+}
+
 // servePyPI answers the simple API and file downloads of a pypi group and
 // reports whether it handled the request (other paths fall through to the
 // generic first-hit resolution).
@@ -64,6 +81,17 @@ func (h *Handler) servePyPI(
 	}
 
 	return true
+}
+
+// pypiAuthPath is the path a caller is authorized against for member m: a
+// file is authorized under the path m serves it with, as a direct request
+// would be.
+func pypiAuthPath(m *models.Repository, relPath string) string {
+	if kind, project, filename := pypisimple.ParsePath(relPath); kind == pypisimple.PathFile {
+		return pypiFilePath(m, project, filename)
+	}
+
+	return relPath
 }
 
 // pypiFilePath is the path of a distribution file inside member m: proxy
@@ -189,4 +217,25 @@ func (h *Handler) servePyPIProject(
 			)
 		},
 	})
+}
+
+func pypiRef(relPath string) (PkgRef, bool) {
+	kind, project, filename := pypisimple.ParsePath(relPath)
+
+	switch kind {
+	case pypisimple.PathProject:
+		return PkgRef{probe: "simple/" + project + "/", accept: pypiMemberAccept}, true
+	case pypisimple.PathFile:
+		return PkgRef{
+			probe:  "simple/" + project + "/",
+			accept: pypiMemberAccept,
+			file:   true,
+			pathFor: func(m *models.Repository) string {
+				return pypiFilePath(m, project, filename)
+			},
+		}, true
+	case pypisimple.PathIndex, pypisimple.PathOther:
+	}
+
+	return PkgRef{}, false
 }

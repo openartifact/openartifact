@@ -32,6 +32,27 @@ func mavenMetadataPath(relPath string) (string, string, bool) {
 	return "", "", false
 }
 
+// MavenHooks is the maven group: merged maven-metadata.xml, everything else first-hit.
+var MavenHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		base, suffix, ok := mavenMetadataPath(relPath)
+		if ok {
+			h.serveMavenMetadata(w, r, grp, readable, base, suffix, be)
+		}
+
+		return ok
+	},
+	PackageRef: mavenRef,
+}
+
 // serveMavenMetadata answers a maven-metadata.xml (or checksum) request by
 // merging the document of every member that has one. With a single
 // contributing member its bytes are served unchanged. A member that errors is
@@ -193,4 +214,26 @@ func (c *captureWriter) Write(b []byte) (int, error) {
 	}
 
 	return c.body.Write(b)
+}
+
+func mavenRef(relPath string) (PkgRef, bool) {
+	if doc, _, ok := mavenMetadataPath(relPath); ok {
+		return PkgRef{probe: doc}, true
+	}
+
+	rel := strings.TrimPrefix(relPath, "/")
+
+	// A signature or the like of the metadata document belongs to that
+	// document's package.
+	if strings.HasPrefix(path.Base(rel), "maven-metadata.xml") {
+		return PkgRef{probe: path.Dir(rel) + "/maven-metadata.xml", file: true}, true
+	}
+
+	// <group path>/<artifact>/<version>/<file>: the artifact's metadata is
+	// two levels up from the file.
+	if strings.Count(rel, "/") < 3 {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{probe: path.Dir(path.Dir(rel)) + "/maven-metadata.xml", file: true}, true
 }

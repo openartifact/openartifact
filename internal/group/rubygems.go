@@ -31,6 +31,12 @@ const (
 	rubygemsContentType = "text/plain; charset=utf-8"
 )
 
+// RubyGemsHooks is the rubygems group: merged compact index, gems first-hit.
+var RubyGemsHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveRubyGems,
+	PackageRef:  rubygemsRef,
+}
+
 // serveRubyGems answers the compact index of a rubygems group and reports
 // whether it handled the request; gem and gemspec downloads, and the paths a
 // group does not generate, fall through to the generic first-hit resolution.
@@ -430,4 +436,31 @@ func (h *Handler) mergedEntry(
 	}
 
 	return compactindex.Entry{Name: name, Versions: versions, InfoMD5: compactindex.InfoMD5(body)}, !c.partial()
+}
+
+func rubygemsRef(relPath string) (PkgRef, bool) {
+	p, ok := compactindex.ParsePath(relPath)
+	if !ok {
+		return PkgRef{}, false
+	}
+
+	switch p.Kind {
+	case compactindex.KindInfo:
+		return PkgRef{probe: "info/" + p.Gem}, true
+	case compactindex.KindGem, compactindex.KindGemspec:
+		split := compactindex.SplitFile(p.File)
+		if len(split) == 0 {
+			return PkgRef{}, false
+		}
+
+		ref := PkgRef{probe: "info/" + split[0].Name, file: true}
+		for _, c := range split[1:] {
+			ref.altProbes = append(ref.altProbes, "info/"+c.Name)
+		}
+
+		return ref, true
+	case compactindex.KindVersions, compactindex.KindNames, compactindex.KindSpecs:
+	}
+
+	return PkgRef{}, false
 }

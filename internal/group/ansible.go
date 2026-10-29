@@ -32,6 +32,12 @@ const (
 	ansibleMaxEntries = 100000
 )
 
+// AnsibleHooks is the ansible group: merged Galaxy API documents, collection downloads first-hit.
+var AnsibleHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveAnsible,
+	PackageRef:  ansibleRef,
+}
+
 // serveAnsible answers the Galaxy API requests of an ansible group that it
 // generates or merges and reports whether it handled the request; collection
 // downloads fall through to the generic first-hit resolution.
@@ -409,4 +415,24 @@ func (h *Handler) writeAnsible(w http.ResponseWriter, r *http.Request, grp *mode
 	}
 
 	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), ansibleMetaMaxAge, partial)
+}
+
+func ansibleRef(relPath string) (PkgRef, bool) {
+	p, ok := pkgansible.ParsePath(relPath)
+	if !ok {
+		return PkgRef{}, false
+	}
+
+	ref := PkgRef{probe: "api/v3/collections/" + p.Namespace + "/" + p.Name + "/", accept: "application/json"}
+
+	switch p.Kind {
+	case pkgansible.KindCollection, pkgansible.KindVersions, pkgansible.KindVersion:
+		return ref, true
+	case pkgansible.KindDownload:
+		ref.file = true
+		return ref, true
+	case pkgansible.KindRoot, pkgansible.KindV3, pkgansible.KindIndex:
+	}
+
+	return PkgRef{}, false
 }

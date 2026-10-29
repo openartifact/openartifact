@@ -6,20 +6,12 @@ package group
 
 import (
 	"net/http"
-	"path"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/ocipath"
-	"github.com/openartifact/openartifact/internal/pathseg"
-	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
-	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
-	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
-	"github.com/openartifact/openartifact/pkg/compactindex"
-	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
-	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
 // Hosted wins is the group's defence against dependency confusion: when an
@@ -70,9 +62,14 @@ import (
 // Names that only index lists (cargo config.json, the nuget service index,
 // pypi simple/ index) are merged unchanged: they reveal no versions.
 
-// pkgRef is the package a request names and how to find out whether a hosted
-// member holds it.
-type pkgRef struct {
+// PkgRef is the package a request names and how to find out whether a hosted
+// member holds it. A format's Hooks.PackageRef returns it; the zero value of
+// owner (probing the document named by probe and altProbes) is what most
+// formats use.
+type PkgRef struct {
+	// owner is the ownership strategy: how a hosted member is asked whether it
+	// holds the package. Nil probes the member for probe and altProbes.
+	owner ownerFunc
 	// probe is the member path of a package-level document a hosted member
 	// answers 200 for iff it holds the package.
 	probe string
@@ -110,233 +107,9 @@ type pkgRef struct {
 	modules []fileModule
 }
 
-// packageRef extracts the package a request of a group of format names. ok is
-// false for requests that name none (indexes, config documents) and for
-// formats that have no versions to hide (raw).
-func packageRef(format, relPath string) (pkgRef, bool) {
-	var (
-		ref pkgRef
-		ok  bool
-	)
-
-	switch format {
-	case "npm":
-		ref, ok = npmRef(relPath)
-	case "pypi":
-		ref, ok = pypiRef(relPath)
-	case "go":
-		ref, ok = goRef(relPath)
-	case "cargo":
-		ref, ok = cargoRef(relPath)
-	case "nuget":
-		ref, ok = nugetRef(relPath)
-	case "maven":
-		ref, ok = mavenRef(relPath)
-	case "helm":
-		ref, ok = helmRef(relPath)
-	case "ivy", "sbt":
-		ref, ok = fileRepoRef(relPath)
-	case "rubygems":
-		ref, ok = rubygemsRef(relPath)
-	case "conan":
-		ref, ok = conanRef(relPath)
-	case "conda":
-		ref, ok = condaRef(relPath)
-	case "terraform":
-		ref, ok = terraformRef(relPath)
-	case "ansible":
-		ref, ok = ansibleRef(relPath)
-	case "composer":
-		ref, ok = composerRef(relPath)
-	}
-
-	if !ok {
-		return pkgRef{}, false
-	}
-
-	if ref.pathFor == nil {
-		ref.pathFor = func(*models.Repository) string { return relPath }
-	}
-
-	return ref, true
-}
-
-func npmRef(relPath string) (pkgRef, bool) {
-	p, err := pkgnpm.ParsePath(relPath)
-	if err != nil {
-		return pkgRef{}, false
-	}
-
-	return pkgRef{
-		probe:  strings.Replace(p.Package, "/", "%2f", 1),
-		accept: "application/json",
-		file:   p.Kind == pkgnpm.KindTarball,
-	}, true
-}
-
-func pypiRef(relPath string) (pkgRef, bool) {
-	kind, project, filename := pypisimple.ParsePath(relPath)
-
-	switch kind {
-	case pypisimple.PathProject:
-		return pkgRef{probe: "simple/" + project + "/", accept: pypiMemberAccept}, true
-	case pypisimple.PathFile:
-		return pkgRef{
-			probe:  "simple/" + project + "/",
-			accept: pypiMemberAccept,
-			file:   true,
-			pathFor: func(m *models.Repository) string {
-				return pypiFilePath(m, project, filename)
-			},
-		}, true
-	case pypisimple.PathIndex, pypisimple.PathOther:
-	}
-
-	return pkgRef{}, false
-}
-
-func rubygemsRef(relPath string) (pkgRef, bool) {
-	p, ok := compactindex.ParsePath(relPath)
-	if !ok {
-		return pkgRef{}, false
-	}
-
-	switch p.Kind {
-	case compactindex.KindInfo:
-		return pkgRef{probe: "info/" + p.Gem}, true
-	case compactindex.KindGem, compactindex.KindGemspec:
-		split := compactindex.SplitFile(p.File)
-		if len(split) == 0 {
-			return pkgRef{}, false
-		}
-
-		ref := pkgRef{probe: "info/" + split[0].Name, file: true}
-		for _, c := range split[1:] {
-			ref.altProbes = append(ref.altProbes, "info/"+c.Name)
-		}
-
-		return ref, true
-	case compactindex.KindVersions, compactindex.KindNames, compactindex.KindSpecs:
-	}
-
-	return pkgRef{}, false
-}
-
-func goRef(relPath string) (pkgRef, bool) {
-	rel := strings.TrimPrefix(relPath, "/")
-
-	mod, _, ok := strings.Cut(rel, "/@v/")
-	if !ok {
-		mod, ok = strings.CutSuffix(rel, "/@latest")
-	}
-
-	if !ok || mod == "" {
-		return pkgRef{}, false
-	}
-
-	return pkgRef{probe: mod + "/@v/list", nonEmpty: true, file: rel != mod+"/@v/list"}, true
-}
-
-func cargoRef(relPath string) (pkgRef, bool) {
-	p, err := pkgcargo.ParsePath(relPath)
-	if err != nil {
-		return pkgRef{}, false
-	}
-
-	switch p.Kind {
-	case pkgcargo.KindIndex:
-		return pkgRef{probe: "index/" + p.IndexPath}, true
-	case pkgcargo.KindDownload:
-		return pkgRef{probe: "index/" + pkgcargo.IndexPathFor(strings.ToLower(p.Crate)), file: true}, true
-	case pkgcargo.KindConfig:
-	}
-
-	return pkgRef{}, false
-}
-
-func ansibleRef(relPath string) (pkgRef, bool) {
-	p, ok := pkgansible.ParsePath(relPath)
-	if !ok {
-		return pkgRef{}, false
-	}
-
-	ref := pkgRef{probe: "api/v3/collections/" + p.Namespace + "/" + p.Name + "/", accept: "application/json"}
-
-	switch p.Kind {
-	case pkgansible.KindCollection, pkgansible.KindVersions, pkgansible.KindVersion:
-		return ref, true
-	case pkgansible.KindDownload:
-		ref.file = true
-		return ref, true
-	case pkgansible.KindRoot, pkgansible.KindV3, pkgansible.KindIndex:
-	}
-
-	return pkgRef{}, false
-}
-
-// composerRef: a hosted member holds a package when its stable or its "~dev"
-// p2 document exists; its dists are files of the package.
-func composerRef(relPath string) (pkgRef, bool) {
-	p, ok := pkgcomposer.ParsePath(relPath)
-	if !ok || (p.Kind != pkgcomposer.KindMetadata && p.Kind != pkgcomposer.KindDist) {
-		return pkgRef{}, false
-	}
-
-	return pkgRef{
-		probe:     "p2/" + p.Name + ".json",
-		altProbes: []string{"p2/" + p.Name + "~dev.json"},
-		accept:    "application/json",
-		file:      p.Kind == pkgcomposer.KindDist,
-	}, true
-}
-
-func nugetRef(relPath string) (pkgRef, bool) {
-	segs := strings.Split(strings.Trim(relPath, "/"), "/")
-	if len(segs) < 3 || segs[0] != "v3" || (segs[1] != "registration" && segs[1] != "package") || !nugetSegment(segs[2]) {
-		return pkgRef{}, false
-	}
-
-	return pkgRef{
-		probe:  "v3/package/" + strings.ToLower(segs[2]) + "/index.json",
-		accept: "application/json",
-		file:   strings.HasSuffix(relPath, ".nupkg") || strings.HasSuffix(relPath, ".nuspec"),
-	}, true
-}
-
-func mavenRef(relPath string) (pkgRef, bool) {
-	if doc, _, ok := mavenMetadataPath(relPath); ok {
-		return pkgRef{probe: doc}, true
-	}
-
-	rel := strings.TrimPrefix(relPath, "/")
-
-	// A signature or the like of the metadata document belongs to that
-	// document's package.
-	if strings.HasPrefix(path.Base(rel), "maven-metadata.xml") {
-		return pkgRef{probe: path.Dir(rel) + "/maven-metadata.xml", file: true}, true
-	}
-
-	// <group path>/<artifact>/<version>/<file>: the artifact's metadata is
-	// two levels up from the file.
-	if strings.Count(rel, "/") < 3 {
-		return pkgRef{}, false
-	}
-
-	return pkgRef{probe: path.Dir(path.Dir(rel)) + "/maven-metadata.xml", file: true}, true
-}
-
-func helmRef(relPath string) (pkgRef, bool) {
-	file, ok := strings.CutPrefix(strings.TrimPrefix(relPath, "/"), helmChartsDir)
-	if !ok || !pathseg.Name(file) {
-		return pkgRef{}, false
-	}
-
-	return pkgRef{chartFile: file, file: true}, true
-}
-
 // ociRef is the image a docker request names. Referrers are files of the image
 // like manifests and blobs.
-func ociRef(req ocipath.Request, relPath string) (pkgRef, bool) {
+func ociRef(req ocipath.Request, relPath string) (PkgRef, bool) {
 	var file bool
 
 	switch req.Kind { //nolint:exhaustive // uploads are refused before this point
@@ -344,7 +117,7 @@ func ociRef(req ocipath.Request, relPath string) (pkgRef, bool) {
 		file = true
 	case ocipath.KindTags:
 	default:
-		return pkgRef{}, false
+		return PkgRef{}, false
 	}
 
 	probe := "tags/list"
@@ -352,7 +125,7 @@ func ociRef(req ocipath.Request, relPath string) (pkgRef, bool) {
 		probe = image + "/tags/list"
 	}
 
-	return pkgRef{
+	return PkgRef{
 		probe:   probe,
 		file:    file,
 		pathFor: func(*models.Repository) string { return relPath },
@@ -384,6 +157,7 @@ func (h *Handler) applyHostedWins(
 	w http.ResponseWriter,
 	r *http.Request,
 	grp *models.Repository,
+	hk Hooks,
 	readable []*models.Repository,
 	relPath string,
 	be Backend,
@@ -392,7 +166,7 @@ func (h *Handler) applyHostedWins(
 		return readable, false
 	}
 
-	ref, ok := packageRef(grp.Format, relPath)
+	ref, ok := hk.packageRef(relPath)
 	if !ok {
 		return readable, false
 	}
@@ -444,7 +218,7 @@ func (h *Handler) resolveHostedWins(
 	w http.ResponseWriter,
 	r *http.Request,
 	readable []*models.Repository,
-	ref pkgRef,
+	ref PkgRef,
 	be Backend,
 	rep replies,
 ) ([]*models.Repository, bool) {
@@ -524,7 +298,7 @@ func splitHosted(readable []*models.Repository) ([]*models.Repository, bool) {
 // probeRequest is the request hosted members are asked about a package with: a
 // plain GET for the probe document, without the client's conditional or range
 // headers and query.
-func probeRequest(r *http.Request, ref pkgRef) *http.Request {
+func probeRequest(r *http.Request, ref PkgRef) *http.Request {
 	mr := r.Clone(r.Context())
 	mr.Method = http.MethodGet
 	mr.URL.RawQuery = ref.query
@@ -540,22 +314,15 @@ func probeRequest(r *http.Request, ref pkgRef) *http.Request {
 	return mr
 }
 
-// owns asks hosted member m whether it holds the package of ref.
-func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Backend) ownership {
-	if ref.chartFile != "" {
-		return h.ownsChart(mr, m, ref.chartFile, be)
-	}
+// ownerFunc is an ownership strategy: it asks hosted member m whether it holds
+// the package of ref. mr is the probe request (see probeRequest).
+type ownerFunc func(h *Handler, mr *http.Request, m *models.Repository, ref PkgRef, be Backend) ownership
 
-	if len(ref.modules) > 0 {
-		return h.ownsFileModule(mr.Context(), m, ref.modules)
-	}
-
-	if ref.holds != nil {
-		return h.ownsByDoc(mr, m, ref, be)
-	}
-
-	if ref.condaName != "" {
-		return h.ownsCondaName(mr, m, ref.condaName)
+// owns asks hosted member m whether it holds the package of ref, by the
+// strategy ref names.
+func (h *Handler) owns(mr *http.Request, m *models.Repository, ref PkgRef, be Backend) ownership {
+	if ref.owner != nil {
+		return ref.owner(h, mr, m, ref, be)
 	}
 
 	result := ownsNot
@@ -574,7 +341,7 @@ func (h *Handler) owns(mr *http.Request, m *models.Repository, ref pkgRef, be Ba
 }
 
 // ownsProbe asks hosted member m for one probe document.
-func (h *Handler) ownsProbe(mr *http.Request, m *models.Repository, ref pkgRef, probe string, be Backend) ownership {
+func (h *Handler) ownsProbe(mr *http.Request, m *models.Repository, ref PkgRef, probe string, be Backend) ownership {
 	sw := &statusWriter{header: make(http.Header)}
 	be.ServeMember(sw, mr, m, probe)
 
@@ -597,7 +364,7 @@ func (h *Handler) ownsProbe(mr *http.Request, m *models.Repository, ref pkgRef, 
 
 // ownsByDoc asks hosted member m for the probe document and lets ref decide
 // from its content whether the member holds the package.
-func (h *Handler) ownsByDoc(mr *http.Request, m *models.Repository, ref pkgRef, be Backend) ownership {
+func (h *Handler) ownsByDoc(mr *http.Request, m *models.Repository, ref PkgRef, be Backend) ownership {
 	sess := h.newSession(mr.Context())
 	defer sess.release()
 
@@ -628,9 +395,9 @@ func (h *Handler) ownsByDoc(mr *http.Request, m *models.Repository, ref pkgRef, 
 	return ownsNot
 }
 
-// ownsChart reports whether hosted helm member m lists a chart that file (a
-// chart package or its .prov) belongs to.
-func (h *Handler) ownsChart(mr *http.Request, m *models.Repository, file string, be Backend) ownership {
+// ownsChart reports whether hosted helm member m lists a chart that ref's
+// chartFile (a chart package or its .prov) belongs to.
+func (h *Handler) ownsChart(mr *http.Request, m *models.Repository, ref PkgRef, be Backend) ownership {
 	sess := h.newSession(mr.Context())
 	defer sess.release()
 
@@ -651,7 +418,7 @@ func (h *Handler) ownsChart(mr *http.Request, m *models.Repository, file string,
 	}
 
 	for cv := range ix.Versions() {
-		if isChartFileOf(cv.Name, file) {
+		if isChartFileOf(cv.Name, ref.chartFile) {
 			return ownsYes
 		}
 	}

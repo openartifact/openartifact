@@ -6,6 +6,7 @@ package group
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -28,7 +29,7 @@ type fileModule struct{ group, module string }
 // both its current and its legacy reading); a maven-metadata document, which
 // the hosted handlers store like any file but which names the module one or two
 // directories up, is read both ways. ok is false for paths that name no module.
-func fileRepoRef(relPath string) (pkgRef, bool) {
+func fileRepoRef(relPath string) (PkgRef, bool) {
 	rel := strings.Trim(relPath, "/")
 
 	var mods []fileModule
@@ -58,26 +59,48 @@ func fileRepoRef(relPath string) (pkgRef, bool) {
 	}
 
 	if len(mods) == 0 {
-		return pkgRef{}, false
+		return PkgRef{}, false
 	}
 
-	return pkgRef{file: true, modules: mods}, true
+	return PkgRef{file: true, modules: mods}, true
 }
 
-// ownsFileModule reports whether hosted member m holds a file of any of mods.
-func (h *Handler) ownsFileModule(ctx context.Context, m *models.Repository, mods []fileModule) ownership {
+// ivyRef and sbtRef are fileRepoRef with the table the format's hosted members
+// keep their files in asked.
+func ivyRef(relPath string) (PkgRef, bool) {
+	ref, ok := fileRepoRef(relPath)
+	ref.owner = func(h *Handler, mr *http.Request, m *models.Repository, ref PkgRef, _ Backend) ownership {
+		return h.ownsFileModule(mr.Context(), m, ref.modules, h.db.IvyModuleExists)
+	}
+
+	return ref, ok
+}
+
+func sbtRef(relPath string) (PkgRef, bool) {
+	ref, ok := fileRepoRef(relPath)
+	ref.owner = func(h *Handler, mr *http.Request, m *models.Repository, ref PkgRef, _ Backend) ownership {
+		return h.ownsFileModule(mr.Context(), m, ref.modules, h.db.SBTModuleExists)
+	}
+
+	return ref, ok
+}
+
+// IvyHooks is the ivy group: first hit, with module ownership for hosted wins.
+var IvyHooks = Hooks{PackageRef: ivyRef} //nolint:gochecknoglobals // immutable format hook value
+
+// SBTHooks is the sbt group: first hit, with module ownership for hosted wins.
+var SBTHooks = Hooks{PackageRef: sbtRef} //nolint:gochecknoglobals // immutable format hook value
+
+// ownsFileModule reports whether hosted member m holds a file of any of mods,
+// by asking exists (the store's per-format module check).
+func (h *Handler) ownsFileModule(
+	ctx context.Context,
+	m *models.Repository,
+	mods []fileModule,
+	exists func(ctx context.Context, repoID, group, module string) (bool, error),
+) ownership {
 	for _, fm := range mods {
-		var (
-			held bool
-			err  error
-		)
-
-		if m.Format == "sbt" {
-			held, err = h.db.SBTModuleExists(ctx, m.ID, fm.group, fm.module)
-		} else {
-			held, err = h.db.IvyModuleExists(ctx, m.ID, fm.group, fm.module)
-		}
-
+		held, err := exists(ctx, m.ID, fm.group, fm.module)
 		if err != nil {
 			h.log.Errorw("failed to check member module", "member", m.Name, "error", err)
 			return ownsUnknown

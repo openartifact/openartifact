@@ -43,6 +43,22 @@ const (
 // errCondaMemberBody is a member whose repodata could not be read in full.
 var errCondaMemberBody = errors.New("member repodata unreadable")
 
+// CondaHooks is the conda group: merged repodata, package files first-hit.
+var CondaHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: func(
+		h *Handler,
+		w http.ResponseWriter,
+		r *http.Request,
+		grp *models.Repository,
+		relPath string,
+		readable []*models.Repository,
+		be Backend,
+	) bool {
+		return h.serveConda(w, r, grp, readable, relPath, be)
+	},
+	PackageRef: condaRef,
+}
+
 // serveConda answers the requests of a conda group that are not first-hit: the
 // merged <subdir>/repodata.json and current_repodata.json, plain or .zst.
 // Package files are first-hit (hosted wins is applied before). Everything else
@@ -256,7 +272,7 @@ func (h *Handler) probeCondaMembers(r *http.Request, readable []*models.Reposito
 		cm := condaMember{repo: m, state: memberAbsent}
 
 		for _, path := range condaMemberPaths(m, p) {
-			mr := probeRequest(r, pkgRef{})
+			mr := probeRequest(r, PkgRef{})
 			mr.Header.Set("If-None-Match", "*")
 
 			pw := &etagProbe{header: make(http.Header)}
@@ -380,7 +396,7 @@ func (h *Handler) addCondaMember(r *http.Request, b *pkgconda.Builder, m condaMe
 	}()
 
 	fw := &fileResponse{header: make(http.Header), dst: spool, limit: maxCondaDocBytes}
-	be.ServeMember(fw, probeRequest(r, pkgRef{}), m.repo, m.path)
+	be.ServeMember(fw, probeRequest(r, PkgRef{}), m.repo, m.path)
 
 	switch {
 	case fw.err != nil:
@@ -468,9 +484,11 @@ func (h *Handler) writeCondaDocument(w http.ResponseWriter, p pkgconda.Path, doc
 	_, _ = doc.WriteTo(w)
 }
 
-// ownsCondaName reports whether hosted member m holds a package of this name
-// in any platform.
-func (h *Handler) ownsCondaName(mr *http.Request, m *models.Repository, name string) ownership {
+// ownsCondaName reports whether hosted member m holds a package of ref's
+// condaName in any platform.
+func (h *Handler) ownsCondaName(mr *http.Request, m *models.Repository, ref PkgRef, _ Backend) ownership {
+	name := ref.condaName
+
 	has, err := h.db.HasCondaPackageName(mr.Context(), m.ID, name)
 	if err != nil {
 		h.log.Errorw("failed to look up hosted conda package name", "member", m.Name, "name", name, "error", err)
@@ -486,16 +504,16 @@ func (h *Handler) ownsCondaName(mr *http.Request, m *models.Repository, name str
 
 // condaRef is the package a conda package file request names, by the name in
 // its file name.
-func condaRef(relPath string) (pkgRef, bool) {
+func condaRef(relPath string) (PkgRef, bool) {
 	p, ok := pkgconda.ParsePath(relPath)
 	if !ok || p.Kind != pkgconda.KindPackage {
-		return pkgRef{}, false
+		return PkgRef{}, false
 	}
 
 	f, ok := pkgconda.ParseFilename(p.File)
 	if !ok {
-		return pkgRef{}, false
+		return PkgRef{}, false
 	}
 
-	return pkgRef{condaName: strings.ToLower(f.Name), file: true}, true
+	return PkgRef{condaName: strings.ToLower(f.Name), file: true, owner: (*Handler).ownsCondaName}, true
 }

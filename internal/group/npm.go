@@ -43,6 +43,12 @@ func (h *Handler) publicBase(w http.ResponseWriter, r *http.Request) string {
 	return publicurl.Resolve(w, r, h.baseURL)
 }
 
+// NPMHooks is the npm group: merged packuments, tarballs first-hit.
+var NPMHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveNPM,
+	PackageRef:  npmRef,
+}
+
 // serveNPM answers packument and version-manifest requests by merging the
 // members' packuments; it reports false for every other path (tarballs), which
 // the caller resolves by first hit. Versions are the union of the members'
@@ -192,4 +198,17 @@ func mergePackuments(tarballBase string, p pkgnpm.Path, docs [][]byte) ([]byte, 
 	}
 
 	return manifest, nil
+}
+
+func npmRef(relPath string) (PkgRef, bool) {
+	p, err := pkgnpm.ParsePath(relPath)
+	if err != nil {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{
+		probe:  strings.Replace(p.Package, "/", "%2f", 1),
+		accept: "application/json",
+		file:   p.Kind == pkgnpm.KindTarball,
+	}, true
 }

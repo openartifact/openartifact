@@ -28,6 +28,12 @@ const (
 	helmChartsDir = "charts/"
 )
 
+// HelmHooks is the helm group: merged index.yaml, charts first-hit.
+var HelmHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveHelm,
+	PackageRef:  helmRef,
+}
+
 // serveHelm answers index.yaml by merging the members' indexes: a chart
 // version is listed once, from the first member that has it (name and version
 // decide), and every chart URL points back at the group. It reports false for
@@ -164,4 +170,13 @@ func mergeHelmIndexes(indexes []*pkghelm.Index) ([]byte, error) {
 	})
 
 	return merged.Marshal() //nolint:wrapcheck // caller logs
+}
+
+func helmRef(relPath string) (PkgRef, bool) {
+	file, ok := strings.CutPrefix(strings.TrimPrefix(relPath, "/"), helmChartsDir)
+	if !ok || !pathseg.Name(file) {
+		return PkgRef{}, false
+	}
+
+	return PkgRef{chartFile: file, file: true, owner: (*Handler).ownsChart}, true
 }

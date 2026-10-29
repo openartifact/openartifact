@@ -113,22 +113,28 @@ func parseTerraformPath(relPath string) terraformPath {
 // module is held by a hosted member iff its version list answers 200, a
 // provider type likewise. The details of a version are package metadata (they
 // are rewritten for the group below), downloads are files.
-func terraformRef(relPath string) (pkgRef, bool) {
+func terraformRef(relPath string) (PkgRef, bool) {
 	p := parseTerraformPath(relPath)
 
 	switch p.kind {
 	case terraformModuleVersions, terraformModuleLatest, terraformModuleLatestDownload, terraformModuleVersion:
-		return pkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json"}, true
+		return PkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json"}, true
 	case terraformModuleDownload:
-		return pkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json", file: true}, true
+		return PkgRef{probe: p.name + "/" + p.system + "/versions", accept: "application/json", file: true}, true
 	case terraformProviderVersions:
-		return pkgRef{probe: p.name + "/versions", accept: "application/json"}, true
+		return PkgRef{probe: p.name + "/versions", accept: "application/json"}, true
 	case terraformProviderDownload:
-		return pkgRef{probe: p.name + "/versions", accept: "application/json", file: true}, true
+		return PkgRef{probe: p.name + "/versions", accept: "application/json", file: true}, true
 	case terraformOther:
 	}
 
-	return pkgRef{}, false
+	return PkgRef{}, false
+}
+
+// TerraformHooks is the terraform group: merged version lists and discovery, downloads first-hit.
+var TerraformHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	ServeMerged: (*Handler).serveTerraform,
+	PackageRef:  terraformRef,
 }
 
 // serveTerraform answers the requests of a terraform group that merge over its

@@ -17,7 +17,6 @@ import (
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatnix "github.com/openartifact/openartifact/internal/format/nix"
-	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -111,99 +110,25 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 		return
 	}
 
+	hk, _ := Lookup(grp.Format)
 	readable := make([]*models.Repository, 0, len(members))
 
 	for _, m := range members {
-		if be.Authorize(r, m, authPath(grp.Format, m, relPath)) {
+		if be.Authorize(r, m, hk.authPath(m, relPath)) {
 			readable = append(readable, m)
 		}
 	}
 
-	readable, done := h.applyHostedWins(w, r, grp, readable, relPath, be)
+	readable, done := h.applyHostedWins(w, r, grp, hk, readable, relPath, be)
 	if done {
 		return
 	}
 
-	if h.serveMerged(w, r, grp, readable, relPath, be) {
+	if hk.serveMerged(h, w, r, grp, relPath, readable, be) {
 		return
 	}
 
 	h.serveFirstHit(w, r, readable, relPath, be)
-}
-
-// serveMerged answers the requests a group of a version-merging format
-// (ansible, apk, cargo, composer, conan, conda, deb, go, helm, maven, npm, nuget, pacman, pypi, rpm, rubygems, terraform) merges over its
-// members, or answers itself (nix); false means the request is a plain first-hit one.
-func (h *Handler) serveMerged(
-	w http.ResponseWriter,
-	r *http.Request,
-	grp *models.Repository,
-	readable []*models.Repository,
-	relPath string,
-	be Backend,
-) bool {
-	switch grp.Format {
-	case "ansible":
-		return h.serveAnsible(w, r, grp, relPath, readable, be)
-	case "apk":
-		h.serveApk(w, r, grp, readable, relPath, be)
-
-		return true
-	case "cargo":
-		return h.serveCargo(w, r, grp, relPath, readable, be)
-	case "composer":
-		return h.serveComposer(w, r, grp, relPath, readable, be)
-	case "conan":
-		return h.serveConan(w, r, grp, relPath, readable, be)
-	case "conda":
-		return h.serveConda(w, r, grp, readable, relPath, be)
-	case "deb", "pacman", "rpm":
-		h.serveDebRPM(w, r, grp, readable, relPath, be)
-
-		return true
-	case "go":
-		return h.serveGo(w, r, grp, relPath, readable, be)
-	case "helm":
-		return h.serveHelm(w, r, grp, relPath, readable, be)
-	case "maven":
-		base, suffix, ok := mavenMetadataPath(relPath)
-		if ok {
-			h.serveMavenMetadata(w, r, grp, readable, base, suffix, be)
-		}
-
-		return ok
-	case "nix":
-		h.serveNix(w, r, grp, readable, relPath, be)
-
-		return true
-	case "npm":
-		return h.serveNPM(w, r, grp, relPath, readable, be)
-	case "nuget":
-		return h.serveNuGet(w, r, grp, relPath, readable, be)
-	case "pypi":
-		return h.servePyPI(w, r, grp, readable, relPath, be)
-	case "rubygems":
-		return h.serveRubyGems(w, r, grp, relPath, readable, be)
-	case "terraform":
-		return h.serveTerraform(w, r, grp, relPath, readable, be)
-	}
-
-	return false
-}
-
-// authPath is the path the caller is authorized against for member m: the one a
-// direct request to m would be authorized with, so a path-scoped grant on the
-// member means the same thing inside and outside the group.
-func authPath(format string, m *models.Repository, relPath string) string {
-	if format != "pypi" {
-		return relPath
-	}
-
-	if kind, project, filename := pypisimple.ParsePath(relPath); kind == pypisimple.PathFile {
-		return pypiFilePath(m, project, filename)
-	}
-
-	return relPath
 }
 
 // members returns grp's members in priority order. Members that cannot be
