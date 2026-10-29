@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
@@ -1253,7 +1254,8 @@ func (m *MockDatabase) storeUploadedComponent(pkg *models.Component) error {
 	}
 
 	if pkg.ID == "" {
-		pkg.ID = pkg.SHA256 + "-" + pkg.RepositoryID
+		// A uuid, as the real id column: the delete handlers refuse any other id.
+		pkg.ID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(pkg.SHA256+"-"+pkg.RepositoryID)).String()
 	}
 
 	if _, exists := m.components[pkg.ID]; exists {
