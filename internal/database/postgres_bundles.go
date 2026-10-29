@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -17,7 +18,10 @@ import (
 
 // PromotionPipeline methods
 
-func (p *PostgresDB) CreatePromotionPipeline(ctx context.Context, pp *models.PromotionPipeline) error {
+// BundleStore owns promotion pipelines and release bundles.
+type BundleStore struct{ *core }
+
+func (p *BundleStore) CreatePromotionPipeline(ctx context.Context, pp *models.PromotionPipeline) error {
 	stagesJSON, err := json.Marshal(pp.Stages)
 	if err != nil {
 		return fmt.Errorf("failed to marshal pipeline stages: %w", err)
@@ -35,16 +39,16 @@ func (p *PostgresDB) CreatePromotionPipeline(ctx context.Context, pp *models.Pro
 	).Scan(&pp.ID)
 }
 
-func (p *PostgresDB) GetPromotionPipelineByName(ctx context.Context, name string) (*models.PromotionPipeline, error) {
+func (p *BundleStore) GetPromotionPipelineByName(ctx context.Context, name string) (*models.PromotionPipeline, error) {
 	return p.getPromotionPipeline(ctx, "name", name)
 }
 
-func (p *PostgresDB) GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error) {
+func (p *BundleStore) GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error) {
 	return p.getPromotionPipeline(ctx, "id", id)
 }
 
 // getPromotionPipeline reads one promotion pipeline by its id or name column.
-func (p *PostgresDB) getPromotionPipeline(ctx context.Context, column, value string) (*models.PromotionPipeline, error) {
+func (p *BundleStore) getPromotionPipeline(ctx context.Context, column, value string) (*models.PromotionPipeline, error) {
 	pp := &models.PromotionPipeline{}
 
 	err := p.db.QueryRowContext(ctx,
@@ -68,7 +72,7 @@ func (p *PostgresDB) getPromotionPipeline(ctx context.Context, column, value str
 	return pp, nil
 }
 
-func (p *PostgresDB) UpdatePromotionPipeline(ctx context.Context, pp *models.PromotionPipeline) error {
+func (p *BundleStore) UpdatePromotionPipeline(ctx context.Context, pp *models.PromotionPipeline) error {
 	stagesJSON, err := json.Marshal(pp.Stages)
 	if err != nil {
 		return fmt.Errorf("failed to marshal pipeline stages: %w", err)
@@ -83,12 +87,12 @@ func (p *PostgresDB) UpdatePromotionPipeline(ctx context.Context, pp *models.Pro
 	return err
 }
 
-func (p *PostgresDB) DeletePromotionPipeline(ctx context.Context, id string) error {
+func (p *BundleStore) DeletePromotionPipeline(ctx context.Context, id string) error {
 	_, err := p.db.ExecContext(ctx, `DELETE FROM promotion_pipelines WHERE id=$1`, id)
 	return err
 }
 
-func (p *PostgresDB) ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error) {
+func (p *BundleStore) ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT pp.id, pp.name, COALESCE(pp.description,''), pp.stages, COALESCE(u.username,''), pp.created_at, pp.updated_at
 		 FROM promotion_pipelines pp
@@ -120,7 +124,7 @@ func (p *PostgresDB) ListPromotionPipelines(ctx context.Context) ([]*models.Prom
 
 // ReleaseBundle methods
 
-func (p *PostgresDB) CreateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
+func (p *BundleStore) CreateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
 	now := time.Now()
 	b.CreatedAt = now
 
@@ -149,7 +153,7 @@ const releaseBundleSelect = `SELECT rb.id, rb.name, rb.version, COALESCE(rb.desc
 	 LEFT JOIN auth_users us ON us.id = rb.sealer_id
 	 LEFT JOIN auth_users ua ON ua.id = rb.archiver_id`
 
-func (p *PostgresDB) GetReleaseBundle(ctx context.Context, name, version string) (*models.ReleaseBundle, error) {
+func (p *BundleStore) GetReleaseBundle(ctx context.Context, name, version string) (*models.ReleaseBundle, error) {
 	b := &models.ReleaseBundle{}
 
 	err := p.db.QueryRowContext(ctx,
@@ -168,7 +172,7 @@ func (p *PostgresDB) GetReleaseBundle(ctx context.Context, name, version string)
 	return b, nil
 }
 
-func (p *PostgresDB) GetReleaseBundleByID(ctx context.Context, id string) (*models.ReleaseBundle, error) {
+func (p *BundleStore) GetReleaseBundleByID(ctx context.Context, id string) (*models.ReleaseBundle, error) {
 	b := &models.ReleaseBundle{}
 
 	err := p.db.QueryRowContext(ctx,
@@ -187,7 +191,7 @@ func (p *PostgresDB) GetReleaseBundleByID(ctx context.Context, id string) (*mode
 	return b, nil
 }
 
-func (p *PostgresDB) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
+func (p *BundleStore) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error {
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE release_bundles
 		 SET description=$1, state=$2, pipeline_id=$3, current_stage=$4,
@@ -203,12 +207,12 @@ func (p *PostgresDB) UpdateReleaseBundle(ctx context.Context, b *models.ReleaseB
 	return err
 }
 
-func (p *PostgresDB) DeleteReleaseBundle(ctx context.Context, id string) error {
+func (p *BundleStore) DeleteReleaseBundle(ctx context.Context, id string) error {
 	_, err := p.db.ExecContext(ctx, `DELETE FROM release_bundles WHERE id=$1`, id)
 	return err
 }
 
-func (p *PostgresDB) ListReleaseBundles(
+func (p *BundleStore) ListReleaseBundles(
 	ctx context.Context,
 	nameFilter, stateFilter string,
 	page, limit int,
@@ -269,7 +273,7 @@ func (p *PostgresDB) ListReleaseBundles(
 // AddBundleItem inserts a bundle item. release_bundle_items has no
 // component_id column, so item.ComponentID never round-trips through storage.
 // The adder is stored as an adder_id UUID FK resolved from AddedBy (username) via a scalar subquery.
-func (p *PostgresDB) AddBundleItem(ctx context.Context, item *models.ReleaseBundleItem) error {
+func (p *BundleStore) AddBundleItem(ctx context.Context, item *models.ReleaseBundleItem) error {
 	_, err := p.db.ExecContext(ctx,
 		`WITH ref AS (
 		     INSERT INTO artifact_refs (repository_id, artifact_path, format)
@@ -293,7 +297,7 @@ func (p *PostgresDB) AddBundleItem(ctx context.Context, item *models.ReleaseBund
 // draft check and the delete are one statement that row-locks the bundle, so a
 // concurrent seal cannot slip between them; a non-draft bundle yields
 // ErrBundleNotDraft. Removing an item that is already gone is a no-op.
-func (p *PostgresDB) RemoveBundleItem(ctx context.Context, bundleID, sha256 string) error {
+func (p *BundleStore) RemoveBundleItem(ctx context.Context, bundleID, sha256 string) error {
 	res, err := p.db.ExecContext(ctx,
 		`DELETE FROM release_bundle_items
 		 WHERE bundle_id = $1 AND sha256 = $2
@@ -326,7 +330,7 @@ func (p *PostgresDB) RemoveBundleItem(ctx context.Context, bundleID, sha256 stri
 	return nil
 }
 
-func (p *PostgresDB) ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error) {
+func (p *BundleStore) ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT rbi.id, rbi.bundle_id, rbi.source_repo_id, rbi.sha256, rbi.artifact_path, rbi.format, rbi.size_bytes,
 		        COALESCE(u.username,''), rbi.added_at
@@ -354,7 +358,7 @@ func (p *PostgresDB) ListBundleItems(ctx context.Context, bundleID string) ([]*m
 	return result, rows.Err()
 }
 
-func (p *PostgresDB) GetBundleItem(ctx context.Context, bundleID, sha256 string) (*models.ReleaseBundleItem, error) {
+func (p *BundleStore) GetBundleItem(ctx context.Context, bundleID, sha256 string) (*models.ReleaseBundleItem, error) {
 	item := &models.ReleaseBundleItem{}
 
 	err := p.db.QueryRowContext(ctx,
@@ -378,7 +382,7 @@ func (p *PostgresDB) GetBundleItem(ctx context.Context, bundleID, sha256 string)
 
 // BundlePromotion methods
 
-func (p *PostgresDB) CreateBundlePromotion(ctx context.Context, pr *models.BundlePromotion) error {
+func (p *BundleStore) CreateBundlePromotion(ctx context.Context, pr *models.BundlePromotion) error {
 	pr.StartedAt = time.Now()
 	if pr.Status == "" {
 		pr.Status = models.PromotionStatusInProgress
@@ -393,7 +397,7 @@ func (p *PostgresDB) CreateBundlePromotion(ctx context.Context, pr *models.Bundl
 	).Scan(&pr.ID)
 }
 
-func (p *PostgresDB) ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error) {
+func (p *BundleStore) ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT bp.id, bp.bundle_id, bp.from_stage, bp.to_stage, bp.target_repo_id, bp.status, COALESCE(u.username,''),
 		        COALESCE(bp.notes,''), bp.error_message, bp.item_count, bp.started_at, bp.completed_at
@@ -420,4 +424,105 @@ func (p *PostgresDB) ListBundlePromotions(ctx context.Context, bundleID string) 
 	}
 
 	return result, rows.Err()
+}
+
+// AddBundleItems inserts all items atomically. The bundle row is locked and
+// must be in draft state; otherwise ErrBundleNotDraft / ErrBundleNotFound is
+// returned and nothing is inserted. Items whose (bundle_id, sha256) already
+// exists are skipped. Each item's ID is filled in.
+func (p *BundleStore) AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error {
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	var state string
+
+	err = tx.QueryRowContext(ctx, `SELECT state FROM release_bundles WHERE id = $1 FOR UPDATE`, bundleID).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrBundleNotFound
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to lock release bundle: %w", err)
+	}
+
+	if state != string(models.BundleStateDraft) {
+		return ErrBundleNotDraft
+	}
+
+	for _, item := range items {
+		err := tx.QueryRowContext(ctx, `
+			WITH ref AS (
+				INSERT INTO artifact_refs (repository_id, artifact_path, format)
+				VALUES ($2, $4, $5)
+				ON CONFLICT (repository_id, artifact_path) DO UPDATE SET format = EXCLUDED.format
+				RETURNING id
+			), ins AS (
+				INSERT INTO release_bundle_items
+				(bundle_id, source_repo_id, artifact_ref_id, sha256, artifact_path, format, size_bytes, adder_id, added_at)
+				SELECT $1, $2, ref.id, $3, $4, $5, $6, (SELECT id FROM auth_users WHERE username = $7), $8
+				FROM ref
+				ON CONFLICT (bundle_id, sha256) DO NOTHING
+				RETURNING id
+			)
+			SELECT COALESCE(
+				(SELECT id FROM ins),
+				(SELECT id FROM release_bundle_items WHERE bundle_id = $1 AND sha256 = $3))`,
+			bundleID, item.SourceRepoID, item.SHA256, item.ArtifactPath, item.Format, item.SizeBytes, item.AddedBy, orNow(item.AddedAt),
+		).Scan(&item.ID)
+		if err != nil {
+			return fmt.Errorf("failed to add bundle item %q: %w", item.SHA256, err)
+		}
+
+		item.BundleID = bundleID
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit bundle items: %w", err)
+	}
+
+	return nil
+}
+
+// SealReleaseBundle moves a draft bundle to sealed with a conditional UPDATE
+// (WHERE state = 'draft'), so concurrent item adds/seals cannot interleave.
+// It reports whether the bundle was sealed; false means it was no longer a
+// draft (or does not exist), or, when sig is given, that its items changed
+// since the manifest was signed. A bundle with no items is never sealed.
+func (p *BundleStore) SealReleaseBundle(
+	ctx context.Context,
+	bundleID, sealedBy string,
+	sealedAt time.Time,
+	sig *models.BundleSignature,
+) (bool, error) {
+	var keyID, signature, itemIDs *string
+
+	if sig != nil {
+		ids := strings.Join(sig.ItemIDs, ",")
+		keyID, signature, itemIDs = &sig.KeyFingerprint, &sig.Signature, &ids
+	}
+
+	res, err := p.db.ExecContext(ctx, `
+		UPDATE release_bundles
+		SET state = 'sealed', sealed_at = $2, sealer_id = (SELECT id FROM auth_users WHERE username = $3),
+		    gpg_key_id = $4, gpg_signature = $5, updated_at = now()
+		WHERE id = $1 AND state = 'draft'
+		  AND EXISTS (SELECT 1 FROM release_bundle_items WHERE bundle_id = $1)
+		  AND ($6::text IS NULL OR $6::text = (
+		        SELECT COALESCE(string_agg(id::text, ',' ORDER BY id::text COLLATE "C"), '')
+		        FROM release_bundle_items WHERE bundle_id = $1))`,
+		bundleID, sealedAt, sealedBy, keyID, signature, itemIDs)
+	if err != nil {
+		return false, fmt.Errorf("failed to seal release bundle: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to seal release bundle: %w", err)
+	}
+
+	return n > 0, nil
 }
