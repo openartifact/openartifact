@@ -6,9 +6,7 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -72,63 +70,6 @@ func (p *PostgresDB) SetVulnScanQuarantine(ctx context.Context, repoID, id strin
 // ---------------------------------------------------------------------------
 // SBOM reports
 // ---------------------------------------------------------------------------
-
-// GetSBOMReportByID returns the SBOM report with the given ID scoped to repoID, or nil.
-func (p *PostgresDB) GetSBOMReportByID(ctx context.Context, repoID, id string) (*models.SBOMReport, error) {
-	report := &models.SBOMReport{}
-
-	var blobSHA256 sql.NullString
-
-	err := p.db.QueryRowContext(ctx, `
-		SELECT sr.id, ref.repository_id, ref.artifact_path, sr.sbom_format, sr.spec_version,
-		       sr.component_count, b.sha256, sj.completed_at, sj.created_at, sj.updated_at
-		FROM sbom_results sr
-		JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-		LEFT JOIN blobs b ON b.id = sr.blob_id
-		WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 AND sr.id = $2`, repoID, id,
-	).Scan(&report.ID, &report.RepositoryID, &report.ArtifactID, &report.Format, &report.SpecVersion,
-		&report.ComponentCount, &blobSHA256, &report.GeneratedAt, &report.CreatedAt, &report.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SBOM report by id: %w", err)
-	}
-
-	report.BlobSHA256 = blobSHA256.String
-
-	return report, nil
-}
-
-// DeleteSBOMReportInRepo deletes the SBOM report with the given ID scoped to
-// repoID and returns the sha256 of the blob it referenced ("" when it had none).
-// Callers should afterwards remove the blob from storage if it is unreferenced
-// (storage.SafeDeleteBlob). Returns ErrSBOMReportNotFound when nothing matched.
-func (p *PostgresDB) DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error) {
-	var blobSHA256 sql.NullString
-
-	err := p.db.QueryRowContext(ctx, `
-		WITH del AS (
-			DELETE FROM sbom_results sr
-			USING scan_jobs sj, artifact_refs ref
-			WHERE sr.id = $2 AND sj.id = sr.scan_job_id AND sj.scan_type = 'sbom'
-			  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1
-			RETURNING sr.blob_id
-		)
-		SELECT b.sha256 FROM del LEFT JOIN blobs b ON b.id = del.blob_id`, repoID, id,
-	).Scan(&blobSHA256)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrSBOMReportNotFound
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("failed to delete SBOM report: %w", err)
-	}
-
-	return blobSHA256.String, nil
-}
 
 // ---------------------------------------------------------------------------
 // Artifact properties

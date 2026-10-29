@@ -26,6 +26,7 @@ type PostgresDB struct {
 	*QuarantineStore
 	*SecretScanStore
 	*LicenseStore
+	*SBOMStore
 	// STORES-STRUCT
 }
 
@@ -49,6 +50,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		QuarantineStore:      &QuarantineStore{core: c},
 		SecretScanStore:      &SecretScanStore{core: c},
 		LicenseStore:         &LicenseStore{core: c},
+		SBOMStore:            &SBOMStore{core: c},
 		// STORES-INIT
 	}
 }
