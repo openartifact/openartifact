@@ -58,6 +58,7 @@ type PostgresDB struct {
 	*NPMStore
 	*TerraformStore
 	*ComposerStore
+	*AnsibleStore
 	// STORES-STRUCT
 }
 
@@ -113,6 +114,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		NPMStore:             &NPMStore{core: c},
 		TerraformStore:       &TerraformStore{core: c},
 		ComposerStore:        &ComposerStore{core: c},
+		AnsibleStore:         &AnsibleStore{core: c},
 		// STORES-INIT
 	}
 }
