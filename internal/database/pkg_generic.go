@@ -51,7 +51,6 @@ type PackageWrite struct {
 	// ReplaceVersionMeta is set.
 	VersionMeta        any
 	ReplaceVersionMeta bool
-	VersionUnitKey     string
 	// Exclusive makes the write fail with ErrDuplicate when the live version
 	// already has a live file (a format whose upload is one file per version).
 	Exclusive bool
@@ -236,7 +235,6 @@ func (p *core) writePackageTx(
 		if err := q.SetVersionMetadata(ctx, dbsqlc.SetVersionMetadataParams{
 			ID:       out.VersionID,
 			Metadata: verMeta,
-			UnitKey:  strOrNil(w.VersionUnitKey),
 		}); err != nil {
 			return nil, fmt.Errorf("set version metadata: %w", err)
 		}
@@ -315,7 +313,6 @@ func (p *core) liveVersion(
 		Version:      w.Version,
 		VersionKey:   w.VersionKey,
 		Metadata:     verMeta,
-		UnitKey:      strOrNil(w.VersionUnitKey),
 		CreatedAt:    timePtr(w.CreatedAt),
 	})
 	if err == nil {

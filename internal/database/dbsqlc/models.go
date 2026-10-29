@@ -407,6 +407,15 @@ type ComposerPackage struct {
 	DeletedBy    *string         `db:"deleted_by" json:"deleted_by"`
 }
 
+// conan package coordinates of a package_files row (one row per stored file)
+type ConanFile struct {
+	ID string `db:"id" json:"id"`
+	// Package id (binary configuration hash); empty for a file of the recipe revision itself
+	PackageID string `db:"package_id" json:"package_id"`
+	// Package revision (hash of the package manifest); empty for a file of the recipe revision itself
+	PackageRevision string `db:"package_revision" json:"package_revision"`
+}
+
 type ConanPackage struct {
 	ID             string     `db:"id" json:"id"`
 	RepositoryID   string     `db:"repository_id" json:"repository_id"`
@@ -454,6 +463,15 @@ type CondaPackage struct {
 	TimestampMs int64 `db:"timestamp_ms" json:"timestamp_ms"`
 	// Remaining info/index.json fields emitted into repodata.json (constrains, license, noarch, ...).
 	IndexExtra json.RawMessage `db:"index_extra" json:"index_extra"`
+}
+
+// Deb side of package_files: the distribution and component the .deb is published in, and its control stanza
+type DebFile struct {
+	ID             string `db:"id" json:"id"`
+	DistributionID string `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string `db:"component_id" json:"component_id"`
+	// Packages-stanza map of the .deb (bulk, up to MBs, derived from the file)
+	ControlFields json.RawMessage `db:"control_fields" json:"control_fields"`
 }
 
 // Debian packages. Canonical table for Debian format. Scoped to distribution+component for proper Debian model. blob_id FK to global blobs table.
@@ -866,6 +884,20 @@ type MavenArtifact struct {
 	DeletedBy           *string    `db:"deleted_by" json:"deleted_by"`
 }
 
+// maven coordinates of a package_files row (one row per stored file)
+type MavenFile struct {
+	ID         string `db:"id" json:"id"`
+	Classifier string `db:"classifier" json:"classifier"`
+	Extension  string `db:"extension" json:"extension"`
+	// Snapshot timestamp string (e.g. "20240101.120000"); NULL for release artifacts
+	SnapshotTimestamp   *string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
+	SnapshotBuildNumber int32   `db:"snapshot_build_number" json:"snapshot_build_number"`
+	IsSnapshot          bool    `db:"is_snapshot" json:"is_snapshot"`
+	Md5                 string  `db:"md5" json:"md5"`
+	Sha1                string  `db:"sha1" json:"sha1"`
+	Sha512              string  `db:"sha512" json:"sha512"`
+}
+
 // Nix store paths: one narinfo and NAR file per store hash.
 type NixPath struct {
 	ID           string `db:"id" json:"id"`
@@ -1032,7 +1064,7 @@ type OsvMirrorState struct {
 	RematchedAt        *time.Time `db:"rematched_at" json:"rematched_at"`
 }
 
-// One logical package of a repository; identity is (repository_id, name_key). See docs/design/format-plugins.md
+// One logical package of a repository; identity is (repository_id, name_key)
 type Package struct {
 	ID           string `db:"id" json:"id"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
@@ -1040,7 +1072,8 @@ type Package struct {
 	// Listing and display name
 	Name string `db:"name" json:"name"`
 	// Identity inside the repository: the normalised name
-	NameKey   string          `db:"name_key" json:"name_key"`
+	NameKey string `db:"name_key" json:"name_key"`
+	// Package-level facts of the format (npm scope, apk branch/repo, maven group/artifact)
 	Attrs     json.RawMessage `db:"attrs" json:"attrs"`
 	CreatedAt time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
@@ -1060,7 +1093,7 @@ type PackageDelta struct {
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
-// One stored file: the unit of listing, trash, quota, blob references and scan ids. Migrated rows keep the id of the legacy row
+// One stored file: the unit of listing, trash, quota, blob references and scan ids
 type PackageFile struct {
 	ID           string `db:"id" json:"id"`
 	VersionID    string `db:"version_id" json:"version_id"`
@@ -1072,18 +1105,19 @@ type PackageFile struct {
 	BlobID   *string `db:"blob_id" json:"blob_id"`
 	// Declared size that wins over the blob size when set (rpm, rubygems)
 	SizeBytes *int64 `db:"size_bytes" json:"size_bytes"`
-	// primary counts as one artifact for quota; any other role (go mod/info) counts none
+	// primary counts as one artifact for quota; any other role (go mod) counts none
 	Role string `db:"role" json:"role"`
 	// true: the file is a unit of the repository listing
 	Listed bool `db:"listed" json:"listed"`
-	// Platform qualifier shown by the listing and the second retention partition key
+	// Platform qualifier shown by the listing and part of the retention partition
 	Arch string `db:"arch" json:"arch"`
 	// Extra retention-partition suffix (deb distribution, maven snapshot flag)
-	Part  string          `db:"part" json:"part"`
+	Part string `db:"part" json:"part"`
+	// File-level facts of the format; the listing reads release, epoch, build_time, archive_size, installed_size
 	Attrs json.RawMessage `db:"attrs" json:"attrs"`
 	// sha1/md5/sha512/shasum/integrity for checksum search; sha256 is the blob's
 	Checksums json.RawMessage `db:"checksums" json:"checksums"`
-	// Federation unit key when the federation unit is the file
+	// Federation unit key, set on the primary file of a federated unit
 	UnitKey       *string    `db:"unit_key" json:"unit_key"`
 	DownloadCount int64      `db:"download_count" json:"download_count"`
 	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
@@ -1109,15 +1143,25 @@ type PackageVersion struct {
 	PackageID    string `db:"package_id" json:"package_id"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Version      string `db:"version" json:"version"`
-	// Identity inside the package: the version plus the coordinates the format keys on; cleanup policies rank by it
-	VersionKey string          `db:"version_key" json:"version_key"`
-	Metadata   json.RawMessage `db:"metadata" json:"metadata"`
-	// Federation unit key when the federation unit is the version
-	UnitKey   *string    `db:"unit_key" json:"unit_key"`
-	CreatedAt time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
-	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
+	// Identity inside the package: the version plus the coordinates the format keys on; cleanup ranks by it
+	VersionKey string `db:"version_key" json:"version_key"`
+	// Version-level metadata of the format (manifest, dependencies, descriptive fields)
+	Metadata  json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time      `db:"deleted_at" json:"deleted_at"`
+	DeletedBy *string         `db:"deleted_by" json:"deleted_by"`
+}
+
+// Pacman side of package_files: the files-database file list and the detached signature
+type PacmanFile struct {
+	ID string `db:"id" json:"id"`
+	// Newline-separated file list; NULL = not read from the package yet (never coalesce to an empty string); bulk, derivable from the blob
+	FileList  *string `db:"file_list" json:"file_list"`
+	Signature string  `db:"signature" json:"signature"`
+	// Empty (unsigned), uploader (publisher-uploaded) or server (signed with the repository key)
+	SignatureSource string `db:"signature_source" json:"signature_source"`
+	SignatureKey    string `db:"signature_key" json:"signature_key"`
 }
 
 // Arch Linux pacman packages: one .pkg.tar.{zst,xz,gz} file per name/version/arch.
@@ -1492,6 +1536,15 @@ type RepositoryMetadatum struct {
 	BlobSha256    string    `db:"blob_sha256" json:"blob_sha256"`
 	BlobSize      int64     `db:"blob_size" json:"blob_size"`
 	LastGenerated time.Time `db:"last_generated" json:"last_generated"`
+}
+
+// RPM side of package_files: header byte range and parsed header extras
+type RpmFile struct {
+	ID          string `db:"id" json:"id"`
+	HeaderStart int64  `db:"header_start" json:"header_start"`
+	HeaderEnd   int64  `db:"header_end" json:"header_end"`
+	// Parsed header extras (dependencies, files[], changelogs[], sizes_parsed): KB-MB per row, derived from the file, never re-parse when copying
+	RpmExtra json.RawMessage `db:"rpm_extra" json:"rpm_extra"`
 }
 
 // RPM packages. Canonical table for RPM format. blob_id FK to global blobs table.

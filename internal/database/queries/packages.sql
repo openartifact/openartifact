@@ -1,4 +1,4 @@
--- Generic package tables (migration 098, docs/design/format-plugins.md). These
+-- Generic package tables (migrations/001_baseline.sql, docs/design/format-plugins.md). These
 -- are the write primitives every format store composes in one transaction;
 -- format-specific reads live in the per-format query files.
 
@@ -19,14 +19,14 @@ SELECT id FROM package_versions WHERE package_id = $1 AND version_key = $2 AND d
 -- A new live version; no row comes back when a concurrent writer created it
 -- first.
 -- name: InsertVersion :one
-INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata, unit_key, created_at)
+INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata, created_at)
 VALUES (sqlc.arg(package_id), sqlc.arg(repository_id), sqlc.arg(version), sqlc.arg(version_key),
-        sqlc.arg(metadata)::jsonb, sqlc.narg(unit_key), COALESCE(sqlc.narg(created_at)::timestamptz, now()))
+        sqlc.arg(metadata)::jsonb, COALESCE(sqlc.narg(created_at)::timestamptz, now()))
 ON CONFLICT (package_id, version_key) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id;
 
 -- name: SetVersionMetadata :exec
-UPDATE package_versions SET metadata = sqlc.arg(metadata)::jsonb, unit_key = sqlc.narg(unit_key), updated_at = now()
+UPDATE package_versions SET metadata = sqlc.arg(metadata)::jsonb, updated_at = now()
 WHERE id = sqlc.arg(id);
 
 -- name: VersionHasLiveFiles :one

@@ -136,9 +136,9 @@ func (q *Queries) InsertPackageFile(ctx context.Context, arg InsertPackageFilePa
 }
 
 const insertVersion = `-- name: InsertVersion :one
-INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata, unit_key, created_at)
+INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata, created_at)
 VALUES ($1, $2, $3, $4,
-        $5::jsonb, $6, COALESCE($7::timestamptz, now()))
+        $5::jsonb, COALESCE($6::timestamptz, now()))
 ON CONFLICT (package_id, version_key) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id
 `
@@ -149,7 +149,6 @@ type InsertVersionParams struct {
 	Version      string          `db:"version" json:"version"`
 	VersionKey   string          `db:"version_key" json:"version_key"`
 	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
-	UnitKey      *string         `db:"unit_key" json:"unit_key"`
 	CreatedAt    *time.Time      `db:"created_at" json:"created_at"`
 }
 
@@ -162,7 +161,6 @@ func (q *Queries) InsertVersion(ctx context.Context, arg InsertVersionParams) (s
 		arg.Version,
 		arg.VersionKey,
 		arg.Metadata,
-		arg.UnitKey,
 		arg.CreatedAt,
 	)
 	var id string
@@ -209,18 +207,17 @@ func (q *Queries) PruneEmptyVersions(ctx context.Context, ids []string) ([]strin
 }
 
 const setVersionMetadata = `-- name: SetVersionMetadata :exec
-UPDATE package_versions SET metadata = $1::jsonb, unit_key = $2, updated_at = now()
-WHERE id = $3
+UPDATE package_versions SET metadata = $1::jsonb, updated_at = now()
+WHERE id = $2
 `
 
 type SetVersionMetadataParams struct {
 	Metadata json.RawMessage `db:"metadata" json:"metadata"`
-	UnitKey  *string         `db:"unit_key" json:"unit_key"`
 	ID       string          `db:"id" json:"id"`
 }
 
 func (q *Queries) SetVersionMetadata(ctx context.Context, arg SetVersionMetadataParams) error {
-	_, err := q.db.Exec(ctx, setVersionMetadata, arg.Metadata, arg.UnitKey, arg.ID)
+	_, err := q.db.Exec(ctx, setVersionMetadata, arg.Metadata, arg.ID)
 	return err
 }
 
@@ -252,7 +249,7 @@ type UpsertPackageParams struct {
 	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
 }
 
-// Generic package tables (migration 098, docs/design/format-plugins.md). These
+// Generic package tables (migrations/001_baseline.sql, docs/design/format-plugins.md). These
 // are the write primitives every format store composes in one transaction;
 // format-specific reads live in the per-format query files.
 // The package of a repository by its identity. Every write to a package bumps

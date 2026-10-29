@@ -9,7 +9,12 @@ sql:
     # migrations/*.sql is the single source of truth for the DB shape.
     # sqlc's catalog builder replays any DML/DO-block/BEGIN-COMMIT statements
     # in migrations as no-ops, so pointing here directly works cleanly.
-    schema: "migrations"
+    # legacy_schema.sql is a TEMPORARY bridge (not a migration): the pre-0.15
+    # per-format tables, so queries not yet ported to the generic package
+    # tables still type-check. Removed with the last port.
+    schema:
+      - "migrations"
+      - "internal/database/legacy_schema.sql"
     queries: "internal/database/queries"
     gen:
       go:
