@@ -93,6 +93,28 @@ export type PromotionPipeline = {
     updated_at: string;
 };
 
+/**
+ * 400 of the search endpoint. query_too_broad also carries the cap and the filters the query could add.
+ */
+export type SearchError = {
+    /**
+     * Message
+     */
+    error: string;
+    /**
+     * missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad
+     */
+    code?: string;
+    /**
+     * query_too_broad only: the largest number of matches a search answers
+     */
+    max_results?: number;
+    /**
+     * query_too_broad only: the filters the query does not use yet (name:<package>, format:<format>, repo:<repository> in q, flagged=true); empty when it already uses all of them
+     */
+    narrow_by?: Array<string>;
+};
+
 export type Error = {
     /**
      * Error code
@@ -6371,10 +6393,12 @@ export type GetApiV1SearchData = {
 
 export type GetApiV1SearchErrors = {
     /**
-     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)
+     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters). A query_too_broad on q lists the filters the query could add in narrow_by
      */
-    400: unknown;
+    400: SearchError;
 };
+
+export type GetApiV1SearchError = GetApiV1SearchErrors[keyof GetApiV1SearchErrors];
 
 export type GetApiV1SearchResponses = {
     /**

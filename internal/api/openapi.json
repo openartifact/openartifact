@@ -354,6 +354,34 @@
           }
         }
       },
+      "SearchError": {
+        "type": "object",
+        "description": "400 of the search endpoint. query_too_broad also carries the cap and the filters the query could add.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Message"
+          },
+          "code": {
+            "type": "string",
+            "description": "missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "query_too_broad only: the largest number of matches a search answers"
+          },
+          "narrow_by": {
+            "type": "array",
+            "description": "query_too_broad only: the filters the query does not use yet (name:<package>, format:<format>, repo:<repository> in q, flagged=true); empty when it already uses all of them",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -12623,7 +12651,14 @@
             }
           },
           "400": {
-            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)"
+            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters). A query_too_broad on q lists the filters the query could add in narrow_by",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchError"
+                }
+              }
+            }
           }
         }
       }

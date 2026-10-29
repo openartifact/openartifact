@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -146,6 +147,51 @@ func TestHandlerCountTooHigh(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
+// TestHandlerTooBroadSaysHowToNarrow: the refusal keeps its code, names the cap
+// and lists the filters the query does not use yet.
+func TestHandlerTooBroadSaysHowToNarrow(t *testing.T) {
+	for _, tc := range []struct {
+		name, target string
+		narrow       []string
+	}{
+		{"free text", "/api/v1/search?q=test", []string{"name:<package>", "format:<format>", "repo:<repository>", "flagged=true"}},
+		{"format given", "/api/v1/search?q=test&format=npm&flagged=true", []string{"name:<package>", "repo:<repository>"}},
+		{"everything given", "/api/v1/search?q=name:a+format:npm+repo:r&flagged=true", []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, cleanup := newTestHandler(t, &mockSearcher{count: MaxSearchResults + 1})
+			defer cleanup()
+
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, requestWithPrincipal("GET", tc.target, adminPrincipal()))
+
+			var body struct {
+				Error      string   `json:"error"`
+				Code       string   `json:"code"`
+				MaxResults int      `json:"max_results"`
+				NarrowBy   []string `json:"narrow_by"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("body %q: %v", w.Body.String(), err)
+			}
+
+			if w.Code != http.StatusBadRequest || body.Code != "query_too_broad" || body.MaxResults != MaxSearchResults {
+				t.Fatalf("status %d body %+v", w.Code, body)
+			}
+
+			if !strings.Contains(body.Error, "10000") || !slices.Equal(body.NarrowBy, tc.narrow) {
+				t.Errorf("error %q narrow_by %v, want %v", body.Error, body.NarrowBy, tc.narrow)
+			}
+
+			for _, f := range tc.narrow {
+				if !strings.Contains(body.Error, f) {
+					t.Errorf("message %q does not name %s", body.Error, f)
+				}
+			}
+		})
 	}
 }
 
