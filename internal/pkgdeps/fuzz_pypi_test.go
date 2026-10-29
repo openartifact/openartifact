@@ -116,22 +116,7 @@ func FuzzParsePyPIDeps(f *testing.F) {
 // FuzzReadPyPIDeps feeds an arbitrary file to the dependency reader under the
 // file names of the PyPI distribution kinds, and checks the shared
 // finishing step: unique, sorted, bounded, trimmed.
-// fuzzRegisterPypi registers the pypi manifest rule and hooks that TestMain
-// registers for `go test`. The ClusterFuzzLite build turns this file into a
-// plain package file and drops every other _test.go file, TestMain included,
-// so Read would otherwise answer ErrUnsupported to every input.
-func fuzzRegisterPypi() {
-	if _, ok := hooks.Lookup("pypi"); ok {
-		return
-	}
-
-	manifest.Register("pypi", manifest.PyPIRule)
-	Register("pypi", PyPIHooks)
-}
-
 func FuzzReadPyPIDeps(f *testing.F) {
-	fuzzRegisterPypi()
-
 	f.Add(pypiFuzzWheel("demo-1.0.dist-info/METADATA", pypiFuzzMetadata), "demo-1.0-py3-none-any.whl")
 	f.Add(pypiFuzzWheel("demo-1.0/PKG-INFO", pypiFuzzMetadata), "demo-1.0.zip")
 	f.Add(pypiFuzzSdist("demo-1.0/PKG-INFO", pypiFuzzMetadata), "demo-1.0.tar.gz")
@@ -192,8 +177,6 @@ func pypiFuzzCheckFinished(t *testing.T, deps []Dep) {
 // FuzzReadPyPIDepsMetadata wraps arbitrary METADATA text in a wheel and an
 // sdist: both yield the dependencies of the text parser, finished.
 func FuzzReadPyPIDepsMetadata(f *testing.F) {
-	fuzzRegisterPypi()
-
 	f.Add(pypiFuzzMetadata)
 	f.Add("Requires-Dist: a\r\n\r\nRequires-Dist: late")
 	f.Add("")

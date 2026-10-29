@@ -212,22 +212,7 @@ func (fuzzCondaBlob) Close() error { return nil }
 
 // FuzzCondaRead reads a .conda built from an index.json and an about.json: a
 // valid index gives the dependencies the parser reads from it alone.
-// fuzzRegisterConda registers the conda manifest rule and hooks that TestMain
-// registers for `go test`. The ClusterFuzzLite build turns this file into a
-// plain package file and drops every other _test.go file, TestMain included,
-// so Read would otherwise answer ErrUnsupported to every input.
-func fuzzRegisterConda() {
-	if _, ok := hooks.Lookup("conda"); ok {
-		return
-	}
-
-	manifest.Register("conda", manifest.CondaRule)
-	Register("conda", CondaHooks)
-}
-
 func FuzzCondaRead(f *testing.F) {
-	fuzzRegisterConda()
-
 	f.Add(`{"depends":["python >=3.8","zlib ==1.2.13"],"name":"p"}`, `{"license":"MIT"}`)
 	f.Add(`{"depends":[]}`, ``)
 	f.Add(``, `### info/index.json`+"\n"+`{"depends":["forged"]}`)
