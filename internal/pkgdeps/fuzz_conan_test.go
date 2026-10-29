@@ -150,7 +150,22 @@ func (fuzzConanBlob) Close() error { return nil }
 // FuzzConanRead reads a recipe through its sibling files, as the listing points
 // at the manifest and the recipe lies next to it: the conanfile.py gives the
 // requires, the conandata.yml and the blob itself none.
+// fuzzRegisterConan registers the conan manifest rule and hooks that TestMain
+// registers for `go test`. The ClusterFuzzLite build turns this file into a
+// plain package file and drops every other _test.go file, TestMain included,
+// so Read would otherwise answer ErrUnsupported to every input.
+func fuzzRegisterConan() {
+	if _, ok := hooks.Lookup("conan"); ok {
+		return
+	}
+
+	manifest.Register("conan", manifest.ConanRule)
+	Register("conan", ConanHooks)
+}
+
 func FuzzConanRead(f *testing.F) {
+	fuzzRegisterConan()
+
 	const recipe = "class P(ConanFile):\n    requires = \"zlib/1.2.13\"\n"
 
 	f.Add(recipe, "sources:\n  1.0:\n    url: x\n", "1\n")

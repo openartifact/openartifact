@@ -135,7 +135,22 @@ func (fuzzNuGetBlob) Close() error { return nil }
 // FuzzNuGetRead reads a .nupkg: a nuspec at the root plus one more member under
 // any name. The dependencies are those of the nuspec, or the archive is refused
 // when the extra member makes the manifest ambiguous.
+// fuzzRegisterNuget registers the nuget manifest rule and hooks that TestMain
+// registers for `go test`. The ClusterFuzzLite build turns this file into a
+// plain package file and drops every other _test.go file, TestMain included,
+// so Read would otherwise answer ErrUnsupported to every input.
+func fuzzRegisterNuget() {
+	if _, ok := hooks.Lookup("nuget"); ok {
+		return
+	}
+
+	manifest.Register("nuget", manifest.NuGetRule)
+	Register("nuget", NuGetHooks)
+}
+
 func FuzzNuGetRead(f *testing.F) {
+	fuzzRegisterNuget()
+
 	const spec = `<package><metadata><dependencies><dependency id="a" version="[1.0.0]"/></dependencies></metadata></package>`
 
 	f.Add(spec, "lib/net8.0/a.dll")
