@@ -13,6 +13,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// PacmanStore owns the Arch Linux pacman packages.
+type PacmanStore struct{ *core }
+
 // pacmanMediaType maps the compression of a package file to the media type of
 // its blob.
 func pacmanMediaType(filename string) string {
@@ -73,7 +76,7 @@ func pacmanFromRow[R pacmanRow](in R) *models.PacmanPackage {
 
 // CreatePacmanPackage stores one package file. A live row with the same file
 // name, or the same name, version and architecture, is a unique violation.
-func (p *PostgresDB) CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error {
+func (p *PacmanStore) CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, pkg.SHA256, pkg.BlobKey, pacmanMediaType(pkg.Filename), pkg.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for pacman package: %w", err)
@@ -115,14 +118,14 @@ func (p *PostgresDB) CreatePacmanPackage(ctx context.Context, pkg *models.Pacman
 
 // GetPacmanPackageByFilename returns the live package published under the file
 // name, or (nil, nil).
-func (p *PostgresDB) GetPacmanPackageByFilename(ctx context.Context, repoID, filename string) (*models.PacmanPackage, error) {
+func (p *PacmanStore) GetPacmanPackageByFilename(ctx context.Context, repoID, filename string) (*models.PacmanPackage, error) {
 	row, err := p.q.GetPacmanPackageByFilename(ctx, dbsqlc.GetPacmanPackageByFilenameParams{RepositoryID: repoID, Filename: filename})
 
 	return mapRow(row, err, "get pacman package", pacmanFromRow)
 }
 
 // ListPacmanPackages returns every live package of the repository, without file lists.
-func (p *PostgresDB) ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
+func (p *PacmanStore) ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
 	rows, err := p.q.ListPacmanPackages(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pacman packages: %w", err)
@@ -137,7 +140,7 @@ func (p *PostgresDB) ListPacmanPackages(ctx context.Context, repoID string) ([]*
 }
 
 // ListPacmanFileLists returns the file lists of the live packages that have one.
-func (p *PostgresDB) ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error) {
+func (p *PacmanStore) ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error) {
 	rows, err := p.q.ListPacmanFileLists(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pacman file lists: %w", err)
@@ -156,7 +159,7 @@ func (p *PostgresDB) ListPacmanFileLists(ctx context.Context, repoID string) (ma
 
 // ListPacmanPackagesWithoutFileList returns the live packages that still need
 // their file list read from the blob.
-func (p *PostgresDB) ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
+func (p *PacmanStore) ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error) {
 	rows, err := p.q.ListPacmanPackagesWithoutFileList(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pacman packages without file list: %w", err)
@@ -171,7 +174,7 @@ func (p *PostgresDB) ListPacmanPackagesWithoutFileList(ctx context.Context, repo
 }
 
 // SetPacmanFileList records the file list of a package that has none.
-func (p *PostgresDB) SetPacmanFileList(ctx context.Context, repoID, id, fileList string) error {
+func (p *PacmanStore) SetPacmanFileList(ctx context.Context, repoID, id, fileList string) error {
 	if err := p.q.SetPacmanFileList(ctx, dbsqlc.SetPacmanFileListParams{ID: id, RepositoryID: repoID, FileList: &fileList}); err != nil {
 		return fmt.Errorf("failed to set pacman file list: %w", err)
 	}
@@ -180,7 +183,7 @@ func (p *PostgresDB) SetPacmanFileList(ctx context.Context, repoID, id, fileList
 }
 
 // SetPacmanSignature records the signature of a package file.
-func (p *PostgresDB) SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error {
+func (p *PacmanStore) SetPacmanSignature(ctx context.Context, repoID, id, signature, source, key string) error {
 	err := p.q.SetPacmanSignature(ctx, dbsqlc.SetPacmanSignatureParams{
 		ID: id, RepositoryID: repoID, Signature: signature, SignatureSource: source, SignatureKey: key,
 	})
@@ -192,7 +195,7 @@ func (p *PostgresDB) SetPacmanSignature(ctx context.Context, repoID, id, signatu
 }
 
 // DeletePacmanPackage removes a live package row.
-func (p *PostgresDB) DeletePacmanPackage(ctx context.Context, repoID, id string) error {
+func (p *PacmanStore) DeletePacmanPackage(ctx context.Context, repoID, id string) error {
 	if err := p.q.DeletePacmanPackage(ctx, dbsqlc.DeletePacmanPackageParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to delete pacman package: %w", err)
 	}
