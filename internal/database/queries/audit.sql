@@ -1,6 +1,17 @@
 -- name: InsertAuditLog :exec
-INSERT INTO audit_logs (action, actor_id, actor_type, details_json, resource_type, resource_id, repository_id, project_id, ip_address)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+-- The audit writer passes the id and created_at it stamped when the event was
+-- recorded, so the row and the OTLP audit event carry the same values; a
+-- caller that leaves them NULL gets the column defaults.
+INSERT INTO audit_logs (
+    id, created_at, action, actor_id, actor_type, details_json,
+    resource_type, resource_id, repository_id, project_id, ip_address
+)
+VALUES (
+    COALESCE(sqlc.narg(id)::uuid, gen_random_uuid()),
+    COALESCE(sqlc.narg(created_at)::timestamptz, CURRENT_TIMESTAMP),
+    @action, @actor_id, @actor_type, @details_json,
+    @resource_type, @resource_id, @repository_id, @project_id, @ip_address
+);
 
 -- name: PurgeAuditLogsBefore :execrows
 -- Deletes the oldest audit entries created before @cutoff, at most @batch of

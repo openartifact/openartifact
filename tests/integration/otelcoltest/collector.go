@@ -116,6 +116,16 @@ func Start(t *testing.T) *Collector {
 	return &Collector{ctr: ctr, GRPCEndpoint: grpcEP, HTTPEndpoint: httpEP}
 }
 
+// Stop stops the collector, as an outage would: its ports refuse connections
+// from then on. Lines still reads what it exported before.
+func (c *Collector) Stop(t *testing.T) {
+	t.Helper()
+
+	if err := c.ctr.Stop(t.Context(), nil); err != nil {
+		t.Fatalf("stop collector: %v", err)
+	}
+}
+
 // requireRuntime skips the test without a reachable container runtime, or
 // fails it under CI, where the runtime is part of the job.
 func requireRuntime(t *testing.T) {

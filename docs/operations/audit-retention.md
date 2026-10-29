@@ -31,7 +31,7 @@ Deletion is permanent and **nothing is exported automatically**. If you must kee
 oa audit export --format jsonl --until 365d -o audit-before-$(date -u +%F).jsonl
 ```
 
-See [audit export](monitoring.md#export) for the formats, the filters and shipping the log to a SIEM. A continuous export to Splunk, Elasticsearch or Loki (same page) is the better answer when the log is an evidence trail: the retention then only bounds the database.
+See [audit export](monitoring.md#export) for the formats, the filters and shipping the log to a SIEM. A continuous export to Splunk, Elasticsearch or Loki (same page, or the [OTLP audit stream](monitoring.md#streaming-over-otlp) through a Collector) is the better answer when the log is an evidence trail: the retention then only bounds the database. The stream is independent of the retention: deleting old entries never touches what was already sent.
 
 ## How it works
 
@@ -59,4 +59,5 @@ time() - max(openartifact_audit_retention_last_run_timestamp_seconds) > 86400
 ## Related
 
 - [Monitoring: audit log](monitoring.md#audit-log): events, filters, export and shipping.
+- [Monitoring: streaming over OTLP](monitoring.md#streaming-over-otlp): the audit events as OpenTelemetry log events, attribute schema and Collector routing.
 - [Trash](trash.md): retention of deleted artifacts, a separate setting.

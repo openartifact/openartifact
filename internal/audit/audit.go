@@ -11,6 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -27,6 +31,12 @@ func SetDefault(l *Logger) {
 func Default() *Logger {
 	return defaultLogger.Load()
 }
+
+// Outcome values of AuditEvent.Outcome.
+const (
+	OutcomeSuccess = "success"
+	OutcomeFailure = "failure"
+)
 
 // AuditEvent is the canonical event type sent to the audit logger.
 // Fields correspond to the audit_logs schema.
@@ -49,31 +59,86 @@ type AuditEvent struct {
 	Package string
 	Version string
 	Subject string
+	// Outcome is OutcomeSuccess or OutcomeFailure. Log fills an empty one:
+	// failure for a Status of 400 and above, success otherwise (an explicit
+	// action records something that happened).
+	Outcome string
+	// Username is the login name of the authenticated user, TokenID the API
+	// token the request authenticated with and RequestID its X-Request-ID.
+	// Log fills empty ones from the Request attached to its context.
+	Username  string
+	TokenID   string
+	RequestID string
+	// Status is the HTTP status of the request, 0 when the event records none.
+	// The five fields above are stored in details_json as "outcome",
+	// "username", "token_id", "request_id" and "status", omitted when empty.
+	Status int
+	// Method and Route are the HTTP method and route pattern of the request,
+	// set by the audit middleware on its own events. They are only streamed
+	// (http.request.method, http.route): the middleware's message already
+	// carries them in details_json.
+	Method string
+	Route  string
+}
+
+// Request identifies the HTTP request events are recorded under. The audit
+// middleware attaches it to the request context (WithRequest) so the events
+// handlers record carry it without each emitter filling it in.
+type Request struct {
+	ID       string
+	Username string
+	TokenID  string
+}
+
+type requestKey struct{}
+
+// WithRequest returns ctx carrying req for Log.
+func WithRequest(ctx context.Context, req Request) context.Context {
+	return context.WithValue(ctx, requestKey{}, req)
+}
+
+// entry is an event as Log captured it: the row id, the event time and the
+// span context of the caller, shared by the database row and the OTLP event.
+type entry struct {
+	AuditEvent
+
+	id   string
+	at   time.Time
+	span trace.SpanContext
 }
 
 type Logger struct {
-	ch   chan AuditEvent
-	db   database.Database
-	log  *logger.Logger
-	reg  *metrics.Registry
-	done chan struct{}
+	ch     chan entry
+	db     database.Database
+	log    *logger.Logger
+	reg    *metrics.Registry
+	stream otellog.Logger // nil unless WithOTLP
+	done   chan struct{}
 
 	mu     sync.RWMutex
 	closed bool
 }
 
-func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, bufferSize int) *Logger {
+// Option configures a Logger.
+type Option func(*Logger)
+
+func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, bufferSize int, opts ...Option) *Logger {
 	if bufferSize <= 0 {
 		bufferSize = 1000
 	}
 
 	l := &Logger{
-		ch:   make(chan AuditEvent, bufferSize),
+		ch:   make(chan entry, bufferSize),
 		db:   db,
 		log:  log,
 		reg:  reg,
 		done: make(chan struct{}),
 	}
+
+	for _, o := range opts {
+		o(l)
+	}
+
 	go l.run()
 
 	return l
@@ -94,34 +159,34 @@ func (l *Logger) run() {
 		}
 	}()
 
-	for event := range l.ch {
-		detailsJSON := "{}"
-		if event.Details != "" || event.Actor != "" || event.Package != "" || event.Version != "" || event.Subject != "" {
-			detailsJSON = buildDetailsJSON(event)
-		}
-
-		entry := &models.AuditLog{
-			Action:       event.Action,
-			ActorID:      event.ActorID,
-			ActorType:    nilActorType(event.ActorType),
-			DetailsJSON:  json.RawMessage(detailsJSON),
-			ResourceType: event.ResourceType,
-			ResourceID:   event.ResourceID,
-			RepositoryID: event.RepositoryID,
-			ProjectID:    event.ProjectID,
-			IPAddress:    event.IPAddress,
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), insertTimeout)
-		err := l.db.InsertAuditLog(ctx, entry)
-
-		cancel()
-
-		if err != nil {
-			l.log.Errorw("audit log insert failed", "action", event.Action, "error", err)
+	for e := range l.ch {
+		if err := l.insert(e); err != nil {
+			l.log.Errorw("audit log insert failed", "action", e.Action, "id", e.id, "error", err)
 		}
 	}
 
 	close(l.done)
+}
+
+func (l *Logger) insert(e entry) error {
+	row := &models.AuditLog{
+		ID:           e.id,
+		CreatedAt:    e.at,
+		Action:       e.Action,
+		ActorID:      e.ActorID,
+		ActorType:    nilActorType(e.ActorType),
+		DetailsJSON:  json.RawMessage(buildDetailsJSON(e.AuditEvent)),
+		ResourceType: e.ResourceType,
+		ResourceID:   e.ResourceID,
+		RepositoryID: e.RepositoryID,
+		ProjectID:    e.ProjectID,
+		IPAddress:    e.IPAddress,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), insertTimeout)
+	defer cancel()
+
+	return l.db.InsertAuditLog(ctx, row) //nolint:wrapcheck // logged by the caller with the action and id
 }
 
 // insertTimeout bounds one audit insert so a stalled database cannot wedge the
@@ -130,15 +195,20 @@ const insertTimeout = 10 * time.Second
 
 // buildDetailsJSON always yields valid JSON regardless of input bytes.
 func buildDetailsJSON(event AuditEvent) string {
-	m := make(map[string]string, 5)
+	m := make(map[string]any, 10) //nolint:mnd // one slot per key below
 
 	for k, v := range map[string]string{
 		"message": event.Details, "actor": event.Actor,
 		"package": event.Package, "version": event.Version, "subject": event.Subject,
+		"outcome": event.Outcome, "username": event.Username, "token_id": event.TokenID, "request_id": event.RequestID,
 	} {
 		if v != "" {
 			m[k] = v
 		}
+	}
+
+	if event.Status != 0 {
+		m["status"] = event.Status
 	}
 
 	b, err := json.Marshal(m)
@@ -149,9 +219,49 @@ func buildDetailsJSON(event AuditEvent) string {
 	return string(b)
 }
 
-// Log enqueues an event. It never panics, even after Shutdown. If the buffer is
-// full the event is written synchronously (bounded wait) rather than dropped.
-func (l *Logger) Log(_ context.Context, event AuditEvent) {
+// complete fills the request fields event leaves empty from the Request on
+// ctx, and its outcome.
+func complete(ctx context.Context, event AuditEvent) AuditEvent {
+	if req, ok := ctx.Value(requestKey{}).(Request); ok {
+		if event.RequestID == "" {
+			event.RequestID = req.ID
+		}
+
+		if event.Username == "" {
+			event.Username = req.Username
+		}
+
+		if event.TokenID == "" {
+			event.TokenID = req.TokenID
+		}
+	}
+
+	if event.Outcome == "" {
+		event.Outcome = OutcomeSuccess
+		if event.Status >= 400 { //nolint:mnd // HTTP client and server errors
+			event.Outcome = OutcomeFailure
+		}
+	}
+
+	return event
+}
+
+// capture completes event and stamps it: a new row id, the event time (to the
+// microsecond the database keeps, so the row and the OTLP event agree) and the
+// caller's span context.
+func capture(ctx context.Context, event AuditEvent) entry {
+	return entry{
+		AuditEvent: complete(ctx, event),
+		id:         uuid.NewString(),
+		at:         time.Now().Truncate(time.Microsecond),
+		span:       trace.SpanContextFromContext(ctx),
+	}
+}
+
+// Log streams an event and enqueues it for the database. It never panics, even
+// after Shutdown. If the buffer is full it waits briefly for room rather than
+// dropping the row at once.
+func (l *Logger) Log(ctx context.Context, event AuditEvent) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
@@ -160,8 +270,15 @@ func (l *Logger) Log(_ context.Context, event AuditEvent) {
 		return
 	}
 
+	e := capture(ctx, event)
+
+	// Streamed before the queue, so a slow or failing database (a full
+	// buffer, a refused insert) loses no event from the stream. Emit never
+	// waits for the collector.
+	l.emit(e)
+
 	select {
-	case l.ch <- event:
+	case l.ch <- e:
 		return
 	default:
 	}
@@ -170,7 +287,7 @@ func (l *Logger) Log(_ context.Context, event AuditEvent) {
 	t := time.NewTimer(2 * time.Second)
 	defer t.Stop()
 	select {
-	case l.ch <- event:
+	case l.ch <- e:
 	case <-t.C:
 		l.dropped(event.Action, "audit buffer full; event dropped")
 	}

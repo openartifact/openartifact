@@ -126,7 +126,7 @@ func TestLogger_Shutdown(t *testing.T) {
 		// through the expired context. (With a live writer an empty buffer
 		// drains instantly and select picks either case at random.)
 		l := &Logger{
-			ch:   make(chan AuditEvent, 1),
+			ch:   make(chan entry, 1),
 			done: make(chan struct{}),
 		}
 
@@ -145,7 +145,7 @@ func TestLogger_Log_Channel(t *testing.T) {
 		// Log() only touches l.reg on the drop path (channel full); a buffered
 		// channel avoids that branch entirely.
 		l := &Logger{
-			ch:   make(chan AuditEvent, 10),
+			ch:   make(chan entry, 10),
 			done: make(chan struct{}),
 		}
 
@@ -248,5 +248,54 @@ func TestBuildDetailsJSONKeys(t *testing.T) {
 
 	if out := buildDetailsJSON(AuditEvent{Details: "only"}); out != `{"message":"only"}` {
 		t.Errorf("empty keys must be omitted, got %s", out)
+	}
+}
+
+func TestCompleteOutcomeAndRequest(t *testing.T) {
+	ctx := WithRequest(context.Background(), Request{ID: "r", Username: "u", TokenID: "t"})
+
+	for _, tc := range []struct {
+		name string
+		ev   AuditEvent
+		want string
+	}{
+		{"explicit action", AuditEvent{}, OutcomeSuccess},
+		{"2xx", AuditEvent{Status: 204}, OutcomeSuccess},
+		{"4xx", AuditEvent{Status: 403}, OutcomeFailure},
+		{"5xx", AuditEvent{Status: 500}, OutcomeFailure},
+		{"set by the emitter", AuditEvent{Status: 302, Outcome: OutcomeFailure}, OutcomeFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := complete(ctx, tc.ev)
+			if e.Outcome != tc.want {
+				t.Errorf("outcome = %q, want %q", e.Outcome, tc.want)
+			}
+
+			if e.RequestID != "r" || e.Username != "u" || e.TokenID != "t" {
+				t.Errorf("request fields = %q %q %q", e.RequestID, e.Username, e.TokenID)
+			}
+		})
+	}
+
+	// Fields the emitter set win over the request.
+	if e := complete(ctx, AuditEvent{Username: "other"}); e.Username != "other" {
+		t.Errorf("username = %q, want the emitter's", e.Username)
+	}
+
+	if e := complete(context.Background(), AuditEvent{}); e.RequestID != "" || e.Outcome != OutcomeSuccess {
+		t.Errorf("without a request: %+v", e)
+	}
+}
+
+func TestCaptureStampsIDAndTime(t *testing.T) {
+	a, b := capture(context.Background(), AuditEvent{}), capture(context.Background(), AuditEvent{})
+
+	if a.id == "" || a.id == b.id {
+		t.Errorf("ids %q and %q: want two distinct ids", a.id, b.id)
+	}
+
+	// The database keeps microseconds: a finer time would not round-trip.
+	if a.at.IsZero() || a.at.Nanosecond()%1000 != 0 {
+		t.Errorf("at = %v, want a time truncated to the microsecond", a.at)
 	}
 }

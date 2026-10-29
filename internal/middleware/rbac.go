@@ -546,6 +546,7 @@ func tokenPrincipal(ctx context.Context, tokenValue, kind string, db database.Da
 	p.Credential = kind
 	p.TokenKind = token.Kind
 	p.TokenScopes = token.Scopes
+	p.TokenID = token.ID
 
 	auth.TouchToken(ctx, db, token)
 

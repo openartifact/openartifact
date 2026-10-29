@@ -47,6 +47,8 @@ type Principal struct {
 	// when non-empty the token may only use those targets of its owner.
 	TokenKind   string
 	TokenScopes []string
+	// TokenID is the id of that token (audit events record it).
+	TokenID string
 	// ServiceProjectID is set for a project token's service account: the only
 	// project the principal belongs to. Such a principal ignores permission
 	// targets and holds only the role of its own project.

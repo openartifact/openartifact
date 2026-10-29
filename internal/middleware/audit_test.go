@@ -6,6 +6,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -109,5 +111,54 @@ func TestAuditMiddlewareSkipsTelemetryRelay(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("audit event of the following request was not recorded")
+	}
+}
+
+// The middleware records the request id, status, username and token of its own
+// event and attaches them to the context, so a handler's event carries them.
+func TestAuditMiddlewareRecordsRequest(t *testing.T) {
+	db := &auditCaptureDB{events: make(chan *models.AuditLog, 2)}
+	logger := audit.NewLogger(db, nil, nil, 2)
+
+	userID := "u-1"
+	p := &auth.Principal{UserID: &userID, Username: "alice", TokenKind: auth.TokenKindAccess, TokenID: "tok-1"}
+
+	handler := AuditMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.Log(r.Context(), audit.AuditEvent{Action: audit.ActionUserCreated})
+		w.WriteHeader(http.StatusForbidden)
+	}))
+
+	req := httptest.NewRequestWithContext(WithPrincipal(context.Background(), p), http.MethodPost, "/", nil)
+	req.Header.Set("X-Request-ID", "req-9")
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if err := logger.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]map[string]any{
+		audit.ActionUserCreated: {"outcome": "success", "username": "alice", "token_id": "tok-1", "request_id": "req-9"},
+		audit.ActionHTTPRequest: {
+			"outcome": "failure", "username": "alice", "token_id": "tok-1", "request_id": "req-9", "status": float64(403),
+		},
+	}
+
+	if len(db.events) != len(want) {
+		t.Fatalf("recorded %d events, want %d", len(db.events), len(want))
+	}
+
+	for range want {
+		event := <-db.events
+
+		var details map[string]any
+		if err := json.Unmarshal(event.DetailsJSON, &details); err != nil {
+			t.Fatal(err)
+		}
+
+		for k, v := range want[event.Action] {
+			if details[k] != v {
+				t.Errorf("%s: details[%s] = %v, want %v", event.Action, k, details[k], v)
+			}
+		}
 	}
 }
