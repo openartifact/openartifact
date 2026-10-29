@@ -247,33 +247,15 @@ func createdAtOrNil(t time.Time) *time.Time {
 // blobRefSpecs lists every (table, condition) that references blob alias b. It
 // is the single source of truth for both the reference sum (blobRefSumExpr,
 // point lookups by sha) and the anti-join (blobUnreferencedExpr, orphan scan);
-// a new package table is added here once.
+// a new referrer table is added here once. Package formats need no entry:
+// they all share package_files.
 var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // built once, read-only
-	{"rpm_packages", "blob_id = b.id"},
-	{"deb_packages", "blob_id = b.id"},
-	{"npm_versions", "blob_id = b.id"},
-	{"maven_artifacts", "blob_id = b.id"},
+	// Every package format except docker stores its files here; a trashed row
+	// keeps pinning its blob until the purge deletes the row.
+	{"package_files", "blob_id = b.id"},
 	{"docker_blobs", "blob_id = b.id"},
 	{"docker_manifests", "blob_id = b.id"},
-	{"pypi_packages", "blob_id = b.id"},
-	{"nuget_packages", "blob_id = b.id"},
-	{"gomod_modules", "zip_blob_id = b.id OR mod_blob_id = b.id"},
-	{"cargo_crates", "blob_id = b.id"},
-	{"composer_packages", "blob_id = b.id"},
-	{"rubygems_gems", "blob_id = b.id"},
-	{"conda_packages", "blob_id = b.id"},
-	{"ansible_collections", "blob_id = b.id"},
-	{"pacman_packages", "blob_id = b.id"},
-	{"conan_packages", "blob_id = b.id"},
-	{"apk_packages", "blob_id = b.id"},
-	{"nix_paths", "blob_id = b.id"},
 	{"nix_pending_nars", "blob_id = b.id"},
-	{"terraform_modules", "blob_id = b.id"},
-	{"terraform_providers", "blob_id = b.id"},
-	{"ivy_artifacts", "blob_id = b.id"},
-	{"sbt_artifacts", "blob_id = b.id"},
-	{"helm_charts", "blob_id = b.id"},
-	{"raw_artifacts", "blob_id = b.id"},
 	{"release_bundle_items", "sha256 = b.sha256"},
 	{"proxy_cache_entries", "blob_key = b.sha256"},
 	{"sbom_results", "blob_id = b.id"},

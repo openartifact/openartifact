@@ -12,9 +12,15 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
 // TrashStore owns the trash (soft-deleted repositories and packages), its retention and purge.
+//
+// Every package format except docker keeps its files in package_files, so one
+// generic engine (trash_files.go) trashes, restores and purges them; what a
+// format does differently is data in its storage.Trash descriptor. Docker keeps
+// dedicated tables and is the one explicit special case (trash_docker.go).
 type TrashStore struct{ *core }
 
 var (
@@ -48,11 +54,18 @@ const (
 //
 // Retention is resolved per repository: repositories.trash_retention_days, or
 // the server default (SetTrashRetentionDays) when NULL. 0 means no trash.
+//
+// The reference id of a package item is package_files.id of its listed file; a
+// docker item is a manifest or tag id and a repository item is the repository
+// id.
 type TrashOps interface {
 	// TrashRows soft-deletes the given rows of repoID (stamps deleted_at and
-	// deleted_by) and returns true. It returns false without touching anything
-	// when the repository's retention is 0: the caller then hard-deletes as
-	// before. ErrTrashNotFound means none of the rows is live in repoID.
+	// deleted_by) and returns true. For a package format the ids are listed
+	// package_files ids and kind only has to be a package kind (the repository's
+	// format decides what is stamped); docker kinds address docker rows. It
+	// returns false without touching anything when the repository's retention is
+	// 0: the caller then hard-deletes as before. ErrTrashNotFound means none of
+	// the rows is live in repoID.
 	TrashRows(ctx context.Context, repoID string, kind models.TrashKind, ids []string, deletedBy string) (bool, error)
 
 	// TrashRepository soft-deletes a repository (contents stay in place, hidden
@@ -78,9 +91,10 @@ type TrashOps interface {
 	// still referenced, e.g. by a release bundle.
 	PurgeTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error)
 
-	// RegenKeys returns what the metadata workers key a refresh by for an item:
-	// (group_id, artifact_id) for a Maven artifact, (package_id, "") for an npm
-	// version and ("", "") for every other kind (deb/rpm refresh per repository).
+	// RegenKeys returns what the metadata workers key a refresh by for an item,
+	// as the format's storage.Trash.RegenKeys fragment reads it: (group_id,
+	// artifact_id) for a Maven artifact, (package id, "") for an npm version and
+	// ("", "") for every other kind (deb/rpm refresh per repository).
 	RegenKeys(ctx context.Context, kind models.TrashKind, id string) (string, string, error)
 
 	// ListExpiredTrash returns up to limit items whose retention window has
@@ -132,8 +146,7 @@ func (p *TrashStore) effectiveRetention(ctx context.Context, q interface {
 
 // TrashRows implements TrashOps.
 func (p *TrashStore) TrashRows(ctx context.Context, repoID string, kind models.TrashKind, ids []string, deletedBy string) (bool, error) {
-	spec, ok := trashSpecByKind(kind)
-	if !ok {
+	if kind == "" || kind == models.TrashKindRepository {
 		return false, fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
 	}
 
@@ -157,7 +170,13 @@ func (p *TrashStore) TrashRows(ctx context.Context, repoID string, kind models.T
 
 	defer func() { _ = tx.Rollback() }()
 
-	if err := trashRowsExec(ctx, tx, spec, repoID, ids, deletedBy); err != nil {
+	if spec, ok := dockerSpecByKind(kind); ok {
+		err = trashDockerRows(ctx, tx, spec, repoID, ids, deletedBy)
+	} else {
+		err = trashFilesExec(ctx, tx, repoID, ids, deletedBy)
+	}
+
+	if err != nil {
 		return false, err
 	}
 
@@ -166,54 +185,6 @@ func (p *TrashStore) TrashRows(ctx context.Context, repoID string, kind models.T
 	}
 
 	return true, nil
-}
-
-// trashRowsExec stamps the rows and runs the kind's cascade on e.
-func trashRowsExec(ctx context.Context, e interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}, spec *trashSpec, repoID string, ids []string, deletedBy string,
-) error {
-	// One statement timestamp for the row and its cascade, so a cascaded child
-	// is recognisably part of the same delete (and restored with it).
-	res, err := e.ExecContext(ctx,
-		`UPDATE `+spec.table+` t SET deleted_at = now(), deleted_by = $3
-		 WHERE t.id = ANY($1::uuid[]) AND t.deleted_at IS NULL AND `+spec.repoID+` = $2::uuid`,
-		uuidArray(ids), repoID, deletedBy,
-	)
-	if err != nil {
-		return fmt.Errorf("trash %s: %w", spec.kind, err)
-	}
-
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrTrashNotFound
-	}
-
-	for _, id := range ids {
-		for _, stmt := range spec.cascade {
-			if _, err := e.ExecContext(ctx, stmt, id, deletedBy); err != nil {
-				return fmt.Errorf("trash %s cascade: %w", spec.kind, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// TrashRowsInTx soft-deletes rows of repoID inside the caller's transaction,
-// whatever the repository's retention: a purge removes them for good once the
-// retention window has passed. A caller that replaces live content (a forced
-// bundle promotion) uses it so the replaced rows stay restorable.
-// ErrTrashNotFound means none of the rows is live in repoID.
-func TrashRowsInTx(ctx context.Context, tx interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}, repoID string, kind models.TrashKind, ids []string, deletedBy string,
-) error {
-	spec, ok := trashSpecByKind(kind)
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
-	}
-
-	return trashRowsExec(ctx, tx, spec, repoID, ids, deletedBy)
 }
 
 // uuidArray renders ids as a Postgres array literal for ANY($1::uuid[]).
@@ -254,16 +225,50 @@ func (p *TrashStore) TrashRepository(ctx context.Context, id, deletedBy string) 
 // server default retention.
 const purgeAtExpr = `%s.deleted_at + make_interval(days => COALESCE(r.trash_retention_days, $1::int))`
 
-// itemSelect builds the listing/lookup SELECT of one spec. extra is appended to
-// the WHERE clause (it starts with " AND ").
-func (s *trashSpec) itemSelect(extra string) string {
+// itemSelect builds the listing/lookup SELECT of one docker spec. extra is
+// appended to the WHERE clause (it starts with " AND ").
+func (s *dockerSpec) itemSelect(extra string) string {
 	return fmt.Sprintf(
 		`SELECT '%s' AS kind, t.id::text AS id, r.id::text AS repo_id, r.name AS repo_name, '%s' AS format,
 		        (%s)::text AS name, (%s)::text AS version, %s AS size_bytes,
 		        t.deleted_at AS deleted_at, COALESCE(t.deleted_by, '') AS deleted_by, `+purgeAtExpr+` AS purge_at
-		 FROM %s t JOIN repositories r ON r.id = %s
+		 FROM %s t JOIN repositories r ON r.id = t.repository_id
 		 WHERE t.deleted_at IS NOT NULL%s`,
-		s.kind, s.format, s.name, s.version, s.blobSizeExpr(), "t", s.table, s.repoID, extra,
+		s.kind, dockerFormat, s.name, s.version, s.blobSizeExpr(), "t", s.table, extra,
+	)
+}
+
+// filesItemSelect builds the listing/lookup SELECT of the package_files
+// branch for the given (non-empty) formats. The kind column is empty: the
+// scanner derives it from the format's descriptor. extra is appended to the
+// WHERE clause (it starts with " AND ").
+func filesItemSelect(formats []string, extra string) string {
+	name := itemCase(formats, "p.name", func(t storage.Trash) string { return t.NameSQL() })
+	version := itemCase(formats, "v.version", func(t storage.Trash) string { return t.VersionSQL() })
+
+	own := `COALESCE((SELECT b.size_bytes FROM blobs b WHERE b.id = f.blob_id), 0)::bigint`
+	size := own
+
+	if vs := versionScopeFormats(); len(vs) > 0 {
+		// A version-scoped item is the whole version: its size is that of every
+		// file trashed with it.
+		size = `CASE WHEN r.format IN (` + trashFormatsSQL(vs) + `)
+			THEN (SELECT COALESCE(SUM(b.size_bytes), 0)::bigint FROM package_files sf
+			      JOIN blobs b ON b.id = sf.blob_id
+			      WHERE sf.version_id = f.version_id AND sf.deleted_at IS NOT DISTINCT FROM f.deleted_at)
+			ELSE ` + own + ` END`
+	}
+
+	return fmt.Sprintf(
+		`SELECT '' AS kind, f.id::text AS id, r.id::text AS repo_id, r.name AS repo_name, r.format AS format,
+		        (%s)::text AS name, (%s)::text AS version, %s AS size_bytes,
+		        f.deleted_at AS deleted_at, COALESCE(f.deleted_by, '') AS deleted_by, `+purgeAtExpr+` AS purge_at
+		 FROM package_files f
+		 JOIN package_versions v ON v.id = f.version_id
+		 JOIN packages p ON p.id = v.package_id
+		 JOIN repositories r ON r.id = f.repository_id
+		 WHERE f.deleted_at IS NOT NULL AND f.listed AND r.format IN (%s)%s`,
+		name, version, size, "f", trashFormatsSQL(formats), extra,
 	)
 }
 
@@ -294,6 +299,9 @@ func scanTrashItem(sc interface{ Scan(...any) error }) (*models.TrashItem, error
 	}
 
 	it.Kind = models.TrashKind(kind)
+	if it.Kind == "" {
+		it.Kind = trashKindOf(it.Format)
+	}
 
 	return &it, nil
 }
@@ -318,17 +326,23 @@ func (p *TrashStore) ListTrash(ctx context.Context, f models.TrashFilter) ([]*mo
 
 	var branches []string
 
-	for _, s := range trashSpecs {
+	extra := " AND r.deleted_at IS NULL" + repoFilter
+
+	if formats := genericFormats(f.Kind); len(formats) > 0 && f.Kind != models.TrashKindRepository {
+		branches = append(branches, filesItemSelect(formats, extra))
+	}
+
+	for _, s := range dockerSpecs {
 		if f.Kind != "" && f.Kind != s.kind {
 			continue
 		}
 
-		extra := " AND r.deleted_at IS NULL" + repoFilter
+		e := extra
 		if s.listWhere != "" {
-			extra += " AND " + s.listWhere
+			e += " AND " + s.listWhere
 		}
 
-		branches = append(branches, s.itemSelect(extra))
+		branches = append(branches, s.itemSelect(e))
 	}
 
 	if f.IncludeRepositories && f.RepositoryID == "" && (f.Kind == "" || f.Kind == models.TrashKindRepository) {
@@ -392,25 +406,25 @@ func (p *TrashStore) getTrashItem(
 ) (*models.TrashItem, error) {
 	var query string
 
-	suffix := ""
-	if lock {
-		suffix = " FOR UPDATE OF %s"
-	}
-
 	if kind == models.TrashKindRepository {
 		query = repoItemSelect(" AND r.id = $2::uuid")
 		if lock {
-			query += fmt.Sprintf(suffix, "r")
+			query += " FOR UPDATE OF r"
+		}
+	} else if spec, ok := dockerSpecByKind(kind); ok {
+		query = spec.itemSelect(" AND t.id = $2::uuid")
+		if lock {
+			query += " FOR UPDATE OF t"
 		}
 	} else {
-		spec, ok := trashSpecByKind(kind)
-		if !ok {
+		formats := genericFormats(kind)
+		if kind == "" || len(formats) == 0 {
 			return nil, fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
 		}
 
-		query = spec.itemSelect(" AND t.id = $2::uuid")
+		query = filesItemSelect(formats, " AND f.id = $2::uuid")
 		if lock {
-			query += fmt.Sprintf(suffix, "t")
+			query += " FOR UPDATE OF f"
 		}
 	}
 
@@ -465,11 +479,6 @@ func (p *TrashStore) RestoreTrash(ctx context.Context, kind models.TrashKind, id
 		return p.restoreRepository(ctx, id)
 	}
 
-	spec, ok := trashSpecByKind(kind)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
-	}
-
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin restore transaction: %w", err)
@@ -488,28 +497,14 @@ func (p *TrashStore) RestoreTrash(ctx context.Context, kind models.TrashKind, id
 		return nil, ErrTrashRepoTrashed
 	}
 
-	if kind == models.TrashKindDockerTag {
-		if err := ensureTagManifestLive(ctx, tx, id); err != nil {
-			return nil, err
-		}
+	if spec, ok := dockerSpecByKind(kind); ok {
+		err = restoreDockerRow(ctx, tx, spec, id)
+	} else {
+		err = restoreFilesExec(ctx, tx, item)
 	}
 
-	// Companions (docker tags deleted with their manifest) go first: they are
-	// matched on the manifest's still-set deleted_at.
-	for _, stmt := range spec.restoreCascade() {
-		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
-			return nil, fmt.Errorf("restore %s companions: %w", kind, err)
-		}
-	}
-
-	//nolint:gosec // G202: spec.table is a constant of the kind registry; the id is a bound argument
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE `+spec.table+` SET deleted_at = NULL, deleted_by = NULL WHERE id = $1::uuid AND deleted_at IS NOT NULL`, id); err != nil {
-		if IsUniqueViolation(err) {
-			return nil, ErrTrashConflict
-		}
-
-		return nil, fmt.Errorf("restore %s: %w", kind, err)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -517,27 +512,6 @@ func (p *TrashStore) RestoreTrash(ctx context.Context, kind models.TrashKind, id
 	}
 
 	return item, nil
-}
-
-// ensureTagManifestLive returns ErrTrashManifestInTrash when the trashed tag
-// id points at a manifest (same repository, image and digest) that is not live.
-func ensureTagManifestLive(ctx context.Context, tx *sql.Tx, tagID string) error {
-	var live bool
-
-	err := tx.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM docker_manifests m
-			WHERE m.repository_id = dt.repository_id AND m.image = dt.image
-			  AND m.digest = dt.manifest_digest AND m.deleted_at IS NULL)
-		 FROM docker_tags dt WHERE dt.id = $1::uuid`, tagID).Scan(&live)
-	if err != nil {
-		return fmt.Errorf("check docker tag manifest: %w", err)
-	}
-
-	if !live {
-		return ErrTrashManifestInTrash
-	}
-
-	return nil
 }
 
 func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.TrashItem, error) {
@@ -556,8 +530,9 @@ func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.
 
 	defer func() { _ = tx.Rollback() }()
 
-	// One captured delta shifts every row identically, so docker manifest/tag
-	// cascade pairs (matched on equal deleted_at) stay equal.
+	// One captured delta shifts every row identically, so the pairs that are
+	// matched on an equal deleted_at (a version and its files, a docker manifest
+	// and its tags) stay equal.
 	var delta string
 
 	err = tx.QueryRowContext(ctx,
@@ -578,12 +553,21 @@ func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.
 
 	// Items trashed before the repository keep the window they had left when it
 	// was trashed.
-	for _, s := range trashSpecs {
-		//nolint:gosec // G202: table and repoID are constants of the kind registry; the id is a bound argument
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE `+s.table+` t SET deleted_at = t.deleted_at + $2::interval
-			 WHERE `+s.repoID+` = $1::uuid AND t.deleted_at IS NOT NULL`, id, delta); err != nil {
-			return nil, fmt.Errorf("shift trashed %s: %w", s.kind, err)
+	shift := []string{
+		`UPDATE package_files SET deleted_at = deleted_at + $2::interval
+		 WHERE repository_id = $1::uuid AND deleted_at IS NOT NULL`,
+		`UPDATE package_versions SET deleted_at = deleted_at + $2::interval
+		 WHERE repository_id = $1::uuid AND deleted_at IS NOT NULL`,
+	}
+	for _, s := range dockerSpecs {
+		//nolint:gosec // G202: the table is a constant of the docker spec; the id is a bound argument
+		shift = append(shift, `UPDATE `+s.table+` SET deleted_at = deleted_at + $2::interval
+			 WHERE repository_id = $1::uuid AND deleted_at IS NOT NULL`)
+	}
+
+	for _, stmt := range shift {
+		if _, err := tx.ExecContext(ctx, stmt, id, delta); err != nil {
+			return nil, fmt.Errorf("shift trashed items: %w", err)
 		}
 	}
 
@@ -594,34 +578,10 @@ func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.
 	return item, nil
 }
 
-// restoreCascade returns the statements that revive the companions of a row
-// (and move the validator of a derived document); $1 is the row id.
-func (s *trashSpec) restoreCascade() []string {
-	switch s.kind { //nolint:exhaustive // only two kinds have restore side effects
-	case models.TrashKindNPM:
-		return []string{npmTouchPackumentOnRestore}
-	case models.TrashKindDockerManifest:
-		return []string{`UPDATE docker_tags dt SET deleted_at = NULL, deleted_by = NULL
-		FROM docker_manifests m
-		WHERE m.id = $1::uuid AND dt.repository_id = m.repository_id AND dt.image = m.image
-		  AND dt.manifest_digest = m.digest AND dt.deleted_at = m.deleted_at
-		  AND NOT EXISTS (SELECT 1 FROM docker_tags l
-		      WHERE l.repository_id = dt.repository_id AND l.image = dt.image
-		        AND l.name = dt.name AND l.deleted_at IS NULL)`}
-	default:
-		return nil
-	}
-}
-
 // PurgeTrash implements TrashOps.
 func (p *TrashStore) PurgeTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
 	if kind == models.TrashKindRepository {
 		return p.purgeRepository(ctx, id)
-	}
-
-	spec, ok := trashSpecByKind(kind)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
 	}
 
 	tx, err := p.db.BeginTx(ctx, nil)
@@ -636,86 +596,26 @@ func (p *TrashStore) PurgeTrash(ctx context.Context, kind models.TrashKind, id s
 		return nil, err
 	}
 
-	var shas string
-	if err := tx.QueryRowContext(ctx,
-		`SELECT `+spec.blobSHAExpr()+` FROM `+spec.table+` t WHERE t.id = $1::uuid`, id).Scan(&shas); err != nil {
-		return nil, fmt.Errorf("collect blobs of %s: %w", kind, err)
+	res := &models.TrashPurgeResult{
+		Kind: kind, ID: id, RepositoryID: item.RepositoryID, RepositoryName: item.RepositoryName,
+		Format: item.Format, Name: item.Name, Version: item.Version, SizeBytes: item.SizeBytes,
 	}
 
-	pkgID, err := purgeCascades(ctx, tx, spec, id)
+	if spec, ok := dockerSpecByKind(kind); ok {
+		err = purgeDockerRow(ctx, tx, spec, item, res)
+	} else {
+		err = purgeFilesExec(ctx, tx, item, res)
+	}
+
 	if err != nil {
 		return nil, err
-	}
-
-	//nolint:gosec // G202: spec.table is a constant of the kind registry; the id is a bound argument
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM `+spec.table+` WHERE id = $1::uuid AND deleted_at IS NOT NULL`, id); err != nil {
-		return nil, fmt.Errorf("purge %s: %w", kind, err)
-	}
-
-	if pkgID != "" {
-		// The last version of an npm package is gone: drop the empty package.
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM npm_packages p WHERE p.id = $1::uuid AND NOT EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = p.id)`,
-			pkgID); err != nil {
-			return nil, fmt.Errorf("purge empty npm package: %w", err)
-		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit purge transaction: %w", err)
 	}
 
-	res := &models.TrashPurgeResult{
-		Kind: kind, ID: id, RepositoryID: item.RepositoryID, RepositoryName: item.RepositoryName,
-		Format: item.Format, Name: item.Name, Version: item.Version, SizeBytes: item.SizeBytes,
-	}
-
-	if shas != "" {
-		res.BlobSHA256 = strings.Split(shas, ",")
-	}
-
-	if spec.quota {
-		res.QuotaArtifacts = 1
-		res.QuotaBytes = item.SizeBytes
-	}
-
 	return res, nil
-}
-
-// purgeCascades removes the rows that only make sense with the purged row and
-// returns the npm package id to prune when kind is an npm version.
-func purgeCascades(ctx context.Context, tx *sql.Tx, spec *trashSpec, id string) (string, error) {
-	switch spec.kind { //nolint:exhaustive // only two kinds have dependants
-	case models.TrashKindDockerManifest:
-		// Tags trashed together with the manifest.
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM docker_tags dt USING docker_manifests m
-			 WHERE m.id = $1::uuid AND dt.repository_id = m.repository_id AND dt.image = m.image
-			   AND dt.manifest_digest = m.digest AND dt.deleted_at = m.deleted_at`, id); err != nil {
-			return "", fmt.Errorf("purge docker tags of manifest: %w", err)
-		}
-	case models.TrashKindNPM:
-		var pkgID string
-		if err := tx.QueryRowContext(ctx, `SELECT package_id::text FROM npm_versions WHERE id = $1::uuid`, id).Scan(&pkgID); err != nil {
-			return "", fmt.Errorf("find npm package of version: %w", err)
-		}
-
-		// Dist-tags pointing at the purged version (unless a live re-publish
-		// of the same version now owns the tag).
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM npm_dist_tags d USING npm_versions v
-			 WHERE v.id = $1::uuid AND d.package_id = v.package_id AND d.version = v.version
-			   AND NOT EXISTS (SELECT 1 FROM npm_versions o
-			       WHERE o.package_id = v.package_id AND o.version = v.version
-			         AND o.id <> v.id AND o.deleted_at IS NULL)`, id); err != nil {
-			return "", fmt.Errorf("purge npm dist-tags: %w", err)
-		}
-
-		return pkgID, nil
-	}
-
-	return "", nil
 }
 
 func (p *TrashStore) purgeRepository(ctx context.Context, id string) (*models.TrashPurgeResult, error) {
@@ -762,19 +662,25 @@ func (p *TrashStore) purgeRepository(ctx context.Context, id string) (*models.Tr
 
 // RegenKeys implements TrashOps.
 func (p *TrashStore) RegenKeys(ctx context.Context, kind models.TrashKind, id string) (string, string, error) {
-	var a, b string
-
-	var err error
-
-	switch kind { //nolint:exhaustive // only two kinds are keyed
-	case models.TrashKindMaven:
-		err = p.db.QueryRowContext(ctx, `SELECT group_id, artifact_id_coord FROM maven_artifacts WHERE id = $1::uuid`, id).Scan(&a, &b)
-	case models.TrashKindNPM:
-		err = p.db.QueryRowContext(ctx, `SELECT package_id::text FROM npm_versions WHERE id = $1::uuid`, id).Scan(&a)
-	default:
+	formats := genericFormats(kind)
+	if kind == "" || len(formats) == 0 {
+		// Docker and unknown kinds have no keyed regeneration.
 		return "", "", nil
 	}
 
+	desc, err := trashDescriptor(formats[0])
+	if err != nil {
+		return "", "", err
+	}
+
+	var a, b sql.NullString
+
+	//nolint:gosec // G202: RegenKeysSQL is a constant of the format descriptor; the id is a bound argument
+	err = p.db.QueryRowContext(ctx,
+		`SELECT `+desc.RegenKeysSQL()+` FROM package_files f
+		 JOIN package_versions v ON v.id = f.version_id
+		 JOIN packages p ON p.id = v.package_id
+		 WHERE f.id = $1::uuid`, id).Scan(&a, &b)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", ErrTrashNotFound
 	}
@@ -783,48 +689,66 @@ func (p *TrashStore) RegenKeys(ctx context.Context, kind models.TrashKind, id st
 		return "", "", fmt.Errorf("resolve regen keys of %s: %w", kind, err)
 	}
 
-	return a, b, nil
+	return a.String, b.String, nil
 }
 
 // ListExpiredTrash implements TrashOps.
 func (p *TrashStore) ListExpiredTrash(ctx context.Context, limit int) ([]models.TrashRef, error) {
 	refs := make([]models.TrashRef, 0, limit)
 
-	collect := func(kind models.TrashKind, query string) error {
+	collect := func(kindOf func(format string) models.TrashKind, query string) error {
 		rows, err := p.db.QueryContext(ctx, query, p.trashDefault(), limit-len(refs))
 		if err != nil {
-			return fmt.Errorf("list expired %s: %w", kind, err)
+			return fmt.Errorf("list expired trash: %w", err)
 		}
 
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return fmt.Errorf("scan expired %s: %w", kind, err)
+			var id, format string
+			if err := rows.Scan(&id, &format); err != nil {
+				return fmt.Errorf("scan expired trash: %w", err)
 			}
 
-			refs = append(refs, models.TrashRef{Kind: kind, ID: id})
+			refs = append(refs, models.TrashRef{Kind: kindOf(format), ID: id})
 		}
 
 		return rows.Err() //nolint:wrapcheck // wrapped by the caller's context
 	}
 
-	if err := collect(models.TrashKindRepository,
-		`SELECT r.id::text FROM repositories r
+	constKind := func(k models.TrashKind) func(string) models.TrashKind {
+		return func(string) models.TrashKind { return k }
+	}
+
+	if err := collect(constKind(models.TrashKindRepository),
+		`SELECT r.id::text, r.format FROM repositories r
 		 WHERE r.deleted_at IS NOT NULL
 		   AND r.deleted_at + make_interval(days => COALESCE(r.trash_retention_days, $1::int)) <= now()
 		 ORDER BY r.deleted_at LIMIT $2`); err != nil {
 		return nil, err
 	}
 
-	for _, s := range trashSpecs {
+	if len(refs) < limit {
+		if formats := genericFormats(""); len(formats) > 0 {
+			if err := collect(trashKindOf,
+				`SELECT f.id::text, r.format FROM package_files f JOIN repositories r ON r.id = f.repository_id
+				 WHERE f.deleted_at IS NOT NULL AND f.listed AND r.deleted_at IS NULL
+				   AND r.format IN (`+trashFormatsSQL(formats)+`)
+				   AND f.deleted_at + make_interval(days => COALESCE(r.trash_retention_days, $1::int)) <= now()
+				 ORDER BY f.deleted_at LIMIT $2`); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	for _, s := range dockerSpecs {
 		if len(refs) >= limit {
 			break
 		}
 
-		if err := collect(s.kind,
-			`SELECT t.id::text FROM `+s.table+` t JOIN repositories r ON r.id = `+s.repoID+`
+		//nolint:gosec // G202: the table is a constant of the docker spec
+		if err := collect(constKind(s.kind),
+			`SELECT t.id::text, 'docker' FROM `+s.table+` t JOIN repositories r ON r.id = t.repository_id
 			 WHERE t.deleted_at IS NOT NULL AND r.deleted_at IS NULL
 			   AND t.deleted_at + make_interval(days => COALESCE(r.trash_retention_days, $1::int)) <= now()
 			 ORDER BY t.deleted_at LIMIT $2`); err != nil {

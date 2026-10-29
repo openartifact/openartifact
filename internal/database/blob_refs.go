@@ -247,9 +247,8 @@ func (p *BlobRefStore) ArtifactExists(ctx context.Context, sha256 string, reposi
 	var exists bool
 	err := p.db.QueryRowContext(
 		ctx,
-		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id =
-			$2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1
-			AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
+		`SELECT EXISTS(SELECT 1 FROM package_files f JOIN blobs b ON b.id = f.blob_id
+			WHERE b.sha256 = $1 AND f.repository_id = $2 AND f.deleted_at IS NULL)`,
 		sha256,
 		repositoryID,
 	).Scan(&exists)

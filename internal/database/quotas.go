@@ -278,8 +278,13 @@ func (p *QuotaStore) DecrementStorageUsage(ctx context.Context, repoID string, s
 // and repositories, but a reservation is made per row at the row's full size,
 // so the sum deliberately counts a shared blob once per row.
 //
-// A Go module is one artifact with two blobs (zip and go.mod): the zip row
-// carries n = 1 and the go.mod row n = 0. Docker counts a manifest as one
+// Every package format except docker stores its files in package_files; a file
+// counts as one artifact when its role is 'primary'. A Go module is one
+// artifact with two blobs (zip and go.mod): the zip file is primary (n = 1)
+// and the go.mod file has role 'mod' (n = 0), exactly the rule the
+// quota_pending_package_files trigger applies when a row is deleted. A file
+// without a blob (conan restored from an old backup) still counts as one
+// artifact of size 0 through the LEFT JOIN below. Docker counts a manifest as one
 // artifact and every layer/config blob the repository holds (docker_blobs) as
 // bytes only (n = 0), so an image with many layers is one artifact. Proxy
 // caches are not metered: they have no rows in these tables.
@@ -289,29 +294,7 @@ func (p *QuotaStore) DecrementStorageUsage(ctx context.Context, repoID string, s
 // only the purge releases the quota. Filtering them here would make the
 // periodic reconcile hand back the usage of every item sitting in the trash.
 const quotaUsageRowsSQL = `
-SELECT repository_id, blob_id, 1 AS n FROM deb_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM rpm_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM maven_artifacts
-UNION ALL SELECT repository_id, blob_id, 1 FROM helm_charts
-UNION ALL SELECT repository_id, blob_id, 1 FROM rubygems_gems
-UNION ALL SELECT p.repository_id, v.blob_id, 1 FROM npm_versions v JOIN npm_packages p ON p.id = v.package_id
-UNION ALL SELECT repository_id, blob_id, 1 FROM pypi_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM cargo_crates
-UNION ALL SELECT repository_id, blob_id, 1 FROM composer_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM nuget_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM conda_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM ansible_collections
-UNION ALL SELECT repository_id, blob_id, 1 FROM pacman_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM conan_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM apk_packages
-UNION ALL SELECT repository_id, blob_id, 1 FROM nix_paths
-UNION ALL SELECT repository_id, blob_id, 1 FROM terraform_modules
-UNION ALL SELECT repository_id, blob_id, 1 FROM terraform_providers
-UNION ALL SELECT repository_id, blob_id, 1 FROM ivy_artifacts
-UNION ALL SELECT repository_id, blob_id, 1 FROM sbt_artifacts
-UNION ALL SELECT repository_id, blob_id, 1 FROM raw_artifacts
-UNION ALL SELECT repository_id, zip_blob_id, 1 FROM gomod_modules
-UNION ALL SELECT repository_id, mod_blob_id, 0 FROM gomod_modules
+SELECT repository_id, blob_id, (role = 'primary')::int AS n FROM package_files
 UNION ALL SELECT repository_id, blob_id, 1 FROM docker_manifests
 UNION ALL SELECT repository_id, blob_id, 0 FROM docker_blobs`
 

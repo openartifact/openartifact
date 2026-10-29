@@ -8,7 +8,8 @@ import "time"
 
 // TrashKind names a kind of soft-deletable row. The value is the stable
 // identifier used in the trash API (/api/v1/trash/{kind}/{id}) and in audit
-// details; the table behind each kind lives in internal/database/trash_kinds.go.
+// details. The kind of a package format is its storage.Trash.Kind descriptor
+// value (one per format); only docker keeps two kinds of its own.
 type TrashKind string
 
 const (
@@ -80,16 +81,6 @@ type TrashFilter struct {
 	Limit               int
 }
 
-// TrashRowParams describes a request to soft-delete one package row.
-type TrashRowParams struct {
-	RepositoryID string
-	Kind         TrashKind
-	// ID is the primary key of the row in the kind's table.
-	ID string
-	// DeletedBy is recorded in deleted_by (username).
-	DeletedBy string
-}
-
 // TrashPurgeResult describes a purged item so the caller can free blobs,
 // release quota and report the event.
 type TrashPurgeResult struct {
@@ -119,4 +110,19 @@ type TrashPurgeResult struct {
 type TrashRef struct {
 	Kind TrashKind
 	ID   string
+}
+
+// FileDeletion is what a permanent delete of one live package item (listed
+// file and, for a version-scoped format, the files that go with it) gives back.
+type FileDeletion struct {
+	// ID is the listed file id the caller asked to delete.
+	ID string
+	// BlobSHA256 lists the blobs the deleted files referenced; the caller frees
+	// them with storage.SafeDeleteBlob (which keeps blobs still referenced
+	// elsewhere).
+	BlobSHA256 []string
+	// QuotaArtifacts is the number of quota-counted artifacts removed (one per
+	// primary file) and QuotaBytes the size of every blob the files held.
+	QuotaArtifacts int
+	QuotaBytes     int64
 }
