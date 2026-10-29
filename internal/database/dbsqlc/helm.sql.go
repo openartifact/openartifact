@@ -7,126 +7,50 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
-const createHelmChart = `-- name: CreateHelmChart :one
-INSERT INTO helm_charts (repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateHelmChartParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Name         string     `db:"name" json:"name"`
-	Version      string     `db:"version" json:"version"`
-	AppVersion   *string    `db:"app_version" json:"app_version"`
-	Description  *string    `db:"description" json:"description"`
-	Keywords     []string   `db:"keywords" json:"keywords"`
-	Home         *string    `db:"home" json:"home"`
-	Sources      []string   `db:"sources" json:"sources"`
-	Maintainers  []byte     `db:"maintainers" json:"maintainers"`
-	Icon         *string    `db:"icon" json:"icon"`
-	ApiVersion   string     `db:"api_version" json:"api_version"`
-	Type         string     `db:"type" json:"type"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateHelmChartRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateHelmChart(ctx context.Context, arg CreateHelmChartParams) (CreateHelmChartRow, error) {
-	row := q.db.QueryRow(ctx, createHelmChart,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.AppVersion,
-		arg.Description,
-		arg.Keywords,
-		arg.Home,
-		arg.Sources,
-		arg.Maintainers,
-		arg.Icon,
-		arg.ApiVersion,
-		arg.Type,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateHelmChartRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteHelmChart = `-- name: DeleteHelmChart :exec
-DELETE FROM helm_charts WHERE repository_id = $1 AND name = $2 AND version = $3 AND deleted_at IS NULL
-`
-
-type DeleteHelmChartParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
-}
-
-func (q *Queries) DeleteHelmChart(ctx context.Context, arg DeleteHelmChartParams) error {
-	_, err := q.db.Exec(ctx, deleteHelmChart, arg.RepositoryID, arg.Name, arg.Version)
-	return err
-}
-
 const getHelmChart = `-- name: GetHelmChart :one
-SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
-FROM helm_charts hc
-JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.version = $3 AND hc.deleted_at IS NULL
+
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, b.blob_key, b.sha256 AS digest, b.size_bytes, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetHelmChartParams struct {
+	Version      string `db:"version" json:"version"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
 }
 
 type GetHelmChartRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	AppVersion   *string   `db:"app_version" json:"app_version"`
-	Description  *string   `db:"description" json:"description"`
-	Keywords     []string  `db:"keywords" json:"keywords"`
-	Home         *string   `db:"home" json:"home"`
-	Sources      []string  `db:"sources" json:"sources"`
-	Maintainers  []byte    `db:"maintainers" json:"maintainers"`
-	Icon         *string   `db:"icon" json:"icon"`
-	ApiVersion   string    `db:"api_version" json:"api_version"`
-	Type         string    `db:"type" json:"type"`
-	BlobKey      string    `db:"blob_key" json:"blob_key"`
-	Digest       string    `db:"digest" json:"digest"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	Digest       string          `db:"digest" json:"digest"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Helm charts on the generic package tables (mapping spec in pkg_helm.go). One chart
+// version is one package_versions row with one package_files row.
 func (q *Queries) GetHelmChart(ctx context.Context, arg GetHelmChartParams) (GetHelmChartRow, error) {
-	row := q.db.QueryRow(ctx, getHelmChart, arg.RepositoryID, arg.Name, arg.Version)
+	row := q.db.QueryRow(ctx, getHelmChart, arg.Version, arg.RepositoryID, arg.Name)
 	var i GetHelmChartRow
 	err := row.Scan(
 		&i.ID,
 		&i.RepositoryID,
 		&i.Name,
 		&i.Version,
-		&i.AppVersion,
-		&i.Description,
-		&i.Keywords,
-		&i.Home,
-		&i.Sources,
-		&i.Maintainers,
-		&i.Icon,
-		&i.ApiVersion,
-		&i.Type,
+		&i.Metadata,
 		&i.BlobKey,
 		&i.Digest,
 		&i.SizeBytes,
@@ -137,16 +61,16 @@ func (q *Queries) GetHelmChart(ctx context.Context, arg GetHelmChartParams) (Get
 }
 
 const helmIndexStamp = `-- name: HelmIndexStamp :one
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(hc.id::text, 0)), 0)::text)::text AS stamp
-FROM helm_charts hc
-WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM package_files f
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
 `
 
 // Fingerprint of the live charts of a repository: their count and an
-// order-independent hash of their IDs. Chart rows are immutable (a republish
-// is a new row) and trash/restore changes membership, so the stamp changes
-// exactly when index.yaml would. It reads one narrow index range instead of
-// every chart joined to its blob.
+// order-independent hash of their file IDs. A chart's file is immutable (a
+// republish is a new file) and trash/restore changes membership, so the stamp
+// changes exactly when index.yaml would. It reads one narrow index range
+// (idx_package_files_listing) instead of every chart joined to its blob.
 func (q *Queries) HelmIndexStamp(ctx context.Context, repositoryID string) (string, error) {
 	row := q.db.QueryRow(ctx, helmIndexStamp, repositoryID)
 	var stamp string
@@ -154,33 +78,62 @@ func (q *Queries) HelmIndexStamp(ctx context.Context, repositoryID string) (stri
 	return stamp, err
 }
 
+const listHelmChartFileIDs = `-- name: ListHelmChartFileIDs :many
+SELECT f.id
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $2 AND p.name_key = $3
+`
+
+type ListHelmChartFileIDsParams struct {
+	Version      string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+}
+
+// The live files of one chart version, for DeleteHelmChart.
+func (q *Queries) ListHelmChartFileIDs(ctx context.Context, arg ListHelmChartFileIDsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listHelmChartFileIDs, arg.Version, arg.RepositoryID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listHelmCharts = `-- name: ListHelmCharts :many
-SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
-FROM helm_charts hc
-JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL
-ORDER BY hc.name, hc.version DESC
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, b.blob_key, b.sha256 AS digest, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.name, v.version DESC
 `
 
 type ListHelmChartsRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	AppVersion   *string   `db:"app_version" json:"app_version"`
-	Description  *string   `db:"description" json:"description"`
-	Keywords     []string  `db:"keywords" json:"keywords"`
-	Home         *string   `db:"home" json:"home"`
-	Sources      []string  `db:"sources" json:"sources"`
-	Maintainers  []byte    `db:"maintainers" json:"maintainers"`
-	Icon         *string   `db:"icon" json:"icon"`
-	ApiVersion   string    `db:"api_version" json:"api_version"`
-	Type         string    `db:"type" json:"type"`
-	BlobKey      string    `db:"blob_key" json:"blob_key"`
-	Digest       string    `db:"digest" json:"digest"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	Digest       string          `db:"digest" json:"digest"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListHelmCharts(ctx context.Context, repositoryID string) ([]ListHelmChartsRow, error) {
@@ -197,15 +150,7 @@ func (q *Queries) ListHelmCharts(ctx context.Context, repositoryID string) ([]Li
 			&i.RepositoryID,
 			&i.Name,
 			&i.Version,
-			&i.AppVersion,
-			&i.Description,
-			&i.Keywords,
-			&i.Home,
-			&i.Sources,
-			&i.Maintainers,
-			&i.Icon,
-			&i.ApiVersion,
-			&i.Type,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.Digest,
 			&i.SizeBytes,

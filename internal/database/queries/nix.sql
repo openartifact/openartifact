@@ -1,38 +1,50 @@
--- name: CreateNixPath :one
-INSERT INTO nix_paths (repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, refs, deriver, ca, signatures,
-                       blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+-- Nix store paths on the generic package tables (mapping spec in pkg_nix.go). One
+-- store path (narinfo plus the NAR it points at) is one package_versions row
+-- with one package_files row; the store path name is the package and the store
+-- hash is the version. nix_pending_nars and nix_signing_keys are not package
+-- data and stay as they are.
 
 -- name: GetNixPathByHash :one
-SELECT np.id, np.repository_id, np.store_hash, np.name, np.nar_hash, np.nar_size, np.nar_file, np.compression, np.refs, np.deriver, np.ca,
-       np.signatures, np.download_count, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, np.created_at, np.updated_at
-FROM nix_paths np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.store_hash = $2 AND np.deleted_at IS NULL;
+-- By the path of the narinfo file (uq_package_files_path).
+SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL;
 
 -- name: GetNixPathByNarFile :one
-SELECT np.id, np.repository_id, np.store_hash, np.name, np.nar_hash, np.nar_size, np.nar_file, np.compression, np.refs, np.deriver, np.ca,
-       np.signatures, np.download_count, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, np.created_at, np.updated_at
-FROM nix_paths np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.nar_file = $2 AND np.deleted_at IS NULL
-ORDER BY np.created_at, np.id
+-- The oldest live path whose NAR file is nar_file. The metadata ? predicate is
+-- what makes idx_package_versions_nix_nar_file (a partial index) applicable.
+SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at
+FROM (
+    SELECT v0.id, v0.package_id, v0.version, v0.metadata, v0.created_at
+    FROM package_versions v0
+    WHERE v0.repository_id = sqlc.arg(repository_id) AND v0.metadata ->> 'nar_file' = sqlc.arg(nar_file)::text
+      AND v0.deleted_at IS NULL AND v0.metadata ? 'nar_file'
+    ORDER BY v0.created_at, v0.id
+    LIMIT 1
+) v
+JOIN packages p ON p.id = v.package_id
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+ORDER BY f.created_at, f.id
 LIMIT 1;
 
 -- name: ListNixPaths :many
-SELECT np.id, np.repository_id, np.store_hash, np.name, np.nar_hash, np.nar_size, np.nar_file, np.compression, np.refs, np.deriver, np.ca,
-       np.signatures, np.download_count, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, np.created_at, np.updated_at
-FROM nix_paths np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL
-ORDER BY np.store_hash;
-
--- name: DeleteNixPath :exec
-DELETE FROM nix_paths WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
+SELECT f.id, f.repository_id, v.version AS store_hash, p.name, v.metadata, f.download_count,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY f.path;
 
 -- name: IncrementNixDownloadCount :exec
-UPDATE nix_paths SET download_count = download_count + 1
+UPDATE package_files SET download_count = download_count + 1
 WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
 
 -- name: PutNixPendingNar :exec

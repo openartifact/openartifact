@@ -111,7 +111,7 @@ func (e *importEnv) createHelm(t *testing.T, repo string, at time.Time) (string,
 		t.Fatal(err)
 	}
 
-	return "helm_charts", c.ID
+	return "package_files", c.ID
 }
 
 func (e *importEnv) createNuget(t *testing.T, repo string, at time.Time) (string, string) {
@@ -122,7 +122,7 @@ func (e *importEnv) createNuget(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "nuget_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createRubygems(t *testing.T, repo string, at time.Time) (string, string) {
@@ -204,7 +204,7 @@ func (e *importEnv) createAnsible(t *testing.T, repo string, at time.Time) (stri
 		t.Fatal(err)
 	}
 
-	return "ansible_collections", c.ID
+	return "package_files", c.ID
 }
 
 func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (string, string) {
@@ -228,7 +228,7 @@ func (e *importEnv) createNix(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "nix_paths", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string, string) {
@@ -300,7 +300,7 @@ func (e *importEnv) createTerraformModule(t *testing.T, repo string, at time.Tim
 		t.Fatal(err)
 	}
 
-	return "terraform_modules", m.ID
+	return "package_files", m.ID
 }
 
 func (e *importEnv) createTerraformProvider(t *testing.T, repo string, at time.Time) (string, string) {
@@ -312,7 +312,7 @@ func (e *importEnv) createTerraformProvider(t *testing.T, repo string, at time.T
 		t.Fatal(err)
 	}
 
-	return "terraform_providers", p.ID
+	return "package_files", p.ID
 }
 
 func TestImportCreatedAt(t *testing.T) {

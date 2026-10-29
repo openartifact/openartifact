@@ -7,125 +7,26 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
-const createTerraformModule = `-- name: CreateTerraformModule :one
-INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateTerraformModuleParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Name         string     `db:"name" json:"name"`
-	System       string     `db:"system" json:"system"`
-	Version      string     `db:"version" json:"version"`
-	ArchiveExt   string     `db:"archive_ext" json:"archive_ext"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateTerraformModuleRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateTerraformModule(ctx context.Context, arg CreateTerraformModuleParams) (CreateTerraformModuleRow, error) {
-	row := q.db.QueryRow(ctx, createTerraformModule,
-		arg.RepositoryID,
-		arg.Name,
-		arg.System,
-		arg.Version,
-		arg.ArchiveExt,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateTerraformModuleRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const createTerraformProvider = `-- name: CreateTerraformProvider :one
-INSERT INTO terraform_providers (repository_id, type, version, os, arch, protocols, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateTerraformProviderParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Type         string     `db:"type" json:"type"`
-	Version      string     `db:"version" json:"version"`
-	Os           string     `db:"os" json:"os"`
-	Arch         string     `db:"arch" json:"arch"`
-	Protocols    []string   `db:"protocols" json:"protocols"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateTerraformProviderRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateTerraformProvider(ctx context.Context, arg CreateTerraformProviderParams) (CreateTerraformProviderRow, error) {
-	row := q.db.QueryRow(ctx, createTerraformProvider,
-		arg.RepositoryID,
-		arg.Type,
-		arg.Version,
-		arg.Os,
-		arg.Arch,
-		arg.Protocols,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateTerraformProviderRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteTerraformModule = `-- name: DeleteTerraformModule :exec
-DELETE FROM terraform_modules WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeleteTerraformModuleParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeleteTerraformModule(ctx context.Context, arg DeleteTerraformModuleParams) error {
-	_, err := q.db.Exec(ctx, deleteTerraformModule, arg.ID, arg.RepositoryID)
-	return err
-}
-
-const deleteTerraformProvider = `-- name: DeleteTerraformProvider :exec
-DELETE FROM terraform_providers WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeleteTerraformProviderParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeleteTerraformProvider(ctx context.Context, arg DeleteTerraformProviderParams) error {
-	_, err := q.db.Exec(ctx, deleteTerraformProvider, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const getTerraformModule = `-- name: GetTerraformModule :one
-SELECT tm.id, tm.repository_id, tm.name, tm.system, tm.version, tm.archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes, tm.download_count, tm.created_at, tm.updated_at
-FROM terraform_modules tm
-JOIN blobs b ON b.id = tm.blob_id
-WHERE tm.repository_id = $1 AND tm.name = $2 AND tm.system = $3 AND tm.version = $4 AND tm.deleted_at IS NULL
+
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
+       v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetTerraformModuleParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	System       string `db:"system" json:"system"`
 	Version      string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type GetTerraformModuleRow struct {
@@ -143,13 +44,11 @@ type GetTerraformModuleRow struct {
 	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Terraform modules and providers on the generic package tables (mapping spec in
+// pkg_terraform.go). Both share the packages of a repository and are told apart by
+// packages.attrs->>'kind'.
 func (q *Queries) GetTerraformModule(ctx context.Context, arg GetTerraformModuleParams) (GetTerraformModuleRow, error) {
-	row := q.db.QueryRow(ctx, getTerraformModule,
-		arg.RepositoryID,
-		arg.Name,
-		arg.System,
-		arg.Version,
-	)
+	row := q.db.QueryRow(ctx, getTerraformModule, arg.Version, arg.RepositoryID, arg.NameKey)
 	var i GetTerraformModuleRow
 	err := row.Scan(
 		&i.ID,
@@ -169,44 +68,40 @@ func (q *Queries) GetTerraformModule(ctx context.Context, arg GetTerraformModule
 }
 
 const getTerraformProvider = `-- name: GetTerraformProvider :one
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.version = $3 AND tp.os = $4 AND tp.arch = $5 AND tp.deleted_at IS NULL
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetTerraformProviderParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Type         string `db:"type" json:"type"`
-	Version      string `db:"version" json:"version"`
-	Os           string `db:"os" json:"os"`
-	Arch         string `db:"arch" json:"arch"`
+	Path         string `db:"path" json:"path"`
 }
 
 type GetTerraformProviderRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	Type          string    `db:"type" json:"type"`
-	Version       string    `db:"version" json:"version"`
-	Os            string    `db:"os" json:"os"`
-	Arch          string    `db:"arch" json:"arch"`
-	Protocols     []string  `db:"protocols" json:"protocols"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	Checksum      string    `db:"checksum" json:"checksum"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	Type          string          `db:"type" json:"type"`
+	Version       string          `db:"version" json:"version"`
+	Os            string          `db:"os" json:"os"`
+	Arch          string          `db:"arch" json:"arch"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	Checksum      string          `db:"checksum" json:"checksum"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// The platform zip by its path (uq_package_files_path).
 func (q *Queries) GetTerraformProvider(ctx context.Context, arg GetTerraformProviderParams) (GetTerraformProviderRow, error) {
-	row := q.db.QueryRow(ctx, getTerraformProvider,
-		arg.RepositoryID,
-		arg.Type,
-		arg.Version,
-		arg.Os,
-		arg.Arch,
-	)
+	row := q.db.QueryRow(ctx, getTerraformProvider, arg.RepositoryID, arg.Path)
 	var i GetTerraformProviderRow
 	err := row.Scan(
 		&i.ID,
@@ -215,7 +110,7 @@ func (q *Queries) GetTerraformProvider(ctx context.Context, arg GetTerraformProv
 		&i.Version,
 		&i.Os,
 		&i.Arch,
-		&i.Protocols,
+		&i.Metadata,
 		&i.BlobKey,
 		&i.Checksum,
 		&i.SizeBytes,
@@ -226,48 +121,37 @@ func (q *Queries) GetTerraformProvider(ctx context.Context, arg GetTerraformProv
 	return i, err
 }
 
-const incrementTerraformModuleDownloadCount = `-- name: IncrementTerraformModuleDownloadCount :exec
-UPDATE terraform_modules SET download_count = download_count + 1
+const incrementTerraformDownloadCount = `-- name: IncrementTerraformDownloadCount :exec
+UPDATE package_files SET download_count = download_count + 1
 WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
 `
 
-type IncrementTerraformModuleDownloadCountParams struct {
+type IncrementTerraformDownloadCountParams struct {
 	ID           string `db:"id" json:"id"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 }
 
-func (q *Queries) IncrementTerraformModuleDownloadCount(ctx context.Context, arg IncrementTerraformModuleDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementTerraformModuleDownloadCount, arg.ID, arg.RepositoryID)
-	return err
-}
-
-const incrementTerraformProviderDownloadCount = `-- name: IncrementTerraformProviderDownloadCount :exec
-UPDATE terraform_providers SET download_count = download_count + 1
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type IncrementTerraformProviderDownloadCountParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) IncrementTerraformProviderDownloadCount(ctx context.Context, arg IncrementTerraformProviderDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementTerraformProviderDownloadCount, arg.ID, arg.RepositoryID)
+// One download of a module archive or a provider zip.
+func (q *Queries) IncrementTerraformDownloadCount(ctx context.Context, arg IncrementTerraformDownloadCountParams) error {
+	_, err := q.db.Exec(ctx, incrementTerraformDownloadCount, arg.ID, arg.RepositoryID)
 	return err
 }
 
 const listTerraformModuleVersions = `-- name: ListTerraformModuleVersions :many
-SELECT tm.id, tm.repository_id, tm.name, tm.system, tm.version, tm.archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes, tm.download_count, tm.created_at, tm.updated_at
-FROM terraform_modules tm
-JOIN blobs b ON b.id = tm.blob_id
-WHERE tm.repository_id = $1 AND tm.name = $2 AND tm.system = $3 AND tm.deleted_at IS NULL
-ORDER BY tm.created_at, tm.id
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
+       v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY f.created_at, f.id
 `
 
 type ListTerraformModuleVersionsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	System       string `db:"system" json:"system"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type ListTerraformModuleVersionsRow struct {
@@ -286,7 +170,7 @@ type ListTerraformModuleVersionsRow struct {
 }
 
 func (q *Queries) ListTerraformModuleVersions(ctx context.Context, arg ListTerraformModuleVersionsParams) ([]ListTerraformModuleVersionsRow, error) {
-	rows, err := q.db.Query(ctx, listTerraformModuleVersions, arg.RepositoryID, arg.Name, arg.System)
+	rows, err := q.db.Query(ctx, listTerraformModuleVersions, arg.RepositoryID, arg.NameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -319,11 +203,15 @@ func (q *Queries) ListTerraformModuleVersions(ctx context.Context, arg ListTerra
 }
 
 const listTerraformModules = `-- name: ListTerraformModules :many
-SELECT tm.id, tm.repository_id, tm.name, tm.system, tm.version, tm.archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes, tm.download_count, tm.created_at, tm.updated_at
-FROM terraform_modules tm
-JOIN blobs b ON b.id = tm.blob_id
-WHERE tm.repository_id = $1 AND tm.deleted_at IS NULL
-ORDER BY tm.name, tm.system, tm.created_at, tm.id
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'name', '')::text AS name, COALESCE(p.attrs ->> 'system', '')::text AS system,
+       v.version, COALESCE(f.attrs ->> 'archive_ext', '')::text AS archive_ext, b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND p.attrs ->> 'kind' = 'module'
+ORDER BY p.attrs ->> 'name', p.attrs ->> 'system', f.created_at, f.id
 `
 
 type ListTerraformModulesRow struct {
@@ -375,37 +263,41 @@ func (q *Queries) ListTerraformModules(ctx context.Context, repositoryID string)
 }
 
 const listTerraformProviderPlatforms = `-- name: ListTerraformProviderPlatforms :many
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.deleted_at IS NULL
-ORDER BY tp.version, tp.os, tp.arch
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY v.version, f.arch
 `
 
 type ListTerraformProviderPlatformsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Type         string `db:"type" json:"type"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type ListTerraformProviderPlatformsRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	Type          string    `db:"type" json:"type"`
-	Version       string    `db:"version" json:"version"`
-	Os            string    `db:"os" json:"os"`
-	Arch          string    `db:"arch" json:"arch"`
-	Protocols     []string  `db:"protocols" json:"protocols"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	Checksum      string    `db:"checksum" json:"checksum"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	Type          string          `db:"type" json:"type"`
+	Version       string          `db:"version" json:"version"`
+	Os            string          `db:"os" json:"os"`
+	Arch          string          `db:"arch" json:"arch"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	Checksum      string          `db:"checksum" json:"checksum"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // Every live platform zip of one provider type, all versions.
 func (q *Queries) ListTerraformProviderPlatforms(ctx context.Context, arg ListTerraformProviderPlatformsParams) ([]ListTerraformProviderPlatformsRow, error) {
-	rows, err := q.db.Query(ctx, listTerraformProviderPlatforms, arg.RepositoryID, arg.Type)
+	rows, err := q.db.Query(ctx, listTerraformProviderPlatforms, arg.RepositoryID, arg.NameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +312,7 @@ func (q *Queries) ListTerraformProviderPlatforms(ctx context.Context, arg ListTe
 			&i.Version,
 			&i.Os,
 			&i.Arch,
-			&i.Protocols,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.Checksum,
 			&i.SizeBytes,
@@ -439,38 +331,42 @@ func (q *Queries) ListTerraformProviderPlatforms(ctx context.Context, arg ListTe
 }
 
 const listTerraformProviderVersionPlatforms = `-- name: ListTerraformProviderVersionPlatforms :many
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.version = $3 AND tp.deleted_at IS NULL
-ORDER BY tp.os, tp.arch
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
+ORDER BY f.arch
 `
 
 type ListTerraformProviderVersionPlatformsParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Type         string `db:"type" json:"type"`
 	Version      string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type ListTerraformProviderVersionPlatformsRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	Type          string    `db:"type" json:"type"`
-	Version       string    `db:"version" json:"version"`
-	Os            string    `db:"os" json:"os"`
-	Arch          string    `db:"arch" json:"arch"`
-	Protocols     []string  `db:"protocols" json:"protocols"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	Checksum      string    `db:"checksum" json:"checksum"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	Type          string          `db:"type" json:"type"`
+	Version       string          `db:"version" json:"version"`
+	Os            string          `db:"os" json:"os"`
+	Arch          string          `db:"arch" json:"arch"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	Checksum      string          `db:"checksum" json:"checksum"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // Every live platform zip of one provider version.
 func (q *Queries) ListTerraformProviderVersionPlatforms(ctx context.Context, arg ListTerraformProviderVersionPlatformsParams) ([]ListTerraformProviderVersionPlatformsRow, error) {
-	rows, err := q.db.Query(ctx, listTerraformProviderVersionPlatforms, arg.RepositoryID, arg.Type, arg.Version)
+	rows, err := q.db.Query(ctx, listTerraformProviderVersionPlatforms, arg.Version, arg.RepositoryID, arg.NameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +381,7 @@ func (q *Queries) ListTerraformProviderVersionPlatforms(ctx context.Context, arg
 			&i.Version,
 			&i.Os,
 			&i.Arch,
-			&i.Protocols,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.Checksum,
 			&i.SizeBytes,
@@ -504,27 +400,31 @@ func (q *Queries) ListTerraformProviderVersionPlatforms(ctx context.Context, arg
 }
 
 const listTerraformProviders = `-- name: ListTerraformProviders :many
-SELECT tp.id, tp.repository_id, tp.type, tp.version, tp.os, tp.arch, tp.protocols, b.blob_key, b.sha256 AS checksum, b.size_bytes, tp.download_count, tp.created_at, tp.updated_at
-FROM terraform_providers tp
-JOIN blobs b ON b.id = tp.blob_id
-WHERE tp.repository_id = $1 AND tp.deleted_at IS NULL
-ORDER BY tp.type, tp.version, tp.os, tp.arch
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'type', '')::text AS type, v.version,
+       COALESCE(f.attrs ->> 'os', '')::text AS os, COALESCE(f.attrs ->> 'arch', '')::text AS arch, v.metadata,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND p.attrs ->> 'kind' = 'provider'
+ORDER BY p.attrs ->> 'type', v.version, f.arch
 `
 
 type ListTerraformProvidersRow struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	Type          string    `db:"type" json:"type"`
-	Version       string    `db:"version" json:"version"`
-	Os            string    `db:"os" json:"os"`
-	Arch          string    `db:"arch" json:"arch"`
-	Protocols     []string  `db:"protocols" json:"protocols"`
-	BlobKey       string    `db:"blob_key" json:"blob_key"`
-	Checksum      string    `db:"checksum" json:"checksum"`
-	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	Type          string          `db:"type" json:"type"`
+	Version       string          `db:"version" json:"version"`
+	Os            string          `db:"os" json:"os"`
+	Arch          string          `db:"arch" json:"arch"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	Checksum      string          `db:"checksum" json:"checksum"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListTerraformProviders(ctx context.Context, repositoryID string) ([]ListTerraformProvidersRow, error) {
@@ -543,7 +443,7 @@ func (q *Queries) ListTerraformProviders(ctx context.Context, repositoryID strin
 			&i.Version,
 			&i.Os,
 			&i.Arch,
-			&i.Protocols,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.Checksum,
 			&i.SizeBytes,
@@ -561,44 +461,25 @@ func (q *Queries) ListTerraformProviders(ctx context.Context, repositoryID strin
 	return items, nil
 }
 
-const terraformModuleStamp = `-- name: TerraformModuleStamp :one
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(tm.id::text, 0)), 0)::text)::text AS stamp
-FROM terraform_modules tm
-WHERE tm.repository_id = $1 AND tm.name = $2 AND tm.system = $3 AND tm.deleted_at IS NULL
+const terraformPackageStamp = `-- name: TerraformPackageStamp :one
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $1 AND p.name_key = $2
 `
 
-type TerraformModuleStampParams struct {
+type TerraformPackageStampParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	System       string `db:"system" json:"system"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
-// Fingerprint of the live versions of one module: their count and an
-// order-independent hash of their IDs. Rows are immutable apart from the
-// download counter (updated_at moves with every download, so it is no
+// Fingerprint of the live files of one module or provider type: their count
+// and an order-independent hash of their IDs. Files are immutable apart from
+// the download counter (updated_at moves with every download, so it is no
 // validator), and trash/restore changes membership.
-func (q *Queries) TerraformModuleStamp(ctx context.Context, arg TerraformModuleStampParams) (string, error) {
-	row := q.db.QueryRow(ctx, terraformModuleStamp, arg.RepositoryID, arg.Name, arg.System)
-	var stamp string
-	err := row.Scan(&stamp)
-	return stamp, err
-}
-
-const terraformProviderStamp = `-- name: TerraformProviderStamp :one
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(tp.id::text, 0)), 0)::text)::text AS stamp
-FROM terraform_providers tp
-WHERE tp.repository_id = $1 AND tp.type = $2 AND tp.deleted_at IS NULL
-`
-
-type TerraformProviderStampParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Type         string `db:"type" json:"type"`
-}
-
-// Fingerprint of the live platforms of one provider type (see
-// TerraformModuleStamp).
-func (q *Queries) TerraformProviderStamp(ctx context.Context, arg TerraformProviderStampParams) (string, error) {
-	row := q.db.QueryRow(ctx, terraformProviderStamp, arg.RepositoryID, arg.Type)
+func (q *Queries) TerraformPackageStamp(ctx context.Context, arg TerraformPackageStampParams) (string, error) {
+	row := q.db.QueryRow(ctx, terraformPackageStamp, arg.RepositoryID, arg.NameKey)
 	var stamp string
 	err := row.Scan(&stamp)
 	return stamp, err
