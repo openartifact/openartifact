@@ -11,9 +11,40 @@ package federation
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const (
+	// DefaultMaxClockSkew is how far ahead of the local clock the wall time of
+	// a peer's stamp may be (federation.maxClockSkew). The clock of a
+	// repository never goes back, so one stamp from the far future would make
+	// every later local change of the repository carry it and win against the
+	// changes of every other member.
+	DefaultMaxClockSkew = 5 * time.Minute
+
+	// maxStampCounter bounds the logical counter of an incoming stamp. A real
+	// counter only counts the changes within one microsecond; the clock adds
+	// one to the counter it sees, so values near the int32 limit would
+	// overflow it.
+	maxStampCounter = 1 << 24
+)
+
+// validateStamp rejects a stamp that a well-behaved member cannot have
+// produced: a negative or implausibly large counter, or a wall time more than
+// maxSkew ahead of now. Stamps in the past are always fine.
+func validateStamp(s Stamp, now time.Time, maxSkew time.Duration) error {
+	if s.Wall < 0 || s.Counter < 0 || s.Counter > maxStampCounter {
+		return fmt.Errorf("%w: counter %d, wall %d", errStampInvalid, s.Counter, s.Wall)
+	}
+
+	if limit := now.Add(maxSkew).UnixMicro(); s.Wall > limit {
+		return fmt.Errorf("%w: wall time %d is past the local clock plus the allowed skew of %s", errStampInvalid, s.Wall, maxSkew)
+	}
+
+	return nil
+}
 
 // Stamp orders the changes of one unit across instances: a hybrid logical
 // clock (wall microseconds, counter) with the origin instance as the last

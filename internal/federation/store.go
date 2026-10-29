@@ -292,3 +292,43 @@ func (s *Store) TrashRetentionDays(ctx context.Context, q Querier, repoID string
 
 	return days, nil
 }
+
+// RepoBlobSizes returns the recorded size of every blob among shas that the
+// repository already references (a package file, a docker blob or manifest,
+// trashed or not). A blob that only another repository references is not in
+// the result: what a peer names by digest may be linked to the repository
+// without being downloaded only when it is.
+func (s *Store) RepoBlobSizes(ctx context.Context, repoID string, shas []string) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT b.sha256, b.size_bytes FROM blobs b
+		  WHERE b.sha256 = ANY($1::text[])
+		    AND (EXISTS (SELECT 1 FROM package_files f WHERE f.blob_id = b.id AND f.repository_id = $2::uuid)
+		      OR EXISTS (SELECT 1 FROM docker_blobs d WHERE d.blob_id = b.id AND d.repository_id = $2::uuid)
+		      OR EXISTS (SELECT 1 FROM docker_manifests m WHERE m.blob_id = b.id AND m.repository_id = $2::uuid))`,
+		shas, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("read blobs of the repository: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]int64, len(shas))
+
+	for rows.Next() {
+		var (
+			sha  string
+			size int64
+		)
+
+		if err := rows.Scan(&sha, &size); err != nil {
+			return nil, fmt.Errorf("scan blob of the repository: %w", err)
+		}
+
+		out[sha] = size
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read blobs of the repository: %w", err)
+	}
+
+	return out, nil
+}

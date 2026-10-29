@@ -106,6 +106,8 @@ func setupFederation(
 		SpoolDir:           cfg.Federation.SpoolDir,
 		MaxPartialBytes:    cfg.Federation.MaxPartialBytes,
 		MaxPartialAge:      cfg.Federation.MaxPartialAge,
+		MaxClockSkew:       cfg.Federation.MaxClockSkew,
+		MaxBlobBytes:       cfg.Server.MaxBodyBytes,
 		TrashDefaultDays:   cfg.Trash.RetentionDays,
 	})
 	if err != nil {

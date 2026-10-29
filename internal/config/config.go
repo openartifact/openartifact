@@ -47,7 +47,7 @@ var (
 		"audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive",
 	)
 	errFederationSettings = errors.New(
-		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, " +
+		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes, maxPartialAge and maxClockSkew must be positive, " +
 			"tombstoneRetention must not be negative",
 	)
 	errBlobDeletionBatch    = errors.New("blobDeletion.sweepBatch must be at least 1")
@@ -317,6 +317,11 @@ type FederationConfig struct {
 	// MaxPartialAge removes an interrupted download that was not written to for
 	// this long.
 	MaxPartialAge time.Duration `yaml:"maxPartialAge"`
+	// MaxClockSkew is how far ahead of this instance's clock the stamp of a
+	// peer's change may be. The change of a peer whose clock runs further ahead
+	// is set aside and applied once the local clock catches up, instead of moving
+	// the repository's logical clock to that time for good.
+	MaxClockSkew time.Duration `yaml:"maxClockSkew"`
 }
 
 // TieringConfig tunes the storage tier mover (see docs/operations/storage-tiering.md).
@@ -740,6 +745,7 @@ func defaultConfig() *Config {
 			TombstoneRetention: 720 * time.Hour,
 			MaxPartialBytes:    10 << 30,
 			MaxPartialAge:      24 * time.Hour,
+			MaxClockSkew:       5 * time.Minute,
 		},
 		Tiering: TieringConfig{
 			Enabled:             true,
@@ -957,6 +963,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Federation.SpoolDir, "OPENARTIFACT_FEDERATION_SPOOL_DIR")
 	overrideInt64(&cfg.Federation.MaxPartialBytes, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES")
 	overrideDuration(&cfg.Federation.MaxPartialAge, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE")
+	overrideDuration(&cfg.Federation.MaxClockSkew, "OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW")
 
 	// Storage replica
 	applyReplicaEnvOverrides(cfg)
@@ -1169,7 +1176,7 @@ func (c *Config) validateTiering() error {
 func (c *Config) validateFederation() error {
 	f := c.Federation
 	if f.PollInterval <= 0 || f.BatchSize < 1 || f.MaxBackoff <= 0 || f.RequestTimeout <= 0 || f.TombstoneRetention < 0 ||
-		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 {
+		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 || f.MaxClockSkew <= 0 {
 		return errFederationSettings
 	}
 
