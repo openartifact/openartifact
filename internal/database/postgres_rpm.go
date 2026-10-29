@@ -21,7 +21,7 @@ func nullableJSON(b []byte) any {
 }
 
 // RpmPackageExists reports whether the repository already has a package with the NEVRA.
-func (p *PostgresDB) RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error) {
+func (p *RPMStore) RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error) {
 	var exists bool
 
 	err := p.db.QueryRowContext(ctx,
@@ -37,7 +37,7 @@ func (p *PostgresDB) RpmPackageExists(ctx context.Context, repoID, name, version
 
 // ListRpmPackagesForMetadata loads every rpm package of a repo with dependency,
 // file and changelog data plus the header range, for metadata generation.
-func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+func (p *RPMStore) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT rp.name, rp.version, COALESCE(rp.release, ''), rp.epoch, COALESCE(rp.arch, ''),
 		       COALESCE(rp.summary, ''), COALESCE(rp.description, ''), COALESCE(rp.license, ''),
@@ -89,7 +89,7 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 // (sizes_parsed, see pkgrpm.Package.MarshalExtra) the installed_size and
 // archive_size columns are corrected from it too: rows stored before the
 // header size tags were read properly hold 0.
-func (p *PostgresDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
+func (p *RPMStore) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
 	if _, err := p.db.ExecContext(ctx, `
 		UPDATE rpm_packages SET rpm_extra = $3::jsonb,
 		    installed_size = CASE WHEN ($3::jsonb ->> 'sizes_parsed') = 'true'
