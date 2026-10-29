@@ -40,8 +40,6 @@ import (
 // per docker_blobs row created, a manifest is its size and one artifact.
 type dockerPromoter struct{}
 
-func (dockerPromoter) Format() string { return "docker" }
-
 // ErrDockerNotIndexed: a source manifest whose references registry GC has not
 // recorded yet (pushed before docker_manifest_refs existed or restored from a
 // backup). Promotion cannot know its layers without reading the manifest body.
@@ -83,7 +81,7 @@ type dockerRun struct {
 	keys map[string]struct{}
 }
 
-// Promote implements Promoter.
+// Promote copies the docker content req selects inside tx.
 func (dockerPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, error) {
 	if err := lockDockerRepos(ctx, tx, req); err != nil {
 		return nil, err
@@ -307,11 +305,11 @@ func (r *dockerRun) copyTag(ctx context.Context, root dockerManifest, t dockerTa
 	}
 
 	var (
-		id, digest string
-		old        destRow
+		id, digest, oldSHA string
+		oldSize            int64
 	)
 
-	err = r.tx.QueryRowContext(ctx, dockerTagDigestSQL, r.req.Dst.ID, root.image, t.Name).Scan(&id, &digest, &old.sha, &old.size)
+	err = r.tx.QueryRowContext(ctx, dockerTagDigestSQL, r.req.Dst.ID, root.image, t.Name).Scan(&id, &digest, &oldSHA, &oldSize)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -332,8 +330,8 @@ func (r *dockerRun) copyTag(ctx context.Context, root dockerManifest, t dockerTa
 		Name:    name,
 		Version: t.Name,
 		Path:    name + "/manifests/" + digest,
-		SHA256:  old.sha,
-		Size:    old.size,
+		SHA256:  oldSHA,
+		Size:    oldSize,
 	})
 
 	created, err = r.insertTag(ctx, name, t)

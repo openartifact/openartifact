@@ -5,19 +5,23 @@
 // Package promote copies the content of release bundle items from one hosted
 // repository into another (bundle promotion).
 //
-// Every format keeps its metadata in its own tables, so each hosted format has
-// a Promoter: it finds the live rows of the source repository that store the
-// item's content, and writes the same rows (new ids, the destination's
-// repository id) into the destination. Blobs are content-addressed, so a copy
-// is metadata only: the new rows reference the existing blobs row and the bytes
-// are never read or duplicated. The Engine runs every promoter of a promotion
-// inside ONE database transaction together with the bundle's promotion record
-// and stage change, so a promotion either lands completely or not at all.
+// Every package format except docker stores its files in the generic tables
+// (packages, package_versions, package_files and the side tables of its storage
+// descriptor), so one promoter serves them all: it finds the live source files
+// that store the item's content and writes the same rows (new ids, the
+// destination's repository id) into the destination. What differs per format is
+// data, the descriptor's storage.Promotion. Docker keeps its own tables and its
+// own promoter. Blobs are content-addressed, so a copy is metadata only: the new
+// rows reference the existing blobs row and the bytes are never read or
+// duplicated. The Engine runs every item inside ONE database transaction
+// together with the bundle's promotion record and stage change, so a promotion
+// either lands completely or not at all.
 //
-// A promoter never overwrites: a destination row that holds the same content is
-// reported as Existing (so retrying a promotion is idempotent), one that holds
-// different content is a ConflictError (409; Immutable when the destination has
-// immutable_releases and the version is a release).
+// A promotion never overwrites: a destination file that holds the same content
+// is reported as Existing (so retrying a promotion is idempotent), one that
+// holds different content is a ConflictError (409; Immutable when the
+// destination has immutable_releases and the version is a release), unless the
+// promotion is forced, which moves the replaced files to the trash.
 package promote
 
 import (
@@ -29,6 +33,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/trash"
 )
@@ -44,7 +49,7 @@ var (
 	ErrNotHosted = errors.New("promote: only hosted repositories can be promoted from or into")
 	// ErrSameRepository: an item's source repository is the target repository.
 	ErrSameRepository = errors.New("promote: the target repository is the source repository of an item")
-	// ErrUnsupportedFormat: no promoter exists for the item's format.
+	// ErrUnsupportedFormat: the item's format has no storage descriptor to promote by.
 	ErrUnsupportedFormat = errors.New("promote: promotion is not supported for this format")
 	// ErrBundleState: the bundle is no longer a sealed bundle that can be promoted.
 	ErrBundleState = errors.New("promote: bundle is not sealed")
@@ -66,18 +71,6 @@ type Tx interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Promoter copies one format's artifacts between hosted repositories.
-type Promoter interface {
-	// Format is the repository format the promoter handles.
-	Format() string
-	// Promote copies the content req selects from req.Src to req.Dst inside
-	// tx. It returns ErrItemNotFound when req.Src holds no live artifact with
-	// that content, and a *ConflictError when req.Dst holds different content
-	// at the same coordinates. It must not commit or roll back tx; on any
-	// error the Engine rolls everything back.
-	Promote(ctx context.Context, tx Tx, req Request) (*Result, error)
-}
-
 // Request selects the content to copy.
 type Request struct {
 	// Src and Dst are the hosted repositories (same format) to copy from and into.
@@ -97,52 +90,15 @@ type Request struct {
 	Actor string
 }
 
-// displace moves the live destination rows ids of kind to the trash so a
-// forced promotion can write its own in their place.
+// displace moves the live destination docker rows ids of kind to the trash so a
+// forced promotion can write its own in their place; package files go through
+// database.TrashFilesInTx.
 func (r Request) displace(ctx context.Context, tx Tx, kind models.TrashKind, ids ...string) error {
 	if err := database.TrashRowsInTx(ctx, tx, r.Dst.ID, kind, ids, r.Actor); err != nil {
 		return fmt.Errorf("replace %s content in the target: %w", kind, err)
 	}
 
 	return nil
-}
-
-// settleDest settles one source item art against dest, the live destination row
-// at its coordinates (the zero destRow: none); same says dest holds the item's
-// content. It reports whether the item still has to be copied: not when the
-// destination holds it already (recorded in res as existing); yes when it holds
-// nothing or, forced, other content, which is moved to the trash and reported
-// as replaced. Other content without req.Force is a conflict.
-func (r Request) settleDest(
-	ctx context.Context,
-	tx Tx,
-	res *Result,
-	kind models.TrashKind,
-	format string,
-	art Artifact,
-	dest destRow,
-	same bool,
-) (bool, error) {
-	switch {
-	case dest.id == "":
-		return true, nil
-	case same:
-		res.Existing = append(res.Existing, art)
-
-		return false, nil
-	case !r.Force:
-		return false, r.conflict(format, art.Name, art.Version)
-	}
-
-	if err := r.displace(ctx, tx, kind, dest.id); err != nil {
-		return false, err
-	}
-
-	replaced := art
-	replaced.SHA256, replaced.Size = dest.sha, dest.size
-	res.Replaced = append(res.Replaced, replaced)
-
-	return true, nil
 }
 
 // Artifact describes one artifact row a promotion wrote or found.
@@ -160,24 +116,10 @@ type Usage struct {
 	Artifacts int
 }
 
-// RegenKind says which generated metadata a promotion made stale.
-type RegenKind string
-
-// The generated-metadata kinds that need a worker refresh after a promotion.
-// Every other format computes its indexes live from the tables.
-const (
-	RegenDeb    RegenKind = "deb"
-	RegenRPM    RegenKind = "rpm"
-	RegenApk    RegenKind = "apk"
-	RegenMaven  RegenKind = "maven"
-	RegenNPM    RegenKind = "npm"
-	RegenPacman RegenKind = "pacman"
-)
-
 // Regen is one metadata refresh to enqueue once the promotion has committed.
 type Regen struct {
-	Kind RegenKind
-	// RepoID is the destination repository (deb, maven, rpm).
+	Kind storage.RegenKind
+	// RepoID is the destination repository (every kind but npm).
 	RepoID string
 	// GroupID and ArtifactID name the maven artifact.
 	GroupID, ArtifactID string
@@ -204,26 +146,6 @@ type Result struct {
 	QuarantineKeys []string
 	// Regen lists the metadata refreshes the destination needs.
 	Regen []Regen
-}
-
-// addCopied records art as newly written to the destination, adding bytes (the
-// storage of the copy) and one artifact to the quota usage.
-func (r *Result) addCopied(art Artifact, bytes int64) {
-	r.Copied = append(r.Copied, art)
-	r.Usage.Bytes += bytes
-	r.Usage.Artifacts++
-}
-
-// merge appends o to r.
-func (r *Result) merge(o *Result) {
-	r.Copied = append(r.Copied, o.Copied...)
-	r.Existing = append(r.Existing, o.Existing...)
-	r.Replaced = append(r.Replaced, o.Replaced...)
-	r.Usage.Bytes += o.Usage.Bytes
-	r.Usage.Artifacts += o.Usage.Artifacts
-	r.Licenses = append(r.Licenses, o.Licenses...)
-	r.QuarantineKeys = append(r.QuarantineKeys, o.QuarantineKeys...)
-	r.Regen = append(r.Regen, o.Regen...)
 }
 
 // ConflictError reports different content at the coordinates being promoted.
@@ -284,3 +206,37 @@ func (e *ItemError) Error() string {
 }
 
 func (e *ItemError) Unwrap() error { return e.Err }
+
+// candidate is a live source row holding the item's content, with the
+// identifiers Request.Path is matched against.
+type candidate struct {
+	id     string
+	idents []string
+}
+
+// narrow keeps the candidates whose identifiers equal path (ignoring a leading
+// slash); with no such candidate every candidate stays.
+func narrow(cands []candidate, path string) []candidate {
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return cands
+	}
+
+	var hit []candidate
+
+	for _, c := range cands {
+		for _, id := range c.idents {
+			if strings.TrimPrefix(id, "/") == path {
+				hit = append(hit, c)
+
+				break
+			}
+		}
+	}
+
+	if len(hit) == 0 {
+		return cands
+	}
+
+	return hit
+}
