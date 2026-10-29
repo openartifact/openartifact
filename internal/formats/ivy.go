@@ -44,8 +44,10 @@ func ivyFormat() plugin.Format {
 func ivyStorage() storage.Storage {
 	return storage.Storage{
 		Trash: storage.Trash{
-			Kind:     string(models.TrashKindIvy),
-			NameExpr: "p.attrs->>'organisation' || '/' || p.attrs->>'module' || '/' || f.filename",
+			Kind: string(models.TrashKindIvy),
+			// ->> and || share a precedence level and associate left, so each
+			// extraction needs its own parentheses.
+			NameExpr: "(p.attrs->>'organisation') || '/' || (p.attrs->>'module') || '/' || f.filename",
 		},
 		Detail: storage.Detail{Info: []storage.InfoField{
 			entry("organisation", fromP("organisation")), entry("module", fromP("module")),
