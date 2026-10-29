@@ -32,8 +32,8 @@ func jvmCountRows(t *testing.T, s *quotaSeeder, query string, args ...any) int {
 	return n
 }
 
-// genericCounts returns the live packages, versions and files of a repository.
-func genericCounts(t *testing.T, s *quotaSeeder) (int, int, int) {
+// jvmGenericCounts returns the live packages, versions and files of a repository.
+func jvmGenericCounts(t *testing.T, s *quotaSeeder) (int, int, int) {
 	t.Helper()
 
 	pkgs := jvmCountRows(t, s, `SELECT count(*) FROM packages WHERE repository_id = $1`, s.repo)
@@ -92,7 +92,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 	}
 
 	// One package; 1.0 and each snapshot build are versions of their own.
-	if p, v, f := genericCounts(t, s); p != 1 || v != 3 || f != 4 {
+	if p, v, f := jvmGenericCounts(t, s); p != 1 || v != 3 || f != 4 {
 		t.Errorf("packages/versions/files = %d/%d/%d, want 1/3/4", p, v, f)
 	}
 
@@ -196,7 +196,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 		t.Errorf("overwrite id = %s, want %s", again.ID, snap2.ID)
 	}
 
-	if p, v, f := genericCounts(t, s); p != 1 || v != 3 || f != 4 {
+	if p, v, f := jvmGenericCounts(t, s); p != 1 || v != 3 || f != 4 {
 		t.Errorf("after overwrite packages/versions/files = %d/%d/%d, want 1/3/4", p, v, f)
 	}
 
@@ -219,7 +219,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 		t.Fatalf("DeleteMavenArtifact: %v", err)
 	}
 
-	if p, v, f := genericCounts(t, s); p != 1 || v != 2 || f != 3 {
+	if p, v, f := jvmGenericCounts(t, s); p != 1 || v != 2 || f != 3 {
 		t.Errorf("after delete packages/versions/files = %d/%d/%d, want 1/2/3", p, v, f)
 	}
 
@@ -233,7 +233,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 		}
 	}
 
-	if p, v, f := genericCounts(t, s); p != 0 || v != 0 || f != 0 {
+	if p, v, f := jvmGenericCounts(t, s); p != 0 || v != 0 || f != 0 {
 		t.Errorf("after deleting everything packages/versions/files = %d/%d/%d, want 0/0/0", p, v, f)
 	}
 }
@@ -281,7 +281,7 @@ func TestIvyRoundTripOnGenericTables(t *testing.T) {
 		t.Errorf("bare-name filename = %q, %v; want mod.xml", filename, err)
 	}
 
-	if p, v, f := genericCounts(t, s); p != 1 || v != 1 || f != 2 {
+	if p, v, f := jvmGenericCounts(t, s); p != 1 || v != 1 || f != 2 {
 		t.Errorf("packages/versions/files = %d/%d/%d, want 1/1/2", p, v, f)
 	}
 
@@ -337,7 +337,7 @@ func TestIvyRoundTripOnGenericTables(t *testing.T) {
 		}
 	}
 
-	if p, v, f := genericCounts(t, s); p != 0 || v != 0 || f != 0 {
+	if p, v, f := jvmGenericCounts(t, s); p != 0 || v != 0 || f != 0 {
 		t.Errorf("after delete packages/versions/files = %d/%d/%d, want 0/0/0", p, v, f)
 	}
 
@@ -399,7 +399,7 @@ func TestSBTRoundTripOnGenericTables(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p, v, f := genericCounts(t, s); p != 0 || v != 0 || f != 0 {
+	if p, v, f := jvmGenericCounts(t, s); p != 0 || v != 0 || f != 0 {
 		t.Errorf("after delete packages/versions/files = %d/%d/%d, want 0/0/0", p, v, f)
 	}
 
