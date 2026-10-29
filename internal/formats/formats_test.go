@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
@@ -258,6 +259,30 @@ func TestStorageDescriptorsMatchSpecs(t *testing.T) {
 	for _, name := range dedicatedTables {
 		if _, ok := repotype.Lookup(name); !ok {
 			t.Errorf("dedicatedTables names %q, which is not a format", name)
+		}
+	}
+}
+
+// TestFederationQuarantineKeys: the spellings a scan of a replicated unit may
+// have been recorded under are the ones the format's download handler checks.
+func TestFederationQuarantineKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		format, key string
+		want        []string
+	}{
+		{"pypi", "demo/1.0/demo-1.0.tar.gz", quarantine.PathKeys("demo/1.0/demo-1.0.tar.gz", "demo-1.0.tar.gz")},
+		{"helm", "nginx@1.2.3", quarantine.PathKeys("nginx@1.2.3", "nginx-1.2.3.tgz", "charts/nginx-1.2.3.tgz")},
+		{"cargo", "serde@1.0.0", quarantine.PathKeys("serde@1.0.0", "serde-1.0.0.crate", "serde/1.0.0")},
+		{"go", "example.com/m@v1.0.0", quarantine.PathKeys("example.com/m@v1.0.0",
+			"example.com/m/@v/v1.0.0.zip", "example.com/m/@v/v1.0.0.mod", "example.com%2Fm@v1.0.0")},
+		{"nuget", "Newtonsoft.Json@13.0.1", quarantine.PathKeys("Newtonsoft.Json@13.0.1", "newtonsoft.json.13.0.1.nupkg")},
+	} {
+		st, _ := storage.Lookup(tc.format)
+
+		if got := st.Federation.QuarantineKeys(tc.key); !slices.Equal(got, tc.want) {
+			t.Errorf("%s %q: keys %v, want %v", tc.format, tc.key, got, tc.want)
 		}
 	}
 }

@@ -52,7 +52,7 @@ func goFormat() plugin.Format {
 func goStorage() storage.Storage {
 	return storage.Storage{
 		Trash:      storage.Trash{Kind: string(models.TrashKindGoMod), Scope: storage.ScopeVersion},
-		Federation: &storage.Federation{},
+		Federation: &storage.Federation{QuarantineKeys: goQuarantineKeys},
 		Detail: storage.Detail{
 			Info: []storage.InfoField{entry("module_path", fromK("name"))},
 			Deps: fromM("go_mod_content"), Decoder: "go-mod",

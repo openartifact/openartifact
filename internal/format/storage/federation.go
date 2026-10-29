@@ -48,4 +48,8 @@ type Federation struct {
 	// packument_stale). They are never replicated: a package created by a
 	// replicated unit starts without them.
 	LocalPackageAttrs []string
+	// QuarantineKeys lists the artifact paths under which a scan of the unit
+	// with the given unit key may have been recorded: the spellings the format's
+	// own download handler checks. Nil means the unit key is the path.
+	QuarantineKeys func(unitKey string) []string
 }

@@ -40,7 +40,7 @@ func helmFormat() plugin.Format {
 func helmStorage() storage.Storage {
 	return storage.Storage{
 		Trash:      storage.Trash{Kind: string(models.TrashKindHelm)},
-		Federation: &storage.Federation{},
+		Federation: &storage.Federation{QuarantineKeys: helmQuarantineKeys},
 		Detail: storage.Detail{
 			Description: fromV("description"), Homepage: fromV("home"),
 			Info: []storage.InfoField{

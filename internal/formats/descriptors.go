@@ -4,7 +4,13 @@
 
 package formats
 
-import "github.com/openartifact/openartifact/internal/format/storage"
+import (
+	"net/url"
+	"strings"
+
+	"github.com/openartifact/openartifact/internal/format/storage"
+	"github.com/openartifact/openartifact/internal/quarantine"
+)
 
 // Shorthands of the storage descriptors: a Field reads one value of the artifact
 // detail document (see storage.Source).
@@ -45,4 +51,48 @@ func licenseList(expr string) string {
 	  WHEN 'array' THEN ARRAY(SELECT e FROM jsonb_array_elements_text(` + expr + `) e WHERE e <> '')
 	  WHEN 'string' THEN array_remove(ARRAY[` + expr + ` #>> '{}'], '')
 	  ELSE '{}'::text[] END`
+}
+
+// cutLast splits a unit key around its last '@'; without one the whole key is the head.
+func cutLast(key string) (string, string) {
+	head, tail, ok := strings.CutLast(key, "@")
+	if !ok {
+		return key, ""
+	}
+
+	return head, tail
+}
+
+// The Federation.QuarantineKeys of the formats whose unit key is not the path a
+// download handler checks a scan under.
+
+func pypiQuarantineKeys(key string) []string { // name/version/filename
+	return quarantine.PathKeys(key, key[strings.LastIndex(key, "/")+1:])
+}
+
+func helmQuarantineKeys(key string) []string { // name@version
+	name, ver := cutLast(key)
+	file := name + "-" + ver + ".tgz"
+
+	return quarantine.PathKeys(key, file, "charts/"+file)
+}
+
+func cargoQuarantineKeys(key string) []string { // name@version
+	name, ver := cutLast(key)
+
+	return quarantine.PathKeys(key, name+"-"+ver+".crate", name+"/"+ver)
+}
+
+func goQuarantineKeys(key string) []string { // module@version
+	mod, ver := cutLast(key)
+	esc := url.PathEscape(mod)
+
+	return quarantine.PathKeys(key, mod+"/@v/"+ver+".zip", mod+"/@v/"+ver+".mod", esc+"@"+ver)
+}
+
+func nugetQuarantineKeys(key string) []string { // id@version
+	id, ver := cutLast(key)
+	file := strings.ToLower(id) + "." + strings.ToLower(ver) + ".nupkg"
+
+	return quarantine.PathKeys(key, file)
 }

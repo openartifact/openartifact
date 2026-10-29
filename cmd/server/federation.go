@@ -14,9 +14,9 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/federation"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/webhook"
-	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -44,19 +44,13 @@ type federationRuntime struct {
 }
 
 // regenNotifier queues the metadata regeneration of replicated changes on the
-// format workers (the RegenQueue).
-type regenNotifier struct {
-	maven *worker.MavenMetadataWorker
-	npm   *worker.NPMMetadataWorker
-}
+// format workers (the RegenQueue), through each format's Changed hook.
+type regenNotifier struct{ w *workerSet }
 
 func (n regenNotifier) Notify(r federation.Regen) {
-	switch r.Format {
-	case "maven":
-		n.maven.NotifyStale(r.RepoID, r.Attr("group_id"), r.Attr("artifact_id"))
-	case "npm":
-		n.npm.NotifyStale(r.PackageID)
-	}
+	lifecycle.Notify(n.w.metadata, r.Format, lifecycle.Change{
+		RepoID: r.RepoID, PackageID: r.PackageID, GroupID: r.Attr("group_id"), ArtifactID: r.Attr("artifact_id"),
+	})
 }
 
 // setupFederation builds the federation runtime. With federation.enabled off
@@ -102,7 +96,7 @@ func setupFederation(
 		Blobs:              blobs,
 		Log:                log,
 		Webhooks:           publisher,
-		Notify:             regenNotifier{maven: w.maven, npm: w.npm},
+		Notify:             regenNotifier{w: w},
 		Metrics:            metrics,
 		PollInterval:       cfg.Federation.PollInterval,
 		BatchSize:          cfg.Federation.BatchSize,

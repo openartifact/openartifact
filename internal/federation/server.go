@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -413,32 +413,16 @@ func (s *Server) fail(w http.ResponseWriter, what string, err error) {
 }
 
 // quarantineKeys lists the artifact paths under which a scan of the unit may
-// have been recorded: the spellings the format's own download handler checks.
+// have been recorded: the spellings the format's own download handler checks,
+// which its Federation descriptor gives. Docker, with dedicated tables, is the
+// one explicit case.
 func quarantineKeys(format, key string) []string {
-	switch format {
-	case "pypi": // name/version/filename
-		return quarantine.PathKeys(key, key[strings.LastIndex(key, "/")+1:])
-	case "helm": // name@version
-		name, ver := cutLast(key)
-		file := name + "-" + ver + ".tgz"
-
-		return quarantine.PathKeys(key, file, "charts/"+file)
-	case "cargo": // name@version
-		name, ver := cutLast(key)
-
-		return quarantine.PathKeys(key, name+"-"+ver+".crate", name+"/"+ver)
-	case "go": // module@version
-		mod, ver := cutLast(key)
-		esc := url.PathEscape(mod)
-
-		return quarantine.PathKeys(key, mod+"/@v/"+ver+".zip", mod+"/@v/"+ver+".mod", esc+"@"+ver)
-	case "nuget": // id@version
-		id, ver := cutLast(key)
-		file := strings.ToLower(id) + "." + strings.ToLower(ver) + ".nupkg"
-
-		return quarantine.PathKeys(key, file)
-	case "docker": // m:image@digest | t:image:tag
+	if format == "docker" { // m:image@digest | t:image:tag
 		return quarantine.PathKeys(dockerQuarantineKeys(key)...)
+	}
+
+	if d, ok := formatstorage.Lookup(format); ok && d.Federation != nil && d.Federation.QuarantineKeys != nil {
+		return d.Federation.QuarantineKeys(key)
 	}
 
 	return quarantine.PathKeys(key) // maven, npm, raw: the unit key is the path

@@ -67,6 +67,11 @@ func registerFixtureFormats() {
 			formatstorage.Register(format, formatstorage.Storage{SideTables: side})
 		}
 	}
+
+	// npm's derived metadata is keyed by package: the rebuild hands those ids to the hook.
+	if _, ok := formatstorage.Lookup("npm"); !ok {
+		formatstorage.Register("npm", formatstorage.Storage{Backup: formatstorage.Backup{Regen: formatstorage.RegenNPM}})
+	}
 }
 
 // newTestDB creates an empty, migrated database on the TEST_DATABASE_URL server

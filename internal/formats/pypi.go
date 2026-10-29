@@ -48,7 +48,7 @@ func pypiStorage() storage.Storage {
 	return storage.Storage{
 		Trash:      storage.Trash{Kind: string(models.TrashKindPyPI), NameExpr: "f.filename"},
 		Cleanup:    storage.Cleanup{Partition: []string{"p.id"}},
-		Federation: &storage.Federation{Unit: storage.UnitFile},
+		Federation: &storage.Federation{Unit: storage.UnitFile, QuarantineKeys: pypiQuarantineKeys},
 		Detail: storage.Detail{
 			Summary: fromV("summary"), License: fromV("license"),
 			Info: []storage.InfoField{

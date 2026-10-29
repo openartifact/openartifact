@@ -44,7 +44,7 @@ func cargoFormat() plugin.Format {
 func cargoStorage() storage.Storage {
 	return storage.Storage{
 		Trash:      storage.Trash{Kind: string(models.TrashKindCargo)},
-		Federation: &storage.Federation{},
+		Federation: &storage.Federation{QuarantineKeys: cargoQuarantineKeys},
 		Detail: storage.Detail{
 			Description: fromV("description"), License: fromV("license"), Homepage: fromV("homepage"),
 			Info: []storage.InfoField{

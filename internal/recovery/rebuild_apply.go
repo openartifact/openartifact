@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 )
 
 const (
@@ -123,14 +125,10 @@ func (r *Rebuilder) regenerate(ctx context.Context, rep *Report, st *applyState)
 	rep.PostSteps = append(rep.PostSteps, "metadata regeneration")
 }
 
-// npmFormat is the one format whose derived metadata is tracked per package
-// (the packument) instead of per repository; Hooks.Regenerate receives those
-// package ids separately.
-const npmFormat = "npm"
-
 // resolvePackages adds the repositories of the packages that received rows to
 // the touched set (package_tags rows carry no repository id) and returns the
-// ids of the npm packages among them, sorted.
+// ids of the packages among them whose format regenerates its metadata per
+// package (its descriptor's Backup.Regen is RegenNPM, the packument), sorted.
 func (r *Rebuilder) resolvePackages(ctx context.Context, st *applyState) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id::text, repository_id::text, format FROM packages WHERE id = ANY($1::uuid[])`, keys(st.packages))
@@ -150,7 +148,7 @@ func (r *Rebuilder) resolvePackages(ctx context.Context, st *applyState) ([]stri
 
 		st.touchedRepos[repoID] = struct{}{}
 
-		if format == npmFormat {
+		if d, ok := formatstorage.Lookup(format); ok && d.Backup.Regen == formatstorage.RegenNPM {
 			npmIDs = append(npmIDs, id)
 		}
 	}

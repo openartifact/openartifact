@@ -44,7 +44,7 @@ func nugetFormat() plugin.Format {
 func nugetStorage() storage.Storage {
 	return storage.Storage{
 		Trash:      storage.Trash{Kind: string(models.TrashKindNuGet)},
-		Federation: &storage.Federation{},
+		Federation: &storage.Federation{QuarantineKeys: nugetQuarantineKeys},
 		Detail: storage.Detail{
 			Summary: fromV("summary"), Description: fromV("description"), License: fromV("license_url"), Homepage: fromV("project_url"),
 			Info: []storage.InfoField{
