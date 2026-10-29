@@ -269,7 +269,6 @@ func writeMerged(w http.ResponseWriter, r *http.Request, public bool, body []byt
 	w.WriteHeader(http.StatusOK)
 
 	if r.Method != http.MethodHead {
-		//nolint:gosec // G705: a package index merged from member repositories, served with its format's content type, not HTML
 		_, _ = w.Write(body)
 	}
 }

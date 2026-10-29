@@ -185,10 +185,10 @@ linters:
       - source: "//nolint:|https?://"
         linters:
           - lll
-      # writeBody serves package metadata (never HTML) whose only request-derived
-      # part is a validated host; gosec's taint result for it changes between
+      # The proxy and group pipelines write package metadata (never HTML) whose
+      # only request-derived part is a validated host; gosec's taint result changes between
       # runs, so a //nolint would flip nolintlint.
-      - path: "^internal/proxy/pipeline\\.go$"
+      - path: "^internal/(proxy|group)/pipeline\\.go$"
         linters:
           - gosec
         text: "G705"
