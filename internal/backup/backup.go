@@ -51,6 +51,19 @@ const maxTableSize = 2 << 30
 // hash to its own name).
 const maxBlobEntrySize = 64 << 30
 
+// ArchiveVersion is the version of the archive layout this server writes and
+// restores. 2.0 stores package data as rows of the generic package tables; the
+// 1.x archives of 0.14 and older carry per-format tables and are not restorable.
+const ArchiveVersion = "2.0"
+
+// ErrUnsupportedArchive is returned for an archive of another layout version.
+// Data of 0.14 and older moves to this version with `oa import` from the old
+// server, not with a restore (docs/getting-started/upgrading.md).
+var ErrUnsupportedArchive = errors.New(
+	"unsupported backup archive: backups of 0.14 and older cannot be restored; " +
+		"move the data with `oa import` (see docs/getting-started/upgrading.md)",
+)
+
 // ErrRestoreIncomplete is returned when a restore finished but some records
 // or blobs could not be restored.
 var ErrRestoreIncomplete = errors.New("restore completed with failures")
@@ -136,47 +149,22 @@ type EngineStore interface {
 	AddProjectMember(ctx context.Context, projectID string, userID string, role string) error
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
 	BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (database.SnapshotReader, error)
-	CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error
-	CreateApkPackage(ctx context.Context, p *models.ApkPackage) error
 	CreateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
-	CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error
 	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
-	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
-	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
-	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
-	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string) error
-	CreateDebianArchitecture(ctx context.Context, arch *models.DebianArchitecture) error
-	CreateDebianComponent(ctx context.Context, comp *models.DebianComponent) error
-	CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error
 	CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error
 	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error
-	CreateGoModule(ctx context.Context, mod *models.GoModule) error
 	CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error)
-	CreateHelmChart(ctx context.Context, chart *models.HelmChart) error
-	CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error
 	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
-	CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error
-	CreateNPMPackage(ctx context.Context, p *models.NPMPackage) (*models.NPMPackage, error)
-	CreateNPMVersion(ctx context.Context, v *models.NPMVersion) (*models.NPMVersion, error)
-	CreateNixPath(ctx context.Context, p *models.NixPath) error
-	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
-	CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error
 	CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error)
 	CreateProject(ctx context.Context, project *models.Project) error
 	CreatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error
-	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
 	CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) error
 	CreateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
 	CreateRepository(ctx context.Context, repo *models.Repository) error
-	CreateRpmPackage(ctx context.Context, pkg *models.Component) error
-	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
 	CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error
-	CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error
 	CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
 	CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error
 	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
-	CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error
-	CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error
 	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)
 	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
 	CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
@@ -187,9 +175,9 @@ type EngineStore interface {
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
 	GetRPMRepo(ctx context.Context, repositoryID string) (*models.RPMRepo, error)
-	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
 	MarkRepoStale(ctx context.Context, repositoryID string) error
 	ReconcileAllStorageUsage(ctx context.Context) (int64, error)
+	RestorePackageRows(ctx context.Context, set database.PackageRowSet, repoID string, rows []json.RawMessage) (int, error)
 	SetProjectGroup(ctx context.Context, projectID string, groupID string, role string, createdBy *string) error
 	SetProjectQuota(
 		ctx context.Context,
@@ -204,8 +192,6 @@ type EngineStore interface {
 	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
 	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
 	UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error
-	UpsertNPMDistTag(ctx context.Context, t *models.NPMDistTag) (*models.NPMDistTag, error)
-	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 	UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error
 }
 
@@ -369,7 +355,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 	// Create manifest
 	manifest := BackupManifest{
-		Version:     "1.0",
+		Version:     ArchiveVersion,
 		CreatedAt:   now,
 		Type:        backupType,
 		TableCounts: make(map[string]int),
@@ -501,60 +487,24 @@ func closeArchive(tw *tar.Writer, gz *gzip.Writer, f *os.File) error {
 	return errors.Join(errs...)
 }
 
-// debPackageRecord pairs an exported Debian package's Component data with
-// the distribution/component names it belongs to. GetDebianPackagesByDistComp
-// returns bare models.Component values with no such reference (Component has
-// no DistributionID/ComponentID fields), so restore needs this side channel
-// to know which (distribution, component) each package belongs under.
-type debPackageRecord struct {
-	Component     models.Component
-	Distribution  string
-	ComponentName string
-}
-
-// packageExport accumulates every per-repo package/metadata table gathered
-// by exportPackageTables, keyed by the same names exportMetadata writes to
-// the archive.
+// packageExport accumulates the per-repo tables gathered by
+// exportPackageTables that have a typed model (docker's dedicated tables and
+// the tables every repository can have), keyed by the same names exportMetadata
+// writes to the archive. The generic package rows of the other formats are
+// archived by exportPackageRows.
 type packageExport struct {
-	debDists           []models.DebianDistribution
-	debComps           []models.DebianComponent
-	debArchs           []models.DebianArchitecture
-	debPackages        []debPackageRecord
-	rpmComponents      []models.Component
-	helmCharts         []*models.HelmChart
-	pypiPackages       []*models.PyPIPackage
-	nugetPackages      []*models.NuGetPackage
-	cargoCrates        []*models.CargoCrate
-	composerPackages   []*models.ComposerPackage
-	rubyGems           []*models.RubyGem
-	conanPackages      []*models.ConanPackage
-	apkPackages        []*models.ApkPackage
-	tfModules          []*models.TerraformModule
-	tfProviders        []*models.TerraformProvider
-	ivyArtifacts       []*models.IvyArtifact
-	sbtArtifacts       []*models.SBTArtifact
-	rawArtifacts       []*models.RawArtifact
-	npmPackages        []*models.NPMPackage
-	npmVersions        []*models.NPMVersion
-	npmDistTags        []*models.NPMDistTag
-	mavenArtifacts     []*models.MavenArtifact
-	condaPackages      []*models.CondaPackage
-	pacmanPackages     []*models.PacmanPackage
-	nixPaths           []*models.NixPath
-	ansibleCollections []*models.AnsibleCollection
-	gomodModules       []*models.GoModule
-	dockerBlobs        []*models.DockerBlob
-	dockerManifests    []*models.DockerManifest
-	dockerTags         []*models.DockerTag
-	webhooks           []*models.Webhook
-	cleanupPolicies    []*models.CleanupPolicy
-	sbomReports        []*models.SBOMReport
-	vexStatements      []*models.VEXStatement
-	licenseResults     []*models.LicenseScanResult
-	secretResults      []*models.SecretScanResult
-	vulnResults        []*models.VulnScanResult
-	aiAnalyses         []*models.AIAnalysis
-	errs               []error
+	dockerBlobs     []*models.DockerBlob
+	dockerManifests []*models.DockerManifest
+	dockerTags      []*models.DockerTag
+	webhooks        []*models.Webhook
+	cleanupPolicies []*models.CleanupPolicy
+	sbomReports     []*models.SBOMReport
+	vexStatements   []*models.VEXStatement
+	licenseResults  []*models.LicenseScanResult
+	secretResults   []*models.SecretScanResult
+	vulnResults     []*models.VulnScanResult
+	aiAnalyses      []*models.AIAnalysis
+	errs            []error
 }
 
 // exportMetadata exports database metadata to the archive.
@@ -605,6 +555,10 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		return err
 	}
 
+	if err := e.exportPackageRows(ctx, tw, manifest, repos); err != nil {
+		return err
+	}
+
 	pkg := e.exportPackageTables(ctx, repos)
 	if len(pkg.errs) > 0 {
 		return fmt.Errorf("incomplete export: %w", errors.Join(pkg.errs...))
@@ -623,36 +577,9 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		data  any
 		count int
 	}{
-		{"debian_distributions", pkg.debDists, len(pkg.debDists)},
-		{"debian_components", pkg.debComps, len(pkg.debComps)},
-		{"debian_architectures", pkg.debArchs, len(pkg.debArchs)},
-		{"deb_packages", pkg.debPackages, len(pkg.debPackages)},
-		{"rpm_packages", pkg.rpmComponents, len(pkg.rpmComponents)},
-		{"helm_charts", pkg.helmCharts, len(pkg.helmCharts)},
-		{"pypi_packages", pkg.pypiPackages, len(pkg.pypiPackages)},
-		{"nuget_packages", pkg.nugetPackages, len(pkg.nugetPackages)},
-		{"cargo_crates", pkg.cargoCrates, len(pkg.cargoCrates)},
-		{"composer_packages", pkg.composerPackages, len(pkg.composerPackages)},
-		{"rubygems", pkg.rubyGems, len(pkg.rubyGems)},
-		{"conan_packages", pkg.conanPackages, len(pkg.conanPackages)},
-		{"apk_packages", pkg.apkPackages, len(pkg.apkPackages)},
-		{"terraform_modules", pkg.tfModules, len(pkg.tfModules)},
-		{"terraform_providers", pkg.tfProviders, len(pkg.tfProviders)},
-		{"ivy_artifacts", pkg.ivyArtifacts, len(pkg.ivyArtifacts)},
-		{"sbt_artifacts", pkg.sbtArtifacts, len(pkg.sbtArtifacts)},
-		{"raw_artifacts", pkg.rawArtifacts, len(pkg.rawArtifacts)},
 		{"docker_blobs", pkg.dockerBlobs, len(pkg.dockerBlobs)},
 		{"docker_manifests", pkg.dockerManifests, len(pkg.dockerManifests)},
 		{"docker_tags", pkg.dockerTags, len(pkg.dockerTags)},
-		{"npm_packages", pkg.npmPackages, len(pkg.npmPackages)},
-		{"npm_versions", pkg.npmVersions, len(pkg.npmVersions)},
-		{"npm_dist_tags", pkg.npmDistTags, len(pkg.npmDistTags)},
-		{"maven_artifacts", pkg.mavenArtifacts, len(pkg.mavenArtifacts)},
-		{"conda_packages", pkg.condaPackages, len(pkg.condaPackages)},
-		{"pacman_packages", pkg.pacmanPackages, len(pkg.pacmanPackages)},
-		{"nix_paths", pkg.nixPaths, len(pkg.nixPaths)},
-		{"ansible_collections", pkg.ansibleCollections, len(pkg.ansibleCollections)},
-		{"gomod_modules", pkg.gomodModules, len(pkg.gomodModules)},
 		{"webhooks", pkg.webhooks, len(pkg.webhooks)},
 		{"cleanup_policies", pkg.cleanupPolicies, len(pkg.cleanupPolicies)},
 		{"sbom_reports", pkg.sbomReports, len(pkg.sbomReports)},
@@ -729,7 +656,10 @@ func (e *exporter) exportPackageTables(ctx context.Context, repos []*models.Repo
 	var pkg packageExport
 
 	for _, repo := range repos {
-		e.exportFormatTables(ctx, repo, &pkg)
+		if repo.Format == dockerFormat {
+			e.exportDockerTables(ctx, repo, &pkg)
+		}
+
 		e.exportRepoScopedTables(ctx, repo, &pkg)
 	}
 
@@ -743,94 +673,20 @@ func (e *exporter) exportPackageTables(ctx context.Context, repos []*models.Repo
 	return pkg
 }
 
-// exportFormatTables gathers the format-specific package tables of one repo.
-//
-//nolint:gocyclo,cyclop // one case per format
-//nolint:cyclop,gocyclo // one case per format
-func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
+// exportDockerTables gathers the dedicated tables of one docker repo: docker
+// is the one format that keeps its own tables instead of the generic package
+// model.
+func (e *exporter) exportDockerTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	id := repo.ID
 
-	switch repo.Format {
-	case "rpm":
-		// GetComponentsByRepo returns the rpm_packages rows joined with
-		// their blob's sha256 — exactly what CreateRpmPackage needs to
-		// round-trip on restore.
-		v, err := e.db.GetComponentsByRepo(ctx, id)
-		collectRepoList(pkg, &pkg.rpmComponents, "rpm packages", id, v, err)
-	case "deb":
-		e.exportDebPackages(ctx, repo, pkg)
-	case "helm":
-		v, err := e.db.ListHelmCharts(ctx, id)
-		collectRepoList(pkg, &pkg.helmCharts, "helm charts", id, v, err)
-	case "pypi":
-		v, err := e.db.ListPyPIPackages(ctx, id)
-		collectRepoList(pkg, &pkg.pypiPackages, "pypi packages", id, v, err)
-	case "nuget":
-		v, err := e.db.ListNuGetPackages(ctx, id)
-		collectRepoList(pkg, &pkg.nugetPackages, "nuget packages", id, v, err)
-	case "cargo":
-		// SearchCargoCrates ILIKEs name/description against "%"+query+"%";
-		// an empty query matches everything, giving a bulk "list all"
-		// without a dedicated method.
-		v, err := e.db.SearchCargoCrates(ctx, id, "", bulkListLimit)
-		collectRepoList(pkg, &pkg.cargoCrates, "cargo crates", id, v, err)
-	case "composer":
-		v, err := e.db.ListComposerPackages(ctx, id)
-		collectRepoList(pkg, &pkg.composerPackages, "composer packages", id, v, err)
-	case "rubygems":
-		v, err := e.db.ListRubyGems(ctx, id)
-		collectRepoList(pkg, &pkg.rubyGems, "ruby gems", id, v, err)
-	case "conan":
-		v, err := e.db.ListConanPackages(ctx, id)
-		collectRepoList(pkg, &pkg.conanPackages, "conan packages", id, v, err)
-	case "nix":
-		v, err := e.db.ListNixPaths(ctx, id)
-		collectRepoList(pkg, &pkg.nixPaths, "nix paths", id, v, err)
-	case "apk":
-		v, err := e.db.ListApkPackages(ctx, id)
-		collectRepoList(pkg, &pkg.apkPackages, "apk packages", id, v, err)
-	case "terraform":
-		mods, err := e.db.ListTerraformModules(ctx, id)
-		collectRepoList(pkg, &pkg.tfModules, "terraform modules", id, mods, err)
+	blobs, err := e.db.ListDockerBlobs(ctx, id)
+	collectRepoList(pkg, &pkg.dockerBlobs, "docker blobs", id, blobs, err)
 
-		provs, err := e.db.ListTerraformProviders(ctx, id)
-		collectRepoList(pkg, &pkg.tfProviders, "terraform providers", id, provs, err)
-	case "ivy":
-		v, err := e.db.ListIvyArtifacts(ctx, id)
-		collectRepoList(pkg, &pkg.ivyArtifacts, "ivy artifacts", id, v, err)
-	case "sbt":
-		v, err := e.db.ListSBTArtifacts(ctx, id)
-		collectRepoList(pkg, &pkg.sbtArtifacts, "sbt artifacts", id, v, err)
-	case "raw":
-		v, err := e.db.ListRawArtifacts(ctx, id, "")
-		collectRepoList(pkg, &pkg.rawArtifacts, "raw artifacts", id, v, err)
-	case "docker":
-		blobs, err := e.db.ListDockerBlobs(ctx, id)
-		collectRepoList(pkg, &pkg.dockerBlobs, "docker blobs", id, blobs, err)
+	manifests, err := e.db.ListDockerManifestsByRepo(ctx, id)
+	collectRepoList(pkg, &pkg.dockerManifests, "docker manifests", id, manifests, err)
 
-		manifests, err := e.db.ListDockerManifestsByRepo(ctx, id)
-		collectRepoList(pkg, &pkg.dockerManifests, "docker manifests", id, manifests, err)
-
-		tags, err := e.db.ListDockerTagsByRepo(ctx, id, bulkListLimit)
-		collectRepoList(pkg, &pkg.dockerTags, "docker tags", id, tags, err)
-	case "npm":
-		e.exportNPMPackages(ctx, repo, pkg)
-	case "maven":
-		v, err := e.db.ListMavenArtifactsByRepo(ctx, id)
-		collectRepoList(pkg, &pkg.mavenArtifacts, "maven artifacts", id, v, err)
-	case "ansible":
-		v, err := e.db.ListAnsibleCollections(ctx, id)
-		collectRepoList(pkg, &pkg.ansibleCollections, "ansible collections", id, v, err)
-	case "pacman":
-		v, err := e.db.ListPacmanPackages(ctx, id)
-		collectRepoList(pkg, &pkg.pacmanPackages, "pacman packages", id, v, err)
-	case "conda":
-		v, err := e.db.ListAllCondaPackages(ctx, id)
-		collectRepoList(pkg, &pkg.condaPackages, "conda packages", id, v, err)
-	case "go":
-		v, err := e.db.ListGoModulesByRepo(ctx, id)
-		collectRepoList(pkg, &pkg.gomodModules, "gomod modules", id, v, err)
-	}
+	tags, err := e.db.ListDockerTagsByRepo(ctx, id, bulkListLimit)
+	collectRepoList(pkg, &pkg.dockerTags, "docker tags", id, tags, err)
 }
 
 // exportRepoScopedTables gathers the tables every repo can have regardless of
@@ -861,94 +717,6 @@ func (e *exporter) exportRepoScopedTables(ctx context.Context, repo *models.Repo
 
 	analyses, _, err := e.db.ListAIAnalyses(ctx, id, "", false, bulkListLimit, 0)
 	collectRepoList(pkg, &pkg.aiAnalyses, "ai analyses", id, analyses, err)
-}
-
-// exportDebPackages backs up one Debian repo's distribution/component/
-// architecture hierarchy plus every package under it. GetDebianPackagesByDistComp
-// is the only listing that returns package rows with a resolved sha256, and
-// it requires a (distribution, component, architecture) name triple, so we
-// enumerate the hierarchy first via the existing bulk-list methods.
-func (e *exporter) exportDebPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
-	dists, err := e.db.GetDebianDistributionsByRepo(ctx, repo.ID)
-	if err != nil {
-		pkg.fail("debian distributions", "repo "+repo.ID, err)
-		return
-	}
-
-	pkg.debDists = append(pkg.debDists, dists...)
-
-	for _, dist := range dists {
-		comps, err := e.db.GetDebianComponentsByDist(ctx, dist.ID)
-		if err != nil {
-			pkg.fail("debian components", "dist "+dist.ID, err)
-			continue
-		}
-
-		pkg.debComps = append(pkg.debComps, comps...)
-
-		archs, err := e.db.GetDebianArchitecturesByDist(ctx, dist.ID)
-		if err != nil {
-			pkg.fail("debian architectures", "dist "+dist.ID, err)
-			continue
-		}
-
-		pkg.debArchs = append(pkg.debArchs, archs...)
-
-		for _, comp := range comps {
-			for _, arch := range archs {
-				dps, err := e.db.GetDebianPackagesByDistComp(ctx, repo.ID, dist.Name, comp.Name, arch.Name)
-				if err != nil {
-					pkg.fail("deb packages", "repo "+repo.ID+" "+dist.Name+"/"+comp.Name+"/"+arch.Name, err)
-
-					continue
-				}
-
-				for _, p := range dps {
-					pkg.debPackages = append(pkg.debPackages, debPackageRecord{
-						Component:     p,
-						Distribution:  dist.Name,
-						ComponentName: comp.Name,
-					})
-				}
-			}
-		}
-	}
-}
-
-// exportNPMPackages backs up one npm repo's packages, tarball versions
-// (with the blob's sha256/size resolved via ListNPMVersionsByRepo, not the
-// live blobs.id UUID), and dist tags (dist tags have no bulk-list-by-repo
-// method, so they're composed per package via the existing GetNPMDistTags).
-func (e *exporter) exportNPMPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
-	packages, err := e.db.ListAllNPMPackages(ctx, repo.ID)
-	if err != nil {
-		pkg.fail("npm packages", "repo "+repo.ID, err)
-		return
-	}
-
-	pkg.npmPackages = append(pkg.npmPackages, packages...)
-
-	if versions, err := e.db.ListNPMVersionsByRepo(ctx, repo.ID); err != nil {
-		pkg.fail("npm versions", "repo "+repo.ID, err)
-	} else {
-		pkg.npmVersions = append(pkg.npmVersions, versions...)
-	}
-
-	for _, p := range packages {
-		tags, err := e.db.GetNPMDistTags(ctx, p.ID)
-		if err != nil {
-			pkg.fail("npm dist tags", "package "+p.ID, err)
-			continue
-		}
-
-		for tag, version := range tags {
-			pkg.npmDistTags = append(pkg.npmDistTags, &models.NPMDistTag{
-				PackageID: p.ID,
-				Tag:       tag,
-				Version:   version,
-			})
-		}
-	}
 }
 
 // writeListedTable writes a listed global table. A failed list call fails the
@@ -1148,33 +916,33 @@ func (e *Engine) writeJSONLFile(tw *tar.Writer, filename string, data any) error
 
 // restoreState carries the id remaps built up while walking the archive:
 // most Create* methods regenerate a server-side id (repositories, users,
-// debian distributions/components, promotion pipelines, release bundles,
-// projects all do), so every table that references one of those ids
-// must be rewritten to point at the NEW id before it's restored.
+// promotion pipelines, release bundles, projects all do), so every table that
+// references one of those ids must be rewritten to point at the NEW id before
+// it's restored. The package rows of a repository need no remap: their ids
+// are derived from the new repository id (see database.RestorePackageRows).
 type restoreState struct {
-	repoIDMap       map[string]string    // old repository id -> new
-	userIDMap       map[string]string    // old user id -> new
-	keptUsers       map[string]struct{}  // old ids of users whose name already exists on the target
-	distIDMap       map[string]string    // old debian_distributions id -> new
-	distByRepoName  map[string]string    // old_repo_id+"|"+dist_name -> new dist id
-	compByDistName  map[string]string    // new_dist_id+"|"+comp_name -> new comp id
-	pipelineIDMap   map[string]string    // old promotion_pipelines id -> new
-	bundleIDMap     map[string]string    // old release_bundles id -> new
-	projectIDMap    map[string]string    // old projects (organizations) id -> new
-	groupIDMap      map[string]string    // old groups id -> new
-	targetIDMap     map[string]string    // old permission_targets id -> new (or the existing same-named target)
-	npmPackageIDMap map[string]string    // old npm_packages id -> new
-	hostedRepos     []*models.Repository // restored non-proxy, non-group repos (new ids)
-	failures        int                  // records skipped/failed outside Engine methods
+	repoIDMap     map[string]string             // old repository id -> new
+	userIDMap     map[string]string             // old user id -> new
+	keptUsers     map[string]struct{}           // old ids of users whose name already exists on the target
+	pipelineIDMap map[string]string             // old promotion_pipelines id -> new
+	bundleIDMap   map[string]string             // old release_bundles id -> new
+	projectIDMap  map[string]string             // old projects id -> new
+	groupIDMap    map[string]string             // old groups id -> new
+	targetIDMap   map[string]string             // old permission_targets id -> new (or the existing same-named target)
+	restoredRepos map[string]*models.Repository // old repository id -> the restored repository
+	failures      int                           // records skipped/failed outside Engine methods
+	// companionIDs are the archived ids of the companion rows (deb distributions
+	// and components) restored per new repository id.
+	companionIDs map[string][]string
+	// mavenCoords are the group/artifact pairs of the restored packages of
+	// repositories whose descriptor asks for maven metadata regeneration, by
+	// new repository id.
+	mavenCoords map[string]map[[2]string]struct{}
 	// projectRepos are restored repositories that belonged to a non-system
 	// project. Repositories are restored before projects, so they are inserted
 	// into the system project and moved once the project exists
 	// (restoreProjects).
 	projectRepos []projectRepo
-	// legacyMemberRole is the organization-wide member_role of every legacy
-	// ("organizations") archive entry by old id, needed to map plain members to
-	// a project role.
-	legacyMemberRole map[string]string
 }
 
 type projectRepo struct {
@@ -1184,19 +952,17 @@ type projectRepo struct {
 
 func newRestoreState() *restoreState {
 	return &restoreState{
-		repoIDMap:        map[string]string{},
-		userIDMap:        map[string]string{},
-		keptUsers:        map[string]struct{}{},
-		distIDMap:        map[string]string{},
-		distByRepoName:   map[string]string{},
-		compByDistName:   map[string]string{},
-		pipelineIDMap:    map[string]string{},
-		bundleIDMap:      map[string]string{},
-		projectIDMap:     map[string]string{},
-		groupIDMap:       map[string]string{},
-		targetIDMap:      map[string]string{},
-		legacyMemberRole: map[string]string{},
-		npmPackageIDMap:  map[string]string{},
+		repoIDMap:     map[string]string{},
+		userIDMap:     map[string]string{},
+		keptUsers:     map[string]struct{}{},
+		pipelineIDMap: map[string]string{},
+		bundleIDMap:   map[string]string{},
+		projectIDMap:  map[string]string{},
+		groupIDMap:    map[string]string{},
+		targetIDMap:   map[string]string{},
+		restoredRepos: map[string]*models.Repository{},
+		companionIDs:  map[string][]string{},
+		mavenCoords:   map[string]map[[2]string]struct{}{},
 	}
 }
 
@@ -1281,9 +1047,8 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 		return err
 	}
 
-	// Validate manifest version
-	if manifest.Version != "1.0" {
-		return fmt.Errorf("unsupported backup version: %s", manifest.Version) //nolint:err113 // dynamic error with runtime context
+	if manifest.Version != ArchiveVersion {
+		return fmt.Errorf("%w: archive version %q, this server restores %q", ErrUnsupportedArchive, manifest.Version, ArchiveVersion)
 	}
 
 	// Reset tar reader
@@ -1303,8 +1068,9 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 	e.restoreSkips.Store(0)
 
 	// Process files. Order matters: exportMetadata always writes
-	// repositories/users/groups first, then the debian hierarchy before
-	// deb_packages, then promotion_pipelines before release_bundles before
+	// repositories/users/groups first, then every repository's package rows
+	// (companions, packages, versions, files, side tables, tags), then
+	// promotion_pipelines before release_bundles before
 	// release_bundle_items/bundle_promotions, then projects before
 	// project_members and project_groups — the restore steps rely on that order to have the id remaps
 	// they need already populated in st.
@@ -1323,6 +1089,14 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 		if strings.HasPrefix(header.Name, "blobs/") {
 			if err := e.restoreBlob(ctx, tarReader, header); err != nil {
 				e.restoreWarn("failed to restore blob", "name", header.Name, "error", err)
+			}
+
+			continue
+		}
+
+		if strings.HasPrefix(header.Name, packageRowsDir) {
+			if err := e.restorePackageRows(ctx, tarReader, header.Name, st); err != nil {
+				return fmt.Errorf("failed to restore %s: %w", header.Name, err)
 			}
 
 			continue
@@ -1412,37 +1186,6 @@ func (e *Engine) restoreSteps() map[string]restoreFunc {
 		"permission_assignments.jsonl":   e.restorePermissionAssignments,
 		"user_groups.jsonl":              e.restoreUserGroups,
 		"storage_quotas.jsonl":           e.restoreStorageQuotas,
-		"debian_distributions.jsonl":     e.restoreDebianDistributions,
-		"debian_components.jsonl":        e.restoreDebianComponents,
-		"debian_architectures.jsonl":     e.restoreDebianArchitectures,
-		"deb_packages.jsonl":             e.restoreDebPackages,
-		"rpm_packages.jsonl":             e.restoreRpmPackages,
-		"helm_charts.jsonl": repoScoped(e.log, "helm chart",
-			func(c *models.HelmChart) *string { return &c.RepositoryID }, false, e.db.CreateHelmChart),
-		"pypi_packages.jsonl": repoScoped(e.log, "pypi package",
-			func(c *models.PyPIPackage) *string { return &c.RepositoryID }, false, e.db.CreatePyPIPackage),
-		"nuget_packages.jsonl": repoScoped(e.log, "nuget package",
-			func(c *models.NuGetPackage) *string { return &c.RepositoryID }, false, e.db.CreateNuGetPackage),
-		"cargo_crates.jsonl": repoScoped(e.log, "cargo crate",
-			func(c *models.CargoCrate) *string { return &c.RepositoryID }, false, e.db.CreateCargoCrate),
-		"composer_packages.jsonl": repoScoped(e.log, "composer package",
-			func(c *models.ComposerPackage) *string { return &c.RepositoryID }, false, e.db.CreateComposerPackage),
-		"rubygems.jsonl": repoScoped(e.log, "ruby gem",
-			func(c *models.RubyGem) *string { return &c.RepositoryID }, false, e.db.CreateRubyGem),
-		"conan_packages.jsonl": repoScoped(e.log, "conan package",
-			func(c *models.ConanPackage) *string { return &c.RepositoryID }, false, e.db.CreateConanPackage),
-		"apk_packages.jsonl": repoScoped(e.log, "apk package",
-			func(c *models.ApkPackage) *string { return &c.RepositoryID }, false, e.db.CreateApkPackage),
-		"terraform_modules.jsonl": repoScoped(e.log, "terraform module",
-			func(c *models.TerraformModule) *string { return &c.RepositoryID }, false, e.db.CreateTerraformModule),
-		"terraform_providers.jsonl": repoScoped(e.log, "terraform provider",
-			func(c *models.TerraformProvider) *string { return &c.RepositoryID }, false, e.db.CreateTerraformProvider),
-		"ivy_artifacts.jsonl": repoScoped(e.log, "ivy artifact",
-			func(c *models.IvyArtifact) *string { return &c.RepositoryID }, false, e.db.CreateIvyArtifact),
-		"sbt_artifacts.jsonl": repoScoped(e.log, "sbt artifact",
-			func(c *models.SBTArtifact) *string { return &c.RepositoryID }, false, e.db.CreateSBTArtifact),
-		"raw_artifacts.jsonl": repoScoped(e.log, "raw artifact",
-			func(c *models.RawArtifact) *string { return &c.RepositoryID }, false, e.db.UpsertRawArtifact),
 		"docker_blobs.jsonl": repoScoped(e.log, "docker blob",
 			func(c *models.DockerBlob) *string { return &c.RepositoryID }, false, e.db.CreateDockerBlob),
 		"docker_manifests.jsonl": repoScoped(e.log, "docker manifest",
@@ -1454,21 +1197,6 @@ func (e *Engine) restoreSteps() map[string]restoreFunc {
 		// non-fatal to the rest of the restore.
 		"docker_tags.jsonl": repoScoped(e.log, "docker tag",
 			func(c *models.DockerTag) *string { return &c.RepositoryID }, false, e.db.UpsertDockerTag),
-		"npm_packages.jsonl":  e.restoreNPMPackages,
-		"npm_versions.jsonl":  e.restoreNPMVersions,
-		"npm_dist_tags.jsonl": e.restoreNPMDistTags,
-		"maven_artifacts.jsonl": repoScoped(e.log, "maven artifact",
-			func(c *models.MavenArtifact) *string { return &c.RepositoryID }, false, e.restoreMavenArtifact),
-		"conda_packages.jsonl": repoScoped(e.log, "conda package",
-			func(c *models.CondaPackage) *string { return &c.RepositoryID }, false, e.db.CreateCondaPackage),
-		"nix_paths.jsonl": repoScoped(e.log, "nix path",
-			func(c *models.NixPath) *string { return &c.RepositoryID }, false, e.db.CreateNixPath),
-		"ansible_collections.jsonl": repoScoped(e.log, "ansible collection",
-			func(c *models.AnsibleCollection) *string { return &c.RepositoryID }, false, e.db.CreateAnsibleCollection),
-		"pacman_packages.jsonl": repoScoped(e.log, "pacman package",
-			func(c *models.PacmanPackage) *string { return &c.RepositoryID }, false, e.db.CreatePacmanPackage),
-		"gomod_modules.jsonl": repoScoped(e.log, "go module",
-			func(c *models.GoModule) *string { return &c.RepositoryID }, false, e.restoreGoModule),
 		"webhooks.jsonl": repoScoped(e.log, "webhook",
 			func(c *models.Webhook) *string { return &c.RepositoryID }, true, e.db.CreateWebhook),
 		"cleanup_policies.jsonl": repoScoped(e.log, "cleanup policy",
@@ -1497,9 +1225,6 @@ func (e *Engine) restoreSteps() map[string]restoreFunc {
 		"project_quotas.jsonl":           e.restoreProjectQuotas,
 		"project_cleanup_policies.jsonl": e.restoreProjectCleanupPolicies,
 		"project_groups.jsonl":           e.restoreProjectGroups,
-		// Archives written before organizations became projects.
-		"organizations.jsonl": e.restoreLegacyOrganizations,
-		"org_members.jsonl":   e.restoreLegacyOrgMembers,
 	}
 }
 
@@ -1574,23 +1299,18 @@ func repoScoped[T any](
 // always generates a fresh server-side id (see postgres.go), so every
 // subsequent table referencing a repository must go through repoIDMap.
 func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *restoreState) error {
-	archived, err := decodeSlice[*archivedRepository](r)
+	repos, err := decodeSlice[*models.Repository](r)
 	if err != nil {
 		return fmt.Errorf("failed to decode repositories: %w", err)
 	}
 
-	for _, ar := range archived {
-		repo := &ar.Repository
+	for _, repo := range repos {
 		oldID := repo.ID
 
 		// These names shadow the SPA pages and the isolated /repos/<marker>/ routes.
 		if repotype.ReservedName(repo.Name) {
 			e.restoreWarn("skipping repository with a reserved name", "name", repo.Name)
 			continue
-		}
-
-		if repo.ProjectID == nil {
-			repo.ProjectID = ar.LegacyOrgID
 		}
 
 		oldProjectID := ""
@@ -1607,9 +1327,7 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 
 		st.repoIDMap[oldID] = repo.ID
 
-		if repo.RepoType != "proxy" && repo.RepoType != "group" {
-			st.hostedRepos = append(st.hostedRepos, repo)
-		}
+		st.restoredRepos[oldID] = repo
 
 		if oldProjectID != "" {
 			st.projectRepos = append(st.projectRepos, projectRepo{repo: repo, oldProjectID: oldProjectID})
@@ -1715,254 +1433,6 @@ func (e *Engine) restoreGroupMembers(ctx context.Context, r io.Reader, st *resto
 	return nil
 }
 
-// regenerateRestoredMetadata makes the generated metadata of restored hosted
-// repositories servable. Backups carry package rows only; repodata, dists and
-// maven-metadata.xml are derived, and nothing else would create them until a
-// new upload hits the same repository. rpm gets its rpm_repos row (the
-// worker's only index of work) marked stale, so the periodic stale sweep also
-// covers a missing notifier; deb and pacman are enqueued per repo, maven per GA.
-func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreState) {
-	for _, repo := range st.hostedRepos {
-		switch repo.Format {
-		case "rpm":
-			e.regenerateRestoredRPM(ctx, repo)
-		case "deb":
-			if e.regen != nil {
-				e.regen.NotifyDebStale(repo.ID)
-			}
-		case "pacman":
-			if e.regen != nil {
-				e.regen.NotifyPacmanStale(repo.ID)
-			}
-		case "apk":
-			if e.regen != nil {
-				e.regen.NotifyApkStale(repo.ID)
-			}
-		case "maven":
-			e.regenerateRestoredMaven(ctx, repo)
-		}
-	}
-}
-
-func (e *Engine) regenerateRestoredRPM(ctx context.Context, repo *models.Repository) {
-	existing, err := e.db.GetRPMRepo(ctx, repo.ID)
-	if err != nil {
-		e.restoreWarn("failed to look up rpm repo after restore", "repo", repo.Name, "error", err)
-		return
-	}
-
-	if existing == nil {
-		if err := e.db.CreateRPMRepo(ctx, &models.RPMRepo{RepositoryID: repo.ID, BaseArch: "x86_64"}); err != nil {
-			e.restoreWarn("failed to create rpm repo after restore", "repo", repo.Name, "error", err)
-			return
-		}
-	}
-
-	if err := e.db.MarkRepoStale(ctx, repo.ID); err != nil {
-		e.restoreWarn("failed to mark rpm repo stale after restore", "repo", repo.Name, "error", err)
-		return
-	}
-
-	if e.regen != nil {
-		e.regen.NotifyRPMStale(repo.ID)
-	}
-}
-
-func (e *Engine) regenerateRestoredMaven(ctx context.Context, repo *models.Repository) {
-	if e.regen == nil {
-		return
-	}
-
-	arts, err := e.db.ListMavenArtifactsByRepo(ctx, repo.ID)
-	if err != nil {
-		e.restoreWarn("failed to list maven artifacts after restore", "repo", repo.Name, "error", err)
-		return
-	}
-
-	seen := map[[2]string]struct{}{}
-
-	for _, a := range arts {
-		key := [2]string{a.GroupID, a.ArtifactCoord}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-
-		seen[key] = struct{}{}
-
-		e.regen.NotifyMavenStale(repo.ID, a.GroupID, a.ArtifactCoord)
-	}
-}
-
-func (e *Engine) restoreDebianDistributions(ctx context.Context, r io.Reader, st *restoreState) error {
-	dists, err := decodeSlice[models.DebianDistribution](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode debian distributions: %w", err)
-	}
-
-	for _, dist := range dists {
-		oldID := dist.ID
-		oldRepoID := dist.RepositoryID
-
-		newRepoID, ok := st.repoIDMap[oldRepoID]
-		if !ok {
-			e.restoreWarn("skipping debian distribution: source repository not restored", "repo_id", oldRepoID, "name", dist.Name)
-			continue
-		}
-
-		dist.RepositoryID = newRepoID
-
-		if err := e.db.CreateDebianDistribution(ctx, &dist); err != nil {
-			e.restoreWarn("failed to restore debian distribution", "name", dist.Name, "error", err)
-			continue
-		}
-
-		st.distIDMap[oldID] = dist.ID
-		st.distByRepoName[oldRepoID+"|"+dist.Name] = dist.ID
-	}
-
-	return nil
-}
-
-func (e *Engine) restoreDebianComponents(ctx context.Context, r io.Reader, st *restoreState) error {
-	comps, err := decodeSlice[models.DebianComponent](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode debian components: %w", err)
-	}
-
-	for _, comp := range comps {
-		newDistID, ok := st.distIDMap[comp.DistributionID]
-		if !ok {
-			e.restoreWarn("skipping debian component: source distribution not restored", "dist_id", comp.DistributionID, "name", comp.Name)
-			continue
-		}
-
-		comp.DistributionID = newDistID
-
-		if err := e.db.CreateDebianComponent(ctx, &comp); err != nil {
-			e.restoreWarn("failed to restore debian component", "name", comp.Name, "error", err)
-			continue
-		}
-
-		st.compByDistName[newDistID+"|"+comp.Name] = comp.ID
-	}
-
-	return nil
-}
-
-func (e *Engine) restoreDebianArchitectures(ctx context.Context, r io.Reader, st *restoreState) error {
-	archs, err := decodeSlice[models.DebianArchitecture](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode debian architectures: %w", err)
-	}
-
-	for _, arch := range archs {
-		newDistID, ok := st.distIDMap[arch.DistributionID]
-		if !ok {
-			e.restoreWarn(
-				"skipping debian architecture: source distribution not restored",
-				"dist_id",
-				arch.DistributionID,
-				"name",
-				arch.Name,
-			)
-			continue
-		}
-
-		arch.DistributionID = newDistID
-
-		if err := e.db.CreateDebianArchitecture(ctx, &arch); err != nil {
-			e.restoreWarn("failed to restore debian architecture", "name", arch.Name, "error", err)
-		}
-	}
-
-	return nil
-}
-
-// restoreDebPackages re-derives each package's blob via UpsertBlob (the
-// blob content itself lands separately via restoreBlob) since CreateDebPackage
-// expects Component.ArtifactID to already be a blobs-table id, not a sha256.
-func (e *Engine) restoreDebPackages(ctx context.Context, r io.Reader, st *restoreState) error {
-	records, err := decodeSlice[debPackageRecord](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode deb packages: %w", err)
-	}
-
-	for _, rec := range records {
-		comp := rec.Component
-
-		newRepoID, ok := st.repoIDMap[comp.RepositoryID]
-		if !ok {
-			e.restoreWarn("skipping deb package: source repository not restored", "repo_id", comp.RepositoryID, "filename", comp.Filename)
-			continue
-		}
-
-		newDistID, ok := st.distByRepoName[comp.RepositoryID+"|"+rec.Distribution]
-		if !ok {
-			e.restoreWarn(
-				"skipping deb package: source distribution not restored",
-				"distribution",
-				rec.Distribution,
-				"filename",
-				comp.Filename,
-			)
-			continue
-		}
-
-		newCompID, ok := st.compByDistName[newDistID+"|"+rec.ComponentName]
-		if !ok {
-			e.restoreWarn("skipping deb package: source component not restored", "component", rec.ComponentName, "filename", comp.Filename)
-			continue
-		}
-
-		blobID, err := e.db.UpsertBlob(ctx, comp.SHA256, comp.SHA256, comp.PackageSize)
-		if err != nil {
-			e.restoreWarn("failed to upsert blob for deb package", "filename", comp.Filename, "error", err)
-			continue
-		}
-
-		comp.RepositoryID = newRepoID
-		comp.ArtifactID = blobID
-
-		if err := e.db.CreateDebPackage(ctx, &comp, newDistID, newCompID); err != nil {
-			e.restoreWarn("failed to restore deb package", "filename", comp.Filename, "error", err)
-		}
-	}
-
-	return nil
-}
-
-// restoreRpmPackages mirrors restoreDebPackages's blob handling; rpm
-// packages need no distribution/component association.
-func (e *Engine) restoreRpmPackages(ctx context.Context, r io.Reader, st *restoreState) error {
-	comps, err := decodeSlice[models.Component](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode rpm packages: %w", err)
-	}
-
-	for _, comp := range comps {
-		newRepoID, ok := st.repoIDMap[comp.RepositoryID]
-		if !ok {
-			e.restoreWarn("skipping rpm package: source repository not restored", "repo_id", comp.RepositoryID, "filename", comp.Filename)
-			continue
-		}
-
-		blobID, err := e.db.UpsertBlob(ctx, comp.SHA256, comp.SHA256, comp.PackageSize)
-		if err != nil {
-			e.restoreWarn("failed to upsert blob for rpm package", "filename", comp.Filename, "error", err)
-			continue
-		}
-
-		comp.RepositoryID = newRepoID
-		comp.ArtifactID = blobID
-
-		if err := e.db.CreateRpmPackage(ctx, &comp); err != nil {
-			e.restoreWarn("failed to restore rpm package", "filename", comp.Filename, "error", err)
-		}
-	}
-
-	return nil
-}
-
 // linkRowBlob prepares a restored row that references a blob: it rejects an
 // empty sha256 and sets *blobID to the blobs-table id that ensure (EnsureBlob
 // or UpsertBlob, which take the blob's name and size) returns for it. what names
@@ -1999,128 +1469,6 @@ func (e *Engine) restoreDockerManifest(ctx context.Context, m *models.DockerMani
 	}
 
 	return e.db.CreateDockerManifest(ctx, m)
-}
-
-// restoreGoModule restores one Go module version. Backups taken on <= 0.4.1
-// carry an empty ZipHash and, in ZipBlobKey, the key of the one zip every
-// version shared: neither identifies this version's zip, so the row cannot be
-// restored (relinking it by key would serve another module's zip). It is
-// skipped and counted as a restore failure; re-upload the version.
-func (e *Engine) restoreGoModule(ctx context.Context, m *models.GoModule) error {
-	if !database.IsValidBlobSHA256(m.ZipHash) {
-		e.restoreWarn("skipping go module: its backup has no valid zip sha256 (taken on <= 0.4.1); re-upload this version",
-			"module", m.ModulePath, "version", m.Version, "repo_id", m.RepositoryID)
-
-		return nil
-	}
-
-	return e.db.CreateGoModule(ctx, m)
-}
-
-// restoreMavenArtifact re-derives the artifact's blob via UpsertBlob (the
-// blob content itself lands separately via restoreBlob) since
-// CreateMavenArtifact expects BlobID to already be a blobs-table id, not a
-// sha256. Used as repoScoped's create callback for maven_artifacts.
-func (e *Engine) restoreMavenArtifact(ctx context.Context, a *models.MavenArtifact) error {
-	if err := linkRowBlob(ctx, "maven artifact", a.BlobSHA256, &a.BlobID, a.BlobSHA256, a.BlobSizeBytes, e.db.UpsertBlob); err != nil {
-		return err
-	}
-
-	return e.db.CreateMavenArtifact(ctx, a)
-}
-
-// restoreNPMPackages restores npm_packages and records each old->new id
-// mapping in st.npmPackageIDMap, needed by restoreNPMVersions/
-// restoreNPMDistTags to remap their PackageID FK.
-func (e *Engine) restoreNPMPackages(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.NPMPackage](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode npm packages: %w", err)
-	}
-
-	for _, pkg := range items {
-		newRepoID, ok := st.repoIDMap[pkg.RepositoryID]
-		if !ok {
-			e.restoreWarn("skipping npm package: source repository not restored", "repo_id", pkg.RepositoryID, "name", pkg.FullName)
-			continue
-		}
-
-		oldID := pkg.ID
-		pkg.RepositoryID = newRepoID
-
-		if _, err := e.db.CreateNPMPackage(ctx, pkg); err != nil {
-			e.restoreWarn("failed to restore npm package", "name", pkg.FullName, "error", err)
-			continue
-		}
-
-		st.npmPackageIDMap[oldID] = pkg.ID
-	}
-
-	return nil
-}
-
-// restoreNPMVersions re-derives each version's tarball blob via UpsertBlob
-// (BlobSHA256/BlobSizeBytes come from ListNPMVersionsByRepo) and remaps
-// PackageID via st.npmPackageIDMap — npm_versions has no RepositoryID of
-// its own, so repoScoped doesn't apply here.
-func (e *Engine) restoreNPMVersions(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.NPMVersion](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode npm versions: %w", err)
-	}
-
-	for _, v := range items {
-		newPackageID, ok := st.npmPackageIDMap[v.PackageID]
-		if !ok {
-			e.restoreWarn("skipping npm version: source package not restored", "package_id", v.PackageID, "version", v.Version)
-			continue
-		}
-
-		if v.BlobSHA256 == "" {
-			e.restoreWarn("skipping npm version: missing blob sha256", "version", v.Version)
-			continue
-		}
-
-		blobID, err := e.db.UpsertBlob(ctx, v.BlobSHA256, v.BlobSHA256, v.BlobSizeBytes)
-		if err != nil {
-			e.restoreWarn("failed to upsert blob for npm version", "version", v.Version, "error", err)
-			continue
-		}
-
-		v.PackageID = newPackageID
-		v.BlobID = blobID
-
-		if _, err := e.db.CreateNPMVersion(ctx, v); err != nil {
-			e.restoreWarn("failed to restore npm version", "version", v.Version, "error", err)
-		}
-	}
-
-	return nil
-}
-
-// restoreNPMDistTags remaps PackageID via st.npmPackageIDMap; dist tags have
-// no RepositoryID of their own either.
-func (e *Engine) restoreNPMDistTags(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*models.NPMDistTag](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode npm dist tags: %w", err)
-	}
-
-	for _, t := range items {
-		newPackageID, ok := st.npmPackageIDMap[t.PackageID]
-		if !ok {
-			e.restoreWarn("skipping npm dist tag: source package not restored", "package_id", t.PackageID, "tag", t.Tag)
-			continue
-		}
-
-		t.PackageID = newPackageID
-
-		if _, err := e.db.UpsertNPMDistTag(ctx, t); err != nil {
-			e.restoreWarn("failed to restore npm dist tag", "tag", t.Tag, "error", err)
-		}
-	}
-
-	return nil
 }
 
 func (e *Engine) restoreSSOProviders(ctx context.Context, r io.Reader, _ *restoreState) error {
@@ -2302,14 +1650,6 @@ func (e *Engine) restoreBundlePromotions(ctx context.Context, r io.Reader, st *r
 	return nil
 }
 
-// archivedRepository decodes a repository from an archive: the project link
-// is "ProjectID" since projects replaced organizations, "OrgID" before.
-type archivedRepository struct {
-	models.Repository
-
-	LegacyOrgID *string `json:"OrgID"` //nolint:tagliatelle // key of archives written before projects
-}
-
 func (e *Engine) restoreProjects(ctx context.Context, r io.Reader, st *restoreState) error {
 	items, err := decodeSlice[*models.Project](r)
 	if err != nil {
@@ -2321,49 +1661,8 @@ func (e *Engine) restoreProjects(ctx context.Context, r io.Reader, st *restoreSt
 	return nil
 }
 
-// legacyOrganization is an "organizations" archive entry: a project without
-// policy and with the organization-wide member_role.
-type legacyOrganization struct {
-	models.Project
-
-	MemberRole string
-}
-
-// restoreLegacyOrganizations restores an organization as a project with the
-// policy defaults existing organizations got in the migration.
-func (e *Engine) restoreLegacyOrganizations(ctx context.Context, r io.Reader, st *restoreState) error {
-	legacy, err := decodeSlice[*legacyOrganization](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode organizations: %w", err)
-	}
-
-	items := make([]*models.Project, 0, len(legacy))
-
-	for _, l := range legacy {
-		project := l.Project
-		if project.Slug == "" {
-			project.Slug = models.ProjectSlug(project.Name)
-		}
-
-		project.AllowedRepoTypes = []string{models.ProjectRepoTypeHosted}
-		project.RepoNamePrefix = project.Slug + "-"
-		project.MaxRepositories = legacyMaxRepositories
-		project.TokenMaxTTLDays = legacyTokenMaxTTLDays
-		st.legacyMemberRole[project.ID] = l.MemberRole
-		items = append(items, &project)
-	}
-
-	e.createRestoredProjects(ctx, items, st)
-
-	return nil
-}
-
-// Policy defaults the migration gave existing organizations.
-const (
-	systemProjectName     = "system"
-	legacyMaxRepositories = 50
-	legacyTokenMaxTTLDays = 365
-)
+// systemProjectName is the name of the built-in system project.
+const systemProjectName = "system"
 
 func (e *Engine) createRestoredProjects(ctx context.Context, items []*models.Project, st *restoreState) {
 	for _, it := range items {
@@ -2390,10 +1689,6 @@ func (e *Engine) createRestoredProjects(ctx context.Context, items []*models.Pro
 		}
 
 		st.projectIDMap[oldID] = it.ID
-
-		if role, ok := st.legacyMemberRole[oldID]; ok {
-			st.legacyMemberRole[it.ID] = role
-		}
 	}
 
 	e.moveRestoredReposToProjects(ctx, st)
@@ -2427,45 +1722,6 @@ func (e *Engine) restoreProjectMembers(ctx context.Context, r io.Reader, st *res
 
 	for _, it := range items {
 		e.restoreProjectMember(ctx, st, it.ProjectID, it.UserID, it.Role)
-	}
-
-	return nil
-}
-
-// legacyOrgMember is an "org_members" archive entry.
-type legacyOrgMember struct {
-	OrgID  string
-	UserID string
-	Role   string
-}
-
-// restoreLegacyOrgMembers maps the organization roles to project roles: admin
-// becomes maintainer, a plain member gets the role of the organization's
-// member_role (read viewer, write developer, admin maintainer).
-func (e *Engine) restoreLegacyOrgMembers(ctx context.Context, r io.Reader, st *restoreState) error {
-	items, err := decodeSlice[*legacyOrgMember](r)
-	if err != nil {
-		return fmt.Errorf("failed to decode org members: %w", err)
-	}
-
-	for _, it := range items {
-		role := it.Role
-
-		switch it.Role {
-		case "admin":
-			role = models.ProjectRoleMaintainer
-		case "member":
-			switch st.legacyMemberRole[it.OrgID] {
-			case "write":
-				role = models.ProjectRoleDeveloper
-			case "admin":
-				role = models.ProjectRoleMaintainer
-			default:
-				role = models.ProjectRoleViewer
-			}
-		}
-
-		e.restoreProjectMember(ctx, st, it.OrgID, it.UserID, role)
 	}
 
 	return nil

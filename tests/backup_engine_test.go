@@ -121,7 +121,7 @@ func createBackupArchive(t *testing.T, dir string) string {
 	t.Helper()
 
 	manifest := map[string]any{
-		"version":    "1.0",
+		"version":    backup.ArchiveVersion,
 		"created_at": time.Now().UTC(),
 		"type":       "metadata-only",
 		"table_counts": map[string]int{

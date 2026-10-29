@@ -354,12 +354,12 @@ func TestBackupRestore_ProjectsRoundTrip(t *testing.T) {
 	}
 }
 
-// writeLegacyArchive writes a backup in the layout used before organizations
-// became projects: the entries are written in the given order.
-func writeLegacyArchive(t *testing.T, entries []legacyEntry) string {
+// writeEntriesArchive writes a backup archive whose jsonl entries are written
+// in the given order, after the manifest.
+func writeEntriesArchive(t *testing.T, entries []archiveEntry) string {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "legacy.tar.gz")
+	path := filepath.Join(t.TempDir(), "entries.tar.gz")
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -371,8 +371,8 @@ func writeLegacyArchive(t *testing.T, entries []legacyEntry) string {
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
 
-	manifest := BackupManifest{Version: "1.0", CreatedAt: time.Now(), Type: "full", TableCounts: map[string]int{}}
-	all := append([]legacyEntry{{"manifest.json", manifest}}, entries...)
+	manifest := BackupManifest{Version: ArchiveVersion, CreatedAt: time.Now(), Type: "full", TableCounts: map[string]int{}}
+	all := append([]archiveEntry{{"manifest.json", manifest}}, entries...)
 
 	for _, e := range all {
 		data, err := json.Marshal(e.value)
@@ -400,108 +400,7 @@ func writeLegacyArchive(t *testing.T, entries []legacyEntry) string {
 	return path
 }
 
-type legacyEntry struct {
+type archiveEntry struct {
 	name  string
 	value any
-}
-
-func TestRestore_LegacyOrganizationArchive(t *testing.T) {
-	const (
-		oldOwner    = "u-owner"
-		oldAdmin    = "u-admin"
-		oldMember   = "u-member"
-		oldOrgWrite = "org-write"
-		oldOrgRead  = "org-read"
-		oldOrgAdmin = "org-admin"
-		oldRepo     = "repo-1"
-		oldRepoSys  = "repo-sys"
-	)
-
-	users := legacyEntry{"users.jsonl", []map[string]any{
-		{"ID": oldOwner, "Username": "owner"},
-		{"ID": oldAdmin, "Username": "admin"},
-		{"ID": oldMember, "Username": "member"},
-	}}
-	repos := legacyEntry{"repositories.jsonl", []map[string]any{
-		{"ID": oldRepo, "Name": "legacy-repo", "Format": "raw", "RepoType": "hosted", "OrgID": oldOrgWrite},
-		{"ID": oldRepoSys, "Name": "sys-repo", "Format": "raw", "RepoType": "hosted", "OrgID": models.SystemProjectID},
-	}}
-	orgs := legacyEntry{"organizations.jsonl", []map[string]any{
-		{"ID": oldOrgWrite, "Name": "Write-Org", "Slug": "write-org", "OwnerID": oldOwner, "MemberRole": "write"},
-		{"ID": oldOrgRead, "Name": "read-org", "Slug": "read-org", "OwnerID": oldOwner, "MemberRole": "read"},
-		{"ID": oldOrgAdmin, "Name": "admin-org", "Slug": "", "OwnerID": oldOwner, "MemberRole": "admin"},
-	}}
-	members := legacyEntry{"org_members.jsonl", []map[string]any{
-		{"OrgID": oldOrgWrite, "UserID": oldOwner, "Role": "owner"},
-		{"OrgID": oldOrgWrite, "UserID": oldAdmin, "Role": "admin"},
-		{"OrgID": oldOrgWrite, "UserID": oldMember, "Role": "member"},
-		{"OrgID": oldOrgRead, "UserID": oldMember, "Role": "member"},
-		{"OrgID": oldOrgAdmin, "UserID": oldMember, "Role": "member"},
-	}}
-
-	orders := map[string][]legacyEntry{
-		"users first":               {users, repos, orgs, members},
-		"repositories before users": {repos, users, orgs, members},
-	}
-
-	for name, entries := range orders {
-		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			dst := newProjectFakeDB("dst")
-			engine, _ := newTestEngine(t, dst)
-
-			if err := engine.RunRestore(ctx, writeLegacyArchive(t, entries)); err != nil {
-				t.Fatalf("RunRestore: %v", err)
-			}
-
-			assertLegacyProjects(t, dst)
-		})
-	}
-}
-
-func assertLegacyProjects(t *testing.T, dst *projectFakeDB) {
-	t.Helper()
-
-	if len(dst.projects) != 3 {
-		t.Fatalf("restored %d projects, want 3", len(dst.projects))
-	}
-
-	owner, admin, member := dst.userByName(t, "owner"), dst.userByName(t, "admin"), dst.userByName(t, "member")
-
-	for _, tt := range []struct{ name, slug string }{
-		{"Write-Org", "write-org"}, {"read-org", "read-org"}, {"admin-org", "admin-org"},
-	} {
-		p := dst.projectByName(t, tt.name)
-		if p.Slug != tt.slug || p.RepoNamePrefix != tt.slug+"-" || p.MaxRepositories != 50 || p.TokenMaxTTLDays != 365 ||
-			!slices.Equal(p.AllowedRepoTypes, []string{models.ProjectRepoTypeHosted}) || p.AllowedFormats != nil || p.AllowPublicRepos {
-			t.Errorf("%s legacy defaults = %+v", tt.name, p)
-		}
-
-		if p.OwnerID == nil || *p.OwnerID != owner {
-			t.Errorf("%s owner = %v, want %s", tt.name, p.OwnerID, owner)
-		}
-	}
-
-	roles := []struct{ name, project, user, want string }{
-		{"owner stays owner", "Write-Org", owner, models.ProjectRoleOwner},
-		{"admin -> maintainer", "Write-Org", admin, models.ProjectRoleMaintainer},
-		{"member + member_role write -> developer", "Write-Org", member, models.ProjectRoleDeveloper},
-		{"member + member_role read -> viewer", "read-org", member, models.ProjectRoleViewer},
-		{"member + member_role admin -> maintainer", "admin-org", member, models.ProjectRoleMaintainer},
-	}
-
-	for _, r := range roles {
-		if got := dst.roleOf(dst.projectByName(t, r.project).ID, r.user); got != r.want {
-			t.Errorf("%s: role = %q, want %q", r.name, got, r.want)
-		}
-	}
-
-	repo := dst.repoByName(t, "legacy-repo")
-	if want := dst.projectByName(t, "Write-Org").ID; repo.ProjectID == nil || *repo.ProjectID != want {
-		t.Errorf("legacy-repo project = %v, want %s", repo.ProjectID, want)
-	}
-
-	if sys := dst.repoByName(t, "sys-repo"); sys.ProjectID == nil || *sys.ProjectID != models.SystemProjectID {
-		t.Errorf("sys-repo project = %v, want system", sys.ProjectID)
-	}
 }

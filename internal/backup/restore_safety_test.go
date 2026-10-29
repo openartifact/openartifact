@@ -36,7 +36,7 @@ func TestRestore_SerializedAgainstRestoresAndBackups(t *testing.T) {
 	db := &blockingDB{fakeDB: newFakeDB("dst"), started: make(chan struct{}, 2), release: make(chan struct{})}
 	eng, _ := newTestEngine(t, db)
 
-	archive := writeLegacyArchive(t, []legacyEntry{{"users.jsonl", []map[string]any{{"ID": "u1", "Username": "alice"}}}})
+	archive := writeEntriesArchive(t, []archiveEntry{{"users.jsonl", []map[string]any{{"ID": "u1", "Username": "alice"}}}})
 	done := make(chan error, 1)
 
 	go func() { done <- eng.RunRestore(ctx, archive) }()
@@ -80,11 +80,11 @@ func TestRestore_FailureCountIsPerRun(t *testing.T) {
 	db := newFakeDB("dst")
 	eng, _ := newTestEngine(t, db)
 
-	bad := writeLegacyArchive(
+	bad := writeEntriesArchive(
 		t,
-		[]legacyEntry{{"repositories.jsonl", []map[string]any{{"ID": "r1", "Name": "raw", "Format": "raw", "RepoType": "hosted"}}}},
+		[]archiveEntry{{"repositories.jsonl", []map[string]any{{"ID": "r1", "Name": "raw", "Format": "raw", "RepoType": "hosted"}}}},
 	)
-	good := writeLegacyArchive(t, []legacyEntry{{"users.jsonl", []map[string]any{{"ID": "u1", "Username": "alice"}}}})
+	good := writeEntriesArchive(t, []archiveEntry{{"users.jsonl", []map[string]any{{"ID": "u1", "Username": "alice"}}}})
 
 	if err := eng.RunRestore(ctx, bad); !errors.Is(err, ErrRestoreIncomplete) {
 		t.Fatalf("restore with a reserved repository name = %v, want ErrRestoreIncomplete", err)
@@ -105,7 +105,7 @@ func TestRestore_SkipsNullElements(t *testing.T) {
 	db := newFakeDB("dst")
 	eng, _ := newTestEngine(t, db)
 
-	archive := writeLegacyArchive(t, []legacyEntry{
+	archive := writeEntriesArchive(t, []archiveEntry{
 		{"users.jsonl", []any{nil, map[string]any{"ID": "u1", "Username": "alice"}}},
 		{"repositories.jsonl", []any{nil}},
 		{"groups.jsonl", []any{nil}},
