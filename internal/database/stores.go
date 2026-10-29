@@ -34,6 +34,7 @@ type PostgresDB struct {
 	*DependencyTrackStore
 	*AIAnalysisStore
 	*QuotaStore
+	*StorageBackendStore
 	// STORES-STRUCT
 }
 
@@ -65,6 +66,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		DependencyTrackStore: &DependencyTrackStore{core: c},
 		AIAnalysisStore:      &AIAnalysisStore{core: c},
 		QuotaStore:           &QuotaStore{core: c},
+		StorageBackendStore:  &StorageBackendStore{core: c},
 		// STORES-INIT
 	}
 }

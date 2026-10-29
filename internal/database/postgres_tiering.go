@@ -189,13 +189,6 @@ func (p *PostgresDB) DeleteStorageTierIfUnused(ctx context.Context, tierID strin
 	return "", nil
 }
 
-// StorageBackendBusyReason reports why a backend's kind or config must not
-// change (or the backend not be deleted): it holds blobs, is served by a tier
-// or is named by a move journal row. "" means it is idle.
-func (p *PostgresDB) StorageBackendBusyReason(ctx context.Context, backendID string) (string, error) {
-	return storageBackendBusy(ctx, p.db, backendID, true)
-}
-
 func storageBackendBusy(ctx context.Context, q rowQuerier, backendID string, includeTier bool) (string, error) {
 	var blobs, moves, tier bool
 

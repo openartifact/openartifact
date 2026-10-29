@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -289,15 +290,4 @@ func UniqueViolationConstraint(err error) string {
 	}
 
 	return ""
-}
-
-// CountBlobsOnStorageBackend returns how many blobs are recorded on a storage backend.
-func (p *PostgresDB) CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error) {
-	var n int64
-
-	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM blobs WHERE storage_backend_id = $1`, backendID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("failed to count blobs on storage backend: %w", err)
-	}
-
-	return n, nil
 }
