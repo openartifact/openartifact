@@ -493,12 +493,15 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Always re-validate the effective config: the kind may have changed even
-	// when no config was sent. Omitted secrets are preserved.
+	// when no config was sent. Omitted secrets are preserved: the stored
+	// config's own secrets are ciphertext, which prepareStorageConfig would
+	// refuse as submitted plaintext, so they are left out of the input and
+	// carried over from the stored config instead.
 	var raw []byte
 	if patch.Config != nil {
 		raw = *patch.Config
 	} else {
-		raw = backend.Config
+		raw = withoutStorageSecrets(backend.Config)
 	}
 
 	config, err := prepareStorageConfig(r.Context(), backend.Kind, raw, backend.Config)
@@ -534,6 +537,26 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, storageBackendToResponse(backend))
+}
+
+// withoutStorageSecrets returns config without its credential fields
+// (storageSecretFields). A config that is not a JSON object is returned as is.
+func withoutStorageSecrets(config []byte) []byte {
+	cfg := map[string]any{}
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return config
+	}
+
+	for _, f := range storageSecretFields {
+		delete(cfg, f)
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return config
+	}
+
+	return out
 }
 
 // storageLocationEqual compares two backend configs by where the blobs live

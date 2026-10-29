@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -28,6 +29,7 @@ type storageUpdateMockDB struct {
 	backend *models.StorageBackend
 	busy    string
 	updated bool
+	saved   *models.StorageBackend
 }
 
 // UpdateStorageBackendStatus is not exercised by the tests.
@@ -41,8 +43,10 @@ func (m *storageUpdateMockDB) GetStorageBackend(context.Context, string) (*model
 	return &c, nil
 }
 
-func (m *storageUpdateMockDB) UpdateStorageBackend(context.Context, *models.StorageBackend) error {
+func (m *storageUpdateMockDB) UpdateStorageBackend(_ context.Context, b *models.StorageBackend) error {
 	m.updated = true
+	m.saved = b
+
 	return nil
 }
 
@@ -104,6 +108,65 @@ func TestStorageBackendUpdateConflictsWhenBackendBusy(t *testing.T) {
 				t.Errorf("updated = %v with status %d", db.updated, rec.Code)
 			}
 		})
+	}
+}
+
+// A PATCH that omits config (a rename, a kind-only change) re-validates the
+// stored config, whose secrets are enc:v1: ciphertext. That must not be
+// mistaken for a submitted plaintext, and the ciphertext must survive.
+func TestStorageBackendPatchWithoutConfigKeepsEncryptedSecrets(t *testing.T) {
+	if err := crypto.Init("0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = crypto.Init("") })
+
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sealed, err := crypto.Encrypt("topsecret")
+	if err != nil || !crypto.IsEncrypted(sealed) {
+		t.Fatalf("setup: Encrypt = %q, %v", sealed, err)
+	}
+
+	stored, err := json.Marshal(map[string]any{"bucket": "b", "access_key": sealed, "secret_key": sealed})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := &storageUpdateMockDB{backend: &models.StorageBackend{ID: "b1", Name: "cold", Kind: "s3", Config: stored}}
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{IsLegacy: true})))
+		})
+	})
+	NewAdminStorageHandler(db, log, nil).Register(r)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(), http.MethodPatch, "/api/v1/admin/storage/cold", strings.NewReader(`{"name":"renamed"}`),
+	)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+
+	if db.saved == nil || db.saved.Name != "renamed" {
+		t.Fatalf("saved backend = %+v, want it renamed", db.saved)
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(db.saved.Config, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg["bucket"] != "b" || cfg["access_key"] != sealed || cfg["secret_key"] != sealed {
+		t.Errorf("saved config = %s, want the bucket and both stored ciphertexts untouched", db.saved.Config)
 	}
 }
 
