@@ -65,6 +65,7 @@ type PostgresDB struct {
 	*HelmStore
 	*PyPIStore
 	*NuGetStore
+	*CargoStore
 	// STORES-STRUCT
 }
 
@@ -127,6 +128,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		HelmStore:            &HelmStore{core: c},
 		PyPIStore:            &PyPIStore{core: c},
 		NuGetStore:           &NuGetStore{core: c},
+		CargoStore:           &CargoStore{core: c},
 		// STORES-INIT
 	}
 }

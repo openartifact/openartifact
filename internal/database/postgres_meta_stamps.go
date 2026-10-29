@@ -70,33 +70,3 @@ func (p *PostgresDB) ListRubyGemSpecs(ctx context.Context, repoID string) ([]*mo
 
 	return gems, nil
 }
-
-func (p *PostgresDB) CargoIndexStamp(ctx context.Context, repoID, name string) (string, error) {
-	stamp, err := p.q.CargoIndexStamp(ctx, dbsqlc.CargoIndexStampParams{RepositoryID: repoID, Name: name})
-	if err != nil {
-		return "", fmt.Errorf("failed to stamp cargo index: %w", err)
-	}
-
-	return stamp, nil
-}
-
-func (p *PostgresDB) ListCargoIndexVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
-	rows, err := p.q.ListCargoIndexVersions(ctx, dbsqlc.ListCargoIndexVersionsParams{RepositoryID: repoID, Name: name})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list cargo index versions: %w", err)
-	}
-
-	crates := make([]*models.CargoCrate, len(rows))
-	for i, row := range rows {
-		crates[i] = &models.CargoCrate{
-			RepositoryID: repoID,
-			Name:         row.Name,
-			Version:      row.Version,
-			MetadataJSON: row.MetadataJson,
-			Checksum:     row.Checksum,
-			Yanked:       row.Yanked,
-		}
-	}
-
-	return crates, nil
-}
