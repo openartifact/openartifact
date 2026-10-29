@@ -96,8 +96,8 @@ func composerDistKey(p pkgcomposer.Path) string {
 }
 
 func (s *Service) serveComposerRoot(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	s.serveGenerated(w, r, repo, nil,
-		[]byte(`{"packages":[],"metadata-url":"`+s.composerRoot(repo)+`/p2/%package%.json"}`), jsonMediaType, composerMaxAge)
+	s.serveGeneratedJSON(w, r, repo, nil,
+		[]byte(`{"packages":[],"metadata-url":"`+s.composerRoot(repo)+`/p2/%package%.json"}`), composerMaxAge)
 }
 
 // composerDoc is the upstream p2 document of name, cached verbatim.

@@ -120,7 +120,7 @@ func (s *Service) writeAnsibleDoc(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
-	s.serveGenerated(w, r, repo, res, body, jsonMediaType, ansibleMaxAge)
+	s.serveGeneratedJSON(w, r, repo, res, body, ansibleMaxAge)
 }
 
 // ansibleVersionsDoc is the cached version list of a collection: the upstream's

@@ -18,8 +18,8 @@ func TestFormatServerDecidesEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "proxy.formatServer",
-		[]string{"ansible", "cargo", "composer", "go", "helm", "npm", "nuget", "pypi", "rubygems", "terraform"},
-		[]string{"apk", "conan", "conda", "deb", "docker", "ivy", "maven", "nix", "pacman", "raw", "rpm", "sbt"})
+		[]string{"ansible", "cargo", "composer", "conan", "conda", "go", "helm", "npm", "nuget", "pypi", "rubygems", "terraform"},
+		[]string{"apk", "deb", "docker", "ivy", "maven", "nix", "pacman", "raw", "rpm", "sbt"})
 
 	s := &Service{}
 

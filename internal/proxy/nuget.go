@@ -444,7 +444,7 @@ func (s *Service) serveNuGetIndex(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
-	s.serveGenerated(w, r, repo, res, body, nugetJSON, nugetMetaMaxAge)
+	s.serveGeneratedJSON(w, r, repo, res, body, nugetMetaMaxAge)
 }
 
 // nugetDocURL is where the upstream serves the metadata document p names, ""

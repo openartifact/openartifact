@@ -54,7 +54,7 @@ func (s *Service) serveCargo(w http.ResponseWriter, r *http.Request, repo *model
 }
 
 func (s *Service) serveCargoConfig(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	s.serveGenerated(w, r, repo, nil, pkgcargo.RenderConfig(s.baseURL, repo.Name, repo.Public), jsonMediaType, cargoConfigMaxAge)
+	s.serveGeneratedJSON(w, r, repo, nil, pkgcargo.RenderConfig(s.baseURL, repo.Name, repo.Public), cargoConfigMaxAge)
 }
 
 func cargoIndexKey(indexPath string) string { return "index/" + indexPath }

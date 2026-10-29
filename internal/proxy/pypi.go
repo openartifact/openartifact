@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,8 +28,6 @@ const (
 
 	pypiIndexKey = "simple/"
 )
-
-var errBadPage = errors.New("unparsable upstream simple page")
 
 // servePyPI answers a GET/HEAD for a pypi proxy repository.
 func (s *Service) servePyPI(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
