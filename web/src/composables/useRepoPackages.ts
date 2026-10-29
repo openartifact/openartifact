@@ -3,11 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ref, watch, onMounted } from 'vue'
-import { listAllRepositories, listPackages, type PackageItem, type Repository } from '../api/repositories'
+import { listAllPackages, listAllRepositories, type PackageItem, type Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n'
-
-const PAGE_SIZE = 100
 
 /**
  * Repository list plus the packages of the repository the caller selected, for
@@ -38,12 +36,7 @@ export function useRepoPackages() {
     packages.value = []
     if (!repo) return
     try {
-      const all: PackageItem[] = []
-      for (let page = 1; ; page++) {
-        const res = await listPackages(repo, { page, limit: PAGE_SIZE })
-        all.push(...(res.packages ?? []))
-        if (all.length >= res.total || (res.packages ?? []).length < PAGE_SIZE) break
-      }
+      const all = await listAllPackages(repo)
       if (mySeq === seq) packages.value = all
     } catch (err) {
       if (mySeq !== seq) return

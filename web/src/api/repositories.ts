@@ -96,7 +96,12 @@ interface ListRepositoriesResult {
 }
 
 interface ListPackagesResult {
-  total: number
+  /** Absent on a request that carries a cursor (it is not counted). */
+  total?: number
+  /** The listing continues after this page (per-file listing). */
+  has_more?: boolean
+  /** Set while `has_more`, on the newest-first listing: the `cursor` of the next page. */
+  next_cursor?: string
   packages: PackageItem[]
 }
 
@@ -190,6 +195,8 @@ interface ListPackagesParams {
   q?: string
   /** `created` (newest first, the default) or `name` (name, then version). */
   sort?: PackageSort
+  /** `next_cursor` of the previous page (newest-first listing; `page` is then ignored). */
+  cursor?: string
 }
 
 export function listPackages(name: string, params?: ListPackagesParams): Promise<ListPackagesResult> {
@@ -200,6 +207,7 @@ export function listPackages(name: string, params?: ListPackagesParams): Promise
   if (params?.packageName) qs.set('package_name', params.packageName)
   if (params?.q) qs.set('q', params.q)
   if (params?.sort) qs.set('sort', params.sort)
+  if (params?.cursor) qs.set('cursor', params.cursor)
   const query = qs.toString() ? `?${qs}` : ''
   return request<ListPackagesResult>(`/api/v1/repositories/${encodeURIComponent(name)}/packages${query}`)
 }
@@ -245,17 +253,27 @@ const COMPONENT_PAGE_SIZE = 100 // backend clamps `limit` to 100
  * listed name, so repositories of any size resolve without walking the whole
  * listing.
  */
-export async function listPackageVersions(
+export function listPackageVersions(repoName: string, packageName: string, format?: string): Promise<PackageItem[]> {
+  return listAllPackages(repoName, { format, packageName })
+}
+
+/**
+ * Every row of a repository's newest-first listing that matches the filters,
+ * walked by keyset cursor (`next_cursor` / `has_more`) so a deep page costs the
+ * same as the first.
+ */
+export async function listAllPackages(
   repoName: string,
-  packageName: string,
-  format?: string,
+  filters: Pick<ListPackagesParams, 'format' | 'packageName' | 'q'> = {},
 ): Promise<PackageItem[]> {
   const items: PackageItem[] = []
-  for (let page = 1; ; page++) {
-    const res = await listPackages(repoName, { page, limit: COMPONENT_PAGE_SIZE, format, packageName })
+  let cursor: string | undefined
+  for (;;) {
+    const res = await listPackages(repoName, { ...filters, limit: COMPONENT_PAGE_SIZE, cursor })
     const rows = res.packages ?? []
     items.push(...rows)
-    if (items.length >= (res.total ?? 0) || rows.length === 0) break
+    if (!res.has_more || !res.next_cursor || rows.length === 0) break
+    cursor = res.next_cursor
   }
   return items
 }
