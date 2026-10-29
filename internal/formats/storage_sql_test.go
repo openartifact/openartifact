@@ -39,7 +39,7 @@ func TestStorageExpressionsParenthesiseJSONExtraction(t *testing.T) {
 				top = innermostParens.ReplaceAllString(top, "_")
 			}
 
-			for _, part := range strings.Split(top, ",") {
+			for part := range strings.SplitSeq(top, ",") {
 				if strings.Contains(part, "->") && strings.Contains(part, "||") {
 					t.Errorf("%s %s = %q: wrap each ->/->> extraction in parentheses", name, field, expr)
 

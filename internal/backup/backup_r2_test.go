@@ -99,6 +99,7 @@ type staleNotifier interface {
 	NotifyStale(repoID, group, artifact string)
 }
 
+//nolint:gochecknoglobals // registers the recording hooks once per test binary
 var registerRecordingHooks sync.Once
 
 // workers binds a recording worker per format with generated metadata and, once

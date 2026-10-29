@@ -96,8 +96,8 @@ func npmStorage() storage.Storage {
 	SELECT $2::uuid, 'latest', v.version FROM package_versions v WHERE v.id = $3::uuid AND $1::uuid IS NOT NULL
 	ON CONFLICT (package_id, tag) DO NOTHING`,
 				`UPDATE packages SET updated_at = now(),
-	       attrs = attrs || jsonb_build_object('packument_stale', true,
-	                        'latest_version', COALESCE((SELECT t.version FROM package_tags t WHERE t.package_id = $2::uuid AND t.tag = 'latest'), ''))
+	       attrs = attrs || jsonb_build_object('packument_stale', true, 'latest_version', COALESCE(
+	         (SELECT t.version FROM package_tags t WHERE t.package_id = $2::uuid AND t.tag = 'latest'), ''))
 	 WHERE id = $2::uuid AND $1::uuid IS NOT NULL AND $3::uuid IS NOT NULL`,
 			},
 		},

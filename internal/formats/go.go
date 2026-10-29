@@ -5,9 +5,10 @@
 package formats
 
 import (
+	"net/http"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/storage"
-	"net/http"
 
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
