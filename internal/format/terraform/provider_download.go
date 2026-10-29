@@ -155,6 +155,10 @@ func (h *HTTPHandler) providerURLs(w http.ResponseWriter, repoID string, p *mode
 	sumsName := providerSumsName(p.Type, p.Version)
 	sums := ticket{repoID: repoID, kind: kindProviderSums, a: p.Type, b: p.Version}
 
+	// The platform rides along so that redeeming the checksum file re-checks
+	// the quarantine of the package the client is fetching.
+	sums.c = platformName(p.OS, p.Arch)
+
 	if links.sums, ok = h.mintURL(w, sums, sumsName); !ok {
 		return providerLinks{}, false
 	}

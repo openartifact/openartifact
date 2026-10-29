@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
@@ -61,9 +62,15 @@ func (h *HTTPHandler) handleTicketDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	f, err := h.resolveTicketFile(r, t)
+	f, keys, err := h.resolveTicketFile(r, t)
 	if err != nil {
 		h.writeTicketError(w, repo.Name, err)
+		return
+	}
+
+	// A ticket minted before the artifact was quarantined stays valid until it
+	// expires, so the state is read again here, under the keys the mint checked.
+	if h.DenyIfQuarantined(w, r, repo.ID, keys...) {
 		return
 	}
 
@@ -91,42 +98,53 @@ func (h *HTTPHandler) writeTicketError(w http.ResponseWriter, repoName string, e
 	}
 }
 
-// resolveTicketFile looks up what the ticket names. Rows are resolved by
+// resolveTicketFile looks up what the ticket names and the quarantine keys of
+// the artifact behind it (the ones the mint checked). Rows are resolved by
 // coordinates at download time, so a version deleted after minting is gone.
-func (h *HTTPHandler) resolveTicketFile(r *http.Request, t ticket) (file, error) {
+func (h *HTTPHandler) resolveTicketFile(r *http.Request, t ticket) (file, []string, error) {
 	ctx := r.Context()
 
 	switch t.kind {
 	case kindModule:
 		m, err := h.DB.GetTerraformModule(ctx, t.repoID, t.a, t.b, t.c)
 		if err != nil {
-			return file{}, fmt.Errorf("get module: %w", err)
+			return file{}, nil, fmt.Errorf("get module: %w", err)
 		}
 
 		if m == nil {
-			return file{}, errTicketNotFound
+			return file{}, nil, errTicketNotFound
 		}
 
-		return moduleFile(m), nil
+		f := moduleFile(m)
+
+		return f, quarantine.PathKeys(m.ID, "modules/"+t.a+"/"+t.b+"/"+t.c, f.name), nil
 	case kindProviderZip:
 		osName, arch, _ := strings.Cut(t.c, "_")
 
 		p, err := h.DB.GetTerraformProvider(ctx, t.repoID, t.a, t.b, osName, arch)
 		if err != nil {
-			return file{}, fmt.Errorf("get provider: %w", err)
+			return file{}, nil, fmt.Errorf("get provider: %w", err)
 		}
 
 		if p == nil {
-			return file{}, errTicketNotFound
+			return file{}, nil, errTicketNotFound
 		}
 
 		return file{
 			name: providerZipName(p.Type, p.Version, p.OS, p.Arch), contentType: "application/zip",
 			blobKey: p.BlobKey, sha256: p.Checksum, size: p.SizeBytes,
-		}, nil
+		}, providerQuarantineKeys(p), nil
 	default:
 		return h.checksumFile(r, t)
 	}
+}
+
+// providerQuarantineKeys are the identifiers a platform package is quarantined
+// under: the ones the package document checks when it mints the tickets.
+func providerQuarantineKeys(p *models.TerraformProvider) []string {
+	return quarantine.PathKeys(
+		p.ID, "providers/"+p.Type+"/"+p.Version+"/"+p.OS+"/"+p.Arch, providerZipName(p.Type, p.Version, p.OS, p.Arch),
+	)
 }
 
 func moduleFile(m *models.TerraformModule) file {
@@ -145,14 +163,25 @@ func moduleFile(m *models.TerraformModule) file {
 // the detached signature over it. They are generated per request: the set of
 // platforms of a version can grow, and the signature is made with the key the
 // repository has now.
-func (h *HTTPHandler) checksumFile(r *http.Request, t ticket) (file, error) {
+func (h *HTTPHandler) checksumFile(r *http.Request, t ticket) (file, []string, error) {
 	rows, err := h.DB.ListTerraformProviderVersionPlatforms(r.Context(), t.repoID, t.a, t.b)
 	if err != nil {
-		return file{}, fmt.Errorf("list platforms: %w", err)
+		return file{}, nil, fmt.Errorf("list platforms: %w", err)
 	}
 
 	if len(rows) == 0 {
-		return file{}, errTicketNotFound
+		return file{}, nil, errTicketNotFound
+	}
+
+	// The mint checked the platform the client is fetching; a ticket without
+	// one (minted before the platform was added to it) is refused when any
+	// platform of the version is quarantined.
+	var keys []string
+
+	for _, p := range rows {
+		if t.c == "" || t.c == platformName(p.OS, p.Arch) {
+			keys = append(keys, providerQuarantineKeys(p)...)
+		}
 	}
 
 	entries := make([]sumEntry, 0, len(rows))
@@ -164,25 +193,25 @@ func (h *HTTPHandler) checksumFile(r *http.Request, t ticket) (file, error) {
 	name := providerSumsName(t.a, t.b)
 
 	if t.kind == kindProviderSums {
-		return file{name: name, contentType: "text/plain; charset=utf-8", data: sums}, nil
+		return file{name: name, contentType: "text/plain; charset=utf-8", data: sums}, keys, nil
 	}
 
 	signer, err := h.signerFor(r.Context(), t.repoID)
 	if err != nil {
-		return file{}, err
+		return file{}, nil, err
 	}
 
 	armored, err := signer.DetachedSign(bytes.NewReader(sums))
 	if err != nil {
-		return file{}, fmt.Errorf("sign checksums: %w", err)
+		return file{}, nil, fmt.Errorf("sign checksums: %w", err)
 	}
 
 	sig, err := binarySignature(armored)
 	if err != nil {
-		return file{}, err
+		return file{}, nil, err
 	}
 
-	return file{name: name + ".sig", contentType: "application/octet-stream", data: sig}, nil
+	return file{name: name + ".sig", contentType: "application/octet-stream", data: sig}, keys, nil
 }
 
 // serveFile writes f. The response is never cached: it is addressed by a

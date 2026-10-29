@@ -59,6 +59,29 @@ SELECT $1::uuid, $2::uuid, r.image, r.kind, r.digest
   FROM docker_manifest_refs r
  WHERE r.manifest_id = $3::uuid`
 
+// dockerBlobsQuarantinedSQL: whether a config/layer blob of source manifest $1
+// belongs to a quarantined image of repository $2, the check a blob GET makes
+// (a live manifest referencing the blob is quarantined by its id, digest or the
+// id of a live tag pointing at it). One statement per manifest.
+const dockerBlobsQuarantinedSQL = `
+SELECT EXISTS (
+    SELECT 1
+      FROM docker_manifest_refs own
+      JOIN docker_manifest_refs r ON r.repository_id = $2::uuid AND r.kind = 'blob' AND r.digest = own.digest
+      JOIN docker_manifests m ON m.id = r.manifest_id AND m.deleted_at IS NULL
+      LEFT JOIN docker_tags t ON t.repository_id = m.repository_id AND t.image = m.image
+           AND t.manifest_digest = m.digest AND t.deleted_at IS NULL
+      JOIN artifact_refs ar ON ar.repository_id = r.repository_id
+           AND ar.artifact_path IN (m.id::text, m.digest, t.id::text)
+      JOIN scan_jobs sj ON sj.artifact_ref_id = ar.id
+     WHERE own.manifest_id = $1::uuid AND own.kind = 'blob'
+       AND (
+           EXISTS (SELECT 1 FROM vuln_results vr WHERE vr.scan_job_id = sj.id AND vr.quarantined)
+           OR EXISTS (SELECT 1 FROM secret_results sr WHERE sr.scan_job_id = sj.id AND sr.quarantined)
+           OR EXISTS (SELECT 1 FROM license_results lr WHERE lr.scan_job_id = sj.id AND lr.quarantined)
+       )
+)`
+
 // dockerCopyBlobsSQL gives repository $2 a docker_blobs row (same blobs row,
 // verified size) for every config/layer blob source manifest $1 references and
 // the source repository holds. A digest the destination already holds is left
