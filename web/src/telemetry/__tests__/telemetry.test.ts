@@ -5,7 +5,7 @@
 import { describe, it, expect, afterAll, spyOn } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { request } from '../../api/client'
+import { ApiError, request } from '../../api/client'
 import { startTelemetry, stopTelemetry } from '..'
 import { exceptionAttributes, initTelemetry, traceparent } from '../otel'
 
@@ -106,6 +106,12 @@ describe('telemetry wrapper', () => {
     const err = new TypeError('boom')
     expect(exceptionAttributes(err)).toEqual({ 'exception.type': 'TypeError', 'exception.message': 'boom', 'exception.stacktrace': err.stack })
     expect(exceptionAttributes('plain')).toEqual({ 'exception.message': 'plain' })
+  })
+
+  it('exports only the type of an ApiError, never its server text or stack', () => {
+    const err = new ApiError('repository "acme-secret" not found', 404, 'not_found')
+    expect(err.stack).toContain('acme-secret')
+    expect(exceptionAttributes(err)).toEqual({ 'exception.type': 'ApiError' })
   })
 
   it('uses errors and web vitals only', () => {

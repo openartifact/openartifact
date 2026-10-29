@@ -202,16 +202,8 @@ func shutdownWith[P interface{ Shutdown(context.Context) error }](p P, uninstall
 	}
 }
 
-func sampler(ratio float64) sdktrace.Sampler {
-	switch {
-	case ratio >= 1:
-		return sdktrace.ParentBased(sdktrace.AlwaysSample())
-	case ratio <= 0:
-		return sdktrace.ParentBased(sdktrace.NeverSample())
-	}
-
-	return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
-}
+// sampler is the trace sampler for sample ratio ratio (see inboundSampler).
+func sampler(ratio float64) sdktrace.Sampler { return newInboundSampler(ratio) }
 
 func newResource(ctx context.Context, o OTLPConfig, b Build) (*resource.Resource, error) {
 	name := o.ServiceName
