@@ -296,8 +296,9 @@ func TestSQLFormatLists(t *testing.T) {
 		}
 	}
 
-	// Groups that serve generated metadata.
-	check("../database/repo_groups.go", generated, 2)
+	// Groups that serve generated metadata: the queries take the list from
+	// repotype.GeneratedGroupMetadataFormats, no format is spelled out.
+	check("../database/repo_groups.go", generated, 0)
 	// Hosted repositories whose generated metadata is GPG-signed.
 	check("../database/queries/gpg.sql", gpgGenerated, 1)
 }
