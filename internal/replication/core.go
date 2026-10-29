@@ -41,9 +41,6 @@ const (
 	// failingAttempts is the attempt count from which a queued operation is
 	// reported as failing.
 	failingAttempts = 5
-
-	// maxErrorLen truncates the error text stored with a failed operation.
-	maxErrorLen = 500
 )
 
 var (
@@ -55,6 +52,8 @@ var (
 	ErrCorrupt = errors.New("no copy of the blob matches its sha256")
 
 	errPendingDelete = errors.New("blob is queued for deletion on the replica")
+	errPanic         = errors.New("internal error while working the operation")
+	errUnclassified  = errors.New("the operation failed; the server log has the cause")
 	errNoQueue       = errors.New("replication queue is not available")
 )
 
@@ -176,13 +175,25 @@ func defaultJitter(d time.Duration) time.Duration {
 	return half + rand.N(half+1) //nolint:gosec // retry jitter, not a secret
 }
 
-func truncateError(err error) string {
-	msg := err.Error()
-	if len(msg) > maxErrorLen {
-		msg = msg[:maxErrorLen] + "..."
+// failureReason is the reason stored with a failed operation and shown in the
+// replication status: the text of the failure's class, never the error itself,
+// which carries bucket and endpoint names, object keys and driver detail. The
+// log has the cause.
+func failureReason(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "the operation timed out"
+	case isNotFound(err):
+		return "blob not found in the store"
 	}
 
-	return msg
+	for _, class := range []error{ErrMissingPrimary, ErrCorrupt, errPendingDelete, errPanic} {
+		if errors.Is(err, class) {
+			return class.Error()
+		}
+	}
+
+	return errUnclassified.Error()
 }
 
 // isNotFound reports whether err means the blob does not exist.

@@ -1329,14 +1329,8 @@ func npmDecodePackageName(raw string) string {
 	return s
 }
 
+// isUniqueViolation reports whether err is the store's duplicate sentinel or a
+// PostgreSQL unique_violation. It decides on the error's type, never its text.
 func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	msg := err.Error()
-
-	return strings.Contains(msg, "already exists") ||
-		strings.Contains(msg, "unique") ||
-		strings.Contains(msg, "23505")
+	return errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err)
 }

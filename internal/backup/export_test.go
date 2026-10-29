@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -221,8 +222,12 @@ func TestRunBackup_FailureReleasesSnapshotAndFailsJob(t *testing.T) {
 	}
 
 	got := db.jobs[job.ID]
-	if got.Status != "failed" || !strings.Contains(got.ErrorMessage, shaOf("never stored")) {
-		t.Errorf("job = %q / %q, want failed naming the blob", got.Status, got.ErrorMessage)
+	if got.Status != "failed" || got.ErrorMessage != ErrBlobMissing.Error() {
+		t.Errorf("job = %q / %q, want failed with the fixed blob-missing reason", got.Status, got.ErrorMessage)
+	}
+
+	if strings.Contains(got.ErrorMessage, shaOf("never stored")) {
+		t.Errorf("the stored reason names the blob: %q", got.ErrorMessage)
 	}
 
 	if db.released != 1 {
@@ -246,8 +251,8 @@ func TestRunBackup_SnapshotFailureFailsJob(t *testing.T) {
 		t.Fatalf("RunBackup = %v, want the snapshot error", err)
 	}
 
-	if got := db.jobs[job.ID]; got.Status != "failed" || !strings.Contains(got.ErrorMessage, "take database snapshot") {
-		t.Errorf("job = %q / %q, want failed with a snapshot message", got.Status, got.ErrorMessage)
+	if got := db.jobs[job.ID]; got.Status != "failed" || got.ErrorMessage != errSnapshotStage.Error() {
+		t.Errorf("job = %q / %q, want failed with the fixed snapshot reason (not %q)", got.Status, got.ErrorMessage, db.snapshotErr)
 	}
 }
 
@@ -363,5 +368,39 @@ func TestRunBackup_CancelledExportIsDiscarded(t *testing.T) {
 
 	if len(left) != 0 {
 		t.Errorf("backup dir holds %d leftover file(s), want none", len(left))
+	}
+}
+
+// TestRunBackup_FilesystemFailureReasonHasNoPath: the stored reason of a
+// backup that cannot create its directory is fixed text; the path is only logged.
+func TestRunBackup_FilesystemFailureReasonHasNoPath(t *testing.T) {
+	ctx := context.Background()
+	db := newFakeDB("src")
+	eng, _ := newTestEngine(t, db)
+
+	// A regular file where the backup directory should be.
+	blocker := filepath.Join(t.TempDir(), "occupied")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	eng.backupDir = filepath.Join(blocker, "backups")
+
+	job := &models.BackupJob{ID: "job-nodir", Status: "pending", Type: "full"}
+	if err := db.CreateBackupJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := eng.RunBackup(ctx, job.ID, "full"); err == nil {
+		t.Fatal("RunBackup succeeded without a backup directory")
+	}
+
+	got := db.jobs[job.ID]
+	if got.Status != "failed" || got.ErrorMessage != "failed to create backup directory" {
+		t.Errorf("job = %q / %q, want failed with the fixed reason", got.Status, got.ErrorMessage)
+	}
+
+	if strings.Contains(got.ErrorMessage, blocker) {
+		t.Errorf("the stored reason names the path: %q", got.ErrorMessage)
 	}
 }

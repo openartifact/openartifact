@@ -21,6 +21,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -67,7 +68,9 @@ type Blob struct {
 	// Filename, when set, becomes the Content-Disposition filename of the
 	// presigned response so clients save the file under the right name.
 	Filename string
-	// ContentType, when set, overrides the stored object's Content-Type.
+	// ContentType, when set, overrides the stored object's Content-Type. Only
+	// the types safeContentType allows are signed; any other (an uploader may
+	// choose it) becomes application/octet-stream.
 	ContentType string
 	// Repo is the owning repository's name (for the per-repository override).
 	Repo string
@@ -192,7 +195,7 @@ func (s *Store) redirect(w http.ResponseWriter, r *http.Request, blob Blob) (str
 
 	target, err := s.signer.PresignGet(r.Context(), blob.SHA256, s.settings.TTL, storage.PresignGetOptions{
 		ContentDisposition: contentDisposition(blob.Filename),
-		ContentType:        blob.ContentType,
+		ContentType:        safeContentType(blob.ContentType),
 	})
 	if err != nil {
 		if !errors.Is(err, storage.ErrPresignNotSupported) {
@@ -243,14 +246,61 @@ func (s *Store) count(mode, reason string) {
 	}
 }
 
-// contentDisposition renders an attachment Content-Disposition for filename,
-// or "" when there is none or it cannot be encoded.
+// contentDisposition renders an attachment Content-Disposition for filename.
+// Without a filename it is a bare "attachment", so the browser never renders a
+// presigned object inline. It is "" only when the filename cannot be encoded.
 func contentDisposition(filename string) string {
 	if filename == "" {
-		return ""
+		return "attachment"
 	}
 
 	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+}
+
+// safeContentTypes are the exact media types a presigned response may declare.
+var safeContentTypes = map[string]bool{
+	"application/octet-stream":     true,
+	"application/gzip":             true,
+	"application/x-gzip":           true,
+	"application/zip":              true,
+	"application/java-archive":     true,
+	"application/x-tar":            true,
+	"application/x-bzip2":          true,
+	"application/x-xz":             true,
+	"application/zstd":             true,
+	"application/x-rpm":            true,
+	"application/x-nix-nar":        true,
+	"application/x-debian-package": true,
+	"application/json":             true,
+	"text/plain":                   true,
+}
+
+// safeContentType returns contentType when a browser cannot run it as a page
+// (an archive, a package type, JSON, plain text) and application/octet-stream
+// otherwise: the type of a hosted file is chosen by whoever uploaded it, and
+// text/html or image/svg+xml served from the artifact origin would run their
+// script there. The object store can only override Content-Type and
+// Content-Disposition in the signed URL, so X-Content-Type-Options cannot be
+// added; the attachment disposition and this allowlist are the defence. ""
+// stays "" (no override).
+func safeContentType(contentType string) string {
+	if contentType == "" {
+		return ""
+	}
+
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return "application/octet-stream"
+	}
+
+	switch {
+	case safeContentTypes[mediaType]:
+		return mediaType
+	case strings.HasPrefix(mediaType, "application/vnd.") && !strings.HasSuffix(mediaType, "+xml") && !strings.HasSuffix(mediaType, "+html"):
+		return mediaType
+	default:
+		return "application/octet-stream"
+	}
 }
 
 // HealthCheck probes the store this one wraps.

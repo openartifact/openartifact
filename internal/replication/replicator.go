@@ -274,7 +274,7 @@ func (r *Replicator) handle(ctx context.Context, op database.BlobReplication, re
 	func() {
 		defer func() {
 			if p := recover(); p != nil {
-				err = fmt.Errorf("panic: %v", p) //nolint:err113 // converted panic
+				err = fmt.Errorf("%w: %v", errPanic, p) //nolint:err113 // converted panic
 			}
 		}()
 
@@ -304,10 +304,10 @@ func (r *Replicator) handle(ctx context.Context, op database.BlobReplication, re
 	}
 
 	r.m.Failures.WithLabelValues(op.Op).Inc()
-	res.fail(truncateError(err))
+	res.fail(failureReason(err))
 
 	delay := r.backoff(op.Attempts)
-	if _, ferr := r.queue.FailBlobReplication(dbCtx, op.SHA256, op.Version, truncateError(err), r.now().Add(delay)); ferr != nil {
+	if _, ferr := r.queue.FailBlobReplication(dbCtx, op.SHA256, op.Version, failureReason(err), r.now().Add(delay)); ferr != nil {
 		r.log.Warnw("replication: could not record a failed attempt", "sha256", op.SHA256, "error", ferr)
 	}
 
