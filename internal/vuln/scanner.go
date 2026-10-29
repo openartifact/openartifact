@@ -358,108 +358,11 @@ func (s *TrivyScanner) writeSBOM(dir string, pkg Package) error {
 }
 
 func (s *TrivyScanner) writeManifest(dir, packageName, version, ecosystem string) error {
-	switch strings.ToLower(ecosystem) {
-	// Trivy reads lockfiles, not the manifests that declare ranges: a bare
-	// package.json, Cargo.toml, Gemfile or .csproj yields no packages and so a
-	// clean result that means nothing. These ecosystems get a lockfile that
-	// pins exactly the package being scanned.
-	case "npm":
-		data, err := json.Marshal(map[string]any{
-			"name":            "scan-pkg",
-			"lockfileVersion": 3,
-			"requires":        true,
-			"packages": map[string]any{
-				"":                            map[string]any{"name": "scan-pkg", "dependencies": map[string]string{packageName: version}},
-				"node_modules/" + packageName: map[string]any{"version": version},
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(filepath.Join(dir, "package-lock.json"), data, 0600)
-
-	case "pypi":
-		content := packageName + "==" + version + "\n"
-		return os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(content), 0600)
-
-	case "maven":
-		// For maven, packageName may be in groupId:artifactId format
-		groupId, artifactId := packageName, packageName
-		if parts := strings.SplitN(packageName, ":", 2); len(parts) == 2 {
-			groupId = parts[0]
-			artifactId = parts[1]
-		}
-
-		content := fmt.Sprintf(`<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>app</groupId>
-  <artifactId>app</artifactId>
-  <version>1.0.0</version>
-  <dependencies>
-    <dependency>
-      <groupId>%s</groupId>
-      <artifactId>%s</artifactId>
-      <version>%s</version>
-    </dependency>
-  </dependencies>
-</project>`, groupId, artifactId, version)
-
-		return os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(content), 0600)
-
-	case "cargo":
-		content := fmt.Sprintf("version = 3\n\n[[package]]\nname = %q\nversion = %q\n", packageName, version)
-
-		return os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(content), 0600)
-
-	case "composer":
-		data, err := json.Marshal(map[string]any{
-			"packages":     []map[string]string{{"name": packageName, "version": composerVersion(version)}},
-			"packages-dev": []map[string]string{},
-		})
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(filepath.Join(dir, "composer.lock"), data, 0600)
-
-	case "go":
-		content := fmt.Sprintf(`module scan-pkg
-
-go 1.21
-
-require %s %s
-`, packageName, version)
-
-		return os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0600)
-
-	case "rubygems":
-		content := fmt.Sprintf(
-			"GEM\n  remote: https://rubygems.org/\n  specs:\n    %s (%s)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  %s (= %s)\n",
-			packageName,
-			version,
-			packageName,
-			version,
-		)
-
-		return os.WriteFile(filepath.Join(dir, "Gemfile.lock"), []byte(content), 0600)
-
-	case "nuget":
-		data, err := json.Marshal(map[string]any{
-			"version": 1,
-			"dependencies": map[string]any{"net6.0": map[string]any{
-				packageName: map[string]any{"type": "Direct", "requested": "[" + version + ", )", "resolved": version},
-			}},
-		})
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(filepath.Join(dir, "packages.lock.json"), data, 0600)
-
-	default:
-		return fmt.Errorf("%w: %s", errUnsupportedEcosystem, ecosystem)
+	if h, ok := hooks.Lookup(strings.ToLower(ecosystem)); ok && h.TrivyManifest != nil {
+		return h.TrivyManifest(dir, packageName, version)
 	}
+
+	return fmt.Errorf("%w: %s", errUnsupportedEcosystem, ecosystem)
 }
 
 func (s *TrivyScanner) parseTrivyOutput(data []byte) ([]models.Vulnerability, error) {

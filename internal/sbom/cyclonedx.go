@@ -142,17 +142,6 @@ func (g *Generator) cdxTools(spec string) any {
 	}}
 }
 
-func rootType(format string) string {
-	switch strings.ToLower(format) {
-	case "docker":
-		return "container"
-	case "raw":
-		return "file"
-	default:
-		return "library"
-	}
-}
-
 func (in *Input) cdxComponent() cdxComponent {
 	c := cdxComponent{
 		Type:     rootType(in.Format),

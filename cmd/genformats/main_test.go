@@ -11,6 +11,13 @@ import (
 	"testing"
 )
 
+// TestMain registers the client setup builders, as main does.
+func TestMain(m *testing.M) {
+	registerClientSetup()
+
+	os.Exit(m.Run())
+}
+
 // TestCommittedFileIsCurrent is the drift check of the generated web
 // constants: it fails until `make generate` output is committed.
 func TestCommittedFileIsCurrent(t *testing.T) {
