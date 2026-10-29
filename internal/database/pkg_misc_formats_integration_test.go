@@ -868,7 +868,9 @@ func TestNixStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one round 
 	requireGeneric(t, pg, repo, genericRows{0, 0, 0})
 
 	// The signing key table is untouched by the port.
-	key := &models.NixSigningKey{RepositoryID: repo, KeyName: "cache-1", PublicKey: "cache-1:pub", PrivateKeyEnc: []byte("sealed"), CreatedBy: "t"}
+	key := &models.NixSigningKey{
+		RepositoryID: repo, KeyName: "cache-1", PublicKey: "cache-1:pub", PrivateKeyEnc: []byte("sealed"), CreatedBy: "t",
+	}
 	if created, err := pg.CreateNixSigningKeyIfAbsent(ctx, key); err != nil || !created {
 		t.Fatalf("CreateNixSigningKeyIfAbsent = %v, %v", created, err)
 	}
