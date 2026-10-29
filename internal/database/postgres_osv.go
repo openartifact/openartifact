@@ -16,6 +16,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// OSVDB owns the mirrored OSV advisories and per-package OSV scan results.
+type OSVDB struct{ *core }
+
 var _ OSVStore = (*PostgresDB)(nil)
 
 // OSVStore is the local mirror of the OSV database and the lookups its re-match
@@ -139,7 +142,7 @@ const (
 )
 
 // ApplyOSVAdvisories implements OSVStore.
-func (p *PostgresDB) ApplyOSVAdvisories(ctx context.Context, advisories []models.OSVAdvisory) ([]models.OSVPackageKey, error) {
+func (p *OSVDB) ApplyOSVAdvisories(ctx context.Context, advisories []models.OSVAdvisory) ([]models.OSVPackageKey, error) {
 	if len(advisories) == 0 {
 		return nil, nil
 	}
@@ -398,7 +401,7 @@ func scanOSVState(row rowScanner) (*models.OSVMirrorState, error) {
 }
 
 // GetOSVMirrorState implements OSVStore.
-func (p *PostgresDB) GetOSVMirrorState(ctx context.Context, ecosystem string) (*models.OSVMirrorState, error) {
+func (p *OSVDB) GetOSVMirrorState(ctx context.Context, ecosystem string) (*models.OSVMirrorState, error) {
 	st, err := scanOSVState(p.db.QueryRowContext(ctx, `SELECT `+osvStateColumns+` FROM osv_mirror_state WHERE ecosystem = $1`, ecosystem))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not-found: no state yet
@@ -412,7 +415,7 @@ func (p *PostgresDB) GetOSVMirrorState(ctx context.Context, ecosystem string) (*
 }
 
 // ListOSVMirrorStates implements OSVStore.
-func (p *PostgresDB) ListOSVMirrorStates(ctx context.Context) ([]models.OSVMirrorState, error) {
+func (p *OSVDB) ListOSVMirrorStates(ctx context.Context) ([]models.OSVMirrorState, error) {
 	rows, err := p.db.QueryContext(ctx, `SELECT `+osvStateColumns+` FROM osv_mirror_state ORDER BY ecosystem`)
 	if err != nil {
 		return nil, fmt.Errorf("list osv mirror states: %w", err)
@@ -438,7 +441,7 @@ func (p *PostgresDB) ListOSVMirrorStates(ctx context.Context) ([]models.OSVMirro
 }
 
 // SaveOSVMirrorState implements OSVStore.
-func (p *PostgresDB) SaveOSVMirrorState(ctx context.Context, st *models.OSVMirrorState) error {
+func (p *OSVDB) SaveOSVMirrorState(ctx context.Context, st *models.OSVMirrorState) error {
 	_, err := p.db.ExecContext(ctx, `
 		INSERT INTO osv_mirror_state (ecosystem, high_water, etag, archive_modified, source_url, advisories, last_checked_at,
 			last_imported_at, last_import_seconds, last_error)
@@ -458,7 +461,7 @@ func (p *PostgresDB) SaveOSVMirrorState(ctx context.Context, st *models.OSVMirro
 }
 
 // FinishOSVRematch implements OSVStore.
-func (p *PostgresDB) FinishOSVRematch(ctx context.Context, ecosystem string, started time.Time, took time.Duration) error {
+func (p *OSVDB) FinishOSVRematch(ctx context.Context, ecosystem string, started time.Time, took time.Duration) error {
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE osv_mirror_state SET rematch_pending = false, last_rematch_seconds = $2, rematched_at = $3 WHERE ecosystem = $1`,
 		ecosystem, took.Seconds(), started)
@@ -470,7 +473,7 @@ func (p *PostgresDB) FinishOSVRematch(ctx context.Context, ecosystem string, sta
 }
 
 // CountOSVAdvisories implements OSVStore.
-func (p *PostgresDB) CountOSVAdvisories(ctx context.Context, ecosystem string) (int, error) {
+func (p *OSVDB) CountOSVAdvisories(ctx context.Context, ecosystem string) (int, error) {
 	var n int
 
 	err := p.db.QueryRowContext(ctx, `
@@ -485,7 +488,7 @@ func (p *PostgresDB) CountOSVAdvisories(ctx context.Context, ecosystem string) (
 }
 
 // OSVCVEAliases implements OSVStore.
-func (p *PostgresDB) OSVCVEAliases(ctx context.Context, ids []string) (map[string][]string, error) {
+func (p *OSVDB) OSVCVEAliases(ctx context.Context, ids []string) (map[string][]string, error) {
 	out := map[string][]string{}
 	if len(ids) == 0 {
 		return out, nil
@@ -519,7 +522,7 @@ func (p *PostgresDB) OSVCVEAliases(ctx context.Context, ids []string) (map[strin
 }
 
 // ListOSVAdvisoriesForPackages implements OSVStore.
-func (p *PostgresDB) ListOSVAdvisoriesForPackages(
+func (p *OSVDB) ListOSVAdvisoriesForPackages(
 	ctx context.Context, ecosystem string, namesNorm []string,
 ) (map[string][]models.OSVAdvisoryMatch, error) {
 	if len(namesNorm) == 0 {
@@ -590,7 +593,7 @@ func (p *PostgresDB) ListOSVAdvisoriesForPackages(
 }
 
 // ListStoredPackages implements OSVStore.
-func (p *PostgresDB) ListStoredPackages(
+func (p *OSVDB) ListStoredPackages(
 	ctx context.Context, format string, after *models.StoredPackage, limit int,
 ) ([]models.StoredPackage, error) {
 	var union []catalogBranch
@@ -645,7 +648,7 @@ func (p *PostgresDB) ListStoredPackages(
 }
 
 // GetOSVScanResults implements OSVStore.
-func (p *PostgresDB) GetOSVScanResults(ctx context.Context, pkgs []models.StoredPackage) (map[string]*models.VulnScanResult, error) {
+func (p *OSVDB) GetOSVScanResults(ctx context.Context, pkgs []models.StoredPackage) (map[string]*models.VulnScanResult, error) {
 	out := make(map[string]*models.VulnScanResult, len(pkgs))
 	if len(pkgs) == 0 {
 		return out, nil
@@ -686,7 +689,7 @@ func (p *PostgresDB) GetOSVScanResults(ctx context.Context, pkgs []models.Stored
 }
 
 // SaveOSVScanResult implements OSVStore.
-func (p *PostgresDB) SaveOSVScanResult(ctx context.Context, result *models.VulnScanResult) error {
+func (p *OSVDB) SaveOSVScanResult(ctx context.Context, result *models.VulnScanResult) error {
 	vulns := result.Vulnerabilities
 	if vulns == nil {
 		vulns = []models.Vulnerability{}
