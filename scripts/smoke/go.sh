@@ -8,19 +8,20 @@
 # Usage: OA_TOKEN=... scripts/smoke/go.sh [URL]
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
-smoke_init go golang:latest "$@"
 # The go command never sends credentials over plain http (only GOAUTH over
 # https), so the consumed repository is a public one; uploads still use the token.
-smoke_create_repo "$SMOKE_REPO-pub" go '{"public":true}'
+SMOKE_REPO_BODY='{"public":true}'
+smoke_init go golang:latest "$@"
 
 smoke_run "$(cat <<'SCRIPT'
 set -eu
 go version
 mod="example.com/$PKG"
 v="v$VERSION"
-mkdir -p /tmp/zipper /tmp/c && cd /tmp/zipper
-printf 'module zipper\n\ngo 1.20\n' > go.mod
-cat > main.go <<'EOT'
+[ "$SMOKE_MODE" = install ] || {
+  mkdir -p /tmp/zipper && cd /tmp/zipper
+  printf 'module zipper\n\ngo 1.20\n' > go.mod
+  cat > main.go <<'EOT'
 package main
 
 import (
@@ -51,13 +52,16 @@ func main() {
 	f.Close()
 }
 EOT
-go run . "$mod" "$v" /tmp/m.zip
-curl -fsS -X PUT -H "Authorization: Bearer $OA_TOKEN" --data-binary @/tmp/m.zip \
-  "$OA_URL/repos/$REPO/$mod/@v/$v" >/dev/null
-export GOPROXY="$OA_URL/repos/$REPO" GONOSUMDB='*' GOSUMDB=off GOFLAGS=-mod=mod
-cd /tmp/c
-printf 'module consumer\n\ngo 1.20\n' > go.mod
-cat > main.go <<EOT
+  go run . "$mod" "$v" /tmp/m.zip
+  curl -fsS -X PUT -H "Authorization: Bearer $OA_TOKEN" --data-binary @/tmp/m.zip \
+    "$OA_URL/repos/$REPO/$mod/@v/$v" >/dev/null
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # fresh go state: an empty module cache; the consumer is anonymous (the repository is public)
+  export GOMODCACHE=/tmp/gomodcache-install GOPROXY="$OA_URL/repos/$REPO" GONOSUMDB='*' GOSUMDB=off GOFLAGS=-mod=mod
+  mkdir -p /tmp/c && cd /tmp/c
+  printf 'module consumer\n\ngo 1.20\n' > go.mod
+  cat > main.go <<EOT
 package main
 
 import (
@@ -68,7 +72,8 @@ import (
 
 func main() { fmt.Print(smoke.Marker) }
 EOT
-go get "$mod@$v"
-[ "$(go run .)" = "$mod" ]
+  go get "$mod@$v"
+  [ "$(go run .)" = "$mod" ]
+}
 SCRIPT
-)" -e REPO="$SMOKE_REPO-pub"
+)"

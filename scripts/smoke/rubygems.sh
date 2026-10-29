@@ -13,9 +13,11 @@ smoke_init rubygems docker.io/library/ruby:latest "$@"
 smoke_run "$(cat <<'SCRIPT'
 set -eu
 echo "gem $(gem --version)"
-mkdir -p /tmp/p/lib && cd /tmp/p
-echo "module Smoke; VALUE = \"$PKG\"; end" > "lib/$PKG.rb"
-cat > "$PKG.gemspec" <<EOF
+hp="${OA_URL#*://}"; scheme="${OA_URL%%://*}"
+[ "$SMOKE_MODE" = install ] || {
+  mkdir -p /tmp/p/lib && cd /tmp/p
+  echo "module Smoke; VALUE = \"$PKG\"; end" > "lib/$PKG.rb"
+  cat > "$PKG.gemspec" <<EOF
 Gem::Specification.new do |s|
   s.name = "$PKG"
   s.version = "$VERSION"
@@ -25,11 +27,15 @@ Gem::Specification.new do |s|
   s.files = ["lib/$PKG.rb"]
 end
 EOF
-gem build "$PKG.gemspec" >/dev/null
-GEM_HOST_API_KEY="Bearer $OA_TOKEN" gem push "$PKG-$VERSION.gem" --host "$OA_URL/repos/$REPO"
-hp="${OA_URL#*://}"; scheme="${OA_URL%%://*}"
-gem install "$PKG" --version "$VERSION" --clear-sources --no-document --install-dir /tmp/g \
-  --source "$scheme://smoke:$OA_TOKEN@$hp/repos/$REPO/" >/dev/null
-GEM_PATH=/tmp/g ruby -e "require \"$PKG\"; abort 'wrong content' unless Smoke::VALUE == \"$PKG\"; puts Smoke::VALUE"
+  gem build "$PKG.gemspec" >/dev/null
+  GEM_HOST_API_KEY="Bearer $OA_TOKEN" gem push "$PKG-$VERSION.gem" --host "$OA_URL/repos/$REPO"
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # fresh gem state: an install directory of its own, no other source, no local gem file
+  mkdir -p /tmp/c && cd /tmp/c
+  gem install "$PKG" --version "$VERSION" --clear-sources --no-document --install-dir /tmp/g \
+    --source "$scheme://smoke:$OA_TOKEN@$hp/repos/$REPO/" >/dev/null
+  GEM_PATH=/tmp/g ruby -e "require \"$PKG\"; abort 'wrong content' unless Smoke::VALUE == \"$PKG\"; puts Smoke::VALUE"
+}
 SCRIPT
 )"

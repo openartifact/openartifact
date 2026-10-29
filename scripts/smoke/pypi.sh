@@ -12,17 +12,23 @@ smoke_init pypi python:3-slim "$@"
 
 smoke_run "$(cat <<'SCRIPT'
 set -eu
-pip install -q build twine setuptools wheel >/dev/null 2>&1
 pip --version
-mkdir -p /tmp/p/src && cd /tmp/p
-printf "[build-system]\nrequires=[\"setuptools\"]\nbuild-backend=\"setuptools.build_meta\"\n[project]\nname=\"%s\"\nversion=\"%s\"\n" "$PKG" "$VERSION" > pyproject.toml
-printf "[tool.setuptools]\npy-modules=[\"%s\"]\n" "$PKG" >> pyproject.toml
-echo "VALUE = \"$PKG\"" > $PKG.py
-python -m build --wheel --no-isolation >/dev/null 2>&1
-TWINE_USERNAME=smoke TWINE_PASSWORD=$OA_TOKEN twine upload --non-interactive \
-  --repository-url "$OA_URL/repos/$REPO/legacy/" dist/*.whl >/dev/null
 hp="${OA_URL#*://}"; scheme="${OA_URL%%://*}"
-pip install -q --index-url "$scheme://smoke:$OA_TOKEN@$hp/repos/$REPO/simple/" "$PKG==$VERSION" >/dev/null
-[ "$(python -c "import $PKG; print($PKG.VALUE)")" = "$PKG" ]
+[ "$SMOKE_MODE" = install ] || {
+  pip install -q build twine setuptools wheel >/dev/null 2>&1
+  mkdir -p /tmp/p/src && cd /tmp/p
+  printf "[build-system]\nrequires=[\"setuptools\"]\nbuild-backend=\"setuptools.build_meta\"\n[project]\nname=\"%s\"\nversion=\"%s\"\n" "$PKG" "$VERSION" > pyproject.toml
+  printf "[tool.setuptools]\npy-modules=[\"%s\"]\n" "$PKG" >> pyproject.toml
+  echo "VALUE = \"$PKG\"" > $PKG.py
+  python -m build --wheel --no-isolation >/dev/null 2>&1
+  TWINE_USERNAME=smoke TWINE_PASSWORD=$OA_TOKEN twine upload --non-interactive \
+    --repository-url "$OA_URL/repos/$REPO/legacy/" dist/*.whl >/dev/null
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # no pip cache; the import runs outside the build directory, so it finds the installed wheel, not the source
+  pip install -q --no-cache-dir --index-url "$scheme://smoke:$OA_TOKEN@$hp/repos/$REPO/simple/" "$PKG==$VERSION" >/dev/null
+  mkdir -p /tmp/c && cd /tmp/c
+  [ "$(python -c "import $PKG; print($PKG.VALUE)")" = "$PKG" ]
+}
 SCRIPT
 )"

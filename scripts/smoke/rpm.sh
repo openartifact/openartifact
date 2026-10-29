@@ -13,9 +13,21 @@ smoke_init rpm fedora:latest "$@"
 
 smoke_run "$(cat <<'SCRIPT'
 set -eu
-dnf -y -q install rpm-build >/dev/null
 dnf --version | head -1
-cat > /tmp/$PKG.spec <<EOF
+cat > /etc/yum.repos.d/smoke.repo <<EOF
+[smoke]
+name=smoke
+baseurl=$OA_URL/repos/$REPO
+enabled=1
+gpgcheck=0
+repo_gpgcheck=0
+username=smoke
+password=$OA_TOKEN
+metadata_expire=1
+EOF
+[ "$SMOKE_MODE" = install ] || {
+  dnf -y -q --disablerepo=smoke install rpm-build >/dev/null
+  cat > /tmp/$PKG.spec <<EOF
 Name: $PKG
 Version: $VERSION
 Release: 1
@@ -31,27 +43,20 @@ chmod 755 %{buildroot}/usr/bin/$PKG
 %files
 /usr/bin/$PKG
 EOF
-rpmbuild -bb --define "_topdir /tmp/rpmbuild" /tmp/$PKG.spec >/dev/null 2>&1
-f=$(find /tmp/rpmbuild/RPMS -name "$PKG-*.rpm" | head -1)
-[ -n "$f" ] || { echo "rpmbuild produced nothing"; exit 1; }
-curl -fsS -H "Authorization: Bearer $OA_TOKEN" -F file=@"$f" "$OA_URL/api/v1/repositories/$REPO/packages" >/dev/null
-cat > /etc/yum.repos.d/smoke.repo <<EOF
-[smoke]
-name=smoke
-baseurl=$OA_URL/repos/$REPO
-enabled=1
-gpgcheck=0
-repo_gpgcheck=0
-username=smoke
-password=$OA_TOKEN
-metadata_expire=1
-EOF
-i=0
-until dnf -q clean all >/dev/null 2>&1; dnf -q --disablerepo="*" --enablerepo=smoke list available $PKG >/dev/null 2>&1; do
-  i=$((i+1)); [ $i -lt 30 ] || { echo "package never appeared in the rpm index"; exit 1; }; sleep 1
-done
-dnf -y -q --disablerepo="*" --enablerepo=smoke install $PKG >/dev/null
-[ "$(/usr/bin/$PKG)" = "$PKG" ]
-rpm -q $PKG | grep -q "$VERSION"
+  rpmbuild -bb --define "_topdir /tmp/rpmbuild" /tmp/$PKG.spec >/dev/null 2>&1
+  f=$(find /tmp/rpmbuild/RPMS -name "$PKG-*.rpm" | head -1)
+  [ -n "$f" ] || { echo "rpmbuild produced nothing"; exit 1; }
+  curl -fsS -H "Authorization: Bearer $OA_TOKEN" -F file=@"$f" "$OA_URL/api/v1/repositories/$REPO/packages" >/dev/null
+}
+[ "$SMOKE_MODE" = publish ] || {
+  # every attempt starts from cleaned dnf metadata and caches
+  i=0
+  until dnf -q clean all >/dev/null 2>&1; dnf -q --disablerepo="*" --enablerepo=smoke list available $PKG >/dev/null 2>&1; do
+    i=$((i+1)); [ $i -lt 30 ] || { echo "package never appeared in the rpm index"; exit 1; }; sleep 1
+  done
+  dnf -y -q --disablerepo="*" --enablerepo=smoke install $PKG >/dev/null
+  [ "$(/usr/bin/$PKG)" = "$PKG" ]
+  rpm -q $PKG | grep -q "$VERSION"
+}
 SCRIPT
 )"
