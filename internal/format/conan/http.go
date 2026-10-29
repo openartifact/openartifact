@@ -44,10 +44,11 @@ const (
 
 type HTTPHandler struct {
 	*base.Handler
+	DB database.Database
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // RegisterRepoRoutes registers Conan-specific routes on the provided sub-router.

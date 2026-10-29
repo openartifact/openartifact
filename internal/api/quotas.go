@@ -20,10 +20,11 @@ import (
 
 type QuotasHandler struct {
 	repoAccess
+	db database.Database
 }
 
 func NewQuotasHandler(log *logger.Logger, db database.Database, evaluator *auth.Evaluator) *QuotasHandler {
-	return &QuotasHandler{repoAccess: newRepoAccess(db, log, evaluator)}
+	return &QuotasHandler{repoAccess: newRepoAccess(db, log, evaluator), db: db}
 }
 
 func (h *QuotasHandler) RegisterRoutes(r chi.Router, pathPrefix string) {

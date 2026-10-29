@@ -36,6 +36,7 @@ type VEXHandler struct {
 
 	generator *sbom.Generator
 	attest    *attest.Service
+	db        database.Database
 }
 
 // WithAttestation enables signed documents (`?attest=true`).
@@ -45,7 +46,7 @@ func (h *VEXHandler) WithAttestation(svc *attest.Service) *VEXHandler {
 }
 
 func NewVEXHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator) *VEXHandler {
-	return &VEXHandler{repoAccess: newRepoAccess(db, log, evaluator), generator: generator}
+	return &VEXHandler{repoAccess: newRepoAccess(db, log, evaluator), generator: generator, db: db}
 }
 
 func (h *VEXHandler) RegisterAuthed(r chi.Router) {

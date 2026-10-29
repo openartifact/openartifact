@@ -325,6 +325,7 @@ type AttestationAttachHandler struct {
 
 	attacher *AttestationAttacher
 	blobs    storage.BlobStore
+	db       database.Database
 }
 
 // NewAttestationAttachHandler builds the handler.
@@ -335,7 +336,7 @@ func NewAttestationAttachHandler(
 	attacher *AttestationAttacher,
 	blobs storage.BlobStore,
 ) *AttestationAttachHandler {
-	return &AttestationAttachHandler{repoAccess: newRepoAccess(db, log, evaluator), attacher: attacher, blobs: blobs}
+	return &AttestationAttachHandler{repoAccess: newRepoAccess(db, log, evaluator), attacher: attacher, blobs: blobs, db: db}
 }
 
 // RegisterAuthed registers the admin routes.

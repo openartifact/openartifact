@@ -63,12 +63,13 @@ type HTTPHandler struct {
 	keys    KeyProvider
 	regen   Regenerator
 	metrics *metrics.Registry
+	DB      database.Database
 }
 
 // NewHTTPHandler builds the handler. Wire the key service and the regeneration
 // worker with WithKeys and WithRegenerator before serving.
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // WithKeys wires the signing key service that backs the public key downloads.

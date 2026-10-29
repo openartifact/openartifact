@@ -31,6 +31,7 @@ type BundlesHandler struct {
 	keys      BundleKeyResolver
 	promoter  *promote.Engine
 	publisher webhook.Publisher
+	db        database.Database
 }
 
 const (
@@ -121,7 +122,7 @@ func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.Pip
 }
 
 func NewBundlesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
-	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil)}
+	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil), db: db}
 }
 
 // WithPublisher enables the bundle.promoted webhook event.

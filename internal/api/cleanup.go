@@ -33,10 +33,11 @@ type CleanupHandler struct {
 	repoAccess
 
 	runner CleanupRunner
+	db     database.Database
 }
 
 func NewCleanupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, runner CleanupRunner) *CleanupHandler {
-	return &CleanupHandler{repoAccess: newRepoAccess(db, log, evaluator), runner: runner}
+	return &CleanupHandler{repoAccess: newRepoAccess(db, log, evaluator), runner: runner, db: db}
 }
 
 func (h *CleanupHandler) RegisterAuthed(r chi.Router) {

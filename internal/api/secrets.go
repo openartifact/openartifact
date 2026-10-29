@@ -25,12 +25,13 @@ type SecretsHandler struct {
 	repoAccess
 
 	scanner *secrets.Scanner
+	db      database.Database
 }
 
 func NewSecretsHandler(db database.Database, log *logger.Logger, scanner *secrets.Scanner) *SecretsHandler {
 	return &SecretsHandler{
 		repoAccess: newRepoAccess(db, log, auth.NewEvaluator(db, log, false)),
-		scanner:    scanner,
+		scanner:    scanner, db: db,
 	}
 }
 

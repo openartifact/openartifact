@@ -54,6 +54,7 @@ type VulnHandler struct {
 	// fwd, when set (server.role=web), receives the scans for a worker process
 	// to run (ForwardScansTo).
 	fwd *workq.Store
+	db  database.Database
 }
 
 // WithExploit sets the enricher that marks findings with the CISA KEV and
@@ -146,7 +147,7 @@ func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		scanners:   scanners,
 		newBackend: scanners.Backend,
 		tasks:      bgtask.New(context.Background()),
-		exploit:    exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),
+		exploit:    exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold), db: db,
 	}
 }
 

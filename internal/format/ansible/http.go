@@ -43,11 +43,12 @@ const metadataMaxAge = 60
 // HTTPHandler serves hosted Ansible collection repositories.
 type HTTPHandler struct {
 	*base.Handler
+	DB database.Database
 }
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // route registers h for pattern with and without the trailing slash: the

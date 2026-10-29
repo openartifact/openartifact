@@ -31,13 +31,14 @@ type BackupHandler struct {
 
 	backupEngine *backup.Engine
 	tasks        *bgtask.Runner
+	db           database.Database
 }
 
 func NewBackupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, backupEngine *backup.Engine) *BackupHandler {
 	return &BackupHandler{
 		repoAccess:   newRepoAccess(db, log, evaluator),
 		backupEngine: backupEngine,
-		tasks:        bgtask.New(context.Background()),
+		tasks:        bgtask.New(context.Background()), db: db,
 	}
 }
 

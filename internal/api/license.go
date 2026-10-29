@@ -26,6 +26,7 @@ type LicenseHandler struct {
 
 	detector *license.Detector
 	licenses artifactLicenseSource
+	db       database.Database
 }
 
 // NewLicenseHandler returns the license scan and policy handler. blobs is the
@@ -40,7 +41,7 @@ func NewLicenseHandler(
 	return &LicenseHandler{
 		repoAccess: newRepoAccess(db, log, evaluator),
 		detector:   detector,
-		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector},
+		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector}, db: db,
 	}
 }
 

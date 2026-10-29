@@ -52,11 +52,12 @@ type HTTPHandler struct {
 	*base.Handler
 
 	regen Regenerator
+	DB    database.Database
 }
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // SetRegenerator sets the worker that regenerates the databases after an

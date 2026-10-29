@@ -33,6 +33,7 @@ type SBOMHandler struct {
 	blobStore storage.BlobStore
 	attest    *attest.Service
 	attacher  *AttestationAttacher
+	db        database.Database
 }
 
 // WithAttacher attaches each generated SBOM to its docker image as an OCI
@@ -58,7 +59,7 @@ func NewSBOMHandler(
 	return &SBOMHandler{
 		repoAccess: newRepoAccess(db, log, evaluator),
 		generator:  generator,
-		blobStore:  blobStore,
+		blobStore:  blobStore, db: db,
 	}
 }
 

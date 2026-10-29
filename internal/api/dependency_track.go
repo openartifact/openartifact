@@ -43,6 +43,7 @@ type DependencyTrackHandler struct {
 	repoAccess
 
 	pusher DTrackPusher
+	db     database.Database
 }
 
 // NewDependencyTrackHandler creates the handler; pusher may be nil (manual pushes then answer 501).
@@ -52,7 +53,7 @@ func NewDependencyTrackHandler(
 	evaluator *auth.Evaluator,
 	pusher DTrackPusher,
 ) *DependencyTrackHandler {
-	return &DependencyTrackHandler{repoAccess: newRepoAccess(db, log, evaluator), pusher: pusher}
+	return &DependencyTrackHandler{repoAccess: newRepoAccess(db, log, evaluator), pusher: pusher, db: db}
 }
 
 // RegisterAuthed registers the admin routes.

@@ -56,6 +56,7 @@ type HTTPHandler struct {
 	proxy     ProxyServer
 	ticketKey []byte
 	now       func() time.Time
+	DB        database.Database
 }
 
 // NewHTTPHandler creates the handler. baseURL is the externally visible server
@@ -63,7 +64,7 @@ type HTTPHandler struct {
 // download tickets need WithTicketKey; without them the matching endpoints
 // answer 503.
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), now: time.Now}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), now: time.Now, DB: db}
 }
 
 // WithSigner sets where provider checksum signatures come from: the GPG key

@@ -76,11 +76,12 @@ type Handler[A any] struct {
 	*base.Handler
 
 	spec Spec[A]
+	DB   database.Database
 }
 
 // New creates the handler of the format described by spec.
 func New[A any](spec Spec[A], log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *Handler[A] {
-	return &Handler[A]{Handler: base.New(log, db, blobStore, baseURL), spec: spec}
+	return &Handler[A]{Handler: base.New(log, db, blobStore, baseURL), spec: spec, DB: db}
 }
 
 // RegisterRepoRoutes registers the format's routes on the provided sub-router.

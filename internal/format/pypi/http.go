@@ -45,10 +45,11 @@ type HTTPHandler struct {
 
 	// maxUpload bounds one uploaded distribution file.
 	maxUpload int64
+	DB        database.Database
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes, DB: db}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {

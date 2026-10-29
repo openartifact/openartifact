@@ -36,10 +36,11 @@ const metadataMaxAge = 300
 
 type HTTPHandler struct {
 	*base.Handler
+	DB database.Database
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, "")}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, ""), DB: db}
 }
 
 // RegisterRepoRoutes registers Maven-specific routes on the provided sub-router.

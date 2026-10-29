@@ -69,6 +69,7 @@ type HTTPHandler struct {
 	// concurrent nupkg reads behind cache misses.
 	deps       *depCache
 	nuspecGate base.Gate
+	DB         database.Database
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
@@ -76,7 +77,7 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 		Handler:    base.New(log, db, blobStore, baseURL),
 		maxPush:    maxNuGetPackageBytes,
 		deps:       newDepCache(depCacheEntries),
-		nuspecGate: base.NewGate(maxConcurrentNuspecReads),
+		nuspecGate: base.NewGate(maxConcurrentNuspecReads), DB: db,
 	}
 }
 

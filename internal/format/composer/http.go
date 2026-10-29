@@ -54,11 +54,12 @@ type HTTPHandler struct {
 	*base.Handler
 
 	metrics *metrics.Registry
+	DB      database.Database
 }
 
 // NewHTTPHandler creates the handler.
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 
 // WithMetrics counts a committed upload in openartifact_uploads_total.

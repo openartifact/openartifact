@@ -82,6 +82,7 @@ type PresignedUploadHandler struct {
 	urlTTL     time.Duration
 	maxPending int
 	reg        *metrics.Registry
+	DB         database.Database
 }
 
 // NewPresignedUploadHandler builds the handler. blobStore may or may not
@@ -107,7 +108,7 @@ func NewPresignedUploadHandler(log *logger.Logger, db database.Database, blobSto
 		multipart:  multipart,
 		urlTTL:     urlTTL,
 		maxPending: maxPending,
-		reg:        reg,
+		reg:        reg, DB: db,
 	}
 }
 

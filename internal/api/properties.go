@@ -25,6 +25,7 @@ type PropertiesHandler struct {
 	repoAccess
 
 	licenses artifactLicenseSource
+	db       database.Database
 }
 
 // NewPropertiesHandler returns the artifact properties handler. blobs is the
@@ -33,7 +34,7 @@ type PropertiesHandler struct {
 func NewPropertiesHandler(log *logger.Logger, db database.Database, blobs storage.BlobStore) *PropertiesHandler {
 	return &PropertiesHandler{
 		repoAccess: newRepoAccess(db, log, nil),
-		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)},
+		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)}, db: db,
 	}
 }
 

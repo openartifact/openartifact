@@ -52,10 +52,11 @@ type TrashHandler struct {
 	// tasks runs the detached orphan-blob collections started by repository
 	// purges; they are cancelled at server shutdown.
 	tasks *bgtask.Runner
+	db    database.Database
 }
 
 func NewTrashHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
-	return &TrashHandler{repoAccess: newRepoAccess(db, log, evaluator), tasks: bgtask.New(context.Background())}
+	return &TrashHandler{repoAccess: newRepoAccess(db, log, evaluator), tasks: bgtask.New(context.Background()), db: db}
 }
 
 // WithTasks runs the background orphan-blob collections under the server

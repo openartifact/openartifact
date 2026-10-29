@@ -28,6 +28,7 @@ type WebhooksHandler struct {
 	repoAccess
 
 	dispatcher *webhook.Dispatcher
+	db         database.Database
 }
 
 func NewWebhooksHandler(
@@ -38,7 +39,7 @@ func NewWebhooksHandler(
 ) *WebhooksHandler {
 	return &WebhooksHandler{
 		repoAccess: newRepoAccess(db, log, evaluator),
-		dispatcher: dispatcher,
+		dispatcher: dispatcher, db: db,
 	}
 }
 
