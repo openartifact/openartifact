@@ -259,8 +259,8 @@ func (p *BlobRefStore) ArtifactExists(ctx context.Context, sha256 string, reposi
 	return exists, nil
 }
 
-// BlobReferenceCount returns the number of rows, across every package table
-// that stores a blob_id FK into the global blobs table, referencing the blob
+// BlobReferenceCount returns the number of rows, across package_files and the
+// other tables that store a blob_id FK into the global blobs table, referencing the blob
 // identified by sha256. A count of 0 means the blob is safe to delete from
 // storage (see SafeDeleteBlob in internal/storage/refcount.go). A blob that
 // does not exist in the blobs table is still checked against the tables that

@@ -65,16 +65,10 @@ func (p *DeltaStore) ListPackageDeltas(ctx context.Context, repoID, toSHA256 str
 		FROM package_deltas d
 		WHERE d.repository_id = $1 AND d.to_sha256 = $2
 		  AND (
-		    EXISTS (SELECT 1 FROM rpm_packages s JOIN blobs b ON b.id = s.blob_id
+		    EXISTS (SELECT 1 FROM package_files s JOIN blobs b ON b.id = s.blob_id
 		            WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NULL)
-		    OR EXISTS (SELECT 1 FROM deb_packages s JOIN blobs b ON b.id = s.blob_id
-		               WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NULL)
-		    OR NOT (
-		      EXISTS (SELECT 1 FROM rpm_packages s JOIN blobs b ON b.id = s.blob_id
-		              WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NOT NULL)
-		      OR EXISTS (SELECT 1 FROM deb_packages s JOIN blobs b ON b.id = s.blob_id
-		                 WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NOT NULL)
-		    )
+		    OR NOT EXISTS (SELECT 1 FROM package_files s JOIN blobs b ON b.id = s.blob_id
+		                   WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NOT NULL)
 		  )
 		ORDER BY d.created_at DESC`,
 		repoID, toSHA256,

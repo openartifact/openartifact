@@ -25,7 +25,6 @@ func trashDockerRows(ctx context.Context, e interface {
 ) error {
 	// One statement timestamp for the row and its cascade, so a cascaded child
 	// is recognisably part of the same delete (and restored with it).
-	//nolint:gosec // G202: the table is a constant of the docker spec; ids and repo are bound arguments
 	res, err := e.ExecContext(ctx,
 		`UPDATE `+spec.table+` t SET deleted_at = now(), deleted_by = $3
 		 WHERE t.id = ANY($1::uuid[]) AND t.deleted_at IS NULL AND t.repository_id = $2::uuid`,
@@ -117,7 +116,6 @@ func ensureTagManifestLive(ctx context.Context, tx *sql.Tx, tagID string) error 
 // manifest) and fills res with the blobs and quota to give back.
 func purgeDockerRow(ctx context.Context, tx *sql.Tx, spec *dockerSpec, item *models.TrashItem, res *models.TrashPurgeResult) error {
 	var shas string
-	//nolint:gosec // G202: the SHA expression and table are constants of the docker spec; the id is a bound argument
 	if err := tx.QueryRowContext(ctx,
 		`SELECT `+spec.blobSHAExpr()+` FROM `+spec.table+` t WHERE t.id = $1::uuid`, item.ID).Scan(&shas); err != nil {
 		return fmt.Errorf("collect blobs of %s: %w", spec.kind, err)

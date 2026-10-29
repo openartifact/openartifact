@@ -141,8 +141,10 @@ func genericFormats(kind models.TrashKind) []string {
 	return storage.TrashFormatsOfKind(string(kind))
 }
 
-// itemCase renders "CASE r.format WHEN 'f' THEN (expr) ... ELSE def END" over
-// the formats whose expression differs from def, or def alone when none does.
+// itemCase renders "CASE r.format WHEN 'f' THEN COALESCE((expr), ”) ... ELSE def
+// END" over the formats whose expression differs from def, or def alone when
+// none does. A descriptor expression concatenates optional attributes, which
+// yields NULL when one is absent; the list shows an empty text then.
 func itemCase(formats []string, def string, expr func(storage.Trash) string) string {
 	var b strings.Builder
 
@@ -153,7 +155,7 @@ func itemCase(formats []string, def string, expr func(storage.Trash) string) str
 		}
 
 		if e := expr(s.Trash); e != "" && e != def {
-			fmt.Fprintf(&b, " WHEN %s THEN (%s)", sqlLiteral(f), e)
+			fmt.Fprintf(&b, " WHEN %s THEN COALESCE((%s), '')", sqlLiteral(f), e)
 		}
 	}
 

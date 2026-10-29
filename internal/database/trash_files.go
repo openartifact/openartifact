@@ -383,22 +383,25 @@ func deleteUnit(ctx context.Context, tx sqlTx, desc storage.Trash, repoID, id st
 
 // totals folds a unit into what the purge result reports: the blobs to free and
 // the quota the unit held (one artifact per primary file, every blob's bytes).
-func totals(unit []unitFile) (shas []string, artifacts int, size int64) {
+func totals(unit []unitFile) models.FileDeletion {
+	var out models.FileDeletion
+
 	for _, u := range unit {
 		if u.primary {
-			artifacts++
+			out.QuotaArtifacts++
 		}
 
-		size += u.size
+		out.QuotaBytes += u.size
 
 		if u.sha256 != "" {
-			shas = append(shas, u.sha256)
+			out.BlobSHA256 = append(out.BlobSHA256, u.sha256)
 		}
 	}
 
-	slices.Sort(shas)
+	slices.Sort(out.BlobSHA256)
+	out.BlobSHA256 = slices.Compact(out.BlobSHA256)
 
-	return slices.Compact(shas), artifacts, size
+	return out
 }
 
 func versionsOf(unit []unitFile) []string {
@@ -432,7 +435,8 @@ func purgeFilesExec(ctx context.Context, tx sqlTx, item *models.TrashItem, res *
 		return err
 	}
 
-	res.BlobSHA256, res.QuotaArtifacts, res.QuotaBytes = totals(unit)
+	sum := totals(unit)
+	res.BlobSHA256, res.QuotaArtifacts, res.QuotaBytes = sum.BlobSHA256, sum.QuotaArtifacts, sum.QuotaBytes
 
 	return nil
 }
@@ -484,8 +488,9 @@ func (p *TrashStore) HardDeleteFiles(ctx context.Context, repoID string, ids []s
 			return nil, err
 		}
 
-		shas, artifacts, size := totals(unit)
-		out = append(out, models.FileDeletion{ID: id, BlobSHA256: shas, QuotaArtifacts: artifacts, QuotaBytes: size})
+		sum := totals(unit)
+		sum.ID = id
+		out = append(out, sum)
 		versions = append(versions, versionsOf(unit)...)
 	}
 

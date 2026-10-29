@@ -560,7 +560,6 @@ func (p *TrashStore) restoreRepository(ctx context.Context, id string) (*models.
 		 WHERE repository_id = $1::uuid AND deleted_at IS NOT NULL`,
 	}
 	for _, s := range dockerSpecs {
-		//nolint:gosec // G202: the table is a constant of the docker spec; the id is a bound argument
 		shift = append(shift, `UPDATE `+s.table+` SET deleted_at = deleted_at + $2::interval
 			 WHERE repository_id = $1::uuid AND deleted_at IS NOT NULL`)
 	}
@@ -675,7 +674,6 @@ func (p *TrashStore) RegenKeys(ctx context.Context, kind models.TrashKind, id st
 
 	var a, b sql.NullString
 
-	//nolint:gosec // G202: RegenKeysSQL is a constant of the format descriptor; the id is a bound argument
 	err = p.db.QueryRowContext(ctx,
 		`SELECT `+desc.RegenKeysSQL()+` FROM package_files f
 		 JOIN package_versions v ON v.id = f.version_id
@@ -746,7 +744,6 @@ func (p *TrashStore) ListExpiredTrash(ctx context.Context, limit int) ([]models.
 			break
 		}
 
-		//nolint:gosec // G202: the table is a constant of the docker spec
 		if err := collect(constKind(s.kind),
 			`SELECT t.id::text, 'docker' FROM `+s.table+` t JOIN repositories r ON r.id = t.repository_id
 			 WHERE t.deleted_at IS NOT NULL AND r.deleted_at IS NULL
