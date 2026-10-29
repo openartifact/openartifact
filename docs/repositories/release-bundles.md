@@ -63,12 +63,12 @@ Each item:
 |---|---|---|
 | `source_repo_id` | yes | UUID of an existing repository (the `id` of `GET /api/v1/repository/{repo}`). |
 | `sha256` | yes | 64 hex characters (case-insensitive, stored lowercase); unique within the bundle. |
-| `artifact_path` | yes | Path of the artifact (at most 1024 bytes): its path or filename in the source repository (a leading `/` is ignored), its file id, or for docker its digest, image, tag or distribution name. |
+| `artifact_path` | yes | Path of the artifact (at most 1024 bytes): its path or file name in the source repository (what the package listing and the search show), its repository URL path (`com/example/lib/1.0/lib-1.0.jar` for Ivy and sbt, whose group is stored with dots), either behind a leading `/` or a `repos/<repository>/` prefix, its file id, or for docker its digest, image, tag or distribution name. A path that starts with another repository's `repos/<name>/` never matches. |
 | `format` | no | Defaults to the source repository's format; any other value is `400`. |
 | `size_bytes` | no | Non-negative. |
 | `component_id` | no | Optional id stored with the item. |
 
-The server checks that the source repository exists and that it holds a live artifact stored as `sha256` and located by `artifact_path`; otherwise the request is `400 validation_failed` and nothing is added. The signed manifest therefore only states what the repository backs.
+The server checks that the source repository exists and that it holds a live artifact stored as `sha256` and located by `artifact_path` (promotion locates the item with the same rule, so an accepted item always selects the artifact it was accepted for); otherwise the request is `400 validation_failed` and nothing is added. The signed manifest therefore only states what the repository backs.
 
 ```sh
 curl -X POST HOST/api/v1/bundles -H "Authorization: Bearer <TOKEN>" \

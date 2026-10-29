@@ -219,6 +219,20 @@ func TestListedMatcher(t *testing.T) {
 		t.Errorf("deb: %v", err)
 	}
 
+	for _, f := range []importFormat{formatIvy, formatSBT} {
+		q, match, err = listedMatcher(f, "com/acme/lib/1.0/lib-1.0.jar")
+		row := ciPackage{Name: "com.acme:lib", Version: "1.0", Filename: "lib-1.0.jar"}
+
+		if err != nil || q != "1.0" || !match(row) {
+			t.Errorf("%s: the listed stored file name must match: %q %v", f, q, err)
+		}
+
+		row.Version = "2.0"
+		if match(row) {
+			t.Errorf("%s: another version must not match", f)
+		}
+	}
+
 	if _, _, err := listedMatcher(formatSBT, "too/short"); !errors.Is(err, errBundlePath) {
 		t.Errorf("sbt short path: %v", err)
 	}

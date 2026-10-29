@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package base
+package artifactpath
 
 import (
 	"strings"
@@ -10,8 +10,8 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
-// ArtifactPath is the address of one file in an Ivy or sbt repository.
-type ArtifactPath struct {
+// Path is the address of one file in an Ivy or sbt repository.
+type Path struct {
 	// Group is the organisation / group id, dotted ("com.example") whichever way
 	// the client wrote it.
 	Group    string
@@ -20,7 +20,7 @@ type ArtifactPath struct {
 	Filename string // may hold a subdirectory in the Ivy layout ("jars/lib.jar")
 }
 
-// SplitArtifactPath parses the wildcard part of an Ivy or sbt URL, which is one
+// Split parses the wildcard part of an Ivy or sbt URL, which is one
 // of two layouts:
 //
 //   - Maven layout, `com/example/lib/1.0/lib-1.0.jar` (what sbt publishes by
@@ -39,17 +39,17 @@ type ArtifactPath struct {
 // coordinates, so read and delete fall back to them; it equals the current
 // reading when there is nothing to fall back to. The path is invalid when it has
 // fewer than four segments or one that is not a plain segment (see pathseg.Name).
-func SplitArtifactPath(p string) (ArtifactPath, ArtifactPath, bool) {
+func Split(p string) (Path, Path, bool) {
 	parts := strings.Split(p, "/")
 	if len(parts) < 4 || !pathseg.Segments(parts) {
-		return ArtifactPath{}, ArtifactPath{}, false
+		return Path{}, Path{}, false
 	}
 
-	legacy := ArtifactPath{Group: parts[0], Module: parts[1], Version: parts[2], Filename: strings.Join(parts[3:], "/")}
+	legacy := Path{Group: parts[0], Module: parts[1], Version: parts[2], Filename: strings.Join(parts[3:], "/")}
 	cur := legacy
 
 	if n := len(parts); n > 4 && isMavenFile(parts[n-3], parts[n-2], parts[n-1]) {
-		cur = ArtifactPath{
+		cur = Path{
 			Group:    strings.Join(parts[:n-3], "."),
 			Module:   parts[n-3],
 			Version:  parts[n-2],

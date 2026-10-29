@@ -85,7 +85,7 @@ type ivySBTCoords struct {
 }
 
 // splitIvySBTPath reads a source path the way the server does (see
-// SplitArtifactPath in internal/format/base, which a test keeps this in step
+// Split in internal/artifactpath, which a test keeps this in step
 // with): Maven layout when the file name starts with <module>-<version>,
 // otherwise the first three segments are group, module and version and the
 // rest is the file name. It fails below four segments or on a segment
