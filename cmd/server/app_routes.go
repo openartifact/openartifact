@@ -186,6 +186,7 @@ func (a *app) registerAdminRoutes() {
 	api.NewNixKeyHandler(db, log, evaluator, a.workers.nixKeys).Register(authedAPI)
 	w.public.sysInfo.RegisterAuthed(authedAPI)
 	w.public.brand.RegisterAuthed(authedAPI)
+	api.NewFrontendTelemetryHandler(cfg.Telemetry, a.reg, log).RegisterAuthed(authedAPI)
 
 	if cfg.Server.PprofEnabled {
 		registerPprof(authedAPI)

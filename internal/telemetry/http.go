@@ -76,7 +76,8 @@ func SpanName(method, route string) string {
 // matched pattern is readable here after next returns. Mount it before the
 // logging middleware so log lines can carry the trace id. Probe endpoints
 // (/health, /ready, /metrics) are not traced: polled every few seconds they
-// would drown real traffic.
+// would drown real traffic. Neither are the frontend telemetry relay's exports
+// (every open UI posts every few seconds, and each would be a new root trace).
 func HTTPMiddleware() func(http.Handler) http.Handler {
 	if !Enabled() {
 		return func(next http.Handler) http.Handler { return next }
@@ -87,7 +88,7 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isProbe(r.URL.Path) {
+			if untraced(r.URL.Path) {
 				next.ServeHTTP(w, r)
 
 				return
@@ -133,8 +134,15 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-func isProbe(path string) bool {
-	return path == "/health" || path == "/ready" || path == "/metrics"
+// untraced reports whether path is served without a server span: the probes
+// and the frontend telemetry relay.
+func untraced(path string) bool {
+	switch path {
+	case "/health", "/ready", "/metrics", "/api/v1/telemetry/traces", "/api/v1/telemetry/logs":
+		return true
+	}
+
+	return false
 }
 
 func finishServer(ctx context.Context, span trace.Span, method string, status int) {

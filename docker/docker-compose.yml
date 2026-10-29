@@ -100,6 +100,9 @@ services:
       OTEL_METRICS_EXPORTER:
       OTEL_LOGS_EXPORTER:
       OPENARTIFACT_OTLP_AUDIT:
+      # Experimental frontend telemetry; the relay speaks OTLP/HTTP (port 4318).
+      OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED:
+      OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT: ${OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT:-http://otel-collector:4318}
     restart: unless-stopped
     read_only: true
     tmpfs:

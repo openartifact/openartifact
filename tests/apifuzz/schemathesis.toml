@@ -59,6 +59,12 @@ enabled = false
 include-name = "GET /api/v1/admin/ai/models"
 enabled = false
 
+[[operations]]
+# Forwards the body to the OTLP collector. Its only media type is application/x-protobuf,
+# for which Schemathesis has no serializer.
+include-name = "POST /api/v1/telemetry/{signal}"
+enabled = false
+
 # --- Fuzzed, with an expected 5xx --------------------------------------------------
 
 [[operations]]

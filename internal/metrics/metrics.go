@@ -73,6 +73,11 @@ type Registry struct {
 	ExploitImportAttemptsTotal      *prometheus.CounterVec
 	ExploitFeedLastSuccessTimestamp *prometheus.GaugeVec
 
+	// FrontendTelemetryRequestsTotal counts the export requests of the
+	// experimental browser telemetry relay by signal (traces, logs) and result
+	// (relayed, rejected, failed).
+	FrontendTelemetryRequestsTotal *prometheus.CounterVec
+
 	// Recovery holds the disaster-recovery row journal metrics.
 	Recovery RecoveryMetrics
 }
@@ -266,6 +271,13 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 			Name: "openartifact_exploit_feed_last_success_timestamp_seconds",
 			Help: "Unix time of the last successful import (or unchanged check) of the KEV and EPSS feeds, by feed.",
 		}, []string{"feed"}),
+
+		FrontendTelemetryRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_frontend_telemetry_requests_total",
+			Help: "Export requests of the experimental browser telemetry relay, by signal (traces, logs) and result: relayed " +
+				"(the collector accepted them), rejected (refused by the relay or the collector as invalid) or failed " +
+				"(collector unreachable or erroring, answered 502).",
+		}, []string{"signal", "result"}),
 	}
 
 	reg.MustRegister(
@@ -299,6 +311,7 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		r.ScannerDBLastSuccessTimestamp,
 		r.ExploitImportAttemptsTotal,
 		r.ExploitFeedLastSuccessTimestamp,
+		r.FrontendTelemetryRequestsTotal,
 	)
 	reg.MustRegister(r.Replication.Collectors()...)
 

@@ -36,15 +36,56 @@ const (
 const DefaultServiceName = "openartifact"
 
 var (
-	errProtocol    = errors.New("telemetry.otlp.protocol must be grpc, http or http/protobuf")
-	errSampleRatio = errors.New("telemetry.otlp.sampleRatio must be between 0 and 1")
-	errEndpoint    = errors.New("telemetry.otlp.endpoint must be host:port or an http(s) URL without query or fragment")
-	errHeaderName  = errors.New("telemetry.otlp.headers must not contain an empty header name")
+	errProtocol         = errors.New("telemetry.otlp.protocol must be grpc, http or http/protobuf")
+	errSampleRatio      = errors.New("telemetry.otlp.sampleRatio must be between 0 and 1")
+	errEndpoint         = errors.New("telemetry.otlp.endpoint must be host:port or an http(s) URL without query or fragment")
+	errHeaderName       = errors.New("telemetry.otlp.headers must not contain an empty header name")
+	errFrontendEndpoint = errors.New("telemetry.frontend.endpoint must be an http(s) URL without query or fragment")
+	errFrontendNoTarget = errors.New("telemetry.frontend.enabled needs telemetry.frontend.endpoint (an OTLP/HTTP URL) " +
+		"unless telemetry.otlp.protocol is http with an endpoint")
 )
 
 // Config is the telemetry section of the server configuration.
 type Config struct {
-	OTLP OTLPConfig `yaml:"otlp"`
+	OTLP     OTLPConfig     `yaml:"otlp"`
+	Frontend FrontendConfig `yaml:"frontend"`
+}
+
+// FrontendConfig configures the experimental browser telemetry: the web UI
+// loads the OpenTelemetry browser SDK and sends its errors, web vitals and API
+// client spans to a same-origin relay, which forwards them unchanged as
+// OTLP/HTTP to the collector. It needs telemetry.otlp.enabled (the shared
+// headers and TLS) and has no compatibility promise.
+type FrontendConfig struct {
+	// Enabled turns the whole feature on. Off by default: the UI then loads no
+	// telemetry code and the relay and its config endpoint answer 404.
+	Enabled bool `yaml:"enabled"`
+	// Endpoint is the OTLP/HTTP base URL the relay forwards to ("/v1/traces"
+	// and "/v1/logs" are appended). Empty uses telemetry.otlp.endpoint, which
+	// then has to be an OTLP/HTTP one (protocol http).
+	Endpoint string `yaml:"endpoint"`
+}
+
+// FrontendActive reports whether the frontend telemetry relay is on: the
+// feature toggle and the OTLP master switch.
+func (c Config) FrontendActive() bool { return c.Frontend.Enabled && c.OTLP.Enabled }
+
+// FrontendURL is the collector URL the relay forwards signal ("traces" or
+// "logs") to. It assumes a configuration Validate accepted with the frontend
+// active.
+func (c Config) FrontendURL(signal string) string {
+	if c.Frontend.Endpoint != "" {
+		return strings.TrimRight(strings.TrimSpace(c.Frontend.Endpoint), "/") + "/v1/" + signal
+	}
+
+	ep, _ := parseEndpoint(c.OTLP.Endpoint)
+
+	scheme := "https"
+	if ep.plaintext || c.OTLP.Insecure {
+		scheme = "http"
+	}
+
+	return scheme + "://" + ep.hostPort + ep.path + "/v1/" + signal
 }
 
 // OTLPConfig configures the OTLP exporters. The endpoint, protocol, headers
@@ -149,6 +190,28 @@ func (c Config) Validate() error {
 		if _, err := parseEndpoint(o.Endpoint); err != nil {
 			return err
 		}
+	}
+
+	if c.Frontend.Enabled {
+		return c.Frontend.validate(o)
+	}
+
+	return nil
+}
+
+// validate checks that the relay has an OTLP/HTTP target: its own endpoint,
+// or the shared one when that speaks OTLP/HTTP.
+func (f FrontendConfig) validate(o OTLPConfig) error {
+	if f.Endpoint != "" {
+		if ep, err := parseEndpoint(f.Endpoint); err != nil || !strings.Contains(f.Endpoint, "://") || ep.hostPort == "" {
+			return errFrontendEndpoint
+		}
+
+		return nil
+	}
+
+	if proto, _ := o.NormalizedProtocol(); proto != ProtocolHTTP || o.Endpoint == "" {
+		return errFrontendNoTarget
 	}
 
 	return nil

@@ -65,21 +65,49 @@ export function expireSession(): Promise<void> {
   return expiring
 }
 
+/** The client span of one API call (experimental frontend telemetry, web/src/telemetry). */
+export interface ClientSpan {
+  /** W3C traceparent of the span: the server span of the call becomes its child. */
+  readonly traceparent: string
+  /** Ends the span with the response status. */
+  end(status: number): void
+  /** Ends the span as failed: the request did not get a response. */
+  fail(err: unknown): void
+}
+
+let startClientSpan: ((method: string) => ClientSpan) | undefined
+
+/** Installs the client span factory once frontend telemetry is on (undefined removes it); without one calls carry no traceparent. */
+export function setClientSpanFactory(start: ((method: string) => ClientSpan) | undefined): void {
+  startClientSpan = start
+}
+
 /**
  * Sends a same-origin API call with the standard headers (CSRF, XHR marker,
- * cookies) and handles an expired session: a 401 outside the auth probes
- * clears the session, redirects to login and throws.
+ * cookies, and traceparent while telemetry is on) and handles an expired
+ * session: a 401 outside the auth probes clears the session, redirects to
+ * login and throws.
  */
 async function send(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set('X-Requested-With', 'XMLHttpRequest')
   for (const [name, value] of Object.entries(csrfHeader())) headers.set(name, value)
 
-  const res = await fetch(path, {
-    ...init,
-    headers,
-    credentials: 'include',
-  })
+  const span = startClientSpan?.(init.method ?? 'GET')
+  if (span) headers.set('traceparent', span.traceparent)
+
+  let res: Response
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers,
+      credentials: 'include',
+    })
+  } catch (err) {
+    span?.fail(err)
+    throw err
+  }
+  span?.end(res.status)
 
   // These endpoints return 401 for reasons other than an expired session
   // (bad credentials, wrong current password, "not signed in" probe), so

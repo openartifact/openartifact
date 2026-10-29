@@ -20,7 +20,8 @@ function walk(dir: string): string[] {
 /**
  * Builds the service worker (src/pwa/sw.ts) into dist/sw.js once the app
  * bundle is written, injecting the precache list: every file under assets/
- * (content-hashed by Vite) except the locale-* catalog chunks plus the shell files and icons. The cache version
+ * (content-hashed by Vite) except the locale-* catalog chunks and the otel-* frontend telemetry chunk, plus the shell
+ * files and icons. The cache version
  * is a digest of the listed files, so any change yields a new worker.
  */
 export function pwa(): Plugin {
@@ -42,7 +43,8 @@ export function pwa(): Plugin {
       ]
         .filter((f) => !f.endsWith('.map'))
         // Translated catalogs are fetched on demand (the chunk of the user's language only), not installed for every language.
-        .filter((f) => !/^locale-/.test(basename(f)))
+        // The telemetry wrapper (src/telemetry/otel.ts) is fetched only when the server has frontend telemetry on.
+        .filter((f) => !/^(locale|otel)-/.test(basename(f)))
         .map((f) => ({ file: f, url: '/' + relative(outDir, f).split(sep).join('/') }))
         .sort((a, b) => a.url.localeCompare(b.url))
 

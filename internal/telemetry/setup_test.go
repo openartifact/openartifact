@@ -322,3 +322,62 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestFrontendTarget covers the relay target: telemetry.frontend.endpoint
+// wins, otherwise the shared endpoint when it speaks OTLP/HTTP, and the
+// feature needs the OTLP master switch.
+func TestFrontendTarget(t *testing.T) {
+	cfg := func(protocol, otlpEndpoint, frontendEndpoint string, insecure bool) Config {
+		c := DefaultConfig()
+		c.OTLP.Enabled = true
+		c.OTLP.Protocol = protocol
+		c.OTLP.Endpoint = otlpEndpoint
+		c.OTLP.Insecure = insecure
+		c.Frontend = FrontendConfig{Enabled: true, Endpoint: frontendEndpoint}
+
+		return c
+	}
+
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr bool
+		wantURL string
+	}{
+		{"own endpoint with grpc", cfg("grpc", "collector:4317", "http://localhost:4318/", false), false, "http://localhost:4318/v1/logs"},
+		{"own endpoint with path", cfg("grpc", "", "https://otlp.example.com/otlp", false), false, "https://otlp.example.com/otlp/v1/logs"},
+		{"shared http endpoint", cfg("http", "http://collector:4318/p", "", false), false, "http://collector:4318/p/v1/logs"},
+		{"shared host:port is https", cfg("http", "collector:4318", "", false), false, "https://collector:4318/v1/logs"},
+		{"shared host:port insecure", cfg("http", "collector:4318", "", true), false, "http://collector:4318/v1/logs"},
+		{"grpc without own endpoint", cfg("grpc", "collector:4317", "", false), true, ""},
+		{"http without any endpoint", cfg("http", "", "", false), true, ""},
+		{"own endpoint host:port", cfg("grpc", "", "localhost:4318", false), true, ""},
+		{"own endpoint with query", cfg("grpc", "", "http://localhost:4318?x=1", false), true, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Validate() = %v, wantErr %v", err, tc.wantErr)
+			}
+
+			if err == nil {
+				if got := tc.cfg.FrontendURL("logs"); got != tc.wantURL {
+					t.Errorf("FrontendURL(logs) = %q, want %q", got, tc.wantURL)
+				}
+			}
+		})
+	}
+
+	off := cfg("grpc", "", "", false)
+	off.OTLP.Enabled = false
+
+	if off.FrontendActive() {
+		t.Error("frontend telemetry active without telemetry.otlp.enabled")
+	}
+
+	if err := off.Validate(); err != nil {
+		t.Errorf("a disabled OTLP block must not fail on the frontend settings: %v", err)
+	}
+}

@@ -604,6 +604,10 @@ func isSelfServiceRequest(r *http.Request, principal *auth.Principal) bool {
 		return method == http.MethodGet
 	}
 
+	if rest, ok := strings.CutPrefix(path, "/api/v1/telemetry/"); ok {
+		return isFrontendTelemetryRequest(method, rest, principal)
+	}
+
 	if principal.Credential != auth.CredentialSession || principal.UserID == nil {
 		return false
 	}
@@ -620,12 +624,14 @@ func isSelfServiceRequest(r *http.Request, principal *auth.Principal) bool {
 	}
 
 	rest, ok := strings.CutPrefix(path, "/api/v1/users/")
-	if !ok {
-		return false
-	}
 
-	segs := strings.Split(rest, "/")
-	if segs[0] != *principal.UserID {
+	return ok && isOwnUserRequest(method, strings.Split(rest, "/"), *principal.UserID)
+}
+
+// isOwnUserRequest reports whether segs (of /api/v1/users/<segs>) address the
+// caller's own user (userID): updating it and managing its tokens.
+func isOwnUserRequest(method string, segs []string, userID string) bool {
+	if segs[0] != userID {
 		return false
 	}
 
@@ -639,6 +645,19 @@ func isSelfServiceRequest(r *http.Request, principal *auth.Principal) bool {
 	}
 
 	return false
+}
+
+// isFrontendTelemetryRequest reports whether a request to
+// /api/v1/telemetry/<rest> reaches the browser telemetry handler: reading its
+// settings needs any account (like /auth/me), the relay a browser session.
+// The handler answers 404 while the feature is off.
+func isFrontendTelemetryRequest(method, rest string, principal *auth.Principal) bool {
+	if rest == "frontend" && method == http.MethodGet {
+		return true
+	}
+
+	return method == http.MethodPost && isSingleSegment(rest) &&
+		principal.Credential == auth.CredentialSession && principal.UserID != nil
 }
 
 func isSingleSegment(s string) bool {

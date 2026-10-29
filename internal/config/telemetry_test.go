@@ -221,6 +221,31 @@ func TestValidate_Telemetry(t *testing.T) {
 	}
 }
 
+func TestFrontendTelemetryEnv(t *testing.T) {
+	clearTelemetryEnv(t)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if f := cfg.Telemetry.Frontend; f.Enabled || f.Endpoint != "" {
+		t.Fatalf("frontend telemetry defaults = %+v, want off and no endpoint", f)
+	}
+
+	t.Setenv("OPENARTIFACT_OTLP_ENABLED", "true")
+	t.Setenv("OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED", "true")
+	t.Setenv("OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT", "http://localhost:4318")
+
+	if cfg, err = Load(""); err != nil {
+		t.Fatal(err)
+	}
+
+	if f := cfg.Telemetry.Frontend; !f.Enabled || f.Endpoint != "http://localhost:4318" || !cfg.Telemetry.FrontendActive() {
+		t.Errorf("frontend telemetry from env = %+v (active %v)", f, cfg.Telemetry.FrontendActive())
+	}
+}
+
 // clearTelemetryEnv unsets every variable applyTelemetryEnv reads for the
 // duration of the test, so the developer's shell cannot change the result.
 func clearTelemetryEnv(t *testing.T) {
@@ -232,6 +257,7 @@ func clearTelemetryEnv(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL",
 		"OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_INSECURE",
 		"OTEL_SERVICE_NAME", "OTEL_TRACES_SAMPLER_ARG",
+		"OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED", "OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT",
 	} {
 		t.Setenv(k, "") // restores the original value on cleanup
 

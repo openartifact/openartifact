@@ -463,6 +463,15 @@ func TestIsSelfServiceRequest(t *testing.T) {
 		{"token must not mint via users route", bearer, http.MethodPost, "/api/v1/users/user-1/tokens", false},
 		{"token must not patch user", bearer, http.MethodPatch, "/api/v1/users/user-1", false},
 		{"listing users is never self-service", session, http.MethodGet, "/api/v1/users", false},
+		{"session reads frontend telemetry settings", session, http.MethodGet, "/api/v1/telemetry/frontend", true},
+		{"token reads frontend telemetry settings", bearer, http.MethodGet, "/api/v1/telemetry/frontend", true},
+		{"anonymous cannot read telemetry settings", anon, http.MethodGet, "/api/v1/telemetry/frontend", false},
+		{"session relays telemetry", session, http.MethodPost, "/api/v1/telemetry/traces", true},
+		{"token must not relay telemetry", bearer, http.MethodPost, "/api/v1/telemetry/traces", false},
+		{"legacy key must not relay telemetry", legacy, http.MethodPost, "/api/v1/telemetry/logs", false},
+		{"anonymous must not relay telemetry", anon, http.MethodPost, "/api/v1/telemetry/logs", false},
+		{"relay is one segment", session, http.MethodPost, "/api/v1/telemetry/logs/x", false},
+		{"relay is POST only", session, http.MethodDelete, "/api/v1/telemetry/logs", false},
 	}
 
 	for _, tc := range tests {

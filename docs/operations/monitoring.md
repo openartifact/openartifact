@@ -309,7 +309,7 @@ OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
 The server only speaks OTLP. Batching, retries, queueing, redaction and routing to one or more backends belong in an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (the `otelcol-contrib` distribution) running next to it, so only the Collector needs egress.
 
-[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`; `OTELCOL_LISTEN_HOST` changes the bind address), the `memory_limiter` and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
+[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`; `OTELCOL_LISTEN_HOST` changes the bind address), the `memory_limiter`, `redaction/frontend` (see [Frontend telemetry](#frontend-telemetry-experimental)) and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
 
 The compose file runs it as the opt-in `otel-collector` profile: a separate service on the compose network, listening on `0.0.0.0` there with no published ports, so the server's default endpoint `http://otel-collector:4317` reaches it and either container can restart on its own. In `docker/.env`:
 
@@ -326,6 +326,70 @@ docker compose -f docker/docker-compose.yml --env-file docker/.env --profile ote
 `OTELCOL_EXPORT_ENDPOINT` is required: without it the Collector exits with `exporters::otlp_http: at least one endpoint must be specified` and compose keeps restarting it (`docker compose logs otel-collector`). An empty `OTELCOL_EXPORT_AUTHORIZATION` is still sent as an empty `Authorization` header; for a backend without authentication, remove the `headers` block from the configuration.
 
 The per-signal variables (`OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OPENARTIFACT_OTLP_AUDIT`) and `OTEL_EXPORTER_OTLP_ENDPOINT` are passed through from `docker/.env` as well; the per-signal ones and `OPENARTIFACT_OTLP_ENABLED` only when set there, so they never override a mounted config file. Outside compose, run the same configuration with `otelcol-contrib --config docker/otel-collector.yaml` on the host or as a sidecar.
+
+### Frontend telemetry (experimental)
+
+The web UI can send its own errors and web vitals, and a client span for each API call, to the same Collector as the server. It is **experimental**: off by default, no compatibility promise, and a bump of the pinned OpenTelemetry browser packages may change the data model (event names, attributes) in any release. Ship no dashboards or alerts on this data; it is meant for ad-hoc research.
+
+```yaml
+telemetry:
+  otlp:
+    enabled: true
+  frontend:
+    enabled: true
+    endpoint: "http://localhost:4318"   # OTLP/HTTP base URL of the Collector
+```
+
+| Key | Environment | Default | Notes |
+|---|---|---|---|
+| `frontend.enabled` | `OPENARTIFACT_TELEMETRY_FRONTEND_ENABLED` | `false` | the single toggle; needs `otlp.enabled` (without it the server logs a warning and the feature stays off) |
+| `frontend.endpoint` | `OPENARTIFACT_TELEMETRY_FRONTEND_ENDPOINT` | empty | OTLP/HTTP base URL the relay forwards to; `/v1/traces` and `/v1/logs` are appended. Empty uses `otlp.endpoint`, which then has to be OTLP/HTTP (`protocol: http`); with `protocol: grpc` it is required. The compose file defaults it to `http://otel-collector:4318`; next to a Collector sidecar use `http://localhost:4318` |
+
+The browser never talks to the Collector. It posts OTLP/HTTP protobuf to a same-origin relay, `POST /api/v1/telemetry/traces` and `POST /api/v1/telemetry/logs`, which forwards the body unchanged with the `otlp.headers`, so the Collector stays internal, there is no CORS, and the page's CSP stays as it is. The relay:
+
+- accepts signed-in browser sessions only, with the `X-CSRF-Token` header like every other UI call: anonymous requests get `401`, API tokens (deploy tokens included) `403`;
+- takes `Content-Type: application/x-protobuf`, uncompressed, at most 1 MiB per request (`415`, `413`);
+- answers `404` while the feature is off and for any other signal (`/api/v1/telemetry/metrics`);
+- answers `502` when the Collector is unreachable or fails (the browser exporter retries later), `400` when the Collector rejects the payload; a forward times out after 10 seconds and affects no other request;
+- answers `503` with `Retry-After` while 32 forwards are already in flight, so a hung Collector cannot pile up request bodies in memory (the browser exporter retries);
+- is covered by `server.rateLimitRps` like every other route, is not written to the audit log, and counts the requests it handles in `openartifact_frontend_telemetry_requests_total{signal, result}` with `result` `relayed`, `rejected` or `failed` (the `401` and a missing CSRF token are refused before it and not counted).
+
+`GET /api/v1/telemetry/frontend` tells a signed-in UI whether to load the SDK: `{"enabled": true, "sample_ratio": ...}`, or `404` while off. `sample_ratio` is `otlp.sampleRatio`: the UI samples its traces with it, so its `traceparent` cannot make the server record more than it would on its own.
+
+The relay does not parse or filter the payload: redaction belongs in the Collector. [`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) already has a `redaction` processor on its traces and logs pipelines, so the compose profile does not export raw stack traces; it masks URLs the browser could record and query strings in error messages and stack traces. With another Collector, add the same processor:
+
+```yaml
+processors:
+  redaction/frontend:
+    allow_all_keys: true
+    blocked_key_patterns:
+      - '^url\.(full|path|query)$'
+      - '^browser\.document\.url\.'
+    blocked_values:
+      - '[?&][^=&\s]+=[^&\s)]*'
+    summary: silent
+
+service:
+  pipelines:
+    traces:
+      processors: [memory_limiter, redaction/frontend, batch]
+    logs:
+      processors: [memory_limiter, redaction/frontend, batch]
+```
+
+The UI sets `service.name=openartifact-web`: filter on it to separate the UI from the server. The relay forwards payloads unchanged and accepts them from every signed-in account, so a user can send records with any resource attributes, including the server's own `service.name`: treat this data as untrusted.
+
+#### What the UI sends
+
+After sign-in the UI asks `GET /api/v1/telemetry/frontend`. Only a `200` makes it load the OpenTelemetry wrapper, a separate `otel-*` chunk that the service worker does not precache; while the feature is off the default bundle holds no OpenTelemetry code and nothing else is requested. The pinned packages are `@opentelemetry/api`, `sdk-trace`, `sdk-logs`, `resources`, `exporter-trace-otlp-proto`, `exporter-logs-otlp-proto` and `browser-instrumentation` (its `errors` and `web-vitals` instrumentations only).
+
+| Data | Signal | Contents |
+|---|---|---|
+| Errors | log event `exception` | unhandled errors and promise rejections, and errors caught by Vue's error handler: `exception.type`, `exception.message`, `exception.stacktrace`. A script from another origin only reports `Script error.` |
+| Web vitals | log event `browser.web_vital` | CLS, INP, LCP, FCP and TTFB: `browser.web_vital.name`, `.value`, `.delta`, `.rating`, `.id`, `.navigation_type` |
+| API calls | client span `HTTP GET` (`POST`, ...) | one per call through the UI's API client, with `http.request.method`, `http.response.status_code` and `error.type`, never the URL; its `traceparent` makes the server span of the call its child. Sampled with `sample_ratio` |
+
+Every record has `service.name=openartifact-web` and `service.version` of the web build. Nothing else is collected: no console output, clicks, document load, navigation or resource timing, no fetch/XHR instrumentation, and no session id; nothing is kept in cookies, local storage or globals. Records are batched (64 per request) and sent every few seconds and when the page is hidden.
 
 ## Audit log
 

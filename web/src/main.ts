@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
@@ -10,10 +10,12 @@ import './style.css'
 import { useThemeStore } from './stores/theme'
 import { useToastStore } from './stores/toast'
 import { useBrandingStore } from './stores/branding'
+import { useSessionStore } from './stores/session'
 import { isSessionExpired } from './api/client'
 import { initI18n, t } from './i18n'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { startServiceWorker } from './pwa/register'
+import { recordError, startTelemetry, stopTelemetry } from './telemetry'
 
 // The catalog of the user's language is fetched before anything renders in it.
 await initI18n()
@@ -40,6 +42,8 @@ app.use(router)
 app.config.errorHandler = (err, _instance, info) => {
   // An expired session already redirected to /login; a toast on top is noise.
   if (isSessionExpired(err)) return
+  // Vue swallows these, so the telemetry error listener never sees them.
+  recordError(err)
   const toast = useToastStore()
   const message = err instanceof Error ? err.message : String(err)
   toast.error(t('shell.unexpectedError'), message)
@@ -57,6 +61,18 @@ window.addEventListener('unhandledrejection', (event) => {
 
 // The install event can fire before any component mounts: listen from the start.
 captureInstallPrompt()
+
+// Experimental frontend telemetry: its settings need a session, so they are
+// asked for once someone is signed in and stopped again on sign-out; nothing is loaded while the server has it off.
+const session = useSessionStore()
+watch(
+  () => session.isAuthenticated && !session.mustChangePassword,
+  (signedIn) => {
+    if (signedIn) void startTelemetry()
+    else stopTelemetry()
+  },
+  { immediate: true },
+)
 
 app.mount('#app')
 void branding.refresh()
