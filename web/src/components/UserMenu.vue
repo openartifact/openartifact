@@ -17,9 +17,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :aria-label="tp('shell.userMenu', { name: username })"
       data-testid="user-menu"
     >
-      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-medium text-primary" aria-hidden="true">
-        {{ username[0]?.toUpperCase() ?? '?' }}
-      </span>
+      <!-- The initial is drawn from an attribute: as text it would count as visible label text and differ from the account name. -->
+      <span
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-medium text-primary before:content-[attr(data-initial)]"
+        :data-initial="username[0]?.toUpperCase() ?? '?'"
+        aria-hidden="true"
+      />
       <span class="hidden max-w-32 truncate text-sm font-medium lg:inline">{{ username }}</span>
       <ChevronDownIcon class="hidden h-3.5 w-3.5 text-muted lg:block" aria-hidden="true" />
     </PopoverButton>

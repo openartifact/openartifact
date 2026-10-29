@@ -29,7 +29,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-full border border-border bg-surface-hover/60 px-4 py-1.5 text-left transition-colors hover:border-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:min-h-9 md:max-w-md md:flex-none md:w-80 md:absolute md:left-1/2 md:-translate-x-1/2"
       aria-haspopup="dialog"
-      :aria-label="t('shell.openPalette')"
       :aria-keyshortcuts="paletteHotkeyShortcut(apple)"
       data-testid="search-pill"
       @click="ui.openCommandPalette()"
