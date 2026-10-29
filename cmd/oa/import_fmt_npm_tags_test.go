@@ -386,6 +386,16 @@ func TestImportNPMPackumentLocation(t *testing.T) {
 			wantWhere: ".npm/@acme/widget/package.json", wantURL: "http://af/artifactory/npm-local/.npm/@acme/widget/package.json",
 		},
 		{
+			name: "openartifact", kind: kindOpenArtifact, pkg: "left-pad",
+			tarball:   sourceAsset{Repo: "npm-hosted", Path: "left-pad/-/left-pad-1.0.0.tgz", URL: "http://oa/api/v1/repositories/npm-hosted/packages/1/download"},
+			wantWhere: "left-pad", wantURL: "http://oa/repos/npm-hosted/left-pad",
+		},
+		{
+			name: "openartifact scoped", kind: kindOpenArtifact, pkg: "@acme/widget",
+			tarball:   sourceAsset{Repo: "npm-hosted", Path: "@acme/widget/-/widget-1.0.0.tgz", URL: "http://oa/api/v1/repositories/npm-hosted/packages/1/download"},
+			wantWhere: "@acme/widget", wantURL: "http://oa/repos/npm-hosted/@acme%2Fwidget",
+		},
+		{
 			name: "a url that is not the listed path", kind: "artifactory", pkg: "left-pad", wantFailed: true,
 			tarball: sourceAsset{Path: "left-pad/-/left-pad-1.0.0.tgz", URL: "http://af/elsewhere"},
 		},
