@@ -6297,6 +6297,8 @@ CREATE INDEX idx_package_files_sha1 ON public.package_files ((checksums ->> 'sha
 CREATE INDEX idx_package_files_md5 ON public.package_files ((checksums ->> 'md5')) WHERE checksums ? 'md5' AND deleted_at IS NULL;
 CREATE INDEX idx_package_files_shasum ON public.package_files ((checksums ->> 'shasum')) WHERE checksums ? 'shasum' AND deleted_at IS NULL;
 CREATE INDEX idx_package_files_unit ON public.package_files (repository_id, unit_key) WHERE unit_key IS NOT NULL AND deleted_at IS NULL;
+-- Raw prefix listing (path LIKE 'dir/%') is a btree range scan only with text_pattern_ops under non-C collations.
+CREATE INDEX idx_package_files_path_prefix ON public.package_files (repository_id, path text_pattern_ops) WHERE deleted_at IS NULL AND path IS NOT NULL;
 
 CREATE TABLE public.package_tags (
     id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -6310,6 +6312,9 @@ CREATE TABLE public.package_tags (
 );
 
 COMMENT ON TABLE public.package_tags IS 'Mutable named pointers to versions (npm dist-tags); version is resolved at read time';
+
+-- Federation looks a replicated tag up by its unit key.
+CREATE INDEX idx_package_tags_unit ON public.package_tags (unit_key) WHERE unit_key IS NOT NULL;
 
 CREATE TRIGGER update_packages_updated_at BEFORE UPDATE ON public.packages
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
