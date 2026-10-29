@@ -155,7 +155,7 @@ func (h *Handler) serveMerged(
 	case "maven":
 		base, suffix, ok := mavenMetadataPath(relPath)
 		if ok {
-			h.serveMavenMetadata(w, r, readable, base, suffix, be)
+			h.serveMavenMetadata(w, r, grp, readable, base, suffix, be)
 		}
 
 		return ok
