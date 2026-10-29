@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -411,13 +412,13 @@ func sumBlobSizes(blobs []BlobRef) int64 {
 func assertDockerUsage(t *testing.T, r *dockerRepo, key string, c *Content, wantSize int64) {
 	t.Helper()
 
-	size, count, err := dockerCodecForTest(t).Usage(context.Background(), r.db, r.id, key, c)
+	usage, err := dockerCodecForTest(t).Usage(context.Background(), r.db, r.id, key, c)
 	if err != nil {
 		t.Fatalf("usage: %v", err)
 	}
 
-	if size != wantSize || count != 1 {
-		t.Fatalf("usage = %d bytes, %d artifacts; want %d bytes, 1", size, count, wantSize)
+	if len(usage) != 1 || usage[0] != (Reservation{Size: wantSize, Count: 1}) {
+		t.Fatalf("usage = %+v; want one reservation of %d bytes, 1 artifact", usage, wantSize)
 	}
 }
 
@@ -830,7 +831,7 @@ func TestDockerTableColumnsAreDecided(t *testing.T) {
 	}
 
 	for table, cols := range want {
-		got, err := tableColumns(context.Background(), pg.GetDB(), table)
+		got, err := dockerTableColumns(pg.GetDB(), table)
 		if err != nil {
 			t.Fatalf("columns of %s: %v", table, err)
 		}
@@ -841,4 +842,28 @@ func TestDockerTableColumnsAreDecided(t *testing.T) {
 			t.Errorf("%s columns = %v, want %v: decide how the docker codec treats the change", table, got, cols)
 		}
 	}
+}
+
+// dockerTableColumns lists the column names of a public table.
+func dockerTableColumns(db *sql.DB, table string) ([]string, error) {
+	rows, err := db.QueryContext(context.Background(),
+		`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`, table)
+	if err != nil {
+		return nil, fmt.Errorf("list columns of %s: %w", table, err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var cols []string
+
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, fmt.Errorf("scan column of %s: %w", table, err)
+		}
+
+		cols = append(cols, c)
+	}
+
+	return cols, rows.Err() //nolint:wrapcheck // test helper
 }

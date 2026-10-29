@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -433,34 +432,27 @@ func TestHTTPErrorFatal(t *testing.T) {
 	}
 }
 
-// registeredFormats lists the formats with a registered codec, sorted.
-func registeredFormats() []string { return slices.Sorted(maps.Keys(codecs)) }
-
-func TestRegistryCoversFederationSupportedFormats(t *testing.T) {
+func TestFederatedFormatsMatchRepotype(t *testing.T) {
 	t.Parallel()
 
-	// Every format repotype advertises has a codec, and every codec's format
-	// is advertised: the repository API and the engine agree.
-	known := []string{
-		"cargo", "docker", "go", "helm", "maven", "npm", "nuget", "pypi", "raw",
-		// formats federation does not serve
-		"apt", "conan", "deb", "generic", "rpm", "terraform", "yum", "", "RAW", "unknown",
+	registerFixtureFormats()
+
+	// The formats whose storage descriptor has a Federation value, plus docker
+	// (dedicated codec), are exactly the formats repotype advertises.
+	want := []string{dockerFormat}
+
+	want = append(want, fixtureFederated...)
+
+	slices.Sort(want)
+
+	listed := strings.Split(repotype.FederationFormats(), ", ")
+	slices.Sort(listed)
+
+	if !slices.Equal(listed, want) {
+		t.Fatalf("repotype.FederationFormats() lists %v, descriptors give %v", listed, want)
 	}
 
-	registered := registeredFormats()
-
-	for _, f := range registered {
-		if !repotype.FederationSupported(f) {
-			t.Errorf("codec %q is registered but repotype.FederationSupported(%q) is false", f, f)
-		}
-
-		c, err := CodecFor(f)
-		if err != nil || c == nil || c.Format() != f {
-			t.Errorf("CodecFor(%q) = %v, %v", f, c, err)
-		}
-	}
-
-	for _, f := range known {
+	for _, f := range append(repotype.Names(), "", "RAW", "unknown") {
 		supported := repotype.FederationSupported(f)
 		_, err := CodecFor(f)
 
@@ -471,28 +463,6 @@ func TestRegistryCoversFederationSupportedFormats(t *testing.T) {
 			t.Errorf("CodecFor(%q) succeeds but repotype.FederationSupported is false", f)
 		case !supported && !errors.Is(err, ErrUnsupportedFormat):
 			t.Errorf("CodecFor(%q) error %v is not ErrUnsupportedFormat", f, err)
-		}
-
-		if supported && !slices.Contains(registered, f) {
-			t.Errorf("format %q supported but absent from the registered codecs %v", f, registered)
-		}
-	}
-}
-
-func TestRegistryFederationFormatsListsExactlyTheCodecs(t *testing.T) {
-	t.Parallel()
-
-	listed := strings.Split(repotype.FederationFormats(), ", ")
-	slices.Sort(listed)
-
-	registered := registeredFormats()
-	if !slices.Equal(listed, registered) {
-		t.Fatalf("repotype.FederationFormats() lists %v, registered codecs are %v", listed, registered)
-	}
-
-	for _, f := range listed {
-		if !repotype.FederationSupported(f) {
-			t.Errorf("FederationFormats lists %q but FederationSupported is false", f)
 		}
 	}
 }
