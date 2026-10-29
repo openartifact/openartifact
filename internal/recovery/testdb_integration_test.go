@@ -16,12 +16,14 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
 
 	"github.com/openartifact/openartifact/internal/database"
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -39,9 +41,40 @@ func testLog(t *testing.T) *logger.Logger {
 	return log
 }
 
-// newTestDB creates an empty, migrated database on the TEST_DATABASE_URL server.
+// fixtureSideTables are the side-table descriptors the format plugins register
+// in production (internal/formats): the journal registry is built from them.
+var fixtureSideTables = map[string][]formatstorage.SideTable{ //nolint:gochecknoglobals // immutable test fixture
+	"conan":  {{Name: "conan_files"}},
+	"deb":    {{Name: "deb_files", Exclude: []string{"control_fields"}}},
+	"maven":  {{Name: "maven_files"}},
+	"pacman": {{Name: "pacman_files", Exclude: []string{"file_list"}}},
+	"rpm":    {{Name: "rpm_files", Exclude: []string{"rpm_extra"}}},
+}
+
+// fixtureMu serialises registerFixtureFormats: the parallel tests of the
+// package share one descriptor registry. Tests that Reset it are not parallel,
+// and run before the parallel ones resume.
+var fixtureMu sync.Mutex //nolint:gochecknoglobals // guards the process-wide descriptor registry
+
+// registerFixtureFormats registers the side-table fixtures above for every
+// format that has no descriptor yet.
+func registerFixtureFormats() {
+	fixtureMu.Lock()
+	defer fixtureMu.Unlock()
+
+	for format, side := range fixtureSideTables {
+		if _, ok := formatstorage.Lookup(format); !ok {
+			formatstorage.Register(format, formatstorage.Storage{SideTables: side})
+		}
+	}
+}
+
+// newTestDB creates an empty, migrated database on the TEST_DATABASE_URL server
+// and registers the fixture format descriptors.
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
+
+	registerFixtureFormats()
 
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -140,13 +173,17 @@ func mustString(t *testing.T, db *sql.DB, q string, args ...any) string {
 	return s.String
 }
 
-// seededRaw is a raw repository with one artifact whose bytes are in the store.
+// seededRaw is a raw repository with one file whose bytes are in the store.
+// artifactID is the package_files id of the file.
 type seededRaw struct {
-	repoID, blobID, artifactID, sha string
+	repoID, blobID, packageID, versionID, artifactID, sha string
 }
 
-// seedRaw inserts a raw repository, a blob row, its bytes and one raw artifact,
-// the way an upload leaves them.
+// rawAttrs is the attrs value of a raw file (see the raw mapping of the format).
+const rawAttrs = `{"content_type": "application/octet-stream", "metadata": {}}`
+
+// seedRaw inserts a raw repository, a blob row, its bytes and one raw file
+// (package, version ” and file), the way an upload leaves them.
 func seedRaw(t *testing.T, db *sql.DB, store storage.BlobStore, repo, path string, content []byte) seededRaw {
 	t.Helper()
 
@@ -178,17 +215,47 @@ func seedRaw(t *testing.T, db *sql.DB, store storage.BlobStore, repo, path strin
 		t.Fatalf("insert blob: %v", err)
 	}
 
-	if err := db.QueryRowContext(
-		context.Background(),
-		`INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, $2, $3) RETURNING id`,
-		s.repoID,
-		path,
-		s.blobID,
-	).Scan(&s.artifactID); err != nil {
-		t.Fatalf("insert raw artifact: %v", err)
-	}
+	ids := insertRawFile(t, db, s.repoID, s.blobID, path, false)
+	s.packageID, s.versionID, s.artifactID = ids.pkg, ids.ver, ids.file
 
 	return s
+}
+
+// rawIDs are the ids of the rows insertRawFile wrote.
+type rawIDs struct{ pkg, ver, file string }
+
+// insertRawFile inserts the package, version and file rows of one raw path;
+// trashed stamps deleted_at/deleted_by on the version and the file.
+func insertRawFile(t *testing.T, db *sql.DB, repoID, blobID, path string, trashed bool) rawIDs {
+	t.Helper()
+
+	var (
+		ctx = context.Background()
+		ids rawIDs
+	)
+
+	if err := db.QueryRowContext(ctx,
+		`INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, 'raw', $2, $2) RETURNING id`,
+		repoID, path).Scan(&ids.pkg); err != nil {
+		t.Fatalf("insert package: %v", err)
+	}
+
+	if err := db.QueryRowContext(ctx,
+		`INSERT INTO package_versions (package_id, repository_id, version, version_key, deleted_at, deleted_by)
+		 VALUES ($1, $2, '', '', CASE WHEN $3::bool THEN now() END, CASE WHEN $3::bool THEN 'tester' END) RETURNING id`,
+		ids.pkg, repoID, trashed).Scan(&ids.ver); err != nil {
+		t.Fatalf("insert version: %v", err)
+	}
+
+	if err := db.QueryRowContext(ctx,
+		`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, role, attrs, unit_key, deleted_at, deleted_by)
+		 VALUES ($1, $2, $3, $3, $4, 'primary', $5::jsonb, $3, CASE WHEN $6::bool THEN now() END, CASE WHEN $6::bool THEN 'tester' END)
+		 RETURNING id`,
+		ids.ver, repoID, path, blobID, rawAttrs, trashed).Scan(&ids.file); err != nil {
+		t.Fatalf("insert file: %v", err)
+	}
+
+	return ids
 }
 
 func newTestJournal(t *testing.T, db *sql.DB, store storage.BlobStore) *Journal {
