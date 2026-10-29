@@ -252,7 +252,7 @@ func (e *importEnv) createConan(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "conan_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createIvy(t *testing.T, repo string, at time.Time) (string, string) {

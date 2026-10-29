@@ -7,86 +7,46 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
-const createConanPackage = `-- name: CreateConanPackage :one
-INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id, md5, sha1, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, NOW()))
-ON CONFLICT (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename) WHERE deleted_at IS NULL DO UPDATE SET
-    blob_id = EXCLUDED.blob_id,
-    md5 = EXCLUDED.md5,
-    sha1 = EXCLUDED.sha1,
-    updated_at = now()
-RETURNING id, created_at, updated_at
+const deleteConanFile = `-- name: DeleteConanFile :one
+DELETE FROM package_files WHERE id = $1 AND deleted_at IS NULL RETURNING version_id
 `
 
-type CreateConanPackageParams struct {
-	RepositoryID    string     `db:"repository_id" json:"repository_id"`
-	Name            string     `db:"name" json:"name"`
-	Version         string     `db:"version" json:"version"`
-	UserChannel     string     `db:"user_channel" json:"user_channel"`
-	RecipeRevision  string     `db:"recipe_revision" json:"recipe_revision"`
-	PackageID       string     `db:"package_id" json:"package_id"`
-	PackageRevision string     `db:"package_revision" json:"package_revision"`
-	Filename        string     `db:"filename" json:"filename"`
-	BlobID          *string    `db:"blob_id" json:"blob_id"`
-	Md5             string     `db:"md5" json:"md5"`
-	Sha1            string     `db:"sha1" json:"sha1"`
-	CreatedAt       *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateConanPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// Upserts one stored file: re-uploading a file replaces its blob (a Conan client
-// does this for metadata and when a failed upload is retried).
-func (q *Queries) CreateConanPackage(ctx context.Context, arg CreateConanPackageParams) (CreateConanPackageRow, error) {
-	row := q.db.QueryRow(ctx, createConanPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.UserChannel,
-		arg.RecipeRevision,
-		arg.PackageID,
-		arg.PackageRevision,
-		arg.Filename,
-		arg.BlobID,
-		arg.Md5,
-		arg.Sha1,
-		arg.CreatedAt,
-	)
-	var i CreateConanPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteConanPackage = `-- name: DeleteConanPackage :exec
-DELETE FROM conan_packages WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteConanPackage(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteConanPackage, id)
-	return err
+// Hard delete of one live file (the quota trigger releases its usage, conan_files
+// goes with it); the version it leaves empty is pruned by the caller.
+func (q *Queries) DeleteConanFile(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, deleteConanFile, id)
+	var version_id string
+	err := row.Scan(&version_id)
+	return version_id, err
 }
 
 const findConanPackageBySHA1 = `-- name: FindConanPackageBySHA1 :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+SELECT f.id, f.repository_id, p.name, v.version,
+       COALESCE(v.metadata ->> 'user_channel', '')::text AS user_channel,
+       COALESCE(v.metadata ->> 'recipe_revision', '')::text AS recipe_revision,
+       cf.package_id, cf.package_revision,
+       COALESCE(f.attrs ->> 'filename', '')::text AS filename,
        COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.md5, cp.sha1, cp.created_at, cp.updated_at
-FROM conan_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.sha1 = $2 AND cp.sha1 <> '' AND cp.deleted_at IS NULL
-ORDER BY cp.created_at, cp.id
+       COALESCE(f.checksums ->> 'md5', '')::text AS md5, COALESCE(f.checksums ->> 'sha1', '')::text AS sha1,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN blobs b ON b.id = f.blob_id
+JOIN conan_files cf ON cf.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+WHERE (f.checksums ->> 'sha1') = $1::text AND f.checksums ? 'sha1' AND f.deleted_at IS NULL
+  AND f.repository_id = $2 AND $1::text <> ''
+ORDER BY f.created_at, f.id
 LIMIT 1
 `
 
 type FindConanPackageBySHA1Params struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Sha1         string `db:"sha1" json:"sha1"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
 }
 
 type FindConanPackageBySHA1Row struct {
@@ -110,9 +70,9 @@ type FindConanPackageBySHA1Row struct {
 
 // Checksum deploy: a live file of the repository whose content has this SHA-1.
 // Scoped to the repository, so a client can only ever reuse content it could
-// already address there.
+// already address there. The `?` test is the predicate of idx_package_files_sha1.
 func (q *Queries) FindConanPackageBySHA1(ctx context.Context, arg FindConanPackageBySHA1Params) (FindConanPackageBySHA1Row, error) {
-	row := q.db.QueryRow(ctx, findConanPackageBySHA1, arg.RepositoryID, arg.Sha1)
+	row := q.db.QueryRow(ctx, findConanPackageBySHA1, arg.Sha1, arg.RepositoryID)
 	var i FindConanPackageBySHA1Row
 	err := row.Scan(
 		&i.ID,
@@ -136,24 +96,25 @@ func (q *Queries) FindConanPackageBySHA1(ctx context.Context, arg FindConanPacka
 }
 
 const getConanPackage = `-- name: GetConanPackage :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+SELECT f.id, f.repository_id, p.name, v.version,
+       COALESCE(v.metadata ->> 'user_channel', '')::text AS user_channel,
+       COALESCE(v.metadata ->> 'recipe_revision', '')::text AS recipe_revision,
+       cf.package_id, cf.package_revision,
+       COALESCE(f.attrs ->> 'filename', '')::text AS filename,
        COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.md5, cp.sha1, cp.created_at, cp.updated_at
-FROM conan_packages cp
-LEFT JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.recipe_revision = $5
-  AND cp.package_id = $6 AND cp.package_revision = $7 AND cp.filename = $8 AND cp.deleted_at IS NULL
+       COALESCE(f.checksums ->> 'md5', '')::text AS md5, COALESCE(f.checksums ->> 'sha1', '')::text AS sha1,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN conan_files cf ON cf.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetConanPackageParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	Name            string `db:"name" json:"name"`
-	Version         string `db:"version" json:"version"`
-	UserChannel     string `db:"user_channel" json:"user_channel"`
-	RecipeRevision  string `db:"recipe_revision" json:"recipe_revision"`
-	PackageID       string `db:"package_id" json:"package_id"`
-	PackageRevision string `db:"package_revision" json:"package_revision"`
-	Filename        string `db:"filename" json:"filename"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Path         string `db:"path" json:"path"`
 }
 
 type GetConanPackageRow struct {
@@ -176,16 +137,7 @@ type GetConanPackageRow struct {
 }
 
 func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams) (GetConanPackageRow, error) {
-	row := q.db.QueryRow(ctx, getConanPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.UserChannel,
-		arg.RecipeRevision,
-		arg.PackageID,
-		arg.PackageRevision,
-		arg.Filename,
-	)
+	row := q.db.QueryRow(ctx, getConanPackage, arg.RepositoryID, arg.Path)
 	var i GetConanPackageRow
 	err := row.Scan(
 		&i.ID,
@@ -208,84 +160,28 @@ func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams
 	return i, err
 }
 
-const listConanPackages = `-- name: ListConanPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
-       COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.md5, cp.sha1, cp.created_at, cp.updated_at
-FROM conan_packages cp
-LEFT JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename
-`
-
-type ListConanPackagesRow struct {
-	ID              string    `db:"id" json:"id"`
-	RepositoryID    string    `db:"repository_id" json:"repository_id"`
-	Name            string    `db:"name" json:"name"`
-	Version         string    `db:"version" json:"version"`
-	UserChannel     string    `db:"user_channel" json:"user_channel"`
-	RecipeRevision  string    `db:"recipe_revision" json:"recipe_revision"`
-	PackageID       string    `db:"package_id" json:"package_id"`
-	PackageRevision string    `db:"package_revision" json:"package_revision"`
-	Filename        string    `db:"filename" json:"filename"`
-	BlobKey         string    `db:"blob_key" json:"blob_key"`
-	Sha256          string    `db:"sha256" json:"sha256"`
-	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
-	Md5             string    `db:"md5" json:"md5"`
-	Sha1            string    `db:"sha1" json:"sha1"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListConanPackages(ctx context.Context, repositoryID string) ([]ListConanPackagesRow, error) {
-	rows, err := q.db.Query(ctx, listConanPackages, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListConanPackagesRow{}
-	for rows.Next() {
-		var i ListConanPackagesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Name,
-			&i.Version,
-			&i.UserChannel,
-			&i.RecipeRevision,
-			&i.PackageID,
-			&i.PackageRevision,
-			&i.Filename,
-			&i.BlobKey,
-			&i.Sha256,
-			&i.SizeBytes,
-			&i.Md5,
-			&i.Sha1,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listConanRecipeFiles = `-- name: ListConanRecipeFiles :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+SELECT f.id, f.repository_id, p.name, v.version,
+       COALESCE(v.metadata ->> 'user_channel', '')::text AS user_channel,
+       COALESCE(v.metadata ->> 'recipe_revision', '')::text AS recipe_revision,
+       cf.package_id, cf.package_revision,
+       COALESCE(f.attrs ->> 'filename', '')::text AS filename,
        COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.md5, cp.sha1, cp.created_at, cp.updated_at
-FROM conan_packages cp
-LEFT JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.deleted_at IS NULL
-ORDER BY cp.created_at, cp.id
+       COALESCE(f.checksums ->> 'md5', '')::text AS md5, COALESCE(f.checksums ->> 'sha1', '')::text AS sha1,
+       f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id
+JOIN package_files f ON f.version_id = v.id
+JOIN conan_files cf ON cf.id = f.id
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2 AND v.version = $3 AND v.metadata ->> 'user_channel' = $4::text
+  AND v.deleted_at IS NULL AND f.deleted_at IS NULL
+ORDER BY f.created_at, f.id
 `
 
 type ListConanRecipeFilesParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
+	NameKey      string `db:"name_key" json:"name_key"`
 	Version      string `db:"version" json:"version"`
 	UserChannel  string `db:"user_channel" json:"user_channel"`
 }
@@ -310,10 +206,12 @@ type ListConanRecipeFilesRow struct {
 }
 
 // Every live file of one recipe: all its recipe revisions and package revisions.
+// A live file never sits in a trashed version; the v.deleted_at test is what lets
+// the planner use idx_package_versions_pkg (a partial index).
 func (q *Queries) ListConanRecipeFiles(ctx context.Context, arg ListConanRecipeFilesParams) ([]ListConanRecipeFilesRow, error) {
 	rows, err := q.db.Query(ctx, listConanRecipeFiles,
 		arg.RepositoryID,
-		arg.Name,
+		arg.NameKey,
 		arg.Version,
 		arg.UserChannel,
 	)
@@ -353,10 +251,12 @@ func (q *Queries) ListConanRecipeFiles(ctx context.Context, arg ListConanRecipeF
 }
 
 const listConanRecipes = `-- name: ListConanRecipes :many
-SELECT DISTINCT cp.name, cp.version, cp.user_channel
-FROM conan_packages cp
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL AND cp.filename <> ''
-ORDER BY cp.name, cp.version, cp.user_channel
+SELECT DISTINCT p.name, v.version, COALESCE(v.metadata ->> 'user_channel', '')::text AS user_channel
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id
+JOIN package_files f ON f.version_id = v.id
+WHERE p.repository_id = $1 AND f.deleted_at IS NULL AND COALESCE(f.attrs ->> 'filename', '') <> ''
+ORDER BY p.name, v.version, user_channel
 `
 
 type ListConanRecipesRow struct {
@@ -386,17 +286,93 @@ func (q *Queries) ListConanRecipes(ctx context.Context, repositoryID string) ([]
 }
 
 const setConanPackageDigests = `-- name: SetConanPackageDigests :exec
-UPDATE conan_packages SET md5 = $2, sha1 = $3 WHERE id = $1 AND deleted_at IS NULL
+UPDATE package_files
+SET checksums = (checksums - 'md5' - 'sha1')
+    || jsonb_strip_nulls(jsonb_build_object('md5', NULLIF($1::text, ''), 'sha1', NULLIF($2::text, '')))
+WHERE id = $3 AND deleted_at IS NULL
 `
 
 type SetConanPackageDigestsParams struct {
-	ID   string `db:"id" json:"id"`
 	Md5  string `db:"md5" json:"md5"`
 	Sha1 string `db:"sha1" json:"sha1"`
+	ID   string `db:"id" json:"id"`
 }
 
-// Records the digests computed for a file stored before they were tracked.
+// Records the digests computed for a file stored before they were tracked; an
+// empty digest is absent from checksums.
 func (q *Queries) SetConanPackageDigests(ctx context.Context, arg SetConanPackageDigestsParams) error {
-	_, err := q.db.Exec(ctx, setConanPackageDigests, arg.ID, arg.Md5, arg.Sha1)
+	_, err := q.db.Exec(ctx, setConanPackageDigests, arg.Md5, arg.Sha1, arg.ID)
+	return err
+}
+
+const upsertConanFile = `-- name: UpsertConanFile :one
+
+INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, role, listed, attrs, checksums, created_at)
+VALUES ($1, $2, $3, $4, $5,
+        'primary', $6, $7::jsonb, $8::jsonb,
+        COALESCE($9::timestamptz, now()))
+ON CONFLICT (repository_id, path) WHERE deleted_at IS NULL DO UPDATE SET
+    blob_id = EXCLUDED.blob_id,
+    checksums = EXCLUDED.checksums,
+    updated_at = now()
+RETURNING id, created_at, updated_at
+`
+
+type UpsertConanFileParams struct {
+	VersionID    string          `db:"version_id" json:"version_id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Path         string          `db:"path" json:"path"`
+	Filename     string          `db:"filename" json:"filename"`
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Listed       bool            `db:"listed" json:"listed"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
+	Checksums    json.RawMessage `db:"checksums" json:"checksums"`
+	CreatedAt    *time.Time      `db:"created_at" json:"created_at"`
+}
+
+type UpsertConanFileRow struct {
+	ID        string    `db:"id" json:"id"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// conan on the generic package tables; the mapping is documented on ConanStore
+// (internal/database/pkg_conan.go). A conan "file" is one package_files row, its
+// coordinates are P.name, V.version, V.metadata (user_channel, recipe_revision)
+// and the conan_files side row.
+// Upserts one stored file: re-uploading a file replaces its blob and digests (a
+// Conan client does this for metadata and when a failed upload is retried). The
+// path encodes every coordinate of the file, so a conflict is the same file.
+func (q *Queries) UpsertConanFile(ctx context.Context, arg UpsertConanFileParams) (UpsertConanFileRow, error) {
+	row := q.db.QueryRow(ctx, upsertConanFile,
+		arg.VersionID,
+		arg.RepositoryID,
+		arg.Path,
+		arg.Filename,
+		arg.BlobID,
+		arg.Listed,
+		arg.Attrs,
+		arg.Checksums,
+		arg.CreatedAt,
+	)
+	var i UpsertConanFileRow
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
+const upsertConanFileCoords = `-- name: UpsertConanFileCoords :exec
+INSERT INTO conan_files (id, package_id, package_revision)
+VALUES ($1, $2, $3)
+ON CONFLICT (id) DO NOTHING
+`
+
+type UpsertConanFileCoordsParams struct {
+	ID              string `db:"id" json:"id"`
+	PackageID       string `db:"package_id" json:"package_id"`
+	PackageRevision string `db:"package_revision" json:"package_revision"`
+}
+
+func (q *Queries) UpsertConanFileCoords(ctx context.Context, arg UpsertConanFileCoordsParams) error {
+	_, err := q.db.Exec(ctx, upsertConanFileCoords, arg.ID, arg.PackageID, arg.PackageRevision)
 	return err
 }
