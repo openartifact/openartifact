@@ -13468,9 +13468,13 @@ export type GetApiV1RepositoriesByNamePackagesByIdDeltaErrors = {
      */
     404: Error;
     /**
-     * Package too large for delta generation
+     * Package too large for delta generation (over 64 MiB, or over 8 MiB for a caller that is not signed in)
      */
     413: Error;
+    /**
+     * Delta generation is busy: the queue of generations waiting for a slot, or the callers waiting for this one, is full. Retry after the Retry-After delay
+     */
+    503: Error;
 };
 
 export type GetApiV1RepositoriesByNamePackagesByIdDeltaError = GetApiV1RepositoriesByNamePackagesByIdDeltaErrors[keyof GetApiV1RepositoriesByNamePackagesByIdDeltaErrors];
