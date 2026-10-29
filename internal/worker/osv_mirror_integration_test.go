@@ -160,8 +160,11 @@ func (s *osvSeed) addNPMVersion(version string) {
 	blobID, _ := s.blob(fmt.Sprintf("npm tarball %d", s.seq), 2*time.Hour)
 
 	if _, err := s.pg.GetDB().ExecContext(context.Background(),
-		`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
-		 VALUES ($1, $2, '{}'::jsonb, 'i', 's', 'f.tgz', $3)`, s.pkgID, version, blobID); err != nil {
+		`WITH v AS (INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata)
+		            VALUES ($1, $4, $2::text, $2::text, '{"manifest_json": {}}') RETURNING id)
+		 INSERT INTO package_files (version_id, repository_id, path, filename, blob_id)
+		 SELECT v.id, $4, 'lodash/-/lodash-' || $2::text || '.tgz', 'lodash-' || $2::text || '.tgz', $3 FROM v`,
+		s.pkgID, version, blobID, s.hostedRepo); err != nil {
 		s.t.Fatal(err)
 	}
 }
@@ -182,7 +185,7 @@ func newOSVSeed(t *testing.T) *osvSeed {
 	s.proxyRepo2 = s.proxyRepo("osv-proxy-npm", 3600)
 
 	if err := s.pg.GetDB().QueryRowContext(ctx,
-		`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, 'lodash', 'lodash') RETURNING id`, s.hostedRepo).
+		`INSERT INTO packages (repository_id, format, name, name_key, attrs) VALUES ($1, 'npm', 'lodash', 'lodash', '{"scope": "", "name": "lodash"}') RETURNING id`, s.hostedRepo).
 		Scan(&s.pkgID); err != nil {
 		t.Fatal(err)
 	}

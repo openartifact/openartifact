@@ -42,6 +42,47 @@ func (s *cleanupSeed) metadataXML(repoID, path string) string {
 	return string(data)
 }
 
+// deleteMaven removes one maven file through the store.
+func (s *purgeSeed) deleteMaven(id string) {
+	s.t.Helper()
+
+	if err := s.pg.DeleteMavenArtifact(context.Background(), id); err != nil {
+		s.t.Fatalf("DeleteMavenArtifact: %v", err)
+	}
+}
+
+// deleteMavenWhere removes, through the store, every live file matching cond.
+func (s *purgeSeed) deleteMavenWhere(cond string, args ...any) {
+	s.t.Helper()
+
+	rows, err := s.pg.GetDB().QueryContext(context.Background(),
+		`SELECT id FROM package_files WHERE deleted_at IS NULL AND `+cond, args...)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+
+	var ids []string
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			s.t.Fatal(err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		s.t.Fatal(err)
+	}
+
+	_ = rows.Close()
+
+	for _, id := range ids {
+		s.deleteMaven(id)
+	}
+}
+
 // TestMavenRegenerateAdvertisesOnlyLiveVersions: the generated metadata lists
 // the live versions with the right release/latest and the newest snapshot
 // build, leaves trashed rows out and is pruned (with its blobs) when the last
@@ -63,7 +104,8 @@ func TestMavenRegenerateAdvertisesOnlyLiveVersions(t *testing.T) {
 	s.mvn(repoID, mvnRow{artifact: "a", version: "2.0-SNAPSHOT", ext: "jar", ageDays: 2, snapTS: "20240101.000000", snapBuild: 1})
 	s.mvn(repoID, mvnRow{artifact: "a", version: "2.0-SNAPSHOT", ext: "jar", ageDays: 1, snapTS: "20240102.101010", snapBuild: 7})
 
-	s.exec(`UPDATE maven_artifacts SET deleted_at = now() WHERE id = $1`, trashed)
+	s.exec(`UPDATE package_versions SET deleted_at = now() WHERE id = (SELECT version_id FROM package_files WHERE id = $1)`, trashed)
+	s.exec(`UPDATE package_files SET deleted_at = now() WHERE id = $1`, trashed)
 
 	if err := w.regenerate(ctx, repoID, "g", "a"); err != nil {
 		t.Fatalf("regenerate: %v", err)
@@ -89,7 +131,7 @@ func TestMavenRegenerateAdvertisesOnlyLiveVersions(t *testing.T) {
 
 	// Removing a version re-points the group metadata and frees the old blob.
 	oldGroup, _ := s.pg.GetRepoMetadataByPath(ctx, repoID, "g/a/maven-metadata.xml")
-	s.exec(`DELETE FROM maven_artifacts WHERE id = $1`, rel11)
+	s.deleteMaven(rel11)
 
 	if err := w.regenerate(ctx, repoID, "g", "a"); err != nil {
 		t.Fatal(err)
@@ -108,9 +150,9 @@ func TestMavenRegenerateAdvertisesOnlyLiveVersions(t *testing.T) {
 	snapMeta, _ := s.pg.GetRepoMetadataByPath(ctx, repoID, "g/a/2.0-SNAPSHOT/maven-metadata.xml")
 	curGroup, _ := s.pg.GetRepoMetadataByPath(ctx, repoID, "g/a/maven-metadata.xml")
 
-	s.exec(`DELETE FROM maven_artifacts WHERE repository_id = $1 AND id <> $2`, repoID, rel10)
-	s.exec(`DELETE FROM maven_artifacts WHERE id = $1`, rel9)
-	s.exec(`DELETE FROM maven_artifacts WHERE id = $1`, rel10)
+	s.deleteMavenWhere(`repository_id = $1 AND id <> $2`, repoID, rel10)
+	s.deleteMaven(rel9)
+	s.deleteMaven(rel10)
 
 	if err := w.regenerate(ctx, repoID, "g", "a"); err != nil {
 		t.Fatal(err)
@@ -147,7 +189,7 @@ func TestMavenRegenerateIsScopedToItsArtifact(t *testing.T) {
 		}
 	}
 
-	s.exec(`DELETE FROM maven_artifacts WHERE artifact_id_coord = 'one'`)
+	s.deleteMavenWhere(`path LIKE 'g/one/%'`)
 
 	if err := w.regenerate(ctx, repoID, "g", "one"); err != nil {
 		t.Fatal(err)
