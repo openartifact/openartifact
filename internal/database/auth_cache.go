@@ -7,7 +7,6 @@ package database
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -159,18 +158,6 @@ func cloneShallowSlice[T any](vs []*T) []*T {
 	return out
 }
 
-func clonePermTargets(ts []*models.PermissionTarget) []*models.PermissionTarget {
-	out := make([]*models.PermissionTarget, len(ts))
-
-	for i, t := range ts {
-		cp := *t
-		cp.Actions = append([]string(nil), t.Actions...)
-		out[i] = &cp
-	}
-
-	return out
-}
-
 // cachedPtr is cachedLookup for a lookup of one pointer value, where nil means
 // not found.
 func cachedPtr[T any](
@@ -198,21 +185,6 @@ func cachedList[T any](
 	return cachedLookup(ctx, c, m, key, clone,
 		func([]*T) bool { return false },
 		func(ctx context.Context) ([]*T, error) { return load(ctx, key) })
-}
-
-// GetPermissionTargetsForPrincipal returns the permission targets held by a
-// user and its groups, from the auth cache when fresh.
-func (p *PostgresDB) GetPermissionTargetsForPrincipal(
-	ctx context.Context,
-	userID string,
-	groupIDs []string,
-) ([]*models.PermissionTarget, error) {
-	key := userID + "\x00" + strings.Join(groupIDs, "\x00")
-
-	return cachedList(ctx, &p.authCache, &p.authCache.perms, key, clonePermTargets,
-		func(ctx context.Context, _ string) ([]*models.PermissionTarget, error) {
-			return p.GetPermissionTargetsForPrincipalUncached(ctx, userID, groupIDs)
-		})
 }
 
 // ListProjectGrantsByUser returns the project grants of a user (see

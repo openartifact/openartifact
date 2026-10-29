@@ -16,7 +16,7 @@ import (
 
 // ListPermissionAssignments returns every permission assignment (user and
 // group principals alike).
-func (p *PostgresDB) ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error) {
+func (p *PermissionStore) ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, permission_target_id, principal_type, principal_id, created_at
 		   FROM permission_assignments ORDER BY created_at, id`)

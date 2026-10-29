@@ -8,10 +8,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
+
+// PermissionStore owns permission targets and their user/group assignments.
+type PermissionStore struct{ *core }
 
 // userColumns is the column list scanUser reads; queries select it FROM auth_users u.
 const userColumns = `u.id, u.username, u.email, u.password_hash, u.full_name, u.disabled, u.must_change_password, u.last_login_at,
@@ -45,7 +49,7 @@ func scanUser(row rowScanner) (*models.User, error) {
 	return u, nil
 }
 
-func (p *PostgresDB) CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error) {
+func (p *PermissionStore) CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error) {
 	row, err := p.q.CreatePermissionTarget(ctx, dbsqlc.CreatePermissionTargetParams{
 		Name:             target.Name,
 		RepositoryFilter: target.RepositoryFilter,
@@ -75,19 +79,19 @@ func permissionTargetFromRow(row dbsqlc.GetPermissionTargetByIDRow) *models.Perm
 	}
 }
 
-func (p *PostgresDB) GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error) {
+func (p *PermissionStore) GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error) {
 	row, err := p.q.GetPermissionTargetByID(ctx, id)
 
 	return mapRow(row, err, "get permission target by id", permissionTargetFromRow)
 }
 
-func (p *PostgresDB) GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error) {
+func (p *PermissionStore) GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error) {
 	row, err := p.q.GetPermissionTargetByName(ctx, name)
 
 	return mapRow(dbsqlc.GetPermissionTargetByIDRow(row), err, "get permission target by name", permissionTargetFromRow)
 }
 
-func (p *PostgresDB) UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error {
+func (p *PermissionStore) UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -102,7 +106,7 @@ func (p *PostgresDB) UpdatePermissionTarget(ctx context.Context, target *models.
 	return nil
 }
 
-func (p *PostgresDB) DeletePermissionTarget(ctx context.Context, id string) error {
+func (p *PermissionStore) DeletePermissionTarget(ctx context.Context, id string) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -114,7 +118,7 @@ func (p *PostgresDB) DeletePermissionTarget(ctx context.Context, id string) erro
 	return nil
 }
 
-func (p *PostgresDB) ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error) {
+func (p *PermissionStore) ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error) {
 	rows, err := p.q.ListPermissionTargets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list permission targets: %w", err)
@@ -136,7 +140,7 @@ func (p *PostgresDB) ListPermissionTargets(ctx context.Context) ([]*models.Permi
 	return targets, nil
 }
 
-func (p *PostgresDB) CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error {
+func (p *PermissionStore) CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -152,7 +156,7 @@ func (p *PostgresDB) CreatePermissionAssignment(ctx context.Context, assignment 
 	return nil
 }
 
-func (p *PostgresDB) DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
+func (p *PermissionStore) DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -168,7 +172,7 @@ func (p *PostgresDB) DeletePermissionAssignment(ctx context.Context, targetID, p
 	return nil
 }
 
-func (p *PostgresDB) GetPermissionTargetsForPrincipalUncached(
+func (p *PermissionStore) GetPermissionTargetsForPrincipalUncached(
 	ctx context.Context,
 	userID string,
 	groupIDs []string,
@@ -195,4 +199,48 @@ func (p *PostgresDB) GetPermissionTargetsForPrincipalUncached(
 	}
 
 	return targets, nil
+}
+
+func clonePermTargets(ts []*models.PermissionTarget) []*models.PermissionTarget {
+	out := make([]*models.PermissionTarget, len(ts))
+
+	for i, t := range ts {
+		cp := *t
+		cp.Actions = append([]string(nil), t.Actions...)
+		out[i] = &cp
+	}
+
+	return out
+}
+
+// GetPermissionTargetsForPrincipal returns the permission targets held by a
+// user and its groups, from the auth cache when fresh.
+func (p *PermissionStore) GetPermissionTargetsForPrincipal(
+	ctx context.Context,
+	userID string,
+	groupIDs []string,
+) ([]*models.PermissionTarget, error) {
+	key := userID + "\x00" + strings.Join(groupIDs, "\x00")
+
+	return cachedList(ctx, &p.authCache, &p.authCache.perms, key, clonePermTargets,
+		func(ctx context.Context, _ string) ([]*models.PermissionTarget, error) {
+			return p.GetPermissionTargetsForPrincipalUncached(ctx, userID, groupIDs)
+		})
+}
+
+func (p *PermissionStore) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
+	_, err := p.db.ExecContext(ctx,
+		`INSERT INTO permission_assignments (permission_target_id, principal_type, principal_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (permission_target_id, principal_type, principal_id) DO NOTHING`,
+		targetID, principalType, principalID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get or create permission assignment: %w", err)
+	}
+
+	return nil
 }

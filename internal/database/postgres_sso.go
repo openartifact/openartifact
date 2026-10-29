@@ -203,20 +203,3 @@ func scanSSOProviderRows(rows *sql.Rows) ([]*models.SSOProvider, error) {
 
 	return providers, nil
 }
-
-func (p *PostgresDB) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
-	// Cached auth lookups must not outlive this write.
-	defer p.authCache.invalidate()
-
-	_, err := p.db.ExecContext(ctx,
-		`INSERT INTO permission_assignments (permission_target_id, principal_type, principal_id)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (permission_target_id, principal_type, principal_id) DO NOTHING`,
-		targetID, principalType, principalID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to get or create permission assignment: %w", err)
-	}
-
-	return nil
-}

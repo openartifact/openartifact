@@ -13,7 +13,7 @@ import (
 
 // ListPermissionAssignmentsForTarget returns the assignments of one permission
 // target with principal names, ordered by type then name.
-func (p *PostgresDB) ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error) {
+func (p *PermissionStore) ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error) {
 	rows, err := p.q.ListPermissionAssignmentsForTarget(ctx, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("list permission assignments for target: %w", err)
