@@ -21,8 +21,8 @@ func TestFSContainsMigrations(t *testing.T) {
 		t.Fatal("expected at least one embedded migration file")
 	}
 
-	if entries[0].Name() != "001_initial_schema.sql" {
-		t.Errorf("first migration = %q, want 001_initial_schema.sql", entries[0].Name())
+	if entries[0].Name() != "001_baseline.sql" {
+		t.Errorf("first migration = %q, want 001_baseline.sql", entries[0].Name())
 	}
 
 	pattern := regexp.MustCompile(`^\d{3}_.*\.sql$`)

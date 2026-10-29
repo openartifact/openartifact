@@ -8,7 +8,6 @@ package database
 
 import (
 	"context"
-	"os"
 	"slices"
 	"testing"
 
@@ -269,89 +268,4 @@ func pgExec(t *testing.T, pg *PostgresDB, query string, args ...any) {
 	if _, err := pg.GetDB().ExecContext(context.Background(), query, args...); err != nil {
 		t.Fatalf("exec %q: %v", query, err)
 	}
-}
-
-// Migration 063 gives the open-ended docker digest entries a finite expiry and
-// leaves everything else alone.
-func TestMigrationProxyDockerDigestExpiry(t *testing.T) {
-	pg := newQuotaTestDB(t, 4)
-	ctx := context.Background()
-	org := systemOrgID
-
-	mk := func(name, format string) string {
-		r := &models.Repository{Name: name, Format: format, RepoType: "proxy", UpstreamURL: "https://up.example.com", ProjectID: &org}
-		if err := pg.CreateRepository(ctx, r); err != nil {
-			t.Fatal(err)
-		}
-
-		return r.ID
-	}
-
-	dockerRepo, npmRepo := mk("hub", "docker"), mk("npmjs", "npm")
-	digest := "sha256:a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
-
-	rows := []struct{ repo, key, blob string }{
-		{dockerRepo, "library/alpine/manifests/" + digest, "b1"}, // migrated
-		{dockerRepo, "library/alpine/blobs/" + digest, "b2"},     // migrated
-		{dockerRepo, "library/alpine/manifests/3.20", "b3"},      // a tag: untouched
-		{dockerRepo, "library/alpine/blobs/" + digest + "x", "b4"},
-		{npmRepo, "pkg/-/pkg-1.0.0.tgz/manifests/" + digest, "b5"}, // other format: untouched
-	}
-	for _, r := range rows {
-		pgExec(t, pg, `INSERT INTO proxy_cache_entries (repository_id, cache_key, blob_key, expires_at)
-		        VALUES ($1, $2, $3, now() + interval '100 years')`, r.repo, r.key, r.blob)
-	}
-
-	// A digest entry that already has a short life keeps it.
-	pgExec(t, pg, `INSERT INTO proxy_cache_entries (repository_id, cache_key, blob_key, expires_at)
-	        VALUES ($1, $2, 'b6', now() + interval '1 day')`, dockerRepo, "library/busybox/manifests/"+digest)
-
-	script, err := os.ReadFile("../../migrations/063_proxy_docker_digest_expiry.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tx, err := pg.GetDB().BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := tx.ExecContext(ctx, string(script)); err != nil {
-		_ = tx.Rollback()
-		t.Fatalf("migration 063: %v", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, tc := range []struct {
-		blob       string
-		long       bool
-		minD, maxD string
-	}{
-		{"b1", false, "29 days", "31 days"},
-		{"b2", false, "29 days", "31 days"},
-		{"b3", true, "", ""},
-		{"b4", true, "", ""},
-		{"b5", true, "", ""},
-		{"b6", false, "0 days", "2 days"},
-	} {
-		var ok bool
-
-		err := pg.GetDB().QueryRowContext(ctx, `SELECT CASE WHEN $2::bool THEN expires_at > now() + interval '50 years'
-		        ELSE expires_at BETWEEN now() + $3::interval AND now() + $4::interval END
-		        FROM proxy_cache_entries WHERE blob_key = $1`, tc.blob, tc.long, orDefault(tc.minD), orDefault(tc.maxD)).Scan(&ok)
-		if err != nil || !ok {
-			t.Errorf("entry %s: expiry as expected = %v (%v)", tc.blob, ok, err)
-		}
-	}
-}
-
-func orDefault(s string) string {
-	if s == "" {
-		return "0 days"
-	}
-
-	return s
 }
