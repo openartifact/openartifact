@@ -218,14 +218,46 @@ The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often ma
 
 ## Adding a format
 
-The registry in `internal/repotype/repotype.go` is the single list of package formats. Add one `Spec` there (the registry is alphabetical, and so is the picker order: insert it in place), then run `go test ./...`: the exhaustiveness tests fail once for every place that has no decision for the new format, naming it. Work through them:
+A format is one registration plus its handler and its store. Nothing else enumerates formats: the generic engines (listing, search, trash, quota, cleanup, tiering, promote, backup, recovery, federation) read the generic tables `packages`, `package_versions` and `package_files` and the format's [`storage.Storage` descriptor](../design/format-plugins.md#the-storage-descriptor), so there is no table list, union branch, trigger or exhaustiveness test to extend. Docker is the only format with dedicated tables and is not a template.
 
-1. **Registry:** the `Spec` fields (proxy, group and federation support, default upstream, signing, isolated URL namespace, version rules, Package URL type, OSV ecosystem, package tables) are the only place format facts live. Never add a new `switch` or slice of format names for such a fact.
-2. **Database:** a migration that extends `chk_repo_format` (the latest one is checked by `TestLatestMigrationAcceptsEveryFormat`), and the `internal/api/openapi.json` format enums.
-3. **Package tables:** list them in `Spec.PackageTables`, then add the branches to every union query the `TestPackageTablesInUnions` failure names (`ListRepoComponents`/`CountRepoComponents`, catalog, trash, quota, tiering, recovery journal, backup).
-4. **Per-format code:** a switch whose branches run different code per format (router mounts, proxy and group serving, workers, SBOM and vuln scanning, client setup, license and dependency readers) stays a switch. Each has a `format_exhaustive_test.go` that lists the format as `handled` (and probes it) or `ignored` (falling through is intended), so add the branch or list the format as ignored.
-5. **Web:** run `make generate`: it rewrites `web/src/lib/formats.generated.ts` (the `FormatId` union, the proxy, group, federation, GPG-signed and isolated lists, the default upstreams, the vulnerability ecosystems) from the registry and `web/src/lib/clientsetup.generated.ts` (the client snippet and base URL templates) from `internal/clientsetup`, both with `cmd/genformats`, and CI fails when a committed file is stale. Then `bun run typecheck` fails on `FORMAT_META` in `web/src/lib/formats.ts` until it has a label, color and icon for the format. Also add the client snippets to `internal/clientsetup` (the web renders the generated templates, so there is nothing to write in TypeScript) and the install command to `pullCommand` in `web/src/lib/installCommands.ts` and, for a proxy format without a default upstream, a placeholder in `web/src/lib/repoTypes.ts`.
-6. **Client smoke test:** add `scripts/smoke/<format>.sh` (publish a tiny package with the real client and install it back); the [nightly matrix](#client-compatibility-matrix) picks it up by itself.
+**The checklist (10 items).** Run `go test ./...` after each: the tests that remain (`TestRegistrationsMatchSpecs`, `TestSQLFormatLists`, `TestOpenAPIFormatEnums`, `TestSharedRouteClashesAreKnown`, the upload-label and web tests) name every place that still lacks the format.
+
+1. **Registry:** one `Spec` in `internal/repotype/repotype.go` (alphabetical; proxy, group and federation support, default upstream, signing, `Mount`, version rules, PURL type, OSV ecosystem), and the upload routes in `internal/repotype/uploads.go`. These are the only place format *facts* live; never add a slice or `switch` of format names.
+2. **Database constraint:** `migrations/NNN_<format>.sql` (drop and re-add `chk_repo_format` `NOT VALID`) and `NNN_<format>_validate.no_tx.sql` (`VALIDATE CONSTRAINT`). `NNN` is the next free number (`002` and up). Also the format enums of `internal/api/openapi.json`. No table: the format lives in the generic tables.
+3. **Handler:** `internal/format/<format>/` (protocol routes, publish, download, tests), written against a small store interface.
+4. **Typed store:** `internal/database/pkg_<format>.go` (reads and writes through `writePackage`/`deleteFiles` in `pkg_generic.go`; the doc comment states the mapping to `packages`, `package_versions`, `package_files` and the `unit_key`), `internal/database/queries/<format>.sql` (then `make generate`), `internal/database/models/<format>.go` and the embed in `internal/database/stores.go` (plus the interface in `internal/format/formattest` if its fake store is used). Add a side table only when an FK, an index or bulk data demands one.
+5. **Registration:** `internal/formats/<format>.go` (a `plugin.Format`, usually a `plugin.Definition`: hosted constructor, analysis hooks, client-setup builder, proxy and group hooks or `NoProxy`/`NoGroup`, lifecycle hooks, and the **`storage.Storage` descriptor** with its trash kind, cleanup partition, federation, detail, promotion and backup values) and one line in `registrations()` in `internal/formats/formats.go` (the order is the shared-route precedence).
+6. **Client setup:** the builder in `internal/clientsetup/clientsetup.go` (snippets and base URL template). `make generate` rewrites `web/src/lib/formats.generated.ts` and `clientsetup.generated.ts` from the registry and this package, with `cmd/genformats`; CI fails when a committed file is stale.
+7. **Web:** `FORMAT_META` in `web/src/lib/formats.ts` (label, colour, icon; `bun run typecheck` fails until it exists), the install command in `web/src/lib/installCommands.ts`, and `PackageUploadZone.vue` when the format has no browser upload.
+8. **Metrics label:** `Format<Name>` in `internal/metrics/uploads.go` (`TestEveryFormatHasUploadLabel` maps every format to one).
+9. **Client smoke test:** `scripts/smoke/<format>.sh` (publish a tiny package with the real client, install it back, see [Client compatibility matrix](#client-compatibility-matrix)); the nightly matrix picks it up by itself.
+10. **Docs:** `docs/formats/<format>.md` and a row in `docs/formats/README.md`. `make docs-gen` refreshes `docs/reference`.
+
+Optional, only when the format needs it: `models.TrashKind<Name>` (when the API names the kind), `internal/presign/paths.go` (presigned blob paths of a proxy), the `oa import` source (`cmd/oa/import_fmt_<format>.go` and `import_source.go`) and `cmd/oa/cmd_ci_upload.go`, and `restUploadHandlers()` in `cmd/server/app_routes.go` for a REST upload endpoint in `internal/api`.
+
+### Worked example: a hypothetical `swift` (Swift Package Registry, hosted only)
+
+Assume one package per `scope.name`, one version per release, one source archive file per version, no proxy, group or federation.
+
+| # | File | What goes in it |
+|---|---|---|
+| 1 | `internal/repotype/repotype.go` | `{Name: "swift", PURLType: "swift", OSVEcosystem: "SwiftURL", Mount: MountIsolated}` |
+| 1 | `internal/repotype/uploads.go` | the `PUT /repos/{repo}/{scope}/{name}/{version}` route as an upload endpoint |
+| 2 | `migrations/002_swift.sql` | `ALTER TABLE repositories DROP CONSTRAINT chk_repo_format; ALTER TABLE repositories ADD CONSTRAINT chk_repo_format CHECK (format IN (..., 'swift')) NOT VALID;` |
+| 2 | `migrations/002_swift_validate.no_tx.sql` | `ALTER TABLE repositories VALIDATE CONSTRAINT chk_repo_format;` |
+| 2 | `internal/api/openapi.json` | `"swift"` in each format enum |
+| 3 | `internal/format/swift/http.go`, `publish.go`, `*_test.go` | the registry protocol (`GET /{scope}/{name}`, `.../{version}`, `.../{version}.zip`, `Package.swift`) |
+| 4 | `internal/database/pkg_swift.go` | `PutSwiftRelease`, `GetSwiftRelease`, `ListSwiftReleases`: one `packages` row (`name = scope.name`, `name_key = lower`), one `package_versions` row (`version_key = version`), one `package_files` row (`path = scope/name/version.zip`, `role = primary`, `listed`), duplicates mapped to `ErrDuplicate` |
+| 4 | `internal/database/queries/swift.sql`, `models/swift.go`, `stores.go` | the format-specific reads, the model, `*SwiftStore` embedded in `PostgresDB` |
+| 5 | `internal/formats/swift.go` | `plugin.Definition{ID: "swift", NewHosted: ..., Snippets: ..., Store: storage.Storage{Trash: ..., Detail: ...}}` |
+| 5 | `internal/formats/formats.go` | `swiftFormat(),` in `registrations()` |
+| 6 | `internal/clientsetup/clientsetup.go` | the `swift package-registry set` snippet |
+| 7 | `web/src/lib/formats.ts`, `installCommands.ts` | label, colour, icon, `swift package add` command |
+| 8 | `internal/metrics/uploads.go` | `FormatSwift = "swift"` |
+| 9 | `scripts/smoke/swift.sh` | publish with `swift package-registry publish`, resolve it back |
+| 10 | `docs/formats/swift.md`, `docs/formats/README.md` | the user page and the row |
+
+That is 10 checklist items over 21 files (3 of them generated or regenerated by `make generate`: `dbsqlc/`, `formats.generated.ts`, `clientsetup.generated.ts`, not counted). Nothing in `internal/search`, `internal/trash`, `internal/backup`, `internal/promote`, `internal/federation`, `internal/recovery`, `internal/worker` or the catalog and listing queries changes; adding swift to them is the descriptor in item 5.
 
 ## Dead-code gate
 
