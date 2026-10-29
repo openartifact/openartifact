@@ -73,7 +73,12 @@ func TestTokenCreateNonUUIDScopeIsBadRequest(t *testing.T) {
 
 	for _, scope := range []string{"read", "not-a-uuid", "0", "6f1c2f0e-3b52-4c1e-9a8e-0a7d5d3e2b11/x"} {
 		body := `{"name":"ci","kind":"access","scopes":["` + scope + `"]}`
-		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/users/"+owner+"/tokens", strings.NewReader(body))
+		req := httptest.NewRequestWithContext(
+			context.Background(),
+			http.MethodPost,
+			"/api/v1/users/"+owner+"/tokens",
+			strings.NewReader(body),
+		)
 		req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
 
 		rw := httptest.NewRecorder()
