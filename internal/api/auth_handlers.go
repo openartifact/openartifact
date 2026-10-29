@@ -454,14 +454,6 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	h.loginPairLimiter.reset(pairKey)
 	h.loginAnyIPLimiter.reset(userKey)
 
-	csrfToken, err := middleware.NewCSRFToken()
-	if err != nil {
-		h.log.Errorw("login: generate CSRF token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
-
-		return
-	}
-
 	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, clientIP, r.UserAgent())
 	if err != nil {
 		h.log.Errorw("login: create session", "error", err)
@@ -472,7 +464,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	secure := isSecureContext(r, h.baseURL)
 	setSessionCookie(w, secure, cookieValue)
-	setCSRFCookie(w, secure, csrfToken)
+	setCSRFCookie(w, secure, cookieValue)
 
 	now := time.Now()
 	user.LastLoginAt = &now

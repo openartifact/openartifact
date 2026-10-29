@@ -59,7 +59,11 @@ Session cookies (`oa_session`, `oa_csrf`) carry `Max-Age` equal to the absolute 
 
 ### CSRF
 
-On `/api/v1/*` every POST/PUT/PATCH/DELETE made with a session must send `X-CSRF-Token` equal to the `oa_csrf` cookie, otherwise 403 `csrf_protection`. Bearer, Basic-token and legacy-key requests, and the SAML `/acs` POST, are exempt. The one exception: a Basic-token request that carries browser signals of a cross-site origin (`Sec-Fetch-Site: cross-site` or `same-site`, or an `Origin` that is not the request host) is not exempt and needs the CSRF token, because browsers cache Basic credentials and attach them to cross-site requests. `curl`, `mvn`, `npm` and `docker` send neither header and are unaffected.
+Every state-changing request (anything but GET, HEAD and OPTIONS) authenticated by the session cookie must send `X-CSRF-Token`, on every path: `/api/v1/*`, `/repos/**` and `/v2/**` alike. Otherwise it gets 403 `csrf_protection`. The token is bound to the session: it is an HMAC of the `oa_session` value, so the `oa_csrf` cookie of another session, or one planted from a sibling subdomain, never validates. Login and SSO login issue the bound `oa_csrf` cookie; a safe `/api/v1/*` request replaces a cookie that holds anything else. The web UI reads the cookie and echoes it, so it needs no change.
+
+Bearer, Basic-token and legacy-key requests, and the SAML `/acs` POST, are exempt: package clients (`curl`, `mvn`, `npm`, `docker`, `pip`, ...) authenticate with a token and are unaffected. The one exception, on `/api/v1/*` only: a Basic-token request that carries browser signals of a cross-site origin (`Sec-Fetch-Site: cross-site` or `same-site`, or an `Origin` that is neither the origin the client reached nor the `BASE_URL` origin) is not exempt and needs a double-submit CSRF token, because browsers cache Basic credentials and attach them to cross-site requests. The origin the client reached follows the [trusted-proxy rules](../getting-started/installation.md#the-public-url-and-base_url): `X-Forwarded-Host` and `X-Forwarded-Proto` count only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`.
+
+The `oa_csrf` cookie issued by the server on a safe request carries `Secure` when `BASE_URL` is `https://` or the request arrived over TLS directly or through a trusted proxy that sends `X-Forwarded-Proto: https`.
 
 ## API tokens
 

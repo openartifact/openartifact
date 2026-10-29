@@ -69,14 +69,6 @@ func establishSSOSession(
 ) bool {
 	ctx := r.Context()
 
-	csrfToken, err := middleware.NewCSRFToken()
-	if err != nil {
-		log.Errorw("sso login: generate CSRF token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
-
-		return false
-	}
-
 	if old := sessionCookieValue(r); old != "" {
 		if err := auth.DeleteSession(ctx, db, old); err != nil {
 			log.Warnw("sso login: revoke pre-login session", "error", err)
@@ -100,7 +92,7 @@ func establishSSOSession(
 
 	secure := isSecureContext(r, baseURL)
 	setSessionCookie(w, secure, cookieValue)
-	setCSRFCookie(w, secure, csrfToken)
+	setCSRFCookie(w, secure, cookieValue)
 
 	return true
 }
