@@ -8318,6 +8318,14 @@
             }
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "description": "Keyset paging of the newest-first per-file listing: the next_cursor of the previous response. page is then ignored and the response carries no total. Rejected when malformed, and with group=package or sort=name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "flagged",
             "in": "query",
             "description": "With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.",
@@ -8335,13 +8343,22 @@
                   "type": "object",
                   "properties": {
                     "total": {
-                      "type": "integer"
+                      "type": "integer",
+                      "description": "Number of matching rows. Absent on a per-file request that carries a cursor, which does not count."
                     },
                     "page": {
                       "type": "integer"
                     },
                     "limit": {
                       "type": "integer"
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "Per-file listing only (not group=package): the listing continues after this page."
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "description": "Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page."
                     },
                     "packages": {
                       "type": "array",
@@ -8362,7 +8379,7 @@
             }
           },
           "400": {
-            "description": "Invalid sort, group, flagged or q"
+            "description": "Invalid sort, group, flagged, q or cursor"
           },
           "403": {
             "description": "Forbidden",

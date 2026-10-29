@@ -67,10 +67,17 @@ type PackageResponse struct {
 
 // PackageListResponse is a page of PackageResponse.
 type PackageListResponse struct {
-	Total    int               `json:"total"`
-	Page     int               `json:"page"`
-	Limit    int               `json:"limit"`
-	Packages []PackageResponse `json:"packages"`
+	// Total is the number of matching files; absent on a request that carries a
+	// cursor, which does not count.
+	Total *int `json:"total,omitempty"`
+	Page  int  `json:"page"`
+	Limit int  `json:"limit"`
+	// HasMore: the listing continues after this page.
+	HasMore bool `json:"has_more"`
+	// NextCursor, set whenever HasMore is true on the newest-first listing,
+	// is the cursor query parameter that fetches the next page.
+	NextCursor string            `json:"next_cursor,omitempty"`
+	Packages   []PackageResponse `json:"packages"`
 }
 
 // PackageGroupResponse is one package (repository, format, name) across its

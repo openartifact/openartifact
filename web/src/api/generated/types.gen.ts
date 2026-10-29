@@ -3967,6 +3967,10 @@ export type GetApiV1RepositoriesByNamePackagesData = {
          */
         group?: 'package';
         /**
+         * Keyset paging of the newest-first per-file listing: the next_cursor of the previous response. page is then ignored and the response carries no total. Rejected when malformed, and with group=package or sort=name.
+         */
+        cursor?: string;
+        /**
          * With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.
          */
         flagged?: boolean;
@@ -3976,7 +3980,7 @@ export type GetApiV1RepositoriesByNamePackagesData = {
 
 export type GetApiV1RepositoriesByNamePackagesErrors = {
     /**
-     * Invalid sort, group, flagged or q
+     * Invalid sort, group, flagged, q or cursor
      */
     400: unknown;
     /**
@@ -3996,9 +4000,20 @@ export type GetApiV1RepositoriesByNamePackagesResponses = {
      * List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package
      */
     200: {
+        /**
+         * Number of matching rows. Absent on a per-file request that carries a cursor, which does not count.
+         */
         total?: number;
         page?: number;
         limit?: number;
+        /**
+         * Per-file listing only (not group=package): the listing continues after this page.
+         */
+        has_more?: boolean;
+        /**
+         * Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page.
+         */
+        next_cursor?: string;
         packages?: Array<PackageFile | PackageGroup>;
     };
 };

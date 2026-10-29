@@ -777,6 +777,7 @@ List all packages in a specific repository
 | `format` | query | string | no | Only list packages of this format |
 | `package_name` | query | string | no | Only list rows whose listed package name equals this value exactly (all versions of one package) |
 | `group` | query | string | no | package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped. One of: `package`. |
+| `cursor` | query | string | no | Keyset paging of the newest-first per-file listing: the next_cursor of the previous response. page is then ignored and the response carries no total. Rejected when malformed, and with group=package or sort=name. |
 | `flagged` | query | boolean | no | With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package. |
 
 **Responses**
@@ -784,7 +785,7 @@ List all packages in a specific repository
 | Status | Description | Body |
 |---|---|---|
 | `200` | List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package | `application/json`: object |
-| `400` | Invalid sort, group, flagged or q | - |
+| `400` | Invalid sort, group, flagged, q or cursor | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
 
@@ -792,10 +793,12 @@ Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `has_more` | boolean | no | Per-file listing only (not group=package): the listing continues after this page. |
 | `limit` | integer | no | - |
+| `next_cursor` | string | no | Per-file listing, newest first only: set whenever has_more is true; pass it as cursor to fetch the next page. |
 | `packages` | array of any | no | - |
 | `page` | integer | no | - |
-| `total` | integer | no | - |
+| `total` | integer | no | Number of matching rows. Absent on a per-file request that carries a cursor, which does not count. |
 
 ### `POST /api/v1/repositories/{name}/packages`
 

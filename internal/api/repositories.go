@@ -1400,17 +1400,17 @@ func collectOrphansAsync(tasks *bgtask.Runner, db collectOrphansAsyncStore, stor
 	})
 }
 
-var errListFilterUnsupported = errors.New("package_name, q and sort are not supported by this store")
+var errListFilterUnsupported = errors.New("package_name, q, sort and cursor are not supported by this store")
 
 // listComponents lists a repository's packages with the filters and ordering
 // of opts. The plain newest-first listing needs only the base store; any
-// filter or other order needs a database.ComponentSearcher.
+// filter, other order or cursor needs a database.ComponentSearcher.
 func (h *RepositoriesHandler) listComponents(
 	ctx context.Context,
 	repoID string,
 	opts database.ComponentListOptions,
 ) ([]*models.Component, int, error) {
-	if opts.Name == "" && opts.Query == "" && !opts.SortByName {
+	if opts.Name == "" && opts.Query == "" && !opts.SortByName && opts.After == nil {
 		return h.db.ListComponentsByRepo(ctx, repoID, opts.Format, opts.Page, opts.Limit)
 	}
 
