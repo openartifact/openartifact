@@ -29,7 +29,7 @@ Full reference: [`.env.example`](../../.env.example), [`openartifact.example.yam
 
 ### Provider behavior
 
-All providers use the OpenAI chat-completions protocol: `POST <base>/chat/completions` for analysis and `GET <base>/models` for the model list, with `Authorization: Bearer <key>` when a key is set. The provider only changes the default base URL:
+All providers use the OpenAI chat-completions protocol: `POST <base>/chat/completions` for analysis and `GET <base>/models` for the model list, with `Authorization: Bearer <key>` when a key is set. A stored key that cannot be decrypted (`OPENARTIFACT_SECRET_KEY` changed or removed) is never sent: analysis and model listing fail until the key is entered again. The provider only changes the default base URL:
 
 | Provider | Default base URL | Examples |
 |---|---|---|
@@ -60,7 +60,7 @@ All of these need the global `manage` permission (administrator) when called ove
 | `GET /api/v1/repositories/{name}/ai-analysis/{artifactID}` | one analysis, `404 not_found` if none |
 | `POST /api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger` | queue an analysis, returns `202 {"status":"queued"}` |
 | `GET /api/v1/admin/ai/config`, `PUT /api/v1/admin/ai/config` | read / update runtime settings |
-| `POST /api/v1/admin/ai/test` | list models from the provider; optional body with the same fields as `PUT` tests unsaved settings (a masked or empty key means the stored one). Returns `{"ok":true,"models":[...]}` or `{"ok":false,"error":"..."}` |
+| `POST /api/v1/admin/ai/test` | list models from the provider; optional body with the same fields as `PUT` tests unsaved settings (a masked or empty key means the stored one, but only while the provider and base URL resolve to the stored endpoint; testing another endpoint needs its key in the request, or an explicit `"api_key": ""` for a keyless one, else `400 validation_failed`). Returns `{"ok":true,"models":[...]}` or `{"ok":false,"error":"..."}` |
 | `GET /api/v1/admin/ai/models` | model list from the stored settings; `502 upstream_error` on failure |
 
 ```sh
