@@ -9,12 +9,18 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // Queries behind the Go module zip repair (internal/format/gomod/repair.go).
 // OpenArtifact <= 0.4.1 stored every Go module zip under ONE blobs row whose
 // sha256 was ''; these methods find the rows that still point at such a row,
 // relink them to a row keyed by the zip's real digest, and drop the shared row.
+
+// GoModStore owns the Go modules and the repair queries of the gomod repair task.
+type GoModStore struct{ *core }
 
 // gomodRepairLockKey names the session advisory lock that keeps a single
 // replica running the repair.
@@ -42,7 +48,7 @@ type GomodAffectedRow struct {
 // TryGomodRepairLock takes the repair's session advisory lock on a pinned
 // connection. ok is false when another replica holds it. release must be
 // called when ok is true; it unlocks and returns the connection to the pool.
-func (p *PostgresDB) TryGomodRepairLock(ctx context.Context) (func(), bool, error) {
+func (p *GoModStore) TryGomodRepairLock(ctx context.Context) (func(), bool, error) {
 	conn, err := p.db.Conn(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("pin connection for gomod repair lock: %w", err)
@@ -70,7 +76,7 @@ func (p *PostgresDB) TryGomodRepairLock(ctx context.Context) (func(), bool, erro
 
 // ListGomodAffectedRows returns every gomod_modules row whose zip blob row has
 // a sha256 that is not 64 lowercase hex characters.
-func (p *PostgresDB) ListGomodAffectedRows(ctx context.Context) ([]GomodAffectedRow, error) {
+func (p *GoModStore) ListGomodAffectedRows(ctx context.Context) ([]GomodAffectedRow, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT gm.id, gm.repository_id, r.name, gm.module_path, gm.version, gm.go_mod_content,
 		       gm.deleted_at IS NOT NULL, zb.id, zb.blob_key
@@ -103,7 +109,7 @@ func (p *PostgresDB) ListGomodAffectedRows(ctx context.Context) ([]GomodAffected
 // EmptySHA256BlobID returns the id of the shared blobs row with an empty
 // sha256 left behind by OpenArtifact <= 0.4.1, or "" when it does not exist (blobs.sha256 is unique and indexed, so
 // this is a point lookup).
-func (p *PostgresDB) EmptySHA256BlobID(ctx context.Context) (string, error) {
+func (p *GoModStore) EmptySHA256BlobID(ctx context.Context) (string, error) {
 	var id string
 
 	err := p.db.QueryRowContext(ctx, `SELECT id FROM blobs WHERE sha256 = ''`).Scan(&id)
@@ -121,7 +127,7 @@ func (p *PostgresDB) EmptySHA256BlobID(ctx context.Context) (string, error) {
 // ListGomodSiblingZipKeys returns the digests of valid zip blobs of other
 // gomod_modules rows that share module path and version with an affected row
 // (the same release published in another repository after the upgrade).
-func (p *PostgresDB) ListGomodSiblingZipKeys(ctx context.Context) ([]string, error) {
+func (p *GoModStore) ListGomodSiblingZipKeys(ctx context.Context) ([]string, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT DISTINCT sb.sha256
 		FROM gomod_modules s
@@ -139,7 +145,7 @@ func (p *PostgresDB) ListGomodSiblingZipKeys(ctx context.Context) ([]string, err
 
 // UnreferencedBlobKeys returns the subset of ids (blob store keys) that no
 // blobs row carries as its sha256.
-func (p *PostgresDB) UnreferencedBlobKeys(ctx context.Context, ids []string) ([]string, error) {
+func (p *GoModStore) UnreferencedBlobKeys(ctx context.Context, ids []string) ([]string, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT k FROM unnest($1::text[]) AS k WHERE NOT EXISTS (SELECT 1 FROM blobs WHERE sha256 = k)`,
 		ids)
@@ -173,7 +179,7 @@ func ScanStrings(rows *sql.Rows) ([]string, error) {
 // reference badBlobID (so a concurrent change is never overwritten). It runs
 // under the same per-blob advisory lock as uploads and SafeDeleteBlob and
 // returns how many rows were relinked.
-func (p *PostgresDB) RelinkGomodZips(ctx context.Context, sha256 string, size int64, rowIDs []string) (int64, error) {
+func (p *GoModStore) RelinkGomodZips(ctx context.Context, sha256 string, size int64, rowIDs []string) (int64, error) {
 	if err := validateBlobSHA256(sha256); err != nil {
 		return 0, err
 	}
@@ -224,7 +230,7 @@ func (p *PostgresDB) RelinkGomodZips(ctx context.Context, sha256 string, size in
 // It never touches the storage object: for the shared "" row that object is a
 // real module's zip, now relinked under its true digest. Returns true when the
 // row was deleted.
-func (p *PostgresDB) DeleteUnreferencedInvalidBlobRow(ctx context.Context, id string) (bool, error) {
+func (p *GoModStore) DeleteUnreferencedInvalidBlobRow(ctx context.Context, id string) (bool, error) {
 	res, err := p.db.ExecContext(ctx,
 		`DELETE FROM blobs b
 		 WHERE b.id = $1 AND b.sha256 !~ '^[0-9a-f]{64}$' AND `+blobUnreferencedExpr,
@@ -243,4 +249,88 @@ func (p *PostgresDB) DeleteUnreferencedInvalidBlobRow(ctx context.Context, id st
 	}
 
 	return n > 0, nil
+}
+
+// CreateGoModule creates a new Go module record.
+//
+// gomod_modules stores two blobs (zip archive + go.mod file) via zip_blob_id/
+// mod_blob_id FKs into the global blobs table. The mod
+// blob has no dedicated hash field on models.GoModule, so its own blob key is
+// used as the blobs.sha256 value (self-referential, mirrors the docker blob
+// pattern) — it never collides since blob keys are unique per upload.
+func (p *GoModStore) CreateGoModule(ctx context.Context, mod *models.GoModule) error {
+	zipBlobID, err := p.upsertBlobWithMediaType(ctx, mod.ZipHash, mod.ZipBlobKey, "application/zip", mod.ZipSizeBytes)
+	if err != nil {
+		return fmt.Errorf("failed to upsert zip blob for go module: %w", err)
+	}
+
+	modBlobID, err := p.upsertBlobWithMediaType(ctx, mod.ModBlobKey, mod.ModBlobKey, "text/plain", int64(len(mod.GoModContent)))
+	if err != nil {
+		return fmt.Errorf("failed to upsert mod blob for go module: %w", err)
+	}
+
+	row, err := p.q.CreateGoModule(ctx, dbsqlc.CreateGoModuleParams{
+		CreatedAt:    createdAtOrNil(mod.CreatedAt),
+		RepositoryID: mod.RepositoryID,
+		ModulePath:   mod.ModulePath,
+		Version:      mod.Version,
+		GoModContent: mod.GoModContent,
+		ZipBlobID:    &zipBlobID,
+		ModBlobID:    &modBlobID,
+	})
+
+	return finishCreate(insertedRow(row), err, "create go module", &mod.ID, &mod.CreatedAt, &mod.UpdatedAt)
+}
+
+// GetGoModule retrieves a Go module by repo, path, and version.
+func (p *GoModStore) GetGoModule(ctx context.Context, repoID, modulePath, version string) (*models.GoModule, error) {
+	row, err := p.q.GetGoModule(ctx, dbsqlc.GetGoModuleParams{
+		RepositoryID: repoID,
+		ModulePath:   modulePath,
+		Version:      version,
+	})
+
+	return mapRow(row, err, "get go module", goModuleFromRow)
+}
+
+// goModuleRow lists the sqlc row types goModuleFromRow converts.
+type goModuleRow interface {
+	dbsqlc.GetGoModuleRow | dbsqlc.ListGoModuleVersionsRow | dbsqlc.ListGoModulesByRepoRow
+}
+
+func goModuleFromRow[R goModuleRow](in R) *models.GoModule {
+	row := dbsqlc.GetGoModuleRow(in)
+
+	return &models.GoModule{
+		ID:           row.ID,
+		RepositoryID: row.RepositoryID,
+		ModulePath:   row.ModulePath,
+		Version:      row.Version,
+		GoModContent: row.GoModContent,
+		ZipBlobKey:   row.ZipBlobKey,
+		ModBlobKey:   row.ModBlobKey,
+		ZipSizeBytes: row.ZipSizeBytes,
+		ZipHash:      row.ZipHash,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}
+}
+
+// ListGoModuleVersions lists all versions of a module.
+func (p *GoModStore) ListGoModuleVersions(ctx context.Context, repoID, modulePath string) ([]*models.GoModule, error) {
+	rows, err := p.q.ListGoModuleVersions(ctx, dbsqlc.ListGoModuleVersionsParams{
+		RepositoryID: repoID,
+		ModulePath:   modulePath,
+	})
+
+	return mapRowsOrNil(rows, err, "list go module versions", goModuleFromRow)
+}
+
+// ListGoModulesByRepo lists every module version for a repository. Used
+// only by backup export, where ListGoModuleVersions' mandatory module path
+// filter would silently drop every other module.
+func (p *GoModStore) ListGoModulesByRepo(ctx context.Context, repoID string) ([]*models.GoModule, error) {
+	rows, err := p.q.ListGoModulesByRepo(ctx, repoID)
+
+	return mapRowsOrNil(rows, err, "list go modules by repo", goModuleFromRow)
 }
