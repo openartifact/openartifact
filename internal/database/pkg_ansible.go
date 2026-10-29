@@ -16,17 +16,46 @@ import (
 )
 
 // AnsibleStore owns the Ansible collections.
+//
+// Mapping of a collection version onto the generic package tables (one
+// published tarball is one version and one file; the collection is the
+// package):
+//
+//	packages          name = name_key = "namespace.name" (the FQCN; neither part
+//	                  contains a dot), attrs {namespace, name}
+//	package_versions  version = version_key = collection version; metadata
+//	                  {dependencies: object, metadata: the galaxy.yml info,
+//	                  requires_ansible: text, omitted when empty}
+//	package_files     path namespace/name/version/filename, filename as given,
+//	                  the tarball blob, role primary, no unit_key (ansible is
+//	                  not federated)
+//
+// The id a client sees (upload response, import task URL) is package_files.id.
+// A duplicate publish is a live version with a live file (ErrDuplicate).
 type AnsibleStore struct{ *core }
 
 const ansibleMediaType = "application/gzip"
 
-func ansibleFromRow(row dbsqlc.ListAnsibleCollectionVersionsRow) (*models.AnsibleCollection, error) {
-	deps := map[string]string{}
+// ansibleMetadata is package_versions.metadata of a collection version.
+type ansibleMetadata struct {
+	Dependencies    map[string]string `json:"dependencies"`
+	Metadata        json.RawMessage   `json:"metadata"`
+	RequiresAnsible string            `json:"requires_ansible,omitempty"`
+}
 
-	if len(row.Dependencies) > 0 {
-		if err := json.Unmarshal(row.Dependencies, &deps); err != nil {
-			return nil, fmt.Errorf("decode ansible collection dependencies: %w", err)
-		}
+func ansibleFQCN(namespace, name string) string {
+	return namespace + "." + name
+}
+
+func ansibleFromRow(row dbsqlc.ListAnsibleCollectionVersionsRow) (*models.AnsibleCollection, error) {
+	var meta ansibleMetadata
+
+	if err := json.Unmarshal(row.Metadata, &meta); err != nil {
+		return nil, fmt.Errorf("decode ansible collection metadata: %w", err)
+	}
+
+	if meta.Dependencies == nil {
+		meta.Dependencies = map[string]string{}
 	}
 
 	return &models.AnsibleCollection{
@@ -39,46 +68,52 @@ func ansibleFromRow(row dbsqlc.ListAnsibleCollectionVersionsRow) (*models.Ansibl
 		BlobKey:         row.BlobKey,
 		SizeBytes:       row.SizeBytes,
 		SHA256:          row.Sha256,
-		Dependencies:    deps,
-		Metadata:        row.Metadata,
-		RequiresAnsible: row.RequiresAnsible,
+		Dependencies:    meta.Dependencies,
+		Metadata:        meta.Metadata,
+		RequiresAnsible: meta.RequiresAnsible,
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,
 	}, nil
 }
 
-// CreateAnsibleCollection stores one collection version. A live row with the
-// same namespace, name and version is a unique violation.
+// CreateAnsibleCollection stores one collection version. A live version with
+// the same namespace, name and version is ErrDuplicate.
 func (p *AnsibleStore) CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error {
-	blobID, err := p.upsertBlobWithMediaType(ctx, c.SHA256, c.BlobKey, ansibleMediaType, c.SizeBytes)
-	if err != nil {
-		return fmt.Errorf("failed to upsert blob for ansible collection: %w", err)
-	}
-
-	deps, err := json.Marshal(nonNilMap(c.Dependencies))
-	if err != nil {
-		return fmt.Errorf("encode ansible collection dependencies: %w", err)
-	}
-
 	meta := c.Metadata
 	if len(meta) == 0 {
 		meta = json.RawMessage(`{}`)
 	}
 
-	row, err := p.q.CreateAnsibleCollection(ctx, dbsqlc.CreateAnsibleCollectionParams{
-		RepositoryID:    c.RepositoryID,
-		Namespace:       c.Namespace,
-		Name:            c.Name,
-		Version:         c.Version,
-		Filename:        c.Filename,
-		BlobID:          blobID,
-		Dependencies:    deps,
-		Metadata:        meta,
-		RequiresAnsible: c.RequiresAnsible,
-		CreatedAt:       createdAtOrNil(c.CreatedAt),
-	})
+	fqcn := ansibleFQCN(c.Namespace, c.Name)
 
-	return finishCreate(insertedRow(row), err, "create ansible collection", &c.ID, &c.CreatedAt, &c.UpdatedAt)
+	out, err := p.writePackage(ctx, &PackageWrite{
+		RepoID:     c.RepositoryID,
+		Format:     "ansible",
+		Name:       fqcn,
+		NameKey:    fqcn,
+		PkgAttrs:   map[string]any{"namespace": c.Namespace, "name": c.Name},
+		Version:    c.Version,
+		VersionKey: c.Version,
+		VersionMeta: ansibleMetadata{
+			Dependencies:    nonNilMap(c.Dependencies),
+			Metadata:        meta,
+			RequiresAnsible: c.RequiresAnsible,
+		},
+		Exclusive: true,
+		CreatedAt: c.CreatedAt,
+		Files: []FileWrite{{
+			Path:     c.Namespace + "/" + c.Name + "/" + c.Version + "/" + c.Filename,
+			Filename: c.Filename,
+			Blob:     BlobWrite{SHA256: c.SHA256, Key: c.BlobKey, MediaType: ansibleMediaType, Size: c.SizeBytes},
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create ansible collection: %w", err)
+	}
+
+	c.ID, c.CreatedAt, c.UpdatedAt = out.Files[0].ID, out.Files[0].CreatedAt, out.Files[0].UpdatedAt
+
+	return nil
 }
 
 func nonNilMap(m map[string]string) map[string]string {
@@ -95,7 +130,7 @@ func (p *AnsibleStore) GetAnsibleCollection(
 	repoID, namespace, name, version string,
 ) (*models.AnsibleCollection, error) {
 	row, err := p.q.GetAnsibleCollection(ctx, dbsqlc.GetAnsibleCollectionParams{
-		RepositoryID: repoID, Namespace: namespace, Name: name, Version: version,
+		RepositoryID: repoID, Fqcn: ansibleFQCN(namespace, name), Version: version,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -129,7 +164,7 @@ func (p *AnsibleStore) ListAnsibleCollectionVersions(
 	repoID, namespace, name string,
 ) ([]*models.AnsibleCollection, error) {
 	rows, err := p.q.ListAnsibleCollectionVersions(ctx, dbsqlc.ListAnsibleCollectionVersionsParams{
-		RepositoryID: repoID, Namespace: namespace, Name: name,
+		RepositoryID: repoID, Fqcn: ansibleFQCN(namespace, name),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ansible collection versions: %w", err)
@@ -191,9 +226,10 @@ func (p *AnsibleStore) ListAnsibleCollectionNames(
 	return out, int(total), nil
 }
 
-// DeleteAnsibleCollection removes a live collection version row.
+// DeleteAnsibleCollection hard-deletes a live collection version file; the
+// version and the collection go with their last file.
 func (p *AnsibleStore) DeleteAnsibleCollection(ctx context.Context, repoID, id string) error {
-	if err := p.q.DeleteAnsibleCollection(ctx, dbsqlc.DeleteAnsibleCollectionParams{ID: id, RepositoryID: repoID}); err != nil {
+	if err := p.deleteLiveFiles(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete ansible collection: %w", err)
 	}
 

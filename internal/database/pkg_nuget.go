@@ -6,8 +6,7 @@ package database
 
 import (
 	"context"
-	"database/sql"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -16,65 +15,123 @@ import (
 )
 
 // NuGetStore owns the NuGet packages.
+//
+// Mapping of a package version onto the generic package tables (one .nupkg is
+// one version and one file; the package id is the package):
+//
+//	packages          name = package id as stored (the handler lower-cases it),
+//	                  name_key = lower(package id): every lookup is by name_key
+//	package_versions  version = version_key = the normalised version; metadata
+//	                  {title, description, summary, authors, owners, tags,
+//	                  project_url, license_url, icon_url, min_client_version
+//	                  (empty values omitted), require_license_acceptance,
+//	                  is_prerelease (always written), dependency_groups
+//	                  (omitted until derived; written, also as [], once
+//	                  derived)}
+//	package_files     path <id>/<version>/<id>.<version>.nupkg (the flat
+//	                  container path), filename <id>.<version>.nupkg, the nupkg
+//	                  blob, role primary, download_count (the package's
+//	                  counter), unit_key <id>@<version> (federation)
+//
+// The id of a package version is package_files.id. A duplicate publish is a
+// live version with a live file: ErrDuplicate, the stored content stays.
 type NuGetStore struct{ *core }
+
+// nugetMetadata is package_versions.metadata of a package version.
+type nugetMetadata struct {
+	Title                    string          `json:"title,omitempty"`
+	Description              string          `json:"description,omitempty"`
+	Summary                  string          `json:"summary,omitempty"`
+	Authors                  string          `json:"authors,omitempty"`
+	Owners                   string          `json:"owners,omitempty"`
+	Tags                     string          `json:"tags,omitempty"`
+	ProjectURL               string          `json:"project_url,omitempty"`
+	LicenseURL               string          `json:"license_url,omitempty"`
+	IconURL                  string          `json:"icon_url,omitempty"`
+	MinClientVersion         string          `json:"min_client_version,omitempty"`
+	RequireLicenseAcceptance bool            `json:"require_license_acceptance"`
+	IsPrerelease             bool            `json:"is_prerelease"`
+	DependencyGroups         json.RawMessage `json:"dependency_groups,omitempty"`
+}
+
+// nugetKey is the package identity: the lower-cased package id.
+func nugetKey(packageID string) string {
+	return strings.ToLower(packageID)
+}
 
 func (p *NuGetStore) CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error {
 	// PackageHash is SHA512-base64 (~88 chars): too long for blobs.sha256
 	// VARCHAR(64) and not a real sha256, so BlobKey (the storage key) doubles
 	// as the blob dedup key here, same as the docker_blobs precedent for
 	// formats that don't compute a content hash before BlobStore.Put.
-	// The schema has no package_hash_algorithm column, so
-	// pkg.PackageHashAlgorithm does not round-trip.
-	blobID, err := p.upsertBlobWithMediaType(ctx, pkg.BlobKey, pkg.BlobKey, "application/zip", pkg.PackageSize)
-	if err != nil {
-		return fmt.Errorf("failed to upsert blob for nuget package: %w", err)
-	}
+	// pkg.PackageHash and pkg.PackageHashAlgorithm do not round-trip.
+	filename := pkg.PackageID + "." + pkg.Version + ".nupkg"
 
-	row, err := p.q.CreateNuGetPackage(ctx, dbsqlc.CreateNuGetPackageParams{
-		CreatedAt:                createdAtOrNil(pkg.CreatedAt),
-		RepositoryID:             pkg.RepositoryID,
-		PackageID:                pkg.PackageID,
-		Version:                  pkg.Version,
-		Title:                    strPtr(pkg.Title),
-		Description:              strPtr(pkg.Description),
-		Summary:                  strPtr(pkg.Summary),
-		Authors:                  strPtr(pkg.Authors),
-		Owners:                   strPtr(pkg.Owners),
-		Tags:                     strPtr(pkg.Tags),
-		ProjectUrl:               strPtr(pkg.ProjectURL),
-		LicenseUrl:               strPtr(pkg.LicenseURL),
-		IconUrl:                  strPtr(pkg.IconURL),
-		RequireLicenseAcceptance: pkg.RequireLicenseAcceptance,
-		IsPrerelease:             pkg.IsPrerelease,
-		MinClientVersion:         strPtr(pkg.MinClientVersion),
-		BlobID:                   blobID,
-		DependencyGroups:         pkg.DependencyGroups,
+	out, err := p.writePackage(ctx, &PackageWrite{
+		RepoID:     pkg.RepositoryID,
+		Format:     "nuget",
+		Name:       pkg.PackageID,
+		NameKey:    nugetKey(pkg.PackageID),
+		Version:    pkg.Version,
+		VersionKey: pkg.Version,
+		VersionMeta: nugetMetadata{
+			Title:                    pkg.Title,
+			Description:              pkg.Description,
+			Summary:                  pkg.Summary,
+			Authors:                  pkg.Authors,
+			Owners:                   pkg.Owners,
+			Tags:                     pkg.Tags,
+			ProjectURL:               pkg.ProjectURL,
+			LicenseURL:               pkg.LicenseURL,
+			IconURL:                  pkg.IconURL,
+			MinClientVersion:         pkg.MinClientVersion,
+			RequireLicenseAcceptance: pkg.RequireLicenseAcceptance,
+			IsPrerelease:             pkg.IsPrerelease,
+			DependencyGroups:         pkg.DependencyGroups,
+		},
+		Exclusive: true,
+		CreatedAt: pkg.CreatedAt,
+		Files: []FileWrite{{
+			Path:     pkg.PackageID + "/" + pkg.Version + "/" + filename,
+			Filename: filename,
+			Blob:     BlobWrite{SHA256: pkg.BlobKey, Key: pkg.BlobKey, MediaType: "application/zip", Size: pkg.PackageSize},
+			UnitKey:  pkg.PackageID + "@" + pkg.Version,
+			// The imported counter survives (a restore keeps the downloads).
+			DownloadCount: int64(pkg.DownloadCount),
+		}},
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		// ON CONFLICT DO NOTHING returned no row: the live (repo, id, version)
-		// already exists. Its content is left untouched.
-		return ErrDuplicate
+	if err != nil {
+		return fmt.Errorf("failed to create nuget package: %w", err)
 	}
 
-	return finishCreate(insertedRow(row), err, "create nuget package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
+	pkg.ID, pkg.CreatedAt, pkg.UpdatedAt = out.Files[0].ID, out.Files[0].CreatedAt, out.Files[0].UpdatedAt
+
+	return nil
 }
 
 func (p *NuGetStore) GetNuGetPackage(ctx context.Context, repoID, packageID, version string) (*models.NuGetPackage, error) {
 	row, err := p.q.GetNuGetPackage(ctx, dbsqlc.GetNuGetPackageParams{
 		RepositoryID: repoID,
-		PackageID:    packageID,
+		NameKey:      nugetKey(packageID),
 		Version:      version,
 	})
 
 	return mapRow(row, err, "get nuget package", nugetRowToModel)
 }
 
+// DeleteNuGetPackage hard-deletes the live file of a package version; the
+// version and the package go with their last file.
 func (p *NuGetStore) DeleteNuGetPackage(ctx context.Context, repoID, packageID, version string) error {
-	if err := p.q.DeleteNuGetPackage(ctx, dbsqlc.DeleteNuGetPackageParams{
+	ids, err := p.q.ListNuGetPackageFileIDs(ctx, dbsqlc.ListNuGetPackageFileIDsParams{
 		RepositoryID: repoID,
-		PackageID:    packageID,
+		NameKey:      nugetKey(packageID),
 		Version:      version,
-	}); err != nil {
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete nuget package: %w", err)
+	}
+
+	if _, err := p.deleteFiles(ctx, repoID, ids); err != nil {
 		return fmt.Errorf("failed to delete nuget package: %w", err)
 	}
 
@@ -82,13 +139,13 @@ func (p *NuGetStore) DeleteNuGetPackage(ctx context.Context, repoID, packageID, 
 }
 
 // SetNuGetDependencyGroups records the dependency groups of a package that has
-// none stored yet. A stored value is never overwritten and updated_at is not
-// touched.
+// none stored yet. A stored value is never overwritten and the file's
+// updated_at is not touched.
 func (p *NuGetStore) SetNuGetDependencyGroups(ctx context.Context, repoID, packageID, version string, groups []byte) error {
 	if err := p.q.SetNuGetDependencyGroups(ctx, dbsqlc.SetNuGetDependencyGroupsParams{
 		DependencyGroups: groups,
 		RepositoryID:     repoID,
-		PackageID:        packageID,
+		NameKey:          nugetKey(packageID),
 		Version:          version,
 	}); err != nil {
 		return fmt.Errorf("failed to set nuget dependency groups: %w", err)
@@ -106,7 +163,7 @@ func (p *NuGetStore) ListNuGetPackages(ctx context.Context, repoID string) ([]*m
 func (p *NuGetStore) ListNuGetPackageVersions(ctx context.Context, repoID, packageID string) ([]*models.NuGetPackage, error) {
 	rows, err := p.q.ListNuGetPackageVersions(ctx, dbsqlc.ListNuGetPackageVersionsParams{
 		RepositoryID: repoID,
-		PackageID:    packageID,
+		NameKey:      nugetKey(packageID),
 	})
 
 	return mapRowsOrNil(rows, err, "list nuget package versions", nugetRowToModel)
@@ -116,11 +173,11 @@ func (p *NuGetStore) ListNuGetPackageVersions(ctx context.Context, repoID, packa
 // the total is the number of matching packages, and every live version of each
 // package on the page is returned (grouped by package id, oldest first).
 func (p *NuGetStore) SearchNuGetPackages(ctx context.Context, repoID, query string, skip, take int) ([]*models.NuGetPackage, int, error) {
-	searchQuery := "%" + escapeLike(strings.ToLower(query)) + "%"
+	pattern := "%" + escapeLike(strings.ToLower(query)) + "%"
 
 	total, err := p.q.SearchNuGetPackagesCount(ctx, dbsqlc.SearchNuGetPackagesCountParams{
 		RepositoryID: repoID,
-		PackageID:    searchQuery,
+		Pattern:      pattern,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count nuget packages: %w", err)
@@ -128,9 +185,9 @@ func (p *NuGetStore) SearchNuGetPackages(ctx context.Context, repoID, query stri
 
 	rows, err := p.q.SearchNuGetPackages(ctx, dbsqlc.SearchNuGetPackagesParams{
 		RepositoryID: repoID,
-		PackageID:    searchQuery,
-		Offset:       toInt32(skip),
-		Limit:        toInt32(take),
+		Pattern:      pattern,
+		PageOffset:   toInt32(skip),
+		PageLimit:    toInt32(take),
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to search nuget packages: %w", err)
@@ -148,7 +205,7 @@ func (p *NuGetStore) SearchNuGetPackages(ctx context.Context, repoID, query stri
 func (p *NuGetStore) IncrementNuGetDownloadCount(ctx context.Context, repoID, packageID, version string) error {
 	if err := p.q.IncrementNuGetDownloadCount(ctx, dbsqlc.IncrementNuGetDownloadCountParams{
 		RepositoryID: repoID,
-		PackageID:    packageID,
+		NameKey:      nugetKey(packageID),
 		Version:      version,
 	}); err != nil {
 		return fmt.Errorf("failed to increment nuget download count: %w", err)
@@ -157,37 +214,39 @@ func (p *NuGetStore) IncrementNuGetDownloadCount(ctx context.Context, repoID, pa
 	return nil
 }
 
-// nugetRowToModel converts any of the four structurally-identical nuget row
-// types (Get/List/ListVersions/Search all share the same SELECT list) via
-// Go's struct conversion rule (identical field sequence, tags ignored).
-// The schema has no package_hash_algorithm column, so PackageHashAlgorithm
-// never round-trips.
 // nugetPackageRow lists the sqlc row types nugetRowToModel converts; they share the columns of GetNuGetPackageRow.
 type nugetPackageRow interface {
 	dbsqlc.GetNuGetPackageRow | dbsqlc.ListNuGetPackagesRow | dbsqlc.ListNuGetPackageVersionsRow
 }
 
+// nugetRowToModel converts the structurally identical nuget row types (Get,
+// List, ListVersions and Search share the SELECT list) via Go's struct
+// conversion rule. PackageHashAlgorithm never round-trips.
 func nugetRowToModel[R nugetPackageRow](in R) *models.NuGetPackage {
 	row := dbsqlc.GetNuGetPackageRow(in)
+
+	var meta nugetMetadata
+
+	_ = json.Unmarshal(row.Metadata, &meta)
 
 	return &models.NuGetPackage{
 		ID:                       row.ID,
 		RepositoryID:             row.RepositoryID,
 		PackageID:                row.PackageID,
 		Version:                  row.Version,
-		Title:                    derefStr(row.Title),
-		Description:              derefStr(row.Description),
-		Summary:                  derefStr(row.Summary),
-		Authors:                  derefStr(row.Authors),
-		Owners:                   derefStr(row.Owners),
-		Tags:                     derefStr(row.Tags),
-		ProjectURL:               derefStr(row.ProjectUrl),
-		LicenseURL:               derefStr(row.LicenseUrl),
-		IconURL:                  derefStr(row.IconUrl),
-		RequireLicenseAcceptance: row.RequireLicenseAcceptance,
-		IsPrerelease:             row.IsPrerelease,
-		MinClientVersion:         derefStr(row.MinClientVersion),
-		DependencyGroups:         row.DependencyGroups,
+		Title:                    meta.Title,
+		Description:              meta.Description,
+		Summary:                  meta.Summary,
+		Authors:                  meta.Authors,
+		Owners:                   meta.Owners,
+		Tags:                     meta.Tags,
+		ProjectURL:               meta.ProjectURL,
+		LicenseURL:               meta.LicenseURL,
+		IconURL:                  meta.IconURL,
+		RequireLicenseAcceptance: meta.RequireLicenseAcceptance,
+		IsPrerelease:             meta.IsPrerelease,
+		MinClientVersion:         meta.MinClientVersion,
+		DependencyGroups:         meta.DependencyGroups,
 		BlobKey:                  row.BlobKey,
 		PackageHash:              row.PackageHash,
 		PackageSize:              row.PackageSize,

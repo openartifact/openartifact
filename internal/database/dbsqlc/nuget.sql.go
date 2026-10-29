@@ -11,141 +11,49 @@ import (
 	"time"
 )
 
-const createNuGetPackage = `-- name: CreateNuGetPackage :one
-INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, COALESCE($18::timestamptz, NOW()))
-ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO NOTHING
-RETURNING id, created_at, updated_at
-`
-
-type CreateNuGetPackageParams struct {
-	RepositoryID             string     `db:"repository_id" json:"repository_id"`
-	PackageID                string     `db:"package_id" json:"package_id"`
-	Version                  string     `db:"version" json:"version"`
-	Title                    *string    `db:"title" json:"title"`
-	Description              *string    `db:"description" json:"description"`
-	Summary                  *string    `db:"summary" json:"summary"`
-	Authors                  *string    `db:"authors" json:"authors"`
-	Owners                   *string    `db:"owners" json:"owners"`
-	Tags                     *string    `db:"tags" json:"tags"`
-	ProjectUrl               *string    `db:"project_url" json:"project_url"`
-	LicenseUrl               *string    `db:"license_url" json:"license_url"`
-	IconUrl                  *string    `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool       `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool       `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string    `db:"min_client_version" json:"min_client_version"`
-	BlobID                   string     `db:"blob_id" json:"blob_id"`
-	DependencyGroups         []byte     `db:"dependency_groups" json:"dependency_groups"`
-	CreatedAt                *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateNuGetPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateNuGetPackage(ctx context.Context, arg CreateNuGetPackageParams) (CreateNuGetPackageRow, error) {
-	row := q.db.QueryRow(ctx, createNuGetPackage,
-		arg.RepositoryID,
-		arg.PackageID,
-		arg.Version,
-		arg.Title,
-		arg.Description,
-		arg.Summary,
-		arg.Authors,
-		arg.Owners,
-		arg.Tags,
-		arg.ProjectUrl,
-		arg.LicenseUrl,
-		arg.IconUrl,
-		arg.RequireLicenseAcceptance,
-		arg.IsPrerelease,
-		arg.MinClientVersion,
-		arg.BlobID,
-		arg.DependencyGroups,
-		arg.CreatedAt,
-	)
-	var i CreateNuGetPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteNuGetPackage = `-- name: DeleteNuGetPackage :exec
-DELETE FROM nuget_packages WHERE repository_id = $1 AND package_id = $2 AND version = $3 AND deleted_at IS NULL
-`
-
-type DeleteNuGetPackageParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	PackageID    string `db:"package_id" json:"package_id"`
-	Version      string `db:"version" json:"version"`
-}
-
-func (q *Queries) DeleteNuGetPackage(ctx context.Context, arg DeleteNuGetPackageParams) error {
-	_, err := q.db.Exec(ctx, deleteNuGetPackage, arg.RepositoryID, arg.PackageID, arg.Version)
-	return err
-}
-
 const getNuGetPackage = `-- name: GetNuGetPackage :one
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id = $2 AND np.version = $3
+
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetNuGetPackageParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	PackageID    string `db:"package_id" json:"package_id"`
 	Version      string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type GetNuGetPackageRow struct {
-	ID                       string    `db:"id" json:"id"`
-	RepositoryID             string    `db:"repository_id" json:"repository_id"`
-	PackageID                string    `db:"package_id" json:"package_id"`
-	Version                  string    `db:"version" json:"version"`
-	Title                    *string   `db:"title" json:"title"`
-	Description              *string   `db:"description" json:"description"`
-	Summary                  *string   `db:"summary" json:"summary"`
-	Authors                  *string   `db:"authors" json:"authors"`
-	Owners                   *string   `db:"owners" json:"owners"`
-	Tags                     *string   `db:"tags" json:"tags"`
-	ProjectUrl               *string   `db:"project_url" json:"project_url"`
-	LicenseUrl               *string   `db:"license_url" json:"license_url"`
-	IconUrl                  *string   `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
-	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
-	BlobKey                  string    `db:"blob_key" json:"blob_key"`
-	PackageHash              string    `db:"package_hash" json:"package_hash"`
-	PackageSize              int64     `db:"package_size" json:"package_size"`
-	DownloadCount            int64     `db:"download_count" json:"download_count"`
-	CreatedAt                time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt                time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	PackageID     string          `db:"package_id" json:"package_id"`
+	Version       string          `db:"version" json:"version"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	PackageHash   string          `db:"package_hash" json:"package_hash"`
+	PackageSize   int64           `db:"package_size" json:"package_size"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// NuGet packages on the generic package tables (mapping spec in pkg_nuget.go). One
+// .nupkg is one package_versions row with one package_files row; the package
+// id is the package, looked up by its lower-cased name_key.
 func (q *Queries) GetNuGetPackage(ctx context.Context, arg GetNuGetPackageParams) (GetNuGetPackageRow, error) {
-	row := q.db.QueryRow(ctx, getNuGetPackage, arg.RepositoryID, arg.PackageID, arg.Version)
+	row := q.db.QueryRow(ctx, getNuGetPackage, arg.Version, arg.RepositoryID, arg.NameKey)
 	var i GetNuGetPackageRow
 	err := row.Scan(
 		&i.ID,
 		&i.RepositoryID,
 		&i.PackageID,
 		&i.Version,
-		&i.Title,
-		&i.Description,
-		&i.Summary,
-		&i.Authors,
-		&i.Owners,
-		&i.Tags,
-		&i.ProjectUrl,
-		&i.LicenseUrl,
-		&i.IconUrl,
-		&i.RequireLicenseAcceptance,
-		&i.IsPrerelease,
-		&i.MinClientVersion,
-		&i.DependencyGroups,
+		&i.Metadata,
 		&i.BlobKey,
 		&i.PackageHash,
 		&i.PackageSize,
@@ -157,62 +65,91 @@ func (q *Queries) GetNuGetPackage(ctx context.Context, arg GetNuGetPackageParams
 }
 
 const incrementNuGetDownloadCount = `-- name: IncrementNuGetDownloadCount :exec
-UPDATE nuget_packages SET download_count = download_count + 1, updated_at = NOW()
-WHERE repository_id = $1 AND package_id = $2 AND version = $3 AND deleted_at IS NULL
+UPDATE package_files f SET download_count = f.download_count + 1, updated_at = NOW()
+FROM package_versions v, packages p
+WHERE f.version_id = v.id AND v.package_id = p.id
+  AND p.repository_id = $1 AND p.name_key = $2
+  AND v.version_key = $3 AND v.deleted_at IS NULL AND f.deleted_at IS NULL
 `
 
 type IncrementNuGetDownloadCountParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	PackageID    string `db:"package_id" json:"package_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 	Version      string `db:"version" json:"version"`
 }
 
 func (q *Queries) IncrementNuGetDownloadCount(ctx context.Context, arg IncrementNuGetDownloadCountParams) error {
-	_, err := q.db.Exec(ctx, incrementNuGetDownloadCount, arg.RepositoryID, arg.PackageID, arg.Version)
+	_, err := q.db.Exec(ctx, incrementNuGetDownloadCount, arg.RepositoryID, arg.NameKey, arg.Version)
 	return err
 }
 
+const listNuGetPackageFileIDs = `-- name: ListNuGetPackageFileIDs :many
+SELECT f.id
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $2 AND p.name_key = $3
+`
+
+type ListNuGetPackageFileIDsParams struct {
+	Version      string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
+}
+
+// The live files of one package version, for DeleteNuGetPackage.
+func (q *Queries) ListNuGetPackageFileIDs(ctx context.Context, arg ListNuGetPackageFileIDsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listNuGetPackageFileIDs, arg.Version, arg.RepositoryID, arg.NameKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNuGetPackageVersions = `-- name: ListNuGetPackageVersions :many
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id = $2
-ORDER BY np.version DESC
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY v.version DESC
 `
 
 type ListNuGetPackageVersionsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	PackageID    string `db:"package_id" json:"package_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type ListNuGetPackageVersionsRow struct {
-	ID                       string    `db:"id" json:"id"`
-	RepositoryID             string    `db:"repository_id" json:"repository_id"`
-	PackageID                string    `db:"package_id" json:"package_id"`
-	Version                  string    `db:"version" json:"version"`
-	Title                    *string   `db:"title" json:"title"`
-	Description              *string   `db:"description" json:"description"`
-	Summary                  *string   `db:"summary" json:"summary"`
-	Authors                  *string   `db:"authors" json:"authors"`
-	Owners                   *string   `db:"owners" json:"owners"`
-	Tags                     *string   `db:"tags" json:"tags"`
-	ProjectUrl               *string   `db:"project_url" json:"project_url"`
-	LicenseUrl               *string   `db:"license_url" json:"license_url"`
-	IconUrl                  *string   `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
-	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
-	BlobKey                  string    `db:"blob_key" json:"blob_key"`
-	PackageHash              string    `db:"package_hash" json:"package_hash"`
-	PackageSize              int64     `db:"package_size" json:"package_size"`
-	DownloadCount            int64     `db:"download_count" json:"download_count"`
-	CreatedAt                time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt                time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	PackageID     string          `db:"package_id" json:"package_id"`
+	Version       string          `db:"version" json:"version"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	PackageHash   string          `db:"package_hash" json:"package_hash"`
+	PackageSize   int64           `db:"package_size" json:"package_size"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListNuGetPackageVersions(ctx context.Context, arg ListNuGetPackageVersionsParams) ([]ListNuGetPackageVersionsRow, error) {
-	rows, err := q.db.Query(ctx, listNuGetPackageVersions, arg.RepositoryID, arg.PackageID)
+	rows, err := q.db.Query(ctx, listNuGetPackageVersions, arg.RepositoryID, arg.NameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -225,19 +162,7 @@ func (q *Queries) ListNuGetPackageVersions(ctx context.Context, arg ListNuGetPac
 			&i.RepositoryID,
 			&i.PackageID,
 			&i.Version,
-			&i.Title,
-			&i.Description,
-			&i.Summary,
-			&i.Authors,
-			&i.Owners,
-			&i.Tags,
-			&i.ProjectUrl,
-			&i.LicenseUrl,
-			&i.IconUrl,
-			&i.RequireLicenseAcceptance,
-			&i.IsPrerelease,
-			&i.MinClientVersion,
-			&i.DependencyGroups,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.PackageHash,
 			&i.PackageSize,
@@ -256,37 +181,28 @@ func (q *Queries) ListNuGetPackageVersions(ctx context.Context, arg ListNuGetPac
 }
 
 const listNuGetPackages = `-- name: ListNuGetPackages :many
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL
-ORDER BY np.package_id, np.version DESC
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.name_key, v.version DESC
 `
 
 type ListNuGetPackagesRow struct {
-	ID                       string    `db:"id" json:"id"`
-	RepositoryID             string    `db:"repository_id" json:"repository_id"`
-	PackageID                string    `db:"package_id" json:"package_id"`
-	Version                  string    `db:"version" json:"version"`
-	Title                    *string   `db:"title" json:"title"`
-	Description              *string   `db:"description" json:"description"`
-	Summary                  *string   `db:"summary" json:"summary"`
-	Authors                  *string   `db:"authors" json:"authors"`
-	Owners                   *string   `db:"owners" json:"owners"`
-	Tags                     *string   `db:"tags" json:"tags"`
-	ProjectUrl               *string   `db:"project_url" json:"project_url"`
-	LicenseUrl               *string   `db:"license_url" json:"license_url"`
-	IconUrl                  *string   `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
-	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
-	BlobKey                  string    `db:"blob_key" json:"blob_key"`
-	PackageHash              string    `db:"package_hash" json:"package_hash"`
-	PackageSize              int64     `db:"package_size" json:"package_size"`
-	DownloadCount            int64     `db:"download_count" json:"download_count"`
-	CreatedAt                time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt                time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	PackageID     string          `db:"package_id" json:"package_id"`
+	Version       string          `db:"version" json:"version"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	PackageHash   string          `db:"package_hash" json:"package_hash"`
+	PackageSize   int64           `db:"package_size" json:"package_size"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListNuGetPackages(ctx context.Context, repositoryID string) ([]ListNuGetPackagesRow, error) {
@@ -303,19 +219,7 @@ func (q *Queries) ListNuGetPackages(ctx context.Context, repositoryID string) ([
 			&i.RepositoryID,
 			&i.PackageID,
 			&i.Version,
-			&i.Title,
-			&i.Description,
-			&i.Summary,
-			&i.Authors,
-			&i.Owners,
-			&i.Tags,
-			&i.ProjectUrl,
-			&i.LicenseUrl,
-			&i.IconUrl,
-			&i.RequireLicenseAcceptance,
-			&i.IsPrerelease,
-			&i.MinClientVersion,
-			&i.DependencyGroups,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.PackageHash,
 			&i.PackageSize,
@@ -335,51 +239,45 @@ func (q *Queries) ListNuGetPackages(ctx context.Context, repositoryID string) ([
 
 const searchNuGetPackages = `-- name: SearchNuGetPackages :many
 WITH matched AS (
-    SELECT m.package_id
-    FROM nuget_packages m
-    WHERE m.repository_id = $1 AND m.deleted_at IS NULL AND (lower(m.package_id) LIKE $2 OR lower(m.title) LIKE $2 OR lower(m.description) LIKE $2)
-    GROUP BY m.package_id
-    ORDER BY m.package_id
+    SELECT p.id, p.name_key
+    FROM packages p
+    JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+    WHERE p.repository_id = $1
+      AND (p.name_key LIKE $2 OR lower(v.metadata ->> 'title') LIKE $2
+           OR lower(v.metadata ->> 'description') LIKE $2)
+    GROUP BY p.id
+    ORDER BY p.name_key
     OFFSET $3 LIMIT $4
 )
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id IN (SELECT package_id FROM matched)
-ORDER BY np.package_id, np.created_at, np.id
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM matched m
+JOIN packages p ON p.id = m.id
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+ORDER BY m.name_key, v.created_at, v.id
 `
 
 type SearchNuGetPackagesParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	PackageID    string `db:"package_id" json:"package_id"`
-	Offset       int32  `db:"offset" json:"offset"`
-	Limit        int32  `db:"limit" json:"limit"`
+	Pattern      string `db:"pattern" json:"pattern"`
+	PageOffset   int32  `db:"page_offset" json:"page_offset"`
+	PageLimit    int32  `db:"page_limit" json:"page_limit"`
 }
 
 type SearchNuGetPackagesRow struct {
-	ID                       string    `db:"id" json:"id"`
-	RepositoryID             string    `db:"repository_id" json:"repository_id"`
-	PackageID                string    `db:"package_id" json:"package_id"`
-	Version                  string    `db:"version" json:"version"`
-	Title                    *string   `db:"title" json:"title"`
-	Description              *string   `db:"description" json:"description"`
-	Summary                  *string   `db:"summary" json:"summary"`
-	Authors                  *string   `db:"authors" json:"authors"`
-	Owners                   *string   `db:"owners" json:"owners"`
-	Tags                     *string   `db:"tags" json:"tags"`
-	ProjectUrl               *string   `db:"project_url" json:"project_url"`
-	LicenseUrl               *string   `db:"license_url" json:"license_url"`
-	IconUrl                  *string   `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
-	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
-	BlobKey                  string    `db:"blob_key" json:"blob_key"`
-	PackageHash              string    `db:"package_hash" json:"package_hash"`
-	PackageSize              int64     `db:"package_size" json:"package_size"`
-	DownloadCount            int64     `db:"download_count" json:"download_count"`
-	CreatedAt                time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt                time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	PackageID     string          `db:"package_id" json:"package_id"`
+	Version       string          `db:"version" json:"version"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	PackageHash   string          `db:"package_hash" json:"package_hash"`
+	PackageSize   int64           `db:"package_size" json:"package_size"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // OFFSET/LIMIT page over matching packages, not versions: every live version of
@@ -387,9 +285,9 @@ type SearchNuGetPackagesRow struct {
 func (q *Queries) SearchNuGetPackages(ctx context.Context, arg SearchNuGetPackagesParams) ([]SearchNuGetPackagesRow, error) {
 	rows, err := q.db.Query(ctx, searchNuGetPackages,
 		arg.RepositoryID,
-		arg.PackageID,
-		arg.Offset,
-		arg.Limit,
+		arg.Pattern,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -403,19 +301,7 @@ func (q *Queries) SearchNuGetPackages(ctx context.Context, arg SearchNuGetPackag
 			&i.RepositoryID,
 			&i.PackageID,
 			&i.Version,
-			&i.Title,
-			&i.Description,
-			&i.Summary,
-			&i.Authors,
-			&i.Owners,
-			&i.Tags,
-			&i.ProjectUrl,
-			&i.LicenseUrl,
-			&i.IconUrl,
-			&i.RequireLicenseAcceptance,
-			&i.IsPrerelease,
-			&i.MinClientVersion,
-			&i.DependencyGroups,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.PackageHash,
 			&i.PackageSize,
@@ -434,43 +320,50 @@ func (q *Queries) SearchNuGetPackages(ctx context.Context, arg SearchNuGetPackag
 }
 
 const searchNuGetPackagesCount = `-- name: SearchNuGetPackagesCount :one
-SELECT COUNT(DISTINCT package_id) FROM nuget_packages
-WHERE repository_id = $1 AND deleted_at IS NULL AND (lower(package_id) LIKE $2 OR lower(title) LIKE $2 OR lower(description) LIKE $2)
+SELECT COUNT(DISTINCT p.id) FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = $1
+  AND (p.name_key LIKE $2 OR lower(v.metadata ->> 'title') LIKE $2
+       OR lower(v.metadata ->> 'description') LIKE $2)
 `
 
 type SearchNuGetPackagesCountParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	PackageID    string `db:"package_id" json:"package_id"`
+	Pattern      string `db:"pattern" json:"pattern"`
 }
 
-// Counts matching packages (not versions).
+// Counts matching packages (not versions). The query is lower-cased and
+// LIKE-escaped by the caller; name_key is the lower-cased package id.
 func (q *Queries) SearchNuGetPackagesCount(ctx context.Context, arg SearchNuGetPackagesCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, searchNuGetPackagesCount, arg.RepositoryID, arg.PackageID)
+	row := q.db.QueryRow(ctx, searchNuGetPackagesCount, arg.RepositoryID, arg.Pattern)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const setNuGetDependencyGroups = `-- name: SetNuGetDependencyGroups :exec
-UPDATE nuget_packages SET dependency_groups = $1::jsonb
-WHERE repository_id = $2 AND package_id = $3 AND version = $4
-  AND deleted_at IS NULL AND dependency_groups IS NULL
+UPDATE package_versions v
+SET metadata = v.metadata || jsonb_build_object('dependency_groups', $1::jsonb)
+FROM packages p
+WHERE v.package_id = p.id AND p.repository_id = $2 AND p.name_key = $3
+  AND v.version_key = $4 AND v.deleted_at IS NULL AND NOT (v.metadata ? 'dependency_groups')
 `
 
 type SetNuGetDependencyGroupsParams struct {
 	DependencyGroups json.RawMessage `db:"dependency_groups" json:"dependency_groups"`
 	RepositoryID     string          `db:"repository_id" json:"repository_id"`
-	PackageID        string          `db:"package_id" json:"package_id"`
+	NameKey          string          `db:"name_key" json:"name_key"`
 	Version          string          `db:"version" json:"version"`
 }
 
 // Backfills the dependency groups of a package published before they were
-// stored. It never overwrites a value and leaves updated_at alone.
+// stored. It never overwrites a value; the file's updated_at (the one the
+// registration validators read) is left alone.
 func (q *Queries) SetNuGetDependencyGroups(ctx context.Context, arg SetNuGetDependencyGroupsParams) error {
 	_, err := q.db.Exec(ctx, setNuGetDependencyGroups,
 		arg.DependencyGroups,
 		arg.RepositoryID,
-		arg.PackageID,
+		arg.NameKey,
 		arg.Version,
 	)
 	return err

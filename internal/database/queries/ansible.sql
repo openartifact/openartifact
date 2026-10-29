@@ -1,57 +1,65 @@
--- name: CreateAnsibleCollection :one
-INSERT INTO ansible_collections (
-    repository_id, namespace, name, version, filename, blob_id, dependencies, metadata, requires_ansible, created_at
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+-- Ansible collections on the generic package tables (mapping spec in pkg_ansible.go). One
+-- published collection version is one package_versions row with one package_files row.
+
+-- The ids among ids that are live files of the repository: the hard deletes of
+-- the version-grain formats act on live rows only.
+-- name: FilterLivePackageFileIDs :many
+SELECT f.id FROM package_files f
+WHERE f.repository_id = sqlc.arg(repository_id) AND f.id = ANY(sqlc.arg(ids)::uuid[]) AND f.deleted_at IS NULL;
 
 -- name: GetAnsibleCollection :one
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.namespace = $2 AND ac.name = $3 AND ac.version = $4 AND ac.deleted_at IS NULL;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(fqcn);
 
 -- name: GetAnsibleCollectionByID :one
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.id = $2 AND ac.deleted_at IS NULL;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.id = sqlc.arg(id) AND f.repository_id = sqlc.arg(repository_id) AND f.deleted_at IS NULL;
 
 -- name: ListAnsibleCollectionVersions :many
 -- Every live version of one collection; the caller orders them by version.
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.namespace = $2 AND ac.name = $3 AND ac.deleted_at IS NULL
-ORDER BY ac.created_at, ac.id;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(fqcn)
+ORDER BY f.created_at, f.id;
 
 -- name: ListAnsibleCollections :many
 -- Every live version of every collection of the repository (backup export).
-SELECT ac.id, ac.repository_id, ac.namespace, ac.name, ac.version, ac.filename, b.blob_key, b.size_bytes, b.sha256,
-       ac.dependencies, ac.metadata, ac.requires_ansible, ac.created_at, ac.updated_at
-FROM ansible_collections ac
-JOIN blobs b ON b.id = ac.blob_id
-WHERE ac.repository_id = $1 AND ac.deleted_at IS NULL
-ORDER BY ac.namespace, ac.name, ac.created_at, ac.id;
+SELECT f.id, f.repository_id, COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, f.filename, b.blob_key, b.size_bytes, b.sha256, v.metadata, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.attrs ->> 'namespace', p.attrs ->> 'name', f.created_at, f.id;
 
 -- name: ListAnsibleCollectionNames :many
--- One row per collection of the repository, a page of them in name order.
-SELECT ac.namespace, ac.name, MIN(ac.created_at)::timestamptz AS created_at, MAX(ac.updated_at)::timestamptz AS updated_at
-FROM ansible_collections ac
-WHERE ac.repository_id = $1 AND ac.deleted_at IS NULL
-GROUP BY ac.namespace, ac.name
-ORDER BY ac.namespace, ac.name
+-- One row per collection of the repository that has a live version, a page of
+-- them in name order.
+SELECT COALESCE(p.attrs ->> 'namespace', '')::text AS namespace, COALESCE(p.attrs ->> 'name', '')::text AS name,
+       MIN(v.created_at)::timestamptz AS created_at, MAX(v.updated_at)::timestamptz AS updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = $1
+GROUP BY p.id
+ORDER BY 1, 2
 LIMIT $2 OFFSET $3;
 
 -- name: CountAnsibleCollectionNames :one
-SELECT COUNT(*) FROM (
-    SELECT 1 FROM ansible_collections ac
-    WHERE ac.repository_id = $1 AND ac.deleted_at IS NULL
-    GROUP BY ac.namespace, ac.name
-) c;
-
--- name: DeleteAnsibleCollection :exec
-DELETE FROM ansible_collections WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL;
+SELECT COUNT(DISTINCT p.id) FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = $1;

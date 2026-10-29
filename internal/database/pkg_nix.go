@@ -7,6 +7,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -16,7 +17,44 @@ import (
 )
 
 // NixStore owns the Nix store paths, pending NARs and signing key.
+//
+// Mapping of a store path onto the generic package tables (one narinfo plus
+// the NAR it points at is one version and one file; the store path name is
+// the package, the store hash the version):
+//
+//	packages          name = name_key = store path name (e.g. "hello-2.12.1")
+//	package_versions  version = version_key = store hash; metadata
+//	                  {nar_hash, nar_size, nar_file, compression, refs,
+//	                  deriver, ca, signatures}: every key is always written
+//	                  (refs and signatures as [] when empty, deriver and ca
+//	                  as ""); nar_file is the URL path of the NAR and is what
+//	                  GetNixPathByNarFile looks up
+//	package_files     path = filename = "<store hash>.narinfo", the NAR blob
+//	                  (several paths may share one NAR blob), role primary,
+//	                  download_count (the NAR's counter), no unit_key (nix is
+//	                  not federated)
+//
+// The store hash is unique across names in a repository because the narinfo
+// path is: a duplicate is a unique violation on the live path (ErrDuplicate).
+// nix_pending_nars (staging) and nix_signing_keys keep their own tables.
 type NixStore struct{ *core }
+
+// nixMetadata is package_versions.metadata of a store path.
+type nixMetadata struct {
+	NarHash     string   `json:"nar_hash"`
+	NarSize     int64    `json:"nar_size"`
+	NarFile     string   `json:"nar_file"`
+	Compression string   `json:"compression"`
+	Refs        []string `json:"refs"`
+	Deriver     string   `json:"deriver"`
+	CA          string   `json:"ca"`
+	Signatures  []string `json:"signatures"`
+}
+
+// nixNarinfoPath is the path (and file name) of the narinfo of a store hash.
+func nixNarinfoPath(storeHash string) string {
+	return storeHash + ".narinfo"
+}
 
 // nixMediaType is the media type of a stored NAR file.
 const nixMediaType = "application/x-nix-nar"
@@ -29,19 +67,23 @@ type nixPathRow interface {
 func nixPathFromRow[R nixPathRow](in R) *models.NixPath {
 	row := dbsqlc.GetNixPathByHashRow(in)
 
+	var meta nixMetadata
+
+	_ = json.Unmarshal(row.Metadata, &meta)
+
 	return &models.NixPath{
 		ID:            row.ID,
 		RepositoryID:  row.RepositoryID,
 		StoreHash:     row.StoreHash,
 		Name:          row.Name,
-		NarHash:       row.NarHash,
-		NarSize:       row.NarSize,
-		NarFile:       row.NarFile,
-		Compression:   row.Compression,
-		References:    row.Refs,
-		Deriver:       row.Deriver,
-		CA:            row.Ca,
-		Signatures:    row.Signatures,
+		NarHash:       meta.NarHash,
+		NarSize:       meta.NarSize,
+		NarFile:       meta.NarFile,
+		Compression:   meta.Compression,
+		References:    meta.Refs,
+		Deriver:       meta.Deriver,
+		CA:            meta.CA,
+		Signatures:    meta.Signatures,
 		DownloadCount: row.DownloadCount,
 		BlobKey:       row.BlobKey,
 		SHA256:        row.BlobSha256,
@@ -95,18 +137,50 @@ func (p *NixStore) GetNixPathByNarFile(ctx context.Context, repoID, narFile stri
 
 // GetNixPathByHash returns the live path of the store hash, or (nil, nil).
 func (p *NixStore) GetNixPathByHash(ctx context.Context, repoID, storeHash string) (*models.NixPath, error) {
-	row, err := p.q.GetNixPathByHash(ctx, dbsqlc.GetNixPathByHashParams{RepositoryID: repoID, StoreHash: storeHash})
+	row, err := p.q.GetNixPathByHash(ctx, dbsqlc.GetNixPathByHashParams{RepositoryID: repoID, Path: nixNarinfoPath(storeHash)})
 
 	return mapRow(row, err, "get nix path", nixPathFromRow)
 }
 
 // CreateNixPath stores the path and drops the staging row of its NAR file in
-// one transaction. A live row with the same store hash is a unique violation
-// (IsUniqueViolation).
+// one transaction. A live path with the same store hash is ErrDuplicate.
 func (p *NixStore) CreateNixPath(ctx context.Context, np *models.NixPath) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, np.SHA256, np.BlobKey, nixMediaType, np.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for nix path: %w", err)
+	}
+
+	verMeta, err := jsonOrEmpty(nixMetadata{
+		NarHash:     np.NarHash,
+		NarSize:     np.NarSize,
+		NarFile:     np.NarFile,
+		Compression: np.Compression,
+		Refs:        nonNilStrings(np.References),
+		Deriver:     np.Deriver,
+		CA:          np.CA,
+		Signatures:  nonNilStrings(np.Signatures),
+	})
+	if err != nil {
+		return err
+	}
+
+	pkgAttrs, err := jsonOrEmpty(nil)
+	if err != nil {
+		return err
+	}
+
+	path := nixNarinfoPath(np.StoreHash)
+
+	w := &PackageWrite{
+		RepoID:     np.RepositoryID,
+		Format:     "nix",
+		Name:       np.Name,
+		NameKey:    np.Name,
+		Version:    np.StoreHash,
+		VersionKey: np.StoreHash,
+		Exclusive:  true,
+		CreatedAt:  np.CreatedAt,
+		Files:      []FileWrite{{Path: path, Filename: path}},
 	}
 
 	tx, err := p.pool.Begin(ctx)
@@ -118,21 +192,7 @@ func (p *NixStore) CreateNixPath(ctx context.Context, np *models.NixPath) error 
 
 	q := p.q.WithTx(tx)
 
-	row, err := q.CreateNixPath(ctx, dbsqlc.CreateNixPathParams{
-		RepositoryID: np.RepositoryID,
-		StoreHash:    np.StoreHash,
-		Name:         np.Name,
-		NarHash:      np.NarHash,
-		NarSize:      np.NarSize,
-		NarFile:      np.NarFile,
-		Compression:  np.Compression,
-		Refs:         nonNilStrings(np.References),
-		Deriver:      np.Deriver,
-		Ca:           np.CA,
-		Signatures:   nonNilStrings(np.Signatures),
-		BlobID:       blobID,
-		CreatedAt:    createdAtOrNil(np.CreatedAt),
-	})
+	out, err := p.writePackageTx(ctx, q, w, []*string{&blobID}, pkgAttrs, verMeta)
 	if err != nil {
 		return fmt.Errorf("failed to create nix path: %w", err)
 	}
@@ -145,9 +205,9 @@ func (p *NixStore) CreateNixPath(ctx context.Context, np *models.NixPath) error 
 		return fmt.Errorf("failed to commit nix path: %w", err)
 	}
 
-	np.ID = row.ID
-	np.CreatedAt = row.CreatedAt
-	np.UpdatedAt = row.UpdatedAt
+	np.ID = out.Files[0].ID
+	np.CreatedAt = out.Files[0].CreatedAt
+	np.UpdatedAt = out.Files[0].UpdatedAt
 
 	return nil
 }
@@ -159,9 +219,10 @@ func (p *NixStore) ListNixPaths(ctx context.Context, repoID string) ([]*models.N
 	return mapRows(rows, err, "list nix paths", nixPathFromRow)
 }
 
-// DeleteNixPath removes one path row.
+// DeleteNixPath hard-deletes one live path (its narinfo file); the version and
+// the package go with it.
 func (p *NixStore) DeleteNixPath(ctx context.Context, repoID, id string) error {
-	if err := p.q.DeleteNixPath(ctx, dbsqlc.DeleteNixPathParams{ID: id, RepositoryID: repoID}); err != nil {
+	if err := p.deleteLiveFiles(ctx, repoID, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete nix path: %w", err)
 	}
 

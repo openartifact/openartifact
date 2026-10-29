@@ -1,30 +1,37 @@
--- name: CreateHelmChart :one
-INSERT INTO helm_charts (repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-RETURNING id, created_at, updated_at;
+-- Helm charts on the generic package tables (mapping spec in pkg_helm.go). One chart
+-- version is one package_versions row with one package_files row.
 
 -- name: GetHelmChart :one
-SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
-FROM helm_charts hc
-JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.version = $3 AND hc.deleted_at IS NULL;
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, b.blob_key, b.sha256 AS digest, b.size_bytes, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name);
 
--- name: DeleteHelmChart :exec
-DELETE FROM helm_charts WHERE repository_id = $1 AND name = $2 AND version = $3 AND deleted_at IS NULL;
+-- The live files of one chart version, for DeleteHelmChart.
+-- name: ListHelmChartFileIDs :many
+SELECT f.id
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name);
 
 -- name: ListHelmCharts :many
-SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
-FROM helm_charts hc
-JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL
-ORDER BY hc.name, hc.version DESC;
+SELECT f.id, f.repository_id, p.name, v.version, v.metadata, b.blob_key, b.sha256 AS digest, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.name, v.version DESC;
 
 -- name: HelmIndexStamp :one
 -- Fingerprint of the live charts of a repository: their count and an
--- order-independent hash of their IDs. Chart rows are immutable (a republish
--- is a new row) and trash/restore changes membership, so the stamp changes
--- exactly when index.yaml would. It reads one narrow index range instead of
--- every chart joined to its blob.
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(hc.id::text, 0)), 0)::text)::text AS stamp
-FROM helm_charts hc
-WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL;
+-- order-independent hash of their file IDs. A chart's file is immutable (a
+-- republish is a new file) and trash/restore changes membership, so the stamp
+-- changes exactly when index.yaml would. It reads one narrow index range
+-- (idx_package_files_listing) instead of every chart joined to its blob.
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM package_files f
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL;

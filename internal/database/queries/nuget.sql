@@ -1,61 +1,89 @@
--- name: CreateNuGetPackage :one
-INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, sqlc.narg(dependency_groups)::jsonb, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
-ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO NOTHING
-RETURNING id, created_at, updated_at;
+-- NuGet packages on the generic package tables (mapping spec in pkg_nuget.go). One
+-- .nupkg is one package_versions row with one package_files row; the package
+-- id is the package, looked up by its lower-cased name_key.
 
 -- name: GetNuGetPackage :one
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id = $2 AND np.version = $3;
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key);
 
--- name: DeleteNuGetPackage :exec
-DELETE FROM nuget_packages WHERE repository_id = $1 AND package_id = $2 AND version = $3 AND deleted_at IS NULL;
+-- The live files of one package version, for DeleteNuGetPackage.
+-- name: ListNuGetPackageFileIDs :many
+SELECT f.id
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key);
 
 -- name: ListNuGetPackages :many
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL
-ORDER BY np.package_id, np.version DESC;
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.name_key, v.version DESC;
 
 -- name: ListNuGetPackageVersions :many
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id = $2
-ORDER BY np.version DESC;
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
+ORDER BY v.version DESC;
 
 -- name: SearchNuGetPackagesCount :one
--- Counts matching packages (not versions).
-SELECT COUNT(DISTINCT package_id) FROM nuget_packages
-WHERE repository_id = $1 AND deleted_at IS NULL AND (lower(package_id) LIKE $2 OR lower(title) LIKE $2 OR lower(description) LIKE $2);
+-- Counts matching packages (not versions). The query is lower-cased and
+-- LIKE-escaped by the caller; name_key is the lower-cased package id.
+SELECT COUNT(DISTINCT p.id) FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = sqlc.arg(repository_id)
+  AND (p.name_key LIKE sqlc.arg(pattern) OR lower(v.metadata ->> 'title') LIKE sqlc.arg(pattern)
+       OR lower(v.metadata ->> 'description') LIKE sqlc.arg(pattern));
 
 -- name: SearchNuGetPackages :many
 -- OFFSET/LIMIT page over matching packages, not versions: every live version of
 -- each package on the page is returned so callers can group them per package.
 WITH matched AS (
-    SELECT m.package_id
-    FROM nuget_packages m
-    WHERE m.repository_id = $1 AND m.deleted_at IS NULL AND (lower(m.package_id) LIKE $2 OR lower(m.title) LIKE $2 OR lower(m.description) LIKE $2)
-    GROUP BY m.package_id
-    ORDER BY m.package_id
-    OFFSET $3 LIMIT $4
+    SELECT p.id, p.name_key
+    FROM packages p
+    JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+    WHERE p.repository_id = sqlc.arg(repository_id)
+      AND (p.name_key LIKE sqlc.arg(pattern) OR lower(v.metadata ->> 'title') LIKE sqlc.arg(pattern)
+           OR lower(v.metadata ->> 'description') LIKE sqlc.arg(pattern))
+    GROUP BY p.id
+    ORDER BY p.name_key
+    OFFSET sqlc.arg(page_offset) LIMIT sqlc.arg(page_limit)
 )
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
-FROM nuget_packages np
-JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id IN (SELECT package_id FROM matched)
-ORDER BY np.package_id, np.created_at, np.id;
+SELECT f.id, f.repository_id, p.name AS package_id, v.version, v.metadata, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size,
+       f.download_count, f.created_at, f.updated_at
+FROM matched m
+JOIN packages p ON p.id = m.id
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+ORDER BY m.name_key, v.created_at, v.id;
 
 -- name: IncrementNuGetDownloadCount :exec
-UPDATE nuget_packages SET download_count = download_count + 1, updated_at = NOW()
-WHERE repository_id = $1 AND package_id = $2 AND version = $3 AND deleted_at IS NULL;
+UPDATE package_files f SET download_count = f.download_count + 1, updated_at = NOW()
+FROM package_versions v, packages p
+WHERE f.version_id = v.id AND v.package_id = p.id
+  AND p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
+  AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL AND f.deleted_at IS NULL;
 
 -- name: SetNuGetDependencyGroups :exec
 -- Backfills the dependency groups of a package published before they were
--- stored. It never overwrites a value and leaves updated_at alone.
-UPDATE nuget_packages SET dependency_groups = sqlc.arg(dependency_groups)::jsonb
-WHERE repository_id = sqlc.arg(repository_id) AND package_id = sqlc.arg(package_id) AND version = sqlc.arg(version)
-  AND deleted_at IS NULL AND dependency_groups IS NULL;
+-- stored. It never overwrites a value; the file's updated_at (the one the
+-- registration validators read) is left alone.
+UPDATE package_versions v
+SET metadata = v.metadata || jsonb_build_object('dependency_groups', sqlc.arg(dependency_groups)::jsonb)
+FROM packages p
+WHERE v.package_id = p.id AND p.repository_id = sqlc.arg(repository_id) AND p.name_key = sqlc.arg(name_key)
+  AND v.version_key = sqlc.arg(version) AND v.deleted_at IS NULL AND NOT (v.metadata ? 'dependency_groups');

@@ -47,7 +47,13 @@ func TestMetadataStamps(t *testing.T) {
 
 		empty := stamp()
 		add := func(version string) {
-			s.exec(`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'web',$2,$3)`, s.repo, version, s.blob(5))
+			c := &models.HelmChart{
+				RepositoryID: s.repo, Name: "web", Version: version, Digest: fmt.Sprintf("%064x", len(version)*100+int(version[2])),
+				BlobKey: "helm/" + version, SizeBytes: 5, APIVersion: "v2", Type: "application",
+			}
+			if err := pg.CreateHelmChart(ctx, c); err != nil {
+				t.Fatal(err)
+			}
 		}
 
 		stampMoves(t, "first chart", stamp, func() { add("1.0.0") })
@@ -55,7 +61,7 @@ func TestMetadataStamps(t *testing.T) {
 		one := stamp()
 		stampMoves(t, "second chart", stamp, func() { add("1.1.0") })
 		stampMoves(t, "trash a chart", stamp, func() {
-			s.exec(`UPDATE helm_charts SET deleted_at = now() WHERE repository_id = $1 AND version = '1.1.0'`, s.repo)
+			s.exec(`UPDATE package_files SET deleted_at = now() WHERE repository_id = $1 AND filename = 'web-1.1.0.tgz'`, s.repo)
 		})
 
 		if got := stamp(); got != one {
