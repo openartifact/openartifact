@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
@@ -60,6 +61,8 @@ type seedRow struct {
 	// unlisted keeps the file out of the listing; role defaults to primary.
 	unlisted bool
 	role     string
+	// created is the file's created_at (zero = now).
+	created time.Time
 }
 
 // seedFile writes one package, version and file (reusing the live package and
@@ -89,15 +92,24 @@ func seedFile(t *testing.T, pg *database.PostgresDB, r seedRow) string {
 			INSERT INTO package_versions (package_id, repository_id, version, version_key) SELECT id, $1, $4, $4 FROM p
 			ON CONFLICT (package_id, version_key) WHERE deleted_at IS NULL DO UPDATE SET version = EXCLUDED.version RETURNING id
 		)
-		INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, size_bytes, role, listed, arch, attrs)
-		SELECT v.id, $1, $5, $6, NULLIF($7, '')::uuid, NULLIF($8::bigint, 0), $9, $10, $11, $12::jsonb FROM v RETURNING id`,
-		r.repo, r.format, r.name, r.version, r.path, r.filename, r.blobID, r.size, r.role, !r.unlisted, r.arch, r.attrs,
+		INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, size_bytes, role, listed, arch, attrs, created_at)
+		SELECT v.id, $1, $5, $6, NULLIF($7, '')::uuid, NULLIF($8::bigint, 0), $9, $10, $11, $12::jsonb, COALESCE($13::timestamptz, now()) FROM v RETURNING id`,
+		r.repo, r.format, r.name, r.version, r.path, r.filename, r.blobID, r.size, r.role, !r.unlisted, r.arch, r.attrs, nilTime(r.created),
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed %s %s@%s: %v", r.format, r.name, r.version, err)
 	}
 
 	return id
+}
+
+// nilTime maps the zero time to NULL.
+func nilTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
 }
 
 type npmRawFixture struct {

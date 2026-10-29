@@ -93,10 +93,7 @@ func seedSearchBench(t *testing.T, pg *database.PostgresDB) {
 		t.Fatalf("UpsertBlob: %v", err)
 	}
 
-	execSQL(t, pg, `INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at)
-		SELECT (SELECT id FROM repositories WHERE name = 'charts'), 'chart-' || c, v || '.0.0', $1,
-		       now() - (c * v) * interval '1 minute'
-		FROM generate_series(1, 3000) c, generate_series(1, 10) v`, blobID)
+	seedBulkCharts(t, pg, "charts", "chart-", blobID, 3000, 10, true)
 	// Hint bits and statistics settled, as in a database that has been running.
 	execSQL(t, pg, `VACUUM ANALYZE`)
 }

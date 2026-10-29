@@ -119,7 +119,7 @@ func TestSearchFindsRepositoriesByName(t *testing.T) {
 		t.Fatalf("lookup webapp: %v", err)
 	}
 
-	execSQL(t, pg, `INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'acme/ui-kit-1.0.txt', $2)`, webappID, blobID)
+	seedFile(t, pg, seedRow{repo: webappID, format: "raw", name: "acme/ui-kit-1.0.txt", filename: "acme/ui-kit-1.0.txt", blobID: blobID})
 
 	log := newTestLogger(t)
 	h := search.NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log)
