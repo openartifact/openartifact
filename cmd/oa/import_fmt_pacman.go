@@ -80,14 +80,36 @@ func pacmanArch(file string) (string, bool) {
 	return "", false
 }
 
+// pacmanDefaultDir is the architecture directory an "any" package is uploaded
+// to when its source does not name one: the destination refuses os/any, and
+// serves an "any" package under every architecture whichever directory holds it.
+const pacmanDefaultDir = "x86_64"
+
+// pacmanAnyDir is the architecture directory for an "any" package: the one the
+// source path names (<prefix>/os/<arch>/<file>), else pacmanDefaultDir. The
+// OpenArtifact listing carries no directory, so its packages land in the default.
+func pacmanAnyDir(assetPath string) string {
+	dir := path.Dir(assetPath)
+	if arch := path.Base(dir); arch != "." && arch != "/" && arch != "any" && path.Base(path.Dir(dir)) == "os" {
+		return arch
+	}
+
+	return pacmanDefaultDir
+}
+
 // pacmanPath is the repository path of a package file or signature: the
-// architecture comes from the file name.
+// architecture comes from the file name, except for an "any" package, which has
+// to go into the directory of a real architecture (see pacmanAnyDir).
 func pacmanPath(repo, assetPath string) (string, bool) {
 	file := path.Base(assetPath)
 
 	arch, ok := pacmanArch(file)
 	if !ok {
 		return "", false
+	}
+
+	if arch == "any" {
+		arch = pacmanAnyDir(assetPath)
 	}
 
 	return "/repos/" + url.PathEscape(repo) + "/os/" + url.PathEscape(arch) + "/" + url.PathEscape(file), true
