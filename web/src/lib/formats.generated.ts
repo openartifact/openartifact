@@ -11,10 +11,10 @@ export const FORMAT_IDS = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'cond
 export type FormatId = (typeof FORMAT_IDS)[number]
 
 /** Formats that can be created as proxy repositories. */
-export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+export const PROXY_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats that can be created as group repositories. */
-export const GROUP_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
+export const GROUP_FORMATS: readonly FormatId[] = ['ansible', 'apk', 'cargo', 'composer', 'conan', 'conda', 'deb', 'docker', 'go', 'helm', 'ivy', 'maven', 'nix', 'npm', 'nuget', 'pacman', 'pypi', 'raw', 'rpm', 'rubygems', 'sbt', 'terraform']
 
 /** Formats whose hosted repositories can be federated. */
 export const FEDERATION_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']
@@ -32,6 +32,7 @@ export const VULN_ECOSYSTEMS: readonly FormatId[] = ['cargo', 'composer', 'deb',
 export const DEFAULT_UPSTREAMS: Readonly<Partial<Record<FormatId, string>>> = {
   ansible: 'https://galaxy.ansible.com',
   cargo: 'https://index.crates.io',
+  composer: 'https://repo.packagist.org',
   conan: 'https://center2.conan.io',
   docker: 'https://registry-1.docker.io',
   go: 'https://proxy.golang.org',

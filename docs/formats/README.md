@@ -26,7 +26,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Ansible collections | `ansible` | `HOST/repos/REPO/api/` (Galaxy API v3) | hosted, proxy, group | `ansible-galaxy collection publish` (`POST /api/v3/artifacts/collections/`, multipart) | [ansible](ansible.md) |
 | Alpine (apk) | `apk` | `HOST/repos/REPO/<branch>/<repo>` (`<arch>/APKINDEX.tar.gz`) | hosted, proxy, group | `PUT <branch>/<repo>/<arch>/<name>-<version>.apk` or `POST /api/v1/repositories/REPO/apks` (multipart) | [apk](apk.md) |
 | Cargo | `cargo` | `sparse+HOST/repos/REPO/index/` | hosted, proxy, group | `cargo publish` (`PUT /api/v1/crates/new`) | [cargo](cargo.md) |
-| Composer (PHP) | `composer` | `HOST/repos/REPO` (`packages.json`, Composer repository v2) | hosted | `PUT /packages/upload/VENDOR/NAME/VERSION` (zip) | [composer](composer.md) |
+| Composer (PHP) | `composer` | `HOST/repos/REPO` (`packages.json`, Composer repository v2) | hosted, proxy, group | `PUT /packages/upload/VENDOR/NAME/VERSION` (zip) | [composer](composer.md) |
 | Conan (1.x and 2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`, `v1/conans/...`) | hosted, proxy, group | `conan upload` | [conan](conan.md) |
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted, proxy, group | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy, group | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
@@ -52,7 +52,7 @@ Nix is published with `nix copy --to`, which uploads the NAR and then its `.nari
 
 Ansible collections are published with `ansible-galaxy collection publish` to the Galaxy API v3 under `HOST/repos/REPO/api/`; proxy repositories mirror `galaxy.ansible.com` and groups merge them ([details](ansible.md)).
 
-Composer packages are uploaded with a `PUT` of the dist zip to `HOST/repos/REPO/packages/upload/VENDOR/NAME/VERSION`; Composer reads them through `packages.json` and the `p2/` metadata. Only hosted repositories exist for now ([details](composer.md)).
+Composer packages are uploaded with a `PUT` of the dist zip to `HOST/repos/REPO/packages/upload/VENDOR/NAME/VERSION`; Composer reads them through `packages.json` and the `p2/` metadata. Proxy repositories mirror `repo.packagist.org` and groups merge them ([details](composer.md)).
 
 Debian and RPM have no upload route under `/repos/REPO/`: they are uploaded through the REST endpoints under `/api/v1/repositories/REPO/`. `POST` or `PUT` to `HOST/repos/REPO/upload` of such a repository answers `404` and names the endpoint to use.
 

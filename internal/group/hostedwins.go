@@ -17,6 +17,7 @@ import (
 	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 	"github.com/openartifact/openartifact/pkg/compactindex"
+	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
@@ -52,6 +53,8 @@ import (
 //	                                              are files, version details are metadata)
 //	ansible api/v3/collections/<ns>/<name>/      (the collection document; version lists,
 //	                                              version documents and downloads)
+//	composer p2/<name>.json, p2/<name>~dev.json  (either document; versions are merged
+//	                                              in serveComposer, dists are files)
 //	docker  <image>/tags/list                    (manifests, blobs and tags)
 //	ivy/sbt <group>/<module> of the file path     (any live file of the module in the
 //	                                              member's table; no document to probe)
@@ -143,6 +146,8 @@ func packageRef(format, relPath string) (pkgRef, bool) {
 		ref, ok = terraformRef(relPath)
 	case "ansible":
 		ref, ok = ansibleRef(relPath)
+	case "composer":
+		ref, ok = composerRef(relPath)
 	}
 
 	if !ok {
@@ -267,6 +272,22 @@ func ansibleRef(relPath string) (pkgRef, bool) {
 	}
 
 	return pkgRef{}, false
+}
+
+// composerRef: a hosted member holds a package when its stable or its "~dev"
+// p2 document exists; its dists are files of the package.
+func composerRef(relPath string) (pkgRef, bool) {
+	p, ok := pkgcomposer.ParsePath(relPath)
+	if !ok || (p.Kind != pkgcomposer.KindMetadata && p.Kind != pkgcomposer.KindDist) {
+		return pkgRef{}, false
+	}
+
+	return pkgRef{
+		probe:     "p2/" + p.Name + ".json",
+		altProbes: []string{"p2/" + p.Name + "~dev.json"},
+		accept:    "application/json",
+		file:      p.Kind == pkgcomposer.KindDist,
+	}, true
 }
 
 func nugetRef(relPath string) (pkgRef, bool) {

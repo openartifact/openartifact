@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/pkg/composer"
-	"github.com/openartifact/openartifact/pkg/composer/composertest"
 )
 
 func TestMinifyExpandRoundTrip(t *testing.T) {
@@ -30,7 +29,7 @@ func TestMinifyExpandRoundTrip(t *testing.T) {
 		t.Fatalf("second minified entry = %v, want %v", minified[1], wantSecond)
 	}
 
-	if got := composertest.Expand(minified); !reflect.DeepEqual(got, versions) {
+	if got := composer.Expand(minified); !reflect.DeepEqual(got, versions) {
 		t.Fatalf("Expand(Minify(v)) = %v, want %v", got, versions)
 	}
 }
@@ -49,7 +48,7 @@ func TestDocumentRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		got, err := composertest.Decode(data)
+		got, err := composer.Decode(data)
 		if err != nil || !reflect.DeepEqual(got, pkgs) {
 			t.Fatalf("minify=%v: DecodeDocument = %v, %v; want %v", minify, got, err, pkgs)
 		}

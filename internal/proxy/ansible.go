@@ -65,8 +65,6 @@ const (
 	// ansibleMaxAge is how long shared caches may reuse a generated document
 	// of a public repository.
 	ansibleMaxAge = 60
-
-	ansibleJSON = "application/json"
 )
 
 func (s *Service) serveAnsible(w http.ResponseWriter, r *http.Request, repo *models.Repository, relPath string) {
@@ -124,16 +122,31 @@ func (s *Service) writeAnsibleDoc(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
+	s.writeGeneratedJSON(w, r, repo, res, body, ansibleMaxAge)
+}
+
+// writeGeneratedJSON answers with an encoded JSON document, revalidated by its
+// digest and cacheable by shared caches for maxAge seconds when the repository
+// is public. res is the cache resolution it was built from (nil when it came
+// from no upstream copy): a stale one is flagged.
+func (s *Service) writeGeneratedJSON(
+	w http.ResponseWriter,
+	r *http.Request,
+	repo *models.Repository,
+	res *resolution,
+	body []byte,
+	maxAge int,
+) {
 	if res != nil && res.stale {
 		w.Header().Set("Warning", staleWarning)
 	}
 
 	sum := sha256.Sum256(body)
-	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, ansibleMaxAge) {
+	if base.Revalidate(w, r, repo.Public, `"`+hex.EncodeToString(sum[:16])+`"`, maxAge) {
 		return
 	}
 
-	w.Header().Set("Content-Type", ansibleJSON)
+	w.Header().Set("Content-Type", jsonMediaType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
 
@@ -173,8 +186,8 @@ func (s *Service) ansibleVersionList(
 		}
 
 		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      ansibleJSON,
-			contentType: ansibleJSON,
+			accept:      jsonMediaType,
+			contentType: jsonMediaType,
 			transform:   func(resp *http.Response) error { return s.ansibleVersionsTransform(fctx, repo, target, resp) },
 		})
 	})
@@ -273,7 +286,7 @@ func (s *Service) ansiblePage(ctx context.Context, repo *models.Repository, targ
 		return nil, outboundError(verr)
 	}
 
-	req, err := s.newUpstreamRequest(ctx, repo, pageURL, fetchOpts{accept: ansibleJSON})
+	req, err := s.newUpstreamRequest(ctx, repo, pageURL, fetchOpts{accept: jsonMediaType})
 	if err != nil {
 		return nil, err
 	}
@@ -402,8 +415,8 @@ func (s *Service) ansibleVersionDoc(
 		}
 
 		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      ansibleJSON,
-			contentType: ansibleJSON,
+			accept:      jsonMediaType,
+			contentType: jsonMediaType,
 			verify:      ansibleVerifyDoc(p),
 		})
 	})

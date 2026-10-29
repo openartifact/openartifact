@@ -55,10 +55,10 @@ func (h *HTTPHandler) handleRoot(w http.ResponseWriter, r *http.Request, repo *m
 // handleMetadata serves p2/vendor/name.json (the stable and pre-release
 // versions) and p2/vendor/name~dev.json (branches and numeric "-dev"
 // versions), minified as Composer's MetadataMinifier does.
-func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt route) {
-	rows, err := h.DB.ListComposerPackageVersions(r.Context(), repo.ID, rt.name)
+func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt composer.Path) {
+	rows, err := h.DB.ListComposerPackageVersions(r.Context(), repo.ID, rt.Name)
 	if err != nil {
-		h.Log.Errorw("failed to list composer versions", "package", rt.name, "error", err)
+		h.Log.Errorw("failed to list composer versions", "package", rt.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "Internal error.")
 
 		return
@@ -68,7 +68,7 @@ func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, rep
 	versions := make([]composer.Version, 0, len(rows))
 
 	for _, row := range slices.Backward(rows) {
-		if composer.IsDev(row.VersionNormalized) != rt.dev {
+		if composer.IsDev(row.VersionNormalized) != rt.Dev {
 			continue
 		}
 
@@ -91,9 +91,9 @@ func (h *HTTPHandler) handleMetadata(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
-	body, err := composer.EncodeDocument(map[string][]composer.Version{rt.name: versions}, true)
+	body, err := composer.EncodeDocument(map[string][]composer.Version{rt.Name: versions}, true)
 	if err != nil {
-		h.Log.Errorw("failed to encode composer metadata", "package", rt.name, "error", err)
+		h.Log.Errorw("failed to encode composer metadata", "package", rt.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "Internal error.")
 
 		return
@@ -199,22 +199,22 @@ func distFileName(p *models.ComposerPackage) string {
 
 // handleDist streams the zip of one version. The content reference in the URL
 // must be the zip's sha256: a stale or forged URL is a 404.
-func (h *HTTPHandler) handleDist(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt route) {
-	normalized, err := composer.NormalizePublished(rt.version)
+func (h *HTTPHandler) handleDist(w http.ResponseWriter, r *http.Request, repo *models.Repository, rt composer.Path) {
+	normalized, err := composer.NormalizePublished(rt.Version)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "Not found.")
 		return
 	}
 
-	p, err := h.DB.GetComposerPackage(r.Context(), repo.ID, rt.name, normalized)
+	p, err := h.DB.GetComposerPackage(r.Context(), repo.ID, rt.Name, normalized)
 	if err != nil {
-		h.Log.Errorw("failed to get composer package", "package", rt.name, "version", rt.version, "error", err)
+		h.Log.Errorw("failed to get composer package", "package", rt.Name, "version", rt.Version, "error", err)
 		writeError(w, http.StatusInternalServerError, "Internal error.")
 
 		return
 	}
 
-	if p == nil || p.SHA256 != rt.ref {
+	if p == nil || p.SHA256 != rt.Ref {
 		writeError(w, http.StatusNotFound, "Not found.")
 		return
 	}

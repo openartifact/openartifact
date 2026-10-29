@@ -7,6 +7,7 @@ package composer
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +72,79 @@ func FuzzNormalizePublished(f *testing.F) {
 
 		if n == "" || len(n) > MaxVersionLen || len(v) > MaxVersionLen {
 			t.Fatalf("NormalizePublished(%q) = %q", v, n)
+		}
+	})
+}
+
+// FuzzRenderSource feeds RenderSource arbitrary upstream bodies: none may
+// panic, and what it renders is a minified document of the one package whose
+// every dist points at the repository.
+func FuzzRenderSource(f *testing.F) {
+	f.Add([]byte(`{"minified":"composer/2.0","packages":{"a/b":[` +
+		`{"name":"a/b","version":"2.0.0","version_normalized":"2.0.0.0","dist":{"type":"zip","url":"https://h/z/2","reference":"r2","shasum":""}},` +
+		`{"version":"1.0.0","version_normalized":"1.0.0.0","dist":{"url":"https://h/z/1","reference":"r1"}},` +
+		`{"version":"0.9.0","dist":"__unset"}]}}`))
+	f.Add([]byte(`{"packages":{"a/b":[{"version":"1.0.0","dist":{"type":"tar","url":"https://h/t"}},{"version":"1.1.0","dist":null}]}}`))
+	f.Add([]byte(`{"packages":{"a/b":[]}}`))
+	f.Add([]byte(`{`))
+
+	const root = "https://oa.example/repos/php"
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		out, err := RenderSource(data, "a/b", root)
+		if err != nil {
+			return
+		}
+
+		versions, err := ParseDocument(out, "a/b")
+		if err != nil {
+			t.Fatalf("rendered document does not read back: %v", err)
+		}
+
+		for _, v := range versions {
+			block, ok := v["dist"].(map[string]any)
+			if !ok {
+				continue
+			}
+
+			u, _ := block["url"].(string)
+			if _, ok := DistRef(u); !ok || len(u) <= len(root) || u[:len(root)] != root {
+				t.Fatalf("dist url %q is not a dist of the repository", u)
+			}
+		}
+	})
+}
+
+// FuzzParsePath checks that a parsed path names a valid package and that a
+// dist path built from it parses back to the same coordinates.
+func FuzzParsePath(f *testing.F) {
+	for _, p := range []string{
+		"packages.json", "p2/acme/tools.json", "p2/acme/tools~dev.json", "packages/upload/acme/tools/dev-x%2Fy",
+		"dists/acme/tools/1.0.0/abc.zip", "dists/acme/tools/dev-x/y/abc.zip", "dists//", "p2/a/b.json/c",
+	} {
+		f.Add(p)
+	}
+
+	f.Fuzz(func(t *testing.T, rel string) {
+		p, ok := ParsePath(rel)
+		if !ok {
+			return
+		}
+
+		switch p.Kind {
+		case KindMetadata, KindUpload, KindDist:
+			if !ValidName(p.Name) {
+				t.Fatalf("ParsePath(%q) accepted the invalid name %q", rel, p.Name)
+			}
+		}
+
+		if p.Kind != KindDist || p.Ref == "" || strings.ContainsAny(p.Ref, "/%") {
+			return
+		}
+
+		back, ok := ParsePath(DistPath(p.Name, p.Version, p.Ref))
+		if !ok || back != p {
+			t.Fatalf("DistPath of %+v parses back to %+v, %v", p, back, ok)
 		}
 	})
 }

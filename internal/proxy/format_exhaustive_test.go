@@ -18,8 +18,8 @@ func TestFormatServerDecidesEveryFormat(t *testing.T) {
 	t.Parallel()
 
 	handled := repotypetest.Classified(t, "proxy.formatServer",
-		[]string{"ansible", "cargo", "go", "helm", "npm", "nuget", "pypi", "rubygems", "terraform"},
-		[]string{"apk", "composer", "conan", "conda", "deb", "docker", "ivy", "maven", "nix", "pacman", "raw", "rpm", "sbt"})
+		[]string{"ansible", "cargo", "composer", "go", "helm", "npm", "nuget", "pypi", "rubygems", "terraform"},
+		[]string{"apk", "conan", "conda", "deb", "docker", "ivy", "maven", "nix", "pacman", "raw", "rpm", "sbt"})
 
 	s := &Service{}
 
@@ -62,15 +62,16 @@ func TestImmutableDecidesEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "proxy.Immutable",
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "nix", "npm",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "docker", "go", "helm", "ivy", "maven", "nix", "npm",
 			"nuget", "pypi", "rpm", "rubygems", "sbt", "terraform",
 		},
-		[]string{"composer", "pacman", "raw"})
+		[]string{"pacman", "raw"})
 
 	keys := map[string]string{
 		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",
 		"apk":       "v3.20/main/x86_64/curl-8.0.0-r0.apk",
 		"cargo":     "api/v1/crates/a/1.0.0/download",
+		"composer":  "dists/a/b/1.0.0/abc.zip",
 		"conan":     "v2/conans/a/1/_/_/revisions/r/files/conanfile.py",
 		"conda":     "linux-64/a-1.conda",
 		"deb":       "pool/main/a/app/app_1_amd64.deb",
@@ -110,15 +111,16 @@ func TestIsMetadataKeyDecidesEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "proxy.isMetadataKey",
 		[]string{
-			"ansible", "apk", "cargo", "conan", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
+			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
 			"pacman", "pypi", "rpm", "rubygems", "sbt", "terraform",
 		},
-		[]string{"composer", "docker", "raw"})
+		[]string{"docker", "raw"})
 
 	keys := map[string]string{
 		"ansible":   "api/v3/collections/a/b/versions/",
 		"apk":       "v3.20/main/x86_64/APKINDEX.tar.gz",
 		"cargo":     "config.json",
+		"composer":  "p2/a/b.json",
 		"conan":     "v2/conans/a/1/_/_/latest",
 		"conda":     "linux-64/repodata.json",
 		"deb":       "dists/stable/InRelease",

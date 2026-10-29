@@ -20,14 +20,15 @@ func TestIsProxyBlobPathDecidesEveryFormat(t *testing.T) {
 
 	handled := repotypetest.Classified(t, "presign.IsProxyBlobPath",
 		[]string{
-			"ansible", "cargo", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget", "pacman", "pypi",
+			"ansible", "cargo", "composer", "conan", "conda", "deb", "go", "helm", "maven", "nix", "npm", "nuget", "pacman", "pypi",
 			"raw", "rpm", "rubygems", "terraform",
 		},
-		[]string{"apk", "composer", "docker", "ivy", "sbt"})
+		[]string{"apk", "docker", "ivy", "sbt"})
 
 	blobs := map[string]string{
 		"ansible":   "api/v3/artifacts/collections/a-b-1.0.0.tar.gz",
 		"cargo":     "api/v1/crates/a/1.0.0/download",
+		"composer":  "dists/a/b/1.0.0/abc.zip",
 		"conan":     "v2/conans/a/1/_/_/revisions/r/files/conan_package.tgz",
 		"conda":     "linux-64/a-1.conda",
 		"deb":       "pool/main/a/app/app_1_amd64.deb",
