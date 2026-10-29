@@ -7,10 +7,8 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
@@ -340,44 +338,6 @@ func (p *CatalogStore) ListRecentPackages(ctx context.Context, repoIDs []string,
 	}
 
 	return out, nil
-}
-
-// GetRepoComponentDetail resolves a row id of the package listing (any format)
-// to the row with the metadata its table stores, scoped to repoID. It returns
-// nil, nil when the id is not in that repository or is not a UUID.
-func (p *CatalogStore) GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error) {
-	if !isUUID(id) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
-
-	row, err := p.q.GetRepoComponentDetail(ctx, dbsqlc.GetRepoComponentDetailParams{RepoID: repoID, ID: id})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get component detail: %w", err)
-	}
-
-	detail := &models.ComponentDetail{
-		ID: row.ID, Format: row.Format, Name: row.Name, Version: row.Version, Arch: row.Arch,
-		Filename: row.Filename, SHA256: row.Sha256, MD5: row.Md5, SHA1: row.Sha1, SizeBytes: row.SizeBytes,
-		Summary: row.Summary, Description: row.Description, License: row.License, Homepage: row.Homepage,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Deps: row.Deps,
-		Info: map[string]string{},
-	}
-
-	if len(row.Info) > 0 {
-		var info map[string]string
-		if err := json.Unmarshal(row.Info, &info); err != nil {
-			return nil, fmt.Errorf("failed to decode component info: %w", err)
-		}
-
-		maps.DeleteFunc(info, func(_, v string) bool { return v == "" })
-		detail.Info = info
-	}
-
-	return detail, nil
 }
 
 // ListComponentsByRepo lists the packages of one repository across every

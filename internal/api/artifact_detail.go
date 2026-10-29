@@ -85,7 +85,7 @@ func (h *RepositoriesHandler) packageDetailResponse(
 		CreatedAt: formatTime(d.CreatedAt), UpdatedAt: formatTime(d.UpdatedAt),
 		Summary: d.Summary, Description: d.Description, License: d.License, Homepage: d.Homepage,
 		Metadata:     metadataEntries(d.Info),
-		Dependencies: decodeDependencies(d.Format, d.Deps),
+		Dependencies: decodeDependencies(d.DepsDecoder, d.Deps),
 		Files:        files,
 	}
 
@@ -137,31 +137,34 @@ func metadataEntries(info map[string]string) []responses.PackageMetadataEntry {
 	return entries
 }
 
-// dependencyDecoders turn the raw dependency column of a format into
-// dependencies. A format absent here stores none; a column that does not decode
-// yields none.
+// dependencyDecoders turn the raw dependency source of a package version into
+// dependencies, by the decoder name a format's storage.Detail descriptor gives
+// (Detail.Decoder). The names describe the stored shape, not a format. An
+// unknown name, like an empty one, yields no dependencies; a source that does not
+// decode yields none.
 //
 //nolint:gochecknoglobals // immutable lookup table
 var dependencyDecoders = map[string]func([]byte) []responses.PackageDependencyResponse{
-	"npm":      decodeNpmDeps,
-	"cargo":    decodeCargoDeps,
-	"composer": decodeComposerDeps,
-	"nuget":    decodeNugetDeps,
-	"rubygems": decodeGemDeps,
-	"conda":    decodeCondaDeps,
-	"deb":      decodeDebDeps,
-	"rpm":      decodeRpmDeps,
-	"go":       decodeGoDeps,
-	"pacman":   decodePacmanDeps,
-	"ansible":  decodeAnsibleDeps,
+	"npm-manifest":     decodeNpmDeps,
+	"cargo-metadata":   decodeCargoDeps,
+	"composer-require": decodeComposerDeps,
+	"nuget-groups":     decodeNugetDeps,
+	"gem-dependencies": decodeGemDeps,
+	"conda-specs":      decodeCondaDeps,
+	"deb-control":      decodeDebDeps,
+	"rpm-extra":        decodeRpmDeps,
+	"go-mod":           decodeGoDeps,
+	"pacman-depends":   decodePacmanDeps,
+	"ansible-map":      decodeAnsibleDeps,
 }
 
 // decodeDependencies returns the declared dependencies of a package version
-// from the raw column the format keeps them in, capped at maxDetailDependencies.
-func decodeDependencies(format string, raw []byte) []responses.PackageDependencyResponse {
+// from the raw JSON the format keeps them in, decoded by the named decoder and
+// capped at maxDetailDependencies.
+func decodeDependencies(decoder string, raw []byte) []responses.PackageDependencyResponse {
 	deps := []responses.PackageDependencyResponse{}
 
-	decode, ok := dependencyDecoders[format]
+	decode, ok := dependencyDecoders[decoder]
 	if !ok || len(raw) == 0 {
 		return deps
 	}
