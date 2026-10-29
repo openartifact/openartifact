@@ -82,6 +82,24 @@ Every repo-scoped format handler registers **relative** routes on the single `/r
 - Group repositories read hosted members through in-memory routers of the same cargo, Conan, conda, Go, Helm, Maven, npm, NuGet, PyPI, raw, RubyGems and Terraform handlers.
 - `cmd/server/routes_test.go` guards the registration order against chi `Mount()` panics.
 
+## Proxy and group pipeline
+
+A format does not re-implement caching, revalidation, SSRF checks or member merging; it supplies hooks to one pipeline per side.
+
+**Proxy** (`internal/proxy/pipeline.go`). Stages: fetch the upstream metadata, cache it with serve-stale, render it (rewrite download URLs to the repository), resolve a download only from the cached metadata, SSRF-check the target, store it content-addressed. A format describes its documents with a `metaDoc` (cache key, upstream URL, fetch options and verification, size limit, what to do with an unparsable copy) and plugs into three entry points:
+
+| Entry point | Used for | Format hook |
+|---|---|---|
+| `serveVerbatim` | metadata served byte for byte (cargo index, go `@v`, rubygems, conan) | `metaDoc` |
+| `serveRendered` | metadata rewritten per request (npm packument, pypi simple pages, helm index, composer p2, ansible, nuget) | `render`, `etag` |
+| `serveDownload` | files named by cached metadata (npm tarball, pypi file, helm chart, cargo crate, composer dist, ansible tarball, gem, conda package, terraform archive) | `locate`: parse the cached metadata, return the URL and the digest the bytes must have |
+
+Credentials go only to the upstream's own origin (the pipeline forces `noAuth` for any other), a file is cached only when its digest matches what the metadata promised, and a missing blob of a cached row is refetched. Docker has its own OCI path (`internal/proxy/oci*.go`); apk, deb, ivy, maven, nix, pacman, rpm and sbt mirror the upstream path by path and use the generic `Serve` route (`fetch`/`fetchURL`), which is the same fetch, cache and store stages without a metadata parser.
+
+**Group** (`internal/group/pipeline.go`). Files and every path a format does not merge are first-hit (first readable member that has them, hosted first when hosted wins applies, `applyHostedWins` in `hostedwins.go`). A merged document is described by a `mergedDoc` (what to ask every member, size limit, merge hook, content type, cache lifetime) and served by `serveMergedDoc`: collect the members' 200 answers (404 skipped, a failing member recorded), merge by the format's key (the first member that has an entry wins), answer with a content ETag, and send a partial merge (a failed member left out) uncacheable.
+
+Adding a format: write its `pkg/<format>` grammar and parsers, then its proxy hooks (`internal/proxy/<format>.go`) and merge hook (`internal/group/<format>.go`); do not copy the resolve/revalidate/read/gate sequence.
+
 ## Storage and database
 
 - **Blob store** (`storage.BlobStore`): `Put/Get/Delete/Exists/GetMetadata/List/GetSize/ExistsBySHA256/PresignURL`. Blobs are content-addressed by sha256 and deduplicated across repositories, so deletes go through `storage.SafeDeleteBlob` (refcounting). Backends are chosen by `storage.type`; see [../operations/storage.md](../operations/storage.md). The server wraps the store in `NewMetricsBlobStore` for Prometheus metrics.

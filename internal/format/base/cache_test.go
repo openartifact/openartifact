@@ -91,3 +91,18 @@ func TestRevalidate(t *testing.T) {
 		})
 	}
 }
+
+func TestContentETag(t *testing.T) {
+	t.Parallel()
+
+	// SHA-256 of "abc", quoted: a strong validator over the bytes alone.
+	const want = `"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"`
+
+	if got := ContentETag([]byte("abc")); got != want {
+		t.Fatalf("ContentETag(abc) = %s, want %s", got, want)
+	}
+
+	if ContentETag([]byte("abc")) == ContentETag([]byte("abd")) {
+		t.Fatal("different bodies share an ETag")
+	}
+}

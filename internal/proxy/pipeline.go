@@ -73,6 +73,11 @@ type metaDoc struct {
 	// url maps the repository's upstream base URL to the URL the document is
 	// fetched from. Nil means the base URL plus key.
 	url func(upstream string) (string, error)
+	// locate finds the URL from other cached metadata (a registration page
+	// is where the registration index says it is). It runs inside the fetch
+	// flight, takes precedence over url, and its error is returned
+	// unchanged: errNotFound, errUpstream, errInternal.
+	locate func(fctx context.Context) (string, error)
 	// opts returns the fetch options of the document (accept header,
 	// verification, content type, transform). ctx is the flight's context and
 	// target the URL being fetched. Nil means no options.
@@ -99,12 +104,22 @@ func jsonDocOpts(verify func(io.ReadSeeker) error) fetchOpts {
 // fetchDoc is the fetchFunc of d.
 func (s *Service) fetchDoc(repo *models.Repository, d metaDoc) fetchFunc {
 	return func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		urlOf := d.url
-		if urlOf == nil {
-			urlOf = func(upstream string) (string, error) { return upstreamURL(upstream, d.key) }
+		var (
+			target string
+			err    error
+		)
+
+		switch {
+		case d.locate != nil:
+			if target, err = d.locate(fctx); err != nil {
+				return nil, err
+			}
+		case d.url != nil:
+			target, err = d.url(repo.UpstreamURL)
+		default:
+			target, err = upstreamURL(repo.UpstreamURL, d.key)
 		}
 
-		target, err := urlOf(repo.UpstreamURL)
 		if err != nil {
 			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
 			return nil, errInternal
