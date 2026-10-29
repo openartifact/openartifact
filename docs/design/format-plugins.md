@@ -112,18 +112,18 @@ Design rules that follow from the above:
 
 ### Kept side tables (each justified)
 
-A side table is keyed by `package_files.id` (`file_id uuid PRIMARY KEY REFERENCES package_files ON DELETE CASCADE`) unless noted, holds only what cannot ride in `attrs`/`metadata` (an FK, an index the format's metadata generation needs, or bulk data that must stay out of the narrow listing row), is journaled with its parent first, and is read only by the format's own code. Nothing cross-format reads a side table.
+A side table is keyed by `package_files.id` (`id uuid PRIMARY KEY REFERENCES package_files ON DELETE CASCADE`; the column is called `id` because the journal trigger keys on it) unless noted, holds only what cannot ride in `attrs`/`metadata` (an FK, an index the format's metadata generation needs, or bulk data that must stay out of the narrow listing row), is journaled with its parent first, and is read only by the format's own code. Nothing cross-format reads a side table.
 
 | Table | Format | Why it stays separate |
 |---|---|---|
 | `debian_distributions`, `debian_components`, `debian_architectures` | deb | The distribution graph the `Release` files are generated from; not package rows. Unchanged. |
-| `deb_files (file_id, distribution_id, component_id, control_fields jsonb)` | deb | FKs to the graph, the `ListDebPackageEntries` join and the per-distribution cleanup partition; `control_fields` is bulk. |
+| `deb_files (id, distribution_id, component_id, control_fields jsonb)` | deb | FKs to the graph, the `ListDebPackageEntries` join and the per-distribution cleanup partition; `control_fields` is bulk. |
 | `rpm_repos` | rpm | Per-repository repodata state (`metadata_stale`, base arch). Unchanged. |
-| `rpm_files (file_id, header_start, header_end, rpm_extra jsonb)` | rpm | `rpm_extra` (file list, changelog, dependencies) is megabytes per row and read only by repodata generation; migrated as-is, never re-parsed (re-parsing would force a re-read of every package blob). |
-| `pacman_files (file_id, file_list text NULL)` | pacman | NULL means "not read from the package yet" and drives a worker anti-join; excluded from the journal (large, derivable). |
-| `apk_files (file_id, ...)` | apk | The APKINDEX stanza fields, bulk; the package-level `branch/repo` ride in the package name. |
-| `conan_files (file_id, package_id, package_revision)` | conan | Binary packages are addressed by the 8-column key including `package_id` and `package_revision`; the lookups need an index on them. |
-| `maven_files (file_id, classifier, extension, is_snapshot, snapshot_timestamp, snapshot_build_number, md5, sha1, sha512)` | maven | Snapshot ordering, `maven-metadata.xml` generation and the newest-snapshot retention protection need typed, indexed coordinates. |
+| `rpm_files (id, header_start, header_end, rpm_extra jsonb)` | rpm | `rpm_extra` (file list, changelog, dependencies) is megabytes per row and read only by repodata generation; migrated as-is, never re-parsed (re-parsing would force a re-read of every package blob). |
+| `pacman_files (id, file_list text NULL)` | pacman | NULL means "not read from the package yet" and drives a worker anti-join; excluded from the journal (large, derivable). |
+| `apk_files (id, ...)` | apk | The APKINDEX stanza fields, bulk; the package-level `branch/repo` ride in the package name. |
+| `conan_files (id, package_id, package_revision)` | conan | Binary packages are addressed by the 8-column key including `package_id` and `package_revision`; the lookups need an index on them. |
+| `maven_files (id, classifier, extension, is_snapshot, snapshot_timestamp, snapshot_build_number, md5, sha1, sha512)` | maven | Snapshot ordering, `maven-metadata.xml` generation and the newest-snapshot retention protection need typed, indexed coordinates. |
 | `nix_pending_nars`, `nix_signing_keys`, `apk_signing_keys` | nix, apk | Staging rows and secrets; never package data. Unchanged. |
 | `group_metadata_state`, `group_package_owners` | group repos | Repository-level, no package rows. Unchanged. |
 | `docker_blobs`, `docker_blob_images`, `docker_manifests`, `docker_manifest_refs`, `docker_tags`, `docker_uploads` | docker | See Scope. |
