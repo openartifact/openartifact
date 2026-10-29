@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -221,22 +222,13 @@ type Engine struct {
 	restoreSkips atomic.Int64
 
 	// regen schedules metadata regeneration for restored repositories; optional.
-	regen Regenerator
+	regen *lifecycle.Workers
 }
 
-// Regenerator enqueues generated-metadata refreshes after a restore. It is
-// satisfied by api.NewWorkerRegenerator.
-type Regenerator interface {
-	NotifyDebStale(repoID string)
-	NotifyRPMStale(repoID string)
-	NotifyApkStale(repoID string)
-	NotifyMavenStale(repoID, groupID, artifactID string)
-	NotifyPacmanStale(repoID string)
-}
-
-// SetRegenerator wires the metadata workers so a restore regenerates deb,
-// maven and rpm metadata immediately instead of waiting for the next upload.
-func (e *Engine) SetRegenerator(r Regenerator) { e.regen = r }
+// SetWorkers wires the metadata workers so a restore regenerates the generated
+// metadata (deb, maven, rpm, ...) immediately instead of waiting for the next
+// upload; each format's Changed lifecycle hook decides what to refresh.
+func (e *Engine) SetWorkers(w *lifecycle.Workers) { e.regen = w }
 
 func NewEngine(db EngineStore, blobStore storage.BlobStore, log *logger.Logger, backupDir string) *Engine {
 	return &Engine{

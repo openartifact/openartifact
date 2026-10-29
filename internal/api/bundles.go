@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/promote"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -165,10 +166,11 @@ func (h *BundlesHandler) WithPublisher(p webhook.Publisher) *BundlesHandler {
 	return h
 }
 
-// WithRegenerator enqueues the refresh of generated metadata (deb, npm and rpm
-// indexes) in the target repository after a promotion.
-func (h *BundlesHandler) WithRegenerator(r TrashRegenerator) *BundlesHandler {
-	h.promoter = promote.NewEngine(h.db, h.log, r)
+// WithWorkers enqueues the refresh of generated metadata (deb, npm and rpm
+// indexes, ...) in the target repository after a promotion, through the Changed
+// lifecycle hook of each format over the metadata workers.
+func (h *BundlesHandler) WithWorkers(w *lifecycle.Workers) *BundlesHandler {
+	h.promoter = promote.NewEngine(h.db, h.log, w)
 	return h
 }
 

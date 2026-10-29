@@ -33,7 +33,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/trash"
 )
@@ -118,7 +117,8 @@ type Usage struct {
 
 // Regen is one metadata refresh to enqueue once the promotion has committed.
 type Regen struct {
-	Kind storage.RegenKind
+	// Format is the format whose Changed lifecycle hook runs it.
+	Format string
 	// RepoID is the destination repository (every kind but npm).
 	RepoID string
 	// GroupID and ArtifactID name the maven artifact.

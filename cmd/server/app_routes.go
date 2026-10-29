@@ -283,10 +283,6 @@ func (a *app) mountFormats(repoDispatch *repodispatch.Dispatcher) error {
 func (a *app) registerRepositoryRoutes() {
 	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 	w := &a.workers
-	regenerator := func() api.TrashRegenerator {
-		return api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.pacman, w.maven, w.npm)
-	}
-
 	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).
 		WithBlobStore(a.store.blobs).
 		WithPublisher(w.webhook).
@@ -317,7 +313,7 @@ func (a *app) registerRepositoryRoutes() {
 	api.NewBundlesHandler(db, log, evaluator).
 		WithGPGKeys(w.gpgKeys).
 		WithPublisher(w.webhook).
-		WithRegenerator(regenerator()).
+		WithWorkers(w.metadata).
 		RegisterAuthed(authedAPI)
 }
 
@@ -357,7 +353,7 @@ func (a *app) registerWebhooksAndBackup() {
 
 	backupEngine := backup.NewEngine(db, a.store.blobs, log, a.cfg.Backup.BackupDir)
 	backupEngine.SetLeaseTTL(a.cfg.Backup.LeaseTTL)
-	backupEngine.SetRegenerator(api.NewWorkerRegenerator(w.deb, w.rpm, w.apk, w.pacman, w.maven, w.npm))
+	backupEngine.SetWorkers(w.metadata)
 	api.NewBackupHandler(db, log, evaluator, backupEngine).WithTasks(a.tasks).RegisterAuthed(authedAPI)
 }
 

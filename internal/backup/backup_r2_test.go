@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 )
 
 // r2State is the extra fake state the round-two backup tests need (fakeDB.extra).
@@ -75,12 +76,50 @@ func (r *recordingRegen) add(s string) {
 	r.mu.Unlock()
 }
 
-func (r *recordingRegen) NotifyDebStale(repoID string)    { r.add("deb:" + repoID) }
-func (r *recordingRegen) NotifyPacmanStale(repoID string) { r.add("pacman:" + repoID) }
-func (r *recordingRegen) NotifyRPMStale(repoID string)    { r.add("rpm:" + repoID) }
-func (r *recordingRegen) NotifyApkStale(repoID string)    { r.add("apk:" + repoID) }
-func (r *recordingRegen) NotifyMavenStale(repoID, g, a string) {
-	r.add("maven:" + repoID + ":" + g + ":" + a)
+// recordingWorker is the metadata worker the recording hooks find bound for
+// their format.
+type recordingWorker struct {
+	r    *recordingRegen
+	name string
+}
+
+func (w recordingWorker) NotifyStale(repoID, group, artifact string) {
+	if group == "" && artifact == "" {
+		w.r.add(w.name + ":" + repoID)
+
+		return
+	}
+
+	w.r.add(w.name + ":" + repoID + ":" + group + ":" + artifact)
+}
+
+// staleNotifier is what the recording hooks call; the backup package cannot
+// import the plugin layer that registers the real ones.
+type staleNotifier interface {
+	NotifyStale(repoID, group, artifact string)
+}
+
+var registerRecordingHooks sync.Once
+
+// workers binds a recording worker per format with generated metadata and, once
+// per process, registers the Changed hooks that forward to it.
+func (r *recordingRegen) workers() *lifecycle.Workers {
+	registerRecordingHooks.Do(func() {
+		for _, name := range []string{"deb", "rpm", "pacman", "apk", "maven"} {
+			lifecycle.Register(name, lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+				if n, ok := lifecycle.Worker[staleNotifier](env.Workers, name); ok {
+					n.NotifyStale(c.RepoID, c.GroupID, c.ArtifactID)
+				}
+			}})
+		}
+	})
+
+	w := lifecycle.NewWorkers()
+	for _, name := range []string{"deb", "rpm", "pacman", "apk", "maven"} {
+		w.Bind(name, recordingWorker{r, name})
+	}
+
+	return w
 }
 
 // backupAndRestore runs a full backup of src and restores it into a fresh
@@ -190,7 +229,7 @@ func TestBackupRestore_RegeneratesGeneratedMetadata(t *testing.T) {
 	}
 
 	regen := &recordingRegen{}
-	dst := backupAndRestore(t, src, func(e *Engine) { e.SetRegenerator(regen) })
+	dst := backupAndRestore(t, src, func(e *Engine) { e.SetWorkers(regen.workers()) })
 
 	rpmID, debID, mvnID := repoByName(t, dst, "r").ID, repoByName(t, dst, "d").ID, repoByName(t, dst, "m").ID
 

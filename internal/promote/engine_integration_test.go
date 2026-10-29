@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/storage"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/quota"
 )
 
@@ -48,13 +48,55 @@ func (f *fakeRegen) add(s string) {
 	f.calls = append(f.calls, s)
 }
 
-func (f *fakeRegen) NotifyDebStale(repoID string)    { f.add("deb:" + repoID) }
-func (f *fakeRegen) NotifyPacmanStale(repoID string) { f.add("pacman:" + repoID) }
-func (f *fakeRegen) NotifyRPMStale(repoID string)    { f.add("rpm:" + repoID) }
-func (f *fakeRegen) NotifyApkStale(repoID string)    { f.add("apk:" + repoID) }
-func (f *fakeRegen) NotifyNPMStale(pkgID string)     { f.add("npm:" + pkgID) }
-func (f *fakeRegen) NotifyMavenStale(repoID, group, artifact string) {
-	f.add("maven:" + repoID + ":" + group + ":" + artifact)
+// staleWorker is the metadata worker a recording hook finds bound for its format.
+type staleWorker struct {
+	f    *fakeRegen
+	name string
+}
+
+func (w staleWorker) NotifyStale(id string) { w.f.add(w.name + ":" + id) }
+
+type mavenStaleWorker struct{ f *fakeRegen }
+
+func (w mavenStaleWorker) NotifyStale(repoID, group, artifact string) {
+	w.f.add("maven:" + repoID + ":" + group + ":" + artifact)
+}
+
+var registerRecordingHooks sync.Once
+
+// workers binds recording workers for the formats with generated metadata and,
+// once per process, registers the Changed hooks the plugin layer registers for
+// them (the promote package cannot import it).
+func (f *fakeRegen) workers() *lifecycle.Workers {
+	registerRecordingHooks.Do(func() {
+		for _, name := range []string{"deb", "rpm", "pacman", "apk"} {
+			lifecycle.Register(name, lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+				if n, ok := lifecycle.Worker[interface{ NotifyStale(string) }](env.Workers, name); ok {
+					n.NotifyStale(c.RepoID)
+				}
+			}})
+		}
+
+		lifecycle.Register("npm", lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+			if n, ok := lifecycle.Worker[interface{ NotifyStale(string) }](env.Workers, "npm"); ok {
+				n.NotifyStale(c.PackageID)
+			}
+		}})
+		lifecycle.Register("maven", lifecycle.Hooks{Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+			if n, ok := lifecycle.Worker[interface{ NotifyStale(string, string, string) }](env.Workers, "maven"); ok {
+				n.NotifyStale(c.RepoID, c.GroupID, c.ArtifactID)
+			}
+		}})
+	})
+
+	w := lifecycle.NewWorkers()
+	for _, name := range []string{"deb", "rpm", "pacman", "apk", "npm"} {
+		w.Bind(name, staleWorker{f, name})
+	}
+
+	w.Bind("maven", mavenStaleWorker{f})
+
+	return w
 }
 
 // newBundleEnv seeds n maven artifacts in a source repository and seals a
@@ -65,7 +107,7 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 	h := newHarness(t)
 	ctx := context.Background()
 	regen := &fakeRegen{}
-	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, regen), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen}
+	env := &bundleEnv{h: h, engine: NewEngine(h.pg, h.log, regen.workers()), src: h.repo("maven", false), dst: h.repo("maven", true), regen: regen}
 
 	pipeline := &models.PromotionPipeline{
 		Name:   "pipe",
@@ -431,12 +473,12 @@ func TestEnginePromoteRejectsBadRepositories(t *testing.T) {
 
 func TestEngineNotifyDispatchesByKind(t *testing.T) {
 	regen := &fakeRegen{}
-	e := &Engine{regen: regen}
+	e := &Engine{regen: regen.workers()}
 	e.notify([]Regen{
-		{Kind: storage.RegenDeb, RepoID: "r1"},
-		{Kind: storage.RegenRPM, RepoID: "r2"},
-		{Kind: storage.RegenMaven, RepoID: "r3", GroupID: "g", ArtifactID: "a"},
-		{Kind: storage.RegenNPM, PackageID: "p1"},
+		{Format: "deb", RepoID: "r1"},
+		{Format: "rpm", RepoID: "r2"},
+		{Format: "maven", RepoID: "r3", GroupID: "g", ArtifactID: "a"},
+		{Format: "npm", PackageID: "p1"},
 	})
 
 	want := []string{"deb:r1", "rpm:r2", "maven:r3:g:a", "npm:p1"}

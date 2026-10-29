@@ -18,6 +18,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
@@ -352,29 +353,22 @@ func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreStat
 		}
 
 		switch d.Backup.Regen {
+		case "":
 		case storage.RegenRPM:
 			// rpm gets its rpm_repos row (the worker's only index of work) marked
 			// stale, so the periodic stale sweep also covers a missing notifier.
 			e.regenerateRestoredRPM(ctx, repo)
-		case storage.RegenDeb:
-			e.notifyRestored(func(r Regenerator) { r.NotifyDebStale(repo.ID) })
-		case storage.RegenPacman:
-			e.notifyRestored(func(r Regenerator) { r.NotifyPacmanStale(repo.ID) })
-		case storage.RegenApk:
-			e.notifyRestored(func(r Regenerator) { r.NotifyApkStale(repo.ID) })
 		case storage.RegenMaven:
+			// The Regen kind says what the refresh is keyed by: one maven
+			// artifact, where the others refresh the repository.
 			for coord := range st.mavenCoords[repo.ID] {
-				e.notifyRestored(func(r Regenerator) { r.NotifyMavenStale(repo.ID, coord[0], coord[1]) })
+				lifecycle.Notify(e.regen, repo.Format, lifecycle.Change{RepoID: repo.ID, GroupID: coord[0], ArtifactID: coord[1]})
 			}
 		case storage.RegenNPM:
 			// the packument is rendered per request from the rows
+		default:
+			lifecycle.Notify(e.regen, repo.Format, lifecycle.Change{RepoID: repo.ID})
 		}
-	}
-}
-
-func (e *Engine) notifyRestored(notify func(Regenerator)) {
-	if e.regen != nil {
-		notify(e.regen)
 	}
 }
 
@@ -397,5 +391,5 @@ func (e *Engine) regenerateRestoredRPM(ctx context.Context, repo *models.Reposit
 		return
 	}
 
-	e.notifyRestored(func(r Regenerator) { r.NotifyRPMStale(repo.ID) })
+	lifecycle.Notify(e.regen, repo.Format, lifecycle.Change{RepoID: repo.ID})
 }

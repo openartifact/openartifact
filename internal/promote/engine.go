@@ -13,23 +13,13 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
-
-// Regenerator enqueues the refresh of generated metadata for a promotion's
-// destination. api.NewWorkerRegenerator satisfies it.
-type Regenerator interface {
-	NotifyDebStale(repoID string)
-	NotifyRPMStale(repoID string)
-	NotifyApkStale(repoID string)
-	NotifyMavenStale(repoID, groupID, artifactID string)
-	NotifyNPMStale(packageID string)
-	NotifyPacmanStale(repoID string)
-}
 
 // EngineStore is the part of the database Engine needs.
 type EngineStore interface {
@@ -44,7 +34,7 @@ type EngineStore interface {
 type Engine struct {
 	db    EngineStore
 	log   *logger.Logger
-	regen Regenerator
+	regen *lifecycle.Workers
 }
 
 // dockerFormat is the one format with dedicated tables and its own promoter;
@@ -53,7 +43,7 @@ const dockerFormat = "docker"
 
 // NewEngine returns an Engine. regen may be nil (generated metadata is then
 // only refreshed by the periodic sweep).
-func NewEngine(db EngineStore, log *logger.Logger, regen Regenerator) *Engine {
+func NewEngine(db EngineStore, log *logger.Logger, regen *lifecycle.Workers) *Engine {
 	return &Engine{db: db, log: log, regen: regen}
 }
 
@@ -388,19 +378,8 @@ func (e *Engine) notify(regen []Regen) {
 	}
 
 	for _, r := range regen {
-		switch r.Kind {
-		case storage.RegenDeb:
-			e.regen.NotifyDebStale(r.RepoID)
-		case storage.RegenRPM:
-			e.regen.NotifyRPMStale(r.RepoID)
-		case storage.RegenApk:
-			e.regen.NotifyApkStale(r.RepoID)
-		case storage.RegenMaven:
-			e.regen.NotifyMavenStale(r.RepoID, r.GroupID, r.ArtifactID)
-		case storage.RegenNPM:
-			e.regen.NotifyNPMStale(r.PackageID)
-		case storage.RegenPacman:
-			e.regen.NotifyPacmanStale(r.RepoID)
-		}
+		lifecycle.Notify(e.regen, r.Format, lifecycle.Change{
+			RepoID: r.RepoID, PackageID: r.PackageID, GroupID: r.GroupID, ArtifactID: r.ArtifactID,
+		})
 	}
 }

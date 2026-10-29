@@ -62,6 +62,18 @@ type Restoration struct {
 	RegenKeys func(ctx context.Context) (string, string, error)
 }
 
+// Change names what one refresh of a format's generated metadata is keyed by.
+// The engines that copy or restore rows in bulk (promotion, backup restore)
+// know which keys they touched; the format's hook picks the one it refreshes by.
+type Change struct {
+	// RepoID is the repository whose rows changed.
+	RepoID string
+	// PackageID is the package row that changed, when the engine knows it.
+	PackageID string
+	// GroupID and ArtifactID are the Maven coordinates, when the engine knows them.
+	GroupID, ArtifactID string
+}
+
 // Hooks is the lifecycle of one format. A nil function is a step the format
 // does not have: its indexes are computed live from the tables.
 type Hooks struct {
@@ -72,6 +84,10 @@ type Hooks struct {
 	Stale func(ctx context.Context, env *Env, repoID string) error
 	// Removed follows up a cleanup run that removed rows. Failures are logged.
 	Removed func(ctx context.Context, env *Env, r Removal)
+	// Changed follows up rows an engine wrote straight into a repository
+	// (promotion, backup restore): it only enqueues the refresh of what the
+	// Change keys. env carries the workers and no log.
+	Changed func(env *Env, c Change)
 	// Restored follows up the restore of a trash item. Failures are logged:
 	// the restore itself already succeeded.
 	Restored func(ctx context.Context, env *Env, r Restoration)
@@ -91,6 +107,18 @@ func Register(format string, h Hooks) { hooks.Register(format, h) }
 
 // Lookup returns the lifecycle registered for format.
 func Lookup(format string) (Hooks, bool) { return hooks.Lookup(format) }
+
+// Notify runs the Changed hook of format over the workers w. It does nothing
+// when w is nil (the engine has no workers wired) or the format has no hook.
+func Notify(w *Workers, format string, c Change) {
+	if w == nil {
+		return
+	}
+
+	if h, ok := Lookup(format); ok && h.Changed != nil {
+		h.Changed(&Env{Workers: w}, c)
+	}
+}
 
 // Workers are the metadata workers a process runs, by format. It is filled at
 // startup, before the hooks run, and read-only afterwards.

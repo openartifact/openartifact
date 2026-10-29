@@ -68,6 +68,11 @@ func repoLifecycle(format string, mark bool) lifecycle.Hooks {
 
 	return lifecycle.Hooks{
 		Stale: stale,
+		Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+			if n, ok := lifecycle.Worker[repoNotifier](env.Workers, format); ok {
+				n.NotifyStale(c.RepoID)
+			}
+		},
 		Removed: func(ctx context.Context, env *lifecycle.Env, r lifecycle.Removal) {
 			refresh(ctx, env, r.Repo.ID, "cleanup")
 		},
@@ -117,6 +122,11 @@ func mavenLifecycle() lifecycle.Hooks {
 
 			return rows.Err() //nolint:wrapcheck // iteration error
 		},
+		Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+			if n, ok := lifecycle.Worker[mavenNotifier](env.Workers, "maven"); ok {
+				n.NotifyStale(c.RepoID, c.GroupID, c.ArtifactID)
+			}
+		},
 		// Removed regenerates the version list and the snapshot metadata of
 		// every artifact a run removed files of, so clients stop resolving
 		// removed versions and builds.
@@ -158,6 +168,11 @@ type packumentNotifier interface{ NotifyStale(packageID string) }
 // npmLifecycle keeps the packuments in step with the versions of their packages.
 func npmLifecycle() lifecycle.Hooks {
 	return lifecycle.Hooks{
+		Changed: func(env *lifecycle.Env, c lifecycle.Change) {
+			if n, ok := lifecycle.Worker[packumentNotifier](env.Workers, "npm"); ok {
+				n.NotifyStale(c.PackageID)
+			}
+		},
 		// Removed drops the package that lost its last version row; the others
 		// get a new packument validator and a regeneration of the latest version.
 		// Versions a dist-tag points at are never removed, so no dist-tag is left
