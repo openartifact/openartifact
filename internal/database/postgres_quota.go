@@ -8,9 +8,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -26,6 +28,9 @@ import (
 // milliseconds; the artifact rows themselves keep their normal durability. The
 // reservation is a single statement (insert-or-conditional-update), so
 // check-and-update stays atomic across replicas without any advisory lock.
+
+// QuotaStore owns storage quotas and usage accounting, per repository and per project.
+type QuotaStore struct{ *core }
 
 // reserveStorageSQL adds ($1 bytes, $2 artifacts) to the repository's usage
 // ($3) unless that would pass a non-zero limit. A missing quota row is created
@@ -116,7 +121,7 @@ SELECT pq.project_id
 // and returns the rows the last one affected. The setting and the statements
 // travel in one batch, i.e. one round trip; the batch is a single implicit
 // transaction, so either every statement applies or none does.
-func (p *PostgresDB) execQuota(
+func (p *QuotaStore) execQuota(
 	ctx context.Context,
 	sizeBytes int64,
 	artifactCount int,
@@ -163,7 +168,7 @@ func (p *PostgresDB) execQuota(
 // 0 means unlimited), and, when the repository's project has a ceiling, to the
 // project's counters too: the upload must fit both levels, otherwise nothing is
 // reserved. It returns false, nil when a quota would be exceeded.
-func (p *PostgresDB) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
+func (p *QuotaStore) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
 	var projectID string
 
 	err := p.pool.QueryRow(ctx, limitedProjectSQL, repoID).Scan(&projectID)
@@ -187,7 +192,7 @@ func (p *PostgresDB) ReserveStorageUsage(ctx context.Context, repoID string, siz
 // reserveTwoLevel reserves on the project row, then the repository row, in one
 // transaction (lock order: project, repository). A failed repository
 // reservation rolls the project reservation back.
-func (p *PostgresDB) reserveTwoLevel(ctx context.Context, projectID, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
+func (p *QuotaStore) reserveTwoLevel(ctx context.Context, projectID, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to begin quota reservation: %w", err)
@@ -247,7 +252,7 @@ UPDATE project_quotas
 // was created without a reservation), past any limit: the artifact is stored,
 // so refusing it would only desynchronise the counters. Nothing is left
 // pending.
-func (p *PostgresDB) ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
+func (p *QuotaStore) ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, chargeProjectSQL, chargeStorageSQL); err != nil {
 		return fmt.Errorf("failed to charge storage usage: %w", err)
 	}
@@ -258,7 +263,7 @@ func (p *PostgresDB) ChargeStorageUsage(ctx context.Context, repoID string, size
 // DecrementStorageUsage gives a reservation back (or accounts for a delete), on
 // the repository and on its project's ceiling when that has one. A repository
 // without a quota row has nothing to decrement.
-func (p *PostgresDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
+func (p *QuotaStore) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, releaseProjectSQL, releaseStorageSQL, takePendingSQL); err != nil {
 		return fmt.Errorf("failed to decrement storage usage: %w", err)
 	}
@@ -434,7 +439,7 @@ WITH sums AS (
 SELECT COUNT(*) FROM fixed`
 
 // reconcileProjects runs reconcileProjectsSQL (projectID "" = every project).
-func (p *PostgresDB) reconcileProjects(ctx context.Context, projectID string) (int64, error) {
+func (p *QuotaStore) reconcileProjects(ctx context.Context, projectID string) (int64, error) {
 	var arg *string
 	if projectID != "" {
 		arg = &projectID
@@ -462,7 +467,7 @@ const quotaReconcileLockKey = `hashtext('openartifact-quota-reconcile')::bigint`
 // adds only the difference to the counter's current value, so the result is
 // exact at every instant (entries older than quotaPendingReserveTTL and
 // quotaPendingReleaseTTL are abandoned operations and do not count).
-func (p *PostgresDB) ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error) {
+func (p *QuotaStore) ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error) {
 	if _, err := p.pool.Exec(ctx, purgeStalePendingSQL); err != nil {
 		return nil, fmt.Errorf("failed to purge stale pending quota entries: %w", err)
 	}
@@ -487,7 +492,7 @@ func (p *PostgresDB) ReconcileStorageUsage(ctx context.Context, repoID string) (
 // ReconcileStorageUsage) and returns how many counters were corrected. Only one
 // run is active at a time across replicas: when another holds the lock this
 // returns 0, nil immediately.
-func (p *PostgresDB) ReconcileAllStorageUsage(ctx context.Context) (int64, error) {
+func (p *QuotaStore) ReconcileAllStorageUsage(ctx context.Context) (int64, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin storage reconcile: %w", err)
@@ -523,4 +528,174 @@ func (p *PostgresDB) ReconcileAllStorageUsage(ctx context.Context) (int64, error
 	}
 
 	return changed + projects, nil
+}
+
+// GetOrCreateStorageQuota gets or creates a storage quota for a repository.
+func (p *QuotaStore) GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error) {
+	if err := p.q.InsertStorageQuotaIfNotExists(ctx, repoID); err != nil {
+		return nil, fmt.Errorf("failed to create storage quota: %w", err)
+	}
+
+	quota, err := p.q.GetStorageQuota(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create storage quota: %w", err)
+	}
+
+	return &models.StorageQuota{
+		ID:                   quota.ID,
+		RepositoryID:         quota.RepositoryID,
+		MaxSizeBytes:         quota.MaxSizeBytes,
+		MaxArtifactCount:     int(quota.MaxArtifactCount),
+		WarnThresholdPercent: int(quota.WarnThresholdPercent),
+		CurrentSizeBytes:     quota.CurrentSizeBytes,
+		CurrentArtifactCount: int(quota.CurrentArtifactCount),
+		CreatedAt:            quota.CreatedAt,
+		UpdatedAt:            quota.UpdatedAt,
+	}, nil
+}
+
+// UpdateStorageQuota updates a storage quota.
+func (p *QuotaStore) UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error {
+	err := p.q.UpdateStorageQuota(ctx, dbsqlc.UpdateStorageQuotaParams{
+		MaxSizeBytes:         quota.MaxSizeBytes,
+		MaxArtifactCount:     int64(quota.MaxArtifactCount),
+		WarnThresholdPercent: toInt32(quota.WarnThresholdPercent),
+		UpdatedAt:            time.Now(),
+		RepositoryID:         quota.RepositoryID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update storage quota: %w", err)
+	}
+
+	return nil
+}
+
+// ListStorageQuotas returns every repository's quota row.
+func (p *QuotaStore) ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error) {
+	rows, err := p.db.QueryContext(ctx,
+		`SELECT repository_id, max_size_bytes, max_artifact_count, warn_threshold_percent
+		   FROM storage_quotas ORDER BY repository_id`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list storage quotas: %w", err)
+	}
+
+	return collectRows(
+		rows,
+		"failed to scan storage quota",
+		"failed to list storage quotas",
+		func(row rowScanner) (*models.StorageQuota, error) {
+			v := &models.StorageQuota{}
+
+			return v, row.Scan(
+				&v.RepositoryID,
+				&v.MaxSizeBytes,
+				&v.MaxArtifactCount,
+				&v.WarnThresholdPercent,
+			) //nolint:wrapcheck // collectRows wraps
+		},
+	)
+}
+
+// GetRepositoryUsage counts the packages and versions a repository holds and
+// when the newest version was created. It scans the repository's package rows:
+// call it for one repository on demand.
+func (p *QuotaStore) GetRepositoryUsage(ctx context.Context, repoID string) (*models.RepositoryUsage, error) {
+	row, err := p.q.RepoUsageStats(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("repository usage: %w", err)
+	}
+
+	usage := &models.RepositoryUsage{PackageCount: row.PackageCount, VersionCount: row.VersionCount}
+
+	// An empty repository yields the Unix epoch (see RepoUsageStats).
+	if row.VersionCount > 0 && row.LastPublishedAt.Unix() > 0 {
+		t := row.LastPublishedAt.UTC()
+		usage.LastPublishedAt = &t
+	}
+
+	return usage, nil
+}
+
+// quotaOverviewCTE lists every live repository and every project with its
+// limits and live usage (the project row sums its repositories' counters,
+// trashed ones included, as GetProjectUsage does). $1 scope (” = both),
+// $2 limited-only, $3 name pattern (” = any), $4 limit, $5 offset.
+const quotaOverviewCTE = `
+WITH q AS (
+    SELECT 'repository'::text AS scope, r.name::text AS name, COALESCE(pr.name, '')::text AS project,
+           COALESCE(sq.max_size_bytes, 0)::bigint AS max_size_bytes,
+           COALESCE(sq.max_artifact_count, 0)::bigint AS max_artifact_count,
+           COALESCE(sq.warn_threshold_percent, 80)::int AS warn_threshold_percent,
+           COALESCE(sq.current_size_bytes, 0)::bigint AS used_bytes,
+           COALESCE(sq.current_artifact_count, 0)::bigint AS artifact_count
+      FROM repositories r
+      LEFT JOIN storage_quotas sq ON sq.repository_id = r.id
+      LEFT JOIN projects pr ON pr.id = r.project_id
+     WHERE r.deleted_at IS NULL
+    UNION ALL
+    SELECT 'project', pr.name::text, '',
+           COALESCE(pq.max_size_bytes, 0), COALESCE(pq.max_artifact_count, 0),
+           COALESCE(pq.warn_threshold_percent, 80),
+           COALESCE(u.size_bytes, 0), COALESCE(u.artifact_count, 0)
+      FROM projects pr
+      LEFT JOIN project_quotas pq ON pq.project_id = pr.id
+      LEFT JOIN LATERAL (
+          SELECT SUM(sq.current_size_bytes)::bigint AS size_bytes, SUM(sq.current_artifact_count)::bigint AS artifact_count
+            FROM repositories r JOIN storage_quotas sq ON sq.repository_id = r.id
+           WHERE r.project_id = pr.id) u ON true
+)
+SELECT scope, name, project, max_size_bytes, max_artifact_count, warn_threshold_percent, used_bytes, artifact_count
+  FROM q
+ WHERE ($1 = '' OR scope = $1)
+   AND (NOT $2 OR max_size_bytes > 0 OR max_artifact_count > 0)
+   AND ($3 = '' OR name ILIKE $3)`
+
+// ListQuotaOverview returns one page of the instance-wide quota overview,
+// largest usage first, and the number of matching lines.
+func (p *QuotaStore) ListQuotaOverview(ctx context.Context, params models.QuotaListParams) ([]*models.QuotaOverview, int, error) {
+	pattern := ""
+	if params.Query != "" {
+		pattern = "%" + escapeLike(params.Query) + "%"
+	}
+
+	var total int
+
+	if err := p.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+quotaOverviewCTE+") c", params.Scope, params.LimitedOnly, pattern).
+		Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count quota overview: %w", err)
+	}
+
+	rows, err := p.db.QueryContext(ctx, quotaOverviewCTE+" ORDER BY used_bytes DESC, scope, name LIMIT $4 OFFSET $5",
+		params.Scope, params.LimitedOnly, pattern, params.Limit, (params.Page-1)*params.Limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list quota overview: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	out := []*models.QuotaOverview{}
+
+	for rows.Next() {
+		q := &models.QuotaOverview{}
+		if err := rows.Scan(
+			&q.Scope,
+			&q.Name,
+			&q.Project,
+			&q.MaxSizeBytes,
+			&q.MaxArtifactCount,
+			&q.WarnThresholdPercent,
+			&q.UsedBytes,
+			&q.ArtifactCount,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scan quota overview: %w", err)
+		}
+
+		out = append(out, q)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list quota overview: %w", err)
+	}
+
+	return out, total, nil
 }

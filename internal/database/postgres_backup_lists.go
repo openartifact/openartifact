@@ -62,29 +62,3 @@ func (p *PostgresDB) ListUserGroupMemberships(ctx context.Context) ([]*models.Us
 		},
 	)
 }
-
-// ListStorageQuotas returns every repository's quota row.
-func (p *PostgresDB) ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT repository_id, max_size_bytes, max_artifact_count, warn_threshold_percent
-		   FROM storage_quotas ORDER BY repository_id`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list storage quotas: %w", err)
-	}
-
-	return collectRows(
-		rows,
-		"failed to scan storage quota",
-		"failed to list storage quotas",
-		func(row rowScanner) (*models.StorageQuota, error) {
-			v := &models.StorageQuota{}
-
-			return v, row.Scan(
-				&v.RepositoryID,
-				&v.MaxSizeBytes,
-				&v.MaxArtifactCount,
-				&v.WarnThresholdPercent,
-			) //nolint:wrapcheck // collectRows wraps
-		},
-	)
-}

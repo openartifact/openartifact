@@ -2806,46 +2806,6 @@ func vulnScanStatusFromJob(status string) string {
 	return status
 }
 
-// GetOrCreateStorageQuota gets or creates a storage quota for a repository.
-func (p *PostgresDB) GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error) {
-	if err := p.q.InsertStorageQuotaIfNotExists(ctx, repoID); err != nil {
-		return nil, fmt.Errorf("failed to create storage quota: %w", err)
-	}
-
-	quota, err := p.q.GetStorageQuota(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get or create storage quota: %w", err)
-	}
-
-	return &models.StorageQuota{
-		ID:                   quota.ID,
-		RepositoryID:         quota.RepositoryID,
-		MaxSizeBytes:         quota.MaxSizeBytes,
-		MaxArtifactCount:     int(quota.MaxArtifactCount),
-		WarnThresholdPercent: int(quota.WarnThresholdPercent),
-		CurrentSizeBytes:     quota.CurrentSizeBytes,
-		CurrentArtifactCount: int(quota.CurrentArtifactCount),
-		CreatedAt:            quota.CreatedAt,
-		UpdatedAt:            quota.UpdatedAt,
-	}, nil
-}
-
-// UpdateStorageQuota updates a storage quota.
-func (p *PostgresDB) UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error {
-	err := p.q.UpdateStorageQuota(ctx, dbsqlc.UpdateStorageQuotaParams{
-		MaxSizeBytes:         quota.MaxSizeBytes,
-		MaxArtifactCount:     int64(quota.MaxArtifactCount),
-		WarnThresholdPercent: toInt32(quota.WarnThresholdPercent),
-		UpdatedAt:            time.Now(),
-		RepositoryID:         quota.RepositoryID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update storage quota: %w", err)
-	}
-
-	return nil
-}
-
 // CreateStorageBackend creates a new storage backend configuration.
 func (p *PostgresDB) CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error {
 	return p.q.CreateStorageBackend(ctx, dbsqlc.CreateStorageBackendParams{
