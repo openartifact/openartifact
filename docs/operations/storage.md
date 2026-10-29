@@ -393,7 +393,7 @@ The raw `PUT` does not run license policy or secret scanning inline (they are on
 
 Docker and OCI pushes stay on the registry. In the distribution flow (`POST /v2/<name>/blobs/uploads/`, `PATCH` chunks, `PUT ?digest=`) the registry holds the upload session and verifies or computes the digest itself. Clients such as docker, containerd and skopeo send the `PATCH` and `PUT` to the `Location` the registry returns, with registry credentials, and cannot be pointed at an object-store presigned URL: a chunked `PATCH` of arbitrary chunks has no object-store equivalent, the final `PUT` must carry a digest the registry verifies, and cross-repository mounts need registry state. Blob downloads (pulls) are redirected, as with distribution's S3 `redirect` option.
 
-The database side is migration `016`, which adds `repositories.presign_downloads` and the `presigned_uploads` table.
+The database side is `repositories.presign_downloads` and the `presigned_uploads` table of the schema baseline.
 
 ## Stored secrets
 

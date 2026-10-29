@@ -89,7 +89,7 @@ Event types (the `event` column, informational and used for metrics):
 
 ### Schema
 
-Forward-only migrations `070`+ (numbers are indicative until merge).
+The tables are part of the 0.15 schema baseline (`migrations/001_baseline.sql`).
 
 ```sql
 -- the identity of this instance, generated once

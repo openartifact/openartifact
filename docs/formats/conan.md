@@ -65,7 +65,7 @@ Every delete answers `200` (the conan client treats other success codes as failu
 
 ## Upgrading from before 0.5.0
 
-Earlier releases stored one record per recipe under revision `0`, ignored the revision and file name in the URL, and could not serve the files a conan client uploads. Migration `019` adds the package id, package revision and file name columns and replaces the unique index. Records stored by the old code do not carry file names, so the protocol endpoints do not list them: upload those recipes again (`conan upload "*" -r REPO --confirm`). The old records stay visible in the UI listing and are removed by `DELETE /v2/conans/<name>/<version>/<user>/<channel>`.
+Releases before 0.14 stored one record per recipe under revision `0` and could not serve the files a conan client uploads. 0.15 starts from a clean schema and `oa import` republishes every conan file through the normal upload, so a 0.15 repository holds only revision-keyed rows; to move from a 0.13 or older store, upload the recipes again (`conan upload "*" -r REPO --confirm`).
 
 ## Conan 1.x
 
@@ -125,4 +125,4 @@ conan install --requires=zlib/1.3.1 -r conan-proxy
 
 The server advertises `checksum_deploy`. Before sending a file, Conan 1.x (a monolithic server, as this one) and Conan 2 send an empty `PUT` with `X-Checksum-Deploy: true` and the file's SHA-1 in `X-Checksum-Sha1`. When the same repository already holds a file with that SHA-1, the new file is stored as a reference to the same content (`201`, no bytes transferred); otherwise `404` and the client uploads the file normally. A malformed checksum is `400`.
 
-A deployed file passes the same checks as an upload: the recipe must be published for a package file, immutable releases refuse replacing different content (`409`), the quota counts the new file (`507`), the `artifact.uploaded` webhook fires. The lookup never leaves the repository and never reuses a quarantined file. Files stored before migration `057` have no SHA-1 recorded and are not deploy sources until a Conan 1 client has listed them or they are uploaded again.
+A deployed file passes the same checks as an upload: the recipe must be published for a package file, immutable releases refuse replacing different content (`409`), the quota counts the new file (`507`), the `artifact.uploaded` webhook fires. The lookup never leaves the repository and never reuses a quarantined file. A file whose SHA-1 is not recorded is not a deploy source until a Conan 1 client has listed it or it is uploaded again.

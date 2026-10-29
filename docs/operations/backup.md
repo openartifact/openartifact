@@ -42,7 +42,7 @@ Soft-deleted data ([trash](trash.md): trashed repositories and package rows) is 
 
 Tables exported:
 
-- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, projects (with their policy settings), members and group grants, webhooks, permission targets and their assignments ([RBAC](../security/rbac.md)), user-group memberships, and storage quota limits. Project tokens (and their service accounts) are left out: mint them again after a restore. Repositories keep their project on restore. Archives from older versions with `organizations` and `organization_members` are still accepted.
+- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, projects (with their policy settings), members and group grants, webhooks, permission targets and their assignments ([RBAC](../security/rbac.md)), user-group memberships, and storage quota limits. Project tokens (and their service accounts) are left out: mint them again after a restore. Repositories keep their project on restore. Archives written before 0.15 (archive version below 2.0), including those with `organizations` and `organization_members`, are refused with a pointer to `oa import`; see [upgrading](../getting-started/upgrading.md#0150).
 - Per format: Alpine (apk packages), Cargo, Conan, Conda, Debian distributions, components and architectures with deb packages; Docker (blobs, manifests, tags), Go module, Helm, Ivy, Maven, npm (packages, versions, dist-tags), NuGet, PyPI, raw, rpm, RubyGems, sbt and Terraform (modules and providers) records.
 - Per repository: cleanup policies, SBOM, VEX decisions, license, secret and vulnerability scan results, AI analyses.
 
@@ -53,7 +53,7 @@ Not included: artifact properties, sessions, the audit log, webhook delivery his
 - `users` and `tokens` carry the password hashes and API token hashes: treat the archive as sensitive and store it encrypted.
 - Webhook signing secrets are removed, so restored webhooks have no secret; set them again. See [webhooks](webhooks.md).
 - SSO OIDC `client_secret` and storage backend credential keys (anything containing secret, key, password or token) are dropped; re-enter them.
-- A proxy repository's upstream password is not exported (only the URL and username): set it again after a restore. Archives written by older versions still carry the stored value, and restoring one keeps it; use the same `OPENARTIFACT_SECRET_KEY` on the target then (see [storage](storage.md#stored-secrets)).
+- A proxy repository's upstream password is not exported (only the URL and username): set it again after a restore. An archive that does carry the stored value keeps it on restore; use the same `OPENARTIFACT_SECRET_KEY` on the target then (see [storage](storage.md#stored-secrets)).
 
 ## Create a backup
 
