@@ -122,18 +122,18 @@ const sniffLen = 512
 
 // digest streams r once through buf and returns the validator (the first 16
 // bytes of its SHA-256, hex), its length and its first sniffLen bytes.
-func digest(r io.Reader, buf []byte) (sum string, size int64, head []byte, err error) {
+func digest(r io.Reader, buf []byte) (fileDigest, error) {
 	h := sha256.New()
-	head = make([]byte, 0, sniffLen)
+	d := fileDigest{head: make([]byte, 0, sniffLen)}
 
 	for {
 		n, rerr := r.Read(buf)
 		if n > 0 {
 			_, _ = h.Write(buf[:n])
-			size += int64(n)
+			d.size += int64(n)
 
-			if room := sniffLen - len(head); room > 0 {
-				head = append(head, buf[:min(n, room)]...)
+			if room := sniffLen - len(d.head); room > 0 {
+				d.head = append(d.head, buf[:min(n, room)]...)
 			}
 		}
 
@@ -142,16 +142,26 @@ func digest(r io.Reader, buf []byte) (sum string, size int64, head []byte, err e
 		}
 
 		if rerr != nil {
-			return "", 0, nil, rerr //nolint:wrapcheck // the caller skips the file
+			return fileDigest{}, rerr //nolint:wrapcheck // the caller skips the file
 		}
 	}
 
-	return hex.EncodeToString(h.Sum(nil)[:16]), size, head, nil
+	d.sum = hex.EncodeToString(h.Sum(nil)[:16])
+
+	return d, nil
+}
+
+// fileDigest is what one pass over a file's plain bytes yields.
+type fileDigest struct {
+	sum  string // validator: the first 16 bytes of the SHA-256, hex
+	size int64
+	head []byte // the first sniffLen bytes
 }
 
 // readCloser pairs a decompressing reader with the file under it.
 type readCloser struct {
 	io.Reader
+
 	closers []io.Closer
 }
 
@@ -208,10 +218,10 @@ func bytesOpen(b []byte) func() (io.ReadCloser, error) {
 
 // digestFile digests the plain bytes of file p of sub, expanding it first when
 // it is a precompressed one; zr is the decompressor to reuse (created on first use).
-func digestFile(sub fs.FS, p string, isGz bool, zr **gzip.Reader, buf []byte) (sum string, size int64, head []byte, err error) {
+func digestFile(sub fs.FS, p string, isGz bool, zr **gzip.Reader, buf []byte) (fileDigest, error) {
 	f, err := sub.Open(p)
 	if err != nil {
-		return "", 0, nil, err //nolint:wrapcheck // the caller skips the file
+		return fileDigest{}, err //nolint:wrapcheck // the caller skips the file
 	}
 
 	defer func() { _ = f.Close() }()
@@ -227,7 +237,7 @@ func digestFile(sub fs.FS, p string, isGz bool, zr **gzip.Reader, buf []byte) (s
 	}
 
 	if err != nil {
-		return "", 0, nil, err //nolint:wrapcheck // the caller skips the file
+		return fileDigest{}, err //nolint:wrapcheck // the caller skips the file
 	}
 
 	return digest(*zr, buf)
@@ -256,8 +266,7 @@ func loadAssets(sub fs.FS) map[string]*asset {
 
 		// One pass over the plain bytes gives the validator, the size and the
 		// head to sniff; nothing is kept.
-		sum, size, head, digestErr := digestFile(sub, p, isGz, &zr, buf)
-
+		dg, digestErr := digestFile(sub, p, isGz, &zr, buf)
 		if digestErr != nil {
 			return nil //nolint:nilerr // a corrupt or unreadable embedded file is simply not served
 		}
@@ -268,23 +277,23 @@ func loadAssets(sub fs.FS) map[string]*asset {
 		}
 
 		if ctyp == "" {
-			ctyp = http.DetectContentType(head)
+			ctyp = http.DetectContentType(dg.head)
 		}
 
 		a := &asset{
 			ctyp:         ctyp,
 			immutable:    strings.HasPrefix(name, "assets/") && hashedName.MatchString(name),
-			sum:          sum,
-			plain:        variant{etag: etagOf(sum, ""), size: size, open: open},
+			sum:          dg.sum,
+			plain:        variant{etag: etagOf(dg.sum, ""), size: dg.size, open: open},
 			compressible: compressible(ctyp),
 		}
 
 		if isGz {
 			a.compressOnce.Do(func() {}) // the build already compressed it
 
-			if info, infoErr := d.Info(); infoErr == nil && info.Size() < size {
+			if info, infoErr := d.Info(); infoErr == nil && info.Size() < dg.size {
 				a.gzip = &variant{
-					etag: etagOf(sum, "-gzip"), size: info.Size(),
+					etag: etagOf(dg.sum, "-gzip"), size: info.Size(),
 					open: func() (io.ReadCloser, error) { return sub.Open(p) },
 				}
 			}
@@ -301,11 +310,11 @@ func loadAssets(sub fs.FS) map[string]*asset {
 // newAsset hashes an in-memory body (the rendered shell); its gzip is made on
 // first use like any other.
 func newAsset(ctyp string, body []byte, immutable bool) *asset {
-	sum, size, _, _ := digest(bytes.NewReader(body), make([]byte, copyBufSize)) // a bytes.Reader never fails
+	dg, _ := digest(bytes.NewReader(body), make([]byte, copyBufSize)) // a bytes.Reader never fails
 
 	return &asset{
-		ctyp: ctyp, immutable: immutable, sum: sum, compressible: compressible(ctyp),
-		plain: variant{etag: etagOf(sum, ""), size: size, open: bytesOpen(body)},
+		ctyp: ctyp, immutable: immutable, sum: dg.sum, compressible: compressible(ctyp),
+		plain: variant{etag: etagOf(dg.sum, ""), size: dg.size, open: bytesOpen(body)},
 	}
 }
 
@@ -438,6 +447,5 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 
 	w.WriteHeader(http.StatusOK)
 
-	//nolint:gosec // G705: embedded build output and the sanitised branded shell, not request data
 	_, _ = io.Copy(w, body)
 }

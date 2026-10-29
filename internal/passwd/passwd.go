@@ -71,7 +71,7 @@ func SetMaxConcurrent(n int) {
 }
 
 // acquire waits for a free Argon2id slot and returns the function that frees it.
-func acquire() (release func()) {
+func acquire() func() {
 	p := argonSlots.Load()
 	if p == nil {
 		SetMaxConcurrent(0)
