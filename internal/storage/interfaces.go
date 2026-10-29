@@ -123,9 +123,14 @@ type StorageConfig struct {
 	// empty uses https://<account>.blob.core.windows.net.
 	AzureEndpoint string `yaml:"azureEndpoint"`
 	// StagingPath is the spool directory for server-relayed presigned uploads
-	// on oci storage (filesystem uses <path>/staging); empty means
-	// <tmp>/openartifact-staging.
+	// on oci storage (filesystem uses <path>/staging). Required for oci when
+	// uploads are relayed (it also holds the relay signing key); use a
+	// persistent directory.
 	StagingPath string `yaml:"stagingPath"`
+	// SpoolPath is the directory where s3, azure and oci spool a blob to disk
+	// while verifying it before the upload; leftovers of a crash are swept from
+	// it at startup. Empty means the system temp dir (not swept).
+	SpoolPath string `yaml:"spoolPath"`
 	// PublicURL is the public base URL of this server (BASE_URL) when the
 	// operator set one, filled in by the config loader; server-relayed upload
 	// URLs point at it.

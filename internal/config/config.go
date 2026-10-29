@@ -865,6 +865,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.AzureContainerName, "OPENARTIFACT_AZURE_CONTAINER_NAME")
 	overrideString(&cfg.Storage.AzureEndpoint, "OPENARTIFACT_AZURE_ENDPOINT")
 	overrideString(&cfg.Storage.StagingPath, "STORAGE_STAGING_PATH")
+	overrideString(&cfg.Storage.SpoolPath, "STORAGE_SPOOL_PATH")
 	overrideString(&cfg.Storage.OCIUsername, "STORAGE_OCI_USERNAME")
 	overrideString(&cfg.Storage.OCIPassword, "STORAGE_OCI_PASSWORD")
 	overrideBool(&cfg.Storage.OCIInsecure, "STORAGE_OCI_INSECURE")

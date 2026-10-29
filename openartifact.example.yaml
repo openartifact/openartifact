@@ -101,7 +101,8 @@ storage:
   # ociUsername: user
   # ociPassword: CHANGE_ME
   # ociInsecure: false
-  # stagingPath: /var/lib/artifacts-staging   # spool dir for server-relayed presigned uploads (oci only)
+  # stagingPath: /var/lib/artifacts-staging   # spool dir for server-relayed presigned uploads (oci only; required, persistent)
+  # spoolPath: /var/lib/artifacts-spool       # where s3/azure/oci spool blobs while verifying them (default: system temp dir)
   # Blob replication: an async second copy on another backend with read
   # fallback and verify/repair (docs/operations/replication.md). Active when
   # type is set. It takes the same backend keys as above; env: OPENARTIFACT_STORAGE_REPLICA_*.
@@ -125,6 +126,7 @@ storage:
   #   # ociUsername: user
   #   # ociPassword: CHANGE_ME
   #   # ociInsecure: false
+  #   # spoolPath: /var/lib/artifacts-replica-spool   # s3/azure/oci spool dir (default: system temp dir)
   #   readFallback: notfound    # notfound | error | off: when reads fall back to the replica
   #   interval: 5s              # pause between queue passes
   #   batch: 100                # operations claimed per pass
