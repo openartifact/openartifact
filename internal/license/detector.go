@@ -275,12 +275,21 @@ func normalizeSet(list []string) map[string]struct{} {
 
 // expressionFields splits a license expression into its words: on whitespace
 // of any kind (a license string is free metadata text, "MIT\nAND\nGPL-3.0" and
-// "MIT\tAND\tGPL-3.0" are conjunctions too), parentheses ("(MIT)AND(GPL-3.0)")
-// and commas.
+// "MIT\tAND\tGPL-3.0" are conjunctions too), parentheses ("(MIT)AND(GPL-3.0)"),
+// commas and the separators package metadata uses in place of an operator:
+// "/" ("MIT/Apache-2.0", the old Cargo form), ";" and "|". No SPDX identifier
+// holds any of them.
 func expressionFields(expr string) []string {
 	return strings.FieldsFunc(expr, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '(' || r == ')' || r == ','
+		return unicode.IsSpace(r) || strings.ContainsRune("(),/;|", r)
 	})
+}
+
+// joinsLicenses reports whether an expression lists licenses with a separator
+// that does not say which of them applies ("/", ";", "|") or with AND.
+func joinsLicenses(expr string) bool {
+	return strings.ContainsAny(expr, "/;|") ||
+		slices.ContainsFunc(expressionFields(expr), func(f string) bool { return strings.EqualFold(f, "AND") })
 }
 
 // spdxIdentifiers returns the normalized license identifiers of an SPDX
@@ -303,8 +312,9 @@ func spdxIdentifiers(expr string) []string {
 	return ids
 }
 
-// expressionAllowed: an expression joined by AND needs every identifier
-// allowed; otherwise (single license or OR) any allowed identifier suffices.
+// expressionAllowed: an expression joined by AND, "/", ";" or "|" needs every
+// identifier allowed; otherwise (single license or OR) any allowed identifier
+// suffices.
 func expressionAllowed(expr string, allowed map[string]struct{}) bool {
 	if _, ok := allowed[normalizeID(expr)]; ok {
 		return true
@@ -315,7 +325,7 @@ func expressionAllowed(expr string, allowed map[string]struct{}) bool {
 		return false
 	}
 
-	requireAll := slices.ContainsFunc(expressionFields(expr), func(f string) bool { return strings.EqualFold(f, "AND") })
+	requireAll := joinsLicenses(expr)
 
 	for _, id := range ids {
 		_, ok := allowed[id]
