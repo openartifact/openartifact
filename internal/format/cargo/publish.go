@@ -22,7 +22,7 @@ import (
 const (
 	// maxCrateNameLen is the length cap crates.io applies to a crate name.
 	maxCrateNameLen = 64
-	// maxCrateVersionLen is the width of the cargo_crates.version column.
+	// maxCrateVersionLen is the width of the packages.version column.
 	maxCrateVersionLen = 100
 )
 
