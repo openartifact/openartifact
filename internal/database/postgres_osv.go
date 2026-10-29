@@ -644,43 +644,6 @@ func (p *PostgresDB) ListStoredPackages(
 	return pkgs, nil
 }
 
-// ListProxyCacheKeys implements OSVStore.
-func (p *PostgresDB) ListProxyCacheKeys(ctx context.Context, format, afterID string, limit int) ([]models.ProxyCacheKey, error) {
-	var after *string
-	if afterID != "" {
-		after = &afterID
-	}
-
-	rows, err := p.db.QueryContext(ctx, `
-		SELECT t.id::text, t.repository_id::text, t.cache_key, t.created_at
-		FROM proxy_cache_entries t
-		JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL AND r.format = $1
-		WHERE t.status_code = 200 AND t.blob_key IS NOT NULL AND ($2::uuid IS NULL OR t.id > $2::uuid)
-		ORDER BY t.id
-		LIMIT $3`, format, after, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list proxy cache keys: %w", err)
-	}
-	defer rows.Close()
-
-	var keys []models.ProxyCacheKey
-
-	for rows.Next() {
-		var k models.ProxyCacheKey
-		if err := rows.Scan(&k.ID, &k.RepositoryID, &k.CacheKey, &k.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan proxy cache key: %w", err)
-		}
-
-		keys = append(keys, k)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list proxy cache keys: %w", err)
-	}
-
-	return keys, nil
-}
-
 // GetOSVScanResults implements OSVStore.
 func (p *PostgresDB) GetOSVScanResults(ctx context.Context, pkgs []models.StoredPackage) (map[string]*models.VulnScanResult, error) {
 	out := make(map[string]*models.VulnScanResult, len(pkgs))
