@@ -126,7 +126,7 @@ type Request struct {
 //
 // database.ErrTrashNotFound means the rows are no longer live in the
 // repository; handlers answer 404.
-func Delete(ctx context.Context, db database.Database, req Request, hard func() error) error {
+func Delete(ctx context.Context, db any, req Request, hard func() error) error {
 	soft := false
 
 	if store, ok := db.(database.TrashStore); ok {

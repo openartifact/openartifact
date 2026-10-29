@@ -62,8 +62,6 @@ type securityMockDB struct {
 	repoSumRepoID string
 }
 
-var _ database.Database = (*securityMockDB)(nil)
-
 func (db *securityMockDB) GetPermissionTargetsForPrincipal(
 	_ context.Context,
 	userID string,

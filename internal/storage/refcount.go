@@ -72,7 +72,7 @@ type blobLocker interface {
 // takes, so an uploader can store a blob and insert its referencing row
 // without a concurrent SafeDeleteBlob removing the blob in between. When the
 // database does not support locking, fn runs unguarded.
-func WithBlobLock(ctx context.Context, db database.Database, sha256 string, fn func(ctx context.Context) error) error {
+func WithBlobLock(ctx context.Context, db any, sha256 string, fn func(ctx context.Context) error) error {
 	if l, ok := db.(blobLocker); ok {
 		return l.WithBlobLock(ctx, sha256, fn)
 	}
@@ -89,7 +89,7 @@ type blobMultiLocker interface {
 // in a deterministic order on a single connection. Databases that only support
 // single-blob locks get nested WithBlobLock calls in the same order; databases
 // without locking support run fn unguarded.
-func WithBlobLocks(ctx context.Context, db database.Database, shas []string, fn func(ctx context.Context) error) error {
+func WithBlobLocks(ctx context.Context, db any, shas []string, fn func(ctx context.Context) error) error {
 	if l, ok := db.(blobMultiLocker); ok {
 		return l.WithBlobLocks(ctx, shas, fn)
 	}
@@ -286,7 +286,7 @@ type blobDeletionQueue interface {
 // content (an upload of byte-identical content that was deleted since) and must
 // find its bytes. The sweeper re-checks references before it removes anything.
 // Databases without the queue (test doubles) delete right away.
-func DiscardUnreferencedBytes(ctx context.Context, db database.Database, blobStore BlobStore, sha string) error {
+func DiscardUnreferencedBytes(ctx context.Context, db any, blobStore BlobStore, sha string) error {
 	if q, ok := db.(blobDeletionQueue); ok {
 		if err := q.EnqueueBlobDeletion(ctx, sha, database.BlobDeletionScopeAll); err != nil {
 			return fmt.Errorf("queue metadata blob %s for deletion: %w", sha, err)

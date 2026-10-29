@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
@@ -42,7 +41,7 @@ func (db *quarantineDB) IsArtifactQuarantined(_ context.Context, repoID string, 
 	return false, nil
 }
 
-func enforce(db database.Database, repoID string, keys ...string) *httptest.ResponseRecorder {
+func enforce(db any, repoID string, keys ...string) *httptest.ResponseRecorder {
 	rw := httptest.NewRecorder()
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
 

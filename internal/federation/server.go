@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -46,13 +45,14 @@ const (
 // log and the content of that one repository and nothing else.
 type Server struct {
 	store *Store
-	db    database.Database
+	// db is probed for quarantine support (quarantine.IsQuarantined).
+	db    any
 	blobs storage.BlobStore
 	log   *logger.Logger
 }
 
 // NewServer creates the peer endpoint handler.
-func NewServer(store *Store, db database.Database, blobs storage.BlobStore, log *logger.Logger) *Server {
+func NewServer(store *Store, db any, blobs storage.BlobStore, log *logger.Logger) *Server {
 	return &Server{store: store, db: db, blobs: blobs, log: log}
 }
 

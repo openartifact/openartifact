@@ -137,8 +137,6 @@ func (d *repoOpsDB) DeleteRepository(_ context.Context, id string) error {
 	return nil
 }
 
-var _ database.Database = (*repoOpsDB)(nil)
-
 func newRepoOpsDB() *repoOpsDB {
 	acme, system := testAcmeID, models.SystemProjectID
 

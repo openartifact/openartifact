@@ -17,8 +17,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-
-	"github.com/openartifact/openartifact/internal/database"
 )
 
 // checker is implemented by databases that can answer quarantine lookups.
@@ -28,7 +26,7 @@ type checker interface {
 
 // IsQuarantined reports whether any of keys identifies a quarantined artifact
 // of the repository. Databases without quarantine support report false.
-func IsQuarantined(ctx context.Context, db database.Database, repoID string, keys ...string) (bool, error) {
+func IsQuarantined(ctx context.Context, db any, repoID string, keys ...string) (bool, error) {
 	if repoID == "" || len(keys) == 0 {
 		return false, nil
 	}
@@ -45,7 +43,7 @@ func IsQuarantined(ctx context.Context, db database.Database, repoID string, key
 // (or a 500 when the quarantine state cannot be determined: the check fails
 // closed) and returns true, in which case the caller MUST return without
 // writing anything else.
-func Enforce(w http.ResponseWriter, r *http.Request, db database.Database, repoID string, keys ...string) bool {
+func Enforce(w http.ResponseWriter, r *http.Request, db any, repoID string, keys ...string) bool {
 	blocked, err := IsQuarantined(r.Context(), db, repoID, keys...)
 	if err != nil {
 		http.Error(w, "unable to verify artifact quarantine state", http.StatusInternalServerError)

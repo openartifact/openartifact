@@ -297,8 +297,6 @@ func (d *npmMemDB) staleCount() int {
 	return d.stale
 }
 
-var _ database.Database = (*npmMemDB)(nil)
-
 type npmEnv struct {
 	db     *npmMemDB
 	h      *NPMUploadHandler

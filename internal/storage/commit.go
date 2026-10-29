@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-
-	"github.com/openartifact/openartifact/internal/database"
 )
 
 // ErrBlobGone is returned by CommitBlobs when a blob that has no source to
@@ -80,7 +78,7 @@ func ReaderBlob(sha string, meta map[string]string, open func() io.Reader) Blob 
 // CommitBlobs. commit receives the blob's storage key.
 func CommitBlob(
 	ctx context.Context,
-	db database.Database,
+	db any,
 	store BlobStore,
 	blob Blob,
 	commit func(ctx context.Context, key string) error,
@@ -119,7 +117,7 @@ func CommitBlob(
 // commit MUST NOT write blobs itself: a Put inside it would pin the lock again.
 func CommitBlobs(
 	ctx context.Context,
-	db database.Database,
+	db any,
 	store BlobStore,
 	blobs []Blob,
 	commit func(ctx context.Context, keys []string) error,

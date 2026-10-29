@@ -40,7 +40,7 @@ type DockerUploadSweeper struct {
 // NewDockerUploadSweeper builds the sweeper. A non-positive ttl, an empty dir
 // or a database without DockerUploadSweepStore yields a sweeper that does
 // nothing.
-func NewDockerUploadSweeper(db database.Database, dir string, ttl time.Duration, log *logger.Logger) *DockerUploadSweeper {
+func NewDockerUploadSweeper(db any, dir string, ttl time.Duration, log *logger.Logger) *DockerUploadSweeper {
 	store, _ := db.(database.DockerUploadSweepStore)
 
 	return &DockerUploadSweeper{

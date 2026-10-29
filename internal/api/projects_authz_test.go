@@ -104,8 +104,6 @@ type projectsMockDB struct {
 	tokenStore tokenStore
 }
 
-var _ database.Database = (*projectsMockDB)(nil)
-
 func (db *projectsMockDB) GetPermissionTargetsForPrincipal(
 	_ context.Context,
 	userID string,
