@@ -39,6 +39,12 @@ func (d *aiSettingsDB) GetSystemSetting(_ context.Context, key string) (string, 
 	return d.settings[key], nil
 }
 
+func (d *aiSettingsDB) SetSystemSetting(_ context.Context, key, value string) error {
+	d.settings[key] = value
+
+	return nil
+}
+
 // recordingLLM is a models endpoint that remembers the Authorization header of
 // every request it gets.
 type recordingLLM struct {
@@ -133,6 +139,10 @@ func TestAdminAITestUsesStoredKeyOnlyForStoredEndpoint(t *testing.T) {
 				t.Fatalf("status = %d, want %d: %s", rw.Code, tc.wantStatus, rw.Body)
 			}
 
+			if tc.wantStatus == http.StatusBadRequest && !strings.Contains(rw.Body.String(), `"`+aiAPIKeyRequiredCode+`"`) {
+				t.Errorf("error code is not %q: %s", aiAPIKeyRequiredCode, rw.Body)
+			}
+
 			got := tc.target.seen()
 			if len(got) != tc.wantCalls || (tc.wantCalls == 1 && got[0] != tc.wantAuth) {
 				t.Errorf("target saw Authorization %q, want %d call(s) with %q", got, tc.wantCalls, tc.wantAuth)
@@ -146,6 +156,71 @@ func TestAdminAITestUsesStoredKeyOnlyForStoredEndpoint(t *testing.T) {
 
 			if strings.Contains(rw.Body.String(), "sk-stored") {
 				t.Errorf("the stored key is in the response: %s", rw.Body)
+			}
+		})
+	}
+}
+
+// TestAdminAIPutKeepsStoredKeyOnlyForStoredEndpoint: saving another endpoint
+// must not leave the stored key in force for it; the request has to supply a
+// key (a new one, or an empty one that clears it).
+func TestAdminAIPutKeepsStoredKeyOnlyForStoredEndpoint(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const stored = "https://llm.example.com/v1"
+
+	for _, tc := range []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantKey    string // stored key after the call
+		wantURL    string
+	}{
+		{"same endpoint, key masked", `{"base_url":"` + stored + `","model":"m2","api_key":"` + aiAPIKeyMask + `"}`, http.StatusOK, "sk-stored", stored},
+		{"same endpoint, trailing slash, key omitted", `{"base_url":"` + stored + `/","model":"m2"}`, http.StatusOK, "sk-stored", stored + "/"},
+		{"no endpoint change", `{"model":"m2"}`, http.StatusOK, "sk-stored", stored},
+		{"other base_url, key masked", `{"base_url":"https://evil.example.com/v1","api_key":"` + aiAPIKeyMask + `"}`, http.StatusBadRequest, "sk-stored", stored},
+		{"other base_url, key omitted", `{"base_url":"https://evil.example.com/v1"}`, http.StatusBadRequest, "sk-stored", stored},
+		{"other provider, key omitted", `{"provider":"openai","base_url":""}`, http.StatusBadRequest, "sk-stored", stored},
+		{"other base_url, new key", `{"base_url":"https://other.example.com/v1","api_key":"sk-new"}`, http.StatusOK, "enc-or-plain:sk-new", "https://other.example.com/v1"},
+		{"other base_url, key cleared", `{"base_url":"https://other.example.com/v1","api_key":""}`, http.StatusOK, "", "https://other.example.com/v1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &aiSettingsDB{settings: map[string]string{
+				ai.SettingEnabled: "true", ai.SettingProvider: "custom", ai.SettingBaseURL: stored, ai.SettingAPIKey: "sk-stored",
+			}}
+
+			r := chi.NewRouter()
+			NewAdminAIHandler(db, log, auth.NewEvaluator(db, log, false)).Register(r)
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/admin/ai/config", strings.NewReader(tc.body))
+			req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+
+			rw := httptest.NewRecorder()
+			r.ServeHTTP(rw, req)
+
+			if rw.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rw.Code, tc.wantStatus, rw.Body)
+			}
+
+			if tc.wantStatus == http.StatusBadRequest && !strings.Contains(rw.Body.String(), `"`+aiAPIKeyRequiredCode+`"`) {
+				t.Errorf("error code is not %q: %s", aiAPIKeyRequiredCode, rw.Body)
+			}
+
+			gotKey := db.settings[ai.SettingAPIKey]
+			if strings.HasPrefix(tc.wantKey, "enc-or-plain:") {
+				if gotKey == "" || gotKey == "sk-stored" {
+					t.Errorf("stored key = %q, want the new key", gotKey)
+				}
+			} else if gotKey != tc.wantKey {
+				t.Errorf("stored key = %q, want %q", gotKey, tc.wantKey)
+			}
+
+			if got := db.settings[ai.SettingBaseURL]; got != tc.wantURL {
+				t.Errorf("stored base_url = %q, want %q", got, tc.wantURL)
 			}
 		})
 	}

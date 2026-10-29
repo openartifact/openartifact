@@ -145,16 +145,21 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 }
 
 const (
-	aiAPIKeyMask       = "••••••••" //nolint:gosec // G101: display placeholder, not a credential
-	aiMaxTokensLimit   = 200000
-	aiMaxTimeoutSecs   = 600
-	aiMaxSystemPrompt  = 16 * 1024
-	aiMaxFieldLen      = 2048
-	aiProviderOpenAI   = "openai"
-	aiProviderAzure    = "azure"
-	aiProviderOllama   = "ollama"
-	aiProviderCustom   = "custom"
-	aiTestFailedReason = "could not list models from the AI provider; check the endpoint, credentials and server logs"
+	aiAPIKeyMask      = "••••••••" //nolint:gosec // G101: display placeholder, not a credential
+	aiMaxTokensLimit  = 200000
+	aiMaxTimeoutSecs  = 600
+	aiMaxSystemPrompt = 16 * 1024
+	aiMaxFieldLen     = 2048
+	aiProviderOpenAI  = "openai"
+	aiProviderAzure   = "azure"
+	aiProviderOllama  = "ollama"
+	aiProviderCustom  = "custom"
+	// aiAPIKeyRequiredCode is the error code of a request that changes the
+	// endpoint (provider or base URL) without supplying the API key: the
+	// stored key only ever goes to the endpoint it was stored for.
+	aiAPIKeyRequiredCode = "api_key_required"
+	aiAPIKeyRequiredMsg  = "api_key is required when the provider or base_url changes: the stored key is only used with the stored endpoint"
+	aiTestFailedReason   = "could not list models from the AI provider; check the endpoint, credentials and server logs"
 )
 
 // aiConfigPatch is a partial AI configuration. Every field is a pointer so an
@@ -280,7 +285,7 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 		case h.sameEndpointAsStored(ctx, &cfg):
 			cfg.APIKey = stored
 		case stored != "" && (body.APIKey == nil || *body.APIKey == aiAPIKeyMask):
-			return ai.Config{}, "api_key is required to test another endpoint: the stored key is only used with the stored one"
+			return ai.Config{}, aiAPIKeyRequiredMsg
 		default:
 			// An explicitly empty key tests a keyless endpoint.
 			cfg.APIKey = ""
@@ -288,6 +293,37 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 	}
 
 	return cfg, ""
+}
+
+// aiPatchErrorCode is the error code for a message of patchedTestConfig.
+func aiPatchErrorCode(msg string) string {
+	if msg == aiAPIKeyRequiredMsg {
+		return aiAPIKeyRequiredCode
+	}
+
+	return "validation_failed"
+}
+
+// keyWouldFollowEndpoint reports whether saving p would send a key already in
+// force (stored, or from env) to a different endpoint without the request
+// supplying a key of its own. A new key, or an explicit empty one that clears
+// it, is fine.
+func (h *AdminAIHandler) keyWouldFollowEndpoint(ctx context.Context, p *aiConfigPatch) bool {
+	cur := ai.LoadSettings(ctx, h.db, h.envAI).Config
+	if cur.APIKey == "" || (p.APIKey != nil && *p.APIKey != aiAPIKeyMask) {
+		return false
+	}
+
+	provider, baseURL := cur.Provider, cur.BaseURL
+	if p.Provider != nil {
+		provider = *p.Provider
+	}
+
+	if p.BaseURL != nil {
+		baseURL = *p.BaseURL
+	}
+
+	return ai.EffectiveBaseURL(provider, baseURL) != ai.EffectiveBaseURL(cur.Provider, cur.BaseURL)
 }
 
 // sameEndpointAsStored reports whether cfg reaches the endpoint of the stored
@@ -318,6 +354,11 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 
 	if msg := h.customNeedsBaseURL(r.Context(), &body); msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	if h.keyWouldFollowEndpoint(r.Context(), &body) {
+		writeError(w, http.StatusBadRequest, aiAPIKeyRequiredCode, aiAPIKeyRequiredMsg)
 		return
 	}
 
@@ -445,7 +486,7 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 
 		cfg, msg = h.patchedTestConfig(r.Context(), body)
 		if msg != "" {
-			writeError(w, http.StatusBadRequest, "validation_failed", msg)
+			writeError(w, http.StatusBadRequest, aiPatchErrorCode(msg), msg)
 			return
 		}
 	} else {
