@@ -66,6 +66,8 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `SERVER_READ_TIMEOUT` | `readTimeout` | `0` | Seconds for a whole request; `0` = unlimited |
 | `SERVER_WRITE_TIMEOUT` | `writeTimeout` | `0` | Seconds for writing a response; `0` = unlimited |
 | `SERVER_READ_HEADER_TIMEOUT` | `readHeaderTimeout` | `20` | Seconds to read request headers |
+| `SERVER_IDLE_TIMEOUT` | `idleTimeout` | `120` | Seconds an idle keep-alive connection stays open; `0` = no limit |
+| `SERVER_MAX_HEADER_BYTES` | `maxHeaderBytes` | `1048576` | Request header size cap in bytes (1024 to 16 MiB); `0` = Go default |
 | `SERVER_MAX_BODY_BYTES` | `maxBodyBytes` | `17179869184` | Maximum request body (bytes) accepted by any endpoint; `0` = unlimited. Format handlers enforce lower limits of their own |
 | `SERVER_SHUTDOWN_TIMEOUT` | `shutdownTimeout` | `30` | Seconds allowed for graceful shutdown |
 | `SERVER_SHUTDOWN_DELAY` | `shutdownDelay` | `0` | Seconds to keep serving, with `/ready` answering 503, after a shutdown signal and before the listener closes; a second signal skips it. See [rolling updates](../operations/monitoring.md#graceful-shutdown-and-rolling-updates) |

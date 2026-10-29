@@ -48,7 +48,53 @@ func (s ServerConfig) validateListen() error {
 		return fmt.Errorf("%w: %d", errInvalidPort, s.Port)
 	}
 
+	if err := s.validateLimits(); err != nil {
+		return err
+	}
+
 	return s.validateRole()
+}
+
+const (
+	maxServerSeconds   = 24 * 60 * 60
+	minMaxHeaderBytes  = 1024
+	maxMaxHeaderBytes  = 16 << 20
+	maxServerRateLimit = 1_000_000
+	maxServerBodyBytes = int64(1) << 50
+)
+
+// validateLimits rejects negative or absurd server timeouts and size caps.
+func (s ServerConfig) validateLimits() error {
+	for _, t := range []struct {
+		name string
+		v    int
+	}{
+		{"readTimeout", s.ReadTimeout},
+		{"writeTimeout", s.WriteTimeout},
+		{"readHeaderTimeout", s.ReadHeaderTimeout},
+		{"idleTimeout", s.IdleTimeout},
+		{"shutdownTimeout", s.ShutdownTimeout},
+		{"shutdownDelay", s.ShutdownDelay},
+	} {
+		if t.v < 0 || t.v > maxServerSeconds {
+			return fmt.Errorf("%w: server.%s=%d, want 0..%d seconds", errInvalidServerLimit, t.name, t.v, maxServerSeconds)
+		}
+	}
+
+	if s.MaxHeaderBytes != 0 && (s.MaxHeaderBytes < minMaxHeaderBytes || s.MaxHeaderBytes > maxMaxHeaderBytes) {
+		return fmt.Errorf("%w: server.maxHeaderBytes=%d, want 0 or %d..%d",
+			errInvalidServerLimit, s.MaxHeaderBytes, minMaxHeaderBytes, maxMaxHeaderBytes)
+	}
+
+	if s.MaxBodyBytes < 0 || s.MaxBodyBytes > maxServerBodyBytes {
+		return fmt.Errorf("%w: server.maxBodyBytes=%d, want 0..%d", errInvalidServerLimit, s.MaxBodyBytes, maxServerBodyBytes)
+	}
+
+	if s.RateLimitRPS < 0 || s.RateLimitRPS > maxServerRateLimit {
+		return fmt.Errorf("%w: server.rateLimitRps=%d, want 0..%d", errInvalidServerLimit, s.RateLimitRPS, maxServerRateLimit)
+	}
+
+	return nil
 }
 
 func (s ServerConfig) validateRole() error {

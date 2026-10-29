@@ -43,6 +43,7 @@ func NewHTTPServer(addr string, log *logger.Logger) *HTTPServer {
 			ReadTimeout:       0,
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		},
 		log:      log,
 		serveErr: make(chan error, 1),
@@ -133,6 +134,13 @@ func applyMiddlewares(handler http.Handler, middlewares ...func(http.Handler) ht
 	}
 
 	return handler
+}
+
+// SetConnLimits sets the keep-alive idle timeout and the request header size
+// cap. idleTimeout 0 means no limit; maxHeaderBytes 0 keeps the Go default.
+func (s *HTTPServer) SetConnLimits(idleTimeout time.Duration, maxHeaderBytes int) {
+	s.httpServer.IdleTimeout = idleTimeout
+	s.httpServer.MaxHeaderBytes = maxHeaderBytes
 }
 
 // SetTimeouts configures read, write, and read-header timeouts on the HTTP

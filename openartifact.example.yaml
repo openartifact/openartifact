@@ -28,6 +28,8 @@ server:
   # rateLimitRps: 100
   # pprofEnabled: false     # Go profiler at /api/v1/admin/pprof/ (admin only); env OPENARTIFACT_PPROF_ENABLED
   # readHeaderTimeout: 10   # seconds
+  # idleTimeout: 120        # seconds an idle keep-alive connection stays open; 0 = no limit
+  # maxHeaderBytes: 1048576 # request header size cap in bytes (1024..16777216); 0 = Go default
   # maxBodyBytes: 17179869184  # max request body for every endpoint (16 GiB); 0 = unlimited
   # trustedProxies:         # CIDRs whose X-Forwarded-For is trusted
   #   - "10.0.0.0/8"
