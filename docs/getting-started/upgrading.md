@@ -28,7 +28,7 @@ Checklist:
 - They run automatically at every start unless `MIGRATE_ON_START=false`, under a PostgreSQL advisory lock, so several replicas can start at once and only one applies each migration. Each file runs in its own transaction; files named `*.no_tx.sql` run without one, one statement at a time (needed for `CREATE INDEX CONCURRENTLY`, which cannot run in a transaction).
 - **Forward-only.** There are no down migrations. An applied file must never change: if the checksum of an applied migration differs from the one in the binary, the migrator aborts with a `checksum drift` error instead of continuing.
 - A failed migration is rolled back (transactional files) and the server logs `auto-migrate failed` and exits with status 1.
-- Running a new binary against an old database applies the pending migrations; there is no dry-run mode.
+- Running a new binary against an old database applies the pending migrations; there is no dry-run mode. **Exception: 0.15** ships one squashed `001_baseline.sql` and refuses a 0.14 database; see [0.15.0](#0150). New migrations start at `002`.
 
 ### Migrating separately from the rollout
 
@@ -84,6 +84,34 @@ Keep these identical across upgrades, restores and replicas:
 Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installation.md#docker-compose) for adding the others. The `docker/.env` file and any compose override belong in your backup.
 
 ## Version notes
+
+### 0.15.0
+
+> **Breaking: 0.15 cannot be upgraded in place.** The package tables were replaced by a generic schema and the 99 migrations of 0.x were squashed into one baseline (`migrations/001_baseline.sql`). A 0.15 server started on a 0.14 database refuses to start (`database predates the 0.15 schema baseline`). Move the data with `oa import openartifact` into an empty 0.15 database, as below. Design: [format plugins](../design/format-plugins.md).
+
+**Procedure.** Follow the [runbook: 0.14 to 0.15](../migration/openartifact.md#runbook-014-to-015): deploy 0.15 beside 0.14 with its own empty database (the same object-storage bucket may be shared), copy the configuration with `oa import config openartifact` and `oa apply`, copy the content with `oa import openartifact` (dry run first; resumable with `--state-file`), verify, switch clients and DNS, decommission 0.14.
+
+- **No rolling upgrade is possible.** 0.14 and 0.15 cannot share a database or a federation. Stop publishing to 0.14 (or run the import twice, the second run copies the delta), run the final import, switch, then stop 0.14.
+- **Duration.** Every hosted artifact is republished through the normal upload of its format, so the import is as slow as uploading the same content with a client, and it downloads from 0.14 at the same time. It runs per repository and is idempotent; a re-run copies only what is missing. The runbook gives no measured figures; time a `--dry-run` and a first repository to extrapolate, and plan the two-pass delta for a busy 0.14.
+- **Not carried over** (see [what is not reachable](../migration/openartifact.md#what-is-not-reachable)): passwords, password hashes, tokens and other secrets, signing keys (clients must trust the new instance's keys; a Terraform signing key must exist on the server before its repository is installed from), scan results, audit logs, sessions, proxy caches (they refill on demand), storage backends and server configuration, untagged docker manifests that are not referrers of a tag, quarantined packages (they fail to download), and go modules that have only a `.mod`. Proxy and group repositories are recreated empty by `oa import config`.
+- **Ids change.** Every row gets a new uuid; artifact ids in links, scan references and VEX statements from 0.14 do not resolve. The conda `repodata` ETag and every cached `ETag` revalidate once.
+- **Backups and rebuild.** Backup archives written by 0.14 are refused (the archive version is now 2.0) with a pointer to `oa import`; legacy organization entries are not restorable. Restore derives new package ids (`md5(repoID||oldID)::uuid`). Recovery sidecars of 0.14 (magic 1) are refused; a rebuild that finds only legacy sidecars fails. Take a fresh backup and let the journal rewrite its sidecars after the import. A backup fails (`ErrNoStorageDescriptor`) for a non-docker repository whose format registered no storage descriptor.
+- **Federation protocol 2.** Peers of 0.14 are refused ("upgrade the peer to 0.15 or later"). Upgrade every member, then re-enable federation. Enabling it now takes `SHARE` locks on the package tables during the backfill, which blocks package writers of all repositories.
+- **Conan validation is stricter.** `@` and `#` are rejected in the name, version, user and channel of a reference, and `#` in a file name (they delimit the revision key). The listed row's `filename` is the full reference; the file name is in the artifact's attributes.
+
+**Behaviour changes** (HTTP bodies and ordering are otherwise unchanged):
+
+- *Duplicates and names.* Publishing an existing version answers with the duplicate error for npm, nuget, cargo, go, apk, pacman, deb, rpm and pypi (pypi still answers 409). Cargo crate names are unique by lowercase name and NuGet ids are case-insensitive: ids that differ only in case are one package. pypi no longer collapses `--` in project names; release metadata is per version. A conda build is one version with one file per extension. A rubygems empty platform behaves like `ruby`. A go version without a live zip is not found. Composer's delete removes by file id. deb and rpm `size_bytes` is NULL when 0. The ivy file name no longer repeats the extension.
+- *Packument ETag.* The npm packument ETag is `packages.updated_at`, bumped on version publish, deprecate, tag change, trash, restore and purge.
+- *Listing.* The format filter applies to the package's format; only listed live files are listed; `ListStoredPackages` returns one row per (repository, name, version); the component views cover deb and rpm only. Listing rows are files: an npm package is listed by its tarball.
+- *Search.* ivy and sbt names are `org:module` and `group:artifact`; the path is the file name. sha256 search is by blob over all live files; sha1 matches the `sha1` and `shasum` keys and md5 the `md5` key; **sha512 and npm `integrity` are no longer searchable** (no index). Results carry the file name (it was empty for conan, conda and go).
+- *Artifact detail.* Info entries that were `"0"` are omitted when absent; go dependencies come from the sibling `go.mod` file; the terraform name is `modules/...` or `providers/...`; only listed files resolve to an artifact id.
+- *Trash and tiering.* Terraform providers list under the trash kind `terraform_module`. Tiering `path_glob` matches `package_files.path`. Trash list sizes of a version-scoped unit (go) are the version sum. A purge frees the number of primary files and the bytes of all files of the unit. A trash kind needs a registered format (`ErrTrashUnknownKind` otherwise).
+- *Cleanup.* `keep_since_days` ages by the file's `created_at`; the candidate id is the listed file id; `name_pattern` matches `packages.name` (maven `group:artifact`); terraform provider cleanup ranks per platform.
+- *Quota.* A go module reserves its zip as one artifact and its `.mod` as zero; quota entries are matched by exact size and count.
+- *Promote.* There is one promoter. A go module's zip and `go.mod` are copied as separate files, so a differing `go.mod` is a conflict. A deb promotion may add distribution, component and architecture rows. Maven promotion sends no regeneration notification. npm `latest_version` is synced to the `latest` tag after a copy.
+- *Plugin layer.* apk now gets a publisher (webhook events); the rpm stale hook notifies even when the stale mark fails; the gpg key refresh notifies every GPG-signed format with a stale hook; the docker GC busy case returns no error; the audit package kinds now include nix.
+- *Webhook paths.* The path of a federation-applied event is the keyed file's repository path.
 
 ### Unreleased
 
