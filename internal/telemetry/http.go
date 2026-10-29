@@ -94,7 +94,12 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := prop.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+			ctx := r.Context()
+			if hasCredentials(r) {
+				ctx = withCredentials(ctx)
+			}
+
+			ctx = prop.Extract(ctx, propagation.HeaderCarrier(r.Header))
 			if chi.RouteContext(ctx) == nil {
 				ctx = context.WithValue(ctx, chi.RouteCtxKey, chi.NewRouteContext())
 			}
