@@ -1032,6 +1032,20 @@ type OsvMirrorState struct {
 	RematchedAt        *time.Time `db:"rematched_at" json:"rematched_at"`
 }
 
+// One logical package of a repository; identity is (repository_id, name_key). See docs/design/format-plugins.md
+type Package struct {
+	ID           string `db:"id" json:"id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Format       string `db:"format" json:"format"`
+	// Listing and display name
+	Name string `db:"name" json:"name"`
+	// Identity inside the repository: the normalised name
+	NameKey   string          `db:"name_key" json:"name_key"`
+	Attrs     json.RawMessage `db:"attrs" json:"attrs"`
+	CreatedAt time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
+}
+
 // Pre-computed bsdiff patches between package versions for bandwidth-efficient updates
 type PackageDelta struct {
 	ID           string    `db:"id" json:"id"`
@@ -1044,6 +1058,66 @@ type PackageDelta struct {
 	DeltaSize    int64     `db:"delta_size" json:"delta_size"`
 	Format       string    `db:"format" json:"format"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+}
+
+// One stored file: the unit of listing, trash, quota, blob references and scan ids. Migrated rows keep the id of the legacy row
+type PackageFile struct {
+	ID           string `db:"id" json:"id"`
+	VersionID    string `db:"version_id" json:"version_id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	// Repository-wide locator, unique while live
+	Path string `db:"path" json:"path"`
+	// What a client downloads
+	Filename string  `db:"filename" json:"filename"`
+	BlobID   *string `db:"blob_id" json:"blob_id"`
+	// Declared size that wins over the blob size when set (rpm, rubygems)
+	SizeBytes *int64 `db:"size_bytes" json:"size_bytes"`
+	// primary counts as one artifact for quota; any other role (go mod/info) counts none
+	Role string `db:"role" json:"role"`
+	// true: the file is a unit of the repository listing
+	Listed bool `db:"listed" json:"listed"`
+	// Platform qualifier shown by the listing and the second retention partition key
+	Arch string `db:"arch" json:"arch"`
+	// Extra retention-partition suffix (deb distribution, maven snapshot flag)
+	Part  string          `db:"part" json:"part"`
+	Attrs json.RawMessage `db:"attrs" json:"attrs"`
+	// sha1/md5/sha512/shasum/integrity for checksum search; sha256 is the blob's
+	Checksums json.RawMessage `db:"checksums" json:"checksums"`
+	// Federation unit key when the federation unit is the file
+	UnitKey       *string    `db:"unit_key" json:"unit_key"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
+}
+
+// Mutable named pointers to versions (npm dist-tags); version is resolved at read time
+type PackageTag struct {
+	ID        string    `db:"id" json:"id"`
+	PackageID string    `db:"package_id" json:"package_id"`
+	Tag       string    `db:"tag" json:"tag"`
+	Version   string    `db:"version" json:"version"`
+	UnitKey   *string   `db:"unit_key" json:"unit_key"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// One version incarnation; live iff at least one of its files is live
+type PackageVersion struct {
+	ID           string `db:"id" json:"id"`
+	PackageID    string `db:"package_id" json:"package_id"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Version      string `db:"version" json:"version"`
+	// Identity inside the package: the version plus the coordinates the format keys on; cleanup policies rank by it
+	VersionKey string          `db:"version_key" json:"version_key"`
+	Metadata   json.RawMessage `db:"metadata" json:"metadata"`
+	// Federation unit key when the federation unit is the version
+	UnitKey   *string    `db:"unit_key" json:"unit_key"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Arch Linux pacman packages: one .pkg.tar.{zst,xz,gz} file per name/version/arch.
