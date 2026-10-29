@@ -69,7 +69,7 @@ Register the redirect URI `BASE_URL/api/v1/auth/sso/oidc/{slug}/callback` with t
 
 | Route | |
 |---|---|
-| `GET /api/v1/auth/sso/oidc/{slug}/login?redirect=/path` | start login |
+| `GET /api/v1/auth/sso/oidc/{slug}/login?redirect=/path` | start login; the sign-in page passes the page the user was heading to (`?next=`) as `redirect`, so a deep link survives the round trip |
 | `GET /api/v1/auth/sso/oidc/{slug}/callback` | IdP return |
 | `POST /api/v1/auth/sso/oidc/{slug}/logout` | same-origin only; see [Logout](#logout) |
 
@@ -93,7 +93,7 @@ SP entity ID / metadata: `BASE_URL/api/v1/auth/sso/saml/{slug}/metadata`; ACS UR
 | `POST /api/v1/auth/sso/saml/{slug}/acs` | assertion consumer (CSRF-exempt) |
 | `GET /api/v1/auth/sso/saml/{slug}/metadata` | SP metadata XML |
 
-Error codes: `saml_signature_invalid` (400), `saml_audience_mismatch` (400), `saml_assertion_expired` (401), `saml_invalid` (400, generic).
+Failure codes: `saml_signature_invalid`, `saml_audience_mismatch`, `saml_assertion_expired`, `saml_invalid` (generic). They reach the user as described in [Sign-in failures](#sign-in-failures).
 
 **Certificate rollover.** Every signing certificate listed in the IdP metadata is accepted. With `idp_metadata_url` the new certificate is picked up at the next refresh; with static `idp_metadata_xml` include **both** the old and the new signing certificate in the XML before the IdP switches (or prefer the URL).
 
@@ -426,11 +426,17 @@ Add `"scopes": ["openid", "email", "profile", "groups"]` to `oidc_config` (the d
 
 1. The user is looked up by (external ID, provider slug).
 2. Unknown user and `link_by_email` on and the email is IdP-verified: an existing unlinked local user with that email is linked.
-3. Conflicts return a generic `403 sso_login_denied` ("SSO sign-in could not be completed; contact your administrator"): the email is already used by another account (unverified email, or `link_by_email` off), the matching account is already bound to another identity, or the email matches more than one account. The reason is only in the server log.
-4. Unknown user and `auto_provision_users` off: 403 `user_not_provisioned`. Disabled account: 403 `account_disabled`.
+3. Conflicts end in the generic `sso_login_denied` failure ("SSO sign-in could not be completed; contact your administrator"): the email is already used by another account (unverified email, or `link_by_email` off), the matching account is already bound to another identity, or the email matches more than one account. The reason is only in the server log.
+4. Unknown user and `auto_provision_users` off: `user_not_provisioned`. Disabled account: `account_disabled`.
 5. Otherwise a user is created (username from the username claim, else the email local part, else the subject; reduced to `[a-zA-Z0-9_-]`, 3 to 64 characters, so it cannot contain `/` or control characters; a hash of the subject is used when nothing usable remains. An email without `@`, with whitespace or over 254 characters is ignored) with no password and SSO-managed groups.
 
 Email verification: for OIDC `email_verified` must be `true`, and a custom `email_claim` counts as never verified; for SAML the email counts as verified only when the assertion carries an `email_verified` attribute equal to `true`; without it the email is never used to link or overwrite an account. Configure the IdP to release `email_verified=true` for a SAML provider that should use `link_by_email`, and only when the IdP controls the mail attribute.
+
+### Sign-in failures
+
+The browser reaches `/login`, `/callback` and `/acs` by navigation, so a failure is a `303` to `/login?sso_error=<code>`, not a JSON body. The sign-in page shows the message of the code in the user's language and removes the parameter from the address. The codes are a closed set: `sso_login_denied`, `user_not_provisioned`, `account_disabled`, `provider_not_found`, `oidc_discovery_failed`, `idp_metadata_unavailable`, `id_token_missing`, `id_token_expired`, `exchange_failed`, `missing_session_cookies`, `state_mismatch`, `nonce_mismatch`, `saml_signature_invalid`, `saml_audience_mismatch`, `saml_assertion_expired`, `saml_invalid`, `missing_subject`, `invalid_relay_state`, `access_denied`, `oidc_error` and `internal_error`. An unknown value shows a generic message.
+
+When the IdP itself answers the authorization request with an error (`?error=` on the callback), only `access_denied` is passed on; any other value (RFC 6749 section 4.1.2.1 defines several, and the parameter is attacker-controllable) becomes `oidc_error` and the original is only in the server log. The SAML metadata endpoint and the OIDC logout endpoint are not navigations and still answer JSON errors.
 
 ### Groups and permissions
 

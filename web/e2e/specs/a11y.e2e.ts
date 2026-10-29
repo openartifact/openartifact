@@ -41,6 +41,7 @@ const TARGETS: Target[] = [
   { name: 'settings hub', path: '/settings', role: 'admin', ready: 'h1' },
   { name: 'settings profile', path: '/settings/profile', role: 'admin', ready: 'h1' },
   { name: 'settings users', path: '/settings/users', role: 'admin', ready: 'h1' },
+  { name: 'settings password', path: '/settings/password', role: 'admin', ready: '#current_password' },
   { name: 'settings tokens', path: '/settings/tokens', role: 'admin', ready: 'h1' },
   { name: 'settings health', path: '/settings/health', role: 'admin', ready: 'h1' },
   { name: 'developer dashboard', path: '/', role: 'dev', ready: 'h1' },

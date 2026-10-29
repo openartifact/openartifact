@@ -20,6 +20,7 @@
   "auth.logoutFailed": "Impossible de se déconnecter",
   "session.probeFailed": "Impossible de vérifier votre session",
   "session.probeFailedHint": "Le serveur n'a pas répondu. Naviguer à nouveau relance la vérification.",
+  "session.expired": "Votre session a expiré. Reconnectez-vous.",
   "nav.repositories": "Dépôts",
   "nav.settings": "Paramètres",
   "nav.security": "Sécurité",

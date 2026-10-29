@@ -80,6 +80,7 @@ import AppButton from '../AppButton.vue'
 import StatusBadge from '../StatusBadge.vue'
 import FindingDetailShell from './FindingDetailShell.vue'
 import { getAIAnalysis, triggerAIAnalysis, type AIAnalysis } from '../../api/ai'
+import { isFeatureUnavailable } from '../../api/client'
 import type { SecurityFinding } from '../../api/security'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { useToastStore } from '../../stores/toast'
@@ -135,7 +136,9 @@ async function load(silent = false): Promise<void> {
     if (mine !== seq) return
     analysis.value = result
   } catch (err) {
-    if (mine === seq && !silent) error.value = err instanceof Error ? err.message : t('security.ai.loadFailed')
+    if (mine === seq && !silent) {
+      error.value = isFeatureUnavailable(err) ? t('security.ai.unavailable') : err instanceof Error ? err.message : t('security.ai.loadFailed')
+    }
   } finally {
     if (mine === seq) {
       loading.value = false
@@ -158,7 +161,7 @@ async function retrigger(): Promise<void> {
     await load(true)
     emit('changed')
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('security.ai.retriggerFailed'))
+    toasts.error(isFeatureUnavailable(err) ? t('security.ai.unavailable') : err instanceof Error ? err.message : t('security.ai.retriggerFailed'))
   } finally {
     retriggering.value = false
   }

@@ -175,8 +175,8 @@ OIDC callback
 
 | Status | Description | Body |
 |---|---|---|
-| `302` | 302 | - |
-| `default` | Error | `application/json`: [Error](schemas.md#error) |
+| `302` | Signed in: redirect to the page given as redirect on login (or /) | - |
+| `303` | Sign-in failed: redirect to /login?sso_error=`<code>` (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body. | - |
 
 ### `GET /api/v1/auth/sso/oidc/{slug}/login`
 
@@ -192,8 +192,8 @@ Begin OIDC login
 
 | Status | Description | Body |
 |---|---|---|
-| `302` | 302 | - |
-| `default` | Error | `application/json`: [Error](schemas.md#error) |
+| `302` | Redirect to the identity provider | - |
+| `303` | Sign-in failed: redirect to /login?sso_error=`<code>` (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body. | - |
 
 ### `POST /api/v1/auth/sso/oidc/{slug}/logout`
 
@@ -254,8 +254,8 @@ SAML assertion consumer service
 
 | Status | Description | Body |
 |---|---|---|
-| `302` | 302 | - |
-| `default` | Error | `application/json`: [Error](schemas.md#error) |
+| `302` | Signed in: redirect to the RelayState target (or /) | - |
+| `303` | Sign-in failed: redirect to /login?sso_error=`<code>` (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body. | - |
 
 ### `GET /api/v1/auth/sso/saml/{slug}/login`
 
@@ -271,8 +271,8 @@ Begin SAML login
 
 | Status | Description | Body |
 |---|---|---|
-| `302` | 302 | - |
-| `default` | Error | `application/json`: [Error](schemas.md#error) |
+| `302` | Redirect to the identity provider | - |
+| `303` | Sign-in failed: redirect to /login?sso_error=`<code>` (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body. | - |
 
 ### `GET /api/v1/auth/sso/saml/{slug}/metadata`
 

@@ -6,6 +6,7 @@ import type { AdminSystemInfo } from '../api/admin'
 import type { SecurityHealth } from '../api/security'
 import { formatUtc } from './datetime'
 import { safeDocsUrl, vulnScannerLabel } from './vulnScanners'
+import { isAiAvailable } from '../composables/useAppVersion'
 import { t, tp } from '../i18n'
 
 export type HealthStatus = 'ok' | 'warn' | 'bad' | 'none'
@@ -96,15 +97,18 @@ export function healthRows(info: AdminSystemInfo, security: SecurityHealthState)
     toLabel: dt.enabled ? t('sx.health.details') : t('sx.health.setUp'),
   })
 
-  rows.push({
-    id: 'ai',
-    name: t('sx.health.ai'),
-    sub: t('sx.health.ai.sub'),
-    status: h.ai.enabled ? 'ok' : 'none',
-    detail: h.ai.enabled ? t('sx.health.ai.on') : t('sx.health.ai.off'),
-    to: '/settings/ai',
-    toLabel: h.ai.enabled ? t('sx.health.details') : t('sx.health.setUp'),
-  })
+  // A server built without AI (-tags noai) has nothing to report or set up: no row.
+  if (isAiAvailable()) {
+    rows.push({
+      id: 'ai',
+      name: t('sx.health.ai'),
+      sub: t('sx.health.ai.sub'),
+      status: h.ai.enabled ? 'ok' : 'none',
+      detail: h.ai.enabled ? t('sx.health.ai.on') : t('sx.health.ai.off'),
+      to: '/settings/ai',
+      toLabel: h.ai.enabled ? t('sx.health.details') : t('sx.health.setUp'),
+    })
+  }
 
   const idle = h.scans_pending === 0 && h.scans_failed_24h === 0
   rows.push({

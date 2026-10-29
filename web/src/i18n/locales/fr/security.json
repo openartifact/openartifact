@@ -126,6 +126,7 @@
   "security.ai.retriggered": "Analyse mise en file d'attente",
   "security.ai.retriggerFailed": "Échec du relancement de l'analyse",
   "security.ai.loadFailed": "Échec du chargement des analyses IA",
+  "security.ai.unavailable": "L'analyse par IA ne fait pas partie de cette version du serveur.",
   "security.ai.status.pending": "En attente",
   "security.ai.status.processing": "En cours",
   "security.ai.status.completed": "Terminée",

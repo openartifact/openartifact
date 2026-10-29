@@ -126,6 +126,7 @@
   "security.ai.retriggered": "分析をキューに登録しました",
   "security.ai.retriggerFailed": "分析の再実行に失敗しました",
   "security.ai.loadFailed": "AI 分析の読み込みに失敗しました",
+  "security.ai.unavailable": "AI 分析はこのサーバービルドに含まれていません。",
   "security.ai.status.pending": "待機中",
   "security.ai.status.processing": "処理中",
   "security.ai.status.completed": "完了",

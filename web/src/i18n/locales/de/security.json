@@ -126,6 +126,7 @@
   "security.ai.retriggered": "Analyse in die Warteschlange gestellt",
   "security.ai.retriggerFailed": "Analyse konnte nicht erneut ausgeführt werden",
   "security.ai.loadFailed": "KI-Analysen konnten nicht geladen werden",
+  "security.ai.unavailable": "KI-Analyse ist nicht Teil dieses Server-Builds.",
   "security.ai.status.pending": "Ausstehend",
   "security.ai.status.processing": "In Bearbeitung",
   "security.ai.status.completed": "Abgeschlossen",

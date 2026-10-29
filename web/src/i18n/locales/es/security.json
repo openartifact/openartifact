@@ -126,6 +126,7 @@
   "security.ai.retriggered": "Análisis en cola",
   "security.ai.retriggerFailed": "No se pudo repetir el análisis",
   "security.ai.loadFailed": "No se pudieron cargar los análisis de IA",
+  "security.ai.unavailable": "El análisis con IA no forma parte de esta compilación del servidor.",
   "security.ai.status.pending": "Pendiente",
   "security.ai.status.processing": "Procesando",
   "security.ai.status.completed": "Completado",

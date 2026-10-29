@@ -132,8 +132,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <AppButton variant="primary" @click="scanOpen = true">{{ t('security.scan.run') }}</AppButton>
           </template>
         </StateBlock>
-        <StateBlock v-else-if="blockState === 'ai-off'" variant="off" :title="t('security.ai.offTitle')" :hint="t('security.ai.offHint')" data-testid="ai-off">
-          <template #action>
+        <StateBlock
+          v-else-if="blockState === 'ai-off'"
+          variant="off"
+          :title="t('security.ai.offTitle')"
+          :hint="aiAvailable ? t('security.ai.offHint') : t('security.ai.unavailable')"
+          data-testid="ai-off"
+        >
+          <template v-if="aiAvailable" #action>
             <AppButton to="/settings/ai" variant="primary">{{ t('security.ai.offAction') }}</AppButton>
           </template>
         </StateBlock>
@@ -259,6 +265,7 @@ import SeverityBadge from '../../components/ui/SeverityBadge.vue'
 import StateBlock from '../../components/ui/StateBlock.vue'
 import { listAllRepositories } from '../../api/repositories'
 import { FINDINGS_EXPORT_FORMATS, findingsExportUrl, type FindingCounts, type FindingsExportFormat, type SecurityFinding } from '../../api/security'
+import { useAiAvailable } from '../../composables/useAppVersion'
 import { useSecurityInbox } from '../../composables/useSecurityInbox'
 import { formatDateTime, timeAgo } from '../../lib/datetime'
 import { EPSS_MIN_OPTIONS, PRIORITY_FILTERS, formatEpssThreshold, type PriorityFilter } from '../../lib/exploitPriority'
@@ -282,6 +289,7 @@ const SELECT =
 
 const session = useSessionStore()
 const isAdmin = computed(() => session.isAdmin)
+const aiAvailable = useAiAvailable()
 const { list, filters, forbidden, summary, summaryError, health, vexLabels, allClear, neverScanned, applyStrip, refresh } =
   useSecurityInbox()
 

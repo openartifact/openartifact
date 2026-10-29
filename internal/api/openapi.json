@@ -463,6 +463,10 @@
           "api_reference_enabled": {
             "type": "boolean",
             "description": "Whether the interactive API reference is served at /api/reference."
+          },
+          "ai_available": {
+            "type": "boolean",
+            "description": "Whether this binary contains AI analysis. False in a build made with -tags noai, where the AI routes answer 501 feature_unavailable; independent of whether an administrator enabled AI."
           }
         }
       },
@@ -21708,17 +21712,10 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Redirect to the identity provider"
           },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
           }
         }
       }
@@ -21755,17 +21752,10 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Signed in: redirect to the page given as redirect on login (or /)"
           },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
           }
         }
       }
@@ -21833,17 +21823,10 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Redirect to the identity provider"
           },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
           }
         }
       }
@@ -21899,17 +21882,10 @@
         ],
         "responses": {
           "302": {
-            "description": "302"
+            "description": "Signed in: redirect to the RelayState target (or /)"
           },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "303": {
+            "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
           }
         }
       }

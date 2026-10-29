@@ -9,7 +9,6 @@ import (
 	"compress/flate"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -174,20 +173,30 @@ func assertNoLogin(t *testing.T, env *samlFlowEnv, rw *httptest.ResponseRecorder
 	}
 }
 
-func assertErrorCode(t *testing.T, rw *httptest.ResponseRecorder, status int, code string) {
+// assertSSOError asserts that the response is the redirect to the login page
+// that carries code as sso_error: the browser navigates to the ACS, so a
+// failure is a redirect, never a JSON body.
+func assertSSOError(t *testing.T, rw *httptest.ResponseRecorder, code string) {
 	t.Helper()
 
-	if rw.Code != status {
-		t.Fatalf("status = %d, want %d (%s)", rw.Code, status, rw.Body.String())
+	if got := ssoErrorOf(rw); got != code {
+		t.Fatalf("sso_error = %q, want %q (status %d, body %s)", got, code, rw.Code, rw.Body.String())
+	}
+}
+
+// ssoErrorOf returns the sso_error of a login-page redirect, or "" when the
+// response is not one.
+func ssoErrorOf(rw *httptest.ResponseRecorder) string {
+	if rw.Code != http.StatusSeeOther {
+		return ""
 	}
 
-	var body map[string]any
-
-	_ = json.Unmarshal(rw.Body.Bytes(), &body)
-
-	if body["code"] != code {
-		t.Errorf("code = %v, want %s", body["code"], code)
+	loc, err := url.Parse(rw.Header().Get("Location"))
+	if err != nil || loc.Path != "/login" || loc.Host != "" {
+		return ""
 	}
+
+	return loc.Query().Get("sso_error")
 }
 
 // spMetadataOf returns a copy of the SP metadata idp has registered.
@@ -251,10 +260,9 @@ func wrongEncryptionKeyIDP(t *testing.T, env *samlFlowEnv) *saml.IdentityProvide
 }
 
 type samlAttack struct {
-	name   string
-	status int
-	code   string
-	issue  func(t *testing.T, e *samlFlowEnv, initiated bool) issued
+	name  string
+	code  string
+	issue func(t *testing.T, e *samlFlowEnv, initiated bool) issued
 }
 
 func samlAttacks() []samlAttack {
@@ -276,38 +284,38 @@ func samlAttacks() []samlAttack {
 	}
 
 	return []samlAttack{
-		{"signed by a certificate that is not in the metadata", http.StatusBadRequest, "saml_signature_invalid",
+		{"signed by a certificate that is not in the metadata", "saml_signature_invalid",
 			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
 				t.Helper()
 
 				return e.issue(foreignIDP(t, e), initiated)
 			}},
-		{"response and assertion unsigned", http.StatusBadRequest, "saml_signature_invalid",
+		{"response and assertion unsigned", "saml_signature_invalid",
 			mutated(func(_ *testing.T, root *etree.Element) { removeSignatures(root, false) })},
-		{"signed content tampered after signing", http.StatusBadRequest, "saml_signature_invalid",
+		{"signed content tampered after signing", "saml_signature_invalid",
 			mutated(func(_ *testing.T, root *etree.Element) {
 				setText(root, "NameID", "admin-nameid")
 				setText(root, "AttributeValue", "mallory")
 			})},
-		{"unsigned assertion wrapped in front of the signed one", http.StatusBadRequest, "saml_signature_invalid",
+		{"unsigned assertion wrapped in front of the signed one", "saml_signature_invalid",
 			mutated(func(t *testing.T, root *etree.Element) {
 				t.Helper()
 
 				root.InsertChildAt(root.FindElement("./Assertion").Index(), evilAssertion(t, root))
 			})},
-		{"assertion encrypted to a key the SP does not hold", http.StatusBadRequest, "saml_invalid",
+		{"assertion encrypted to a key the SP does not hold", "saml_invalid",
 			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
 				t.Helper()
 
 				return e.issue(wrongEncryptionKeyIDP(t, e), initiated)
 			}},
-		{"addressed to another audience", http.StatusBadRequest, "saml_audience_mismatch",
+		{"addressed to another audience", "saml_audience_mismatch",
 			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
 				t.Helper()
 
 				return e.issue(otherAudienceIDP(e), initiated)
 			}},
-		{"issued long ago (expired)", http.StatusUnauthorized, "saml_assertion_expired",
+		{"issued long ago (expired)", "saml_assertion_expired",
 			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
 				t.Helper()
 
@@ -333,7 +341,7 @@ func TestSAML_ACS_RejectsInvalidResponses(t *testing.T) {
 			t.Run(mode.name+"/"+atk.name, func(t *testing.T) {
 				rw := env.post(atk.issue(t, env, mode.initiated))
 
-				assertErrorCode(t, rw, atk.status, atk.code)
+				assertSSOError(t, rw, atk.code)
 				assertNoLogin(t, env, rw)
 			})
 		}
@@ -377,7 +385,7 @@ func TestSAML_ACS_ResponseIssuedInTheFutureRejected(t *testing.T) {
 		withSAMLTime(t, 10*time.Minute, func() { i = env.issue(env.plain, initiated) })
 
 		rw := env.post(i)
-		if rw.Code != http.StatusBadRequest && rw.Code != http.StatusUnauthorized {
+		if ssoErrorOf(rw) == "" {
 			t.Errorf("initiated=%v: a response from the future must be rejected, got %d", initiated, rw.Code)
 		}
 
@@ -390,7 +398,7 @@ func TestSAML_IdPInitiated_DisabledByDefault(t *testing.T) {
 
 	rw := env.post(env.issue(env.idp, true))
 
-	assertErrorCode(t, rw, http.StatusBadRequest, "saml_invalid")
+	assertSSOError(t, rw, "saml_invalid")
 	assertNoLogin(t, env, rw)
 }
 
@@ -448,7 +456,7 @@ func TestSAML_IdPInitiated_ReplayRejected(t *testing.T) {
 	}
 
 	rw := env.post(i)
-	assertErrorCode(t, rw, http.StatusUnauthorized, "saml_invalid")
+	assertSSOError(t, rw, "saml_invalid")
 
 	if hasCookie(rw, auth.SessionCookieName) {
 		t.Error("a replayed IdP-initiated response must not create a session")
@@ -466,7 +474,7 @@ func TestSAML_IdPInitiated_InResponseToCannotBeBypassed(t *testing.T) {
 		i.cookies = nil
 
 		rw := env.post(i)
-		assertErrorCode(t, rw, http.StatusBadRequest, "saml_invalid")
+		assertSSOError(t, rw, "saml_invalid")
 		assertNoLogin(t, env, rw)
 	})
 
@@ -476,10 +484,7 @@ func TestSAML_IdPInitiated_InResponseToCannotBeBypassed(t *testing.T) {
 		i.resp = mutateSAML(t, i.resp, func(root *etree.Element) { root.RemoveAttr("InResponseTo") })
 
 		rw := env.post(i)
-		if rw.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d (%s)", rw.Code, rw.Body.String())
-		}
-
+		assertSSOError(t, rw, "saml_signature_invalid")
 		assertNoLogin(t, env, rw)
 	})
 
@@ -488,10 +493,7 @@ func TestSAML_IdPInitiated_InResponseToCannotBeBypassed(t *testing.T) {
 		i.resp = mutateSAML(t, i.resp, func(root *etree.Element) { root.CreateAttr("InResponseTo", "id-made-up") })
 
 		rw := env.post(i)
-		if rw.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d (%s)", rw.Code, rw.Body.String())
-		}
-
+		assertSSOError(t, rw, "saml_invalid")
 		assertNoLogin(t, env, rw)
 	})
 
@@ -502,7 +504,7 @@ func TestSAML_IdPInitiated_InResponseToCannotBeBypassed(t *testing.T) {
 		sneaky.AssertionMaker = claimsRequestAssertionMaker{}
 
 		rw := env.post(issued{resp: env.idpInitiated(&sneaky)})
-		assertErrorCode(t, rw, http.StatusBadRequest, "saml_invalid")
+		assertSSOError(t, rw, "saml_invalid")
 		assertNoLogin(t, env, rw)
 	})
 }
@@ -678,7 +680,7 @@ func TestSAML_MultiCertMetadata(t *testing.T) {
 					return
 				}
 
-				assertErrorCode(t, rw, http.StatusBadRequest, "saml_signature_invalid")
+				assertSSOError(t, rw, "saml_signature_invalid")
 
 				if hasCookie(rw, auth.SessionCookieName) {
 					t.Error("a response signed by an unlisted certificate must not start a session")

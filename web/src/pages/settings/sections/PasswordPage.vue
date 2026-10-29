@@ -21,34 +21,38 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Current password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-caption font-semibold text-muted mb-0.5">
+            <label for="current_password" class="block text-caption font-semibold text-muted mb-0.5">
               {{ t('auth.currentPassword') }}
-            </div>
+            </label>
           </div>
           <div class="flex-1">
             <input
               id="current_password"
+              :aria-invalid="!!errors.current_password"
+              :aria-describedby="errors.current_password ? 'current_password_error' : undefined"
               v-model="form.current_password"
               type="password"
               autocomplete="current-password"
               required
               class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             />
-            <p v-if="errors.current_password" class="mt-1 text-xs text-danger">{{ errors.current_password }}</p>
+            <p v-if="errors.current_password" id="current_password_error" class="mt-1 text-xs text-danger">{{ errors.current_password }}</p>
           </div>
         </div>
 
         <!-- New password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-caption font-semibold text-muted mb-0.5">
+            <label for="new_password" class="block text-caption font-semibold text-muted mb-0.5">
               {{ t('auth.newPassword') }}
-            </div>
-            <div class="text-xs text-muted">{{ t('auth.passwordMin') }}</div>
+            </label>
+            <div id="new_password_hint" class="text-xs text-muted">{{ t('auth.passwordMin') }}</div>
           </div>
           <div class="flex-1">
             <input
               id="new_password"
+              :aria-invalid="!!errors.new_password"
+              :aria-describedby="[errors.new_password ? 'new_password_error' : '', 'new_password_hint'].filter(Boolean).join(' ')"
               v-model="form.new_password"
               type="password"
               autocomplete="new-password"
@@ -56,27 +60,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               minlength="12"
               class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             />
-            <p v-if="errors.new_password" class="mt-1 text-xs text-danger">{{ errors.new_password }}</p>
+            <p v-if="errors.new_password" id="new_password_error" class="mt-1 text-xs text-danger">{{ errors.new_password }}</p>
           </div>
         </div>
 
         <!-- Confirm password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-caption font-semibold text-muted mb-0.5">
+            <label for="confirm_password" class="block text-caption font-semibold text-muted mb-0.5">
               {{ t('auth.confirmPassword') }}
-            </div>
+            </label>
           </div>
           <div class="flex-1">
             <input
               id="confirm_password"
+              :aria-invalid="!!errors.confirm_password"
+              :aria-describedby="errors.confirm_password ? 'confirm_password_error' : undefined"
               v-model="form.confirm_password"
               type="password"
               autocomplete="new-password"
               required
               class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             />
-            <p v-if="errors.confirm_password" class="mt-1 text-xs text-danger">{{ errors.confirm_password }}</p>
+            <p v-if="errors.confirm_password" id="confirm_password_error" class="mt-1 text-xs text-danger">{{ errors.confirm_password }}</p>
           </div>
         </div>
 

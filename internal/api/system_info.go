@@ -42,6 +42,7 @@ type SystemInfoHandler struct {
 	storageType string
 	docsURL     string
 	apiRefOn    bool
+	aiBuilt     bool
 
 	mu            sync.Mutex
 	checkedAt     time.Time
@@ -79,6 +80,15 @@ func (h *SystemInfoHandler) WithDocsBaseURL(base string) *SystemInfoHandler {
 // when it is served.
 func (h *SystemInfoHandler) WithAPIReference(enabled bool) *SystemInfoHandler {
 	h.apiRefOn = enabled
+
+	return h
+}
+
+// WithAIAvailable sets whether this binary contains AI analysis (it does not
+// when built with -tags noai), advertised as ai_available so the UI hides the
+// AI settings and health entry instead of showing a feature that answers 501.
+func (h *SystemInfoHandler) WithAIAvailable(built bool) *SystemInfoHandler {
+	h.aiBuilt = built
 
 	return h
 }
@@ -164,6 +174,7 @@ func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		"version":               h.version,
 		"status":                status,
 		"api_reference_enabled": h.apiRefOn,
+		"ai_available":          h.aiBuilt,
 	}
 	if h.docsURL != "" {
 		body["docs_url"] = h.docsURL

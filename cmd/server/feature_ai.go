@@ -16,6 +16,10 @@ import (
 	"github.com/openartifact/openartifact/internal/worker"
 )
 
+// aiBuilt reports that this binary contains AI analysis; the public system
+// info advertises it as ai_available.
+const aiBuilt = true
+
 // aiFeature is what AI analysis adds to the features struct.
 type aiFeature struct {
 	envAI    ai.Settings

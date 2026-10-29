@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           :href="safeDocsUrl(s.docs_url)"
           target="_blank"
           rel="noopener noreferrer"
-          class="text-primary underline"
+          class="text-foreground underline"
         >{{ t('security.vuln.scannerSetupGuide') }}</a>
       </p>
     </div>
