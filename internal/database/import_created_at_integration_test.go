@@ -216,7 +216,7 @@ func (e *importEnv) createPacman(t *testing.T, repo string, at time.Time) (strin
 		t.Fatal(err)
 	}
 
-	return "pacman_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createNix(t *testing.T, repo string, at time.Time) (string, string) {
@@ -288,7 +288,7 @@ func (e *importEnv) createApk(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "apk_packages", a.ID
+	return "package_files", a.ID
 }
 
 func (e *importEnv) createTerraformModule(t *testing.T, repo string, at time.Time) (string, string) {
