@@ -73,7 +73,6 @@ type SnapshotReads interface {
 		limit, offset int,
 	) ([]*models.AIAnalysis, int, error)
 	ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error)
-	ListAllNPMPackages(ctx context.Context, repoID string) ([]*models.NPMPackage, error)
 	ListAllProjects(ctx context.Context) ([]*models.Project, error)
 	ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
 	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
@@ -92,7 +91,6 @@ type SnapshotReads interface {
 	ListIvyArtifacts(ctx context.Context, repoID string) ([]*models.IvyArtifact, error)
 	ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error)
 	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
-	ListNPMVersionsByRepo(ctx context.Context, repoID string) ([]*models.NPMVersion, error)
 	ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error)
 	ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error)
 	ListAnsibleCollections(ctx context.Context, repoID string) ([]*models.AnsibleCollection, error)

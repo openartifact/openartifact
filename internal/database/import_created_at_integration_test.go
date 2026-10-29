@@ -87,7 +87,7 @@ func (e *importEnv) createNpm(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "npm_versions", v.ID
+	return "package_files", v.ID
 }
 
 func (e *importEnv) createPypi(t *testing.T, repo string, at time.Time) (string, string) {

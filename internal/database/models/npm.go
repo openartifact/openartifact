@@ -19,6 +19,7 @@ type NPMPackage struct {
 }
 
 type NPMVersion struct {
+	// ID is the id of the tarball package_files row (the artifact id).
 	ID              string
 	PackageID       string
 	Version         string
@@ -27,9 +28,8 @@ type NPMVersion struct {
 	Shasum          string
 	BlobID          string
 	TarballFilename string
-	// BlobSHA256/BlobSizeBytes are populated only by ListNPMVersionsByRepo
-	// (a JOIN with blobs, used for backup export) since BlobID above is a
-	// live blobs.id UUID that doesn't survive a restore into a fresh DB.
+	// BlobSHA256/BlobSizeBytes are resolved by the Get* reads (a JOIN with
+	// blobs): BlobID above is a blobs.id UUID, not a storage key.
 	BlobSHA256    string
 	BlobSizeBytes int64
 	CreatedAt     time.Time

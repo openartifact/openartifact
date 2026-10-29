@@ -317,7 +317,7 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 
 // tarballBlob is the stored blob behind one tarball filename.
 type tarballBlob struct {
-	id      string // npm_versions row id: the identifier the UI scans and quarantines by
+	id      string // tarball package_files row id: the identifier the UI scans and quarantines by
 	sha256  string // blob store key
 	size    int64  // from the blob row; 0 when unknown
 	version string
