@@ -69,48 +69,6 @@ func (p *PostgresDB) SetVulnScanQuarantine(ctx context.Context, repoID, id strin
 // License scans and policies
 // ---------------------------------------------------------------------------
 
-// GetLicenseScanResultByID returns the license scan result with the given ID scoped to repoID, or nil.
-func (p *PostgresDB) GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error) {
-	result, err := scanLicenseResult(p.db.QueryRowContext(ctx, `
-		SELECT `+licenseResultColumns+`
-		FROM license_results lr
-		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
-		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-		WHERE sj.scan_type = 'license' AND ref.repository_id = $1 AND lr.id = $2`, repoID, id,
-	))
-
-	return orNotFound(result, err, "get license scan result by id")
-}
-
-// ListGlobalLicensePolicies lists only the global (repository_id IS NULL) license policies.
-func (p *PostgresDB) ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error) {
-	// A NULL repository filter makes "repository_id = $1" never match, leaving
-	// only the "repository_id IS NULL" branch of the shared query.
-	rows, err := p.q.ListLicensePolicies(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list global license policies: %w", err)
-	}
-
-	policies := make([]*models.LicensePolicy, 0, len(rows))
-
-	for _, row := range rows {
-		policies = append(policies, &models.LicensePolicy{
-			ID:              row.ID,
-			RepositoryID:    row.RepositoryID,
-			Name:            row.Name,
-			Description:     derefStr(row.Description),
-			Action:          row.Action,
-			AllowedLicenses: row.AllowedLicenses,
-			DeniedLicenses:  row.DeniedLicenses,
-			Enabled:         row.Enabled,
-			CreatedAt:       row.CreatedAt,
-			UpdatedAt:       row.UpdatedAt,
-		})
-	}
-
-	return policies, nil
-}
-
 // ---------------------------------------------------------------------------
 // SBOM reports
 // ---------------------------------------------------------------------------
