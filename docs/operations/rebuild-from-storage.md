@@ -12,7 +12,7 @@ This is the last resort, not a replacement for [backups](backup.md): users, perm
 
 ## How it works
 
-1. **Triggers mark rows.** Migration 068 adds an `AFTER INSERT OR UPDATE OR DELETE` trigger to every journaled table (`internal/recovery/tables.go`, 32 tables: repositories, blobs, every format's package table, docker manifests and tags, artifact refs and properties, ...). The trigger only records the row key in `recovery_dirty`; it does not read or write the blob store.
+1. **Triggers mark rows.** The baseline schema adds an `AFTER INSERT OR UPDATE OR DELETE` trigger to every journaled table (`internal/recovery/tables.go`: repositories, blobs, the generic package tables `packages`, `package_versions`, `package_files` and `package_tags`, the side table of every format that has one, docker manifests and tags, artifact refs and properties, ...). The trigger only records the row key in `recovery_dirty`; it does not read or write the blob store.
 2. **A worker writes sidecars.** One replica at a time (advisory lock `openartifact:recovery-journal`, pinned connection) claims dirty keys, loads the row image under `TIME ZONE 'UTC'`, and writes it as a JSON blob. A sidecar is a normal content-addressed blob (its id is the sha256 of its bytes) whose storage metadata carries `oakind=sidecar` and `oatable=<table>` (metadata names are lowercase letters only because S3 lower-cases them and Azure restricts them to identifiers). Rows whose image did not change since the last sidecar (same hash) are skipped, so counters and `last_*` updates cost nothing in storage.
 3. **Superseded sidecars are deleted** after the new one is recorded. The tracking table `recovery_sidecars` stores which blob is current for each row, and a pending marker makes a crash between the write and the record leave nothing leaked. Sidecars have no `blobs` row, so they are removed with the blob store directly, never through the deferred blob deletion.
 4. **A reconcile backfills.** When the journal is first enabled (and then once per `reconcileInterval`) a keyset-paged scan marks rows that have no sidecar and tracking rows whose row no longer exists. It pauses while the backlog is large, so upgrading a big installation spreads the backfill over time instead of flooding storage.
@@ -55,7 +55,7 @@ Alert on a backlog that does not shrink or an oldest age far above `interval`.
 
 ## What each format needs from the sidecar
 
-Package bytes are the content-addressed blobs; what the database adds is the mapping from names to those blobs. Several formats could be partly re-derived from the bytes alone, but none completely (repository names and types, publish times, yanked flags, properties, tags, upstream data and the rest are database state), so every package table is journaled as a whole row and restored from its sidecar.
+Package bytes are the content-addressed blobs; what the database adds is the mapping from names to those blobs. Several formats could be partly re-derived from the bytes alone, but none completely (repository names and types, publish times, yanked flags, properties, tags, upstream data and the rest are database state), so the package rows are journaled whole and restored from their sidecars: a package, a version and a file are three rows (`packages`, `package_versions`, `package_files`), plus the dist-tags (`package_tags`) and the side-table row of the formats that have one (`deb_files`, `rpm_files`, `pacman_files`, `maven_files`, `conan_files`). A format's storage descriptor (`SideTable.Exclude`) lists the bulky side-table columns the journal leaves out.
 
 | Format | Derivable from the blob alone | Only in the sidecar |
 |---|---|---|
@@ -129,6 +129,6 @@ Rows that reference missing blobs are *not* inserted; they are listed under `mis
 
 Users, roles, permissions, tokens and sessions (re-apply with `oa apply` or restore a database backup); audit logs, webhooks, cleanup and license policies and other configuration; upstream repository passwords; download counters and last-used timestamps; signing key assignments (the keys themselves are secrets that were never in the store); blobs that exist only on a tier or store the rebuild did not read.
 
-## Adding a package table
+## Adding a package format
 
-A table with a foreign key to `blobs` or `repositories` needs an entry in `internal/recovery/tables.go` (`Tables`, parents first) and a `recovery_journal` trigger in a new forward-only migration, or an entry with a reason in `NotJournaled`. `TestRegistryCoversSchema` fails otherwise. See `.agents/rules/recovery-journal.md`.
+A format that stores its files in the generic package tables needs no journal entry of its own: its descriptor's `SideTables` are added to the registry automatically (`NewRegistry().Tables()`), and `packages`, `package_versions`, `package_files` and `package_tags` are already journaled. Any other table with a foreign key to `blobs` or `repositories` needs an entry in `internal/recovery/tables.go` (`Tables`, parents first) and a `recovery_journal` trigger in a new forward-only migration, or an entry with a reason in `NotJournaled`. `TestRegistryCoversSchema` fails otherwise. See `.agents/rules/recovery-journal.md`.
