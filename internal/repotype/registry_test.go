@@ -126,7 +126,13 @@ func TestPolicy(t *testing.T) {
 	}
 }
 
-var checkFormats = regexp.MustCompile(`(?s)chk_repo_format CHECK \(format IN \((.*?)\)\)`)
+// checkFormats is the chk_repo_format constraint on one line, in the hand-written
+// form (format IN ('a', 'b')) and in the pg_dump form of the baseline
+// ((format)::text = ANY ((ARRAY['a'::character varying, ...])::text[])).
+var (
+	checkFormats = regexp.MustCompile(`chk_repo_format CHECK ([^\n]*)`)
+	quotedName   = regexp.MustCompile(`'([a-z0-9-]+)'`)
+)
 
 // TestLatestMigrationAcceptsEveryFormat checks the chk_repo_format constraint
 // the newest migration that defines it against the registry in both
@@ -153,8 +159,12 @@ func TestLatestMigrationAcceptsEveryFormat(t *testing.T) {
 
 		var have []string
 
-		for f := range strings.SplitSeq(string(m[1]), ",") {
-			have = append(have, strings.Trim(strings.TrimSpace(f), "'"))
+		for _, q := range quotedName.FindAllSubmatch(m[1], -1) {
+			have = append(have, string(q[1]))
+		}
+
+		if len(have) == 0 {
+			t.Fatalf("chk_repo_format of %s lists no format: %s", e.Name(), m[1])
 		}
 
 		if names := missing(repotype.Names(), have); len(names) > 0 {
