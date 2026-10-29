@@ -60,4 +60,4 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 ## Schemas
 
-All 161 named request and response objects are on the [schemas page](schemas.md).
+All 162 named request and response objects are on the [schemas page](schemas.md).
