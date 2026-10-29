@@ -18,6 +18,7 @@ type PostgresDB struct {
 	*CleanupStore
 	*PresignedUploadStore
 	*PropertyStore
+	*DeltaStore
 	// STORES-STRUCT
 }
 
@@ -33,6 +34,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		CleanupStore:         &CleanupStore{core: c},
 		PresignedUploadStore: &PresignedUploadStore{core: c},
 		PropertyStore:        &PropertyStore{core: c},
+		DeltaStore:           &DeltaStore{core: c},
 		// STORES-INIT
 	}
 }
