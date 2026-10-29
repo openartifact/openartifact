@@ -111,8 +111,10 @@ func (p *CatalogStore) loadLastPublished(ctx context.Context, repoIDs []string, 
 
 // CountRepoPackageNames returns the number of distinct package names (as the
 // package listing names them) of each repository in repoIDs; a repository with
-// no packages maps to 0. It reads every package row of the repositories, so ask
-// for one page of repositories at a time.
+// no packages maps to 0. A hosted repository is counted from its packages rows
+// (those with a live version), so the cost follows the number of packages, not of
+// files; docker and proxy repositories count their tag and cache rows. Ask for
+// one page of repositories at a time.
 func (p *CatalogStore) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
 	counts := make(map[string]int64, len(repoIDs))
 	if len(repoIDs) == 0 {
@@ -153,8 +155,9 @@ func (p *CatalogStore) CountRepoPackageNames(ctx context.Context, repoIDs []stri
 // row each: the latest version, the version count and the latest version's size.
 // It returns the requested page and the total number of matching packages.
 //
-// The first stage groups the narrow rows of every table, the second reads the
-// sizes of the page's packages only (see rollupQuery).
+// The first stage groups the live versions (docker tags and proxy cache rows
+// for those branches), the second reads the sizes of the page's packages only
+// (see rollupQuery).
 func (p *CatalogStore) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
 	offset := (opts.Page - 1) * opts.Limit
 
@@ -404,6 +407,7 @@ func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts C
 		FormatFilter: opts.Format,
 		NameFilter:   opts.Name,
 		Q:            opts.Query,
+		QPattern:     containsPattern(opts.Query),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to count packages: %w", err)
@@ -424,13 +428,13 @@ func (p *CatalogStore) listComponentRows(ctx context.Context, repoID string, opt
 
 	if !opts.SortByName {
 		return p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
-			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query, QPattern: containsPattern(opts.Query),
 			PageLimit: limit, PageOffset: offset,
 		})
 	}
 
 	rows, err := p.q.ListRepoComponentsByName(ctx, dbsqlc.ListRepoComponentsByNameParams{
-		RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+		RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query, QPattern: containsPattern(opts.Query),
 		PageLimit: limit, PageOffset: offset,
 	})
 	if err != nil {
