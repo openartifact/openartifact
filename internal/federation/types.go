@@ -85,4 +85,9 @@ type LogResponse struct {
 }
 
 // ProtocolVersion is the version of the pull protocol this build speaks.
-const ProtocolVersion = 1
+//
+// Version 2 replicates the rows of the generic package tables (packages,
+// package_versions, package_files, package_tags and the format's side tables)
+// with one codec for every format but docker; version 1 carried the per-format
+// tables of releases before 0.15 and is not understood any more.
+const ProtocolVersion = 2

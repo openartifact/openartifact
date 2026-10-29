@@ -19,8 +19,11 @@ import (
 
 const (
 	// SidecarMagic is the value of the "openartifact_sidecar" field: the
-	// sidecar format version. A reader rejects any other value.
-	SidecarMagic = 1
+	// sidecar format version. A reader rejects any other value. Version 2
+	// (release 0.15) journals the generic package tables; version 1 sidecars
+	// described the per-format tables of earlier releases and are refused
+	// (ErrSidecarLegacy).
+	SidecarMagic = 2
 
 	// MaxSidecarBytes bounds what the rebuild reads for one sidecar (an npm
 	// manifest of a package with hundreds of versions is the largest row).
@@ -45,9 +48,13 @@ var (
 	ErrSidecarTooLarge = errors.New("sidecar exceeds the size limit")
 	ErrSidecarFormat   = errors.New("not a sidecar")
 	ErrSidecarVersion  = errors.New("unsupported sidecar format version")
-	ErrSidecarTable    = errors.New("sidecar names a table that is not journaled")
-	ErrSidecarKey      = errors.New("sidecar key does not match its row")
-	ErrSidecarRow      = errors.New("sidecar row is not a JSON object")
+	// ErrSidecarLegacy is a sidecar of a release before 0.15, whose rows live in
+	// the per-format tables that release 0.15 replaced.
+	ErrSidecarLegacy = errors.New("sidecar written by a release before 0.15 (per-format package tables): " +
+		"not supported; migrate that data with `oa import`")
+	ErrSidecarTable = errors.New("sidecar names a table that is not journaled")
+	ErrSidecarKey   = errors.New("sidecar key does not match its row")
+	ErrSidecarRow   = errors.New("sidecar row is not a JSON object")
 )
 
 // Sidecar is the JSON document stored for one journaled row.
@@ -115,8 +122,9 @@ func EncodeSidecar(t *Table, key string, schema int, writtenAt time.Time, row []
 // DecodeSidecar parses and validates sidecar bytes read from blob id: size,
 // content digest, magic, a journaled table, a key of the table's shape that
 // equals the key columns of the row image. Unknown fields are ignored so later
-// versions can add some.
-func DecodeSidecar(id string, data []byte) (*Sidecar, *Table, error) {
+// versions can add some. A sidecar of an earlier format version is refused with
+// ErrSidecarLegacy.
+func (r *Registry) DecodeSidecar(id string, data []byte) (*Sidecar, *Table, error) {
 	if len(data) > MaxSidecarBytes {
 		return nil, nil, ErrSidecarTooLarge
 	}
@@ -135,11 +143,15 @@ func DecodeSidecar(id string, data []byte) (*Sidecar, *Table, error) {
 		return nil, nil, fmt.Errorf("%w: %w", ErrSidecarFormat, err)
 	}
 
-	if sc.Magic != SidecarMagic {
+	switch {
+	case sc.Magic == SidecarMagic:
+	case sc.Magic >= 1 && sc.Magic < SidecarMagic:
+		return nil, nil, fmt.Errorf("%w (sidecar format %d, table %q)", ErrSidecarLegacy, sc.Magic, sc.Table)
+	default:
 		return nil, nil, fmt.Errorf("%w: %d", ErrSidecarVersion, sc.Magic)
 	}
 
-	t, ok := Lookup(sc.Table)
+	t, ok := r.Lookup(sc.Table)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: %q", ErrSidecarTable, sc.Table)
 	}

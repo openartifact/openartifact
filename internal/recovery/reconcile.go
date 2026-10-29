@@ -61,8 +61,8 @@ func (j *Journal) ReconcileStep(ctx context.Context, budget int) (ReconcileResul
 		return res, nil
 	}
 
-	for i := range Tables {
-		t := &Tables[i]
+	for i := range j.reg.tables {
+		t := &j.reg.tables[i]
 
 		st, due, err := j.reconcileDue(ctx, t)
 		if err != nil {
@@ -96,7 +96,7 @@ func (j *Journal) finishReconcileIfIdle(ctx context.Context) {
 	_, _ = j.db.ExecContext(ctx, `
 		UPDATE recovery_state SET last_reconcile_at = (SELECT max(last_completed_at) FROM recovery_reconcile)
 		WHERE id AND (SELECT count(*) FROM recovery_reconcile WHERE last_completed_at IS NOT NULL) >= $1
-		  AND last_reconcile_at IS DISTINCT FROM (SELECT max(last_completed_at) FROM recovery_reconcile)`, len(Tables))
+		  AND last_reconcile_at IS DISTINCT FROM (SELECT max(last_completed_at) FROM recovery_reconcile)`, j.reg.Len())
 }
 
 // reconcileDue loads (creating it when missing) the state of t and reports

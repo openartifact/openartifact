@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 )
 
 // Column types a journal key may use. They double as the SQL cast used for
@@ -30,9 +32,10 @@ type KeyColumn struct {
 	Type string // keyUUID or keyText
 }
 
-// Table is one journaled table. The registry is compiled in: table and column
-// names that reach SQL always come from here (or are intersected with it), never
-// from sidecar or storage content.
+// Table is one journaled table. The registry is made of compile-time constants
+// (the core tables here, the storage descriptors of the formats): table and
+// column names that reach SQL always come from it (or are intersected with it),
+// never from sidecar or storage content.
 type Table struct {
 	Name string
 	// Key is the primary key; its order defines the row key encoding.
@@ -48,57 +51,140 @@ type Table struct {
 
 func idKey() []KeyColumn { return []KeyColumn{{"id", keyUUID}} }
 
-// Tables is the ordered journal registry, parents before children (the rebuild
-// inserts in this order). A new package table needs an entry here, or an
-// explicit entry in NotJournaled with the reason: TestRegistryCoversSchema
-// (integration) fails otherwise. Keep migration 068's trigger list in step.
-//
-//nolint:gochecknoglobals // compiled-in registry, immutable after init
-var Tables = []Table{
-	{Name: "projects", Key: idKey(), Exclude: []string{"owner_id"}},
-	{Name: "blobs", Key: idKey(), Exclude: []string{"storage_backend_id", "last_accessed_at", "tier_changed_at"}},
-	{Name: "repositories", Key: idKey(), Exclude: []string{"upstream_password_enc"}},
-	{Name: "repository_group_members", Key: []KeyColumn{{"group_repo_id", keyUUID}, {"member_repo_id", keyUUID}}},
-	{Name: "rpm_repos", Key: idKey(), Exclude: []string{"metadata_stale", "updated_at"}},
-	{Name: "debian_distributions", Key: idKey()},
-	{Name: "debian_components", Key: idKey()},
-	{Name: "debian_architectures", Key: idKey()},
-	{Name: "deb_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "rpm_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "maven_artifacts", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "ivy_artifacts", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "sbt_artifacts", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "npm_packages", Key: idKey(), Exclude: []string{"packument_stale"}},
-	{Name: "npm_versions", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "npm_dist_tags", Key: idKey()},
-	{Name: "pypi_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "nuget_packages", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "gomod_modules", Key: idKey(), BlobRefs: []string{"zip_blob_id", "mod_blob_id"}},
-	{Name: "cargo_crates", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "composer_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "rubygems_gems", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "conda_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "ansible_collections", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "pacman_packages", Key: idKey(), Exclude: []string{"file_list"}, BlobRefs: []string{"blob_id"}},
-	{Name: "conan_packages", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "apk_packages", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "nix_paths", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "terraform_modules", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "terraform_providers", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
-	{Name: "helm_charts", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "raw_artifacts", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "docker_blobs", Key: idKey(), Exclude: []string{"last_used_at"}, BlobRefs: []string{"blob_id"}},
-	{Name: "docker_blob_images", Key: []KeyColumn{{"repository_id", keyUUID}, {"image", keyText}, {"digest", keyText}}},
-	{Name: "docker_manifests", Key: idKey(), BlobRefs: []string{"blob_id"}},
-	{Name: "docker_manifest_refs", Key: []KeyColumn{{"manifest_id", keyUUID}, {"kind", keyText}, {"digest", keyText}}},
-	{Name: "docker_tags", Key: idKey()},
-	{Name: "artifact_refs", Key: idKey()},
-	{Name: "artifact_properties", Key: idKey()},
+// Registry is the ordered journal registry, parents before children (the
+// rebuild inserts in this order). It is built from the compiled-in
+// repository-level and docker tables, the four generic package tables
+// (packages, package_versions, package_files, package_tags) and the side
+// tables the registered storage descriptors declare (storage.Storage.SideTables;
+// they follow package_files, their parent). Build it after the formats have
+// registered their descriptors: a table that carries the journal trigger but is
+// missing here is not mirrored (the Worker reports it, TestRegistryCoversSchema
+// pins the schema against the registry). A new package table needs an entry
+// here, or an explicit entry in NotJournaled with the reason.
+type Registry struct {
+	tables []Table
+	byName map[string]int
+}
+
+// NewRegistry builds the registry from the storage descriptors registered at
+// this moment. A side table listed by two formats is journaled once.
+func NewRegistry() *Registry {
+	head, tail := headTables(), tailTables()
+
+	taken := make(map[string]bool, len(head)+len(tail))
+	for _, t := range slices.Concat(head, tail) {
+		taken[t.Name] = true
+	}
+
+	tables := slices.Concat(head, sideTables(taken), tail)
+
+	r := &Registry{tables: tables, byName: make(map[string]int, len(tables))}
+	for i := range tables {
+		r.byName[tables[i].Name] = i
+	}
+
+	return r
+}
+
+// headTables are the tables journaled before the side tables: repository level
+// rows, then the generic package tables.
+func headTables() []Table {
+	return []Table{
+		{Name: "projects", Key: idKey(), Exclude: []string{"owner_id"}},
+		{Name: "blobs", Key: idKey(), Exclude: []string{"storage_backend_id", "last_accessed_at", "tier_changed_at"}},
+		{Name: "repositories", Key: idKey(), Exclude: []string{"upstream_password_enc"}},
+		{Name: "repository_group_members", Key: []KeyColumn{{"group_repo_id", keyUUID}, {"member_repo_id", keyUUID}}},
+		{Name: "rpm_repos", Key: idKey(), Exclude: []string{"metadata_stale", "updated_at"}},
+		{Name: "debian_distributions", Key: idKey()},
+		{Name: "debian_components", Key: idKey()},
+		{Name: "debian_architectures", Key: idKey()},
+		{Name: "packages", Key: idKey()},
+		{Name: "package_versions", Key: idKey()},
+		{Name: "package_files", Key: idKey(), Exclude: []string{"download_count"}, BlobRefs: []string{"blob_id"}},
+		{Name: "package_tags", Key: idKey()},
+	}
+}
+
+// tailTables are the docker tables (docker keeps dedicated tables) and the
+// artifact tables, journaled after the package tables.
+func tailTables() []Table {
+	return []Table{
+		{Name: "docker_blobs", Key: idKey(), Exclude: []string{"last_used_at"}, BlobRefs: []string{"blob_id"}},
+		{Name: "docker_blob_images", Key: []KeyColumn{{"repository_id", keyUUID}, {"image", keyText}, {"digest", keyText}}},
+		{Name: "docker_manifests", Key: idKey(), BlobRefs: []string{"blob_id"}},
+		{Name: "docker_manifest_refs", Key: []KeyColumn{{"manifest_id", keyUUID}, {"kind", keyText}, {"digest", keyText}}},
+		{Name: "docker_tags", Key: idKey()},
+		{Name: "artifact_refs", Key: idKey()},
+		{Name: "artifact_properties", Key: idKey()},
+	}
+}
+
+// identPattern is what a descriptor-supplied table or column name must match
+// before it is spliced into SQL.
+var identPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
+
+// sideTables lists the side tables of the registered storage descriptors in
+// format order (names sorted), each table once and none that taken already
+// names. Descriptors are compile-time constants; a name that is not a plain
+// identifier is a programming error.
+func sideTables(taken map[string]bool) []Table {
+	var out []Table
+
+	for _, format := range formatstorage.Names() {
+		desc, _ := formatstorage.Lookup(format)
+
+		for _, st := range desc.SideTables {
+			if taken[st.Name] {
+				continue
+			}
+
+			taken[st.Name] = true
+
+			if !plainIdentifiers(append([]string{st.Name}, st.Exclude...)) {
+				panic(fmt.Sprintf("recovery: format %s: side table %q or its excluded columns are not plain identifiers", format, st.Name))
+			}
+
+			out = append(out, Table{Name: st.Name, Key: idKey(), Exclude: slices.Clone(st.Exclude)})
+		}
+	}
+
+	return out
+}
+
+func plainIdentifiers(names []string) bool {
+	return !slices.ContainsFunc(names, func(n string) bool { return !identPattern.MatchString(n) })
+}
+
+// Tables returns the registry entries in journal order. The slice is shared:
+// callers must not modify it.
+func (r *Registry) Tables() []Table { return r.tables }
+
+// Len is the number of journaled tables.
+func (r *Registry) Len() int { return len(r.tables) }
+
+// Names returns the table names in journal order.
+func (r *Registry) Names() []string {
+	names := make([]string, len(r.tables))
+	for i := range r.tables {
+		names[i] = r.tables[i].Name
+	}
+
+	return names
+}
+
+// Lookup returns the registry entry of a table.
+func (r *Registry) Lookup(name string) (*Table, bool) {
+	i, ok := r.byName[name]
+	if !ok {
+		return nil, false
+	}
+
+	return &r.tables[i], true
 }
 
 // NotJournaled lists every table that has a foreign key to blobs or
 // repositories but is deliberately not journaled, with the reason. Together
-// with Tables it must cover all of them (TestRegistryCoversSchema).
+// with the Registry it must cover all of them (TestRegistryCoversSchema).
 //
 //nolint:gochecknoglobals // compiled-in allowlist, immutable after init
 var NotJournaled = map[string]string{
@@ -128,25 +214,6 @@ var NotJournaled = map[string]string{
 	"vex_statements":                "operator decisions about vulnerabilities; database backups",
 	"webhooks":                      "contain signing secrets; `oa apply` or database backups",
 	"docker_uploads":                "transient in-flight blob uploads",
-}
-
-// byName indexes Tables.
-//
-//nolint:gochecknoglobals // derived from the immutable registry
-var byName = func() map[string]*Table {
-	m := make(map[string]*Table, len(Tables))
-	for i := range Tables {
-		m[Tables[i].Name] = &Tables[i]
-	}
-
-	return m
-}()
-
-// Lookup returns the registry entry of a table.
-func Lookup(name string) (*Table, bool) {
-	t, ok := byName[name]
-
-	return t, ok
 }
 
 // KeyExpr returns the SQL expression yielding the canonical row key of the

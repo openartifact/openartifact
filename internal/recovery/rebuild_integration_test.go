@@ -13,6 +13,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"io"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -28,8 +30,14 @@ func rowImages(t *testing.T, db *sql.DB, names ...string) []string {
 
 	var out []string
 
+	reg := NewRegistry()
+
 	for _, name := range names {
-		tbl, _ := Lookup(name)
+		tbl, ok := reg.Lookup(name)
+		if !ok {
+			t.Fatalf("table %s is not journaled", name)
+		}
+
 		out = append(out, tableImages(t, db, tbl)...)
 	}
 
@@ -121,14 +129,8 @@ func seedSource(t *testing.T, store storage.BlobStore) (*sql.DB, *Journal, seede
 	a := seedRaw(t, src, store, "raw-a", "dir/a.txt", []byte("alpha"))
 	b := seedRaw(t, src, store, "raw-b", "b.bin", []byte("bravo"))
 
-	mustExec(
-		t,
-		src,
-		`INSERT INTO raw_artifacts (repository_id, path, blob_id, deleted_at, deleted_by) VALUES ($1, 'trashed.txt', $2, now(), 'tester')`,
-		a.repoID,
-		a.blobID,
-	)
-	mustExec(t, src, `UPDATE raw_artifacts SET metadata = '{"k": "v"}' WHERE id = $1`, b.artifactID)
+	insertRawFile(t, src, a.repoID, a.blobID, "trashed.txt", true)
+	mustExec(t, src, `UPDATE package_files SET attrs = jsonb_set(attrs, '{metadata}', '{"k": "v"}') WHERE id = $1`, b.artifactID)
 	drain(t, j)
 
 	return src, j, a, b
@@ -141,21 +143,21 @@ func TestRebuildRoundTrip(t *testing.T) {
 	// A row deleted before the loss must not come back.
 	dead := seedRaw(t, src, store, "raw-dead", "dead.txt", []byte("dead"))
 	drain(t, j)
-	mustExec(t, src, `DELETE FROM raw_artifacts WHERE id = $1`, dead.artifactID)
+	mustExec(t, src, `DELETE FROM package_files WHERE id = $1`, dead.artifactID)
 	mustExec(t, src, `DELETE FROM repositories WHERE id = $1`, dead.repoID)
 	drain(t, j)
 
-	tables := []string{"repositories", "blobs", "raw_artifacts"}
+	tables := []string{"repositories", "blobs", "packages", "package_versions", "package_files"}
 	want := rowImages(t, src, tables...)
 
 	dst := newTestDB(t)
 
 	dry := runRebuild(t, dst, store, RebuildOptions{DryRun: true})
-	if dry.ExitCode() != ExitOK || tableReport(dry, "raw_artifacts").Inserted != 3 {
+	if dry.ExitCode() != ExitOK || tableReport(dry, "package_files").Inserted != 3 {
 		t.Fatalf("dry run report = %+v", dry.Tables)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts`) + mustCount(t, dst, `SELECT count(*) FROM recovery_sidecars`); n != 0 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files`) + mustCount(t, dst, `SELECT count(*) FROM recovery_sidecars`); n != 0 {
 		t.Fatalf("dry run wrote %d rows", n)
 	}
 
@@ -175,7 +177,7 @@ func TestRebuildRoundTrip(t *testing.T) {
 	if trashed := mustCount(
 		t,
 		dst,
-		`SELECT count(*) FROM raw_artifacts WHERE deleted_at IS NOT NULL AND repository_id = $1`,
+		`SELECT count(*) FROM package_files WHERE deleted_at IS NOT NULL AND repository_id = $1`,
 		a.repoID,
 	); trashed != 1 {
 		t.Fatalf("trashed row restored as live (trashed=%d)", trashed)
@@ -183,7 +185,7 @@ func TestRebuildRoundTrip(t *testing.T) {
 
 	// Idempotent: nothing new is inserted by a second run.
 	again := runRebuild(t, dst, store, RebuildOptions{})
-	if tr := tableReport(again, "raw_artifacts"); tr.Inserted != 0 || tr.AlreadyPresent != 3 || again.ExitCode() != ExitOK {
+	if tr := tableReport(again, "package_files"); tr.Inserted != 0 || tr.AlreadyPresent != 3 || again.ExitCode() != ExitOK {
 		t.Fatalf("second run = %+v", again.Tables)
 	}
 
@@ -192,16 +194,68 @@ func TestRebuildRoundTrip(t *testing.T) {
 	before := listAll(t, store)
 
 	jd := newTestJournal(t, dst, store)
+	described := describeSidecars(t, jd, store, before)
+
 	drain(t, jd)
 
 	after := listAll(t, store)
 
-	added := len(slices.DeleteFunc(slices.Clone(after), func(id string) bool { return slices.Contains(before, id) }))
-	removed := len(slices.DeleteFunc(slices.Clone(before), func(id string) bool { return slices.Contains(after, id) }))
+	maps.Copy(described, describeSidecars(t, jd, store, after))
 
-	if added != 0 || removed != 0 {
-		t.Fatalf("draining the rebuilt database changed %d added / %d removed sidecars, want none", added, removed)
+	// Every fresh database seeds its own system project (own timestamps), so
+	// the sidecar of that one row is rewritten by the drain; nothing else is.
+	systemProject := `projects {"id":"` + systemProjectID + `"`
+	churn := func(ids []string, other []string) []string {
+		return slices.DeleteFunc(slices.Clone(ids), func(id string) bool {
+			return slices.Contains(other, id) || strings.HasPrefix(described[id], systemProject)
+		})
 	}
+
+	if added, removed := churn(after, before), churn(before, after); len(added) != 0 || len(removed) != 0 {
+		t.Fatalf("draining the rebuilt database changed the sidecars, want none\n added: %v\n removed: %v",
+			mapValues(described, added), mapValues(described, removed))
+	}
+}
+
+func mapValues(m map[string]string, keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, m[k])
+	}
+
+	return out
+}
+
+// describeSidecars maps sidecar ids to "table row" lines for a failure message.
+func describeSidecars(t *testing.T, j *Journal, store storage.BlobStore, ids []string) map[string]string {
+	t.Helper()
+
+	out := make(map[string]string, len(ids))
+
+	for _, id := range ids {
+		rc, err := store.Get(context.Background(), id)
+		if err != nil {
+			t.Fatalf("get sidecar %s: %v", id, err)
+		}
+
+		data, _ := io.ReadAll(rc)
+		_ = rc.Close()
+
+		if !LooksLikeSidecar(data) { // a content blob
+			out[id] = "blob " + id
+
+			continue
+		}
+
+		sc, tbl, err := j.reg.DecodeSidecar(id, data)
+		if err != nil {
+			t.Fatalf("decode sidecar %s: %v", id, err)
+		}
+
+		out[id] = tbl.Name + " " + string(sc.Row)
+	}
+
+	return out
 }
 
 func TestRebuildMissingBlobIsUnrecoverable(t *testing.T) {
@@ -219,20 +273,30 @@ func TestRebuildMissingBlobIsUnrecoverable(t *testing.T) {
 		t.Fatalf("exit=%d missing=%d unrecoverable=%+v", rep.ExitCode(), rep.MissingBlobCount, rep.Unrecoverable)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE blob_id = $1`, a.blobID); n != 0 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE blob_id = $1`, a.blobID); n != 0 {
 		t.Fatalf("rows of a blob with no bytes were inserted (%d)", n)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1`, b.artifactID); n != 1 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1`, b.artifactID); n != 1 {
 		t.Fatal("the intact row was not restored")
 	}
 }
 
-// putSidecar stores a hand-made sidecar of the raw_artifacts row of s.
+// fileRow is the journaled image of a raw package_files row of s (hand-made:
+// only the columns without a default), with id and path given.
+func fileRow(s seededRaw, id, path, attrs string) string {
+	return `{"id":"` + id + `","version_id":"` + s.versionID + `","repository_id":"` + s.repoID + `","path":"` + path +
+		`","filename":"` + path + `","blob_id":"` + s.blobID + `","attrs":` + attrs + `}`
+}
+
+// putSidecar stores a hand-made sidecar of the package_files row with the given key.
 func putSidecar(t *testing.T, store storage.BlobStore, key string, at time.Time, row string, marker bool) string {
 	t.Helper()
 
-	tbl, _ := Lookup("raw_artifacts")
+	tbl, ok := NewRegistry().Lookup("package_files")
+	if !ok {
+		t.Fatal("package_files is not journaled")
+	}
 
 	data, sha, err := EncodeSidecar(tbl, key, SchemaVersion(), at, []byte(row))
 	if err != nil {
@@ -257,7 +321,7 @@ func TestRebuildSupersededAndDeepAndInvalid(t *testing.T) {
 	_ = src
 
 	row := func(ct string) string {
-		return `{"id":"` + a.artifactID + `","repository_id":"` + a.repoID + `","path":"dir/a.txt","content_type":"` + ct + `","metadata":{},"blob_id":"` + a.blobID + `"}`
+		return fileRow(a, a.artifactID, "dir/a.txt", `{"content_type":"`+ct+`","metadata":{}}`)
 	}
 
 	// Two extra sidecars of the same row (as left by a crash or two writers):
@@ -280,7 +344,7 @@ func TestRebuildSupersededAndDeepAndInvalid(t *testing.T) {
 	badID, err := store.Put(
 		context.Background(),
 		strings.NewReader("garbage"),
-		SidecarMetadata("raw_artifacts", hex.EncodeToString(badSum[:])),
+		SidecarMetadata("package_files", hex.EncodeToString(badSum[:])),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -291,19 +355,19 @@ func TestRebuildSupersededAndDeepAndInvalid(t *testing.T) {
 		t.Fatalf("plain: superseded=%d invalid=%d exit=%d", plain.Superseded, plain.SidecarsInvalid, plain.ExitCode())
 	}
 
-	if n := tableReport(plain, "raw_artifacts").Found; n != 3 {
+	if n := tableReport(plain, "package_files").Found; n != 3 {
 		t.Fatalf("found %d raw rows without --deep, want 3 (the unmarked sidecar must stay hidden)", n)
 	}
 
 	deep := runRebuild(t, newTestDB(t), store, RebuildOptions{DryRun: true, Deep: true})
-	if n := tableReport(deep, "raw_artifacts").Found; n != 4 {
+	if n := tableReport(deep, "package_files").Found; n != 4 {
 		t.Fatalf("found %d raw rows with --deep, want 4", n)
 	}
 
 	dst := newTestDB(t)
 
 	rep := runRebuild(t, dst, store, RebuildOptions{PruneSuperseded: true})
-	if got := mustString(t, dst, `SELECT content_type FROM raw_artifacts WHERE id = $1`, a.artifactID); got != "new/type" {
+	if got := mustString(t, dst, `SELECT attrs->>'content_type' FROM package_files WHERE id = $1`, a.artifactID); got != "new/type" {
 		t.Fatalf("content_type = %q, want the newest sidecar's", got)
 	}
 
@@ -335,4 +399,93 @@ type noListStore struct{ storage.BlobStore }
 
 func (noListStore) List(context.Context, string, int) ([]string, string, error) {
 	return nil, "", storage.ErrListNotSupported
+}
+
+// TestRebuildRestoresSideTableRows: a format's side table (here pacman_files)
+// is journaled and rebuilt after its package_files parent, without the
+// columns the descriptor excludes.
+func TestRebuildRestoresSideTableRows(t *testing.T) {
+	store := newFSStore(t)
+	src := newTestDB(t)
+	j := newTestJournal(t, src, store)
+
+	a := seedRaw(t, src, store, "pac", "x.pkg.tar.zst", []byte("pacman package"))
+	mustExec(t, src, `UPDATE packages SET format = 'pacman' WHERE id = $1`, a.packageID)
+	mustExec(t, src,
+		`INSERT INTO pacman_files (id, file_list, signature, signature_source) VALUES ($1, 'usr/bin/x', 'sig', 'uploader')`,
+		a.artifactID)
+	drain(t, j)
+
+	if trackedSha(t, j, "pacman_files", a.artifactID) == "" {
+		t.Fatal("the side-table row has no sidecar")
+	}
+
+	if sc := readTrackedSidecar(t, j, store, "pacman_files", a.artifactID); strings.Contains(string(sc.Row), "file_list") ||
+		!strings.Contains(string(sc.Row), `"signature":"sig"`) {
+		t.Fatalf("pacman_files image = %s, want signature and no file_list", sc.Row)
+	}
+
+	dst := newTestDB(t)
+
+	rep := runRebuild(t, dst, store, RebuildOptions{})
+	if rep.ExitCode() != ExitOK || tableReport(rep, "pacman_files").Inserted != 1 {
+		t.Fatalf("exit %d, report %+v, %+v %+v", rep.ExitCode(), rep.Tables, rep.Failures, rep.Unrecoverable)
+	}
+
+	const restored = `SELECT signature || '|' || signature_source || '|' || COALESCE(file_list, 'NULL') FROM pacman_files WHERE id = $1`
+
+	if got := mustString(t, dst, restored, a.artifactID); got != "sig|uploader|NULL" {
+		t.Fatalf("restored side row = %q, want the journaled columns and a NULL file_list", got)
+	}
+
+	// Cascade: deleting the file takes its side row; the journal follows.
+	mustExec(t, dst, `DELETE FROM package_files WHERE id = $1`, a.artifactID)
+	drain(t, newTestJournal(t, dst, store))
+
+	if n := mustCount(t, dst, `SELECT count(*) FROM recovery_sidecars WHERE table_name = 'pacman_files'`); n != 0 {
+		t.Fatalf("%d sidecars of a cascade-deleted side row survived", n)
+	}
+}
+
+// TestRebuildTouchesPackagesAndRepositories: the Regenerate hook receives the
+// repositories that got rows and, of the npm packages among the restored
+// packages (rows, versions or tags), their ids, found through the generic tables.
+func TestRebuildTouchesPackagesAndRepositories(t *testing.T) {
+	store := newFSStore(t)
+	src := newTestDB(t)
+	j := newTestJournal(t, src, store)
+
+	a := seedRaw(t, src, store, "npmrepo", "left-pad", []byte("tarball"))
+	mustExec(t, src, `UPDATE repositories SET format = 'npm' WHERE id = $1`, a.repoID)
+	mustExec(t, src, `UPDATE packages SET format = 'npm' WHERE id = $1`, a.packageID)
+	mustExec(
+		t,
+		src,
+		`INSERT INTO package_tags (package_id, tag, version, unit_key) VALUES ($1, 'latest', '', 'left-pad#latest')`,
+		a.packageID,
+	)
+
+	other := seedRaw(t, src, store, "rawrepo", "r.txt", []byte("raw"))
+	drain(t, j)
+
+	var (
+		repos []string
+		npm   []string
+	)
+
+	hooks := Hooks{Regenerate: func(_ context.Context, r, n []string) error { repos, npm = r, n; return nil }}
+
+	rep, err := NewRebuilder(newTestDB(t), store, testLog(t), RebuildOptions{Concurrency: 2}, hooks).Run(context.Background())
+	if err != nil || rep.ExitCode() != ExitOK {
+		t.Fatalf("rebuild: %v, exit %d, %+v %+v", err, rep.ExitCode(), rep.Failures, rep.Unrecoverable)
+	}
+
+	if !slices.Equal(repos, sortedStrings(a.repoID, other.repoID)) || !slices.Equal(npm, []string{a.packageID}) {
+		t.Fatalf(
+			"regenerate got repositories %v and npm packages %v; want both repositories and only the npm package %s",
+			repos,
+			npm,
+			a.packageID,
+		)
+	}
 }

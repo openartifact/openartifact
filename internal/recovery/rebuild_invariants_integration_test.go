@@ -30,8 +30,8 @@ func TestRebuildIsMergeOnly(t *testing.T) {
 	dst := newTestDB(t)
 	runRebuild(t, dst, store, RebuildOptions{})
 
-	mustExec(t, dst, `UPDATE raw_artifacts SET content_type = 'edited/after' WHERE id = $1`, a.artifactID)
-	mustExec(t, dst, `DELETE FROM raw_artifacts WHERE id = $1`, b.artifactID)
+	mustExec(t, dst, `UPDATE package_files SET attrs = jsonb_set(attrs, '{content_type}', '"edited/after"') WHERE id = $1`, a.artifactID)
+	mustExec(t, dst, `DELETE FROM package_files WHERE id = $1`, b.artifactID)
 
 	extra := seedRaw(t, dst, store, "raw-only-here", "only.txt", []byte("only here"))
 
@@ -40,20 +40,20 @@ func TestRebuildIsMergeOnly(t *testing.T) {
 		t.Fatalf("exit %d: %+v %+v", rep.ExitCode(), rep.Failures, rep.Unrecoverable)
 	}
 
-	if got := mustString(t, dst, `SELECT content_type FROM raw_artifacts WHERE id = $1`, a.artifactID); got != "edited/after" {
+	if got := mustString(t, dst, `SELECT attrs->>'content_type' FROM package_files WHERE id = $1`, a.artifactID); got != "edited/after" {
 		t.Errorf("content_type = %q: the rebuild overwrote an existing row", got)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1`, b.artifactID); n != 1 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1`, b.artifactID); n != 1 {
 		t.Errorf("the deleted row was not merged back (count %d)", n)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1`, extra.artifactID); n != 1 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1`, extra.artifactID); n != 1 {
 		t.Errorf("a row without a sidecar was removed (count %d)", n)
 	}
 
-	if tr := tableReport(rep, "raw_artifacts"); tr.Inserted != 1 || tr.AlreadyPresent != 2 {
-		t.Errorf("raw_artifacts report = %+v, want 1 inserted and 2 already present", tr)
+	if tr := tableReport(rep, "package_files"); tr.Inserted != 1 || tr.AlreadyPresent != 2 {
+		t.Errorf("package_files report = %+v, want 1 inserted and 2 already present", tr)
 	}
 }
 
@@ -111,9 +111,10 @@ var publicHashColumns = map[string]bool{ //nolint:gochecknoglobals // immutable 
 // column that looks like a credential unless the registry excludes it.
 func TestRegistryExcludesSecretLookingColumns(t *testing.T) {
 	db := newTestDB(t)
+	reg := NewRegistry()
 
-	for i := range Tables {
-		tbl := &Tables[i]
+	for i := range reg.tables {
+		tbl := &reg.tables[i]
 
 		for _, col := range queryStrings(t, db, `
 			SELECT column_name FROM information_schema.columns
@@ -144,16 +145,16 @@ func TestRebuildOrphanIsUnrecoverable(t *testing.T) {
 		t.Fatalf("exit %d, want %d: %+v %+v", rep.ExitCode(), ExitIncomplete, rep.Failures, rep.Unrecoverable)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE repository_id = $1`, a.repoID); n != 0 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE repository_id = $1`, a.repoID); n != 0 {
 		t.Errorf("%d rows of a repository without a sidecar were inserted", n)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1`, b.artifactID); n != 1 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1`, b.artifactID); n != 1 {
 		t.Errorf("the intact repository was not restored")
 	}
 
-	if tr := tableReport(rep, "raw_artifacts"); tr.Unrecoverable != 2 || tr.Failed != 0 {
-		t.Errorf("raw_artifacts report = %+v, want the 2 orphans unrecoverable and none failed", tr)
+	if tr := tableReport(rep, "package_files"); tr.Unrecoverable != 2 || tr.Failed != 0 {
+		t.Errorf("package_files report = %+v, want the 2 orphans unrecoverable and none failed", tr)
 	}
 }
 
@@ -167,19 +168,18 @@ func TestRebuildCollidingRowIsUnrecoverable(t *testing.T) {
 	runRebuild(t, dst, store, RebuildOptions{})
 
 	ghost := uuid.NewString()
-	row := `{"id":"` + ghost + `","repository_id":"` + a.repoID + `","path":"dir/a.txt","blob_id":"` + a.blobID + `"}`
-	putSidecar(t, store, ghost, time.Now(), row, true)
+	putSidecar(t, store, ghost, time.Now(), fileRow(a, ghost, "dir/a.txt", "{}"), true)
 
 	rep := runRebuild(t, dst, store, RebuildOptions{})
 	if rep.ExitCode() != ExitIncomplete {
 		t.Fatalf("exit %d, want %d: %+v %+v", rep.ExitCode(), ExitIncomplete, rep.Failures, rep.Unrecoverable)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1`, ghost); n != 0 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1`, ghost); n != 0 {
 		t.Errorf("the colliding row was inserted")
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1`, a.artifactID); n != 1 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1`, a.artifactID); n != 1 {
 		t.Errorf("the existing row is gone")
 	}
 }
@@ -195,8 +195,8 @@ func TestRebuildIgnoresUnknownColumns(t *testing.T) {
 	runRebuild(t, dst, store, RebuildOptions{})
 
 	id := uuid.NewString()
-	row := `{"id":"` + id + `","repository_id":"` + a.repoID + `","path":"new.txt","blob_id":"` + a.blobID + `",` +
-		`"dropped_column":"x","path\"); DROP TABLE raw_artifacts; --":"y"}`
+	row := strings.TrimSuffix(fileRow(a, id, "new.txt", "{}"), "}") +
+		`,"dropped_column":"x","path\"); DROP TABLE package_files; --":"y"}`
 	putSidecar(t, store, id, time.Now(), row, true)
 
 	rep := runRebuild(t, dst, store, RebuildOptions{})
@@ -204,7 +204,7 @@ func TestRebuildIgnoresUnknownColumns(t *testing.T) {
 		t.Fatalf("exit %d: %+v %+v", rep.ExitCode(), rep.Failures, rep.Unrecoverable)
 	}
 
-	if n := mustCount(t, dst, `SELECT count(*) FROM raw_artifacts WHERE id = $1 AND path = 'new.txt' AND deleted_at IS NULL`, id); n != 1 {
+	if n := mustCount(t, dst, `SELECT count(*) FROM package_files WHERE id = $1 AND path = 'new.txt' AND deleted_at IS NULL`, id); n != 1 {
 		t.Errorf("the row with unknown columns was not restored (count %d)", n)
 	}
 }
@@ -217,23 +217,74 @@ func TestRebuildSkipsUnsupportedSidecars(t *testing.T) {
 		t.Helper()
 
 		sum := sha([]byte(doc))
-		if _, err := store.Put(context.Background(), strings.NewReader(doc), SidecarMetadata("raw_artifacts", sum)); err != nil {
+		if _, err := store.Put(context.Background(), strings.NewReader(doc), SidecarMetadata("package_files", sum)); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	meta(`{"openartifact_sidecar":2,"table":"raw_artifacts","key":"` + testID + `","row":` + testRow + `}`)
-	meta(`{"openartifact_sidecar":1,"table":"auth_users","key":"` + testID + `","row":` + testRow + `}`)
+	meta(`{"openartifact_sidecar":3,"table":"package_files","key":"` + testID + `","row":` + testRow + `}`)
+	meta(`{"openartifact_sidecar":2,"table":"auth_users","key":"` + testID + `","row":` + testRow + `}`)
 
 	rep := runRebuild(t, newTestDB(t), store, RebuildOptions{})
-	if rep.SidecarsUnsupported != 2 || rep.SidecarsInvalid != 0 || rep.SidecarsValid != 0 || rep.ExitCode() != ExitOK {
+	if rep.SidecarsUnsupported != 2 || rep.SidecarsLegacy != 0 || rep.SidecarsInvalid != 0 || rep.SidecarsValid != 0 ||
+		rep.ExitCode() != ExitOK {
 		t.Fatalf(
-			"unsupported=%d invalid=%d valid=%d exit=%d",
+			"unsupported=%d legacy=%d invalid=%d valid=%d exit=%d",
 			rep.SidecarsUnsupported,
+			rep.SidecarsLegacy,
 			rep.SidecarsInvalid,
 			rep.SidecarsValid,
 			rep.ExitCode(),
 		)
+	}
+}
+
+// putLegacySidecar stores a sidecar of format version 1 (a release before
+// 0.15, per-format tables), as the old journal wrote it.
+func putLegacySidecar(t *testing.T, store storage.BlobStore) {
+	t.Helper()
+
+	doc := `{"openartifact_sidecar":1,"schema":68,"table":"raw_artifacts","key":"` + testID + `","row":` + testRow + `}`
+
+	if _, err := store.Put(context.Background(), strings.NewReader(doc), SidecarMetadata("raw_artifacts", sha([]byte(doc)))); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRebuildRefusesLegacySidecars: a store that only holds sidecars of a
+// release before 0.15 cannot be rebuilt from, and the error says so; next to
+// sidecars of this release the legacy ones are skipped with a warning.
+func TestRebuildRefusesLegacySidecars(t *testing.T) {
+	ctx := context.Background()
+
+	legacyOnly := newFSStore(t)
+	putLegacySidecar(t, legacyOnly)
+
+	rep, err := NewRebuilder(newTestDB(t), legacyOnly, testLog(t), RebuildOptions{Concurrency: 2}, Hooks{}).Run(ctx)
+	if !errors.Is(err, ErrSidecarLegacy) || !strings.Contains(err.Error(), "before 0.15") {
+		t.Fatalf("err = %v, want ErrSidecarLegacy naming release 0.15", err)
+	}
+
+	if rep.SidecarsLegacy != 1 || rep.SidecarsUnsupported != 1 || rep.SidecarsInvalid != 0 {
+		t.Errorf(
+			"legacy=%d unsupported=%d invalid=%d, want the sidecar counted as legacy",
+			rep.SidecarsLegacy,
+			rep.SidecarsUnsupported,
+			rep.SidecarsInvalid,
+		)
+	}
+
+	mixed := newFSStore(t)
+	seedSource(t, mixed)
+	putLegacySidecar(t, mixed)
+
+	rep = runRebuild(t, newTestDB(t), mixed, RebuildOptions{})
+	if rep.SidecarsLegacy != 1 || rep.SidecarsValid == 0 || rep.ExitCode() != ExitOK {
+		t.Fatalf("legacy=%d valid=%d exit=%d", rep.SidecarsLegacy, rep.SidecarsValid, rep.ExitCode())
+	}
+
+	if len(rep.Warnings) != 1 || !strings.Contains(rep.Warnings[0], "before 0.15") {
+		t.Errorf("warnings = %v, want one naming release 0.15", rep.Warnings)
 	}
 }
 

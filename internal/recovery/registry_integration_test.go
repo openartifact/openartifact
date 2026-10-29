@@ -11,6 +11,8 @@ import (
 	"database/sql"
 	"slices"
 	"testing"
+
+	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 )
 
 func queryStrings(t *testing.T, db *sql.DB, q string, args ...any) []string {
@@ -42,11 +44,11 @@ func queryStrings(t *testing.T, db *sql.DB, q string, args ...any) []string {
 }
 
 // checkParentOrder asserts every foreign key between journaled tables points to an earlier table.
-func checkParentOrder(t *testing.T, db *sql.DB) {
+func checkParentOrder(t *testing.T, db *sql.DB, reg *Registry) {
 	t.Helper()
 
 	order := map[string]int{}
-	for i, tbl := range Tables {
+	for i, tbl := range reg.Tables() {
 		order[tbl.Name] = i
 	}
 
@@ -83,6 +85,7 @@ func checkParentOrder(t *testing.T, db *sql.DB) {
 // the live schema.
 func TestRegistryCoversSchema(t *testing.T) {
 	db := newTestDB(t)
+	reg := NewRegistry()
 
 	t.Run("every blob or repository referencing table is classified", func(t *testing.T) {
 		referencing := queryStrings(t, db, `
@@ -91,12 +94,12 @@ func TestRegistryCoversSchema(t *testing.T) {
 			  AND c.connamespace = current_schema()::regnamespace`)
 
 		for _, name := range referencing {
-			_, journaled := Lookup(name)
+			_, journaled := reg.Lookup(name)
 			_, exempt := NotJournaled[name]
 
 			if !journaled && !exempt {
-				t.Errorf("table %s references blobs/repositories but is in neither recovery.Tables nor recovery.NotJournaled "+
-					"(add it to internal/recovery/tables.go and migration 068's trigger list, or exempt it with a reason)", name)
+				t.Errorf("table %s references blobs/repositories but is in neither the recovery registry nor recovery.NotJournaled "+
+					"(add it to internal/recovery/tables.go and the trigger list of the baseline, or exempt it with a reason)", name)
 			}
 		}
 	})
@@ -112,8 +115,8 @@ func TestRegistryCoversSchema(t *testing.T) {
 	})
 
 	t.Run("registry columns exist and generated ones are excluded", func(t *testing.T) {
-		for i := range Tables {
-			tbl := &Tables[i]
+		for i := range reg.tables {
+			tbl := &reg.tables[i]
 			cols := queryStrings(
 				t,
 				db,
@@ -152,7 +155,7 @@ func TestRegistryCoversSchema(t *testing.T) {
 		}
 	})
 
-	t.Run("parents come before children", func(t *testing.T) { checkParentOrder(t, db) })
+	t.Run("parents come before children", func(t *testing.T) { checkParentOrder(t, db, reg) })
 
 	t.Run("every journaled table has the journal trigger", func(t *testing.T) {
 		have := queryStrings(
@@ -161,14 +164,14 @@ func TestRegistryCoversSchema(t *testing.T) {
 			`SELECT c.relname FROM pg_trigger g JOIN pg_class c ON c.oid = g.tgrelid WHERE g.tgname = 'recovery_journal' AND NOT g.tgisinternal`,
 		)
 
-		for _, tbl := range Tables {
+		for _, tbl := range reg.Tables() {
 			if !slices.Contains(have, tbl.Name) {
-				t.Errorf("table %s has no recovery_journal trigger (migration 068)", tbl.Name)
+				t.Errorf("table %s has no recovery_journal trigger", tbl.Name)
 			}
 		}
 
-		if len(have) != len(Tables) {
-			t.Errorf("%d tables have the trigger, registry has %d", len(have), len(Tables))
+		if len(have) != reg.Len() {
+			t.Errorf("%d tables have the trigger, registry has %d", len(have), reg.Len())
 		}
 	})
 }
@@ -180,4 +183,29 @@ func keyNames(t *Table) []string {
 	}
 
 	return out
+}
+
+// TestUnregisteredTablesAreReported: a side table whose format descriptor is not
+// registered when the journal is built still carries the journal trigger; the
+// guard names it instead of letting its rows go unmirrored silently.
+func TestUnregisteredTablesAreReported(t *testing.T) {
+	ctx := context.Background()
+	db, store := newTestDB(t), newFSStore(t)
+
+	got, err := newTestJournal(t, db, store).UnregisteredTables(ctx)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("with every format registered: %v, %v; want none", got, err)
+	}
+
+	formatstorage.Reset()
+
+	got, err = newTestJournal(t, db, store).UnregisteredTables(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"conan_files", "deb_files", "maven_files", "pacman_files", "rpm_files"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("without descriptors: %v, want %v", got, want)
+	}
 }

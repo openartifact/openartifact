@@ -171,7 +171,12 @@ func (e *Engine) recordOutcome(peer *Peer, repo *RepoInfo, pullErr error) {
 }
 
 func (e *Engine) newPullCtx(ctx context.Context, peer *Peer, repo *RepoInfo) (*pullCtx, error) {
-	codec, err := CodecFor(repo.Format)
+	resolve := CodecFor
+	if e.codecFor != nil {
+		resolve = e.codecFor
+	}
+
+	codec, err := resolve(repo.Format)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +208,12 @@ func (e *Engine) pull(ctx context.Context, peer *Peer, repo *RepoInfo) error {
 	}
 
 	if info.Version != ProtocolVersion {
-		return fmt.Errorf("%w: peer speaks protocol %d, this instance %d", errPeerMismatch, info.Version, ProtocolVersion)
+		hint := ""
+		if info.Version < ProtocolVersion {
+			hint = " (upgrade the peer to 0.15 or later)"
+		}
+
+		return fmt.Errorf("%w: peer speaks protocol %d, this instance %d%s", errPeerMismatch, info.Version, ProtocolVersion, hint)
 	}
 
 	if info.Instance == e.instance {

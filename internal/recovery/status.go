@@ -42,7 +42,7 @@ type Status struct {
 
 // Status reads the journal state and refreshes the gauges.
 func (j *Journal) Status(ctx context.Context) (Status, error) {
-	st := Status{BacklogCap: backlogCountCap, SchemaVersion: j.schema, TablesTotal: len(Tables)}
+	st := Status{BacklogCap: backlogCountCap, SchemaVersion: j.schema, TablesTotal: j.reg.Len()}
 
 	backlog, age, err := j.backlog(ctx)
 	if err != nil {
@@ -76,7 +76,7 @@ func (j *Journal) Status(ctx context.Context) (Status, error) {
 
 	if err := j.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM recovery_reconcile WHERE last_completed_at IS NOT NULL AND table_name = ANY($1::text[])`,
-		tableNames()).Scan(&st.TablesReconciled); err != nil {
+		j.reg.Names()).Scan(&st.TablesReconciled); err != nil {
 		return st, fmt.Errorf("count reconciled tables: %w", err)
 	}
 

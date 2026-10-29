@@ -59,13 +59,16 @@ type Rebuilder struct {
 	log   *logger.Logger
 	opts  RebuildOptions
 	hooks Hooks
+	reg   *Registry
 }
 
-// NewRebuilder creates a Rebuilder.
+// NewRebuilder creates a Rebuilder over the registry of the storage descriptors
+// registered now (see NewRegistry): register the formats first, or the sidecars
+// of their side tables are reported as unsupported.
 func NewRebuilder(db *sql.DB, store storage.BlobStore, log *logger.Logger, opts RebuildOptions, hooks Hooks) *Rebuilder {
 	opts.Concurrency = max(opts.Concurrency, 1)
 
-	return &Rebuilder{db: db, store: store, log: log, opts: opts, hooks: hooks}
+	return &Rebuilder{db: db, store: store, log: log, opts: opts, hooks: hooks, reg: NewRegistry()}
 }
 
 // entry is a validated sidecar.
@@ -163,6 +166,17 @@ func (r *Rebuilder) Run(ctx context.Context) (*Report, error) {
 	winners, err := r.fetch(ctx, rep, scan.candidates)
 	if err != nil {
 		return rep, err
+	}
+
+	if rep.SidecarsLegacy > 0 {
+		rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+			"%d sidecar(s) were written by a release before 0.15 and are not supported (%s)", rep.SidecarsLegacy, ErrSidecarLegacy))
+
+		if rep.SidecarsValid == 0 {
+			rep.FinishedAt = time.Now().UTC()
+
+			return rep, fmt.Errorf("%w: %d sidecar(s) found and none written by this release", ErrSidecarLegacy, rep.SidecarsLegacy)
+		}
 	}
 
 	if err := r.apply(ctx, rep, scan.ids, winners); err != nil {
@@ -287,7 +301,7 @@ func (r *Rebuilder) readSidecar(ctx context.Context, id string) (*Sidecar, *Tabl
 		return nil, nil, fmt.Errorf("read sidecar: %w", err)
 	}
 
-	return DecodeSidecar(id, data)
+	return r.reg.DecodeSidecar(id, data)
 }
 
 // fetch validates every candidate and keeps, per row, the sidecar with the
@@ -390,6 +404,12 @@ func (r *Rebuilder) classifyBad(rep *Report, id string, err error) {
 	rep.mu.Lock()
 
 	switch {
+	case errors.Is(err, ErrSidecarLegacy):
+		rep.SidecarsUnsupported++
+		rep.SidecarsLegacy++
+		rep.mu.Unlock()
+
+		return
 	case errors.Is(err, ErrSidecarVersion), errors.Is(err, ErrSidecarTable):
 		rep.SidecarsUnsupported++
 		rep.mu.Unlock()

@@ -70,18 +70,20 @@ type Journal struct {
 	m     *metrics.RecoveryMetrics
 	cfg   JournalConfig
 
+	reg    *Registry
 	schema int
 
 	// now is replaceable by tests.
 	now func() time.Time
 }
 
-// NewJournal creates a Journal. m may be nil.
+// NewJournal creates a Journal over the registry of the storage descriptors
+// registered now (see NewRegistry). m may be nil.
 func NewJournal(db *sql.DB, store storage.BlobStore, log *logger.Logger, m *metrics.RecoveryMetrics, cfg JournalConfig) *Journal {
 	cfg.Batch = max(cfg.Batch, 1)
 	cfg.Concurrency = max(cfg.Concurrency, 1)
 
-	return &Journal{db: db, store: store, log: log, m: m, cfg: cfg, schema: SchemaVersion(), now: time.Now}
+	return &Journal{db: db, store: store, log: log, m: m, cfg: cfg, reg: NewRegistry(), schema: SchemaVersion(), now: time.Now}
 }
 
 // SetEnabled stores the journal switch the database triggers consult. When the
@@ -106,7 +108,7 @@ func (j *Journal) SetEnabled(ctx context.Context, enabled bool) error {
 			INSERT INTO recovery_reconcile (table_name, full_pass, pass_started_at)
 			SELECT unnest($1::text[]), true, now()
 			ON CONFLICT (table_name) DO UPDATE
-			SET full_pass = true, stage = 'missing', cursor = NULL, pass_started_at = now()`, tableNames()); err != nil {
+			SET full_pass = true, stage = 'missing', cursor = NULL, pass_started_at = now()`, j.reg.Names()); err != nil {
 			return fmt.Errorf("queue full recovery resync: %w", err)
 		}
 	}
@@ -114,13 +116,36 @@ func (j *Journal) SetEnabled(ctx context.Context, enabled bool) error {
 	return nil
 }
 
-func tableNames() []string {
-	names := make([]string, len(Tables))
-	for i := range Tables {
-		names[i] = Tables[i].Name
+// UnregisteredTables returns the tables that carry the journal trigger but are
+// missing from the registry (a format's side table whose descriptor is not
+// registered): their changes queue marks that no sidecar ever follows. Empty
+// when the registry covers the schema.
+func (j *Journal) UnregisteredTables(ctx context.Context) ([]string, error) {
+	rows, err := j.db.QueryContext(ctx, `
+		SELECT c.relname::text FROM pg_trigger g
+		JOIN pg_class c ON c.oid = g.tgrelid
+		WHERE g.tgname = 'recovery_journal' AND NOT g.tgisinternal
+		  AND c.relnamespace = current_schema()::regnamespace
+		  AND NOT c.relname::text = ANY($1::text[])
+		ORDER BY 1`, j.reg.Names())
+	if err != nil {
+		return nil, fmt.Errorf("list journaled tables: %w", err)
 	}
 
-	return names
+	defer func() { _ = rows.Close() }()
+
+	var out []string
+
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan journaled table: %w", err)
+		}
+
+		out = append(out, name)
+	}
+
+	return out, rows.Err() //nolint:wrapcheck // iteration error
 }
 
 // --- drain -----------------------------------------------------------------
@@ -250,9 +275,10 @@ type work struct {
 // record the outcome and drop the marks that were not re-marked meanwhile.
 // It returns how many marks failed (kept queued with backoff).
 func (j *Journal) processChunk(ctx context.Context, table string, marks []dirtyMark) (int, error) {
-	t, ok := Lookup(table)
+	t, ok := j.reg.Lookup(table)
 	if !ok {
-		// The table left the registry: nothing to journal any more.
+		// The table is not in the registry (it left it, or the format owning
+		// the side table is not registered: Worker.RunPass reports that).
 		return 0, j.dropMarks(ctx, table, marks)
 	}
 
