@@ -17,15 +17,6 @@ import (
 // (no blob join, no row decoding), so a revalidation can be answered, and a
 // cached rendering looked up, without loading the rows themselves.
 
-func (p *PostgresDB) HelmIndexStamp(ctx context.Context, repoID string) (string, error) {
-	stamp, err := p.q.HelmIndexStamp(ctx, repoID)
-	if err != nil {
-		return "", fmt.Errorf("failed to stamp helm index: %w", err)
-	}
-
-	return stamp, nil
-}
-
 func (p *PostgresDB) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
 	stamp, err := p.q.CondaRepodataStamp(ctx, dbsqlc.CondaRepodataStampParams{RepositoryID: repoID, Platform: platform})
 	if err != nil {

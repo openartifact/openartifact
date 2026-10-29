@@ -62,6 +62,7 @@ type PostgresDB struct {
 	*NixStore
 	*GoModStore
 	*DockerStore
+	*HelmStore
 	// STORES-STRUCT
 }
 
@@ -121,6 +122,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		NixStore:             &NixStore{core: c},
 		GoModStore:           &GoModStore{core: c},
 		DockerStore:          &DockerStore{core: c},
+		HelmStore:            &HelmStore{core: c},
 		// STORES-INIT
 	}
 }
