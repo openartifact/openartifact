@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -132,10 +133,14 @@ func fuzzCheckListed(t *testing.T, h *HTTPHandler, name, version, digest string,
 		t.Fatalf("index URL %q names %q (%v), want %q", listed[0].URLs[0], file, ok, name+"-"+version+".tgz")
 	}
 
-	u, err := url.Parse(listed[0].URLs[0])
+	ref, err := url.Parse(listed[0].URLs[0])
 	if err != nil {
 		t.Fatalf("index URL %q: %v", listed[0].URLs[0], err)
 	}
+
+	// helm resolves the reference against the repository URL.
+	repoURL, _ := url.Parse("http://oa.test/repos/myrepo/")
+	u := repoURL.ResolveReference(ref)
 
 	dl := formattest.Do(h.RegisterRepoRoutes, httptest.NewRequestWithContext(t.Context(), http.MethodGet, u.RequestURI(), nil))
 	if dl.Code != http.StatusOK || !bytes.Equal(dl.Body.Bytes(), chart) || dl.Header().Get("ETag") != `"`+digest+`"` {
@@ -175,9 +180,19 @@ func FuzzChartIdentity(f *testing.F) {
 		}
 
 		// The URL a client is given reads back as the same file.
-		u, err := url.Parse("http://oa.test/repos/r/charts/" + url.PathEscape(name+"-"+version) + ".tgz")
+		// It is relative to the repository URL, as helm resolves it.
+		ref := buildHelmIndex([]*models.HelmChart{{Name: name, Version: version}}).Entries[name][0].URLs[0]
+
+		refURL, err := url.Parse(ref)
 		if err != nil {
 			t.Fatalf("URL for %q: %v", file, err)
+		}
+
+		repoURL, _ := url.Parse("http://oa.test/repos/r/")
+		u := repoURL.ResolveReference(refURL)
+
+		if want := "http://oa.test/repos/r/charts/" + url.PathEscape(name+"-"+version) + ".tgz"; u.String() != want {
+			t.Fatalf("reference %q resolves to %q, want %q", ref, u, want)
 		}
 
 		if got, ok := pkghelm.ChartFile(u); !ok || got != file {

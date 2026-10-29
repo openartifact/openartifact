@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -52,9 +53,14 @@ type RBACConfig struct {
 	// any non-navigation request. When nil, those paths get full RBAC
 	// evaluation like every other /repos/ path.
 	SPAHandler http.Handler
-	// BaseURL is the public URL of the server; cargo's WWW-Authenticate
-	// challenge points its login_url at it.
+	// BaseURL is the configured public URL of the server (the localhost default
+	// when BASE_URL was not set); the MCP challenge's resource_metadata points
+	// at it.
 	BaseURL string
+	// ClientBaseURL is BASE_URL as an explicit override of the origin handed to
+	// package clients, "" when it was not set. Cargo's WWW-Authenticate login_url
+	// is built on it, else on the request's origin (see internal/publicurl).
+	ClientBaseURL string
 	// MCPBearerVerifier accepts OIDC access tokens on the MCP endpoint in
 	// addition to API tokens; nil accepts API tokens only.
 	MCPBearerVerifier MCPBearerVerifier
@@ -383,9 +389,9 @@ func writeAccessDenied(
 
 		// Cargo only sends its token after a challenge naming its login page
 		// (RFC 3139 auth-required flow).
-		if scope.repoName != "" && cfg.BaseURL != "" {
+		if scope.repoName != "" {
 			if repo, err := db.GetRepositoryByName(r.Context(), scope.repoName); err == nil && repo != nil && repo.Format == "cargo" {
-				w.Header().Add("WWW-Authenticate", `Cargo login_url="`+strings.TrimRight(cfg.BaseURL, "/")+`/login"`)
+				w.Header().Add("WWW-Authenticate", `Cargo login_url="`+publicurl.Resolve(w, r, cfg.ClientBaseURL)+`/login"`)
 			}
 		}
 

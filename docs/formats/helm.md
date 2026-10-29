@@ -43,7 +43,7 @@ Relative to `HOST/repos/REPO`:
 
 ## Index
 
-`index.yaml` is built on every request from the stored charts (`apiVersion: v1`, `generated`, `entries`). Each entry has `name`, `version`, `appVersion`, `description`, `digest`, `created`, `home`, `sources`, `maintainers`, `icon`, `apiVersion`, `type`, `keywords` and `urls: [BASE_URL/repos/REPO/charts/<name>-<version>.tgz]`. `BASE_URL` must be the URL clients use or `helm pull` follows links to the wrong host.
+`index.yaml` is built on every request from the stored charts (`apiVersion: v1`, `generated`, `entries`). Each entry has `name`, `version`, `appVersion`, `description`, `digest`, `created`, `home`, `sources`, `maintainers`, `icon`, `apiVersion`, `type`, `keywords` and `urls: [charts/<name>-<version>.tgz]`. The URL is relative: helm resolves it against the repository URL, so `BASE_URL` plays no part and the `ETag` has no origin.
 
 ## Upload
 

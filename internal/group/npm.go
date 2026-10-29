@@ -16,6 +16,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -30,9 +31,17 @@ const packumentMaxAge = 60
 // maxConcurrentMerges bounds the packument merges held in memory at once.
 const maxConcurrentMerges = 8
 
-// SetBaseURL sets the server base URL the merged packuments' tarball URLs
-// point at (the same value hosted npm repositories use).
+// SetBaseURL sets BASE_URL, the explicit override of the origin the merged
+// packuments' tarball URLs point at ("" derives it from each request).
 func (h *Handler) SetBaseURL(baseURL string) { h.baseURL = strings.TrimRight(baseURL, "/") }
+
+// publicBase is the origin of the absolute URLs a merged document hands to the
+// client for r: BASE_URL when set, else the request's origin (see
+// base.Handler.PublicBase). Call it before the response headers are written and
+// fold the result into the document's validator.
+func (h *Handler) publicBase(w http.ResponseWriter, r *http.Request) string {
+	return publicurl.Resolve(w, r, h.baseURL)
+}
 
 // serveNPM answers packument and version-manifest requests by merging the
 // members' packuments; it reports false for every other path (tarballs), which
@@ -90,7 +99,7 @@ func (h *Handler) serveNPM(
 	// cached under a digest of them and serves as the validator: a poll that
 	// changes nothing neither parses nor rewrites a thousand-version packument
 	// again.
-	tarballBase := h.baseURL + "/repos/" + grp.Name
+	tarballBase := h.publicBase(w, r) + "/repos/" + grp.Name
 	key := mergeKey(grp.ID, tarballBase, p, docs)
 
 	rendered, err := base.MergedRendered(r.Context(), key, func(context.Context) (*base.Rendered, error) {
@@ -128,7 +137,7 @@ func (h *Handler) serveNPM(
 }
 
 // mergeKey is the hex SHA-256 over everything a merged document is built from:
-// the group, where its tarball URLs point, what was asked for, and the bytes of
+// the group, the origin and repository its tarball URLs point at, what was asked for, and the bytes of
 // every member document in order.
 func mergeKey(groupID, tarballBase string, p pkgnpm.Path, docs [][]byte) string {
 	h := sha256.New()

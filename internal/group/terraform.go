@@ -16,6 +16,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/publicurl"
 )
 
 // maxTerraformSegmentLen bounds one path segment of a registry request a group
@@ -570,10 +571,5 @@ func (h *Handler) serveTerraformLatest(
 // terraformRepoPath is the path a terraform repository is served under, below
 // the path of the server's base URL.
 func (h *Handler) terraformRepoPath(repoName string) string {
-	prefix := ""
-	if u, err := url.Parse(h.baseURL); err == nil {
-		prefix = strings.TrimSuffix(u.EscapedPath(), "/")
-	}
-
-	return prefix + "/repos/" + url.PathEscape(repoName)
+	return publicurl.PathPrefix(h.baseURL) + "/repos/" + url.PathEscape(repoName)
 }

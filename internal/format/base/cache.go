@@ -46,6 +46,16 @@ func ContentETag(body []byte) string {
 	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
+// OriginTag is a short, entity-tag-safe digest of the origin a document's
+// absolute URLs were built from. Fold it into the validator and any in-process
+// cache key of such a document, so a client holding an ETag for one origin never
+// gets a 304 (and no cache serves a rendering) for another.
+func OriginTag(origin string) string {
+	sum := sha256.Sum256([]byte(origin))
+
+	return hex.EncodeToString(sum[:8])
+}
+
 // Revalidate sets the validator and cache headers of a metadata response
 // (ETag, Cache-Control, Vary: Authorization) and answers 304 Not Modified when
 // the request's If-None-Match matches etag. It returns true when the 304 was

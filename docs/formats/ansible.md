@@ -68,7 +68,7 @@ Requests under `/repos/REPO/api/` map to `read` (GET and HEAD) and `write` (POST
 
 ## API endpoints
 
-All paths are relative to `HOST/repos/REPO`. Every link in the responses (`download_url`, `href`, pagination links and the import task) is an absolute URL built from the server's configured `baseUrl`, which `ansible-core` 2.15 needs: set it to the URL clients reach.
+All paths are relative to `HOST/repos/REPO`. Every link in the responses (`download_url`, `href`, pagination links and the import task) is an absolute URL, which `ansible-core` 2.15 needs (it cannot resolve a root-relative `download_url`). The origin is derived from the request (scheme and `Host`; `X-Forwarded-Host` and `X-Forwarded-Proto` only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`). An explicit `BASE_URL` always wins. The `/api/` discovery document keeps `"v3": "v3/"`.
 
 | Method and path | Purpose |
 |---|---|

@@ -1743,3 +1743,17 @@ type WebhookDelivery struct {
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
+
+// Work a web process asks a worker process to do. One row per (kind, key); a repeated request refreshes requested_at. Rows are deleted once the work they asked for finished.
+type WorkerRequest struct {
+	// What to do, e.g. regen:npm, regen:maven, regen:group, ai:analyze, vuln:scan, dtrack:push.
+	Kind string `db:"kind" json:"kind"`
+	// What to do it to: a repository or package id, or a hash of the payload when the subject has several parts.
+	Key string `db:"key" json:"key"`
+	// The subject of kinds whose key is only a hash; null otherwise.
+	Payload []byte `db:"payload" json:"payload"`
+	// When the work was last requested; a worker deletes only the requests it has seen, so one made while it worked survives.
+	RequestedAt time.Time `db:"requested_at" json:"requested_at"`
+	// While in the future, a worker holds the request; a worker that died leaves it to expire and another takes it over. Null: unclaimed.
+	ClaimedUntil *time.Time `db:"claimed_until" json:"claimed_until"`
+}

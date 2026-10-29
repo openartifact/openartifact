@@ -54,7 +54,9 @@ func (s *Service) serveCargo(w http.ResponseWriter, r *http.Request, repo *model
 }
 
 func (s *Service) serveCargoConfig(w http.ResponseWriter, r *http.Request, repo *models.Repository) {
-	s.serveGeneratedJSON(w, r, repo, nil, pkgcargo.RenderConfig(s.baseURL, repo.Name, repo.Public), cargoConfigMaxAge)
+	// The body carries the origin the client reached, so the content ETag
+	// serveGeneratedJSON derives from it differs per origin.
+	s.serveGeneratedJSON(w, r, repo, nil, pkgcargo.RenderConfig(s.publicBase(w, r), repo.Name, repo.Public), cargoConfigMaxAge)
 }
 
 func cargoIndexKey(indexPath string) string { return "index/" + indexPath }

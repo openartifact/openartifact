@@ -5,6 +5,7 @@
 package pypisimple
 
 import (
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -363,11 +364,36 @@ func TestServableFiles_DropsUnsafeNames(t *testing.T) {
 }
 
 func TestURLHelpers(t *testing.T) {
-	if got := ProjectURL("my-repo", "foo-bar"); got != "/repos/my-repo/simple/foo-bar/" {
+	if got := ProjectURL("foo-bar"); got != "foo-bar/" {
 		t.Errorf("ProjectURL = %q", got)
 	}
 
-	if got := FileURL("my-repo", "foo-bar", "foo_bar-1.0.tar.gz"); got != "/repos/my-repo/files/foo-bar/foo_bar-1.0.tar.gz" {
+	if got := FileURL("foo-bar", "foo_bar-1.0.tar.gz"); got != "../../files/foo-bar/foo_bar-1.0.tar.gz" {
 		t.Errorf("FileURL = %q", got)
 	}
+
+	// The routes need the trailing slash, so the references resolve against
+	// the page URL: the file link from simple/<project>/, the project link
+	// from simple/.
+	page, _ := url.Parse("https://oa.example/repos/r/simple/foo-bar/")
+	if got := page.ResolveReference(mustParseURL(t, FileURL("foo-bar", "a b.whl"))).String(); got !=
+		"https://oa.example/repos/r/files/foo-bar/a%20b.whl" {
+		t.Errorf("file reference resolves to %q", got)
+	}
+
+	root, _ := url.Parse("https://oa.example/repos/r/simple/")
+	if got := root.ResolveReference(mustParseURL(t, ProjectURL("foo-bar"))).String(); got != "https://oa.example/repos/r/simple/foo-bar/" {
+		t.Errorf("project reference resolves to %q", got)
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return u
 }

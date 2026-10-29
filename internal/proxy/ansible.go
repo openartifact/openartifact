@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -79,7 +78,7 @@ func (s *Service) serveAnsible(w http.ResponseWriter, r *http.Request, repo *mod
 			"available_versions": map[string]string{"v3": "v3/"},
 		})
 	case pkgansible.KindV3:
-		l := s.ansibleLinks(repo)
+		l := s.ansibleLinks(w, r, repo)
 		s.writeAnsibleDoc(w, r, repo, nil, map[string]string{"collections": l.Collections(), "artifacts": l.Artifacts()})
 	case pkgansible.KindCollection:
 		s.serveAnsibleCollection(w, r, repo, p)
@@ -95,9 +94,13 @@ func (s *Service) serveAnsible(w http.ResponseWriter, r *http.Request, repo *mod
 	}
 }
 
-// ansibleLinks builds the links of the repository's own Galaxy API.
-func (s *Service) ansibleLinks(repo *models.Repository) pkgansible.Links {
-	return pkgansible.Links{Root: strings.TrimSuffix(s.baseURL, "/") + "/repos/" + url.PathEscape(repo.Name) + "/api/v3"}
+// ansibleLinks builds the absolute links of the repository's own Galaxy API on
+// the origin of the request (BASE_URL when set; see publicBase). ansible-core
+// uses download_url as the server sent it, so it cannot be relative. The
+// documents carrying them are validated by their content digest, which holds the
+// origin, and are rendered per request from the cached upstream copy.
+func (s *Service) ansibleLinks(w http.ResponseWriter, r *http.Request, repo *models.Repository) pkgansible.Links {
+	return pkgansible.Links{Root: s.publicBase(w, r) + "/repos/" + url.PathEscape(repo.Name) + "/api/v3"}
 }
 
 func ansibleVersionsKey(namespace, name string) string {
@@ -300,7 +303,7 @@ func (s *Service) serveAnsibleCollection(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	s.writeAnsibleDoc(w, r, repo, res, pkgansible.NewCollectionDoc(s.ansibleLinks(repo), p.Namespace, p.Name, refs))
+	s.writeAnsibleDoc(w, r, repo, res, pkgansible.NewCollectionDoc(s.ansibleLinks(w, r, repo), p.Namespace, p.Name, refs))
 }
 
 func (s *Service) serveAnsibleVersions(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
@@ -316,7 +319,7 @@ func (s *Service) serveAnsibleVersions(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
-	l := s.ansibleLinks(repo)
+	l := s.ansibleLinks(w, r, repo)
 	window := append([]pkgansible.VersionRef{}, pkgansible.Window(refs, limit, offset)...)
 
 	for i := range window {
@@ -381,7 +384,7 @@ func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	doc.Relink(s.ansibleLinks(repo))
+	doc.Relink(s.ansibleLinks(w, r, repo))
 	s.writeAnsibleDoc(w, r, repo, res, doc)
 }
 

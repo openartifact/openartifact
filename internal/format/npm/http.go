@@ -97,30 +97,40 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 
 	abbreviated := strings.Contains(r.Header.Get("Accept"), "application/vnd.npm.install-v1+json")
 
-	etag := fmt.Sprintf(`"%x"`, pkg.UpdatedAt.UnixNano())
+	// dist.tarball is absolute (pacote stores it verbatim), so the origin it
+	// carries is part of the validator: a client that revalidates at another
+	// origin gets a fresh document, not a 304 for the old URLs.
+	origin := h.PublicBase(w, r)
+
+	etag := fmt.Sprintf(`"%x-%s"`, pkg.UpdatedAt.UnixNano(), base.OriginTag(origin))
 	if abbreviated {
 		etag = `"abbr-` + etag[1:]
 	}
 
-	w.Header().Set("Vary", "Accept")
+	w.Header().Add("Vary", "Accept")
 
 	// The ETag derives from the package row alone, so a revalidation is
 	// answered before loading and rendering every version. The rendering is cached under the validator, qualified by what else shapes
-	// the document (package, repository name and base URL for the tarball URLs).
+	// the document (package and repository name; the origin of the tarball URLs
+	// is already in the validator).
 	// Everything that changes a packument marks the package row stale, which
 	// changes the ETag, so a cached document is never served past a change; the
 	// rows are read after the package row, so a rendering is never older than
 	// its key.
-	key := pkg.ID + "\x00" + etag + "\x00" + repoName + "\x00" + h.BaseURL
+	key := pkg.ID + "\x00" + etag + "\x00" + repoName
 
 	h.ServeRendered(w, r, repo.Public, etag, key, packumentMaxAge, func(ctx context.Context) (*base.Rendered, error) {
-		return h.renderPackument(ctx, repoName, pkgName, pkg.ID, abbreviated)
+		return h.renderPackument(ctx, repoName, pkgName, pkg.ID, origin, abbreviated)
 	}, "failed to render packument", "pkg", pkgName)
 }
 
 // renderPackument loads a package's versions and dist-tags and builds its
 // packument (the abbreviated install form or the full document).
-func (h *HTTPHandler) renderPackument(ctx context.Context, repoName, pkgName, pkgID string, abbreviated bool) (*base.Rendered, error) {
+func (h *HTTPHandler) renderPackument(
+	ctx context.Context,
+	repoName, pkgName, pkgID, origin string,
+	abbreviated bool,
+) (*base.Rendered, error) {
 	versions, err := h.DB.GetNPMVersionsByPackage(ctx, pkgID)
 	if err != nil {
 		return nil, fmt.Errorf("get npm versions: %w", err)
@@ -136,7 +146,7 @@ func (h *HTTPHandler) renderPackument(ctx context.Context, repoName, pkgName, pk
 		build = BuildAbbreviatedPackument
 	}
 
-	body, err := build(repoName, pkgName, versions, distTags, h.BaseURL)
+	body, err := build(repoName, pkgName, versions, distTags, origin)
 	if err != nil {
 		return nil, fmt.Errorf("build packument: %w", err)
 	}
@@ -194,7 +204,7 @@ func (h *HTTPHandler) handleVersionManifest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	body, err := BuildVersionManifest(repoName, pkgName, v, h.BaseURL)
+	body, err := BuildVersionManifest(repoName, pkgName, v, h.PublicBase(w, r))
 	if err != nil {
 		h.Log.Errorw("failed to render npm version manifest", "pkg", pkgName, "version", resolvedVersion, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

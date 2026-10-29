@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/quarantine"
 )
 
@@ -80,7 +81,7 @@ const (
 // refreshTerraformMinter rebuilds the ticket minter after the server URL or
 // the secret changed.
 func (s *Service) refreshTerraformMinter() {
-	s.tfTickets = terraform.NewMinter(s.baseURL, s.tfSecret)
+	s.tfTickets = terraform.NewMinter(publicurl.PathPrefix(s.baseURL), s.tfSecret)
 }
 
 // WithTerraformTicketKey sets the server HMAC secret the download tickets of
@@ -568,7 +569,7 @@ func (s *Service) serveTFModule(w http.ResponseWriter, r *http.Request, repo *mo
 		// The coordinates are validated names and a listed version; the host is
 		// the configured base path: a plain 302 with a relative Location.
 		w.Header().Set("Cache-Control", "private, no-cache")
-		prefix := terraform.PathPrefix(s.baseURL) + terraform.RegistryBasePath(repo.Name)
+		prefix := publicurl.PathPrefix(s.baseURL) + terraform.RegistryBasePath(repo.Name)
 		w.Header().Set("Location", prefix+"/"+p.name+"/"+p.system+"/"+version+"/download")
 		w.WriteHeader(http.StatusFound)
 

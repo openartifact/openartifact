@@ -20,7 +20,7 @@ This page lists every configuration key with its type, built-in default and the 
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|
-| `baseUrl` | `BASE_URL` | string | `http://localhost:8080` | `baseUrl` is the public URL of the server; it is used for generated links and SSO callbacks, so set it when the server runs behind a reverse proxy. |
+| `baseUrl` | `BASE_URL` | string | `empty` | `baseUrl` is the public URL of the server. SSO callbacks, SAML metadata, webhook sources and anything else sent outside a client's own request always use it. Package-client URLs (npm tarballs, the Cargo config.json, NuGet resources, Composer dists, ...) are derived from the request when it is unset (see internal/publicurl) and use it as an override when set. |
 
 ## server
 

@@ -59,8 +59,9 @@ type HTTPHandler struct {
 	DB        database.Database
 }
 
-// NewHTTPHandler creates the handler. baseURL is the externally visible server
-// URL the download tickets are built on. Providers need WithSigner and
+// NewHTTPHandler creates the handler. baseURL is the configured server URL
+// (empty when unset); only its path prefix is used, the download tickets and
+// discovery values are path-absolute references. Providers need WithSigner and
 // download tickets need WithTicketKey; without them the matching endpoints
 // answer 503.
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {

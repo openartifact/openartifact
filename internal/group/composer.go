@@ -12,6 +12,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
@@ -55,12 +56,15 @@ func (h *Handler) serveComposer(
 		return true
 	}
 
-	root := h.baseURL + "/repos/" + url.PathEscape(grp.Name)
-
 	switch p.Kind {
 	case pkgcomposer.KindRoot:
-		h.serveComposerRoot(w, r, grp, root, members, be)
+		h.serveComposerRoot(w, r, grp, members, be)
 	case pkgcomposer.KindMetadata:
+		// dist.url is downloaded by Composer as-is, so it is absolute; the
+		// merged document carries the origin and its content digest is the
+		// validator, so no origin ever revalidates against another's.
+		root := h.publicBase(w, r) + "/repos/" + url.PathEscape(grp.Name)
+
 		h.serveComposerMetadata(w, r, grp, root, p, relPath, members, be)
 	case pkgcomposer.KindDist:
 		return false
@@ -75,11 +79,14 @@ func (h *Handler) serveComposerRoot(
 	w http.ResponseWriter,
 	r *http.Request,
 	grp *models.Repository,
-	root string,
 	members []*models.Repository,
 	be Backend,
 ) {
-	doc := map[string]any{"packages": []any{}, "metadata-url": root + "/p2/%package%.json"}
+	// metadata-url is path-absolute: Composer resolves a value starting with "/"
+	// against the scheme and host of the repository URL
+	// (ComposerRepository::canonicalizeUrl), so the document names no origin.
+	prefix := publicurl.PathPrefix(h.baseURL)
+	doc := map[string]any{"packages": []any{}, "metadata-url": prefix + "/repos/" + url.PathEscape(grp.Name) + "/p2/%package%.json"}
 
 	if names, ok := h.composerAvailable(r, members, be); ok {
 		doc["available-packages"] = names

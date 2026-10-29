@@ -18,9 +18,9 @@ import (
 	"github.com/openartifact/openartifact/pkg/ansible"
 )
 
-// links returns the URL builder of repoName's v3 API.
-func (h *HTTPHandler) links(repoName string) ansible.Links {
-	return ansible.Links{Root: h.apiPath(repoName)}
+// links returns the URL builder of repoName's v3 API below origin.
+func links(origin, repoName string) ansible.Links {
+	return ansible.Links{Root: apiPath(origin, repoName)}
 }
 
 // pageParams reads limit and offset; ok is false, after a 400, for a value that
@@ -70,7 +70,8 @@ func (h *HTTPHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l := h.links(repo.Name)
+	origin := h.PublicBase(w, r)
+	l := links(origin, repo.Name)
 
 	docs := make([]ansible.CollectionDoc, len(names))
 	for i, n := range names {
@@ -86,7 +87,7 @@ func (h *HTTPHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	pg := ansible.NewPage(l.Collections(), total, limit, offset)
 	pg.Data = docs
-	h.writeDoc(w, r, repo, pg)
+	h.writeDoc(w, r, repo, origin, pg)
 }
 
 // versionsOf returns the live versions of the collection named in the URL,
@@ -128,14 +129,15 @@ func (h *HTTPHandler) handleCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l := h.links(repo.Name)
+	origin := h.PublicBase(w, r)
+	l := links(origin, repo.Name)
 
 	refs := make([]ansible.VersionRef, len(rows))
 	for i, c := range rows {
 		refs[i] = versionRef(l, c)
 	}
 
-	h.writeDoc(w, r, repo, ansible.NewCollectionDoc(l, rows[0].Namespace, rows[0].Name, refs))
+	h.writeDoc(w, r, repo, origin, ansible.NewCollectionDoc(l, rows[0].Namespace, rows[0].Name, refs))
 }
 
 func (h *HTTPHandler) handleVersions(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +156,8 @@ func (h *HTTPHandler) handleVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l := h.links(repo.Name)
+	origin := h.PublicBase(w, r)
+	l := links(origin, repo.Name)
 
 	refs := make([]ansible.VersionRef, 0, min(limit, len(rows)))
 	for _, c := range ansible.Window(rows, limit, offset) {
@@ -163,11 +166,11 @@ func (h *HTTPHandler) handleVersions(w http.ResponseWriter, r *http.Request) {
 
 	pg := ansible.NewPage(l.Versions(rows[0].Namespace, rows[0].Name), len(rows), limit, offset)
 	pg.Data = refs
-	h.writeDoc(w, r, repo, pg)
+	h.writeDoc(w, r, repo, origin, pg)
 }
 
 // versionDoc builds the detail document of a stored version.
-func (h *HTTPHandler) versionDoc(repoName string, c *models.AnsibleCollection) ansible.VersionDoc {
+func versionDoc(origin, repoName string, c *models.AnsibleCollection) ansible.VersionDoc {
 	meta := map[string]any{}
 	if len(c.Metadata) > 0 {
 		// An undecodable document leaves the metadata empty: the artifact and
@@ -176,7 +179,7 @@ func (h *HTTPHandler) versionDoc(repoName string, c *models.AnsibleCollection) a
 	}
 
 	meta["dependencies"] = c.Dependencies
-	ref := versionRef(h.links(repoName), c)
+	ref := versionRef(links(origin, repoName), c)
 
 	doc := ansible.VersionDoc{
 		Version:         ref.Version,
@@ -189,7 +192,7 @@ func (h *HTTPHandler) versionDoc(repoName string, c *models.AnsibleCollection) a
 		Namespace:       ansible.NamespaceDoc{Name: c.Namespace},
 		Metadata:        meta,
 	}
-	doc.Relink(h.links(repoName))
+	doc.Relink(links(origin, repoName))
 
 	return doc
 }
@@ -225,7 +228,8 @@ func (h *HTTPHandler) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if c := h.lookupVersion(w, r, repo); c != nil {
-		h.writeDoc(w, r, repo, h.versionDoc(repo.Name, c))
+		origin := h.PublicBase(w, r)
+		h.writeDoc(w, r, repo, origin, versionDoc(origin, repo.Name, c))
 	}
 }
 
@@ -301,7 +305,7 @@ func (h *HTTPHandler) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeDoc(w, r, repo, importTask(c))
+	h.writeDoc(w, r, repo, "", importTask(c))
 }
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {

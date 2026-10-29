@@ -33,11 +33,11 @@ Both clients impose these on the registry, not on OpenArtifact; they were verifi
 | **A hostname with a dot** (`artifacts.example.com`, not `localhost` or `oa`) | The first segment of a module or provider source is read as a registry host only if it contains a dot (otherwise it is a namespace on the default public registry). `localhost` and single-label names such as `oa` therefore fail with `must contain at least one dot`. A port is allowed (`artifacts.example.com:8443`). |
 | **The discovery document** at `https://HOST/.well-known/terraform.json`, served as `application/json` | OpenArtifact serves it itself, without authentication. A reverse proxy that rewrites the content type or routes `/.well-known/` elsewhere breaks the registry. |
 | **A `credentials` block with an API token** for private repositories | Both clients send it as `Authorization: Bearer <TOKEN>` to discovery and the registry API. See [authentication](../security/authentication.md). |
-| **`BASE_URL` set to the public HTTPS URL** | Download URLs are absolute and built from it, see [download tickets](#download-tickets). With a wrong `BASE_URL` (for example the internal `http://` address) the registry answers fine and `terraform init` then fails on the download step. |
+| **The proxy forwards the public host** (and `BASE_URL` only for a path prefix) | Download URLs are path-absolute and resolved by the client against the registry URL it called, see [download tickets](#download-tickets). Behind a proxy, forward `Host` or `X-Forwarded-Host` with the public host and any non-default port; `X-Forwarded-*` is believed only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`. |
 
 Reverse proxy and TLS:
 
-- Terminate TLS in front of OpenArtifact (or give the server its own certificate) and forward `/` unchanged, including `/.well-known/terraform.json` and `/terraform/dl/`. If `BASE_URL` has a path prefix, the discovery document still lives at the host root: route `/.well-known/terraform.json` on the public host to the server as well as the prefix.
+- Terminate TLS in front of OpenArtifact (or give the server its own certificate) and forward `/` unchanged, including `/.well-known/terraform.json` and `/terraform/dl/`. If the deployment sits under a path prefix, set `BASE_URL` (only its path is used for the ticket URLs) and the discovery document still lives at the host root: route `/.well-known/terraform.json` on the public host to the server as well as the prefix.
 - Allow request bodies as large as the files you publish (provider zips up to 1 GiB, module archives up to 256 MiB, see [limits](#behavior-and-limits)); proxy buffering and `client_max_body_size`-style limits must not cut them.
 - A private CA is trusted by the client through the operating system store or `SSL_CERT_FILE` (Go reads it on Unix systems); there is no flag to skip verification in either client.
 
@@ -166,13 +166,13 @@ oa gpg generate --name registry --algorithm rsa4096 --activate
 
 Terraform and OpenTofu send **no credentials** to the download URLs a registry returns (`X-Terraform-Get` for modules, `download_url`, `shasums_url` and `shasums_signature_url` for providers); they also `HEAD` the archive before fetching it. A private repository therefore cannot protect those URLs with the API token.
 
-Instead the authenticated registry call (which already passed RBAC, quarantine and license checks) mints a **download ticket**: the returned URL is `BASE_URL/terraform/dl/<ticket>/<file name>`, a capability URL signed with an HMAC key derived from the server's HMAC key (`AUTH_HMAC_KEY`) and valid for **15 minutes**. The URL ends in the real file name (`vpc-aws-1.0.0.zip` or `.tar.gz`, `terraform-provider-hello_1.0.0_linux_amd64.zip`) because Terraform and go-getter pick the unpacker from the extension.
+Instead the authenticated registry call (which already passed RBAC, quarantine and license checks) mints a **download ticket**: the returned URL is the path-absolute `PREFIX/terraform/dl/<ticket>/<file name>` (`PREFIX` is only the path of an explicit `BASE_URL`, empty otherwise; Terraform resolves it against the URL of the registry call), a capability URL signed with an HMAC key derived from the server's HMAC key (`AUTH_HMAC_KEY`) and valid for **15 minutes**. The URL ends in the real file name (`vpc-aws-1.0.0.zip` or `.tar.gz`, `terraform-provider-hello_1.0.0_linux_amd64.zip`) because Terraform and go-getter pick the unpacker from the extension.
 
 - A ticket grants read access to exactly one file of one repository, nothing else. An expired, altered or foreign ticket answers `403` without saying which.
 - Anyone who holds a ticket URL can download that file until it expires; do not paste them into public logs. They are not API tokens and cannot be used on any other route.
 - The ticket route is outside RBAC by design and answers `GET` and `HEAD` with `Cache-Control: private, no-store`. Downloads are counted when the ticket is minted, by the authenticated call.
 - Replicas must share the same `AUTH_HMAC_KEY` (the [secrets to preserve](../getting-started/upgrading.md#secrets-to-preserve)), otherwise a ticket minted by one replica is refused by another.
-- Because the URL is absolute and built from `BASE_URL`, a wrong `BASE_URL` shows up here first: the registry call works and the download fails.
+- Because the URL is path-absolute, the download goes to the host the client used for the registry call. A deployment under a path prefix without `BASE_URL`, or a `BASE_URL` override with the wrong path, shows up here first: the registry call works and the download fails.
 
 ## Proxy repositories
 
@@ -197,7 +197,7 @@ A proxy repository serves a public registry through OpenArtifact: `registry.terr
   Every other go-getter source is refused with **`501`** and a message pointing here: forced getters other than `git::` on GitHub (`hg::`, `s3::`, `gcs::`, ...), git hosts other than `github.com`, scp-style addresses (`git@github.com:org/repo`), `ssh://` URLs, URLs with credentials, a `//subdir` on an archive format other than zip or tar.gz, and the getter parameters `sshkey`, `checksum` and `filename` (and, on GitHub sources, anything but `ref` and `depth`).
 - **Module details** (`GET /MODULE/SYSTEM/VERSION`) are generated from the version list: `published_at` is absent and `downloads` is `0`.
 - **Quarantine, blocking and RBAC** apply as for other proxies: a blocked repository answers `403`, a quarantined package answers `403` with code `ARTIFACT_QUARANTINED` and no ticket is issued. Proxy caches are not counted against the storage quota.
-- **Downloads need `BASE_URL`** and the same `AUTH_HMAC_KEY` on every replica, as for hosted repositories; without a ticket key the download calls answer `503`.
+- **Downloads need** the same `AUTH_HMAC_KEY` on every replica, as for hosted repositories; without a ticket key the download calls answer `503`.
 
 Create one with the API or the web UI:
 
@@ -227,7 +227,7 @@ A group merges hosted and proxy repositories of format `terraform` behind one na
 {"modules.v1": "https://HOST/repos/", "providers.v1": "https://HOST/repos/"}
 ```
 
-The values are `BASE_URL` plus `/repos/`; the clients append `REPO/...` to them. The response is `application/json`, as Terraform requires.
+The values are `PREFIX/repos/` (`PREFIX` is the path of an explicit `BASE_URL`, empty otherwise); the clients append `REPO/...` to them. The response is `application/json`, as Terraform requires.
 
 ## Endpoints
 
@@ -283,7 +283,7 @@ The `versions` endpoints answer ETag/304 like the other index documents; they ar
 | Discovery fails with a content type or invalid response error | The discovery response is not `application/json`: a reverse proxy intercepts `/.well-known/` or rewrites the content type, or the host is not OpenArtifact. `curl -i https://HOST/.well-known/terraform.json` must show `200` and `Content-Type: application/json`. |
 | `403`, `Unauthorized` or `401` on `init` for a private repository | No `credentials` block (or `TF_TOKEN_...`) for the exact host, an expired token, or a token without read access to the repository. |
 | Registry call works, download fails with `403` | The ticket expired (15 minutes between the registry call and the download, for instance a very slow `init` with a stalled plugin cache) or a replica without the same `AUTH_HMAC_KEY` minted it. Retry; check the replicas' `AUTH_HMAC_KEY`. |
-| Registry call works, download fails with a connection error or a `http://` URL | `BASE_URL` is not the public HTTPS URL. Fix it and restart; download URLs are built from it. |
+| Registry call works, download fails with a connection error or a `http://` URL | Download URLs follow the host of the registry call, so the proxy in front is not forwarding the public host or scheme (check `X-Forwarded-Host`, `X-Forwarded-Proto` and `OPENARTIFACT_TRUSTED_PROXIES`), or a `BASE_URL` override is wrong (its path is used for the ticket URLs). Fix it and restart. |
 | `no GPG signing key is configured for this repository` (`503`) | No active key for the repository and no global active key. `oa gpg generate --activate` (global) or `oa gpg activate KEY --repository REPO`. |
 | `Failed to install provider` ... `the current package for ... doesn't match any of the checksums` | The version was changed after the lock file was written (platform added, version deleted and published again). Run `terraform init -upgrade` or `terraform providers lock` for the platforms you use. |
 | `provider ... does not support the platform linux_arm64` / `no available releases match` | No zip was uploaded for that OS and architecture, or the version constraint matches nothing. `GET /repos/REPO/TYPE/versions` lists the platforms per version. |

@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/branding"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/internal/trash"
 	webhandler "github.com/openartifact/openartifact/web"
@@ -116,6 +117,10 @@ func (a *app) addAccessMiddleware(srv *api.HTTPServer) {
 
 	a.web.trustedProxies = middleware.NewTrustedProxies(cfg.Server.TrustedProxies)
 
+	// Package-client URLs follow the request unless BASE_URL overrides them;
+	// forwarded headers count only from a trusted proxy.
+	srv.AddMiddleware(publicurl.Middleware(cfg.ClientBaseURL(), cfg.BaseURL, a.web.trustedProxies.TrustsPeer))
+
 	if len(cfg.Server.IPAllowlist) > 0 {
 		srv.AddMiddleware(middleware.IPAllowlistMiddleware(cfg.Server.IPAllowlist, a.web.trustedProxies))
 		a.log.Infow("IP allowlist middleware enabled", "cidrs", cfg.Server.IPAllowlist)
@@ -155,6 +160,7 @@ func (a *app) setupAuthorization() error {
 		MCPPath:             cfg.MCP.HTTPPath,
 		SPAHandler:          w.spaHandler,
 		BaseURL:             cfg.BaseURL,
+		ClientBaseURL:       cfg.ClientBaseURL(),
 	}
 
 	a.configureMCPAuth(&rbacCfg)

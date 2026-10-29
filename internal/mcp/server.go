@@ -117,8 +117,10 @@ var (
 type Options struct {
 	// Version is the build version reported in the MCP serverInfo.
 	Version string
-	// BaseURL is the externally reachable server origin used for download and
-	// client-setup URLs (config BASE_URL). Empty yields relative download paths.
+	// BaseURL is BASE_URL as an explicit override of the origin used in download
+	// and client-setup URLs; empty derives it from the calling request (see
+	// internal/publicurl), and relative download paths result when the context
+	// carries none.
 	BaseURL string
 	// ResourceMetadataURL is the RFC 9728 metadata URL advertised in the
 	// WWW-Authenticate header of 401 responses. Empty omits the parameter.

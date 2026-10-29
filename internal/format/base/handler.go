@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
+	"github.com/openartifact/openartifact/internal/publicurl"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -32,7 +33,9 @@ type Handler struct {
 	Log       *logger.Logger
 	DB        database.Database
 	BlobStore storage.BlobStore
-	BaseURL   string
+	// BaseURL is the configured BASE_URL when the operator set one, "" otherwise.
+	// Read it only through PublicBase.
+	BaseURL string
 
 	// Publisher receives artifact.* events; nil disables event publishing.
 	Publisher webhook.Publisher
@@ -53,6 +56,17 @@ func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, 
 		BaseURL:   baseURL,
 		renderNS:  strconv.FormatUint(handlerSeq.Add(1), 10) + "|",
 	}
+}
+
+// PublicBase returns the origin (scheme://host, plus BASE_URL's path prefix,
+// no trailing slash) this handler hands to clients in absolute URLs for the
+// request r: BASE_URL when it is set, else the request's own origin, with
+// X-Forwarded-* honored only from a trusted proxy (internal/publicurl). A
+// document built from it MUST carry the result in its validator or cache key,
+// and PublicBase MUST run before the response headers are written (it adds
+// Vary). Formats whose clients resolve relative URLs should emit those instead.
+func (h *Handler) PublicBase(w http.ResponseWriter, r *http.Request) string {
+	return publicurl.Resolve(w, r, h.BaseURL)
 }
 
 // Rendered returns the metadata document cached under key, rendering it with

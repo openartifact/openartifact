@@ -48,7 +48,6 @@ type NPMUploadHandler struct {
 	log       *logger.Logger
 	db        database.Database
 	blobStore storage.BlobStore
-	baseURL   string
 	reg       *metrics.Registry
 	npmWorker *worker.NPMMetadataWorker
 	publisher webhook.Publisher
@@ -60,10 +59,10 @@ func NewNPMUploadHandler(
 	log *logger.Logger,
 	db database.Database,
 	blobStore storage.BlobStore,
-	baseURL string,
+	_ string, // BASE_URL: a publish builds no client-visible URL
 	reg *metrics.Registry,
 ) *NPMUploadHandler {
-	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, reg: reg,
+	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, reg: reg,
 		publishSlots: make(chan struct{}, maxConcurrentNPMPublishes)}
 }
 

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -292,10 +293,22 @@ func TestUploadRefusesFilenameCollision(t *testing.T) {
 }
 
 func TestIndexURLsArePathEscaped(t *testing.T) {
-	idx := buildHelmIndex([]*models.HelmChart{{Name: "a", Version: "1.0.0+b#c?d"}}, "r", "http://h")
+	idx := buildHelmIndex([]*models.HelmChart{{Name: "a", Version: "1.0.0+b#c?d"}})
 
 	got := idx.Entries["a"][0].URLs[0]
-	if want := "http://h/repos/r/charts/a-1.0.0+b%23c%3Fd.tgz"; got != want {
+	if want := "charts/a-1.0.0+b%23c%3Fd.tgz"; got != want {
 		t.Errorf("url = %q, want %q", got, want)
+	}
+
+	// helm resolves it against the repository URL.
+	base, _ := url.Parse("http://h/repos/r")
+
+	ref, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := "http://h/repos/r/charts/a-1.0.0+b%23c%3Fd.tgz"; base.JoinPath("/").ResolveReference(ref).String() != want {
+		t.Errorf("resolved = %q, want %q", base.JoinPath("/").ResolveReference(ref), want)
 	}
 }

@@ -125,9 +125,7 @@ func (h *Handler) servePyPIIndex(w http.ResponseWriter, r *http.Request, grp *mo
 			names := pypisimple.MergeNames(lists...)
 			slices.Sort(names)
 
-			return pypisimple.RenderIndex(offer.Format, names, func(name string) string { //nolint:wrapcheck // logged by serveMergedDoc
-				return pypisimple.ProjectURL(grp.Name, name)
-			})
+			return pypisimple.RenderIndex(offer.Format, names, pypisimple.ProjectURL) //nolint:wrapcheck // logged by serveMergedDoc
 		},
 	})
 }
@@ -186,7 +184,7 @@ func (h *Handler) servePyPIProject(
 				project,
 				merged,
 				func(f *pypisimple.File) string { //nolint:wrapcheck // logged by serveMergedDoc
-					return pypisimple.FileURL(grp.Name, project, f.Filename)
+					return pypisimple.FileURL(project, f.Filename)
 				},
 			)
 		},

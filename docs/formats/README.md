@@ -15,7 +15,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 - Every repository is served under `/repos/REPO/...`.
 - Ivy, Maven, raw and sbt are served under a format prefix: `/repos/ivy/REPO`, `/repos/maven/REPO`, `/repos/raw/REPO`, `/repos/sbt/REPO`. Repositories named like these prefixes are not reachable by the generic URL.
 - Docker / OCI is the exception: the registry API is at `HOST/v2/`, and the first path segment after `/v2/` is the repository name ([details](docker.md)).
-- Set `BASE_URL` (`baseUrl`) to the externally visible URL: npm tarball URLs, Helm `index.yaml`, PyPI JSON, the Cargo `config.json` and the Terraform download URLs are built from it.
+- `BASE_URL` (`baseUrl`) is optional for package clients. Helm, PyPI and Terraform metadata use relative references and need no host; npm, Cargo, NuGet, Conan 1.x, Composer `dist.url` and Ansible use the origin of the request (`Host`, or `X-Forwarded-Host`/`X-Forwarded-Proto` from a trusted proxy), and `BASE_URL` overrides it when set. Per protocol: [the public URL](../getting-started/installation.md#the-public-url-and-base_url).
 
 ## Format matrix
 

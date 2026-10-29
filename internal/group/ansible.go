@@ -63,7 +63,13 @@ func (h *Handler) serveAnsible(
 		return true
 	}
 
-	l := pkgansible.Links{Root: h.baseURL + "/repos/" + grp.Name + "/api/v3"}
+	// The root document links relatively and names no origin; every other
+	// document carries absolute links (ansible-core uses download_url as sent)
+	// on the origin of the request, which its content digest, the validator,
+	// therefore holds.
+	links := func() pkgansible.Links {
+		return pkgansible.Links{Root: h.publicBase(w, r) + "/repos/" + grp.Name + "/api/v3"}
+	}
 
 	switch p.Kind {
 	case pkgansible.KindRoot:
@@ -72,13 +78,14 @@ func (h *Handler) serveAnsible(
 			"available_versions": map[string]string{"v3": "v3/"},
 		}, false)
 	case pkgansible.KindV3:
+		l := links()
 		h.writeAnsible(w, r, grp, map[string]string{"collections": l.Collections(), "artifacts": l.Artifacts()}, false)
 	case pkgansible.KindIndex:
-		h.serveAnsibleIndex(w, r, grp, l, members, be)
+		h.serveAnsibleIndex(w, r, grp, links(), members, be)
 	case pkgansible.KindCollection, pkgansible.KindVersions:
-		h.serveAnsibleVersions(w, r, grp, l, p, members, be)
+		h.serveAnsibleVersions(w, r, grp, links(), p, members, be)
 	case pkgansible.KindVersion:
-		h.serveAnsibleVersion(w, r, grp, l, p, relPath, members, be)
+		h.serveAnsibleVersion(w, r, grp, links(), p, relPath, members, be)
 	case pkgansible.KindDownload:
 		return false
 	}

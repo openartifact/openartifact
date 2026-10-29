@@ -137,9 +137,15 @@ type Config struct {
 	Exploit ExploitConfig `yaml:"exploit"`
 	// OSVMirror configures the local OSV vulnerability mirror (see docs/security/scanning.md).
 	OSVMirror OSVMirrorConfig `yaml:"osvMirror"`
-	// BaseURL is the public URL of the server; it is used for generated links
-	// and SSO callbacks, so set it when the server runs behind a reverse proxy.
+	// BaseURL is the public URL of the server. SSO callbacks, SAML metadata,
+	// webhook sources and anything else sent outside a client's own request
+	// always use it. Package-client URLs (npm tarballs, the Cargo config.json,
+	// NuGet resources, Composer dists, ...) are derived from the request when
+	// it is unset (see internal/publicurl) and use it as an override when set.
 	BaseURL string `yaml:"baseUrl"`
+	// BaseURLSet reports that the operator configured BaseURL (YAML or env);
+	// false means BaseURL holds the localhost default.
+	BaseURLSet bool `yaml:"-"`
 
 	// The replica lives under storage.replica in the YAML file; loadReplicaFromYAML
 	// decodes it, which is why the field itself carries no yaml key.
@@ -760,7 +766,6 @@ func defaultConfig() *Config {
 			Grype:           GrypeScanner{Install: InstallNone},
 		},
 		Exploit: defaultExploitConfig(),
-		BaseURL: "http://localhost:8080",
 	}
 }
 
@@ -1003,16 +1008,31 @@ func applyEnvOverrides(cfg *Config) {
 
 // finalizeConfig handles special configuration cases.
 func finalizeConfig(cfg *Config) {
-	// Handle BASE_URL default
-	if cfg.BaseURL == "" {
+	// Handle BASE_URL default: SSO callbacks and webhook sources need a
+	// configured value; package-client URLs follow the request instead.
+	cfg.BaseURLSet = cfg.BaseURL != ""
+	if !cfg.BaseURLSet {
 		cfg.BaseURL = "http://localhost:8080"
 
-		fmt.Fprintln(os.Stderr, "WARN: BASE_URL not set, defaulting to localhost — SSO callbacks will not work behind a proxy")
+		fmt.Fprintln(os.Stderr, "WARN: BASE_URL not set, defaulting to localhost — package-client URLs follow the request host, "+
+			"but SSO callbacks and webhook links will not work behind a proxy")
 	}
 
 	// Server-relayed presigned uploads (filesystem and oci storage) point
-	// clients at this server.
-	cfg.Storage.PublicURL = cfg.BaseURL
+	// clients at this server: at BASE_URL when set, else at the request's origin.
+	cfg.Storage.PublicURL = cfg.ClientBaseURL()
+	cfg.Storage.PublicURLFromRequest = !cfg.BaseURLSet
+}
+
+// ClientBaseURL is the operator's BASE_URL as an explicit override for the URLs
+// handed to package clients, or "" when it was not set and those URLs are
+// derived from each request (internal/publicurl).
+func (c *Config) ClientBaseURL() string {
+	if c.BaseURLSet {
+		return c.BaseURL
+	}
+
+	return ""
 }
 
 // ValidateFile validates a config file without loading it into the application.

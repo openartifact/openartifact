@@ -26,8 +26,10 @@ import (
 //
 //   - index.yaml is cached verbatim under the key "index.yaml" with the
 //     repository's cache TTL and serve-stale rules. Every response rewrites
-//     each chart URL (absolute, or relative to the upstream) to
-//     BASE_URL/repos/<repo>/charts/<file>, so the cache stays upstream-shaped.
+//     each chart URL (absolute, or relative to the upstream) to the reference
+//     charts/<file>, which helm resolves against the repository URL: no origin
+//     is involved, so the cache stays upstream-shaped and the ETag does not
+//     depend on the host the request came in on.
 //     Versions that only list URLs that cannot be mirrored (oci://) are left
 //     out: this server could not serve them.
 //   - Charts (GET /charts/<file>) are cached under "charts/<file>", immutable
@@ -116,7 +118,7 @@ var helmIndexDoc = metaDoc{ //nolint:gochecknoglobals // read-only descriptor
 // helmIndexETag identifies one rendering of a cached index: the upstream body
 // and everything the rewritten URLs derive from.
 func (s *Service) helmIndexETag(repo *models.Repository, blobKey string) string {
-	sum := sha256.Sum256([]byte(blobKey + "\x00" + s.baseURL + "\x00" + repo.Name + "\x00" + repo.UpstreamURL))
+	sum := sha256.Sum256([]byte(blobKey + "\x00" + repo.Name + "\x00" + repo.UpstreamURL))
 	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
@@ -177,8 +179,6 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 		return nil, err
 	}
 
-	chartBase := s.baseURL + "/repos/" + repo.Name + "/" + helmChartsDir
-
 	var namer helmFileNamer
 
 	ix.RewriteURLs(func(cv pkghelm.ChartVersion) []string {
@@ -195,7 +195,7 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 				continue
 			}
 
-			if u := chartBase + url.PathEscape(file); !slices.Contains(out, u) {
+			if u := helmChartsDir + url.PathEscape(file); !slices.Contains(out, u) {
 				out = append(out, u)
 			}
 		}

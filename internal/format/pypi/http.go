@@ -217,8 +217,8 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
 
 	for _, name := range uniqueNames {
-		fmt.Fprintf(&html, `<a href="/repos/%s/simple/%s/">%s</a>`+"\n",
-			htmlesc.EscapeString(repoName), url.PathEscape(name), htmlesc.EscapeString(name))
+		fmt.Fprintf(&html, `<a href="%s/">%s</a>`+"\n",
+			htmlesc.EscapeString(url.PathEscape(name)), htmlesc.EscapeString(name))
 	}
 
 	html.WriteString("</body></html>\n")
@@ -265,7 +265,8 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
 
 	for _, pkg := range versions {
-		fileURL := fmt.Sprintf("/repos/%s/files/%s", htmlesc.EscapeString(repoName), url.PathEscape(pkg.Filename))
+		// Relative to the page URL ".../simple/<pkg>/" (PEP 503): no origin.
+		fileURL := htmlesc.EscapeString("../../files/" + url.PathEscape(pkg.Filename))
 		fmt.Fprintf(&html, `<a href="%s#sha256=%s"`, fileURL, htmlesc.EscapeString(pkg.SHA256Digest))
 
 		if pkg.RequiresPython != "" {
@@ -676,11 +677,15 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The legacy JSON API is consumed by tools that do not resolve references,
+	// so its file URLs are absolute (and, with no ETag, never cached).
+	publicBase := h.PublicBase(w, r)
+
 	// Build JSON response
 	releases := make(map[string][]map[string]any)
 
 	for _, pkg := range versions {
-		fileURL := fmt.Sprintf("%s/repos/%s/files/%s", h.BaseURL, repoName, url.PathEscape(pkg.Filename))
+		fileURL := fmt.Sprintf("%s/repos/%s/files/%s", publicBase, url.PathEscape(repoName), url.PathEscape(pkg.Filename))
 
 		fileInfo := map[string]any{
 			"filename": pkg.Filename,

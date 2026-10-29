@@ -34,7 +34,7 @@ func (a *app) setupMCP() {
 
 	opts := aimcp.Options{
 		Version:            version,
-		BaseURL:            cfg.BaseURL,
+		BaseURL:            cfg.ClientBaseURL(),
 		MaxBodyBytes:       cfg.MCP.MaxBodyBytes,
 		RateLimitPerMinute: cfg.MCP.RateLimitPerMinute,
 		AITriggerPerMinute: cfg.MCP.AITriggerPerMinute,

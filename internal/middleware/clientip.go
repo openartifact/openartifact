@@ -59,6 +59,12 @@ func (t *TrustedProxies) trusts(ip net.IP) bool {
 	return false
 }
 
+// TrustsPeer reports whether the request's immediate TCP peer is a configured
+// trusted proxy, i.e. whether its X-Forwarded-* headers may be believed.
+func (t *TrustedProxies) TrustsPeer(r *http.Request) bool {
+	return t.trusts(net.ParseIP(remoteHost(r.RemoteAddr)))
+}
+
 // remoteHost strips the port from an http.Request.RemoteAddr, which is
 // always "host:port" (or "[ipv6]:port") as set by net/http itself — never
 // attacker-controlled.

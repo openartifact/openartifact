@@ -73,7 +73,7 @@ Dist-tags (`npm dist-tag`):
 | `GET /<pkg>/-/<file>.tgz`, `GET /@scope/<pkg>/-/<file>.tgz` | tarball |
 
 - The packument carries `ETag` (`If-None-Match` answers `304`), `Vary: Accept` and `Cache-Control: public, max-age=60`.
-- `dist.tarball` is `BASE_URL/repos/REPO/<pkg>/-/<tarball>`: set `BASE_URL` to the URL clients use, or installs download from the wrong host.
+- `dist.tarball` is an absolute URL `ORIGIN/repos/REPO/<pkg>/-/<tarball>`, because npm stores it verbatim as `resolved`. `ORIGIN` is derived from the request (`X-Forwarded-Host` and `X-Forwarded-Proto` are believed only from a peer in `OPENARTIFACT_TRUSTED_PROXIES`, and the proxy must forward a non-default port in the host); an explicit `BASE_URL` always wins. The packument sends `Vary: Host, X-Forwarded-Host, X-Forwarded-Proto` and its `ETag` carries an origin tag (`"<nanos>-<origin tag>"`, abbreviated `"abbr-<nanos>-<origin tag>"`), so a `304` for one host never serves another.
 - Tarball names are `<unscoped-name>-<version>.tgz`.
 - There is no search or login endpoint; configure the token as shown above rather than `npm login`.
 

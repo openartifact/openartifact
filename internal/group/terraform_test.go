@@ -222,7 +222,7 @@ func TestTerraformGroup_DownloadsComeFromTheOwningMemberUntouched(t *testing.T) 
 
 		switch {
 		case m.Name == "mirror" && p == "net/vpc/1.0.0/download":
-			w.Header().Set("X-Terraform-Get", "http://oa.test/terraform/dl/ticket/vpc.zip")
+			w.Header().Set("X-Terraform-Get", "/terraform/dl/ticket/vpc.zip")
 			w.WriteHeader(http.StatusNoContent)
 		case m.Name == "mirror" && p == "random/1.0.0/download/linux/amd64":
 			w.WriteHeader(http.StatusOK)
@@ -240,7 +240,7 @@ func TestTerraformGroup_DownloadsComeFromTheOwningMemberUntouched(t *testing.T) 
 	}
 
 	w := serve("net/vpc/1.0.0/download")
-	if w.Code != http.StatusNoContent || w.Header().Get("X-Terraform-Get") != "http://oa.test/terraform/dl/ticket/vpc.zip" {
+	if w.Code != http.StatusNoContent || w.Header().Get("X-Terraform-Get") != "/terraform/dl/ticket/vpc.zip" {
 		t.Errorf("module download = %d %v", w.Code, w.Header())
 	}
 

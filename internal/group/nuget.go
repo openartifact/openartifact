@@ -57,19 +57,21 @@ func (h *Handler) serveNuGet(
 		return false
 	}
 
-	groupV3 := h.baseURL + "/repos/" + grp.Name + "/v3/"
+	// The members answer with URLs under the origin this request reached (they
+	// resolve it the same way), so the rewrite below needs it per request.
+	origin := h.publicBase(w, r)
 
 	switch {
 	case len(segs) == 2 && segs[1] == "index.json":
-		h.serveNuGetIndex(w, r, grp, groupV3)
+		h.serveNuGetIndex(w, r, grp, origin)
 	case len(segs) == 2 && (segs[1] == "query" || segs[1] == "autocomplete"):
 		http.NotFound(w, r)
 	case len(segs) == 4 && segs[1] == "package" && segs[3] == "index.json" && nugetSegment(segs[2]):
-		h.serveNuGetVersions(w, r, grp, members, be, groupV3, relPath)
+		h.serveNuGetVersions(w, r, grp, members, be, origin, relPath)
 	case len(segs) == 4 && segs[1] == "registration" && segs[3] == "index.json" && nugetSegment(segs[2]):
-		h.serveNuGetRegistration(w, r, grp, members, be, groupV3, strings.ToLower(segs[2]))
+		h.serveNuGetRegistration(w, r, grp, members, be, origin, strings.ToLower(segs[2]))
 	case len(segs) >= 4 && segs[1] == "registration" && nugetSegment(segs[2]):
-		h.serveNuGetLeaf(w, r, grp, members, be, groupV3, relPath)
+		h.serveNuGetLeaf(w, r, grp, members, be, origin, relPath)
 	default:
 		return false
 	}
@@ -93,10 +95,10 @@ func nugetAsk(path string, first int) memberAsk {
 
 // nugetGroupDoc returns the document of answer a with every URL of its member
 // rewritten to point at the group. ok is false when the document is unreadable.
-func (h *Handler) nugetGroupDoc(grp *models.Repository, groupV3 string, a answer, path string) ([]byte, bool) {
+func (h *Handler) nugetGroupDoc(grp *models.Repository, origin string, a answer, path string) ([]byte, bool) {
 	body, err := pkgnuget.RewriteURLs(a.body, pkgnuget.URLPrefix{
-		From: h.baseURL + "/repos/" + a.member.Name + "/v3/",
-		To:   groupV3,
+		From: nugetV3(origin, a.member.Name),
+		To:   nugetV3(origin, grp.Name),
 	})
 	if err != nil {
 		h.log.Warnw("unreadable nuget document from group member", "group", grp.Name, "member", a.member.Name, "path", path, "error", err)
@@ -106,7 +108,10 @@ func (h *Handler) nugetGroupDoc(grp *models.Repository, groupV3 string, a answer
 	return body, true
 }
 
-func (h *Handler) serveNuGetIndex(w http.ResponseWriter, r *http.Request, grp *models.Repository, groupV3 string) {
+// nugetV3 is the root of repository name's v3 resources under origin.
+func nugetV3(origin, name string) string { return origin + "/repos/" + name + "/v3/" }
+
+func (h *Handler) serveNuGetIndex(w http.ResponseWriter, r *http.Request, grp *models.Repository, origin string) {
 	idx := pkgnuget.ServiceIndex{
 		PackageBase:   "x/",
 		Registrations: "x/",
@@ -115,7 +120,7 @@ func (h *Handler) serveNuGetIndex(w http.ResponseWriter, r *http.Request, grp *m
 		RegistrationTypes: []string{"RegistrationsBaseUrl", "RegistrationsBaseUrl/3.6.0", "RegistrationsBaseUrl/Versioned"},
 	}
 
-	body, err := idx.Render(strings.TrimSuffix(groupV3, "/v3/"))
+	body, err := idx.Render(origin + "/repos/" + grp.Name)
 	if err != nil {
 		h.log.Errorw("failed to render nuget group service index", "group", grp.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -135,7 +140,7 @@ func (h *Handler) serveNuGetLeaf(
 	grp *models.Repository,
 	members []*models.Repository,
 	be Backend,
-	groupV3, relPath string,
+	origin, relPath string,
 ) {
 	sess := h.newSession(r.Context())
 	defer sess.release()
@@ -155,7 +160,7 @@ func (h *Handler) serveNuGetLeaf(
 			continue
 		}
 
-		body, ok := h.nugetGroupDoc(grp, groupV3, a, relPath)
+		body, ok := h.nugetGroupDoc(grp, origin, a, relPath)
 		if !ok {
 			c.fail(m)
 			continue
@@ -176,7 +181,7 @@ func (h *Handler) serveNuGetVersions(
 	grp *models.Repository,
 	members []*models.Repository,
 	be Backend,
-	groupV3, relPath string,
+	origin, relPath string,
 ) {
 	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
 		ask:         nugetAsk(relPath, 0),
@@ -187,7 +192,7 @@ func (h *Handler) serveNuGetVersions(
 			var lists [][]string
 
 			for _, a := range c.docs {
-				doc, ok := h.nugetGroupDoc(grp, groupV3, a, relPath)
+				doc, ok := h.nugetGroupDoc(grp, origin, a, relPath)
 				if !ok {
 					c.fail(a.member)
 					continue
@@ -234,7 +239,7 @@ func (h *Handler) serveNuGetRegistration(
 	grp *models.Repository,
 	members []*models.Repository,
 	be Backend,
-	groupV3, id string,
+	origin, id string,
 ) {
 	sess := h.newSession(r.Context())
 	defer sess.release()
@@ -247,7 +252,7 @@ func (h *Handler) serveNuGetRegistration(
 	var sets [][]json.RawMessage
 
 	for _, a := range c.docs {
-		items, ok := h.nugetMemberItems(sess, mr, grp, groupV3, a, id, be)
+		items, ok := h.nugetMemberItems(sess, mr, grp, origin, a, id, be)
 		if !ok {
 			c.fail(a.member)
 			continue
@@ -261,7 +266,7 @@ func (h *Handler) serveNuGetRegistration(
 		return
 	}
 
-	indexURL := groupV3 + "registration/" + url.PathEscape(id) + "/index.json"
+	indexURL := nugetV3(origin, grp.Name) + "registration/" + url.PathEscape(id) + "/index.json"
 
 	body, err := pkgnuget.MergeRegistrationItems(indexURL, sets...)
 	if err != nil {
@@ -283,14 +288,14 @@ func (h *Handler) nugetMemberItems(
 	sess *mergeSession,
 	mr *http.Request,
 	grp *models.Repository,
-	groupV3 string,
+	origin string,
 	a answer,
 	id string,
 	be Backend,
 ) ([]json.RawMessage, bool) {
 	m := a.member
 
-	doc, ok := h.nugetGroupDoc(grp, groupV3, a, "v3/registration/"+id+"/index.json")
+	doc, ok := h.nugetGroupDoc(grp, origin, a, "v3/registration/"+id+"/index.json")
 	if !ok {
 		return nil, false
 	}
@@ -320,7 +325,7 @@ func (h *Handler) nugetMemberItems(
 			return nil, false
 		}
 
-		pd, ok := h.nugetGroupDoc(grp, groupV3, pa, pagePath)
+		pd, ok := h.nugetGroupDoc(grp, origin, pa, pagePath)
 		if !ok {
 			return nil, false
 		}

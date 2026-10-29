@@ -83,9 +83,7 @@ func (s *Service) servePyPIIndex(w http.ResponseWriter, r *http.Request, repo *m
 			return nil, fmt.Errorf("%w: %w", errUnusableDoc, perr)
 		}
 
-		return pypisimple.RenderIndex(offer.Format, names, func(name string) string {
-			return pypisimple.ProjectURL(repo.Name, name)
-		})
+		return pypisimple.RenderIndex(offer.Format, names, pypisimple.ProjectURL)
 	})
 }
 
@@ -109,7 +107,7 @@ func (s *Service) servePyPIProject(w http.ResponseWriter, r *http.Request, repo 
 			}
 
 			return pypisimple.RenderProject(offer.Format, project, pypisimple.ServableFiles(files), func(f *pypisimple.File) string {
-				return pypisimple.FileURL(repo.Name, project, f.Filename)
+				return pypisimple.FileURL(project, f.Filename)
 			})
 		},
 	)

@@ -419,8 +419,12 @@ func nugetRewrites(idx *pkgnuget.ServiceIndex, repoURL string) []pkgnuget.URLPre
 	}
 }
 
-func (s *Service) nugetRepoURL(repo *models.Repository) string {
-	return s.baseURL + "/repos/" + repo.Name
+// nugetRepoURL is the repository's root URL as the client reached it (BASE_URL
+// when set, else the request's origin). NuGet clients take the service index
+// @ids as full URLs, and the rewritten documents are built from it per request:
+// the cached upstream copies never hold it, and every validator folds it in.
+func (s *Service) nugetRepoURL(w http.ResponseWriter, r *http.Request, repo *models.Repository) string {
+	return s.publicBase(w, r) + "/repos/" + repo.Name
 }
 
 func nugetETag(parts ...string) string {
@@ -436,7 +440,7 @@ func (s *Service) serveNuGetIndex(w http.ResponseWriter, r *http.Request, repo *
 		return
 	}
 
-	body, err := idx.Render(s.nugetRepoURL(repo))
+	body, err := idx.Render(s.nugetRepoURL(w, r, repo))
 	if err != nil {
 		s.log.Errorw("failed to render nuget document", "repo", repo.Name, "path", nugetIndexKey, "error", err)
 		s.failWithoutValidators(w, r, errInternal)
@@ -544,13 +548,13 @@ func (s *Service) serveNuGetDoc(w http.ResponseWriter, r *http.Request, repo *mo
 		w.Header().Set("Warning", staleWarning)
 	}
 
-	repoURL := s.nugetRepoURL(repo)
+	repoURL := s.nugetRepoURL(w, r, repo)
 
 	s.serveRendered(w, r, repo, renderedDoc{
 		metaDoc: s.nugetDoc(repo, idx, p),
 		maxAge:  nugetMetaMaxAge,
 		// The rendering depends on the service index and the repository URL
-		// as well as on the cached document.
+		// (origin included) as well as on the cached document.
 		etag: func(blobKey string) string { return nugetETag(blobKey, idxRes.entry.BlobKey, repoURL) },
 		render: func(body []byte, _ *resolution) ([]byte, string, error) {
 			doc, gerr := gunzipDoc(body)
@@ -767,7 +771,7 @@ func (s *Service) serveNuGetSearch(w http.ResponseWriter, r *http.Request, repo 
 
 	doc, err := s.fetchNuGetDocument(r.Context(), repo, u.String())
 	if err == nil {
-		doc, err = pkgnuget.RewriteURLs(doc, nugetRewrites(idx, s.nugetRepoURL(repo))...)
+		doc, err = pkgnuget.RewriteURLs(doc, nugetRewrites(idx, s.nugetRepoURL(w, r, repo))...)
 		if err != nil {
 			s.log.Warnw("unreadable upstream nuget search result", "repo", repo.Name, "error", err)
 			err = errUpstream

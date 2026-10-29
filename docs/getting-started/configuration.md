@@ -55,7 +55,7 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
-| `BASE_URL` | `baseUrl` | `http://localhost:8080` | Public URL; used for generated links and SSO callbacks (see [reverse proxy](installation.md#behind-a-reverse-proxy-and-tls)) |
+| `BASE_URL` | `baseUrl` | empty (SSO and webhooks then use `http://localhost:8080`) | Public URL: always used for SSO and SAML callbacks, webhook and event links; an explicit override for the URLs in package metadata, which follow the request host when it is unset (see [public URL](installation.md#the-public-url-and-base_url)) |
 
 ### Server (`server`)
 

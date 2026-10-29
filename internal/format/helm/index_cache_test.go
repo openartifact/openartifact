@@ -95,6 +95,31 @@ func TestIndexIsRenderedOncePerChartSet(t *testing.T) {
 	}
 }
 
+// The index holds relative chart URLs, so neither its body nor its ETag
+// depends on the origin the request came in on.
+func TestIndexIsIndependentOfOrigin(t *testing.T) {
+	h, db := newStampHandler(t)
+	db.addChart("web", "1.0.0")
+
+	get := func(host string) *httptest.ResponseRecorder {
+		req := formattest.Request(http.MethodGet, "/repos/myrepo/index.yaml", nil)
+		req.Host = host
+		req.Header.Set("X-Forwarded-Host", "evil.example")
+
+		return formattest.Do(h.RegisterRepoRoutes, req)
+	}
+
+	a, b := get("a.example"), get("b.example")
+
+	if a.Header().Get("ETag") == "" || a.Header().Get("ETag") != b.Header().Get("ETag") {
+		t.Errorf("ETags %q and %q differ across origins", a.Header().Get("ETag"), b.Header().Get("ETag"))
+	}
+
+	if !strings.Contains(a.Body.String(), "- charts/web-1.0.0.tgz") || strings.Contains(a.Body.String(), "example") {
+		t.Errorf("chart URL is not the bare relative reference:\n%s", a.Body.String())
+	}
+}
+
 func TestIndexChangesWithChartSet(t *testing.T) {
 	h, db := newStampHandler(t)
 	db.addChart("web", "1.0.0")
