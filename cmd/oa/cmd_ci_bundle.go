@@ -378,7 +378,7 @@ func listedMatcher(f importFormat, p string) (string, func(ciPackage) bool, erro
 		// The listing names the stored file name. An ivy server before the generic
 		// package tables listed it with its extension appended again.
 		return c.version, func(row ciPackage) bool {
-			named := row.Filename == c.filename || f == formatIvy && row.Filename == ivyListedFilename(c.filename)
+			named := row.Filename == c.filename || f == formatIvy && slices.Contains(ivyListedFilenames(c.filename), row.Filename)
 
 			return named && row.Version == c.version && row.Name == c.group+":"+c.module
 		}, nil
