@@ -10,72 +10,25 @@ import (
 	"time"
 )
 
-const createIvyArtifact = `-- name: CreateIvyArtifact :one
-INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()))
-ON CONFLICT (repository_id, organisation, module, revision, artifact_name, artifact_ext) WHERE deleted_at IS NULL
-DO UPDATE SET artifact_type = EXCLUDED.artifact_type, blob_id = EXCLUDED.blob_id, updated_at = now()
-RETURNING id, created_at, updated_at
-`
-
-type CreateIvyArtifactParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	Organisation string     `db:"organisation" json:"organisation"`
-	Module       string     `db:"module" json:"module"`
-	Revision     string     `db:"revision" json:"revision"`
-	ArtifactName string     `db:"artifact_name" json:"artifact_name"`
-	ArtifactType string     `db:"artifact_type" json:"artifact_type"`
-	ArtifactExt  string     `db:"artifact_ext" json:"artifact_ext"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateIvyArtifactRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateIvyArtifact(ctx context.Context, arg CreateIvyArtifactParams) (CreateIvyArtifactRow, error) {
-	row := q.db.QueryRow(ctx, createIvyArtifact,
-		arg.RepositoryID,
-		arg.Organisation,
-		arg.Module,
-		arg.Revision,
-		arg.ArtifactName,
-		arg.ArtifactType,
-		arg.ArtifactExt,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateIvyArtifactRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteIvyArtifact = `-- name: DeleteIvyArtifact :exec
-DELETE FROM ivy_artifacts WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteIvyArtifact(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteIvyArtifact, id)
-	return err
-}
-
 const getIvyArtifact = `-- name: GetIvyArtifact :one
-SELECT ia.id, ia.repository_id, ia.organisation, ia.module, ia.revision, ia.artifact_name, ia.artifact_type, ia.artifact_ext, b.blob_key, b.size_bytes, b.sha256, ia.created_at, ia.updated_at
-FROM ivy_artifacts ia
-JOIN blobs b ON b.id = ia.blob_id
-WHERE ia.repository_id = $1 AND ia.organisation = $2 AND ia.module = $3 AND ia.revision = $4 AND ia.artifact_name = $5 AND ia.artifact_ext = $6 AND ia.deleted_at IS NULL
+
+SELECT f.id, f.repository_id,
+       (p.attrs->>'organisation')::text AS organisation, (p.attrs->>'module')::text AS module,
+       v.version AS revision,
+       (f.attrs->>'artifact_name')::text AS artifact_name,
+       COALESCE(f.attrs->>'artifact_type', 'jar')::text AS artifact_type,
+       (f.attrs->>'artifact_ext')::text AS artifact_ext,
+       b.blob_key, b.size_bytes, b.sha256, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetIvyArtifactParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Organisation string `db:"organisation" json:"organisation"`
-	Module       string `db:"module" json:"module"`
-	Revision     string `db:"revision" json:"revision"`
-	ArtifactName string `db:"artifact_name" json:"artifact_name"`
-	ArtifactExt  string `db:"artifact_ext" json:"artifact_ext"`
+	Path         string `db:"path" json:"path"`
 }
 
 type GetIvyArtifactRow struct {
@@ -94,15 +47,11 @@ type GetIvyArtifactRow struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Ivy on the generic package tables (mapping in pkg_ivy.go): P per
+// organisation:module, V per revision, F per file (path = the rendered
+// organisation/module/revision/filename).
 func (q *Queries) GetIvyArtifact(ctx context.Context, arg GetIvyArtifactParams) (GetIvyArtifactRow, error) {
-	row := q.db.QueryRow(ctx, getIvyArtifact,
-		arg.RepositoryID,
-		arg.Organisation,
-		arg.Module,
-		arg.Revision,
-		arg.ArtifactName,
-		arg.ArtifactExt,
-	)
+	row := q.db.QueryRow(ctx, getIvyArtifact, arg.RepositoryID, arg.Path)
 	var i GetIvyArtifactRow
 	err := row.Scan(
 		&i.ID,
@@ -124,79 +73,22 @@ func (q *Queries) GetIvyArtifact(ctx context.Context, arg GetIvyArtifactParams) 
 
 const ivyModuleExists = `-- name: IvyModuleExists :one
 SELECT EXISTS (
-    SELECT 1 FROM ivy_artifacts
-    WHERE repository_id = $1 AND organisation = $2 AND module = $3 AND deleted_at IS NULL
+    SELECT 1 FROM packages p
+    JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+    WHERE p.repository_id = $1 AND p.name_key = $2::text
 )
 `
 
 type IvyModuleExistsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Organisation string `db:"organisation" json:"organisation"`
-	Module       string `db:"module" json:"module"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
-// Whether the repository holds a live file of the module: a group asks it to
+// Whether the repository holds a live version of the module: a group asks it to
 // tell a module its hosted members own from one only a proxy has.
 func (q *Queries) IvyModuleExists(ctx context.Context, arg IvyModuleExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, ivyModuleExists, arg.RepositoryID, arg.Organisation, arg.Module)
+	row := q.db.QueryRow(ctx, ivyModuleExists, arg.RepositoryID, arg.NameKey)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
-}
-
-const listIvyArtifacts = `-- name: ListIvyArtifacts :many
-SELECT ia.id, ia.repository_id, ia.organisation, ia.module, ia.revision, ia.artifact_name, ia.artifact_type, ia.artifact_ext, b.blob_key, b.size_bytes, b.sha256, ia.created_at, ia.updated_at
-FROM ivy_artifacts ia
-JOIN blobs b ON b.id = ia.blob_id
-WHERE ia.repository_id = $1 AND ia.deleted_at IS NULL ORDER BY ia.organisation, ia.module, ia.revision
-`
-
-type ListIvyArtifactsRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Organisation string    `db:"organisation" json:"organisation"`
-	Module       string    `db:"module" json:"module"`
-	Revision     string    `db:"revision" json:"revision"`
-	ArtifactName string    `db:"artifact_name" json:"artifact_name"`
-	ArtifactType string    `db:"artifact_type" json:"artifact_type"`
-	ArtifactExt  string    `db:"artifact_ext" json:"artifact_ext"`
-	BlobKey      string    `db:"blob_key" json:"blob_key"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	Sha256       string    `db:"sha256" json:"sha256"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListIvyArtifacts(ctx context.Context, repositoryID string) ([]ListIvyArtifactsRow, error) {
-	rows, err := q.db.Query(ctx, listIvyArtifacts, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListIvyArtifactsRow{}
-	for rows.Next() {
-		var i ListIvyArtifactsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Organisation,
-			&i.Module,
-			&i.Revision,
-			&i.ArtifactName,
-			&i.ArtifactType,
-			&i.ArtifactExt,
-			&i.BlobKey,
-			&i.SizeBytes,
-			&i.Sha256,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

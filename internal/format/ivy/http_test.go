@@ -19,7 +19,7 @@ import (
 
 const artifactURL = "/repos/myrepo/org.example/mod/1.0/mod-1.0.jar"
 
-// ivyDB keeps one live row per coordinate, as the ivy_artifacts unique index
+// ivyDB keeps one live row per coordinate, as the live-unique file path of package_files
 // does, and (like the CreateIvyArtifact upsert) replaces the blob of a row that
 // already exists. art is the row written last.
 type ivyDB struct {

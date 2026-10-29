@@ -10,67 +10,22 @@ import (
 	"time"
 )
 
-const createSBTArtifact = `-- name: CreateSBTArtifact :one
-INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, filename, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
-ON CONFLICT (repository_id, group_id, artifact_id, version, filename) WHERE deleted_at IS NULL
-DO UPDATE SET blob_id = EXCLUDED.blob_id, updated_at = now()
-RETURNING id, created_at, updated_at
-`
-
-type CreateSBTArtifactParams struct {
-	RepositoryID string     `db:"repository_id" json:"repository_id"`
-	GroupID      string     `db:"group_id" json:"group_id"`
-	ArtifactID   string     `db:"artifact_id" json:"artifact_id"`
-	Version      string     `db:"version" json:"version"`
-	Filename     string     `db:"filename" json:"filename"`
-	BlobID       string     `db:"blob_id" json:"blob_id"`
-	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateSBTArtifactRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateSBTArtifact(ctx context.Context, arg CreateSBTArtifactParams) (CreateSBTArtifactRow, error) {
-	row := q.db.QueryRow(ctx, createSBTArtifact,
-		arg.RepositoryID,
-		arg.GroupID,
-		arg.ArtifactID,
-		arg.Version,
-		arg.Filename,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateSBTArtifactRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteSBTArtifact = `-- name: DeleteSBTArtifact :exec
-DELETE FROM sbt_artifacts WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteSBTArtifact(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteSBTArtifact, id)
-	return err
-}
-
 const getSBTArtifact = `-- name: GetSBTArtifact :one
-SELECT sa.id, sa.repository_id, sa.group_id, sa.artifact_id, sa.version, sa.filename, b.blob_key, b.size_bytes, b.sha256, sa.created_at, sa.updated_at
-FROM sbt_artifacts sa
-JOIN blobs b ON b.id = sa.blob_id
-WHERE sa.repository_id = $1 AND sa.group_id = $2 AND sa.artifact_id = $3 AND sa.version = $4 AND sa.filename = $5 AND sa.deleted_at IS NULL
+
+SELECT f.id, f.repository_id,
+       (p.attrs->>'group_id')::text AS group_id, (p.attrs->>'artifact_id')::text AS artifact_id,
+       v.version, f.arch AS scala_version, f.filename,
+       b.blob_key, b.size_bytes, b.sha256, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetSBTArtifactParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	GroupID      string `db:"group_id" json:"group_id"`
-	ArtifactID   string `db:"artifact_id" json:"artifact_id"`
-	Version      string `db:"version" json:"version"`
-	Filename     string `db:"filename" json:"filename"`
+	Path         string `db:"path" json:"path"`
 }
 
 type GetSBTArtifactRow struct {
@@ -79,6 +34,7 @@ type GetSBTArtifactRow struct {
 	GroupID      string    `db:"group_id" json:"group_id"`
 	ArtifactID   string    `db:"artifact_id" json:"artifact_id"`
 	Version      string    `db:"version" json:"version"`
+	ScalaVersion string    `db:"scala_version" json:"scala_version"`
 	Filename     string    `db:"filename" json:"filename"`
 	BlobKey      string    `db:"blob_key" json:"blob_key"`
 	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
@@ -87,14 +43,11 @@ type GetSBTArtifactRow struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// sbt on the generic package tables (mapping in pkg_sbt.go): P per
+// group_id:artifact_id, V per version, F per file (path = the rendered
+// group/artifact/version/filename, arch = the scala version).
 func (q *Queries) GetSBTArtifact(ctx context.Context, arg GetSBTArtifactParams) (GetSBTArtifactRow, error) {
-	row := q.db.QueryRow(ctx, getSBTArtifact,
-		arg.RepositoryID,
-		arg.GroupID,
-		arg.ArtifactID,
-		arg.Version,
-		arg.Filename,
-	)
+	row := q.db.QueryRow(ctx, getSBTArtifact, arg.RepositoryID, arg.Path)
 	var i GetSBTArtifactRow
 	err := row.Scan(
 		&i.ID,
@@ -102,6 +55,7 @@ func (q *Queries) GetSBTArtifact(ctx context.Context, arg GetSBTArtifactParams) 
 		&i.GroupID,
 		&i.ArtifactID,
 		&i.Version,
+		&i.ScalaVersion,
 		&i.Filename,
 		&i.BlobKey,
 		&i.SizeBytes,
@@ -112,76 +66,23 @@ func (q *Queries) GetSBTArtifact(ctx context.Context, arg GetSBTArtifactParams) 
 	return i, err
 }
 
-const listSBTArtifacts = `-- name: ListSBTArtifacts :many
-SELECT sa.id, sa.repository_id, sa.group_id, sa.artifact_id, sa.version, sa.filename, b.blob_key, b.size_bytes, b.sha256, sa.created_at, sa.updated_at
-FROM sbt_artifacts sa
-JOIN blobs b ON b.id = sa.blob_id
-WHERE sa.repository_id = $1 AND sa.deleted_at IS NULL ORDER BY sa.group_id, sa.artifact_id, sa.version
-`
-
-type ListSBTArtifactsRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	GroupID      string    `db:"group_id" json:"group_id"`
-	ArtifactID   string    `db:"artifact_id" json:"artifact_id"`
-	Version      string    `db:"version" json:"version"`
-	Filename     string    `db:"filename" json:"filename"`
-	BlobKey      string    `db:"blob_key" json:"blob_key"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	Sha256       string    `db:"sha256" json:"sha256"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListSBTArtifacts(ctx context.Context, repositoryID string) ([]ListSBTArtifactsRow, error) {
-	rows, err := q.db.Query(ctx, listSBTArtifacts, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListSBTArtifactsRow{}
-	for rows.Next() {
-		var i ListSBTArtifactsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.GroupID,
-			&i.ArtifactID,
-			&i.Version,
-			&i.Filename,
-			&i.BlobKey,
-			&i.SizeBytes,
-			&i.Sha256,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const sBTModuleExists = `-- name: SBTModuleExists :one
 SELECT EXISTS (
-    SELECT 1 FROM sbt_artifacts
-    WHERE repository_id = $1 AND group_id = $2 AND artifact_id = $3 AND deleted_at IS NULL
+    SELECT 1 FROM packages p
+    JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+    WHERE p.repository_id = $1 AND p.name_key = $2::text
 )
 `
 
 type SBTModuleExistsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	GroupID      string `db:"group_id" json:"group_id"`
-	ArtifactID   string `db:"artifact_id" json:"artifact_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
-// Whether the repository holds a live file of the artifact: a group asks it to
+// Whether the repository holds a live version of the artifact: a group asks it to
 // tell an artifact its hosted members own from one only a proxy has.
 func (q *Queries) SBTModuleExists(ctx context.Context, arg SBTModuleExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, sBTModuleExists, arg.RepositoryID, arg.GroupID, arg.ArtifactID)
+	row := q.db.QueryRow(ctx, sBTModuleExists, arg.RepositoryID, arg.NameKey)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

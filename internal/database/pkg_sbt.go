@@ -13,11 +13,34 @@ import (
 )
 
 // SBTStore owns the sbt artifacts.
+//
+// sbt on the generic package tables (mapping spec /tmp/oa-plug/schema/119_sbt.sql,
+// restated as the maintainers' reference). No side table.
+//
+//	P  packages         name = name_key = group_id ':' artifact_id
+//	                    attrs = {"group_id", "artifact_id"}
+//	V  package_versions version = version_key = version; metadata {}
+//	F  package_files    filename = the file name; arch = the scala version ('' unless recorded);
+//	                    path = group_id '/' artifact_id '/' version '/' filename
+//	                    (repository-wide live-unique: the lookup key);
+//	                    part '', role primary, listed, unit_key NULL, attrs {}
+//
+// An upload to an existing path repoints the file at the new blob.
 type SBTStore struct{ *core }
 
-// SBTModuleExists reports whether the repository holds a live file of the artifact.
+// sbtPackageName is the package identity (name and name_key) of an artifact.
+func sbtPackageName(groupID, artifactID string) string { return groupID + ":" + artifactID }
+
+func sbtPath(groupID, artifactID, version, filename string) string {
+	return groupID + "/" + artifactID + "/" + version + "/" + filename
+}
+
+// SBTModuleExists reports whether the repository holds a live version of the artifact.
 func (p *SBTStore) SBTModuleExists(ctx context.Context, repoID, groupID, artifactID string) (bool, error) {
-	exists, err := p.q.SBTModuleExists(ctx, dbsqlc.SBTModuleExistsParams{RepositoryID: repoID, GroupID: groupID, ArtifactID: artifactID})
+	exists, err := p.q.SBTModuleExists(
+		ctx,
+		dbsqlc.SBTModuleExistsParams{RepositoryID: repoID, NameKey: sbtPackageName(groupID, artifactID)},
+	)
 	if err != nil {
 		return false, fmt.Errorf("failed to check sbt artifact: %w", err)
 	}
@@ -33,17 +56,28 @@ func (p *SBTStore) CreateSBTArtifact(ctx context.Context, artifact *models.SBTAr
 		return fmt.Errorf("failed to upsert blob for sbt artifact: %w", err)
 	}
 
-	row, err := p.q.CreateSBTArtifact(ctx, dbsqlc.CreateSBTArtifactParams{
-		CreatedAt:    createdAtOrNil(artifact.CreatedAt),
-		RepositoryID: artifact.RepositoryID,
-		GroupID:      artifact.GroupID,
-		ArtifactID:   artifact.ArtifactID,
-		Version:      artifact.Version,
-		Filename:     artifact.Filename,
-		BlobID:       blobID,
-	})
+	written, err := p.upsertPackageFile(ctx, &PackageWrite{
+		RepoID:     artifact.RepositoryID,
+		Format:     "sbt",
+		Name:       sbtPackageName(artifact.GroupID, artifact.ArtifactID),
+		NameKey:    sbtPackageName(artifact.GroupID, artifact.ArtifactID),
+		PkgAttrs:   map[string]any{"group_id": artifact.GroupID, "artifact_id": artifact.ArtifactID},
+		Version:    artifact.Version,
+		VersionKey: artifact.Version,
+		CreatedAt:  artifact.CreatedAt,
+		Files: []FileWrite{{
+			Path:     sbtPath(artifact.GroupID, artifact.ArtifactID, artifact.Version, artifact.Filename),
+			Filename: artifact.Filename,
+			Arch:     artifact.ScalaVersion,
+		}},
+	}, blobID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create sbt artifact: %w", err)
+	}
 
-	return finishCreate(insertedRow(row), err, "create sbt artifact", &artifact.ID, &artifact.CreatedAt, &artifact.UpdatedAt)
+	artifact.ID, artifact.CreatedAt, artifact.UpdatedAt = written.ID, written.CreatedAt, written.UpdatedAt
+
+	return nil
 }
 
 func (p *SBTStore) GetSBTArtifact(
@@ -52,43 +86,31 @@ func (p *SBTStore) GetSBTArtifact(
 ) (*models.SBTArtifact, error) {
 	row, err := p.q.GetSBTArtifact(ctx, dbsqlc.GetSBTArtifactParams{
 		RepositoryID: repoID,
-		GroupID:      groupID,
-		ArtifactID:   artifactID,
-		Version:      version,
-		Filename:     filename,
+		Path:         sbtPath(groupID, artifactID, version, filename),
 	})
 
-	return mapRow(row, err, "get sbt artifact", sbtArtifactFromRow)
-}
-
-func sbtArtifactFromRow(row dbsqlc.GetSBTArtifactRow) *models.SBTArtifact {
-	return &models.SBTArtifact{
-		ID:           row.ID,
-		RepositoryID: row.RepositoryID,
-		GroupID:      row.GroupID,
-		ArtifactID:   row.ArtifactID,
-		Version:      row.Version,
-		Filename:     row.Filename,
-		BlobKey:      row.BlobKey,
-		SizeBytes:    row.SizeBytes,
-		SHA256:       row.Sha256,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
-	}
+	return mapRow(row, err, "get sbt artifact", func(row dbsqlc.GetSBTArtifactRow) *models.SBTArtifact {
+		return &models.SBTArtifact{
+			ID:           row.ID,
+			RepositoryID: row.RepositoryID,
+			GroupID:      row.GroupID,
+			ArtifactID:   row.ArtifactID,
+			Version:      row.Version,
+			ScalaVersion: row.ScalaVersion,
+			Filename:     row.Filename,
+			BlobKey:      row.BlobKey,
+			SizeBytes:    row.SizeBytes,
+			SHA256:       row.Sha256,
+			CreatedAt:    row.CreatedAt,
+			UpdatedAt:    row.UpdatedAt,
+		}
+	})
 }
 
 func (p *SBTStore) DeleteSBTArtifact(ctx context.Context, id string) error {
-	if err := p.q.DeleteSBTArtifact(ctx, id); err != nil {
+	if err := p.deleteLiveFile(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete sbt artifact: %w", err)
 	}
 
 	return nil
-}
-
-func (p *SBTStore) ListSBTArtifacts(ctx context.Context, repoID string) ([]*models.SBTArtifact, error) {
-	rows, err := p.q.ListSBTArtifacts(ctx, repoID)
-
-	return mapRowsOrNil(rows, err, "query sbt artifacts", func(r dbsqlc.ListSBTArtifactsRow) *models.SBTArtifact {
-		return sbtArtifactFromRow(dbsqlc.GetSBTArtifactRow(r))
-	})
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // FMTA-5: the snapshot file lookup filters on classifier and extension and
@@ -28,10 +29,14 @@ func TestGetLatestSnapshotFile(t *testing.T) {
 			name += "-" + cls
 		}
 
-		s.exec(`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, classifier, extension,
-		        snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, blob_id)
-		        VALUES ($1,'com.ex','foo','1.0-SNAPSHOT',$2,$3,$4,$5,true,$6,$7)`,
-			s.repo, cls, ext, ts, build, "com/ex/foo/1.0-SNAPSHOT/"+name+"."+ext, s.blob(size))
+		art := &models.MavenArtifact{
+			RepositoryID: s.repo, BlobID: s.blob(size), GroupID: "com.ex", ArtifactCoord: "foo", Version: "1.0-SNAPSHOT",
+			Classifier: cls, Extension: ext, SnapshotTimestamp: ts, SnapshotBuildNumber: build, IsSnapshot: true,
+			RepoPath: "com/ex/foo/1.0-SNAPSHOT/" + name + "." + ext,
+		}
+		if err := pg.CreateMavenArtifact(ctx, art); err != nil {
+			t.Fatalf("CreateMavenArtifact: %v", err)
+		}
 	}
 
 	add("20240101.000000-1", "", "jar", 1, 11)
