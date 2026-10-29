@@ -47,7 +47,7 @@ CREATE TABLE package_versions (
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
     deleted_at    timestamptz,
-    deleted_by    uuid
+    deleted_by    text
 );
 
 COMMENT ON TABLE package_versions IS 'One version incarnation; live iff at least one of its files is live';
@@ -78,7 +78,7 @@ CREATE TABLE package_files (
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
     deleted_at     timestamptz,
-    deleted_by     uuid
+    deleted_by     text
 );
 
 COMMENT ON TABLE package_files IS 'One stored file: the unit of listing, trash, quota, blob references and scan ids. Migrated rows keep the id of the legacy row';
@@ -174,7 +174,7 @@ CREATE FUNCTION oa_import_file(
     p_created     timestamptz DEFAULT now(),
     p_updated     timestamptz DEFAULT now(),
     p_deleted     timestamptz DEFAULT NULL,
-    p_deleted_by  uuid        DEFAULT NULL
+    p_deleted_by  text        DEFAULT NULL
 ) RETURNS uuid
 LANGUAGE plpgsql AS $$
 DECLARE
