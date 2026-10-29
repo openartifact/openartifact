@@ -7,79 +7,46 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
-const createMavenArtifact = `-- name: CreateMavenArtifact :one
-INSERT INTO maven_artifacts (repository_id, blob_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, now()))
-ON CONFLICT (repository_id, repo_path) WHERE deleted_at IS NULL DO UPDATE SET
-    blob_id = EXCLUDED.blob_id,
-    updated_at = now()
-RETURNING id
+const deleteLivePackageFile = `-- name: DeleteLivePackageFile :one
+DELETE FROM package_files WHERE id = $1 AND deleted_at IS NULL
+RETURNING version_id
 `
 
-type CreateMavenArtifactParams struct {
-	RepositoryID        string     `db:"repository_id" json:"repository_id"`
-	BlobID              string     `db:"blob_id" json:"blob_id"`
-	GroupID             string     `db:"group_id" json:"group_id"`
-	ArtifactIDCoord     string     `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version             string     `db:"version" json:"version"`
-	Classifier          string     `db:"classifier" json:"classifier"`
-	Extension           string     `db:"extension" json:"extension"`
-	SnapshotTimestamp   *string    `db:"snapshot_timestamp" json:"snapshot_timestamp"`
-	SnapshotBuildNumber int32      `db:"snapshot_build_number" json:"snapshot_build_number"`
-	IsSnapshot          bool       `db:"is_snapshot" json:"is_snapshot"`
-	RepoPath            string     `db:"repo_path" json:"repo_path"`
-	CreatedAt           *time.Time `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) CreateMavenArtifact(ctx context.Context, arg CreateMavenArtifactParams) (string, error) {
-	row := q.db.QueryRow(ctx, createMavenArtifact,
-		arg.RepositoryID,
-		arg.BlobID,
-		arg.GroupID,
-		arg.ArtifactIDCoord,
-		arg.Version,
-		arg.Classifier,
-		arg.Extension,
-		arg.SnapshotTimestamp,
-		arg.SnapshotBuildNumber,
-		arg.IsSnapshot,
-		arg.RepoPath,
-		arg.CreatedAt,
-	)
-	var id string
-	err := row.Scan(&id)
-	return id, err
-}
-
-const deleteMavenArtifact = `-- name: DeleteMavenArtifact :exec
-DELETE FROM maven_artifacts WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteMavenArtifact(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteMavenArtifact, id)
-	return err
+// Hard delete of one live file by id (the unpublish of maven, ivy and sbt);
+// the version it leaves empty is pruned by the caller.
+func (q *Queries) DeleteLivePackageFile(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, deleteLivePackageFile, id)
+	var version_id string
+	err := row.Scan(&version_id)
+	return version_id, err
 }
 
 const getLatestSnapshot = `-- name: GetLatestSnapshot :one
-SELECT id, repository_id,
-       blob_id,
-       group_id, artifact_id_coord, version, classifier, extension,
-       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
-       created_at, updated_at
-FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4 AND is_snapshot = true AND deleted_at IS NULL
-ORDER BY snapshot_timestamp DESC, snapshot_build_number DESC
+SELECT f.id, f.repository_id, b.id AS blob_id,
+       (p.attrs->>'group_id')::text AS group_id, (p.attrs->>'artifact_id')::text AS artifact_id_coord,
+       v.version, m.classifier, m.extension,
+       m.snapshot_timestamp, m.snapshot_build_number, m.is_snapshot, f.path AS repo_path,
+       f.created_at, f.updated_at,
+       m.md5, m.sha1, m.sha512, b.sha256, b.size_bytes AS blob_size_bytes
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN maven_files m ON m.id = f.id
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2::text
+  AND v.version = $3 AND m.is_snapshot
+ORDER BY m.snapshot_timestamp DESC, m.snapshot_build_number DESC
 LIMIT 1
 `
 
 type GetLatestSnapshotParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	GroupID         string `db:"group_id" json:"group_id"`
-	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version         string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
+	Version      string `db:"version" json:"version"`
 }
 
 type GetLatestSnapshotRow struct {
@@ -97,15 +64,15 @@ type GetLatestSnapshotRow struct {
 	RepoPath            string    `db:"repo_path" json:"repo_path"`
 	CreatedAt           time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
+	Md5                 string    `db:"md5" json:"md5"`
+	Sha1                string    `db:"sha1" json:"sha1"`
+	Sha512              string    `db:"sha512" json:"sha512"`
+	Sha256              string    `db:"sha256" json:"sha256"`
+	BlobSizeBytes       int64     `db:"blob_size_bytes" json:"blob_size_bytes"`
 }
 
 func (q *Queries) GetLatestSnapshot(ctx context.Context, arg GetLatestSnapshotParams) (GetLatestSnapshotRow, error) {
-	row := q.db.QueryRow(ctx, getLatestSnapshot,
-		arg.RepositoryID,
-		arg.GroupID,
-		arg.ArtifactIDCoord,
-		arg.Version,
-	)
+	row := q.db.QueryRow(ctx, getLatestSnapshot, arg.RepositoryID, arg.NameKey, arg.Version)
 	var i GetLatestSnapshotRow
 	err := row.Scan(
 		&i.ID,
@@ -122,31 +89,41 @@ func (q *Queries) GetLatestSnapshot(ctx context.Context, arg GetLatestSnapshotPa
 		&i.RepoPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Md5,
+		&i.Sha1,
+		&i.Sha512,
+		&i.Sha256,
+		&i.BlobSizeBytes,
 	)
 	return i, err
 }
 
 const getLatestSnapshotFile = `-- name: GetLatestSnapshotFile :one
-SELECT id, repository_id,
-       blob_id,
-       group_id, artifact_id_coord, version, classifier, extension,
-       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
-       created_at, updated_at
-FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4
-  AND classifier = $5 AND extension = $6
-  AND is_snapshot = true AND deleted_at IS NULL
-ORDER BY snapshot_timestamp DESC NULLS LAST, snapshot_build_number DESC
+SELECT f.id, f.repository_id, b.id AS blob_id,
+       (p.attrs->>'group_id')::text AS group_id, (p.attrs->>'artifact_id')::text AS artifact_id_coord,
+       v.version, m.classifier, m.extension,
+       m.snapshot_timestamp, m.snapshot_build_number, m.is_snapshot, f.path AS repo_path,
+       f.created_at, f.updated_at,
+       m.md5, m.sha1, m.sha512, b.sha256, b.size_bytes AS blob_size_bytes
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN maven_files m ON m.id = f.id
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2::text
+  AND v.version = $3
+  AND m.classifier = $4 AND m.extension = $5
+  AND m.is_snapshot
+ORDER BY m.snapshot_timestamp DESC NULLS LAST, m.snapshot_build_number DESC
 LIMIT 1
 `
 
 type GetLatestSnapshotFileParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	GroupID         string `db:"group_id" json:"group_id"`
-	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version         string `db:"version" json:"version"`
-	Classifier      string `db:"classifier" json:"classifier"`
-	Extension       string `db:"extension" json:"extension"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
+	Version      string `db:"version" json:"version"`
+	Classifier   string `db:"classifier" json:"classifier"`
+	Extension    string `db:"extension" json:"extension"`
 }
 
 type GetLatestSnapshotFileRow struct {
@@ -164,6 +141,11 @@ type GetLatestSnapshotFileRow struct {
 	RepoPath            string    `db:"repo_path" json:"repo_path"`
 	CreatedAt           time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
+	Md5                 string    `db:"md5" json:"md5"`
+	Sha1                string    `db:"sha1" json:"sha1"`
+	Sha512              string    `db:"sha512" json:"sha512"`
+	Sha256              string    `db:"sha256" json:"sha256"`
+	BlobSizeBytes       int64     `db:"blob_size_bytes" json:"blob_size_bytes"`
 }
 
 // The newest timestamped snapshot build of one file (classifier + extension),
@@ -171,8 +153,7 @@ type GetLatestSnapshotFileRow struct {
 func (q *Queries) GetLatestSnapshotFile(ctx context.Context, arg GetLatestSnapshotFileParams) (GetLatestSnapshotFileRow, error) {
 	row := q.db.QueryRow(ctx, getLatestSnapshotFile,
 		arg.RepositoryID,
-		arg.GroupID,
-		arg.ArtifactIDCoord,
+		arg.NameKey,
 		arg.Version,
 		arg.Classifier,
 		arg.Extension,
@@ -193,18 +174,29 @@ func (q *Queries) GetLatestSnapshotFile(ctx context.Context, arg GetLatestSnapsh
 		&i.RepoPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Md5,
+		&i.Sha1,
+		&i.Sha512,
+		&i.Sha256,
+		&i.BlobSizeBytes,
 	)
 	return i, err
 }
 
 const getMavenArtifactByPath = `-- name: GetMavenArtifactByPath :one
-SELECT id, repository_id,
-       blob_id,
-       group_id, artifact_id_coord, version, classifier, extension,
-       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
-       created_at, updated_at
-FROM maven_artifacts
-WHERE repository_id = $1 AND repo_path = $2 AND deleted_at IS NULL
+
+SELECT f.id, f.repository_id, b.id AS blob_id,
+       (p.attrs->>'group_id')::text AS group_id, (p.attrs->>'artifact_id')::text AS artifact_id_coord,
+       v.version, m.classifier, m.extension,
+       m.snapshot_timestamp, m.snapshot_build_number, m.is_snapshot, f.path AS repo_path,
+       f.created_at, f.updated_at,
+       m.md5, m.sha1, m.sha512, b.sha256, b.size_bytes AS blob_size_bytes
+FROM package_files f
+JOIN maven_files m ON m.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetMavenArtifactByPathParams struct {
@@ -227,8 +219,17 @@ type GetMavenArtifactByPathRow struct {
 	RepoPath            string    `db:"repo_path" json:"repo_path"`
 	CreatedAt           time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
+	Md5                 string    `db:"md5" json:"md5"`
+	Sha1                string    `db:"sha1" json:"sha1"`
+	Sha512              string    `db:"sha512" json:"sha512"`
+	Sha256              string    `db:"sha256" json:"sha256"`
+	BlobSizeBytes       int64     `db:"blob_size_bytes" json:"blob_size_bytes"`
 }
 
+// Maven on the generic package tables (migrations/001_baseline.sql; mapping
+// in pkg_maven.go). Every read joins package_files (the file, by path or
+// through its version), maven_files (coordinates and digests), the version,
+// the package (group and artifact in attrs) and the blob (sha256 and size).
 func (q *Queries) GetMavenArtifactByPath(ctx context.Context, arg GetMavenArtifactByPathParams) (GetMavenArtifactByPathRow, error) {
 	row := q.db.QueryRow(ctx, getMavenArtifactByPath, arg.RepositoryID, arg.RepoPath)
 	var i GetMavenArtifactByPathRow
@@ -247,25 +248,35 @@ func (q *Queries) GetMavenArtifactByPath(ctx context.Context, arg GetMavenArtifa
 		&i.RepoPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Md5,
+		&i.Sha1,
+		&i.Sha512,
+		&i.Sha256,
+		&i.BlobSizeBytes,
 	)
 	return i, err
 }
 
 const getMavenArtifactsByGAV = `-- name: GetMavenArtifactsByGAV :many
-SELECT id, repository_id,
-       blob_id,
-       group_id, artifact_id_coord, version, classifier, extension,
-       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
-       created_at, updated_at
-FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4 AND deleted_at IS NULL
+SELECT f.id, f.repository_id, b.id AS blob_id,
+       (p.attrs->>'group_id')::text AS group_id, (p.attrs->>'artifact_id')::text AS artifact_id_coord,
+       v.version, m.classifier, m.extension,
+       m.snapshot_timestamp, m.snapshot_build_number, m.is_snapshot, f.path AS repo_path,
+       f.created_at, f.updated_at,
+       m.md5, m.sha1, m.sha512, b.sha256, b.size_bytes AS blob_size_bytes
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN maven_files m ON m.id = f.id
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2::text
+  AND v.version = $3
 `
 
 type GetMavenArtifactsByGAVParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	GroupID         string `db:"group_id" json:"group_id"`
-	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version         string `db:"version" json:"version"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
+	Version      string `db:"version" json:"version"`
 }
 
 type GetMavenArtifactsByGAVRow struct {
@@ -283,15 +294,17 @@ type GetMavenArtifactsByGAVRow struct {
 	RepoPath            string    `db:"repo_path" json:"repo_path"`
 	CreatedAt           time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
+	Md5                 string    `db:"md5" json:"md5"`
+	Sha1                string    `db:"sha1" json:"sha1"`
+	Sha512              string    `db:"sha512" json:"sha512"`
+	Sha256              string    `db:"sha256" json:"sha256"`
+	BlobSizeBytes       int64     `db:"blob_size_bytes" json:"blob_size_bytes"`
 }
 
+// All the live files of one group:artifact:version (every snapshot build of a
+// snapshot version is a version of its own, so all of them).
 func (q *Queries) GetMavenArtifactsByGAV(ctx context.Context, arg GetMavenArtifactsByGAVParams) ([]GetMavenArtifactsByGAVRow, error) {
-	rows, err := q.db.Query(ctx, getMavenArtifactsByGAV,
-		arg.RepositoryID,
-		arg.GroupID,
-		arg.ArtifactIDCoord,
-		arg.Version,
-	)
+	rows, err := q.db.Query(ctx, getMavenArtifactsByGAV, arg.RepositoryID, arg.NameKey, arg.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -314,6 +327,11 @@ func (q *Queries) GetMavenArtifactsByGAV(ctx context.Context, arg GetMavenArtifa
 			&i.RepoPath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Md5,
+			&i.Sha1,
+			&i.Sha512,
+			&i.Sha256,
+			&i.BlobSizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -326,20 +344,24 @@ func (q *Queries) GetMavenArtifactsByGAV(ctx context.Context, arg GetMavenArtifa
 }
 
 const listMavenArtifactsByRepo = `-- name: ListMavenArtifactsByRepo :many
-SELECT ma.id, ma.repository_id, b.sha256 AS blob_sha256, b.size_bytes AS blob_size_bytes,
-       ma.group_id, ma.artifact_id_coord, ma.version, ma.classifier, ma.extension,
-       ma.snapshot_timestamp, ma.snapshot_build_number, ma.is_snapshot, ma.repo_path,
-       ma.created_at, ma.updated_at
-FROM maven_artifacts ma
-JOIN blobs b ON b.id = ma.blob_id
-WHERE ma.repository_id = $1 AND ma.deleted_at IS NULL
+SELECT f.id, f.repository_id, b.id AS blob_id,
+       (p.attrs->>'group_id')::text AS group_id, (p.attrs->>'artifact_id')::text AS artifact_id_coord,
+       v.version, m.classifier, m.extension,
+       m.snapshot_timestamp, m.snapshot_build_number, m.is_snapshot, f.path AS repo_path,
+       f.created_at, f.updated_at,
+       m.md5, m.sha1, m.sha512, b.sha256, b.size_bytes AS blob_size_bytes
+FROM package_files f
+JOIN maven_files m ON m.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
 `
 
 type ListMavenArtifactsByRepoRow struct {
 	ID                  string    `db:"id" json:"id"`
 	RepositoryID        string    `db:"repository_id" json:"repository_id"`
-	BlobSha256          string    `db:"blob_sha256" json:"blob_sha256"`
-	BlobSizeBytes       int64     `db:"blob_size_bytes" json:"blob_size_bytes"`
+	BlobID              string    `db:"blob_id" json:"blob_id"`
 	GroupID             string    `db:"group_id" json:"group_id"`
 	ArtifactIDCoord     string    `db:"artifact_id_coord" json:"artifact_id_coord"`
 	Version             string    `db:"version" json:"version"`
@@ -351,6 +373,11 @@ type ListMavenArtifactsByRepoRow struct {
 	RepoPath            string    `db:"repo_path" json:"repo_path"`
 	CreatedAt           time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
+	Md5                 string    `db:"md5" json:"md5"`
+	Sha1                string    `db:"sha1" json:"sha1"`
+	Sha512              string    `db:"sha512" json:"sha512"`
+	Sha256              string    `db:"sha256" json:"sha256"`
+	BlobSizeBytes       int64     `db:"blob_size_bytes" json:"blob_size_bytes"`
 }
 
 func (q *Queries) ListMavenArtifactsByRepo(ctx context.Context, repositoryID string) ([]ListMavenArtifactsByRepoRow, error) {
@@ -365,8 +392,7 @@ func (q *Queries) ListMavenArtifactsByRepo(ctx context.Context, repositoryID str
 		if err := rows.Scan(
 			&i.ID,
 			&i.RepositoryID,
-			&i.BlobSha256,
-			&i.BlobSizeBytes,
+			&i.BlobID,
 			&i.GroupID,
 			&i.ArtifactIDCoord,
 			&i.Version,
@@ -378,6 +404,11 @@ func (q *Queries) ListMavenArtifactsByRepo(ctx context.Context, repositoryID str
 			&i.RepoPath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Md5,
+			&i.Sha1,
+			&i.Sha512,
+			&i.Sha256,
+			&i.BlobSizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -397,23 +428,26 @@ SELECT v.version::text AS version,
        0::int AS snapshot_build_number,
        false AS snapshot_row
 FROM (
-    SELECT DISTINCT d.version
-    FROM maven_artifacts d
-    WHERE d.repository_id = $1 AND d.group_id = $2 AND d.artifact_id_coord = $3 AND d.deleted_at IS NULL
+    SELECT DISTINCT pv.version
+    FROM packages p
+    JOIN package_versions pv ON pv.package_id = p.id AND pv.deleted_at IS NULL
+    WHERE p.repository_id = $1 AND p.name_key = $2::text
 ) v
 UNION ALL
-SELECT s.version::text, s.classifier::text, s.extension::text,
-       COALESCE(s.snapshot_timestamp, '')::text, s.snapshot_build_number::int, true
-FROM maven_artifacts s
-WHERE s.repository_id = $1 AND s.group_id = $2 AND s.artifact_id_coord = $3 AND s.deleted_at IS NULL
-  AND s.version LIKE '%-SNAPSHOT'
+SELECT sv.version::text, m.classifier::text, m.extension::text,
+       COALESCE(m.snapshot_timestamp, '')::text, m.snapshot_build_number::int, true
+FROM packages sp
+JOIN package_versions sv ON sv.package_id = sp.id AND sv.deleted_at IS NULL
+JOIN package_files sf ON sf.version_id = sv.id AND sf.deleted_at IS NULL
+JOIN maven_files m ON m.id = sf.id
+WHERE sp.repository_id = $1 AND sp.name_key = $2::text
+  AND sv.version LIKE '%-SNAPSHOT'
 ORDER BY snapshot_row, version, classifier, extension, snapshot_timestamp, snapshot_build_number
 `
 
 type ListMavenGARefsParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	GroupID         string `db:"group_id" json:"group_id"`
-	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type ListMavenGARefsRow struct {
@@ -430,7 +464,7 @@ type ListMavenGARefsRow struct {
 // one row per distinct live version (snapshot_row = false) plus one row per
 // file of every -SNAPSHOT version (snapshot_row = true).
 func (q *Queries) ListMavenGARefs(ctx context.Context, arg ListMavenGARefsParams) ([]ListMavenGARefsRow, error) {
-	rows, err := q.db.Query(ctx, listMavenGARefs, arg.RepositoryID, arg.GroupID, arg.ArtifactIDCoord)
+	rows, err := q.db.Query(ctx, listMavenGARefs, arg.RepositoryID, arg.NameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -454,4 +488,77 @@ func (q *Queries) ListMavenGARefs(ctx context.Context, arg ListMavenGARefsParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const overwritePackageFileByPath = `-- name: OverwritePackageFileByPath :one
+UPDATE package_files
+   SET blob_id = $1, attrs = $2::jsonb, checksums = $3::jsonb, updated_at = now()
+ WHERE repository_id = $4 AND path = $5 AND deleted_at IS NULL
+RETURNING id, created_at, updated_at
+`
+
+type OverwritePackageFileByPathParams struct {
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
+	Checksums    json.RawMessage `db:"checksums" json:"checksums"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Path         string          `db:"path" json:"path"`
+}
+
+type OverwritePackageFileByPathRow struct {
+	ID        string    `db:"id" json:"id"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Repoints a live file at new content (the overwrite of an upload to an
+// existing path: maven snapshots, ivy and sbt republish). No row comes back
+// when the path has no live file.
+func (q *Queries) OverwritePackageFileByPath(ctx context.Context, arg OverwritePackageFileByPathParams) (OverwritePackageFileByPathRow, error) {
+	row := q.db.QueryRow(ctx, overwritePackageFileByPath,
+		arg.BlobID,
+		arg.Attrs,
+		arg.Checksums,
+		arg.RepositoryID,
+		arg.Path,
+	)
+	var i OverwritePackageFileByPathRow
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
+const upsertMavenFile = `-- name: UpsertMavenFile :exec
+INSERT INTO maven_files (id, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, md5, sha1, sha512)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8, $9)
+ON CONFLICT (id) DO UPDATE SET md5 = EXCLUDED.md5, sha1 = EXCLUDED.sha1, sha512 = EXCLUDED.sha512
+`
+
+type UpsertMavenFileParams struct {
+	ID                  string  `db:"id" json:"id"`
+	Classifier          string  `db:"classifier" json:"classifier"`
+	Extension           string  `db:"extension" json:"extension"`
+	SnapshotTimestamp   *string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
+	SnapshotBuildNumber int32   `db:"snapshot_build_number" json:"snapshot_build_number"`
+	IsSnapshot          bool    `db:"is_snapshot" json:"is_snapshot"`
+	Md5                 string  `db:"md5" json:"md5"`
+	Sha1                string  `db:"sha1" json:"sha1"`
+	Sha512              string  `db:"sha512" json:"sha512"`
+}
+
+// The coordinates and digests of a stored file. On an overwrite of an existing
+// path only the digests change (the coordinates are part of the path).
+func (q *Queries) UpsertMavenFile(ctx context.Context, arg UpsertMavenFileParams) error {
+	_, err := q.db.Exec(ctx, upsertMavenFile,
+		arg.ID,
+		arg.Classifier,
+		arg.Extension,
+		arg.SnapshotTimestamp,
+		arg.SnapshotBuildNumber,
+		arg.IsSnapshot,
+		arg.Md5,
+		arg.Sha1,
+		arg.Sha512,
+	)
+	return err
 }

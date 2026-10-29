@@ -264,7 +264,7 @@ func (e *importEnv) createIvy(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "ivy_artifacts", a.ID
+	return "package_files", a.ID
 }
 
 func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, string) {
@@ -276,7 +276,7 @@ func (e *importEnv) createSbt(t *testing.T, repo string, at time.Time) (string, 
 		t.Fatal(err)
 	}
 
-	return "sbt_artifacts", a.ID
+	return "package_files", a.ID
 }
 
 func (e *importEnv) createApk(t *testing.T, repo string, at time.Time) (string, string) {

@@ -19,7 +19,7 @@ import (
 
 const artifactURL = "/repos/myrepo/org.example/mod/1.0/mod-1.0.jar"
 
-// sbtDB keeps one live row per coordinate, as the sbt_artifacts unique index
+// sbtDB keeps one live row per coordinate, as the live-unique file path of package_files
 // does, and (like the CreateSBTArtifact upsert) replaces the blob of a row that
 // already exists. art is the row written last.
 type sbtDB struct {
