@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
@@ -92,7 +93,7 @@ func (h *Handler) serveComposerRoot(
 		return
 	}
 
-	writeMergedJSON(w, r, grp, body, composerMetaMaxAge, false)
+	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), composerMetaMaxAge, false)
 }
 
 // composerAvailable is the union of the "available-packages" of the members'
@@ -214,5 +215,5 @@ func (h *Handler) serveComposerMetadata(
 		return
 	}
 
-	writeMergedJSON(w, r, grp, body, composerMetaMaxAge, failed)
+	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), composerMetaMaxAge, failed)
 }

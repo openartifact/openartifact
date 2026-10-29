@@ -7,8 +7,6 @@ package group
 import (
 	"bytes"
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -17,6 +15,7 @@ import (
 	"strconv"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
 )
@@ -103,19 +102,6 @@ const (
 type ansiblePage[T any] struct {
 	items []T
 	next  string
-}
-
-// memberGetRequest is the request members are asked with: a plain GET without
-// the client's conditional or range headers.
-func memberGetRequest(r *http.Request) *http.Request {
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-
-	for _, hdr := range []string{"If-None-Match", "If-Modified-Since", "If-Match", "If-Unmodified-Since", "If-Range", "Range"} {
-		mr.Header.Del(hdr)
-	}
-
-	return mr
 }
 
 // ansibleMemberRequest is memberGetRequest for the page of a list at offset,
@@ -434,24 +420,5 @@ func (h *Handler) writeAnsible(w http.ResponseWriter, r *http.Request, grp *mode
 		return
 	}
 
-	writeMergedJSON(w, r, grp, body, ansibleMetaMaxAge, partial)
-}
-
-// writeMergedJSON answers an encoded JSON document a group generated, with a
-// content ETag and a shared-cache lifetime of maxAge seconds for a public group;
-// partial documents are not cached (revalidateMerged).
-func writeMergedJSON(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, maxAge int, partial bool) {
-	sum := sha256.Sum256(body)
-
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:16])+`"`, maxAge, partial) {
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), ansibleMetaMaxAge, partial)
 }
