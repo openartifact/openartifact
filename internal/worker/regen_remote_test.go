@@ -53,7 +53,7 @@ func TestRegenQueueSettlesFinishedKeys(t *testing.T) {
 	}
 }
 
-func TestRegenQueueSettlesAFailedRegenerationAsDone(t *testing.T) {
+func TestRegenQueueSettlesAFailedRegenerationAsNotDone(t *testing.T) {
 	var got settled
 
 	q := newTestQueue(t, func(context.Context, string) error { return errTestBoom })
@@ -62,10 +62,10 @@ func TestRegenQueueSettlesAFailedRegenerationAsDone(t *testing.T) {
 	q.Notify("repo")
 	pollUntil(t, "the regeneration to settle", func() bool { return len(got.all()) == 1 })
 
-	// An error is logged and dropped, as it is without a worker process: a
-	// request that always fails must not come back for ever.
-	if c := got.all()[0]; !c.done {
-		t.Fatalf("settle = %+v, want done", c)
+	// A transient database or storage error must not drop the durable request:
+	// it stays claimed until the lease lapses and is then retried.
+	if c := got.all()[0]; c.done {
+		t.Fatalf("settle = %+v, want not done", c)
 	}
 }
 

@@ -153,6 +153,12 @@ func (s *Store) finish(ctx context.Context, r ref, upTo time.Time) error {
 		return fmt.Errorf("workq: finish %s %s: %w", r.kind, r.key, err)
 	}
 
+	return s.release(ctx, r)
+}
+
+// release drops the claim on (kind, key), so the next claim, by any worker,
+// can take the request at once instead of after the lease lapses.
+func (s *Store) release(ctx context.Context, r ref) error {
 	if _, err := s.db.ExecContext(ctx,
 		`UPDATE worker_requests SET claimed_until = NULL WHERE kind = $1 AND key = $2`,
 		r.kind, r.key); err != nil {
