@@ -133,17 +133,6 @@ func (p *PostgresDB) ListDependencyTrackPushes(ctx context.Context, repoID strin
 	return out, nil
 }
 
-// CreateSystemSettingIfAbsent stores value under key unless the key exists; it
-// reports whether it was stored. Concurrent callers (several replicas) agree on one winner.
-func (p *PostgresDB) CreateSystemSettingIfAbsent(ctx context.Context, key, value string) (bool, error) {
-	n, err := p.q.CreateSystemSettingIfAbsent(ctx, dbsqlc.CreateSystemSettingIfAbsentParams{Key: key, Value: value})
-	if err != nil {
-		return false, fmt.Errorf("failed to create system setting: %w", err)
-	}
-
-	return n > 0, nil
-}
-
 // GetRepositoryAttestationAttach reports whether the repository attaches signed
 // attestations to its docker images as OCI referrers; false when never set.
 func (p *PostgresDB) GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error) {

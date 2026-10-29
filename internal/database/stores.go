@@ -11,14 +11,16 @@ package database
 type PostgresDB struct {
 	*core
 	*BlobRefStore
+	*SettingsStore
 	// STORES-STRUCT
 }
 
 // newPostgresDB wires one store per domain around the shared core c.
 func newPostgresDB(c *core) *PostgresDB {
 	return &PostgresDB{
-		core:         c,
-		BlobRefStore: &BlobRefStore{core: c},
+		core:          c,
+		BlobRefStore:  &BlobRefStore{core: c},
+		SettingsStore: &SettingsStore{core: c},
 		// STORES-INIT
 	}
 }

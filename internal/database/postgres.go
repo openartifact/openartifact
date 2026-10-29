@@ -4969,33 +4969,6 @@ func (p *PostgresDB) SetProjectGroup(ctx context.Context, projectID, groupID, ro
 	return nil
 }
 
-// GetSystemSetting retrieves a system setting by key.
-func (p *PostgresDB) GetSystemSetting(ctx context.Context, key string) (string, error) {
-	value, err := p.q.GetSystemSetting(ctx, key)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get system setting: %w", err)
-	}
-
-	return value, nil
-}
-
-// SetSystemSetting sets or updates a system setting.
-func (p *PostgresDB) SetSystemSetting(ctx context.Context, key, value string) error {
-	err := p.q.SetSystemSetting(ctx, dbsqlc.SetSystemSettingParams{
-		Key:   key,
-		Value: value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set system setting: %w", err)
-	}
-
-	return nil
-}
-
 // CreateCondaPackage creates a new Conda package file. An empty
 // pkg.Extension is stored as ".tar.bz2" and an empty pkg.Extra as "{}".
 // A live row for the same (name, version, build, platform, extension) yields
