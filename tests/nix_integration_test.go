@@ -8,6 +8,7 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -88,8 +89,8 @@ func TestNixPendingCommitAndUnique(t *testing.T) {
 	}
 
 	dup := nixPathFixture(repoID, "hello-2.12", 1, 2)
-	if err := pg.CreateNixPath(ctx, dup); !database.IsUniqueViolation(err) {
-		t.Fatalf("duplicate live hash = %v, want a unique violation", err)
+	if err := pg.CreateNixPath(ctx, dup); !errors.Is(err, database.ErrDuplicate) {
+		t.Fatalf("duplicate live hash = %v, want ErrDuplicate", err)
 	}
 
 	byHash, err := pg.GetNixPathByHash(ctx, repoID, p.StoreHash)
