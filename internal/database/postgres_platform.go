@@ -23,7 +23,7 @@ func nonNil(s []string) []string {
 
 // ListProjectStats returns the member count, live usage and size ceiling of
 // each given project in one query (projects that do not exist are absent).
-func (p *PostgresDB) ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {
+func (p *ProjectStore) ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error) {
 	stats := make(map[string]*models.ProjectStats, len(projectIDs))
 	if len(projectIDs) == 0 {
 		return stats, nil

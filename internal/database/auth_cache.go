@@ -189,11 +189,11 @@ func cachedList[T any](
 
 // ListProjectGrantsByUser returns the project grants of a user (see
 // models.ProjectGrant), from the auth cache when fresh.
-func (p *PostgresDB) ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {
+func (p *ProjectStore) ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {
 	return cachedList(ctx, &p.authCache, &p.authCache.projects, userID, cloneShallowSlice, p.listProjectGrantsByUserUncached)
 }
 
-func (p *PostgresDB) listProjectGrantsByUserUncached(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {
+func (p *ProjectStore) listProjectGrantsByUserUncached(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {
 	rows, err := p.q.ListProjectGrantsByUser(ctx, &userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list project grants: %w", err)
