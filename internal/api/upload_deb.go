@@ -498,7 +498,23 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 
 	repoID, err := h.resolveRepoID(r, repoName)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+		if errors.Is(err, errDebRepoNotFound) || errors.Is(err, errDebWrongFormat) || errors.Is(err, errDebNotHosted) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+			return
+		}
+
+		// A database failure must not look like a missing repository, or CI
+		// retries are misled.
+		h.log.Errorw("failed to look up repository", "repository", repoName, "error", err)
+		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to look up repository")
+
+		return
+	}
+
+	// Package ids are uuids: any other text cannot name a package, and would
+	// reach the uuid column and come back as a 500.
+	if !isUUIDString(packageID) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
 		return
 	}
 
