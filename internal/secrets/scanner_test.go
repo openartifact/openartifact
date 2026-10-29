@@ -12,7 +12,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-func newTestScanner(t *testing.T) *Scanner {
+func newTestScanner(t testing.TB) *Scanner {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")
