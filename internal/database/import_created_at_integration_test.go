@@ -99,7 +99,7 @@ func (e *importEnv) createPypi(t *testing.T, repo string, at time.Time) (string,
 		t.Fatal(err)
 	}
 
-	return "pypi_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createHelm(t *testing.T, repo string, at time.Time) (string, string) {
@@ -170,7 +170,7 @@ func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "conda_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createComposer(t *testing.T, repo string, at time.Time) (string, string) {

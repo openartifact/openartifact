@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 )
 
@@ -88,7 +89,7 @@ func TestUploadCreateFailureReleasesQuota(t *testing.T) {
 		err  error
 		want int
 	}{
-		"duplicate race": {errors.New("duplicate key value violates unique constraint"), http.StatusConflict},
+		"duplicate race": {database.ErrDuplicate, http.StatusConflict},
 		"other failure":  {errors.New("boom"), http.StatusInternalServerError},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -83,12 +83,7 @@ func TestMetadataStamps(t *testing.T) {
 		other := stamp("noarch")()
 
 		stampMoves(t, "package on platform", stamp("linux-64"), func() {
-			s.exec(
-				`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-			        VALUES ($1,'numpy','1.0','h1','linux-64','{}',$2,'.conda',0,'m',1,'{}')`,
-				s.repo,
-				s.blob(5),
-			)
+			addCondaBuild(t, pg, s.repo, "numpy", "1.0", "h1", "linux-64", models.CondaExtConda)
 		})
 
 		if got := stamp("noarch")(); got != other {
@@ -253,14 +248,7 @@ func TestCondaPackageNames(t *testing.T) {
 
 	s := newQuotaSeeder(t, pg, "names-conda", "conda")
 	add := func(name, platform string) {
-		s.exec(
-			`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-		        VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`,
-			s.repo,
-			name,
-			platform,
-			s.blob(5),
-		)
+		addCondaBuild(t, pg, s.repo, name, "1.0", "h1", platform, models.CondaExtConda)
 	}
 
 	add("Demo", "linux-64")
@@ -278,7 +266,7 @@ func TestCondaPackageNames(t *testing.T) {
 		}
 	}
 
-	s.exec(`UPDATE conda_packages SET deleted_at = now() WHERE repository_id = $1 AND lower(name) = 'other'`, s.repo)
+	trashCondaPackage(t, s, "other")
 
 	if got, err := pg.HasCondaPackageName(ctx, s.repo, "other"); err != nil || got {
 		t.Errorf("a trashed package still counts: %v, %v", got, err)

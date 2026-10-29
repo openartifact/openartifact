@@ -7,89 +7,36 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
-const createPyPIPackage = `-- name: CreatePyPIPackage :one
-INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
+const getPyPIFileID = `-- name: GetPyPIFileID :one
+SELECT id FROM package_files WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL
 `
 
-type CreatePyPIPackageParams struct {
-	RepositoryID   string     `db:"repository_id" json:"repository_id"`
-	Name           string     `db:"name" json:"name"`
-	Version        string     `db:"version" json:"version"`
-	Filename       string     `db:"filename" json:"filename"`
-	PackageType    string     `db:"package_type" json:"package_type"`
-	PythonVersion  *string    `db:"python_version" json:"python_version"`
-	RequiresPython *string    `db:"requires_python" json:"requires_python"`
-	Summary        *string    `db:"summary" json:"summary"`
-	Author         *string    `db:"author" json:"author"`
-	AuthorEmail    *string    `db:"author_email" json:"author_email"`
-	License        *string    `db:"license" json:"license"`
-	Keywords       *string    `db:"keywords" json:"keywords"`
-	Classifiers    []string   `db:"classifiers" json:"classifiers"`
-	BlobID         string     `db:"blob_id" json:"blob_id"`
-	CreatedAt      *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreatePyPIPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreatePyPIPackage(ctx context.Context, arg CreatePyPIPackageParams) (CreatePyPIPackageRow, error) {
-	row := q.db.QueryRow(ctx, createPyPIPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.Filename,
-		arg.PackageType,
-		arg.PythonVersion,
-		arg.RequiresPython,
-		arg.Summary,
-		arg.Author,
-		arg.AuthorEmail,
-		arg.License,
-		arg.Keywords,
-		arg.Classifiers,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreatePyPIPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deletePyPIPackage = `-- name: DeletePyPIPackage :exec
-DELETE FROM pypi_packages WHERE repository_id = $1 AND name = $2 AND version = $3 AND filename = $4 AND deleted_at IS NULL
-`
-
-type DeletePyPIPackageParams struct {
+type GetPyPIFileIDParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
-	Filename     string `db:"filename" json:"filename"`
+	Path         string `db:"path" json:"path"`
 }
 
-func (q *Queries) DeletePyPIPackage(ctx context.Context, arg DeletePyPIPackageParams) error {
-	_, err := q.db.Exec(ctx, deletePyPIPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.Filename,
-	)
-	return err
+func (q *Queries) GetPyPIFileID(ctx context.Context, arg GetPyPIFileIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getPyPIFileID, arg.RepositoryID, arg.Path)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getPyPIPackagesByFilename = `-- name: GetPyPIPackagesByFilename :many
-SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
-FROM pypi_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL AND pp.filename = $2
-ORDER BY pp.created_at, pp.id
+
+SELECT f.id, f.repository_id, p.name, v.version, f.filename, f.attrs, v.metadata,
+       b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.filename = $2
+ORDER BY f.created_at, f.id
 LIMIT 2
 `
 
@@ -99,28 +46,25 @@ type GetPyPIPackagesByFilenameParams struct {
 }
 
 type GetPyPIPackagesByFilenameRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	Filename       string    `db:"filename" json:"filename"`
-	PackageType    string    `db:"package_type" json:"package_type"`
-	PythonVersion  *string   `db:"python_version" json:"python_version"`
-	RequiresPython *string   `db:"requires_python" json:"requires_python"`
-	Summary        *string   `db:"summary" json:"summary"`
-	Author         *string   `db:"author" json:"author"`
-	AuthorEmail    *string   `db:"author_email" json:"author_email"`
-	License        *string   `db:"license" json:"license"`
-	Keywords       *string   `db:"keywords" json:"keywords"`
-	Classifiers    []string  `db:"classifiers" json:"classifiers"`
-	BlobKey        string    `db:"blob_key" json:"blob_key"`
-	Sha256Digest   string    `db:"sha256_digest" json:"sha256_digest"`
-	SizeBytes      int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Filename     string          `db:"filename" json:"filename"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	Sha256Digest string          `db:"sha256_digest" json:"sha256_digest"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// PyPI on the generic package tables (see the mapping in pkg_pypi.go). One
+// package per normalised project name, one version per release, one file per
+// distribution file.
 // At most two rows: enough to tell a unique file from an ambiguous filename.
+// Served by idx_package_files_filename.
 func (q *Queries) GetPyPIPackagesByFilename(ctx context.Context, arg GetPyPIPackagesByFilenameParams) ([]GetPyPIPackagesByFilenameRow, error) {
 	rows, err := q.db.Query(ctx, getPyPIPackagesByFilename, arg.RepositoryID, arg.Filename)
 	if err != nil {
@@ -136,15 +80,8 @@ func (q *Queries) GetPyPIPackagesByFilename(ctx context.Context, arg GetPyPIPack
 			&i.Name,
 			&i.Version,
 			&i.Filename,
-			&i.PackageType,
-			&i.PythonVersion,
-			&i.RequiresPython,
-			&i.Summary,
-			&i.Author,
-			&i.AuthorEmail,
-			&i.License,
-			&i.Keywords,
-			&i.Classifiers,
+			&i.Attrs,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.Sha256Digest,
 			&i.SizeBytes,
@@ -162,14 +99,15 @@ func (q *Queries) GetPyPIPackagesByFilename(ctx context.Context, arg GetPyPIPack
 }
 
 const listPyPIPackageNames = `-- name: ListPyPIPackageNames :many
-SELECT DISTINCT name::text AS name
-FROM pypi_packages
-WHERE repository_id = $1 AND deleted_at IS NULL
-ORDER BY name
+SELECT p.name::text AS name
+FROM packages p
+WHERE p.repository_id = $1
+  AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
+ORDER BY p.name
 `
 
-// Distinct stored project names of a repository, for the /simple/ root. No blob
-// join and no per-file columns: the page needs the names only.
+// Project names of a repository that have a live release, for the /simple/
+// root. No blob join and no per-file columns: the page needs the names only.
 func (q *Queries) ListPyPIPackageNames(ctx context.Context, repositoryID string) ([]string, error) {
 	rows, err := q.db.Query(ctx, listPyPIPackageNames, repositoryID)
 	if err != nil {
@@ -191,46 +129,40 @@ func (q *Queries) ListPyPIPackageNames(ctx context.Context, repositoryID string)
 }
 
 const listPyPIPackageVersions = `-- name: ListPyPIPackageVersions :many
-SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
-FROM pypi_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL
-  AND (pp.name = $2 OR (pp.name LIKE '%--%' AND regexp_replace(pp.name, '-+', '-', 'g') = $2))
-ORDER BY pp.version DESC
+SELECT f.id, f.repository_id, p.name, v.version, f.filename, f.attrs, v.metadata,
+       b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY v.version DESC, f.created_at, f.id
 `
 
 type ListPyPIPackageVersionsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
+	NameKey      string `db:"name_key" json:"name_key"`
 }
 
 type ListPyPIPackageVersionsRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	Filename       string    `db:"filename" json:"filename"`
-	PackageType    string    `db:"package_type" json:"package_type"`
-	PythonVersion  *string   `db:"python_version" json:"python_version"`
-	RequiresPython *string   `db:"requires_python" json:"requires_python"`
-	Summary        *string   `db:"summary" json:"summary"`
-	Author         *string   `db:"author" json:"author"`
-	AuthorEmail    *string   `db:"author_email" json:"author_email"`
-	License        *string   `db:"license" json:"license"`
-	Keywords       *string   `db:"keywords" json:"keywords"`
-	Classifiers    []string  `db:"classifiers" json:"classifiers"`
-	BlobKey        string    `db:"blob_key" json:"blob_key"`
-	Sha256Digest   string    `db:"sha256_digest" json:"sha256_digest"`
-	SizeBytes      int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	Filename     string          `db:"filename" json:"filename"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	BlobKey      string          `db:"blob_key" json:"blob_key"`
+	Sha256Digest string          `db:"sha256_digest" json:"sha256_digest"`
+	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
-// The second arm finds legacy rows stored with a "--" run in their name; it is
-// served by the partial expression index idx_pypi_packages_legacy_name, so the
-// OR resolves to a BitmapOr of two index scans, never a table scan.
+// The files of one project by its normalised name (uq_packages_name), newest
+// version first.
 func (q *Queries) ListPyPIPackageVersions(ctx context.Context, arg ListPyPIPackageVersionsParams) ([]ListPyPIPackageVersionsRow, error) {
-	rows, err := q.db.Query(ctx, listPyPIPackageVersions, arg.RepositoryID, arg.Name)
+	rows, err := q.db.Query(ctx, listPyPIPackageVersions, arg.RepositoryID, arg.NameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -244,85 +176,8 @@ func (q *Queries) ListPyPIPackageVersions(ctx context.Context, arg ListPyPIPacka
 			&i.Name,
 			&i.Version,
 			&i.Filename,
-			&i.PackageType,
-			&i.PythonVersion,
-			&i.RequiresPython,
-			&i.Summary,
-			&i.Author,
-			&i.AuthorEmail,
-			&i.License,
-			&i.Keywords,
-			&i.Classifiers,
-			&i.BlobKey,
-			&i.Sha256Digest,
-			&i.SizeBytes,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPyPIPackages = `-- name: ListPyPIPackages :many
-SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
-FROM pypi_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL
-ORDER BY pp.name, pp.version
-`
-
-type ListPyPIPackagesRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	Filename       string    `db:"filename" json:"filename"`
-	PackageType    string    `db:"package_type" json:"package_type"`
-	PythonVersion  *string   `db:"python_version" json:"python_version"`
-	RequiresPython *string   `db:"requires_python" json:"requires_python"`
-	Summary        *string   `db:"summary" json:"summary"`
-	Author         *string   `db:"author" json:"author"`
-	AuthorEmail    *string   `db:"author_email" json:"author_email"`
-	License        *string   `db:"license" json:"license"`
-	Keywords       *string   `db:"keywords" json:"keywords"`
-	Classifiers    []string  `db:"classifiers" json:"classifiers"`
-	BlobKey        string    `db:"blob_key" json:"blob_key"`
-	Sha256Digest   string    `db:"sha256_digest" json:"sha256_digest"`
-	SizeBytes      int64     `db:"size_bytes" json:"size_bytes"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListPyPIPackages(ctx context.Context, repositoryID string) ([]ListPyPIPackagesRow, error) {
-	rows, err := q.db.Query(ctx, listPyPIPackages, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListPyPIPackagesRow{}
-	for rows.Next() {
-		var i ListPyPIPackagesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Name,
-			&i.Version,
-			&i.Filename,
-			&i.PackageType,
-			&i.PythonVersion,
-			&i.RequiresPython,
-			&i.Summary,
-			&i.Author,
-			&i.AuthorEmail,
-			&i.License,
-			&i.Keywords,
-			&i.Classifiers,
+			&i.Attrs,
+			&i.Metadata,
 			&i.BlobKey,
 			&i.Sha256Digest,
 			&i.SizeBytes,

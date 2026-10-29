@@ -524,7 +524,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreatePyPIPackage(ctx, pkg); err != nil {
-			if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
+			if errors.Is(err, database.ErrDuplicate) {
 				status, msg = http.StatusConflict, "file already exists"
 
 				return err

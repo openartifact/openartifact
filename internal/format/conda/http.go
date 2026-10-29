@@ -86,7 +86,7 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("conda handler registered", "prefix", prefix)
 }
 
-// platformOf returns the platform the URL names. One the conda_packages column
+// platformOf returns the platform the URL names. One the package_files column
 // cannot hold is answered 400 here, instead of failing in the database as a 500.
 func platformOf(w http.ResponseWriter, r *http.Request) (string, bool) {
 	platform := urlparams.Vars(r)["platform"]

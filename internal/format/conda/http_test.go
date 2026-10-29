@@ -20,7 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
-// condaDB is an in-memory conda_packages table: lookups match on the full
+// condaDB is an in-memory package table: lookups match on the full
 // file key (name, version, build, platform, extension), like the real
 // queries, and creating a key twice yields database.ErrDuplicate.
 type condaDB struct {

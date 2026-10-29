@@ -24,10 +24,6 @@ type benchPyPIDB struct {
 	versions []*models.PyPIPackage
 }
 
-func (d *benchPyPIDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
-	return d.all, nil
-}
-
 func (d *benchPyPIDB) ListPyPIPackageNames(_ context.Context, _ string) ([]string, error) {
 	return distinctPyPINames(d.all), nil
 }
