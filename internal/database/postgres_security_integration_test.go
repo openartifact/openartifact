@@ -427,10 +427,10 @@ func TestSecurityFindings_ResolvesPackageRowIDs(t *testing.T) {
 
 	blob := mustScan[string](t, f.db,
 		`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('b', 64), 3, repeat('b', 64)) RETURNING id`)
-	pkgID := mustScan[string](t, f.db,
-		`INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, 'pypi', 'data-pipeline', 'data-pipeline') RETURNING id`, f.repoB)
-	verID := mustScan[string](t, f.db,
-		`INSERT INTO package_versions (package_id, repository_id, version, version_key) VALUES ($1, $2, '2.3.1', '2.3.1') RETURNING id`, pkgID, f.repoB)
+	pkgID := mustScan[string](t, f.db, `INSERT INTO packages (repository_id, format, name, name_key)
+		VALUES ($1, 'pypi', 'data-pipeline', 'data-pipeline') RETURNING id`, f.repoB)
+	verID := mustScan[string](t, f.db, `INSERT INTO package_versions (package_id, repository_id, version, version_key)
+		VALUES ($1, $2, '2.3.1', '2.3.1') RETURNING id`, pkgID, f.repoB)
 	pkg := mustScan[string](t, f.db,
 		`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id)
 		 VALUES ($1, $2, 'data-pipeline/2.3.1/data_pipeline-2.3.1.tar.gz', 'data_pipeline-2.3.1.tar.gz', $3) RETURNING id`, verID, f.repoB, blob)
