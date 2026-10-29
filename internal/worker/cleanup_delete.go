@@ -105,7 +105,6 @@ func (w *CleanupWorker) DeletePackage(
 		w.releaseQuota(ctx, repo.ID, run.released)
 	}
 
-	w.refreshMetadata(ctx, repo)
 	w.refreshFormatMetadata(ctx, repo, run)
 
 	return res, nil

@@ -23,6 +23,7 @@ package plugin
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
@@ -128,7 +129,12 @@ var FirstHitGroup = Group{Enabled: true} //nolint:gochecknoglobals // immutable 
 // GroupOf is the group behaviour with the given merge hooks.
 func GroupOf(h *group.Hooks) Group { return Group{Enabled: true, Hooks: h} }
 
-var formats registry.Registry[Format] //nolint:gochecknoglobals // the format registry, filled by Register at startup
+var (
+	formats registry.Registry[Format] //nolint:gochecknoglobals // the format registry, filled by Register at startup
+
+	orderMu sync.RWMutex //nolint:gochecknoglobals // guards order
+	order   []string     //nolint:gochecknoglobals // format names in registration order, see All
+)
 
 // Register records f in every registry. It panics when f is invalid or its name
 // is already registered: both are programming errors that must fail at startup.
@@ -147,6 +153,11 @@ func Register(f Format) {
 	}
 
 	formats.Register(name, f)
+
+	orderMu.Lock()
+	order = append(order, name)
+	orderMu.Unlock()
+
 	registerLibraries(name, f)
 }
 
@@ -186,12 +197,17 @@ func registerLibraries(name string, f Format) {
 	lifecycle.Register(name, f.Lifecycle())
 }
 
-// All returns the registered formats, sorted by name.
+// All returns the registered formats in registration order. The order is
+// meaningful: formats on the shared /repos/{name} subrouter register their
+// routes in it, and where two of them register a route of the same shape the
+// later one serves it (see internal/formats).
 func All() []Format {
-	names := formats.Names()
-	out := make([]Format, 0, len(names))
+	orderMu.RLock()
+	defer orderMu.RUnlock()
 
-	for _, name := range names {
+	out := make([]Format, 0, len(order))
+
+	for _, name := range order {
 		if f, ok := formats.Lookup(name); ok {
 			out = append(out, f)
 		}

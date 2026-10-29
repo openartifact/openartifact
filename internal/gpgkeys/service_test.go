@@ -18,6 +18,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/gpgkeys/gpgkeystest"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -72,7 +73,11 @@ func newService(t *testing.T, config gpg.Signer) (*Service, *gpgkeystest.Store, 
 	svc.autoAlgorithm = gpg.AlgorithmED25519 // RSA-4096 generation is too slow for unit tests
 
 	rpm, deb := &recorder{}, &recorder{}
-	svc.SetRefreshers(rpm, deb, nil)
+
+	ws := lifecycle.NewWorkers()
+	ws.Bind("rpm", rpm)
+	ws.Bind("deb", deb)
+	svc.SetWorkers(ws)
 
 	return svc, store, rpm, deb
 }
@@ -522,7 +527,10 @@ func TestAutoGenerateReplicaRace(t *testing.T) {
 	for range replicas {
 		svc := New(store, testLog(t), nil)
 		svc.autoAlgorithm = gpg.AlgorithmED25519
-		svc.SetRefreshers(nil, &recorder{}, nil)
+
+		ws := lifecycle.NewWorkers()
+		ws.Bind("deb", &recorder{})
+		svc.SetWorkers(ws)
 
 		wg.Go(func() {
 			<-start

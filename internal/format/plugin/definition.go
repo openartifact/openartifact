@@ -5,6 +5,9 @@
 package plugin
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 )
@@ -34,7 +37,16 @@ type Definition struct {
 func (d Definition) Name() string { return d.ID }
 
 // Hosted implements Format.
-func (d Definition) Hosted(deps *Deps) (Hosted, error) { return d.NewHosted(deps) }
+func (d Definition) Hosted(deps *Deps) (Hosted, error) {
+	if d.NewHosted == nil {
+		return nil, fmt.Errorf("%w: %q", ErrNoHostedHandler, d.ID)
+	}
+
+	return d.NewHosted(deps)
+}
+
+// ErrNoHostedHandler is returned by a Definition that has no NewHosted.
+var ErrNoHostedHandler = errors.New("plugin: format has no hosted handler constructor")
 
 // Analysis implements Format.
 func (d Definition) Analysis() Analysis { return d.Supply }

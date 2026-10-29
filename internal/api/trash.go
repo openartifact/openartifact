@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -57,7 +58,7 @@ type TrashHandler struct {
 
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
-	regen     TrashRegenerator
+	workers   *lifecycle.Workers
 	groupMeta GroupMetadataNotifier
 
 	// tasks runs the detached orphan-blob collections started by repository
@@ -92,9 +93,10 @@ func (h *TrashHandler) WithPublisher(p webhook.Publisher) *TrashHandler {
 	return h
 }
 
-// WithRegenerator enables the metadata refresh after a restore.
-func (h *TrashHandler) WithRegenerator(r TrashRegenerator) *TrashHandler {
-	h.regen = r
+// WithWorkers enables the metadata refresh after a restore: the format
+// lifecycles notify the metadata workers in ws.
+func (h *TrashHandler) WithWorkers(ws *lifecycle.Workers) *TrashHandler {
+	h.workers = ws
 
 	return h
 }

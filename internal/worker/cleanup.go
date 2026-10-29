@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/cron"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatlifecycle "github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
@@ -83,11 +84,7 @@ type CleanupWorker struct {
 
 	wg sync.WaitGroup // manually triggered policy runs
 
-	rpmNotifier, debNotifier, pacmanNotifier MetadataNotifier
-	apkNotifier                              MetadataNotifier
-	mavenNotifier                            MavenNotifier
-	npmNotifier                              NPMNotifier
-	dockerGC                                 DockerGCRunner
+	workers *formatlifecycle.Workers // the metadata workers the format lifecycles notify
 
 	lastOrphanGC         time.Time // only touched from the tick goroutine
 	lastNixPendingSweep  time.Time // only touched from the tick goroutine
@@ -388,7 +385,6 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 	// Also after a partial run: whatever was removed before the error must
 	// leave the generated metadata.
 	if deleted > 0 {
-		w.refreshMetadata(ctx, repo)
 		w.refreshFormatMetadata(ctx, repo, run)
 	}
 
@@ -432,58 +428,6 @@ func (w *CleanupWorker) runProjectPolicy(ctx context.Context, policy *models.Cle
 	}
 
 	return total, errors.Join(errs...)
-}
-
-// MetadataNotifier schedules the regeneration of a repository's generated
-// metadata (repodata, dists). It is satisfied by the rpm and deb metadata workers.
-type MetadataNotifier interface{ NotifyStale(repoID string) }
-
-// SetMetadataNotifiers wires the rpm and deb metadata workers so a cleanup run
-// that removed packages refreshes the repository's index (otherwise
-// primary.xml / Packages keep listing files that no longer exist). Either may
-// be nil when that worker is not running.
-func (w *CleanupWorker) SetMetadataNotifiers(rpm, deb MetadataNotifier) {
-	w.rpmNotifier, w.debNotifier = rpm, deb
-}
-
-// SetPacmanNotifier wires the pacman metadata worker so a cleanup run that
-// removed packages refreshes the repository's package database. It may be nil
-// when that worker is not running.
-func (w *CleanupWorker) SetPacmanNotifier(n MetadataNotifier) { w.pacmanNotifier = n }
-
-// SetApkNotifier wires the apk metadata worker so a cleanup run that removed
-// packages regenerates the repository's APKINDEX files. It may be nil.
-func (w *CleanupWorker) SetApkNotifier(apk MetadataNotifier) { w.apkNotifier = apk }
-
-// refreshMetadata runs once per policy run for the repository the run touched.
-// rpm is marked stale in the database first, so the stale sweep recovers the
-// refresh even if the notifier is absent or the process dies.
-func (w *CleanupWorker) refreshMetadata(ctx context.Context, repo *models.Repository) {
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), policyRecordTimeout)
-	defer cancel()
-
-	switch repo.Format {
-	case "rpm":
-		if err := w.db.MarkRepoStale(rctx, repo.ID); err != nil {
-			w.log.Warnw("cleanup: failed to mark rpm repository stale", "repository_id", repo.ID, "error", err)
-		}
-
-		if w.rpmNotifier != nil {
-			w.rpmNotifier.NotifyStale(repo.ID)
-		}
-	case "deb":
-		if w.debNotifier != nil {
-			w.debNotifier.NotifyStale(repo.ID)
-		}
-	case "pacman":
-		if w.pacmanNotifier != nil {
-			w.pacmanNotifier.NotifyStale(repo.ID)
-		}
-	case "apk":
-		if w.apkNotifier != nil {
-			w.apkNotifier.NotifyStale(repo.ID)
-		}
-	}
 }
 
 // cleanupCandidate is a row selected for deletion: its primary key (for the

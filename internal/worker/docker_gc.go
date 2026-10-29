@@ -148,6 +148,24 @@ func NewDockerGCWorker(db DockerGCDB, blobStore storage.BlobStore, log *logger.L
 // specify one.
 func (w *DockerGCWorker) DefaultGrace() time.Duration { return w.grace }
 
+// CollectRemoved runs the garbage collection of a repository after tags were
+// deleted from it, with the worker's default grace period. A run that is
+// already in progress covers the removal, so it is not an error.
+func (w *DockerGCWorker) CollectRemoved(ctx context.Context, repo *models.Repository) error {
+	_, err := w.RunRepo(ctx, repo, DockerGCOptions{Grace: w.grace})
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrDockerGCBusy):
+		w.log.Debugw("cleanup: docker garbage collection skipped", "repository_id", repo.ID, "reason", err)
+
+		return nil
+	default:
+		return fmt.Errorf("run gc: %w", err)
+	}
+}
+
 // Start begins the scheduled passes. With a non-positive interval nothing is
 // scheduled.
 func (w *DockerGCWorker) Start() {
