@@ -15,35 +15,48 @@ package quarantine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
 
-// checker is implemented by databases that can answer quarantine lookups.
-type checker interface {
+// Checker answers quarantine lookups. Every caller takes one by this type, so a
+// store that cannot answer fails to compile instead of silently serving
+// quarantined artifacts.
+type Checker interface {
 	IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error)
 }
 
+// ErrNoChecker is returned when a lookup is attempted without a Checker: the
+// state of the artifact is unknown, so callers must fail closed.
+var ErrNoChecker = errors.New("quarantine: no checker configured")
+
 // IsQuarantined reports whether any of keys identifies a quarantined artifact
-// of the repository. Databases without quarantine support report false.
-func IsQuarantined(ctx context.Context, db any, repoID string, keys ...string) (bool, error) {
+// of the repository. A nil db is an error (ErrNoChecker), never "not
+// quarantined".
+func IsQuarantined(ctx context.Context, db Checker, repoID string, keys ...string) (bool, error) {
+	if db == nil {
+		return false, ErrNoChecker
+	}
+
 	if repoID == "" || len(keys) == 0 {
 		return false, nil
 	}
 
-	c, ok := db.(checker)
-	if !ok {
-		return false, nil
+	blocked, err := db.IsArtifactQuarantined(ctx, repoID, keys)
+	if err != nil {
+		return false, fmt.Errorf("check artifact quarantine: %w", err)
 	}
 
-	return c.IsArtifactQuarantined(ctx, repoID, keys)
+	return blocked, nil
 }
 
 // Enforce refuses the request when the artifact is quarantined. It writes a 403
 // (or a 500 when the quarantine state cannot be determined: the check fails
 // closed) and returns true, in which case the caller MUST return without
 // writing anything else.
-func Enforce(w http.ResponseWriter, r *http.Request, db any, repoID string, keys ...string) bool {
+func Enforce(w http.ResponseWriter, r *http.Request, db Checker, repoID string, keys ...string) bool {
 	blocked, err := IsQuarantined(r.Context(), db, repoID, keys...)
 	if err != nil {
 		http.Error(w, "unable to verify artifact quarantine state", http.StatusInternalServerError)

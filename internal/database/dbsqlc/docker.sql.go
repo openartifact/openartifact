@@ -1043,6 +1043,40 @@ func (q *Queries) ListDockerManifestsByRepo(ctx context.Context, repositoryID st
 	return items, nil
 }
 
+const listDockerTagIDsByDigest = `-- name: ListDockerTagIDsByDigest :many
+SELECT t.id FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2 AND t.manifest_digest = $3 AND t.deleted_at IS NULL
+`
+
+type ListDockerTagIDsByDigestParams struct {
+	RepositoryID   string `db:"repository_id" json:"repository_id"`
+	Image          string `db:"image" json:"image"`
+	ManifestDigest string `db:"manifest_digest" json:"manifest_digest"`
+}
+
+// The ids of the live tags of an image that point at a manifest: a scan of a
+// docker image is anchored on its tag row (the id the package listing shows), so
+// a pull of the manifest, by tag or by digest, is quarantined with its tags.
+func (q *Queries) ListDockerTagIDsByDigest(ctx context.Context, arg ListDockerTagIDsByDigestParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDockerTagIDsByDigest, arg.RepositoryID, arg.Image, arg.ManifestDigest)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDockerTags = `-- name: ListDockerTags :many
 SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
 FROM docker_tags t

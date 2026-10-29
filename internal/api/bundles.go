@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/promote"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -28,6 +29,7 @@ import (
 
 // BundlesStore is the part of the database BundlesHandler needs.
 type BundlesStore interface {
+	quarantine.Checker
 	repoAccessStore
 	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error
 	BeginTx(ctx context.Context) (database.Transaction, error)

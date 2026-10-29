@@ -221,6 +221,24 @@ func (d *regFakeDB) GetDockerTag(_ context.Context, repoID, image, name string) 
 	return d.tags[scoped(repoID, scoped(image, name))], nil
 }
 
+func (d *regFakeDB) ListDockerTagIDsByDigest(_ context.Context, repoID, image, digest string) ([]string, error) {
+	var ids []string
+
+	for _, t := range d.tags {
+		if t.RepositoryID == repoID && t.Image == image && t.ManifestDigest == digest {
+			ids = append(ids, t.ID)
+		}
+	}
+
+	return ids, nil
+}
+
+// IsArtifactQuarantined answers from the quarantined keys (regFakeDBStore
+// also carries the method, so the fake must name the one it uses).
+func (d *regFakeDB) IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error) {
+	return d.Quarantine.IsArtifactQuarantined(ctx, repoID, keys)
+}
+
 func (d *regFakeDB) DeleteDockerTag(_ context.Context, repoID, image, name string) error {
 	delete(d.tags, scoped(repoID, scoped(image, name)))
 	return nil

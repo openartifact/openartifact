@@ -47,6 +47,16 @@ func newMemDB() *memDB {
 	return &memDB{entries: map[string]*models.ProxyCacheEntry{}, blobs: map[string]int64{}}
 }
 
+// testEntryID is the row id the memDB gives the cache entry of a key, as the
+// database does on insert.
+func testEntryID(key string) string { return "entry-" + key }
+
+// IsArtifactQuarantined reports nothing quarantined; the quarantine tests wrap
+// the memDB with their own.
+func (*memDB) IsArtifactQuarantined(context.Context, string, []string) (bool, error) {
+	return false, nil
+}
+
 func (d *memDB) GetProxyCacheEntry(_ context.Context, repoID, key string) (*models.ProxyCacheEntry, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -66,6 +76,11 @@ func (d *memDB) UpsertProxyCacheEntry(_ context.Context, e *models.ProxyCacheEnt
 	defer d.mu.Unlock()
 
 	cp := *e
+	if cp.ID == "" {
+		cp.ID = testEntryID(e.CacheKey)
+		e.ID = cp.ID
+	}
+
 	d.entries[e.RepositoryID+"|"+e.CacheKey] = &cp
 
 	return nil

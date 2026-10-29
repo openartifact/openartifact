@@ -69,6 +69,7 @@ func validFormatList() string {
 
 // RepositoriesStore is the part of the database RepositoriesHandler needs.
 type RepositoriesStore interface {
+	quarantine.Checker
 	collectOrphansAsyncStore
 	reclaimMetadataBlobsStore
 	ArtifactSecurity(ctx context.Context, repoID string, artifactIDs []string) (map[string]models.ArtifactSecurity, error)

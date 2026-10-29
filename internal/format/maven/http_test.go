@@ -37,6 +37,12 @@ func (m *mavenMockDB) GetRepoMetadataByPath(_ context.Context, _ string, _ strin
 	return m.meta, nil
 }
 
+// IsArtifactQuarantined reports nothing quarantined; tests of quarantine
+// override it.
+func (*mavenMockDB) IsArtifactQuarantined(context.Context, string, []string) (bool, error) {
+	return false, nil
+}
+
 type mavenMockBlobStore struct {
 	blobs map[string][]byte
 }

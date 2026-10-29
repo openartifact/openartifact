@@ -45,14 +45,14 @@ const (
 // log and the content of that one repository and nothing else.
 type Server struct {
 	store *Store
-	// db is probed for quarantine support (quarantine.IsQuarantined).
-	db    any
+	// db answers the quarantine lookups of the units served to a peer.
+	db    quarantine.Checker
 	blobs storage.BlobStore
 	log   *logger.Logger
 }
 
 // NewServer creates the peer endpoint handler.
-func NewServer(store *Store, db any, blobs storage.BlobStore, log *logger.Logger) *Server {
+func NewServer(store *Store, db quarantine.Checker, blobs storage.BlobStore, log *logger.Logger) *Server {
 	return &Server{store: store, db: db, blobs: blobs, log: log}
 }
 
@@ -276,7 +276,15 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request, repo *RepoInfo, 
 		return nil, false
 	}
 
-	blocked, err := quarantine.IsQuarantined(r.Context(), s.db, repo.ID, quarantineKeys(repo.Format, key)...)
+	ids, err := unitRowIDs(r.Context(), s.store.db, repo, key)
+	if err != nil {
+		s.fail(w, "list unit rows", err)
+
+		return nil, false
+	}
+
+	blocked, err := quarantine.IsQuarantined(r.Context(), s.db, repo.ID,
+		append(quarantineKeys(repo.Format, key), quarantine.PathKeys(ids...)...)...)
 	if err != nil {
 		s.fail(w, "check quarantine", err)
 

@@ -532,6 +532,21 @@ func (p *DockerStore) GetDockerTag(ctx context.Context, repoID, image, name stri
 	}, nil
 }
 
+// ListDockerTagIDsByDigest returns the ids of the live tags of the image that
+// point at digest: the identifiers a scan of the image is recorded under.
+func (p *DockerStore) ListDockerTagIDsByDigest(ctx context.Context, repoID, image, digest string) ([]string, error) {
+	ids, err := p.q.ListDockerTagIDsByDigest(ctx, dbsqlc.ListDockerTagIDsByDigestParams{
+		RepositoryID:   repoID,
+		Image:          image,
+		ManifestDigest: digest,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list docker tag ids by digest: %w", err)
+	}
+
+	return ids, nil
+}
+
 func (p *DockerStore) DeleteDockerTag(ctx context.Context, repoID, image, name string) error {
 	if err := p.q.DeleteDockerTag(ctx, dbsqlc.DeleteDockerTagParams{
 		RepositoryID: repoID,

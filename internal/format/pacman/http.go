@@ -50,6 +50,7 @@ type Regenerator interface {
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

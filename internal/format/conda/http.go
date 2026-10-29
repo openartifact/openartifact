@@ -38,6 +38,7 @@ const maxCondaUploadBytes = 500 << 20
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CondaRepodataStamp(ctx context.Context, repoID string, platform string) (string, error)
 	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
@@ -256,7 +257,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filename, platform+"/"+filename, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(pkg.ID, filename, platform+"/"+filename, r.URL.Path)...) {
 		return
 	}
 

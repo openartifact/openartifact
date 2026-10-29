@@ -21,7 +21,6 @@ import (
 // eventsDB adds blobs and quarantine lookups to manifestFakeDB.
 type eventsDB struct {
 	*manifestFakeDB
-	formattest.Quarantine
 
 	blob *models.DockerBlob
 }

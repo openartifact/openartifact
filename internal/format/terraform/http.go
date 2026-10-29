@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/gpg"
@@ -50,6 +51,7 @@ const ticketPath = "/terraform/dl/"
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error
 	CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error

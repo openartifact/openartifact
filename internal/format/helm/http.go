@@ -41,6 +41,7 @@ const maxHelmUploadBytes = 100 << 20
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateHelmChart(ctx context.Context, chart *models.HelmChart) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

@@ -17,6 +17,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/formattest"
 )
 
 // manifestFakeDB is a minimal in-memory Database for manifest-path tests
@@ -26,6 +27,7 @@ import (
 // and the create/upsert methods are idempotent like the real queries.
 type manifestFakeDB struct {
 	testHandlerStore
+	formattest.Quarantine
 
 	repo *models.Repository
 
@@ -86,6 +88,12 @@ func (f *manifestFakeDB) DeleteDockerManifest(_ context.Context, _, image, diges
 	return nil
 }
 
+// IsArtifactQuarantined answers from the quarantined keys (testHandlerStore
+// carries the method too, so the fake must name the one it uses).
+func (f *manifestFakeDB) IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error) {
+	return f.Quarantine.IsArtifactQuarantined(ctx, repoID, keys)
+}
+
 func (f *manifestFakeDB) UpsertDockerTag(_ context.Context, tag *models.DockerTag) error {
 	f.tags[scoped(tag.Image, tag.Name)] = tag
 	return nil
@@ -93,6 +101,18 @@ func (f *manifestFakeDB) UpsertDockerTag(_ context.Context, tag *models.DockerTa
 
 func (f *manifestFakeDB) GetDockerTag(_ context.Context, _, image, name string) (*models.DockerTag, error) {
 	return f.tags[scoped(image, name)], nil
+}
+
+func (f *manifestFakeDB) ListDockerTagIDsByDigest(_ context.Context, _, image, digest string) ([]string, error) {
+	var ids []string
+
+	for _, t := range f.tags {
+		if t.Image == image && t.ManifestDigest == digest {
+			ids = append(ids, t.ID)
+		}
+	}
+
+	return ids, nil
 }
 
 func (f *manifestFakeDB) DeleteDockerTag(_ context.Context, _, image, name string) error {
