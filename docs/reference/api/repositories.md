@@ -1165,6 +1165,7 @@ Download an SBOM report file
 | `400` | Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested) | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `POST /api/v1/repositories/{name}/secrets/scan`
@@ -1439,6 +1440,7 @@ Build an OpenVEX 0.2.0 (default) or CycloneDX VEX document from the latest vulne
 | `400` | Invalid format, spec_version or artifact_id | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `GET /api/v1/repositories/{name}/vex/statements`

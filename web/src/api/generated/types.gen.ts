@@ -4507,6 +4507,10 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadErrors = {
      */
     404: unknown;
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Attestations are not enabled
      */
     501: unknown;
@@ -4561,6 +4565,10 @@ export type GetApiV1RepositoriesByNameVexErrors = {
      * Repository not found
      */
     404: unknown;
+    /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
     /**
      * Attestations are not enabled
      */
@@ -12100,6 +12108,15 @@ export type GetApiV1AuthSsoOidcBySlugLoginData = {
     url: '/api/v1/auth/sso/oidc/{slug}/login';
 };
 
+export type GetApiV1AuthSsoOidcBySlugLoginErrors = {
+    /**
+     * Bad request: the URL contains a NUL byte (code bad_request)
+     */
+    400: Error;
+};
+
+export type GetApiV1AuthSsoOidcBySlugLoginError = GetApiV1AuthSsoOidcBySlugLoginErrors[keyof GetApiV1AuthSsoOidcBySlugLoginErrors];
+
 export type GetApiV1AuthSsoOidcBySlugCallbackData = {
     body?: never;
     path: {
@@ -12111,6 +12128,15 @@ export type GetApiV1AuthSsoOidcBySlugCallbackData = {
     };
     url: '/api/v1/auth/sso/oidc/{slug}/callback';
 };
+
+export type GetApiV1AuthSsoOidcBySlugCallbackErrors = {
+    /**
+     * Bad request: the URL contains a NUL byte (code bad_request)
+     */
+    400: Error;
+};
+
+export type GetApiV1AuthSsoOidcBySlugCallbackError = GetApiV1AuthSsoOidcBySlugCallbackErrors[keyof GetApiV1AuthSsoOidcBySlugCallbackErrors];
 
 export type PostApiV1AuthSsoOidcBySlugLogoutData = {
     body?: never;
@@ -12152,6 +12178,15 @@ export type GetApiV1AuthSsoSamlBySlugLoginData = {
     url: '/api/v1/auth/sso/saml/{slug}/login';
 };
 
+export type GetApiV1AuthSsoSamlBySlugLoginErrors = {
+    /**
+     * Bad request: the URL contains a NUL byte (code bad_request)
+     */
+    400: Error;
+};
+
+export type GetApiV1AuthSsoSamlBySlugLoginError = GetApiV1AuthSsoSamlBySlugLoginErrors[keyof GetApiV1AuthSsoSamlBySlugLoginErrors];
+
 export type GetApiV1AuthSsoSamlBySlugMetadataData = {
     body?: never;
     path: {
@@ -12185,6 +12220,15 @@ export type PostApiV1AuthSsoSamlBySlugAcsData = {
     query?: never;
     url: '/api/v1/auth/sso/saml/{slug}/acs';
 };
+
+export type PostApiV1AuthSsoSamlBySlugAcsErrors = {
+    /**
+     * Bad request: the URL contains a NUL byte (code bad_request)
+     */
+    400: Error;
+};
+
+export type PostApiV1AuthSsoSamlBySlugAcsError = PostApiV1AuthSsoSamlBySlugAcsErrors[keyof PostApiV1AuthSsoSamlBySlugAcsErrors];
 
 export type PostApiV1RepositoriesByNameUploadsData = {
     body: PresignedUploadRequest;
@@ -14029,6 +14073,10 @@ export type PostApiV1RepositoriesByNameSbomByIdAttachErrors = {
      */
     404: unknown;
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Repository storage quota exceeded
      */
     507: unknown;
@@ -14079,6 +14127,10 @@ export type PostApiV1RepositoriesByNameVexAttachErrors = {
      */
     404: unknown;
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Repository storage quota exceeded
      */
     507: unknown;
@@ -14112,6 +14164,10 @@ export type GetApiV1AdminAttestationData = {
 
 export type GetApiV1AdminAttestationErrors = {
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Attestations are not enabled
      */
     501: unknown;
@@ -14141,10 +14197,16 @@ export type GetWellKnownOpenartifactAttestationKeyPemData = {
 
 export type GetWellKnownOpenartifactAttestationKeyPemErrors = {
     /**
+     * OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)
+     */
+    409: Error;
+    /**
      * Attestations are not enabled
      */
     501: unknown;
 };
+
+export type GetWellKnownOpenartifactAttestationKeyPemError = GetWellKnownOpenartifactAttestationKeyPemErrors[keyof GetWellKnownOpenartifactAttestationKeyPemErrors];
 
 export type GetWellKnownOpenartifactAttestationKeyPemResponses = {
     /**

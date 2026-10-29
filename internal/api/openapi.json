@@ -9268,6 +9268,16 @@
           "404": {
             "description": "SBOM report not found"
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "501": {
             "description": "Attestations are not enabled"
           }
@@ -9355,6 +9365,16 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
             "content": {
               "application/json": {
                 "schema": {
@@ -21849,6 +21869,16 @@
           },
           "303": {
             "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -21889,6 +21919,16 @@
           },
           "303": {
             "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -21960,6 +22000,16 @@
           },
           "303": {
             "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -22019,6 +22069,16 @@
           },
           "303": {
             "description": "Sign-in failed: redirect to /login?sso_error=<code> (a closed set of codes, see the SSO guide). The browser reaches this endpoint by navigation, so a failure is never a JSON body."
+          },
+          "400": {
+            "description": "Bad request: the URL contains a NUL byte (code bad_request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -25220,6 +25280,16 @@
           "404": {
             "description": "Repository, report or image not found"
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "507": {
             "description": "Repository storage quota exceeded"
           },
@@ -25308,6 +25378,16 @@
           "404": {
             "description": "Repository, report or image not found"
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "507": {
             "description": "Repository storage quota exceeded"
           },
@@ -25343,6 +25423,16 @@
               }
             }
           },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "501": {
             "description": "Attestations are not enabled"
           },
@@ -25374,6 +25464,16 @@
               "application/x-pem-file": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

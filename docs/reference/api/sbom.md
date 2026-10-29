@@ -25,6 +25,7 @@ The PEM (PKIX) public key that verifies SBOM and VEX attestations, for `cosign v
 | Status | Description | Body |
 |---|---|---|
 | `200` | PEM public key | `application/x-pem-file`: string |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `GET /api/v1/admin/attestation`
@@ -38,6 +39,7 @@ Admin only. The key signs `?attest=` SBOM and VEX downloads; its public half is 
 | Status | Description | Body |
 |---|---|---|
 | `200` | Success | `application/json`: [AttestationKey](schemas.md#attestationkey) |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
 
@@ -213,6 +215,7 @@ Admin only. Signs the stored SBOM (JSON formats only) and attaches the Sigstore 
 | `400` | Not a hosted docker repository, or not a JSON SBOM | - |
 | `403` | Admin access required | - |
 | `404` | Repository, report or image not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `507` | Repository storage quota exceeded | - |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
 
@@ -238,6 +241,7 @@ Download an SBOM report file
 | `400` | Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested) | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | SBOM report not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `GET /api/v1/repositories/{name}/vex`
@@ -264,6 +268,7 @@ Build an OpenVEX 0.2.0 (default) or CycloneDX VEX document from the latest vulne
 | `400` | Invalid format, spec_version or artifact_id | - |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `501` | Attestations are not enabled | - |
 
 ### `POST /api/v1/repositories/{name}/vex/attach`
@@ -296,6 +301,7 @@ Admin only. Builds the artifact's VEX document, signs it and attaches the Sigsto
 | `400` | Not a hosted docker repository, or not a JSON SBOM | - |
 | `403` | Admin access required | - |
 | `404` | Repository, report or image not found | - |
+| `409` | OPENARTIFACT_SECRET_KEY is not set, so the attestation signing key cannot be stored (code secret_key_required) | `application/json`: [Error](schemas.md#error) |
 | `507` | Repository storage quota exceeded | - |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
 

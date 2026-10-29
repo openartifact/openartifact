@@ -5,9 +5,18 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -30,12 +39,12 @@ func TestProbeHealth(t *testing.T) {
 
 	addr := srv.Listener.Addr().String()
 
-	if err := probeHealth("http", addr, time.Second); err != nil {
+	if err := probeHealth("http", addr, "", time.Second); err != nil {
 		t.Fatalf("200 should be healthy: %v", err)
 	}
 
 	status = http.StatusServiceUnavailable
-	if err := probeHealth("http", addr, time.Second); err == nil {
+	if err := probeHealth("http", addr, "", time.Second); err == nil {
 		t.Fatal("503 should be unhealthy")
 	}
 }
@@ -60,7 +69,7 @@ func closedAddr(t *testing.T) string {
 func TestProbeHealthConnectionRefused(t *testing.T) {
 	addr := closedAddr(t)
 
-	if err := probeHealth("http", addr, time.Second); err == nil {
+	if err := probeHealth("http", addr, "", time.Second); err == nil {
 		t.Fatal("closed port should be unhealthy")
 	}
 }
@@ -92,7 +101,20 @@ func TestHealthcheckFlagUsesConfiguredPort(t *testing.T) {
 	}
 }
 
-func TestProbeHealthTLSLoopback(t *testing.T) {
+func writeServerCert(t *testing.T, cert *x509.Certificate) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "server.pem")
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+
+	if err := os.WriteFile(path, pemData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	return path
+}
+
+func TestProbeHealthVerifiesServerCertificate(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -100,11 +122,43 @@ func TestProbeHealthTLSLoopback(t *testing.T) {
 
 	addr := srv.Listener.Addr().String()
 
-	if err := probeHealth("https", addr, 2*time.Second); err != nil {
-		t.Fatalf("https loopback self-probe must skip verification: %v", err)
+	if err := probeHealth("https", addr, writeServerCert(t, srv.Certificate()), 2*time.Second); err != nil {
+		t.Fatalf("probe with the server's own certificate: %v", err)
 	}
 
-	if err := probeHealth("http", addr, 2*time.Second); err == nil {
+	// Mint a certificate that is not the one the server presents.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(7),
+		Subject:      pkix.Name{CommonName: "other"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		DNSNames:     []string{"other.example"},
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherCert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := probeHealth("https", addr, writeServerCert(t, otherCert), 2*time.Second); err == nil {
+		t.Fatal("a different certificate on the port must fail the probe")
+	}
+
+	if err := probeHealth("https", addr, "", 2*time.Second); err == nil {
+		t.Fatal("an untrusted self-signed certificate must fail without a pinned certificate")
+	}
+
+	if err := probeHealth("http", addr, "", 2*time.Second); err == nil {
 		t.Fatal("plain http against a TLS listener must fail")
 	}
 }
@@ -132,15 +186,5 @@ func TestHealthTarget(t *testing.T) {
 				t.Fatalf("got %s %s, want %s %s", scheme, addr, tt.wantScheme, tt.wantAddr)
 			}
 		})
-	}
-}
-
-func TestIsLoopbackHost(t *testing.T) {
-	for host, want := range map[string]bool{
-		"127.0.0.1": true, "::1": true, "localhost": true, "10.0.0.1": false, "example.com": false,
-	} {
-		if got := isLoopbackHost(host); got != want {
-			t.Errorf("isLoopbackHost(%q)=%v, want %v", host, got, want)
-		}
 	}
 }
