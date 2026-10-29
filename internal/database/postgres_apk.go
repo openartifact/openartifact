@@ -14,6 +14,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// APKStore owns the Alpine apk packages and the signing key.
+type APKStore struct{ *core }
+
 // apkMediaType is the media type of a stored .apk (concatenated gzip streams).
 const apkMediaType = "application/gzip"
 
@@ -59,7 +62,7 @@ func apkPackageFromRow[R apkPackageRow](in R) *models.ApkPackage {
 
 // CreateApkPackage stores one .apk. A live row with the same coordinates is a
 // unique violation (IsUniqueViolation).
-func (p *PostgresDB) CreateApkPackage(ctx context.Context, pkg *models.ApkPackage) error {
+func (p *APKStore) CreateApkPackage(ctx context.Context, pkg *models.ApkPackage) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, pkg.BlobSHA256, pkg.BlobKey, apkMediaType, pkg.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for apk package: %w", err)
@@ -95,7 +98,7 @@ func (p *PostgresDB) CreateApkPackage(ctx context.Context, pkg *models.ApkPackag
 }
 
 // GetApkPackageFile returns the live .apk, or (nil, nil).
-func (p *PostgresDB) GetApkPackageFile(ctx context.Context, repoID, branch, repo, arch, name, version string) (*models.ApkPackage, error) {
+func (p *APKStore) GetApkPackageFile(ctx context.Context, repoID, branch, repo, arch, name, version string) (*models.ApkPackage, error) {
 	row, err := p.q.GetApkPackageFile(ctx, dbsqlc.GetApkPackageFileParams{
 		RepositoryID: repoID, Branch: branch, Repo: repo, Arch: arch, Name: name, Version: version,
 	})
@@ -105,14 +108,14 @@ func (p *PostgresDB) GetApkPackageFile(ctx context.Context, repoID, branch, repo
 
 // ListApkPackages returns every live package of the repository ordered by
 // branch, repo, arch, name and version.
-func (p *PostgresDB) ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error) {
+func (p *APKStore) ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error) {
 	rows, err := p.q.ListApkPackages(ctx, repoID)
 
 	return mapRows(rows, err, "list apk packages", apkPackageFromRow)
 }
 
 // DeleteApkPackage removes one package row.
-func (p *PostgresDB) DeleteApkPackage(ctx context.Context, id, repoID string) error {
+func (p *APKStore) DeleteApkPackage(ctx context.Context, id, repoID string) error {
 	if err := p.q.DeleteApkPackage(ctx, dbsqlc.DeleteApkPackageParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to delete apk package: %w", err)
 	}
@@ -121,7 +124,7 @@ func (p *PostgresDB) DeleteApkPackage(ctx context.Context, id, repoID string) er
 }
 
 // IncrementApkDownloadCount counts one download of a package.
-func (p *PostgresDB) IncrementApkDownloadCount(ctx context.Context, id, repoID string) error {
+func (p *APKStore) IncrementApkDownloadCount(ctx context.Context, id, repoID string) error {
 	if err := p.q.IncrementApkDownloadCount(ctx, dbsqlc.IncrementApkDownloadCountParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to count apk download: %w", err)
 	}
@@ -130,7 +133,7 @@ func (p *PostgresDB) IncrementApkDownloadCount(ctx context.Context, id, repoID s
 }
 
 // GetApkSigningKey returns the repository's signing key, or (nil, nil).
-func (p *PostgresDB) GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error) {
+func (p *APKStore) GetApkSigningKey(ctx context.Context, repoID string) (*models.ApkSigningKey, error) {
 	row, err := p.q.GetApkSigningKey(ctx, repoID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -154,7 +157,7 @@ func (p *PostgresDB) GetApkSigningKey(ctx context.Context, repoID string) (*mode
 
 // CreateApkSigningKeyIfAbsent stores the key unless the repository has one;
 // created reports whether it did.
-func (p *PostgresDB) CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.ApkSigningKey) (bool, error) {
+func (p *APKStore) CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.ApkSigningKey) (bool, error) {
 	n, err := p.q.CreateApkSigningKeyIfAbsent(ctx, dbsqlc.CreateApkSigningKeyIfAbsentParams{
 		RepositoryID: k.RepositoryID, KeyName: k.KeyName, Fingerprint: k.Fingerprint,
 		PublicKey: k.PublicKeyPEM, PrivateKey: k.PrivateKeyEnc, CreatedBy: k.CreatedBy,
@@ -167,7 +170,7 @@ func (p *PostgresDB) CreateApkSigningKeyIfAbsent(ctx context.Context, k *models.
 }
 
 // ReplaceApkSigningKey stores the key, replacing the repository's current one.
-func (p *PostgresDB) ReplaceApkSigningKey(ctx context.Context, k *models.ApkSigningKey) error {
+func (p *APKStore) ReplaceApkSigningKey(ctx context.Context, k *models.ApkSigningKey) error {
 	err := p.q.ReplaceApkSigningKey(ctx, dbsqlc.ReplaceApkSigningKeyParams{
 		RepositoryID: k.RepositoryID, KeyName: k.KeyName, Fingerprint: k.Fingerprint,
 		PublicKey: k.PublicKeyPEM, PrivateKey: k.PrivateKeyEnc, CreatedBy: k.CreatedBy,
