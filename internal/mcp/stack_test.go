@@ -193,7 +193,7 @@ func newStack(t *testing.T, mutate func(*stackOptions)) *stack {
 
 	authed := chi.NewRouter()
 	authed.Use(middleware.RBACMiddleware(rbacCfg, db, evaluator, log))
-	authed.Use(middleware.CSRFMiddleware(opts.baseURL))
+	authed.Use(middleware.CSRFMiddleware(opts.baseURL, nil))
 	authed.Mount("/mcp", s.HTTPHandler())
 	router.Mount("/", authed)
 

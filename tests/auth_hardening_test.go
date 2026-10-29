@@ -455,7 +455,7 @@ func TestCSRF_AppliesToSessionsButNotTokenHeaders(t *testing.T) {
 	}
 
 	rbac := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))
-	handler := rbac(middleware.CSRFMiddleware("")(noopHandler(http.StatusOK)))
+	handler := rbac(middleware.CSRFMiddleware("", nil)(noopHandler(http.StatusOK)))
 
 	withCookie := func(r *http.Request) { r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: cookie}) }
 
@@ -466,8 +466,8 @@ func TestCSRF_AppliesToSessionsButNotTokenHeaders(t *testing.T) {
 
 	if rw := serve(handler, http.MethodPost, "/api/v1/repositories", func(r *http.Request) {
 		withCookie(r)
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFTokenCookieName, Value: "tok"})
-		r.Header.Set("X-Csrf-Token", "tok")
+		r.AddCookie(&http.Cookie{Name: middleware.CSRFTokenCookieName, Value: middleware.CSRFTokenForSession(cookie)})
+		r.Header.Set("X-Csrf-Token", middleware.CSRFTokenForSession(cookie))
 	}); rw.Code != http.StatusOK {
 		t.Errorf("session POST with a matching CSRF token = %d, want 200", rw.Code)
 	}
@@ -489,7 +489,7 @@ func TestCSRF_AppliesToSessionsButNotTokenHeaders(t *testing.T) {
 func TestRBAC_LegacyKeySkipsCSRFButNeedsEnabling(t *testing.T) {
 	db := newMockDatabase()
 	cfg := middleware.RBACConfig{LegacyAPIKey: "legacy-secret-key", LegacyAPIKeyEnabled: true}
-	handler := newRBACMiddleware(db, cfg, newMWLogger(t))(middleware.CSRFMiddleware("")(noopHandler(http.StatusOK)))
+	handler := newRBACMiddleware(db, cfg, newMWLogger(t))(middleware.CSRFMiddleware("", nil)(noopHandler(http.StatusOK)))
 
 	if rw := serve(handler, http.MethodPost, "/api/v1/repositories", func(r *http.Request) {
 		r.Header.Set("X-Api-Key", "legacy-secret-key")
@@ -706,5 +706,104 @@ func TestSession_RevokeOtherSessionsKeepsCurrent(t *testing.T) {
 
 	if valid(again) {
 		t.Error("with a malformed keep-cookie every session of the user is revoked")
+	}
+}
+
+// A session cookie is ambient on every path RBAC accepts it on, so a state
+// changing request carried by it needs the CSRF header on /repos and /v2 too.
+func TestCSRF_SessionWritesOutsideAPIWithoutTokenAreRejected(t *testing.T) {
+	ctx := context.Background()
+	db := newMockDatabase()
+	user := newBareUser(t, db, "csrf-repos-user")
+	grantTarget(t, db, user.ID, "csrf-repos-all", ".*", ".*", "read", "write", "delete", "manage")
+
+	cookie, _, err := auth.CreateSession(ctx, db, user.ID, "127.0.0.1", "ua")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	handler := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))(
+		middleware.CSRFMiddleware("", nil)(noopHandler(http.StatusOK)))
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodPut, "/repos/raw-repo/dir/file.txt"},
+		{http.MethodPost, "/repos/raw-repo/upload"},
+		{http.MethodDelete, "/repos/raw-repo/dir/file.txt"},
+		{http.MethodPost, "/v2/repo/app/blobs/uploads/"},
+		{http.MethodPut, "/v2/repo/app/manifests/1"},
+		{http.MethodDelete, "/v2/repo/app/manifests/sha256:abc"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			rw := serve(handler, tc.method, tc.path, func(r *http.Request) {
+				r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: cookie})
+			})
+			if rw.Code != http.StatusForbidden || !strings.Contains(rw.Body.String(), "csrf_protection") {
+				t.Errorf(
+					"session %s %s without CSRF token = %d %s, want 403 csrf_protection",
+					tc.method,
+					tc.path,
+					rw.Code,
+					rw.Body.String(),
+				)
+			}
+		})
+	}
+}
+
+func TestCSRF_SessionWritesOutsideAPIBoundary(t *testing.T) {
+	ctx := context.Background()
+	db := newMockDatabase()
+	user := newBareUser(t, db, "csrf-bound-user")
+	grantTarget(t, db, user.ID, "csrf-bound-all", ".*", ".*", "read", "write", "delete", "manage")
+
+	cookie, _, err := auth.CreateSession(ctx, db, user.ID, "127.0.0.1", "ua")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	otherCookie, _, err := auth.CreateSession(ctx, db, user.ID, "127.0.0.1", "ua")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	token, _, err := auth.CreateToken(ctx, db, auth.TokenKindAccess, "ci", user.ID, []string{}, nil)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	handler := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))(
+		middleware.CSRFMiddleware("", nil)(noopHandler(http.StatusOK)))
+
+	session := func(r *http.Request) { r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: cookie}) }
+	withHeader := func(value string) func(*http.Request) {
+		return func(r *http.Request) {
+			session(r)
+			r.AddCookie(&http.Cookie{Name: middleware.CSRFTokenCookieName, Value: value})
+			r.Header.Set("X-Csrf-Token", value)
+		}
+	}
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		mutate func(*http.Request)
+		want   int
+	}{
+		{"repos PUT with the bound token", http.MethodPut, "/repos/raw-repo/f.txt", withHeader(middleware.CSRFTokenForSession(cookie)), http.StatusOK},
+		{"v2 POST with the bound token", http.MethodPost, "/v2/repo/app/blobs/uploads/", withHeader(middleware.CSRFTokenForSession(cookie)), http.StatusOK},
+		{"repos PUT with a token planted for another session", http.MethodPut, "/repos/raw-repo/f.txt", withHeader(middleware.CSRFTokenForSession(otherCookie)), http.StatusForbidden},
+		{"v2 DELETE with a random cookie and header", http.MethodDelete, "/v2/repo/app/manifests/x", withHeader("planted"), http.StatusForbidden},
+		{"repos GET with the session alone", http.MethodGet, "/repos/raw-repo/f.txt", session, http.StatusOK},
+		{"repos PUT with a bearer token and no CSRF header", http.MethodPut, "/repos/raw-repo/f.txt", bearerHeader(token), http.StatusOK},
+		{"v2 POST with a bearer token and no CSRF header", http.MethodPost, "/v2/repo/app/blobs/uploads/", bearerHeader(token), http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if rw := serve(handler, tc.method, tc.path, tc.mutate); rw.Code != tc.want {
+				t.Errorf("%s %s = %d %s, want %d", tc.method, tc.path, rw.Code, rw.Body.String(), tc.want)
+			}
+		})
 	}
 }

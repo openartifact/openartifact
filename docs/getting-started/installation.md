@@ -194,7 +194,7 @@ The version comes from the `VERSION` file and is injected with `-ldflags "-X mai
 
 - Set `BASE_URL` to the public URL when you use SSO or webhooks (see [the public URL](#the-public-url-and-base_url)); package clients work without it.
 - `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs): only requests whose TCP peer is in this list may set `X-Forwarded-For`/`X-Real-IP` and, for the URLs in package metadata, `X-Forwarded-Host`/`X-Forwarded-Proto`. Without it the peer address is always the client IP, so IP allowlist, rate limiting and login throttling see the proxy's address.
-- Session and CSRF cookies get `Secure` when the request arrived over TLS or carries `X-Forwarded-Proto: https`, so have the proxy set that header.
+- Session and login-issued CSRF cookies get `Secure` when the request arrived over TLS or carries `X-Forwarded-Proto: https`, so have the proxy set that header. The CSRF cookie the server seeds on API reads, and the origin check that guards Basic-token requests from browsers, believe `X-Forwarded-Proto` and `X-Forwarded-Host` only from `OPENARTIFACT_TRUSTED_PROXIES` (or follow an `https://` `BASE_URL`), so list the proxy there.
 - To terminate TLS in OpenArtifact: `SERVER_TLS_ENABLED=true` with `SERVER_TLS_CERT` and `SERVER_TLS_KEY` (PEM files; both required, minimum TLS 1.2). Only in this mode does the server send `Strict-Transport-Security`; behind a TLS-terminating proxy, set HSTS on the proxy.
 - Uploads can be large, and read/write timeouts default to `0` (unlimited). Raise or disable any body-size and timeout limit on the proxy as well.
 - `GET /health` (always 200, JSON with version and component status) and `GET /ready` (503 when the database is down) are the probe endpoints; the compose healthcheck uses `/health`.

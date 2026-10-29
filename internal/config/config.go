@@ -49,7 +49,7 @@ var (
 		"audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive",
 	)
 	errFederationSettings = errors.New(
-		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, " +
+		"federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes, maxPartialAge and maxClockSkew must be positive, " +
 			"tombstoneRetention must not be negative",
 	)
 	errBlobDeletionBatch    = errors.New("blobDeletion.sweepBatch must be at least 1")
@@ -72,6 +72,8 @@ var (
 		"database.maxOpenConns must be 0 (driver default) or at least 2: " +
 			"a blob-lock transaction pins one connection and its callback needs another",
 	)
+
+	errBundleSigner = errors.New(`gpg.bundleSigners entries must be "<key id or fingerprint>=<username>"`)
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
@@ -319,6 +321,11 @@ type FederationConfig struct {
 	// MaxPartialAge removes an interrupted download that was not written to for
 	// this long.
 	MaxPartialAge time.Duration `yaml:"maxPartialAge"`
+	// MaxClockSkew is how far ahead of this instance's clock the stamp of a
+	// peer's change may be. The change of a peer whose clock runs further ahead
+	// is set aside and applied once the local clock catches up, instead of moving
+	// the repository's logical clock to that time for good.
+	MaxClockSkew time.Duration `yaml:"maxClockSkew"`
 }
 
 // TieringConfig tunes the storage tier mover (see docs/operations/storage-tiering.md).
@@ -493,12 +500,18 @@ type GPGConfig struct {
 	// AutoGenerate generates an RSA-4096 global signing key at startup when
 	// no key exists yet. It needs OPENARTIFACT_SECRET_KEY and is replica-safe.
 	AutoGenerate bool `yaml:"autoGenerate"`
+	// BundleSigners lets users other than administrators seal release bundles
+	// with a stored key: each entry is "<key id or fingerprint>=<username>".
+	// Administrators (global manage) may use any stored key; the key at
+	// keyPath never signs bundles (see docs/security/signing.md).
+	BundleSigners []string `yaml:"bundleSigners"`
 }
 
 // AttestationConfig configures the signing key of SBOM and VEX attestations.
 type AttestationConfig struct {
 	// KeyPath is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519).
-	// Empty: a P-256 key is generated on first use and stored encrypted in the database.
+	// Empty: a P-256 key is generated on first use and stored encrypted in the
+	// database; that needs OPENARTIFACT_SECRET_KEY (without it no key is generated).
 	KeyPath string `yaml:"keyPath"`
 }
 
@@ -752,6 +765,7 @@ func defaultConfig() *Config {
 			TombstoneRetention: 720 * time.Hour,
 			MaxPartialBytes:    10 << 30,
 			MaxPartialAge:      24 * time.Hour,
+			MaxClockSkew:       5 * time.Minute,
 		},
 		Tiering: TieringConfig{
 			Enabled:             true,
@@ -883,6 +897,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.GPG.KeyPath, "GPG_KEY_PATH")
 	overrideString(&cfg.GPG.Passphrase, "GPG_PASSPHRASE")
 	overrideBool(&cfg.GPG.AutoGenerate, "GPG_AUTO_GENERATE")
+	overrideSlice(&cfg.GPG.BundleSigners, "GPG_BUNDLE_SIGNERS")
 
 	// Attestation signing key
 	overrideString(&cfg.Attest.KeyPath, "ATTESTATION_KEY_PATH")
@@ -972,6 +987,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Federation.SpoolDir, "OPENARTIFACT_FEDERATION_SPOOL_DIR")
 	overrideInt64(&cfg.Federation.MaxPartialBytes, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES")
 	overrideDuration(&cfg.Federation.MaxPartialAge, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE")
+	overrideDuration(&cfg.Federation.MaxClockSkew, "OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW")
 
 	// Storage replica
 	applyReplicaEnvOverrides(cfg)
@@ -1151,7 +1167,23 @@ func (c *Config) validateFeatures() error {
 		return err
 	}
 
+	if err := c.GPG.validate(); err != nil {
+		return err
+	}
+
 	return c.validatePresign()
+}
+
+// validate rejects bundle signer entries that are not "<key>=<username>".
+func (g GPGConfig) validate() error {
+	for _, e := range g.BundleSigners {
+		key, user, ok := strings.Cut(e, "=")
+		if !ok || strings.TrimSpace(key) == "" || strings.TrimSpace(user) == "" {
+			return fmt.Errorf("%w: %q", errBundleSigner, e)
+		}
+	}
+
+	return nil
 }
 
 // minTieringOpenConns is the smallest explicit database pool a tier mover can
@@ -1184,7 +1216,7 @@ func (c *Config) validateTiering() error {
 func (c *Config) validateFederation() error {
 	f := c.Federation
 	if f.PollInterval <= 0 || f.BatchSize < 1 || f.MaxBackoff <= 0 || f.RequestTimeout <= 0 || f.TombstoneRetention < 0 ||
-		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 {
+		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 || f.MaxClockSkew <= 0 {
 		return errFederationSettings
 	}
 

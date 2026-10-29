@@ -145,15 +145,20 @@ func newAttestFixture(t *testing.T, withService bool) *attestFixture {
 		mustNoError(t, err)
 	}
 
+	f.mount(log, eval, gen, svc)
+
+	return f
+}
+
+// mount routes the SBOM, VEX and attestation-key handlers over svc.
+func (f *attestFixture) mount(log *logger.Logger, eval *auth.Evaluator, gen *sbom.Generator, svc *attest.Service) {
 	r := chi.NewRouter()
-	NewSBOMHandler(db, log, eval, gen, blobs).WithAttestation(svc).RegisterAuthed(r)
-	NewVEXHandler(db, log, eval, gen).WithAttestation(svc).RegisterAuthed(r)
+	NewSBOMHandler(f.db, log, eval, gen, f.blobs).WithAttestation(svc).RegisterAuthed(r)
+	NewVEXHandler(f.db, log, eval, gen).WithAttestation(svc).RegisterAuthed(r)
 	ah := NewAttestationHandler(svc, log, eval)
 	ah.RegisterPublic(r)
 	ah.RegisterAuthed(r)
 	f.router = r
-
-	return f
 }
 
 func (f *attestFixture) get(t *testing.T, target string, admin bool) *httptest.ResponseRecorder {

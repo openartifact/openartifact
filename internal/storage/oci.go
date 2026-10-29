@@ -102,7 +102,7 @@ func NewOCIBlobStore(cfg StorageConfig) (*OCIBlobStore, error) {
 	return &OCIBlobStore{
 		relay:    rl,
 		spoolDir: spool,
-		client:   newStreamingHTTPClient(nil),
+		client:   newStreamingHTTPClient(cfg.dialGuardedTransport()),
 		base:     strings.TrimRight(cfg.Endpoint, "/"),
 		repo:     cfg.Bucket,
 		username: cfg.OCIUsername,

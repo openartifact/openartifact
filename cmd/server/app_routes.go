@@ -87,7 +87,7 @@ func (a *app) newAuthedRouter() {
 	authedAPI.Use(middleware.TrackBlobAccess)
 	// Admin-only origin timestamps for migrations (X-OA-Import-Created-At).
 	authedAPI.Use(importmeta.Middleware(w.evaluator))
-	authedAPI.Use(middleware.CSRFMiddleware(a.cfg.BaseURL))
+	authedAPI.Use(middleware.CSRFMiddleware(a.cfg.BaseURL, w.trustedProxies))
 	authedAPI.Use(middleware.AuditMiddleware(a.auditLogger, w.trustedProxies))
 
 	w.authed = authedAPI
@@ -313,6 +313,7 @@ func (a *app) registerRepositoryRoutes() {
 
 	api.NewBundlesHandler(db, log, evaluator).
 		WithGPGKeys(w.gpgKeys).
+		WithBundleSigners(a.cfg.GPG.BundleSigners).
 		WithPublisher(w.webhook).
 		WithWorkers(w.metadata).
 		RegisterAuthed(authedAPI)

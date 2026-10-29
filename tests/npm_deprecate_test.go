@@ -42,7 +42,7 @@ func manifestOf(t *testing.T, v *models.NPMVersion) map[string]any {
 // deprecation lands on the stored version and the packument ETag moves.
 func TestNPMDeprecate_UpdatesStoredVersion(t *testing.T) {
 	db := newMockDatabase()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 	router := setupUploadRouter(db, newMockBlobStore())
 
 	if w := npmDo(t, router, http.MethodPut, "/repos/myrepo/lodash", buildPublishBody(t, "lodash", "1.0.0")); w.Code != http.StatusCreated {
@@ -103,7 +103,7 @@ func TestNPMDeprecate_UpdatesStoredVersion(t *testing.T) {
 // FMTA-4: dist-tag PUT/DELETE bump the packument ETag via the stale marker.
 func TestNPMDistTag_ChangesMarkPackumentStale(t *testing.T) {
 	db := newMockDatabase()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 	router := setupUploadRouter(db, newMockBlobStore())
 
 	for _, v := range []string{"1.0.0", "2.0.0"} {
@@ -138,7 +138,7 @@ func TestNPMDistTag_ChangesMarkPackumentStale(t *testing.T) {
 // FMTA-13: the dist-tag body is capped.
 func TestNPMDistTag_BodyCapped(t *testing.T) {
 	db := newMockDatabase()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 	router := setupUploadRouter(db, newMockBlobStore())
 
 	_ = npmDo(t, router, http.MethodPut, "/repos/myrepo/lodash", buildPublishBody(t, "lodash", "1.0.0"))

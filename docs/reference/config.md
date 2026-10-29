@@ -158,6 +158,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `gpg.keyPath` | `GPG_KEY_PATH` | string | `empty` | `keyPath` is the private key file (the read-only fallback key). |
 | `gpg.passphrase` | `GPG_PASSPHRASE` | string | `empty` | **Secret.** `passphrase` unlocks the key at keyPath. |
 | `gpg.autoGenerate` | `GPG_AUTO_GENERATE` | bool | `false` | `autoGenerate` generates an RSA-4096 global signing key at startup when no key exists yet. It needs `OPENARTIFACT_SECRET_KEY` and is replica-safe. |
+| `gpg.bundleSigners` | `GPG_BUNDLE_SIGNERS` | list | `empty` | `bundleSigners` lets users other than administrators seal release bundles with a stored key: each entry is "\<key id or fingerprint>=\<username>". Administrators (global manage) may use any stored key; the key at keyPath never signs bundles (see [security/signing.md](../security/signing.md)). |
 
 ## attestation
 
@@ -165,7 +166,7 @@ This page lists every configuration key with its type, built-in default and the 
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|
-| `attestation.keyPath` | `ATTESTATION_KEY_PATH` | string | `empty` | `keyPath` is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: a P-256 key is generated on first use and stored encrypted in the database. |
+| `attestation.keyPath` | `ATTESTATION_KEY_PATH` | string | `empty` | `keyPath` is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: a P-256 key is generated on first use and stored encrypted in the database; that needs `OPENARTIFACT_SECRET_KEY` (without it no key is generated). |
 
 ## auth
 
@@ -365,6 +366,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `federation.spoolDir` | `OPENARTIFACT_FEDERATION_SPOOL_DIR` | string | `empty` | `spoolDir` is where blobs pulled from peers are downloaded to. An interrupted download stays there and the next pull resumes it with a Range request. Empty uses a directory under the OS temp dir; set it to a persistent volume to resume across restarts, and give every instance its own. |
 | `federation.maxPartialBytes` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | int | `10737418240` | `maxPartialBytes` caps the total size of the interrupted downloads kept in the spool; the least recently written are removed first. |
 | `federation.maxPartialAge` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | duration | `24h` | `maxPartialAge` removes an interrupted download that was not written to for this long. |
+| `federation.maxClockSkew` | `OPENARTIFACT_FEDERATION_MAX_CLOCK_SKEW` | duration | `5m` | `maxClockSkew` is how far ahead of this instance's clock the stamp of a peer's change may be. The change of a peer whose clock runs further ahead is set aside and applied once the local clock catches up, instead of moving the repository's logical clock to that time for good. |
 
 ## telemetry
 

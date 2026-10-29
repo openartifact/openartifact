@@ -96,6 +96,13 @@ WHERE t.repository_id = $1 AND t.image = $2 AND t.name = $3
         AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
   );
 
+-- The ids of the live tags of an image that point at a manifest: a scan of a
+-- docker image is anchored on its tag row (the id the package listing shows), so
+-- a pull of the manifest, by tag or by digest, is quarantined with its tags.
+-- name: ListDockerTagIDsByDigest :many
+SELECT t.id FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2 AND t.manifest_digest = $3 AND t.deleted_at IS NULL;
+
 -- name: DeleteDockerTag :exec
 DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND name = $3 AND deleted_at IS NULL;
 

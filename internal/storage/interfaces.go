@@ -139,6 +139,14 @@ type StorageConfig struct {
 	// configured, lets server-relayed upload URLs point at the origin of the
 	// request that asks for them (internal/publicurl) instead of PublicURL.
 	PublicURLFromRequest bool `yaml:"-"`
+	// SafeDial makes every outbound connection of the backend go through
+	// netutil.GuardTransport: loopback, private, link-local and cloud-metadata
+	// addresses are refused when the connection is made (so DNS rebinding
+	// cannot beat the check at save time), the private ones unless
+	// OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true. It is set for backends
+	// defined through the admin API and the database; the storage section of
+	// the operator's own config file is trusted and dials unrestricted.
+	SafeDial bool `yaml:"-"`
 	// OCIInsecure allows plain HTTP to the OCI registry (dev and testing only).
 	OCIInsecure bool `yaml:"ociInsecure"`
 	// OCIUsername is the OCI registry user.

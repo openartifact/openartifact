@@ -30,6 +30,22 @@ const (
 	argonSaltLen = 16
 )
 
+// Bounds VerifyPassword accepts in a stored hash. They sit well above the
+// parameters HashPassword writes and well below what could exhaust the host.
+const (
+	maxArgonMemory  = 256 * 1024 // KiB (256 MiB)
+	maxArgonTime    = 10
+	maxArgonThreads = 16
+	minArgonSaltLen = 8
+	maxArgonSaltLen = 64
+	minArgonKeyLen  = 16
+	maxArgonKeyLen  = 64
+)
+
+// ErrInvalidHashParams is returned by VerifyPassword for an encoded hash whose
+// parameters are outside the accepted bounds.
+var ErrInvalidHashParams = errors.New("argon2id parameters out of bounds")
+
 // argonSemaphore caps concurrent Argon2id operations to prevent OOM under load.
 //
 //nolint:gochecknoglobals // rate-limits concurrent Argon2id hashing
@@ -121,12 +137,9 @@ func VerifyPassword(plain, encoded string) (bool, error) {
 		return false, fmt.Errorf("invalid algorithm: %s", parts[1]) //nolint:err113 // dynamic error with runtime context
 	}
 
-	var (
-		memory, time uint32
-		threads      uint8
-	)
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &time, &threads); err != nil {
-		return false, fmt.Errorf("parse params: %w", err)
+	memory, time, threads, err := parseArgonParams(parts[3])
+	if err != nil {
+		return false, err
 	}
 
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
@@ -139,22 +152,53 @@ func VerifyPassword(plain, encoded string) (bool, error) {
 		return false, fmt.Errorf("decode hash: %w", err)
 	}
 
-	argonSemaphore <- struct{}{}
+	if len(salt) < minArgonSaltLen || len(salt) > maxArgonSaltLen {
+		return false, fmt.Errorf("%w: salt length %d", ErrInvalidHashParams, len(salt))
+	}
 
-	derivedHash := argon2.IDKey(
-		[]byte(plain),
-		salt,
-		time,
-		memory,
-		threads,
-		uint32(len(expectedHash)), //nolint:gosec // argon2 requires uint32 for key length
-	)
+	if len(expectedHash) < minArgonKeyLen || len(expectedHash) > maxArgonKeyLen {
+		return false, fmt.Errorf("%w: hash length %d", ErrInvalidHashParams, len(expectedHash))
+	}
 
-	<-argonSemaphore
+	derivedHash := deriveBounded([]byte(plain), salt, time, memory, threads, uint32(len(expectedHash))) //nolint:gosec // bounded above
 
 	if subtle.ConstantTimeCompare(derivedHash, expectedHash) != 1 {
 		return false, nil
 	}
 
 	return true, nil
+}
+
+// deriveBounded runs one Argon2id derivation holding a slot of argonSemaphore;
+// the deferred release keeps the slot even if the derivation panics.
+func deriveBounded(plain, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte {
+	argonSemaphore <- struct{}{}
+
+	defer func() { <-argonSemaphore }()
+
+	return argon2.IDKey(plain, salt, time, memory, threads, keyLen)
+}
+
+// parseArgonParams parses the "m=<KiB>,t=<passes>,p=<lanes>" segment of an
+// encoded hash and enforces the bounds below. The values come from the stored
+// hash, which an attacker with write access to the users table (or a hash
+// imported from elsewhere) controls: argon2.IDKey panics for t < 1 or p < 1
+// and would allocate m KiB.
+func parseArgonParams(segment string) (uint32, uint32, uint8, error) {
+	var memory, passes, lanes uint32
+
+	if _, err := fmt.Sscanf(segment, "m=%d,t=%d,p=%d", &memory, &passes, &lanes); err != nil {
+		return 0, 0, 0, fmt.Errorf("parse params: %w", err)
+	}
+
+	switch {
+	case lanes < 1 || lanes > maxArgonThreads:
+		return 0, 0, 0, fmt.Errorf("%w: p=%d", ErrInvalidHashParams, lanes)
+	case passes < 1 || passes > maxArgonTime:
+		return 0, 0, 0, fmt.Errorf("%w: t=%d", ErrInvalidHashParams, passes)
+	case memory < 8*lanes || memory > maxArgonMemory:
+		return 0, 0, 0, fmt.Errorf("%w: m=%d", ErrInvalidHashParams, memory)
+	}
+
+	return memory, passes, uint8(lanes), nil
 }

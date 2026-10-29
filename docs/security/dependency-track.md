@@ -30,6 +30,8 @@ Pushes are queued in the background, de-duplicated per artifact (several uploads
 
 DT applies a VEX statement only when the statement's vulnerability **source and id match its own record**, and a CVE can be known to DT as `NVD`, `GITHUB` (a `GHSA-...` id with the CVE as alias) or `INTERNAL`. OpenArtifact therefore does not send the id it has: it looks the decided id up among the DT findings' ids **and aliases**, and sends DT's own id and source for it. Decisions for vulnerabilities DT did not report on the project are left out (the push detail then reads *no VEX decision matches a vulnerability Dependency-Track reports*). Each statement affects the project's own component, which DT applies to every vulnerable component of the project that matches.
 
+The API key and the uploaded documents only ever go to the configured URL: a redirect from Dependency-Track to another origin (host, port or scheme) is refused and the push fails.
+
 If DT's analyzers find something later (a feed update), the next push (the next scan, or `POST …/push`) applies the decisions to it.
 
 ## Configuration

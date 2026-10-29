@@ -66,6 +66,13 @@ type Options struct {
 	// MaxPartialAge discards a partial download untouched for this long
 	// (0: DefaultMaxPartialAge).
 	MaxPartialAge time.Duration
+	// MaxClockSkew is how far ahead of the local clock the stamp of a peer's
+	// change may be; a change beyond it is set aside until the local clock
+	// catches up (0: DefaultMaxClockSkew).
+	MaxClockSkew time.Duration
+	// MaxBlobBytes refuses a blob of a peer larger than this (0: no limit
+	// beyond the declared size of each blob being verified).
+	MaxBlobBytes int64
 }
 
 // Engine applies the changes pulled from peers and runs the pull workers.
@@ -193,6 +200,10 @@ func deferred(reason string, err error) error { return &deferError{reason: reaso
 // the entry's is fetched and applied instead; an entry the local log already
 // supersedes is skipped.
 func (e *Engine) applyEntry(ctx context.Context, pc *pullCtx, entry Entry) (outcome, error) {
+	if err := e.checkStamp(entry.Stamp); err != nil {
+		return outcomeDeferred, err
+	}
+
 	if e.superseded(ctx, pc.repo.ID, entry.UnitKey, entry.Stamp) {
 		if pc.repair && !entry.Tombstone {
 			return e.repairBlobs(ctx, pc, entry)
@@ -241,7 +252,7 @@ func (e *Engine) repairBlobs(ctx context.Context, pc *pullCtx, entry Entry) (out
 	defer closeBlobs()
 
 	err = storage.CommitBlobs(ctx, e.DB, e.Blobs, blobs, func(ctx context.Context, _ []string) error {
-		_, err := e.recordBlobs(ctx, content.Blobs)
+		_, err := e.recordBlobs(ctx, verifiedRefs(content.Blobs, staged))
 
 		return err
 	})
@@ -299,6 +310,24 @@ func blobSources(refs []BlobRef, staged []stagedBlob) ([]storage.Blob, func(), e
 	return blobs, closeAll, nil
 }
 
+// checkStamp refuses the stamp of a peer's change when it is outside what the
+// repository's hybrid logical clock can absorb (see validateStamp): applying it
+// would move the clock of the repository to the stamp's time for good. The unit
+// is set aside, so a peer whose clock was only briefly ahead gets its changes
+// applied once the local clock has caught up.
+func (e *Engine) checkStamp(s Stamp) error {
+	skew := e.MaxClockSkew
+	if skew <= 0 {
+		skew = DefaultMaxClockSkew
+	}
+
+	if err := validateStamp(s, time.Now(), skew); err != nil {
+		return deferred("clock_skew", err)
+	}
+
+	return nil
+}
+
 // superseded reports whether the local log already holds the unit at or past
 // the stamp.
 func (e *Engine) superseded(ctx context.Context, repoID, key string, stamp Stamp) bool {
@@ -324,6 +353,10 @@ func (e *Engine) applyFetched(ctx context.Context, pc *pullCtx, key string, dept
 
 	if err != nil {
 		return 0, err
+	}
+
+	if err := e.checkStamp(ur.Entry.Stamp); err != nil {
+		return outcomeDeferred, err
 	}
 
 	if e.superseded(ctx, pc.repo.ID, key, ur.Entry.Stamp) {
@@ -375,50 +408,136 @@ func (e *Engine) ensureDeps(ctx context.Context, pc *pullCtx, content *Content, 
 }
 
 // stagedBlob is a blob downloaded from the peer and verified, waiting in a
-// temp file for the commit.
+// temp file for the commit. size is the number of bytes that were received and
+// hashed, not what the peer declared.
 type stagedBlob struct {
 	ref  BlobRef
 	path string
+	size int64
 }
 
-// stageBlobs downloads the blobs of a unit that the local store lacks into
-// verified temp files.
-func (e *Engine) stageBlobs(ctx context.Context, pc *pullCtx, key string, blobs []BlobRef) ([]stagedBlob, error) {
-	var staged []stagedBlob
+// emptyBlobSHA256 is the digest of the empty blob, the only blob a peer may
+// declare with size 0.
+const emptyBlobSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+// checkBlob refuses a blob reference whose declared size cannot be right or is
+// over the limit: the size bounds the download, so a peer must not get to leave
+// it open (a size of 0 for anything but the empty blob) or choose an absurd one.
+func (e *Engine) checkBlob(ref BlobRef) error {
+	if err := storage.ValidateBlobID(ref.SHA256); err != nil {
+		return deferred("invalid_blob", err)
+	}
+
+	if ref.Size < 0 || (ref.Size == 0 && ref.SHA256 != emptyBlobSHA256) {
+		return deferred("invalid_blob", fmt.Errorf("%w: %s declares %d bytes", errBlobSize, ref.SHA256, ref.Size))
+	}
+
+	if e.MaxBlobBytes > 0 && ref.Size > e.MaxBlobBytes {
+		return deferred(
+			"blob_too_large",
+			fmt.Errorf("%w: %s declares %d bytes, the limit is %d", errBlobTooLarge, ref.SHA256, ref.Size, e.MaxBlobBytes),
+		)
+	}
+
+	return nil
+}
+
+// checkBlobs applies checkBlob to the blobs of a unit, and refuses one digest
+// listed with two sizes.
+func (e *Engine) checkBlobs(blobs []BlobRef) error {
+	sizes := make(map[string]int64, len(blobs))
 
 	for _, ref := range blobs {
-		if err := storage.ValidateBlobID(ref.SHA256); err != nil {
-			cleanupStaged(staged)
-
-			return nil, deferred("invalid_blob", err)
+		if err := e.checkBlob(ref); err != nil {
+			return err
 		}
 
-		have, err := e.Blobs.Exists(ctx, ref.SHA256)
-		if err != nil {
-			cleanupStaged(staged)
-
-			return nil, fmt.Errorf("check blob %s: %w", ref.SHA256, err)
+		if prev, ok := sizes[ref.SHA256]; ok && prev != ref.Size {
+			return deferred("invalid_blob", fmt.Errorf("%w: %s is declared with two sizes", errBlobSize, ref.SHA256))
 		}
 
-		if have {
+		sizes[ref.SHA256] = ref.Size
+	}
+
+	return nil
+}
+
+// stageBlobs downloads the blobs of a unit into verified temp files. A blob is
+// taken from the local store without a download only when this repository
+// already references it (with the size the peer declares): the digest is
+// otherwise the only thing the peer would have to know to attach a blob that
+// belongs to another repository, a private one included. Any other blob is
+// downloaded and its digest and length verified, whether or not the store
+// already holds it.
+func (e *Engine) stageBlobs(ctx context.Context, pc *pullCtx, key string, blobs []BlobRef) ([]stagedBlob, error) {
+	if err := e.checkBlobs(blobs); err != nil {
+		return nil, err
+	}
+
+	shas := make([]string, len(blobs))
+	for i, ref := range blobs {
+		shas[i] = ref.SHA256
+	}
+
+	held, err := e.Store.RepoBlobSizes(ctx, pc.repo.ID, shas)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		staged []stagedBlob
+		seen   = make(map[string]bool, len(blobs))
+	)
+
+	for _, ref := range blobs {
+		if seen[ref.SHA256] {
 			continue
 		}
 
-		path, err := e.download(ctx, pc, key, ref)
+		seen[ref.SHA256] = true
+
+		sb, err := e.stageBlob(ctx, pc, key, ref, held)
 		if err != nil {
 			cleanupStaged(staged)
 
 			return nil, err
 		}
 
-		if path == "" { // another pull stored it meanwhile
-			continue
+		if sb != nil {
+			staged = append(staged, *sb)
 		}
-
-		staged = append(staged, stagedBlob{ref: ref, path: path})
 	}
 
 	return staged, nil
+}
+
+// stageBlob returns the verified temp file of one blob, or nil when the
+// repository already holds it.
+func (e *Engine) stageBlob(ctx context.Context, pc *pullCtx, key string, ref BlobRef, held map[string]int64) (*stagedBlob, error) {
+	if size, ok := held[ref.SHA256]; ok && size == ref.Size {
+		have, err := e.Blobs.Exists(ctx, ref.SHA256)
+		if err != nil {
+			return nil, fmt.Errorf("check blob %s: %w", ref.SHA256, err)
+		}
+
+		if have {
+			return nil, nil //nolint:nilnil // nothing to stage
+		}
+	}
+
+	path, err := e.download(ctx, pc, key, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := os.Stat(path)
+	if err != nil {
+		_ = os.Remove(path)
+
+		return nil, fmt.Errorf("stat staged blob: %w", err)
+	}
+
+	return &stagedBlob{ref: ref, path: path, size: st.Size()}, nil
 }
 
 func cleanupStaged(staged []stagedBlob) {
@@ -439,19 +558,19 @@ func (e *Engine) applyLive(ctx context.Context, pc *pullCtx, ur *UnitResponse, d
 		)
 	}
 
+	if err := e.checkBlobs(content.Blobs); err != nil {
+		return outcomeDeferred, err
+	}
+
 	if err := e.ensureDeps(ctx, pc, content, depth); err != nil {
 		return outcomeDeferred, err
 	}
 
 	e.markConflict(ctx, pc, entry)
 
-	staged, err := e.stageBlobs(ctx, pc, entry.UnitKey, content.Blobs)
-	if err != nil {
-		return outcomeDeferred, err
-	}
-
-	defer cleanupStaged(staged)
-
+	// The quota is checked on the declared sizes before anything is downloaded;
+	// they are what the download is then held to (see appendBody), so the usage
+	// reserved here is the usage of the verified bytes.
 	usage, err := pc.codec.Usage(ctx, e.SQL, pc.repo.ID, entry.UnitKey, content)
 	if err != nil {
 		return 0, err
@@ -465,6 +584,15 @@ func (e *Engine) applyLive(ctx context.Context, pc *pullCtx, ur *UnitResponse, d
 
 		return 0, err
 	}
+
+	staged, err := e.stageBlobs(ctx, pc, entry.UnitKey, content.Blobs)
+	if err != nil {
+		e.release(ctx, pc.repo.ID, reserved)
+
+		return outcomeDeferred, err
+	}
+
+	defer cleanupStaged(staged)
 
 	var change *Change
 
@@ -524,7 +652,7 @@ func (e *Engine) commitLive(ctx context.Context, pc *pullCtx, entry Entry, conte
 	defer closeBlobs()
 
 	err = storage.CommitBlobs(ctx, e.DB, e.Blobs, blobs, func(ctx context.Context, _ []string) error {
-		blobIDs, err := e.recordBlobs(ctx, content.Blobs)
+		blobIDs, err := e.recordBlobs(ctx, verifiedRefs(content.Blobs, staged))
 		if err != nil {
 			return err
 		}
@@ -593,6 +721,26 @@ func (e *Engine) recordUnit(ctx context.Context, tx *sql.Tx, repoID string, entr
 	}
 
 	return nil
+}
+
+// verifiedRefs returns the blob references of a unit with the size of every
+// blob that was downloaded replaced by the number of bytes received and hashed:
+// that, not the peer's declaration, is what the blobs row records.
+func verifiedRefs(refs []BlobRef, staged []stagedBlob) []BlobRef {
+	sizes := make(map[string]int64, len(staged))
+	for _, sb := range staged {
+		sizes[sb.ref.SHA256] = sb.size
+	}
+
+	out := slices.Clone(refs)
+
+	for i := range out {
+		if n, ok := sizes[out[i].SHA256]; ok {
+			out[i].Size = n
+		}
+	}
+
+	return out
 }
 
 // recordBlobs makes sure every blob of the unit has a blobs row; it returns

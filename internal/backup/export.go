@@ -36,6 +36,13 @@ var (
 	// ErrBlobCountMismatch reports an archive that holds fewer blobs than the
 	// snapshot lists.
 	ErrBlobCountMismatch = errors.New("archive holds fewer blobs than the database snapshot lists")
+
+	// The stage sentinels name where an export failed. Their text is the
+	// reason a failed job shows (see exportFailureReason); the cause they wrap
+	// is only logged.
+	errSnapshotStage = errors.New("failed to take the database snapshot")
+	errMetadataStage = errors.New("failed to export the metadata")
+	errBlobsStage    = errors.New("failed to export the blobs")
 )
 
 // SetLeaseTTL sets how long a running backup's blob-retention lease lives
@@ -69,7 +76,7 @@ type exporter struct {
 func (e *Engine) exportArchive(ctx context.Context, tw *tar.Writer, manifest *BackupManifest, backupType string) error {
 	snap, err := e.db.BeginBackupSnapshot(ctx, e.leaseTTLOrDefault())
 	if err != nil {
-		return fmt.Errorf("failed to take database snapshot: %w", err)
+		return fmt.Errorf("%w: %w", errSnapshotStage, err)
 	}
 	defer snap.Release()
 
@@ -78,7 +85,7 @@ func (e *Engine) exportArchive(ctx context.Context, tw *tar.Writer, manifest *Ba
 	x := &exporter{Engine: e, db: snap}
 
 	if err := x.exportMetadata(ctx, tw, manifest); err != nil {
-		return fmt.Errorf("failed to export metadata: %w", err)
+		return fmt.Errorf("%w: %w", errMetadataStage, err)
 	}
 
 	if backupType != "full" {
@@ -86,7 +93,7 @@ func (e *Engine) exportArchive(ctx context.Context, tw *tar.Writer, manifest *Ba
 	}
 
 	if err := x.exportBlobs(ctx, tw, manifest); err != nil {
-		return fmt.Errorf("failed to export blobs: %w", err)
+		return fmt.Errorf("%w: %w", errBlobsStage, err)
 	}
 
 	return nil

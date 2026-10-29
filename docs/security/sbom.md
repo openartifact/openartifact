@@ -149,7 +149,7 @@ The statement's **subjects** are the described package (named by its purl, with 
 ### The signing key
 
 - `attestation.keyPath` / `ATTESTATION_KEY_PATH`: an unencrypted PKCS#8 or SEC1 PEM private key, **ECDSA** (P-256, P-384 or P-521) or **Ed25519**.
-- Unset: OpenArtifact generates an ECDSA P-256 key on first use and stores it **encrypted** in the database (with `OPENARTIFACT_SECRET_KEY` set, see [configuration](../getting-started/configuration.md); without it the key is stored in plaintext, like every other stored secret). Replicas converge on one key, and a restore of the database restores the key.
+- Unset: OpenArtifact generates an ECDSA P-256 key on first use and stores it **encrypted** in the database. This needs `OPENARTIFACT_SECRET_KEY` (see [configuration](../getting-started/configuration.md)); without it no key is generated and the attestation endpoints answer `409` with code `secret_key_required`, because the private key would otherwise be stored as plaintext. Set the secret key, or point `keyPath` at a key file. A key stored by an earlier version keeps working. Replicas converge on one key, and a restore of the database restores the key.
 
 The ECDSA hash follows the curve (SHA-256, SHA-384, SHA-512), as Sigstore requires; Ed25519 signs the DSSE pre-authentication encoding directly. The **public key** is served without authentication at `HOST/.well-known/openartifact/attestation-key.pem` (admins also get its id and algorithm from `GET /api/v1/admin/attestation`). Rotating the key means setting a new `keyPath`, or deleting the `attestation.private_key` system setting to generate a new one; attestations signed earlier keep verifying against the key that signed them, so keep the old public keys.
 

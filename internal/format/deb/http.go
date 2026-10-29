@@ -25,6 +25,7 @@ import (
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	StreamPackagesStore
 	StreamReleaseStore
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)

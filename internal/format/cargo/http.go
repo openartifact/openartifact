@@ -38,6 +38,7 @@ import (
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CargoIndexStamp(ctx context.Context, repoID string, name string) (string, error)
 	CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error
@@ -251,7 +252,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	// resolution away from it (index "yanked": true), while every existing
 	// Cargo.lock that pins it must keep building.
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
-		fmt.Sprintf("%s-%s.crate", crateName, version), crateName+"/"+version, r.URL.Path)...) {
+		crate.ID, fmt.Sprintf("%s-%s.crate", crateName, version), crateName+"/"+version, r.URL.Path)...) {
 		return
 	}
 

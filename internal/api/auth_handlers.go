@@ -55,11 +55,17 @@ const (
 	loginUserFailureLimit  = 10
 	loginUserFailureWindow = 15 * time.Minute
 
-	// loginDistributedFailureLimit bounds failures for one username across all
-	// IPs in the same window, so guessing spread over many addresses is still
-	// stopped. It is deliberately 10x the per-pair limit: holding an account
-	// locked then takes a distributed effort, not one host.
+	// loginDistributedFailureLimit is the number of failures for one username,
+	// across all IPs in the same window, after which the account is considered
+	// under a distributed guessing attack. It never locks the account: the
+	// username's own users keep logging in from the addresses they have logged
+	// in from before (see loginTrust). Attempts from any other address are then
+	// admitted at most loginUnknownIPLimit per loginUnknownIPWindow, so guessing
+	// spread over many addresses stays slow without letting anyone lock the
+	// real user out.
 	loginDistributedFailureLimit = 100
+	loginUnknownIPLimit          = 3
+	loginUnknownIPWindow         = time.Minute
 
 	// limiterMaxKeys bounds the memory a limiter may use. An attacker
 	// rotating source IPs or usernames cannot grow the map past this.
@@ -261,17 +267,22 @@ type AuthStore interface {
 }
 
 type AuthHandler struct {
-	db               AuthStore
-	log              *logger.Logger
-	evaluator        *auth.Evaluator
-	loginIPLimiter   *slidingWindowLimiter
+	db             AuthStore
+	log            *logger.Logger
+	evaluator      *auth.Evaluator
+	loginIPLimiter *slidingWindowLimiter
+	// loginUserLimiter is the wrong-guess budget of change-password.
 	loginUserLimiter *slidingWindowLimiter
-	// loginPairLimiter counts login failures per (username, IP);
-	// loginAnyIPLimiter per username across all IPs.
-	loginPairLimiter  *slidingWindowLimiter
-	loginAnyIPLimiter *slidingWindowLimiter
-	trustedProxies    *middleware.TrustedProxies
-	baseURL           string
+	// loginPairLimiter counts login failures per (username, IP) and blocks the
+	// pair; loginAnyIPLimiter counts them per username across all IPs and only
+	// switches on loginUnknownIPLimiter, the per-username budget of attempts
+	// from addresses that never logged in as that user (loginTrust).
+	loginPairLimiter      *slidingWindowLimiter
+	loginAnyIPLimiter     *slidingWindowLimiter
+	loginUnknownIPLimiter *slidingWindowLimiter
+	loginTrust            *loginTrust
+	trustedProxies        *middleware.TrustedProxies
+	baseURL               string
 	// now is the clock behind password expiry (time.Now outside tests).
 	now func() time.Time
 
@@ -285,15 +296,17 @@ func NewAuthHandler(
 	trustedProxies *middleware.TrustedProxies,
 ) *AuthHandler {
 	return &AuthHandler{
-		db:                db,
-		log:               log,
-		evaluator:         evaluator,
-		loginIPLimiter:    newSlidingWindowLimiter(loginIPLimit, loginIPWindow),
-		loginUserLimiter:  newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
-		loginPairLimiter:  newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
-		loginAnyIPLimiter: newSlidingWindowLimiter(loginDistributedFailureLimit, loginUserFailureWindow),
-		trustedProxies:    trustedProxies,
-		now:               time.Now,
+		db:                    db,
+		log:                   log,
+		evaluator:             evaluator,
+		loginIPLimiter:        newSlidingWindowLimiter(loginIPLimit, loginIPWindow),
+		loginUserLimiter:      newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
+		loginPairLimiter:      newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
+		loginAnyIPLimiter:     newSlidingWindowLimiter(loginDistributedFailureLimit, loginUserFailureWindow),
+		loginUnknownIPLimiter: newSlidingWindowLimiter(loginUnknownIPLimit, loginUnknownIPWindow),
+		loginTrust:            newLoginTrust(),
+		trustedProxies:        trustedProxies,
+		now:                   time.Now,
 	}
 }
 
@@ -380,15 +393,25 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-(username, IP) throttle: an attacker can only lock themselves out,
-	// never the legitimate user connecting from another address. It applies to every submitted name, existing or
-	// not, so a 429 reveals nothing about which accounts exist.
+	// Per-(username, IP) throttle: an attacker can only lock their own address
+	// out, never the legitimate user connecting from another one. While a
+	// username is under a distributed attack (many failures across IPs) an
+	// address that never logged in as that user shares a small attempt budget;
+	// an address that did is not slowed down. Both apply to every submitted
+	// name, existing or not, so a 429 reveals nothing about which accounts
+	// exist.
 	userKey := limiterKey("login:", username)
 	pairKey := userKey + "|" + ip
 
 	wait, blocked := h.loginPairLimiter.retryAfter(pairKey)
 	if !blocked {
-		wait, blocked = h.loginAnyIPLimiter.retryAfter(userKey)
+		_, underAttack := h.loginAnyIPLimiter.retryAfter(userKey)
+		if underAttack && !h.loginTrust.known(pairKey) {
+			var allowed bool
+
+			wait, allowed = h.loginUnknownIPLimiter.take(userKey)
+			blocked = !allowed
+		}
 	}
 
 	if blocked {
@@ -451,16 +474,10 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The distributed counter is left to age out on its own: clearing it on a
+	// success would switch the protection off while the attack is still going.
 	h.loginPairLimiter.reset(pairKey)
-	h.loginAnyIPLimiter.reset(userKey)
-
-	csrfToken, err := middleware.NewCSRFToken()
-	if err != nil {
-		h.log.Errorw("login: generate CSRF token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
-
-		return
-	}
+	h.loginTrust.remember(pairKey)
 
 	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, clientIP, r.UserAgent())
 	if err != nil {
@@ -472,7 +489,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	secure := isSecureContext(r, h.baseURL)
 	setSessionCookie(w, secure, cookieValue)
-	setCSRFCookie(w, secure, csrfToken)
+	setCSRFCookie(w, secure, cookieValue)
 
 	now := time.Now()
 	user.LastLoginAt = &now

@@ -159,7 +159,7 @@ func (e *Engine) recordOutcome(peer *Peer, repo *RepoInfo, pullErr error) {
 	}
 
 	delay := Backoff(peer.ErrorCount, e.PollInterval, e.MaxBackoff)
-	if err := e.Store.MarkFailure(ctx, peer.ID, pullErr.Error(), delay); err != nil {
+	if err := e.Store.MarkFailure(ctx, peer.ID, pullErr, delay); err != nil {
 		e.Log.Warnw("federation: record failure", "repo", repo.Name, "peer", peer.Name, "error", err)
 	}
 
@@ -380,7 +380,7 @@ func (e *Engine) handleUnitError(ctx context.Context, pc *pullCtx, entry Entry, 
 func (e *Engine) park(ctx context.Context, pc *pullCtx, entry Entry, reason string, cause error) error {
 	e.clearFailure(pc.peer.ID, entry.UnitKey)
 
-	if err := e.Store.Defer(ctx, pc.peer.ID, entry.UnitKey, entry.Seq, reason, cause.Error()); err != nil {
+	if err := e.Store.Defer(ctx, pc.peer.ID, entry.UnitKey, entry.Seq, reason, cause); err != nil {
 		return err
 	}
 

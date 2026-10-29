@@ -125,7 +125,8 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		uploadResult = "error"
 
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", fmt.Sprintf("failed to parse form: %v", err))
+		h.log.Debugw("Deb upload: multipart form unreadable", "repository", repoName, "error", err)
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid multipart upload form")
 
 		return
 	}

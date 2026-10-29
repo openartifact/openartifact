@@ -71,6 +71,7 @@ type deltaCall struct {
 
 // DeltaStore is the part of the database DeltaHandler needs.
 type DeltaStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreatePackageDelta(ctx context.Context, delta *models.PackageDelta) error
 	GetComponentByID(ctx context.Context, id string) (*models.Component, error)

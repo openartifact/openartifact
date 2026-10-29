@@ -35,6 +35,7 @@ const metadataMaxAge = 300
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	GetLatestSnapshotFile(
@@ -211,7 +212,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 
 			// A checksum discloses the artifact's digest: it is as quarantined
 			// as the artifact itself.
-			if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.RepoPath, underlyingPath, r.URL.Path, before)...) {
+			if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.ID, art.RepoPath, underlyingPath, r.URL.Path, before)...) {
 				return
 			}
 
@@ -277,7 +278,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if art != nil {
-			if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.RepoPath, artPath, r.URL.Path)...) {
+			if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.ID, art.RepoPath, artPath, r.URL.Path)...) {
 				return
 			}
 
@@ -292,7 +293,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(artPath, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.ID, artPath, r.URL.Path)...) {
 		return
 	}
 

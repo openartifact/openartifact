@@ -125,7 +125,7 @@ func authenticateTestBearer(next http.Handler) http.Handler {
 func TestNPMPublish_BogusBearerWithoutPrincipalIsRejected(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewNPMUploadHandler(log, db, bs, nil)
@@ -158,7 +158,7 @@ func TestNPMPublish_BogusBearerWithoutPrincipalIsRejected(t *testing.T) {
 func TestNPMPublish_ScopedCLIShape_201(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -178,7 +178,7 @@ func TestNPMPublish_ScopedCLIShape_201(t *testing.T) {
 func TestNPMPublish_FirstPublish_201(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -213,7 +213,7 @@ func TestNPMPublish_FirstPublish_201(t *testing.T) {
 func TestNPMPublish_NewVersion_201(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -243,7 +243,7 @@ func TestNPMPublish_NewVersion_201(t *testing.T) {
 func TestNPMPublish_RepublishConflict_409(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -264,7 +264,7 @@ func TestNPMPublish_RepublishConflict_409(t *testing.T) {
 func TestNPMPublish_NameMismatch_400(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -283,7 +283,7 @@ func TestNPMPublish_NameMismatch_400(t *testing.T) {
 func TestNPMPublish_IntegrityMismatch_400(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -329,7 +329,7 @@ func TestNPMPublish_BodyTooLarge_413(t *testing.T) {
 func TestNPMPublish_MissingAttachment_400(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 
@@ -355,7 +355,7 @@ func TestNPMPublish_MissingAttachment_400(t *testing.T) {
 func TestNPMPublish_NoAuth_401(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	router := setupUploadRouter(db, bs)
 

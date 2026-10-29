@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
@@ -77,14 +78,12 @@ type packageUnit struct {
 type packageCodec struct {
 	format string
 	fed    formatstorage.Federation
-	sides  []string
+	sides  []formatstorage.SideTable
 }
 
 func newPackageCodec(format string, st formatstorage.Storage) *packageCodec {
 	c := &packageCodec{format: format, fed: *st.Federation}
-	for _, s := range st.SideTables {
-		c.sides = append(c.sides, s.Name)
-	}
+	c.sides = append(c.sides, st.SideTables...)
 
 	return c
 }
@@ -334,8 +333,8 @@ func (c *packageCodec) exportArtifact(ctx context.Context, q Querier, key string
 func (c *packageCodec) loadSides(ctx context.Context, q Querier, ids []string) (map[string]map[string]json.RawMessage, error) {
 	out := map[string]map[string]json.RawMessage{}
 
-	for _, table := range c.sides {
-		if err := loadSideTable(ctx, q, table, ids, out); err != nil {
+	for _, side := range c.sides {
+		if err := loadSideTable(ctx, q, side.Name, ids, out); err != nil {
 			return nil, err
 		}
 	}
@@ -755,7 +754,7 @@ func (c *packageCodec) reconcileFiles(
 			}
 		}
 
-		if err := c.writeSides(ctx, tx, id, wf.Side); err != nil {
+		if err := c.writeSides(ctx, tx, repoID, id, wf.Side); err != nil {
 			return nil, err
 		}
 	}
@@ -930,17 +929,27 @@ func (c *packageCodec) writeFile(
 }
 
 // writeSides replaces the side-table rows of a file with the incoming ones.
-func (c *packageCodec) writeSides(ctx context.Context, tx *sql.Tx, fileID string, rows map[string]json.RawMessage) error {
-	for _, table := range c.sides {
-		row, ok := rows[table]
+//
+// The row is the peer's JSON, so it chooses every column of it. The columns
+// listed in SideTable.Refs point at rows of other tables (ids that only mean
+// something on the instance that wrote them), and are accepted only when a file
+// of this repository already uses that very value: a peer must not be able to
+// attach its file to the row of another repository.
+func (c *packageCodec) writeSides(ctx context.Context, tx *sql.Tx, repoID, fileID string, rows map[string]json.RawMessage) error {
+	for _, side := range c.sides {
+		row, ok := rows[side.Name]
 		if !ok {
 			continue
 		}
 
-		ident := pgx.Identifier{table}.Sanitize()
+		ident := pgx.Identifier{side.Name}.Sanitize()
+
+		if err := checkSideRefs(ctx, tx, repoID, ident, side, row); err != nil {
+			return err
+		}
 
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+ident+` WHERE id = $1::uuid`, fileID); err != nil { //nolint:gosec // quoted name
-			return fmt.Errorf("replace %s row: %w", table, err)
+			return fmt.Errorf("replace %s row: %w", side.Name, err)
 		}
 
 		_, err := tx.ExecContext(ctx,
@@ -948,7 +957,48 @@ func (c *packageCodec) writeSides(ctx context.Context, tx *sql.Tx, fileID string
 			`INSERT INTO `+ident+` SELECT (jsonb_populate_record(NULL::`+ident+`, $1::jsonb || jsonb_build_object('id', $2::text))).*`,
 			string(row), fileID)
 		if err != nil {
-			return fmt.Errorf("write %s row: %w", table, err)
+			return fmt.Errorf("write %s row: %w", side.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// checkSideRefs verifies the reference columns of a side-table row (see
+// writeSides): each must be a uuid that a file of the repository already
+// carries in the same column.
+func checkSideRefs(ctx context.Context, tx *sql.Tx, repoID, ident string, side formatstorage.SideTable, row json.RawMessage) error {
+	if len(side.Refs) == 0 {
+		return nil
+	}
+
+	var cols map[string]json.RawMessage
+	if err := json.Unmarshal(row, &cols); err != nil {
+		return fmt.Errorf("%w: %s row is not an object", ErrInvalid, side.Name)
+	}
+
+	for _, col := range side.Refs {
+		var ref string
+		if err := json.Unmarshal(cols[col], &ref); err != nil {
+			return fmt.Errorf("%w: %s.%s is not an id", ErrInvalid, side.Name, col)
+		}
+
+		if _, err := uuid.Parse(ref); err != nil {
+			return fmt.Errorf("%w: %s.%s is not an id", ErrInvalid, side.Name, col)
+		}
+
+		var owned bool
+
+		err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM `+ident+` s JOIN package_files f ON f.id = s.id
+			                 WHERE f.repository_id = $1::uuid AND s.`+pgx.Identifier{col}.Sanitize()+` = $2::uuid)`,
+			repoID, ref).Scan(&owned)
+		if err != nil {
+			return fmt.Errorf("check %s.%s: %w", side.Name, col, err)
+		}
+
+		if !owned {
+			return fmt.Errorf("%w: %s.%s does not belong to this repository", ErrInvalid, side.Name, col)
 		}
 	}
 
