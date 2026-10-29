@@ -57,6 +57,7 @@ type PostgresDB struct {
 	*MavenStore
 	*NPMStore
 	*TerraformStore
+	*ComposerStore
 	// STORES-STRUCT
 }
 
@@ -111,6 +112,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		MavenStore:           &MavenStore{core: c},
 		NPMStore:             &NPMStore{core: c},
 		TerraformStore:       &TerraformStore{core: c},
+		ComposerStore:        &ComposerStore{core: c},
 		// STORES-INIT
 	}
 }

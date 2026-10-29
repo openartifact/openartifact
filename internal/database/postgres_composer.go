@@ -13,6 +13,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// ComposerStore owns the Composer packages.
+type ComposerStore struct{ *core }
+
 const composerMediaType = "application/zip"
 
 // composerRow lists the sqlc row types composerFromRow converts; they share the columns of ListComposerPackageVersionsRow.
@@ -41,7 +44,7 @@ func composerFromRow[R composerRow](in R) *models.ComposerPackage {
 
 // CreateComposerPackage stores one package version. A live row with the same
 // name and normalised version is a unique violation.
-func (p *PostgresDB) CreateComposerPackage(ctx context.Context, c *models.ComposerPackage) error {
+func (p *ComposerStore) CreateComposerPackage(ctx context.Context, c *models.ComposerPackage) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, c.SHA256, c.BlobKey, composerMediaType, c.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for composer package: %w", err)
@@ -67,7 +70,7 @@ func (p *PostgresDB) CreateComposerPackage(ctx context.Context, c *models.Compos
 }
 
 // GetComposerPackage returns the live version of a package, or (nil, nil).
-func (p *PostgresDB) GetComposerPackage(ctx context.Context, repoID, name, versionNormalized string) (*models.ComposerPackage, error) {
+func (p *ComposerStore) GetComposerPackage(ctx context.Context, repoID, name, versionNormalized string) (*models.ComposerPackage, error) {
 	row, err := p.q.GetComposerPackage(ctx, dbsqlc.GetComposerPackageParams{
 		RepositoryID: repoID, Name: name, VersionNormalized: versionNormalized,
 	})
@@ -77,14 +80,14 @@ func (p *PostgresDB) GetComposerPackage(ctx context.Context, repoID, name, versi
 
 // GetComposerPackageByID returns the live package version of the repository
 // with the ID, or (nil, nil).
-func (p *PostgresDB) GetComposerPackageByID(ctx context.Context, repoID, id string) (*models.ComposerPackage, error) {
+func (p *ComposerStore) GetComposerPackageByID(ctx context.Context, repoID, id string) (*models.ComposerPackage, error) {
 	row, err := p.q.GetComposerPackageByID(ctx, dbsqlc.GetComposerPackageByIDParams{RepositoryID: repoID, ID: id})
 
 	return mapRow(row, err, "get composer package by id", composerFromRow)
 }
 
 // ListComposerPackageVersions returns every live version of one package, oldest upload first.
-func (p *PostgresDB) ListComposerPackageVersions(ctx context.Context, repoID, name string) ([]*models.ComposerPackage, error) {
+func (p *ComposerStore) ListComposerPackageVersions(ctx context.Context, repoID, name string) ([]*models.ComposerPackage, error) {
 	rows, err := p.q.ListComposerPackageVersions(ctx, dbsqlc.ListComposerPackageVersionsParams{RepositoryID: repoID, Name: name})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list composer package versions: %w", err)
@@ -99,7 +102,7 @@ func (p *PostgresDB) ListComposerPackageVersions(ctx context.Context, repoID, na
 }
 
 // ListComposerPackages returns every live version of every package of the repository.
-func (p *PostgresDB) ListComposerPackages(ctx context.Context, repoID string) ([]*models.ComposerPackage, error) {
+func (p *ComposerStore) ListComposerPackages(ctx context.Context, repoID string) ([]*models.ComposerPackage, error) {
 	rows, err := p.q.ListComposerPackages(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list composer packages: %w", err)
@@ -115,7 +118,7 @@ func (p *PostgresDB) ListComposerPackages(ctx context.Context, repoID string) ([
 
 // ListComposerPackageNames returns every package of the repository in name
 // order with the description of its newest live version.
-func (p *PostgresDB) ListComposerPackageNames(ctx context.Context, repoID string) ([]*models.ComposerPackageName, error) {
+func (p *ComposerStore) ListComposerPackageNames(ctx context.Context, repoID string) ([]*models.ComposerPackageName, error) {
 	rows, err := p.q.ListComposerPackageNames(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list composer package names: %w", err)
@@ -130,7 +133,7 @@ func (p *PostgresDB) ListComposerPackageNames(ctx context.Context, repoID string
 }
 
 // DeleteComposerPackage removes a live package version row.
-func (p *PostgresDB) DeleteComposerPackage(ctx context.Context, repoID, id string) error {
+func (p *ComposerStore) DeleteComposerPackage(ctx context.Context, repoID, id string) error {
 	if err := p.q.DeleteComposerPackage(ctx, dbsqlc.DeleteComposerPackageParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to delete composer package: %w", err)
 	}
