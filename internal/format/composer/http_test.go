@@ -29,7 +29,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/composer/composertest"
 )
 
-// composerDB is an in-memory composer_packages table with its live unique key.
+// composerDB is an in-memory composer package table with its live unique key.
 type composerDB struct {
 	*formattest.DB
 
