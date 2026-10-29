@@ -11,12 +11,18 @@ package database
 // declares. Consumers never depend on this type but on the small interfaces
 // they declare themselves.
 //
-// Package storage is split per format on purpose, so a generic packages store
-// can replace the Deb/RPM/.../SBT stores one by one (see pkg_*.go): everything
-// that spans formats already goes through CatalogStore (cross-format listing,
-// catalog_branches.go, catalog_sql.go) and the blobRefSpecs table in
-// blob_refs.go, which lists every package table referencing a blob. A new
-// package table needs a row in both and in internal/recovery/tables.go.
+// Package storage is split per format: each pkg_<format>.go is the typed store of
+// one format over the generic tables packages, package_versions, package_files
+// and package_tags (plus the side tables conan_files, deb_files, maven_files,
+// pacman_files and rpm_files), written through writePackage/deleteFiles in
+// pkg_generic.go. Docker is the one format with dedicated tables (docker_*,
+// docker.go). Everything that spans formats reads the generic tables once and
+// never switches on the format: CatalogStore (listing, catalog_branches.go),
+// the blobRefSpecs in blob_refs.go (package_files.blob_id plus the docker and
+// side tables that own a blob column), TrashStore, tiering and quota usage. The
+// per-format differences are data: the storage.Storage descriptor each format
+// registers (internal/format/storage). A new format adds a pkg_<format>.go and
+// its queries, and no branch to any cross-format query.
 type PostgresDB struct {
 	*core
 	*BlobRefStore
