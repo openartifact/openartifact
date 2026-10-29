@@ -69,6 +69,7 @@ type PostgresDB struct {
 	*RubyGemsStore
 	*RawStore
 	*CondaStore
+	*ConanStore
 	// STORES-STRUCT
 }
 
@@ -135,6 +136,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		RubyGemsStore:        &RubyGemsStore{core: c},
 		RawStore:             &RawStore{core: c},
 		CondaStore:           &CondaStore{core: c},
+		ConanStore:           &ConanStore{core: c},
 		// STORES-INIT
 	}
 }
