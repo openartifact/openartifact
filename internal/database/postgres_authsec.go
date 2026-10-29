@@ -11,7 +11,7 @@ import (
 )
 
 // DeleteSessionsByUser revokes every session of a user.
-func (p *PostgresDB) DeleteSessionsByUser(ctx context.Context, userID string) error {
+func (p *SessionStore) DeleteSessionsByUser(ctx context.Context, userID string) error {
 	if _, err := p.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE user_id = $1`, userID); err != nil {
 		return fmt.Errorf("failed to delete sessions by user: %w", err)
 	}
@@ -21,7 +21,7 @@ func (p *PostgresDB) DeleteSessionsByUser(ctx context.Context, userID string) er
 
 // DeleteOtherSessionsByUser revokes every session of a user except the one
 // identified by keepTokenHash.
-func (p *PostgresDB) DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error {
+func (p *SessionStore) DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error {
 	if _, err := p.db.ExecContext(ctx,
 		`DELETE FROM auth_sessions WHERE user_id = $1 AND token_hash <> $2`,
 		userID, keepTokenHash,
@@ -51,7 +51,7 @@ type BootstrapAdmin struct {
 // ConsumeSAMLAssertion records a SAML assertion ID as used and reports whether
 // this call was the first to consume it. A false result means the assertion was
 // already accepted before (replay). Expired records are purged opportunistically.
-func (p *PostgresDB) ConsumeSAMLAssertion(ctx context.Context, providerSlug, assertionID string, expiresAt time.Time) (bool, error) {
+func (p *SessionStore) ConsumeSAMLAssertion(ctx context.Context, providerSlug, assertionID string, expiresAt time.Time) (bool, error) {
 	if _, err := p.db.ExecContext(ctx, `DELETE FROM auth_saml_assertions WHERE expires_at < now()`); err != nil {
 		return false, fmt.Errorf("purge saml assertions: %w", err)
 	}
