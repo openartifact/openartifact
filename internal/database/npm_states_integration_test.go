@@ -103,12 +103,18 @@ func BenchmarkNPMRegenerateRead(b *testing.B) {
 	}
 
 	if _, err := pg.GetDB().ExecContext(ctx, `
-		INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
-		SELECT $1, '1.0.' || v,
-		       jsonb_build_object('name', 'big', 'version', '1.0.' || v,
-		           'readme', (SELECT string_agg(md5(g::text || v::text), '') FROM generate_series(1, 600) g)),
-		       'sha512-x', 'x', 'big-1.0.' || v || '.tgz', $2
-		FROM generate_series(1, 1000) v`, pkg.ID, blobID); err != nil {
+		WITH v AS (
+			INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata)
+			SELECT $1, $3, '1.0.' || g, '1.0.' || g,
+			       jsonb_build_object('manifest_json', jsonb_build_object('name', 'big', 'version', '1.0.' || g,
+			           'readme', (SELECT string_agg(md5(i::text || g::text), '') FROM generate_series(1, 600) i)))
+			FROM generate_series(1, 1000) g
+			RETURNING id, version
+		)
+		INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, checksums)
+		SELECT v.id, $3, 'big/-/big-' || v.version || '.tgz', 'big-' || v.version || '.tgz', $2,
+		       '{"shasum":"x","integrity":"sha512-x"}'::jsonb
+		FROM v`, pkg.ID, blobID, repo.ID); err != nil {
 		b.Fatalf("seed versions: %v", err)
 	}
 

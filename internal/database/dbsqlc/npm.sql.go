@@ -12,17 +12,21 @@ import (
 )
 
 const createNPMPackage = `-- name: CreateNPMPackage :one
-INSERT INTO npm_packages (repository_id, scope, name, full_name, latest_version, packument_stale)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (repository_id, full_name) DO UPDATE SET updated_at = NOW()
+
+INSERT INTO packages (repository_id, format, name, name_key, attrs)
+VALUES ($1, 'npm', $2::text, $2::text,
+        jsonb_build_object('scope', $3::text, 'name', $4::text,
+                           'latest_version', $5::text,
+                           'packument_stale', $6::boolean))
+ON CONFLICT (repository_id, name_key) DO UPDATE SET updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type CreateNPMPackageParams struct {
 	RepositoryID   string `db:"repository_id" json:"repository_id"`
+	FullName       string `db:"full_name" json:"full_name"`
 	Scope          string `db:"scope" json:"scope"`
 	Name           string `db:"name" json:"name"`
-	FullName       string `db:"full_name" json:"full_name"`
 	LatestVersion  string `db:"latest_version" json:"latest_version"`
 	PackumentStale bool   `db:"packument_stale" json:"packument_stale"`
 }
@@ -33,12 +37,17 @@ type CreateNPMPackageRow struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// npm on the generic package tables; the mapping is documented in
+// internal/database/pkg_npm.go. Every statement that changes what the packument
+// shows also bumps packages.updated_at (the packument's ETag and render-cache
+// key) in the same statement, so no writer has to remember MarkPackumentStale
+// for the validator to move.
 func (q *Queries) CreateNPMPackage(ctx context.Context, arg CreateNPMPackageParams) (CreateNPMPackageRow, error) {
 	row := q.db.QueryRow(ctx, createNPMPackage,
 		arg.RepositoryID,
+		arg.FullName,
 		arg.Scope,
 		arg.Name,
-		arg.FullName,
 		arg.LatestVersion,
 		arg.PackumentStale,
 	)
@@ -47,57 +56,12 @@ func (q *Queries) CreateNPMPackage(ctx context.Context, arg CreateNPMPackagePara
 	return i, err
 }
 
-const createNPMVersion = `-- name: CreateNPMVersion :one
-WITH touch AS (
-    UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
-)
-INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at)
-VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))
-RETURNING id, created_at
-`
-
-type CreateNPMVersionParams struct {
-	PackageID       string          `db:"package_id" json:"package_id"`
-	Version         string          `db:"version" json:"version"`
-	Column3         json.RawMessage `db:"column_3" json:"column_3"`
-	Integrity       string          `db:"integrity" json:"integrity"`
-	Shasum          string          `db:"shasum" json:"shasum"`
-	BlobID          string          `db:"blob_id" json:"blob_id"`
-	TarballFilename string          `db:"tarball_filename" json:"tarball_filename"`
-	CreatedAt       *time.Time      `db:"created_at" json:"created_at"`
-}
-
-type CreateNPMVersionRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-}
-
-// Every statement that changes what the packument shows also bumps
-// npm_packages.updated_at (the packument's ETag and render-cache key) in the
-// same statement, so no writer has to remember to MarkPackumentStale for the
-// validator to move.
-func (q *Queries) CreateNPMVersion(ctx context.Context, arg CreateNPMVersionParams) (CreateNPMVersionRow, error) {
-	row := q.db.QueryRow(ctx, createNPMVersion,
-		arg.PackageID,
-		arg.Version,
-		arg.Column3,
-		arg.Integrity,
-		arg.Shasum,
-		arg.BlobID,
-		arg.TarballFilename,
-		arg.CreatedAt,
-	)
-	var i CreateNPMVersionRow
-	err := row.Scan(&i.ID, &i.CreatedAt)
-	return i, err
-}
-
 const deleteNPMDistTag = `-- name: DeleteNPMDistTag :exec
 WITH removed AS (
-    DELETE FROM npm_dist_tags WHERE package_id = $1 AND tag = $2
+    DELETE FROM package_tags WHERE package_id = $1 AND tag = $2
     RETURNING package_id
 )
-UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM removed)
+UPDATE packages SET updated_at = now() WHERE id IN (SELECT package_id FROM removed)
 `
 
 type DeleteNPMDistTagParams struct {
@@ -110,42 +74,77 @@ func (q *Queries) DeleteNPMDistTag(ctx context.Context, arg DeleteNPMDistTagPara
 	return err
 }
 
-const deleteNPMPackage = `-- name: DeleteNPMPackage :exec
-DELETE FROM npm_packages
-WHERE npm_packages.id = $1
-  AND NOT EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = npm_packages.id)
+const deleteNPMLiveVersionFiles = `-- name: DeleteNPMLiveVersionFiles :many
+DELETE FROM package_files f
+USING package_versions v
+WHERE f.version_id = v.id AND v.package_id = $1 AND v.version_key = $2 AND v.deleted_at IS NULL
+RETURNING f.version_id
 `
 
-// Only removes a package with no version row left at all, so the FK cascade
-// never takes trashed versions with it.
+type DeleteNPMLiveVersionFilesParams struct {
+	PackageID  string `db:"package_id" json:"package_id"`
+	VersionKey string `db:"version_key" json:"version_key"`
+}
+
+// Hard delete of the file of the live version (the quota trigger releases its
+// usage); the version itself goes in PruneEmptyVersions.
+func (q *Queries) DeleteNPMLiveVersionFiles(ctx context.Context, arg DeleteNPMLiveVersionFilesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, deleteNPMLiveVersionFiles, arg.PackageID, arg.VersionKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var version_id string
+		if err := rows.Scan(&version_id); err != nil {
+			return nil, err
+		}
+		items = append(items, version_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteNPMPackage = `-- name: DeleteNPMPackage :exec
+DELETE FROM packages p
+WHERE p.id = $1
+  AND NOT EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id)
+`
+
+// Only removes a package with no version row left at all (trashed ones
+// included), so the cascade never takes trashed versions with it.
 func (q *Queries) DeleteNPMPackage(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteNPMPackage, id)
 	return err
 }
 
-const deleteNPMVersion = `-- name: DeleteNPMVersion :exec
-WITH removed AS (
-    DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
-    RETURNING package_id
-)
-UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM removed)
+const deleteNPMTagsOfVersion = `-- name: DeleteNPMTagsOfVersion :exec
+DELETE FROM package_tags t
+WHERE t.package_id = $1 AND t.version = $2
+  AND NOT EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = t.package_id AND v.version_key = t.version)
 `
 
-type DeleteNPMVersionParams struct {
+type DeleteNPMTagsOfVersionParams struct {
 	PackageID string `db:"package_id" json:"package_id"`
 	Version   string `db:"version" json:"version"`
 }
 
-func (q *Queries) DeleteNPMVersion(ctx context.Context, arg DeleteNPMVersionParams) error {
-	_, err := q.db.Exec(ctx, deleteNPMVersion, arg.PackageID, arg.Version)
+// Tags are keyed by the version string, so they do not follow the version row.
+// A trashed incarnation of the same version keeps them (a restore brings them
+// back).
+func (q *Queries) DeleteNPMTagsOfVersion(ctx context.Context, arg DeleteNPMTagsOfVersionParams) error {
+	_, err := q.db.Exec(ctx, deleteNPMTagsOfVersion, arg.PackageID, arg.Version)
 	return err
 }
 
 const getNPMDistTags = `-- name: GetNPMDistTags :many
-SELECT d.tag, d.version FROM npm_dist_tags d
-WHERE d.package_id = $1
-  AND EXISTS (SELECT 1 FROM npm_versions v
-              WHERE v.package_id = d.package_id AND v.version = d.version AND v.deleted_at IS NULL)
+SELECT t.tag, t.version FROM package_tags t
+WHERE t.package_id = $1
+  AND EXISTS (SELECT 1 FROM package_versions v
+              WHERE v.package_id = t.package_id AND v.version_key = t.version AND v.deleted_at IS NULL)
 `
 
 type GetNPMDistTagsRow struct {
@@ -176,25 +175,39 @@ func (q *Queries) GetNPMDistTags(ctx context.Context, packageID string) ([]GetNP
 }
 
 const getNPMPackageByName = `-- name: GetNPMPackageByName :one
-SELECT id, repository_id,
-       COALESCE(scope, '') AS scope,
-       name, full_name,
-       COALESCE(latest_version, '') AS latest_version,
-       packument_stale, created_at, updated_at
-FROM npm_packages
-WHERE repository_id = $1 AND full_name = $2
-  AND EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = npm_packages.id AND v.deleted_at IS NULL)
+SELECT p.id, p.repository_id,
+       COALESCE(p.attrs ->> 'scope', '')::text AS scope,
+       COALESCE(p.attrs ->> 'name', '')::text AS name,
+       p.name AS full_name,
+       COALESCE(p.attrs ->> 'latest_version', '')::text AS latest_version,
+       COALESCE((p.attrs ->> 'packument_stale')::boolean, true)::boolean AS packument_stale,
+       p.created_at, p.updated_at
+FROM packages p
+WHERE p.repository_id = $1 AND p.name_key = $2
+  AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = p.id AND v.deleted_at IS NULL)
 `
 
 type GetNPMPackageByNameParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	FullName     string `db:"full_name" json:"full_name"`
+	NameKey      string `db:"name_key" json:"name_key"`
+}
+
+type GetNPMPackageByNameRow struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	Scope          string    `db:"scope" json:"scope"`
+	Name           string    `db:"name" json:"name"`
+	FullName       string    `db:"full_name" json:"full_name"`
+	LatestVersion  string    `db:"latest_version" json:"latest_version"`
+	PackumentStale bool      `db:"packument_stale" json:"packument_stale"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // A package with no live version (all trashed) does not exist.
-func (q *Queries) GetNPMPackageByName(ctx context.Context, arg GetNPMPackageByNameParams) (NpmPackage, error) {
-	row := q.db.QueryRow(ctx, getNPMPackageByName, arg.RepositoryID, arg.FullName)
-	var i NpmPackage
+func (q *Queries) GetNPMPackageByName(ctx context.Context, arg GetNPMPackageByNameParams) (GetNPMPackageByNameRow, error) {
+	row := q.db.QueryRow(ctx, getNPMPackageByName, arg.RepositoryID, arg.NameKey)
+	var i GetNPMPackageByNameRow
 	err := row.Scan(
 		&i.ID,
 		&i.RepositoryID,
@@ -209,15 +222,41 @@ func (q *Queries) GetNPMPackageByName(ctx context.Context, arg GetNPMPackageByNa
 	return i, err
 }
 
+const getNPMPackageIdentity = `-- name: GetNPMPackageIdentity :one
+SELECT repository_id, name FROM packages WHERE id = $1
+`
+
+type GetNPMPackageIdentityRow struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+}
+
+func (q *Queries) GetNPMPackageIdentity(ctx context.Context, id string) (GetNPMPackageIdentityRow, error) {
+	row := q.db.QueryRow(ctx, getNPMPackageIdentity, id)
+	var i GetNPMPackageIdentityRow
+	err := row.Scan(&i.RepositoryID, &i.Name)
+	return i, err
+}
+
 const getNPMVersion = `-- name: GetNPMVersion :one
-SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at
-FROM npm_versions
-WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+SELECT f.id, v.package_id, v.version,
+       COALESCE(v.metadata -> 'manifest_json', '{}'::jsonb)::jsonb AS manifest_json,
+       COALESCE(f.checksums ->> 'integrity', '')::text AS integrity,
+       COALESCE(f.checksums ->> 'shasum', '')::text AS shasum,
+       COALESCE(f.blob_id::text, '')::text AS blob_id,
+       f.filename AS tarball_filename,
+       COALESCE(b.sha256, '')::text AS blob_sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS blob_size_bytes,
+       v.created_at
+FROM package_versions v
+JOIN package_files f ON f.version_id = v.id AND f.role = 'primary' AND f.deleted_at IS NULL
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE v.package_id = $1 AND v.version_key = $2 AND v.deleted_at IS NULL
 `
 
 type GetNPMVersionParams struct {
-	PackageID string `db:"package_id" json:"package_id"`
-	Version   string `db:"version" json:"version"`
+	PackageID  string `db:"package_id" json:"package_id"`
+	VersionKey string `db:"version_key" json:"version_key"`
 }
 
 type GetNPMVersionRow struct {
@@ -229,11 +268,13 @@ type GetNPMVersionRow struct {
 	Shasum          string          `db:"shasum" json:"shasum"`
 	BlobID          string          `db:"blob_id" json:"blob_id"`
 	TarballFilename string          `db:"tarball_filename" json:"tarball_filename"`
+	BlobSha256      string          `db:"blob_sha256" json:"blob_sha256"`
+	BlobSizeBytes   int64           `db:"blob_size_bytes" json:"blob_size_bytes"`
 	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
 }
 
 func (q *Queries) GetNPMVersion(ctx context.Context, arg GetNPMVersionParams) (GetNPMVersionRow, error) {
-	row := q.db.QueryRow(ctx, getNPMVersion, arg.PackageID, arg.Version)
+	row := q.db.QueryRow(ctx, getNPMVersion, arg.PackageID, arg.VersionKey)
 	var i GetNPMVersionRow
 	err := row.Scan(
 		&i.ID,
@@ -244,17 +285,19 @@ func (q *Queries) GetNPMVersion(ctx context.Context, arg GetNPMVersionParams) (G
 		&i.Shasum,
 		&i.BlobID,
 		&i.TarballFilename,
+		&i.BlobSha256,
+		&i.BlobSizeBytes,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getNPMVersionStates = `-- name: GetNPMVersionStates :many
-SELECT version,
-       COALESCE(jsonb_typeof(manifest_json -> 'deprecated') = 'string'
-                AND manifest_json ->> 'deprecated' <> '', false)::boolean AS deprecated
-FROM npm_versions
-WHERE package_id = $1 AND deleted_at IS NULL
+SELECT v.version,
+       COALESCE(jsonb_typeof(v.metadata -> 'manifest_json' -> 'deprecated') = 'string'
+                AND v.metadata -> 'manifest_json' ->> 'deprecated' <> '', false)::boolean AS deprecated
+FROM package_versions v
+WHERE v.package_id = $1 AND v.deleted_at IS NULL
 `
 
 type GetNPMVersionStatesRow struct {
@@ -287,9 +330,19 @@ func (q *Queries) GetNPMVersionStates(ctx context.Context, packageID string) ([]
 }
 
 const getNPMVersionsByPackage = `-- name: GetNPMVersionsByPackage :many
-SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at
-FROM npm_versions
-WHERE package_id = $1 AND deleted_at IS NULL
+SELECT f.id, v.package_id, v.version,
+       COALESCE(v.metadata -> 'manifest_json', '{}'::jsonb)::jsonb AS manifest_json,
+       COALESCE(f.checksums ->> 'integrity', '')::text AS integrity,
+       COALESCE(f.checksums ->> 'shasum', '')::text AS shasum,
+       COALESCE(f.blob_id::text, '')::text AS blob_id,
+       f.filename AS tarball_filename,
+       COALESCE(b.sha256, '')::text AS blob_sha256,
+       COALESCE(b.size_bytes, 0)::bigint AS blob_size_bytes,
+       v.created_at
+FROM package_versions v
+JOIN package_files f ON f.version_id = v.id AND f.role = 'primary' AND f.deleted_at IS NULL
+LEFT JOIN blobs b ON b.id = f.blob_id
+WHERE v.package_id = $1 AND v.deleted_at IS NULL
 `
 
 type GetNPMVersionsByPackageRow struct {
@@ -301,6 +354,8 @@ type GetNPMVersionsByPackageRow struct {
 	Shasum          string          `db:"shasum" json:"shasum"`
 	BlobID          string          `db:"blob_id" json:"blob_id"`
 	TarballFilename string          `db:"tarball_filename" json:"tarball_filename"`
+	BlobSha256      string          `db:"blob_sha256" json:"blob_sha256"`
+	BlobSizeBytes   int64           `db:"blob_size_bytes" json:"blob_size_bytes"`
 	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
 }
 
@@ -322,101 +377,8 @@ func (q *Queries) GetNPMVersionsByPackage(ctx context.Context, packageID string)
 			&i.Shasum,
 			&i.BlobID,
 			&i.TarballFilename,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAllNPMPackages = `-- name: ListAllNPMPackages :many
-SELECT id, repository_id,
-       COALESCE(scope, '') AS scope,
-       name, full_name,
-       COALESCE(latest_version, '') AS latest_version,
-       packument_stale, created_at, updated_at
-FROM npm_packages
-WHERE repository_id = $1
-  AND EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = npm_packages.id AND v.deleted_at IS NULL)
-`
-
-func (q *Queries) ListAllNPMPackages(ctx context.Context, repositoryID string) ([]NpmPackage, error) {
-	rows, err := q.db.Query(ctx, listAllNPMPackages, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []NpmPackage{}
-	for rows.Next() {
-		var i NpmPackage
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Scope,
-			&i.Name,
-			&i.FullName,
-			&i.LatestVersion,
-			&i.PackumentStale,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listNPMVersionsByRepo = `-- name: ListNPMVersionsByRepo :many
-SELECT nv.id, nv.package_id, nv.version, nv.manifest_json, nv.integrity, nv.shasum,
-       b.sha256 AS blob_sha256, b.size_bytes AS blob_size_bytes,
-       nv.tarball_filename, nv.created_at
-FROM npm_versions nv
-JOIN npm_packages np ON np.id = nv.package_id
-JOIN blobs b ON b.id = nv.blob_id
-WHERE np.repository_id = $1 AND nv.deleted_at IS NULL
-`
-
-type ListNPMVersionsByRepoRow struct {
-	ID              string          `db:"id" json:"id"`
-	PackageID       string          `db:"package_id" json:"package_id"`
-	Version         string          `db:"version" json:"version"`
-	ManifestJson    json.RawMessage `db:"manifest_json" json:"manifest_json"`
-	Integrity       string          `db:"integrity" json:"integrity"`
-	Shasum          string          `db:"shasum" json:"shasum"`
-	BlobSha256      string          `db:"blob_sha256" json:"blob_sha256"`
-	BlobSizeBytes   int64           `db:"blob_size_bytes" json:"blob_size_bytes"`
-	TarballFilename string          `db:"tarball_filename" json:"tarball_filename"`
-	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) ListNPMVersionsByRepo(ctx context.Context, repositoryID string) ([]ListNPMVersionsByRepoRow, error) {
-	rows, err := q.db.Query(ctx, listNPMVersionsByRepo, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListNPMVersionsByRepoRow{}
-	for rows.Next() {
-		var i ListNPMVersionsByRepoRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PackageID,
-			&i.Version,
-			&i.ManifestJson,
-			&i.Integrity,
-			&i.Shasum,
 			&i.BlobSha256,
 			&i.BlobSizeBytes,
-			&i.TarballFilename,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -430,7 +392,7 @@ func (q *Queries) ListNPMVersionsByRepo(ctx context.Context, repositoryID string
 }
 
 const markPackumentStale = `-- name: MarkPackumentStale :exec
-UPDATE npm_packages SET packument_stale = true, updated_at = NOW() WHERE id = $1
+UPDATE packages SET attrs = attrs || '{"packument_stale": true}'::jsonb, updated_at = now() WHERE id = $1
 `
 
 func (q *Queries) MarkPackumentStale(ctx context.Context, id string) error {
@@ -439,53 +401,58 @@ func (q *Queries) MarkPackumentStale(ctx context.Context, id string) error {
 }
 
 const updateNPMPackageLatestVersion = `-- name: UpdateNPMPackageLatestVersion :exec
-UPDATE npm_packages SET latest_version = $2, packument_stale = false, updated_at = NOW() WHERE id = $1
+UPDATE packages
+SET attrs = attrs || jsonb_build_object('latest_version', $1::text, 'packument_stale', false),
+    updated_at = now()
+WHERE id = $2
 `
 
 type UpdateNPMPackageLatestVersionParams struct {
-	ID            string `db:"id" json:"id"`
 	LatestVersion string `db:"latest_version" json:"latest_version"`
+	ID            string `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateNPMPackageLatestVersion(ctx context.Context, arg UpdateNPMPackageLatestVersionParams) error {
-	_, err := q.db.Exec(ctx, updateNPMPackageLatestVersion, arg.ID, arg.LatestVersion)
+	_, err := q.db.Exec(ctx, updateNPMPackageLatestVersion, arg.LatestVersion, arg.ID)
 	return err
 }
 
 const updateNPMVersionManifest = `-- name: UpdateNPMVersionManifest :exec
 WITH changed AS (
-    UPDATE npm_versions SET manifest_json = $3::jsonb
-    WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+    UPDATE package_versions
+    SET metadata = jsonb_set(metadata, '{manifest_json}', $1::jsonb)
+    WHERE package_id = $2 AND version_key = $3 AND deleted_at IS NULL
     RETURNING package_id
 )
-UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM changed)
+UPDATE packages SET updated_at = now() WHERE id IN (SELECT package_id FROM changed)
 `
 
 type UpdateNPMVersionManifestParams struct {
+	Manifest  json.RawMessage `db:"manifest" json:"manifest"`
 	PackageID string          `db:"package_id" json:"package_id"`
 	Version   string          `db:"version" json:"version"`
-	Column3   json.RawMessage `db:"column_3" json:"column_3"`
 }
 
 func (q *Queries) UpdateNPMVersionManifest(ctx context.Context, arg UpdateNPMVersionManifestParams) error {
-	_, err := q.db.Exec(ctx, updateNPMVersionManifest, arg.PackageID, arg.Version, arg.Column3)
+	_, err := q.db.Exec(ctx, updateNPMVersionManifest, arg.Manifest, arg.PackageID, arg.Version)
 	return err
 }
 
 const upsertNPMDistTag = `-- name: UpsertNPMDistTag :one
 WITH touch AS (
-    UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
+    UPDATE packages SET updated_at = now() WHERE id = $3
 )
-INSERT INTO npm_dist_tags (package_id, tag, version)
-VALUES ($1, $2, $3)
-ON CONFLICT (package_id, tag) DO UPDATE SET version = EXCLUDED.version, updated_at = NOW()
+INSERT INTO package_tags (package_id, tag, version, unit_key)
+SELECT p.id, $1::text, $2::text, p.name || '#' || $1::text
+FROM packages p WHERE p.id = $3
+ON CONFLICT (package_id, tag) DO UPDATE SET version = EXCLUDED.version, updated_at = now()
 RETURNING id, updated_at
 `
 
 type UpsertNPMDistTagParams struct {
-	PackageID string `db:"package_id" json:"package_id"`
 	Tag       string `db:"tag" json:"tag"`
 	Version   string `db:"version" json:"version"`
+	PackageID string `db:"package_id" json:"package_id"`
 }
 
 type UpsertNPMDistTagRow struct {
@@ -494,7 +461,7 @@ type UpsertNPMDistTagRow struct {
 }
 
 func (q *Queries) UpsertNPMDistTag(ctx context.Context, arg UpsertNPMDistTagParams) (UpsertNPMDistTagRow, error) {
-	row := q.db.QueryRow(ctx, upsertNPMDistTag, arg.PackageID, arg.Tag, arg.Version)
+	row := q.db.QueryRow(ctx, upsertNPMDistTag, arg.Tag, arg.Version, arg.PackageID)
 	var i UpsertNPMDistTagRow
 	err := row.Scan(&i.ID, &i.UpdatedAt)
 	return i, err
