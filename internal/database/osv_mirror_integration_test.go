@@ -128,3 +128,86 @@ func TestOSVApplyReappliesAdvisoryWhenAnEcosystemIsAdded(t *testing.T) {
 		t.Fatalf("affected rows = %v, the older copy must not replace the stored one", got)
 	}
 }
+
+// An advisory that left an ecosystem's export is dropped from that ecosystem
+// only; one with no affected package left is deleted, aliases with it. The
+// packages that lost an advisory come back to be re-matched.
+func TestOSVRemoveAdvisoriesDropsOneEcosystemAndOrphans(t *testing.T) {
+	ctx := context.Background()
+	pg := newQuotaTestDB(t, 4)
+	modified := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	if _, err := pg.ApplyOSVAdvisories(ctx, []models.OSVAdvisory{
+		osvAdvisoryOf("GHSA-both", modified, osvPkg("npm", "a"), osvPkg("PyPI", "b")),
+		osvAdvisoryOf("GHSA-npm", modified, osvPkg("npm", "c")),
+		osvAdvisoryOf("GHSA-kept", modified, osvPkg("npm", "d")),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := pg.ListOSVAdvisoryIDs(ctx, "npm")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slices.Sort(ids)
+
+	if want := []string{"GHSA-both", "GHSA-kept", "GHSA-npm"}; !slices.Equal(ids, want) {
+		t.Fatalf("npm advisory ids = %v, want %v", ids, want)
+	}
+
+	if ids, err := pg.ListOSVAdvisoryIDs(ctx, "PyPI"); err != nil || !slices.Equal(ids, []string{"GHSA-both"}) {
+		t.Fatalf("PyPI advisory ids = %v, %v", ids, err)
+	}
+
+	if err := pg.FinishOSVRematch(ctx, "npm", time.Now(), time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	if osvPending(t, pg, "npm") {
+		t.Fatal("the re-match of the import must be done before the removal")
+	}
+
+	keys, err := pg.RemoveOSVAdvisories(ctx, "npm", []string{"GHSA-both", "GHSA-npm", "GHSA-unknown"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []string{"npm/a", "npm/c"}; !slices.Equal(sortedKeys(keys), want) {
+		t.Fatalf("touched = %v, want %v", sortedKeys(keys), want)
+	}
+
+	if got := osvAffectedRows(t, pg, "GHSA-both"); !slices.Equal(got, []string{"PyPI/b"}) {
+		t.Fatalf("GHSA-both rows = %v, want the PyPI package only", got)
+	}
+
+	if got := osvAffectedRows(t, pg, "GHSA-npm"); len(got) != 0 {
+		t.Fatalf("GHSA-npm rows = %v, want none", got)
+	}
+
+	if got := osvAffectedRows(t, pg, "GHSA-kept"); !slices.Equal(got, []string{"npm/d"}) {
+		t.Fatalf("GHSA-kept rows = %v, want it untouched", got)
+	}
+
+	aliases, err := pg.OSVCVEAliases(ctx, []string{"GHSA-both", "GHSA-npm", "GHSA-kept"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(aliases) != 2 || aliases["GHSA-npm"] != nil {
+		t.Fatalf("aliases = %v, want GHSA-npm deleted with its aliases and the other two kept", aliases)
+	}
+
+	if !osvPending(t, pg, "npm") {
+		t.Fatal("the ecosystem must be flagged for a re-match")
+	}
+
+	if n, err := pg.CountOSVAdvisories(ctx, "npm"); err != nil || n != 1 {
+		t.Fatalf("npm advisories = %d, %v; want 1", n, err)
+	}
+
+	// Nothing to remove: no keys, no error.
+	if keys, err := pg.RemoveOSVAdvisories(ctx, "npm", []string{"GHSA-npm"}); err != nil || len(keys) != 0 {
+		t.Fatalf("removing nothing = %v, %v", keys, err)
+	}
+}

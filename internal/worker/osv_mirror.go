@@ -319,7 +319,7 @@ func (w *OSVMirrorWorker) recordImport(
 	default:
 		stats.Imported++
 		w.log.Infow("osv mirror import finished", "ecosystem", eco, "records", res.Records, "skipped", res.Skipped,
-			"archive_bytes", res.Bytes, "changed_packages", len(res.Touched), "baseline", res.Baseline)
+			"removed", res.Removed, "archive_bytes", res.Bytes, "changed_packages", len(res.Touched), "baseline", res.Baseline)
 	}
 
 	// A cancelled pass still records its state.

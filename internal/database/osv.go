@@ -32,6 +32,17 @@ type OSVMirror interface {
 	// re-match pending, in the same transaction.
 	ApplyOSVAdvisories(ctx context.Context, advisories []models.OSVAdvisory) ([]models.OSVPackageKey, error)
 
+	// ListOSVAdvisoryIDs returns the ids of the advisories that have an
+	// affected package in the ecosystem (withdrawn ones included).
+	ListOSVAdvisoryIDs(ctx context.Context, ecosystem string) ([]string, error)
+
+	// RemoveOSVAdvisories drops the affected packages of the ecosystem from
+	// the given advisories, which its export no longer lists, and deletes the
+	// advisories (and their aliases) left without any affected package. It
+	// returns the packages that lost an advisory and flags the ecosystem as
+	// having a re-match pending, in the same transaction.
+	RemoveOSVAdvisories(ctx context.Context, ecosystem string, ids []string) ([]models.OSVPackageKey, error)
+
 	// GetOSVMirrorState returns the import state of an ecosystem, nil when it
 	// has none.
 	GetOSVMirrorState(ctx context.Context, ecosystem string) (*models.OSVMirrorState, error)
@@ -874,4 +885,96 @@ func parsePGTextArray(s string) []string {
 	flush()
 
 	return out
+}
+
+// ListOSVAdvisoryIDs implements OSVMirror.
+func (p *OSVStore) ListOSVAdvisoryIDs(ctx context.Context, ecosystem string) ([]string, error) {
+	rows, err := p.db.QueryContext(ctx, `SELECT DISTINCT advisory_id FROM osv_affected WHERE ecosystem = $1`, ecosystem)
+	if err != nil {
+		return nil, fmt.Errorf("list osv advisory ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan osv advisory id: %w", err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list osv advisory ids: %w", err)
+	}
+
+	return ids, nil
+}
+
+// RemoveOSVAdvisories implements OSVMirror.
+func (p *OSVStore) RemoveOSVAdvisories(ctx context.Context, ecosystem string, ids []string) ([]models.OSVPackageKey, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin osv removal transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx,
+		`DELETE FROM osv_affected WHERE ecosystem = $1 AND advisory_id = ANY($2) RETURNING ecosystem, name_norm`, ecosystem, ids)
+	if err != nil {
+		return nil, fmt.Errorf("remove osv affected packages: %w", err)
+	}
+	defer rows.Close()
+
+	seen := map[models.OSVPackageKey]bool{}
+
+	var keys []models.OSVPackageKey
+
+	for rows.Next() {
+		var k models.OSVPackageKey
+		if err := rows.Scan(&k.Ecosystem, &k.NameNorm); err != nil {
+			return nil, fmt.Errorf("scan removed osv package: %w", err)
+		}
+
+		if !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("remove osv affected packages: %w", err)
+	}
+
+	// The result set must be read to the end before the next statement runs.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("remove osv affected packages: %w", err)
+	}
+
+	// An advisory left without an affected package matches nothing in any
+	// ecosystem: delete it, its aliases cascade.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM osv_advisories a
+		WHERE a.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM osv_affected af WHERE af.advisory_id = a.id)`, ids); err != nil {
+		return nil, fmt.Errorf("remove osv advisories: %w", err)
+	}
+
+	if len(keys) > 0 {
+		if _, err := tx.ExecContext(ctx, osvMarkPendingSQL, []string{ecosystem}); err != nil {
+			return nil, fmt.Errorf("flag osv re-match pending: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit osv removal: %w", err)
+	}
+
+	return keys, nil
 }
