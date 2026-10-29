@@ -118,8 +118,8 @@ func debStorage() storage.Storage {
 				},
 			},
 		},
-		SideTables: []storage.SideTable{{
-			Name: "deb_files", Exclude: []string{"control_fields"}, Refs: []string{"distribution_id", "component_id"},
-		}},
+		// control_fields is what the Packages stanza is rendered from and is not
+		// derivable without scanning the blobs, so the journal keeps it.
+		SideTables: []storage.SideTable{{Name: "deb_files", Refs: []string{"distribution_id", "component_id"}}},
 	}
 }

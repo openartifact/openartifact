@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
 // cleanupSeed is a purgeSeed whose server keeps no trash, so a policy run
@@ -195,11 +194,6 @@ func TestCleanupPolicySelection(t *testing.T) {
 // architecture must not evict the only build of another.
 func TestCleanupPolicyRanksArchitecturesSeparately(t *testing.T) {
 	s := newCleanupSeed(t)
-
-	storage.Register("rpm", storage.Storage{
-		Trash:   storage.Trash{Kind: "rpm_package"},
-		Cleanup: storage.Cleanup{VersionExpr: "split_part(v.version_key, '|', 1)"},
-	})
 
 	repo := &models.Repository{Name: "rpms", Format: "rpm", RepoType: "hosted", ProjectID: new(trashTestOrgID)}
 	if err := s.pg.CreateRepository(context.Background(), repo); err != nil {
@@ -547,23 +541,6 @@ func TestCleanupCycleRunsOnlyDuePolicies(t *testing.T) {
 	}
 }
 
-// registerNPMFixture registers the npm descriptor values the plugin registers:
-// the dist-tag protection of the cleanup and the dist-tag drop on purge.
-func registerNPMFixture() {
-	storage.Register("npm", storage.Storage{
-		Trash: storage.Trash{
-			Kind: "npm_version",
-			OnPurge: []string{
-				`DELETE FROM package_tags t USING package_files f, package_versions v
-				  WHERE f.id = $1::uuid AND v.id = f.version_id AND t.package_id = v.package_id AND t.version = v.version`,
-			},
-		},
-		Cleanup: storage.Cleanup{
-			ProtectExpr: `EXISTS (SELECT 1 FROM package_tags t WHERE t.package_id = v.package_id AND t.version = v.version)`,
-		},
-	})
-}
-
 // npmVersion writes one version (with one tarball) of the package pkg of repoID.
 func (s *cleanupSeed) npmVersion(repoID, pkg, version string, ageDays int) string {
 	s.t.Helper()
@@ -601,7 +578,6 @@ func (s *cleanupSeed) formatRepo(name, format string) *models.Repository {
 // A version a dist-tag points at is never removed by a policy, however old.
 func TestCleanupPolicyNPMProtectsTaggedVersions(t *testing.T) {
 	s := newCleanupSeed(t)
-	registerNPMFixture()
 
 	repo := s.formatRepo("npm-protect", "npm")
 	tagged := s.npmVersion(repo.ID, "left-pad", "1.0.0", 30)
@@ -636,7 +612,6 @@ func TestCleanupPolicyNPMProtectsTaggedVersions(t *testing.T) {
 // (the descriptor's OnPurge statement), because the repository keeps no trash.
 func TestDeletePackageDropsNPMTags(t *testing.T) {
 	s := newCleanupSeed(t)
-	registerNPMFixture()
 
 	repo := s.formatRepo("npm-delete", "npm")
 	gone := s.npmVersion(repo.ID, "left-pad", "1.0.0", 5)

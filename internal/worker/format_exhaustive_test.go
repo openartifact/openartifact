@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/repotype/repotypetest"
@@ -20,20 +19,15 @@ import (
 // descriptor (what the plugin layer registers for every package format) or is
 // docker, the one special case with dedicated tables.
 func TestCleanupFormatSupported(t *testing.T) {
-	storage.Reset()
-	t.Cleanup(storage.Reset)
-
-	storage.Register("fixture", storage.Storage{Trash: storage.Trash{Kind: "fixture_item"}})
-
-	for format, want := range map[string]bool{"fixture": true, "docker": true, "no-such-format": false} {
+	for format, want := range map[string]bool{"raw": true, "docker": true, "no-such-format": false} {
 		if got := CleanupFormatSupported(format); got != want {
 			t.Errorf("CleanupFormatSupported(%s) = %v, want %v", format, got, want)
 		}
 	}
 
-	tbl, ok := cleanupTableFor("fixture")
-	if !ok || tbl.kind != "fixture_item" || tbl.docker {
-		t.Errorf("cleanupTableFor(fixture) = %+v, %v", tbl, ok)
+	tbl, ok := cleanupTableFor("raw")
+	if !ok || tbl.kind != models.TrashKindRaw || tbl.docker {
+		t.Errorf("cleanupTableFor(raw) = %+v, %v", tbl, ok)
 	}
 
 	if tbl, _ := cleanupTableFor("docker"); !tbl.docker || tbl.kind != models.TrashKindDockerTag {

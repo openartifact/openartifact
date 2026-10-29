@@ -40,7 +40,8 @@ func rpmFormat() plugin.Format {
 }
 
 // rpmStorage describes how the generic engines treat rpm rows: the rpm side table
-// carries the header range and the parsed extras (derived, so not journaled).
+// carries the header range and the parsed extras the detail view reads the
+// dependencies from, so the journal keeps all of it.
 func rpmStorage() storage.Storage {
 	return storage.Storage{
 		Trash: storage.Trash{
@@ -72,6 +73,6 @@ func rpmStorage() storage.Storage {
 	ON CONFLICT (repository_id, base_arch) DO UPDATE SET metadata_stale = true`},
 		},
 		Backup:     storage.Backup{Regen: storage.RegenRPM},
-		SideTables: []storage.SideTable{{Name: "rpm_files", Exclude: []string{"rpm_extra"}}},
+		SideTables: []storage.SideTable{{Name: "rpm_files"}},
 	}
 }

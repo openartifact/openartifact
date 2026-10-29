@@ -440,6 +440,11 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 // client asked for: a Debian distribution, an apk directory, a pacman architecture. Rpm groups
 // have no such request.
 func (w *GroupMetadataWorker) checkHint(ctx context.Context, grp *models.Repository, hint string, members []*models.Repository) error {
+	// The group metadata builders (checkHint, groupAnchor, run) are explicit
+	// cases rather than plugin hooks: the closed set of formats whose group
+	// serves generated metadata (repotype.Spec.GeneratedGroupMetadata) is
+	// implemented by this worker's private job state, and
+	// TestGroupMetadataCoversEveryFormat keeps the set and the Spec in step.
 	switch grp.Format {
 	case "apk", "deb":
 		return w.checkDist(ctx, grp, hint, members)

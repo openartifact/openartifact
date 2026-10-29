@@ -63,6 +63,10 @@ func (h *VulnHandler) withDistro(ctx context.Context, repoID, artifactID string,
 	// Artifact ids are free-form; a stored package's id is a UUID.
 	stored := isUUIDString(artifactID)
 
+	// An explicit case, not a plugin hook: the formats whose vulnerability match
+	// is distro-scoped (repotype.Spec.DistroScoped: deb, rpm) are a closed set,
+	// and each reads its own stored identity (deb distribution, rpm epoch and
+	// release) that no other format has.
 	switch strings.ToLower(pkg.Ecosystem) {
 	case "deb":
 		suite := ""

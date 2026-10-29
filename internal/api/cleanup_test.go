@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -128,11 +127,8 @@ func (f *fakeRunner) PreviewPolicy(_ context.Context, id string) (*worker.Cleanu
 func cleanupRequest(t *testing.T, db *cleanupMockDB, runner CleanupRunner, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	// A format supports cleanup policies when it registered a storage descriptor.
-	storage.Reset()
-	storage.Register("rpm", storage.Storage{})
-	t.Cleanup(storage.Reset)
-
+	// A format supports cleanup policies when it registered a storage descriptor;
+	// the package's TestMain registers the real ones.
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {
 		t.Fatalf("new logger: %v", err)

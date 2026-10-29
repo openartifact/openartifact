@@ -112,8 +112,6 @@ type purgeSeed struct {
 func newPurgeSeed(t *testing.T) *purgeSeed {
 	t.Helper()
 
-	registerMavenFixture(t)
-
 	return &purgeSeed{t: t, pg: newTrashPurgeTestDB(t), blobs: formattest.NewBlobStore()}
 }
 

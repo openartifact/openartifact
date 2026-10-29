@@ -15,43 +15,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/storage"
 )
-
-// registerBackupDescriptors registers the storage descriptors of the formats
-// the package backup test seeds, with the values the format plugins register.
-func registerBackupDescriptors(t *testing.T) {
-	t.Helper()
-
-	storage.Reset()
-	t.Cleanup(storage.Reset)
-
-	storage.Register("raw", storage.Storage{})
-	storage.Register("npm", storage.Storage{Backup: storage.Backup{Regen: storage.RegenNPM}})
-	storage.Register("maven", storage.Storage{
-		SideTables: []storage.SideTable{{Name: "maven_files"}},
-		Backup:     storage.Backup{Regen: storage.RegenMaven},
-	})
-	storage.Register("deb", storage.Storage{
-		SideTables: []storage.SideTable{{Name: "deb_files", Refs: []string{"distribution_id", "component_id"}}},
-		Backup: storage.Backup{
-			Regen: storage.RegenDeb,
-			Companions: []storage.Companion{
-				{Name: "debian_distributions", Scope: "t.repository_id = $1", RepoColumn: "repository_id"},
-				{
-					Name:  "debian_components",
-					Scope: "t.distribution_id IN (SELECT id FROM debian_distributions WHERE repository_id = $1)",
-					Refs:  []string{"distribution_id"},
-				},
-				{
-					Name:  "debian_architectures",
-					Scope: "t.distribution_id IN (SELECT id FROM debian_distributions WHERE repository_id = $1)",
-					Refs:  []string{"distribution_id"},
-				},
-			},
-		},
-	})
-}
 
 type pkgSeed struct {
 	t    *testing.T
