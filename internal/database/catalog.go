@@ -15,10 +15,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// CatalogStore is the format-independent package listing: the unioned view over
-// every per-format package table (see ListRepoComponents), repository
-// size/security aggregates and the package rollups. A new package table needs a
-// branch here (.agents/rules/package-listing.md).
+// CatalogStore is the format-independent package listing: the generic package
+// tables (plus the docker tags and the proxy cache, see ListRepoComponents),
+// repository size/security aggregates and the package rollups. A new format
+// needs no branch: it lists once it writes package_files rows.
 type CatalogStore struct{ *core }
 
 // RepoCatalogStats returns the catalog figures of the repositories in repoIDs
@@ -341,8 +341,8 @@ func (p *CatalogStore) ListRecentPackages(ctx context.Context, repoIDs []string,
 }
 
 // ListComponentsByRepo lists the packages of one repository across every
-// format (see ListRepoComponents in queries/components.sql for the per-format
-// mapping). formatFilter, when non-empty, restricts the result to one format.
+// format (see ListRepoComponents in queries/components.sql for the mapping).
+// formatFilter, when non-empty, restricts the result to one format.
 func (p *CatalogStore) ListComponentsByRepo(
 	ctx context.Context,
 	repoID, formatFilter string,

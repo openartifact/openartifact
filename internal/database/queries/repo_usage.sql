@@ -1,6 +1,7 @@
 -- Repository usage summary: how many versions and distinct packages a
--- repository holds and when something was last published. One branch per
--- format table, mirroring CountRepoComponents (same rows, same name
+-- repository holds and when something was last published. One generic
+-- branch over the listed live package files plus the proxy cache and docker
+-- tags, mirroring CountRepoComponents (same rows, same name
 -- expressions as the package listing). Scans the repository's package rows, so
 -- it is an on-demand per-repository read, never a listing of all repositories.
 -- last_published_at is the Unix epoch for an empty repository (an aggregate
@@ -12,92 +13,12 @@ SELECT COUNT(*)::bigint AS version_count,
        COUNT(DISTINCT u.name)::bigint AS package_count,
        COALESCE(MAX(u.created_at), 'epoch'::timestamptz)::timestamptz AS last_published_at
 FROM (
-    -- deb
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM deb_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- rpm
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM rpm_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- npm
-    SELECT np.full_name::text AS name, t.created_at::timestamptz AS created_at FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id
-    WHERE t.deleted_at IS NULL AND np.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- pypi
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM pypi_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- maven
-    SELECT (t.group_id || ':' || t.artifact_id_coord)::text AS name, t.created_at::timestamptz AS created_at FROM maven_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- ivy
-    SELECT (t.organisation || ':' || t.module)::text AS name, t.created_at::timestamptz AS created_at FROM ivy_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- sbt
-    SELECT (t.group_id || ':' || t.artifact_id)::text AS name, t.created_at::timestamptz AS created_at FROM sbt_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- nuget
-    SELECT t.package_id::text AS name, t.created_at::timestamptz AS created_at FROM nuget_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- gomod
-    SELECT t.module_path::text AS name, t.created_at::timestamptz AS created_at FROM gomod_modules t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- cargo
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM cargo_crates t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- rubygems
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM rubygems_gems t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- conda
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conda_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- composer
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM composer_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- ansible
-    SELECT (t.namespace || '.' || t.name)::text AS name, t.created_at::timestamptz AS created_at FROM ansible_collections t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- pacman
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM pacman_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- nix
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM nix_paths t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- conan
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM conan_packages t
-    WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- apk
-    SELECT (t.branch || '/' || t.repo || '/' || t.name)::text AS name, t.created_at::timestamptz AS created_at FROM apk_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- terraform
-    SELECT ('modules/' || t.name || '/' || t.system)::text AS name, t.created_at::timestamptz AS created_at FROM terraform_modules t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    SELECT ('providers/' || t.type)::text AS name, t.created_at::timestamptz AS created_at FROM terraform_providers t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- helm
-    SELECT t.name::text AS name, t.created_at::timestamptz AS created_at FROM helm_charts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
-    UNION ALL
-    -- raw
-    SELECT t.path::text AS name, t.created_at::timestamptz AS created_at FROM raw_artifacts t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid
+    -- generic files (every format but docker): the listed live files
+    SELECT pk.name::text AS name, f.created_at::timestamptz AS created_at
+    FROM package_files f
+    JOIN package_versions v ON v.id = f.version_id
+    JOIN packages pk ON pk.id = v.package_id
+    WHERE f.deleted_at IS NULL AND f.listed AND f.repository_id = sqlc.arg(repo_id)::uuid
     UNION ALL
     -- proxy cache
     SELECT t.cache_key::text AS name, t.created_at::timestamptz AS created_at FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id

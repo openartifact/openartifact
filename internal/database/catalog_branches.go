@@ -9,18 +9,20 @@ import (
 	"strings"
 )
 
-// catalogBranch maps one package table onto the shared shape of the package
-// listing (see ListRepoComponents in queries/components.sql, whose branches
-// these are). The catalog queries that cannot be a static sqlc statement (they
-// are cut per repository format, or bind a variable set of repositories) build
-// their union from this list; TestCatalogBranchesCoverListing keeps it in step
-// with the listing, so a package table added there cannot silently vanish from
-// the rollup, the stats and the recent list.
+// catalogBranch maps one source of package rows onto the shared shape of the
+// package listing (see ListRepoComponents in queries/components.sql, whose
+// branches these are): the generic package_files/versions/packages tables that
+// hold every format but docker, the docker tags and the proxy cache. The
+// catalog queries that cannot be a static sqlc statement (they are cut per
+// repository format, or bind a variable set of repositories) build their union
+// from this list, so what the listing shows is what the rollup, the stats and
+// the recent list count.
 type catalogBranch struct {
-	// format is the listed format; empty for the proxy cache, whose rows take
-	// the format of their repository.
-	format string
-	// from is the FROM list; t is the package row. Joins here must not fan out.
+	// scope says which repositories can hold rows of the branch.
+	scope branchScope
+	// formatSQL is the SQL expression of the listed format.
+	formatSQL string
+	// from is the FROM list; t is the row. Joins here must not fan out.
 	from string
 	// repo is the repository id expression.
 	repo string
@@ -42,118 +44,103 @@ type catalogBranch struct {
 	sizeFrom string
 }
 
+// branchScope is the set of repositories a branch can hold rows of.
+type branchScope int
+
+const (
+	// scopeHosted: every format but docker (the generic package tables).
+	scopeHosted branchScope = iota
+	// scopeDocker: docker repositories (the docker tag tables).
+	scopeDocker
+	// scopeProxy: any repository (the proxy cache).
+	scopeProxy
+)
+
 const (
 	nullUUID   = "NULL::uuid"
 	nullBigint = "NULL::bigint"
-	liveRow    = "t.deleted_at IS NULL"
+	dockerFmt  = "docker"
 )
 
-// simpleBranch is the usual shape: one table, one row per listed item.
-func simpleBranch(format, table, name, version, blob string) catalogBranch {
+// hostedBranch is every format but docker: one row per listed live file of the
+// generic tables. A file's size is its own size_bytes when the format records
+// one, else its blob's.
+func hostedBranch() catalogBranch {
 	return catalogBranch{
-		format: format, from: table + " t", repo: "t.repository_id", live: liveRow,
-		name: name, version: version, blob: blob, blobKey: "NULL::text",
-		prefSize: nullBigint, fbSize: nullBigint,
+		scope:     scopeHosted,
+		formatSQL: "pk.format::text",
+		from: "package_files t JOIN package_versions v ON v.id = t.version_id " +
+			"JOIN packages pk ON pk.id = v.package_id",
+		repo: "t.repository_id", live: "t.deleted_at IS NULL AND t.listed",
+		name: "pk.name", version: "v.version", blob: "t.blob_id", blobKey: "NULL::text",
+		prefSize: "t.size_bytes::bigint", fbSize: nullBigint,
 	}
 }
 
-// catalogBranches are the package tables of the listing, one per format, and
-// the proxy cache.
-func catalogBranches() []catalogBranch {
-	conan := simpleBranch("conan", "conan_packages", "t.name", "t.version", "t.blob_id")
-	// One row per recipe revision: its manifest, or a pre-0.5.0 row without a file name.
-	conan.live = "t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt')"
-
-	rpm := simpleBranch("rpm", "rpm_packages", "t.name", "t.version", "t.blob_id")
-	rpm.prefSize = "t.package_size::bigint"
-
-	gems := simpleBranch("rubygems", "rubygems_gems", "t.name", "t.version", "t.blob_id")
-	gems.prefSize = "NULLIF(t.size, 0)::bigint"
-
-	npm := simpleBranch("npm", "npm_versions", "np.full_name", "t.version", "t.blob_id")
-	npm.from = "npm_versions t JOIN npm_packages np ON np.id = t.package_id"
-	npm.repo = "np.repository_id"
-
-	docker := simpleBranch(
-		"docker",
-		"docker_tags",
-		"(CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)",
-		"t.name",
-		"dm.blob_id",
-	)
-	docker.from = "docker_tags t JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL"
-	docker.sizeFrom = "LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest " +
-		"= t.manifest_digest AND dm.deleted_at IS NULL"
-	docker.prefSize = "COALESCE(dm.size, 0)::bigint"
-
-	// The proxy cache: a cached upstream file; name is its upstream-relative path.
-	proxy := simpleBranch("", "proxy_cache_entries", "t.cache_key", "''", nullUUID)
-	proxy.from = "proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id"
-	proxy.live = "r.deleted_at IS NULL AND t.status_code = 200 AND t.blob_key IS NOT NULL"
-	proxy.blobKey = "t.blob_key::text"
-	proxy.fbSize = "t.size_bytes::bigint"
-
-	return []catalogBranch{
-		simpleBranch("deb", "deb_packages", "t.name", "t.version", "t.blob_id"),
-		rpm,
-		npm,
-		simpleBranch("pypi", "pypi_packages", "t.name", "t.version", "t.blob_id"),
-		simpleBranch("maven", "maven_artifacts", "t.group_id || ':' || t.artifact_id_coord", "t.version", "t.blob_id"),
-		simpleBranch("ivy", "ivy_artifacts", "t.organisation || ':' || t.module", "t.revision", "t.blob_id"),
-		simpleBranch("sbt", "sbt_artifacts", "t.group_id || ':' || t.artifact_id", "t.version", "t.blob_id"),
-		simpleBranch("nuget", "nuget_packages", "t.package_id", "t.version", "t.blob_id"),
-		simpleBranch("go", "gomod_modules", "t.module_path", "t.version", "COALESCE(t.zip_blob_id, t.mod_blob_id)"),
-		simpleBranch("cargo", "cargo_crates", "t.name", "t.version", "t.blob_id"),
-		simpleBranch("composer", "composer_packages", "t.name", "t.version", "t.blob_id"),
-		gems,
-		simpleBranch("conda", "conda_packages", "t.name", "t.version", "t.blob_id"),
-		simpleBranch("ansible", "ansible_collections", "t.namespace || '.' || t.name", "t.version", "t.blob_id"),
-		simpleBranch("pacman", "pacman_packages", "t.name", "t.version", "t.blob_id"),
-		conan,
-		simpleBranch("apk", "apk_packages", "t.branch || '/' || t.repo || '/' || t.name", "t.version", "t.blob_id"),
-		simpleBranch("nix", "nix_paths", "t.name", "t.store_hash", "t.blob_id"),
-		simpleBranch("terraform", "terraform_modules", "'modules/' || t.name || '/' || t.system", "t.version", "t.blob_id"),
-		simpleBranch("terraform", "terraform_providers", "'providers/' || t.type", "t.version", "t.blob_id"),
-		simpleBranch("helm", "helm_charts", "t.name", "t.version", "t.blob_id"),
-		simpleBranch("raw", "raw_artifacts", "t.path", "''", "t.blob_id"),
-		docker,
-		proxy,
+// dockerBranch is one row per docker tag; the registry image name is the
+// repository name plus the image path inside it.
+func dockerBranch() catalogBranch {
+	return catalogBranch{
+		scope:     scopeDocker,
+		formatSQL: "'" + dockerFmt + "'::text",
+		from:      "docker_tags t JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL",
+		repo:      "t.repository_id", live: "t.deleted_at IS NULL",
+		name:    "(CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)",
+		version: "t.name", blob: "dm.blob_id", blobKey: "NULL::text",
+		prefSize: "COALESCE(dm.size, 0)::bigint", fbSize: nullBigint,
+		sizeFrom: "LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest " +
+			"= t.manifest_digest AND dm.deleted_at IS NULL",
 	}
+}
+
+// proxyBranch is the proxy cache: a cached upstream file; name is its
+// upstream-relative path.
+func proxyBranch() catalogBranch {
+	return catalogBranch{
+		scope:     scopeProxy,
+		formatSQL: "r.format::text",
+		from:      "proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id",
+		repo:      "t.repository_id",
+		live:      "r.deleted_at IS NULL AND t.status_code = 200 AND t.blob_key IS NOT NULL",
+		name:      "t.cache_key", version: "''", blob: nullUUID, blobKey: "t.blob_key::text",
+		prefSize: nullBigint, fbSize: "t.size_bytes::bigint",
+	}
+}
+
+// catalogBranches are the sources of the listing.
+func catalogBranches() []catalogBranch {
+	return []catalogBranch{hostedBranch(), dockerBranch(), proxyBranch()}
 }
 
 // branchesForFormat returns the branches that can hold rows of a repository of
-// the given format: its own table and the proxy cache. A format with no table
-// of its own keeps every branch.
+// the given format: its own rows and the proxy cache. An empty format keeps
+// every branch.
 func branchesForFormat(repoFormat string) []catalogBranch {
-	all := catalogBranches()
-
-	if repoFormat == "" {
-		return all
+	switch repoFormat {
+	case "":
+		return catalogBranches()
+	case dockerFmt:
+		return []catalogBranch{dockerBranch(), proxyBranch()}
+	default:
+		return []catalogBranch{hostedBranch(), proxyBranch()}
 	}
+}
 
-	var kept []catalogBranch
-
-	for _, b := range all {
-		if b.format == repoFormat || b.format == "" {
-			kept = append(kept, b)
-		}
+// repoScope is the predicate on the repositories (alias cr) a branch applies
+// to, or "" for every repository.
+func (b catalogBranch) repoScope() string {
+	switch b.scope {
+	case scopeHosted:
+		return "cr.format <> '" + dockerFmt + "'"
+	case scopeDocker:
+		return "cr.format = '" + dockerFmt + "'"
+	default:
+		return ""
 	}
-
-	if len(kept) == 1 {
-		return all
-	}
-
-	return kept
 }
 
 // formatExpr is the SQL expression of the listed format of a branch.
-func (b catalogBranch) formatExpr() string {
-	if b.format == "" {
-		return "r.format::text"
-	}
-
-	return "'" + b.format + "'::text"
-}
+func (b catalogBranch) formatExpr() string { return b.formatSQL }
 
 // narrow renders the branch as the narrow listing row: repository, id, format,
 // name, version and the two timestamps, restricted by where (a predicate, or "").

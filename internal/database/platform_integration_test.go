@@ -321,7 +321,7 @@ func TestGetRepositoryUsage(t *testing.T) {
 	ctx := context.Background()
 	db := pg.GetDB()
 
-	// Every format branch of the query must run against the real schema, empty or not.
+	// Every branch of the query must run against the real schema, empty or not.
 	empty, err := pg.GetRepositoryUsage(ctx, f.r1)
 	if err != nil {
 		t.Fatalf("GetRepositoryUsage (empty): %v", err)
@@ -331,16 +331,23 @@ func TestGetRepositoryUsage(t *testing.T) {
 		t.Errorf("empty repository = %+v", empty)
 	}
 
-	var blobID string
-	if err := db.QueryRowContext(ctx, `INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES (repeat('a', 64), 10, 'k') RETURNING id`).
-		Scan(&blobID); err != nil {
-		t.Fatalf("insert blob: %v", err)
+	for _, r := range []struct {
+		repo, path, created string
+	}{
+		{f.r1, "a.txt", "2026-01-01T00:00:00Z"}, {f.r1, "b.txt", "2026-02-01T00:00:00Z"}, {f.r1, "gone.txt", "2026-03-01T00:00:00Z"},
+		{f.r2, "other.txt", "2026-04-01T00:00:00Z"},
+	} {
+		created, err := time.Parse(time.RFC3339, r.created)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		seedPackageFile(t, pg, packageSeed{
+			repo: r.repo, format: "raw", name: r.path, filename: r.path, blobSeed: "usage", blobSize: 10, created: created,
+		})
 	}
 
-	seed(t, db, `INSERT INTO raw_artifacts (repository_id, path, blob_id, created_at) VALUES
-		($1, 'a.txt', $2, '2026-01-01T00:00:00Z'), ($1, 'b.txt', $2, '2026-02-01T00:00:00Z'), ($1, 'gone.txt', $2, '2026-03-01T00:00:00Z'),
-		($3, 'other.txt', $2, '2026-04-01T00:00:00Z')`, f.r1, blobID, f.r2)
-	seed(t, db, `UPDATE raw_artifacts SET deleted_at = now() WHERE path = 'gone.txt'`)
+	seed(t, db, `UPDATE package_files SET deleted_at = now() WHERE filename = 'gone.txt'`)
 
 	usage, err := pg.GetRepositoryUsage(ctx, f.r1)
 	if err != nil {

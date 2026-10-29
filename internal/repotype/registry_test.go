@@ -172,55 +172,16 @@ func TestLatestMigrationAcceptsEveryFormat(t *testing.T) {
 	t.Fatal("no migration defines chk_repo_format")
 }
 
-// queryBody returns the text of the named sqlc query of a file.
-func queryBody(t *testing.T, file, name string) string {
-	t.Helper()
-
-	src := read(t, file)
-
-	_, rest, ok := strings.Cut(src, "-- name: "+name+" ")
-	if !ok {
-		t.Fatalf("%s: query %s not found", file, name)
-	}
-
-	body, _, _ := strings.Cut(rest, "\n-- name: ")
-
-	return body
-}
-
-// TestComponentQueriesFilterEveryFormat checks that the package listing and
-// count queries have a branch that answers to each format's name.
-func TestComponentQueriesFilterEveryFormat(t *testing.T) {
-	t.Parallel()
-
-	const file = "../database/queries/components.sql"
-
-	for _, q := range []string{"ListRepoComponents", "ListRepoComponentsByName", "CountRepoComponents", "GetRepoComponentBlob"} {
-		body := queryBody(t, file, q)
-
-		for _, name := range repotype.Names() {
-			if !strings.Contains(body, "'"+name+"'") {
-				t.Errorf("%s: query %s has no branch for format %q: add the package table to the union", file, q, name)
-			}
-		}
-	}
-}
-
 // unions are the files that enumerate every package table, with the tables
 // they leave out on purpose.
 //
 //nolint:gochecknoglobals // test table
 var unions = map[string]map[string]string{
-	"../database/queries/components.sql":     nil,
-	"../database/queries/catalog_detail.sql": nil,
-	"../database/queries/security.sql":       {"docker_manifests": "docker images are scanned per tag, not per manifest row"},
-	"../database/queries/repo_usage.sql":     {"docker_manifests": "docker usage is accounted through its tags"},
-	"../database/catalog_branches.go":        nil,
-	"../database/quotas.go":                  {"docker_tags": "tags own no blob: the manifests carry the quota"},
-	"../database/tiering.go":                 {"docker_tags": "tags own no blob: the manifests are tiered"},
-	"../database/trash_kinds.go":             nil,
-	"../recovery/tables.go":                  nil,
-	"../backup/backup.go":                    {"rubygems_gems": "exported through ListRubyGems, not by table name"},
+	"../database/quotas.go":      {"docker_tags": "tags own no blob: the manifests carry the quota"},
+	"../database/tiering.go":     {"docker_tags": "tags own no blob: the manifests are tiered"},
+	"../database/trash_kinds.go": nil,
+	"../recovery/tables.go":      nil,
+	"../backup/backup.go":        {"rubygems_gems": "exported through ListRubyGems, not by table name"},
 }
 
 // TestPackageTablesInUnions checks that every query or table list that unions

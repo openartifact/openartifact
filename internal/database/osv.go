@@ -596,16 +596,10 @@ func (p *OSVStore) ListOSVAdvisoriesForPackages(
 func (p *OSVStore) ListStoredPackages(
 	ctx context.Context, format string, after *models.StoredPackage, limit int,
 ) ([]models.StoredPackage, error) {
-	var union []catalogBranch
-
-	for _, b := range catalogBranches() {
-		if b.format == format {
-			union = append(union, b)
-		}
-	}
-
-	if len(union) == 0 {
-		return nil, nil
+	// The proxy cache is left out: it holds fetched files, not stored packages.
+	union, formatCond := hostedBranch(), "pk.format = $5"
+	if format == dockerFmt {
+		union, formatCond = dockerBranch(), "$5::text = '"+dockerFmt+"'"
 	}
 
 	var repoID, name, version *string
@@ -613,7 +607,7 @@ func (p *OSVStore) ListStoredPackages(
 		repoID, name, version = &after.RepositoryID, &after.Name, &after.Version
 	}
 
-	query := fmt.Sprintf( //nolint:gosec // G201: the union is built from constant branches
+	query := fmt.Sprintf( //nolint:gosec // G201: the branch is built from constants
 		`SELECT n.repository_id::text, n.name, n.version, (array_agg(n.id::text ORDER BY n.id::text))[1], max(n.created_at)
 		FROM (%s) n
 		JOIN repositories r ON r.id = n.repository_id AND r.deleted_at IS NULL
@@ -621,9 +615,9 @@ func (p *OSVStore) ListStoredPackages(
 		  AND ($1::uuid IS NULL OR (n.repository_id, n.name, n.version) > ($1::uuid, $2::text, $3::text))
 		GROUP BY n.repository_id, n.name, n.version
 		ORDER BY n.repository_id, n.name, n.version
-		LIMIT $4`, unionOf(union, func(b catalogBranch) string { return b.narrow("") }))
+		LIMIT $4`, union.narrow(formatCond))
 
-	rows, err := p.db.QueryContext(ctx, query, repoID, name, version, limit)
+	rows, err := p.db.QueryContext(ctx, query, repoID, name, version, limit, format)
 	if err != nil {
 		return nil, fmt.Errorf("list stored packages: %w", err)
 	}
