@@ -238,12 +238,6 @@ func (p *PostgresDB) GetPermissionTargetsForPrincipal(
 		})
 }
 
-// GetRepositoryByName returns the repository with the given name, from the
-// auth cache when fresh.
-func (p *PostgresDB) GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error) {
-	return cachedPtr(ctx, &p.authCache, &p.authCache.repos, name, cloneShallow, p.GetRepositoryByNameUncached)
-}
-
 // ListProjectGrantsByUser returns the project grants of a user (see
 // models.ProjectGrant), from the auth cache when fresh.
 func (p *PostgresDB) ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {

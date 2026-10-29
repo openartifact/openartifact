@@ -15,7 +15,7 @@ import (
 
 // GetRepositoryAttestationAttach reports whether the repository attaches signed
 // attestations to its docker images as OCI referrers; false when never set.
-func (p *PostgresDB) GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error) {
+func (p *RepositoryStore) GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error) {
 	enabled, err := p.q.GetRepositoryAttestationAttach(ctx, repoID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -29,7 +29,7 @@ func (p *PostgresDB) GetRepositoryAttestationAttach(ctx context.Context, repoID 
 }
 
 // SetRepositoryAttestationAttach stores the repository's attach switch.
-func (p *PostgresDB) SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error {
+func (p *RepositoryStore) SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error {
 	if err := p.q.SetRepositoryAttestationAttach(
 		ctx,
 		dbsqlc.SetRepositoryAttestationAttachParams{RepositoryID: repoID, Enabled: enabled},

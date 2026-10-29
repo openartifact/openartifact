@@ -42,6 +42,7 @@ type PostgresDB struct {
 	*RepoGroupStore
 	*ComponentStore
 	*CatalogStore
+	*RepositoryStore
 	// STORES-STRUCT
 }
 
@@ -81,6 +82,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		RepoGroupStore:       &RepoGroupStore{core: c},
 		ComponentStore:       &ComponentStore{core: c},
 		CatalogStore:         &CatalogStore{core: c},
+		RepositoryStore:      &RepositoryStore{core: c},
 		// STORES-INIT
 	}
 }
