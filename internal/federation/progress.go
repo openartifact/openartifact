@@ -63,13 +63,15 @@ func (s *Store) MarkSuccess(ctx context.Context, id string) error {
 	return nil
 }
 
-// MarkFailure records a failed pull and when the next one may start.
-func (s *Store) MarkFailure(ctx context.Context, id, msg string, retryIn time.Duration) error {
+// MarkFailure records a failed pull and when the next one may start. Only the
+// classified reason of cause is stored (see Describe): the cause itself can
+// hold text of the peer or the network stack and is for the log.
+func (s *Store) MarkFailure(ctx context.Context, id string, cause error, retryIn time.Duration) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE federation_peers
 		    SET error_count = error_count + 1, last_error = $2,
 		        next_attempt_at = now() + make_interval(secs => $3::float8)
-		  WHERE id = $1::uuid`, id, truncate(msg, 500), retryIn.Seconds())
+		  WHERE id = $1::uuid`, id, Describe(cause), retryIn.Seconds())
 	if err != nil {
 		return fmt.Errorf("mark federation failure: %w", err)
 	}

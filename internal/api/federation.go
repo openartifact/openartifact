@@ -177,13 +177,29 @@ func (h *FederationHandler) enabledRepo(w http.ResponseWriter, r *http.Request) 
 
 func peerResponse(p *federation.Peer, now time.Time) FederationPeerResponse {
 	return FederationPeerResponse{
-		ID: p.ID, Name: p.Name, BaseURL: p.BaseURL, Enabled: p.Enabled, State: string(p.State()),
-		CursorSeq: p.CursorSeq, RemoteHeadSeq: p.RemoteHeadSeq, BacklogUnits: p.Backlog(),
+		ID:            p.ID,
+		Name:          p.Name,
+		BaseURL:       p.BaseURL,
+		Enabled:       p.Enabled,
+		State:         string(p.State()),
+		CursorSeq:     p.CursorSeq,
+		RemoteHeadSeq: p.RemoteHeadSeq,
+		BacklogUnits:  p.Backlog(),
 		LagSeconds:    p.Lag(now).Seconds(),
-		LastAttemptAt: p.LastAttemptAt, LastSuccessAt: p.LastSuccessAt, NextAttemptAt: p.NextAttemptAt,
-		LastError: p.LastError, ErrorCount: p.ErrorCount, AppliedTotal: p.AppliedTotal, ConflictsTotal: p.ConflictsTotal,
-		DeferredUnits: p.DeferredUnits, ResyncRequested: p.ResyncRequested,
-		HasCAPEM: p.CAPEM != "", HasClientCert: p.ClientCertEnc != "", CreatedAt: p.CreatedAt,
+		LastAttemptAt: p.LastAttemptAt,
+		LastSuccessAt: p.LastSuccessAt,
+		NextAttemptAt: p.NextAttemptAt,
+		LastError: federation.StoredReason(
+			p.LastError,
+		),
+		ErrorCount:      p.ErrorCount,
+		AppliedTotal:    p.AppliedTotal,
+		ConflictsTotal:  p.ConflictsTotal,
+		DeferredUnits:   p.DeferredUnits,
+		ResyncRequested: p.ResyncRequested,
+		HasCAPEM:        p.CAPEM != "",
+		HasClientCert:   p.ClientCertEnc != "",
+		CreatedAt:       p.CreatedAt,
 	}
 }
 
@@ -440,6 +456,8 @@ func (h *FederationHandler) handleUpdatePeer(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusNotFound, "not_found", "peer not found")
 	case errors.Is(err, federation.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", "a peer with this name already exists")
+	case errors.Is(err, federation.ErrInvalid):
+		writeError(w, http.StatusBadRequest, "validation_failed", "the token must be sent again when base_url changes")
 	case err != nil:
 		h.internalError(w, "update peer", err)
 	default:
@@ -536,7 +554,7 @@ func (h *FederationHandler) handleDeferred(w http.ResponseWriter, r *http.Reques
 
 	items := mapList(rows, func(d federation.Deferred) FederationDeferredResponse {
 		return FederationDeferredResponse{
-			UnitKey: d.UnitKey, Seq: d.Seq, Attempts: d.Attempts, Reason: d.Reason, LastError: d.LastError,
+			UnitKey: d.UnitKey, Seq: d.Seq, Attempts: d.Attempts, Reason: d.Reason, LastError: federation.StoredReason(d.LastError),
 			FirstSeenAt: d.FirstSeenAt, NextAttemptAt: d.NextAttemptAt,
 		}
 	})
