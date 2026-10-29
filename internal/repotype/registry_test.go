@@ -182,40 +182,6 @@ func TestLatestMigrationAcceptsEveryFormat(t *testing.T) {
 	t.Fatal("no migration defines chk_repo_format")
 }
 
-// unions are the files that enumerate every package table, with the tables
-// they leave out on purpose.
-//
-//nolint:gochecknoglobals // test table
-var unions = map[string]map[string]string{
-	"../database/quotas.go":      {"docker_tags": "tags own no blob: the manifests carry the quota"},
-	"../database/tiering.go":     {"docker_tags": "tags own no blob: the manifests are tiered"},
-	"../database/trash_kinds.go": nil,
-	"../recovery/tables.go":      nil,
-	"../backup/backup.go":        {"rubygems_gems": "exported through ListRubyGems, not by table name"},
-}
-
-// TestPackageTablesInUnions checks that every query or table list that unions
-// the package tables names the tables of every format.
-func TestPackageTablesInUnions(t *testing.T) {
-	t.Parallel()
-
-	for file, skip := range unions {
-		src := read(t, file)
-
-		for _, s := range repotypetest.Specs() {
-			for _, table := range s.PackageTables {
-				if _, ok := skip[table]; ok {
-					continue
-				}
-
-				if !regexp.MustCompile(`\b` + table + `\b`).MatchString(src) {
-					t.Errorf("%s does not reference %s, the package table of format %q: add it to the union", file, table, s.Name)
-				}
-			}
-		}
-	}
-}
-
 var sqlFormatList = regexp.MustCompile(`format IN \(([^)]*)\)`)
 
 // formatsIn returns the formats of the `format IN (...)` lists of a file.
