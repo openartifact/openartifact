@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -453,6 +454,11 @@ func platformNames() *models.AuditNames {
 }
 
 func TestRepositoryActivityResolvesNamesInOneBatch(t *testing.T) {
+	// A trash kind is a package subject once a format registered it.
+	storage.Reset()
+	storage.Register("npm", storage.Storage{Trash: storage.Trash{Kind: string(models.TrashKindNPM)}})
+	t.Cleanup(storage.Reset)
+
 	db := &platformMockDB{
 		repo:  &models.Repository{ID: platRepoID, Name: "payments"},
 		audit: &models.AuditPage{Logs: platformAuditRows()},
