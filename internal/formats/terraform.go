@@ -5,6 +5,8 @@
 package formats
 
 import (
+	"slices"
+
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
@@ -54,10 +56,10 @@ func terraformStorage() storage.Storage {
 			Kind:     string(models.TrashKindTerraformModule),
 			NameExpr: "CASE WHEN p.name LIKE 'providers/%' THEN p.name || ' (' || f.arch || ')' ELSE p.name END",
 		},
-		Detail: storage.Detail{Info: []storage.InfoField{
-			entry("kind", fromP("kind")), entry("archive_ext", fromF("archive_ext")),
-			entry("protocols", fromV("protocols")), entry("download_count", fromK("download_count")),
-		}},
+		Detail: storage.Detail{Info: slices.Concat(
+			infoOf(storage.FromPackage, "kind"), infoOf(storage.FromFile, "archive_ext"),
+			infoOf(storage.FromVersion, "protocols"), infoOf(storage.FromColumns, "download_count"),
+		)},
 		Promotion: storage.Promotion{SharedVersion: true},
 	}
 }

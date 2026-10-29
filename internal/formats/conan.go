@@ -9,7 +9,6 @@ import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
@@ -19,21 +18,12 @@ import (
 
 // conanFormat is the registration of the conan format.
 func conanFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "conan",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatconan.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("conan", baseURLHosted(formatconan.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.ConanRule,
 			Deps:     &pkgdeps.ConanHooks,
 		},
-		Snippets: clientsetup.ConanBuilder,
-		Mirror:   plugin.ProxyOf(proxy.ConanHooks),
-		Merge:    plugin.GroupOf(&group.ConanHooks),
-		Meta:     lifecycle.None,
-		Store:    conanStorage(),
-	}
+		clientsetup.ConanBuilder, proxy.ConanHooks, &group.ConanHooks, conanStorage())
 }
 
 // conanStorage describes how the generic engines treat conan rows: a recipe

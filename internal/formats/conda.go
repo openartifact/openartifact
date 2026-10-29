@@ -9,7 +9,6 @@ import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
@@ -19,21 +18,12 @@ import (
 
 // condaFormat is the registration of the conda format.
 func condaFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "conda",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatconda.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("conda", baseURLHosted(formatconda.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.CondaRule,
 			Deps:     &pkgdeps.CondaHooks,
 		},
-		Snippets: clientsetup.CondaBuilder,
-		Mirror:   plugin.ProxyOf(proxy.CondaHooks),
-		Merge:    plugin.GroupOf(&group.CondaHooks),
-		Meta:     lifecycle.None,
-		Store:    condaStorage(),
-	}
+		clientsetup.CondaBuilder, proxy.CondaHooks, &group.CondaHooks, condaStorage())
 }
 
 // condaStorage describes how the generic engines treat conda rows: a version is

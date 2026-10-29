@@ -8,7 +8,6 @@ import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	formatpypi "github.com/openartifact/openartifact/internal/format/pypi"
 	"github.com/openartifact/openartifact/internal/format/storage"
@@ -22,24 +21,15 @@ import (
 
 // pypiFormat is the registration of the pypi format.
 func pypiFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "pypi",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatpypi.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("pypi", baseURLHosted(formatpypi.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.PyPIRule,
 			Deps:     &pkgdeps.PyPIHooks,
 			License:  &licensemeta.PyPIHooks,
 			Vuln:     &vuln.PyPIHooks,
 			SBOM:     &sbom.PyPIHooks,
 		},
-		Snippets: clientsetup.PyPIBuilder,
-		Mirror:   plugin.ProxyOf(proxy.PyPIHooks),
-		Merge:    plugin.GroupOf(&group.PyPIHooks),
-		Meta:     lifecycle.None,
-		Store:    pypiStorage(),
-	}
+		clientsetup.PyPIBuilder, proxy.PyPIHooks, &group.PyPIHooks, pypiStorage())
 }
 
 // pypiStorage describes how the generic engines treat pypi rows: a release holds

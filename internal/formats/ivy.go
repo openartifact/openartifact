@@ -5,11 +5,12 @@
 package formats
 
 import (
+	"slices"
+
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formativy "github.com/openartifact/openartifact/internal/format/ivy"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
@@ -21,23 +22,14 @@ import (
 
 // ivyFormat is the registration of the ivy format.
 func ivyFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "ivy",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formativy.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("ivy", baseURLHosted(formativy.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.IvyRule,
 			Deps:     &pkgdeps.IvyHooks,
 			License:  &licensemeta.IvyHooks,
 			SBOM:     &sbom.MavenHooks,
 		},
-		Snippets: clientsetup.IvyBuilder,
-		Mirror:   plugin.ProxyOf(proxy.IvyHooks),
-		Merge:    plugin.GroupOf(&group.IvyHooks),
-		Meta:     lifecycle.None,
-		Store:    ivyStorage(),
-	}
+		clientsetup.IvyBuilder, proxy.IvyHooks, &group.IvyHooks, ivyStorage())
 }
 
 // ivyStorage describes how the generic engines treat ivy rows.
@@ -49,10 +41,10 @@ func ivyStorage() storage.Storage {
 			// extraction needs its own parentheses.
 			NameExpr: "(p.attrs->>'organisation') || '/' || (p.attrs->>'module') || '/' || f.filename",
 		},
-		Detail: storage.Detail{Info: []storage.InfoField{
-			entry("organisation", fromP("organisation")), entry("module", fromP("module")),
-			entry("artifact_type", fromF("artifact_type")), entry("artifact_ext", fromF("artifact_ext")),
-		}},
+		Detail: storage.Detail{Info: slices.Concat(
+			infoOf(storage.FromPackage, "organisation", "module"),
+			infoOf(storage.FromFile, "artifact_type", "artifact_ext"),
+		)},
 		Promotion: storage.Promotion{SharedVersion: true},
 	}
 }

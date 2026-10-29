@@ -8,7 +8,6 @@ import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
 	"github.com/openartifact/openartifact/internal/format/storage"
@@ -21,23 +20,14 @@ import (
 
 // sbtFormat is the registration of the sbt format.
 func sbtFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "sbt",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatsbt.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("sbt", baseURLHosted(formatsbt.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.SBTRule,
 			Deps:     &pkgdeps.SBTHooks,
 			License:  &licensemeta.SBTHooks,
 			SBOM:     &sbom.MavenHooks,
 		},
-		Snippets: clientsetup.SBTBuilder,
-		Mirror:   plugin.ProxyOf(proxy.SbtHooks),
-		Merge:    plugin.GroupOf(&group.SBTHooks),
-		Meta:     lifecycle.None,
-		Store:    sbtStorage(),
-	}
+		clientsetup.SBTBuilder, proxy.SbtHooks, &group.SBTHooks, sbtStorage())
 }
 
 // sbtStorage describes how the generic engines treat sbt rows.

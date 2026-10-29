@@ -20,23 +20,17 @@ import (
 
 // debFormat is the registration of the deb format.
 func debFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "deb",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return withREST(quiet{formatdeb.NewHTTPHandler(d.Log, d.DB, d.Served)}, d, "deb"), nil
-		},
-		Supply: plugin.Analysis{
+	def := plain("deb", downloadOnly("deb", formatdeb.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.DebRule,
 			Deps:     &pkgdeps.DebHooks,
 			Vuln:     &vuln.DebHooks,
 			SBOM:     &sbom.DebHooks,
 		},
-		Snippets: clientsetup.DebBuilder,
-		Mirror:   plugin.ProxyOf(proxy.DebHooks),
-		Merge:    plugin.GroupOf(&group.DebHooks),
-		Meta:     repoLifecycle("deb", false),
-		Store:    debStorage(),
-	}
+		clientsetup.DebBuilder, proxy.DebHooks, &group.DebHooks, debStorage())
+	def.Meta = repoLifecycle("deb", false)
+
+	return def
 }
 
 const (

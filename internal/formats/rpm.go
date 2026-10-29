@@ -20,23 +20,17 @@ import (
 
 // rpmFormat is the registration of the rpm format.
 func rpmFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "rpm",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return withREST(quiet{formatrpm.NewHTTPHandler(d.Log, d.DB, d.Served)}, d, "rpm"), nil
-		},
-		Supply: plugin.Analysis{
+	def := plain("rpm", downloadOnly("rpm", formatrpm.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.RPMRule,
 			Deps:     &pkgdeps.RPMHooks,
 			Vuln:     &vuln.RPMHooks,
 			SBOM:     &sbom.RPMHooks,
 		},
-		Snippets: clientsetup.RPMBuilder,
-		Mirror:   plugin.ProxyOf(proxy.RPMHooks),
-		Merge:    plugin.GroupOf(&group.RPMHooks),
-		Meta:     repoLifecycle("rpm", true),
-		Store:    rpmStorage(),
-	}
+		clientsetup.RPMBuilder, proxy.RPMHooks, &group.RPMHooks, rpmStorage())
+	def.Meta = repoLifecycle("rpm", true)
+
+	return def
 }
 
 // rpmStorage describes how the generic engines treat rpm rows: the rpm side table

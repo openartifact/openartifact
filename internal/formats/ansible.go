@@ -8,7 +8,6 @@ import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatansible "github.com/openartifact/openartifact/internal/format/ansible"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
@@ -17,18 +16,9 @@ import (
 
 // ansibleFormat is the registration of the ansible format.
 func ansibleFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "ansible",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatansible.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply:   plugin.NoAnalysis,
-		Snippets: clientsetup.AnsibleBuilder,
-		Mirror:   plugin.ProxyOf(proxy.AnsibleHooks),
-		Merge:    plugin.GroupOf(&group.AnsibleHooks),
-		Meta:     lifecycle.None,
-		Store:    ansibleStorage(),
-	}
+	return plain("ansible", baseURLHosted(formatansible.NewHTTPHandler),
+		plugin.NoAnalysis,
+		clientsetup.AnsibleBuilder, proxy.AnsibleHooks, &group.AnsibleHooks, ansibleStorage())
 }
 
 // ansibleStorage describes how the generic engines treat ansible rows.

@@ -8,7 +8,6 @@ import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	"github.com/openartifact/openartifact/internal/format/storage"
@@ -21,23 +20,14 @@ import (
 
 // rubygemsFormat is the registration of the rubygems format.
 func rubygemsFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "rubygems",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatrubygems.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("rubygems", baseURLHosted(formatrubygems.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.RubyGemsRule,
 			Deps:     &pkgdeps.RubyGemsHooks,
 			License:  &licensemeta.RubyGemsHooks,
 			Vuln:     &vuln.RubyGemsHooks,
 		},
-		Snippets: clientsetup.RubyGemsBuilder,
-		Mirror:   plugin.ProxyOf(proxy.RubyGemsHooks),
-		Merge:    plugin.GroupOf(&group.RubyGemsHooks),
-		Meta:     lifecycle.None,
-		Store:    rubygemsStorage(),
-	}
+		clientsetup.RubyGemsBuilder, proxy.RubyGemsHooks, &group.RubyGemsHooks, rubygemsStorage())
 }
 
 // rubygemsStorage describes how the generic engines treat rubygems rows: the same

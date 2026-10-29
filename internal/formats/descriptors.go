@@ -5,12 +5,98 @@
 package formats
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
+	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
+	"github.com/openartifact/openartifact/internal/group"
+	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/quarantine"
+	blobstore "github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// plain is the registration of a format whose hosted handler is built from the
+// standard dependencies alone and whose metadata needs no lifecycle hooks: the
+// ten values that differ per format, in the order of plugin.Definition.
+func plain(
+	id string,
+	hosted func(*plugin.Deps) (plugin.Hosted, error),
+	supply plugin.Analysis,
+	snippets clientsetup.Builder,
+	mirror proxy.Hooks,
+	merge *group.Hooks,
+	store storage.Storage,
+) plugin.Definition {
+	return plugin.Definition{
+		ID:        id,
+		NewHosted: hosted,
+		Supply:    supply,
+		Snippets:  snippets,
+		Mirror:    plugin.ProxyOf(mirror),
+		Merge:     plugin.GroupOf(merge),
+		Meta:      lifecycle.None,
+		Store:     store,
+	}
+}
+
+// ErrStoreMismatch is returned when the database does not implement the store
+// interface a handler constructor asks for.
+var ErrStoreMismatch = errors.New("formats: database does not implement the handler's store")
+
+// baseURLHosted adapts the constructor most handlers have, taking the logger,
+// the format's store interface, the blob store downloads are served from and the
+// public base URL, to a plugin.Definition.NewHosted. The format packages declare
+// their own store interface (they must not import the database), which the
+// PostgresDB implements; the assertion fails at mount, naming the format, when
+// it does not.
+func baseURLHosted[S any, H plugin.Hosted](
+	ctor func(*logger.Logger, S, blobstore.BlobStore, string) H,
+) func(*plugin.Deps) (plugin.Hosted, error) {
+	return func(d *plugin.Deps) (plugin.Hosted, error) {
+		db, err := storeOf[S](d)
+		if err != nil {
+			return nil, err
+		}
+
+		return ctor(d.Log, db, d.Served, d.BaseURL), nil
+	}
+}
+
+// downloadOnly adapts the constructor of the handlers that only serve downloads
+// and announce nothing (deb, rpm: no base URL), together with the format's REST
+// upload handler when the server built one.
+func downloadOnly[S any, H interface{ RegisterRepoRoutes(chi.Router) }](
+	format string,
+	ctor func(*logger.Logger, S, blobstore.BlobStore) H,
+) func(*plugin.Deps) (plugin.Hosted, error) {
+	return func(d *plugin.Deps) (plugin.Hosted, error) {
+		db, err := storeOf[S](d)
+		if err != nil {
+			return nil, err
+		}
+
+		return withREST(quiet{ctor(d.Log, db, d.Served)}, d, format), nil
+	}
+}
+
+// storeOf is the database as the store interface S of a handler package.
+func storeOf[S any](d *plugin.Deps) (S, error) {
+	db, ok := any(d.DB).(S)
+	if !ok {
+		return db, fmt.Errorf("%w: %v", ErrStoreMismatch, reflect.TypeFor[S]())
+	}
+
+	return db, nil
+}
 
 // Shorthands of the storage descriptors: a Field reads one value of the artifact
 // detail document (see storage.Source).
@@ -30,6 +116,17 @@ func joined(f storage.Field, sep string) storage.Field {
 	f.Join = sep
 
 	return f
+}
+
+// infoOf is the display entries that read the keys of one source under the same
+// names.
+func infoOf(source storage.Source, keys ...string) []storage.InfoField {
+	out := make([]storage.InfoField, len(keys))
+	for i, k := range keys {
+		out[i] = storage.InfoField{Key: k, From: storage.Field{Source: source, Path: k}}
+	}
+
+	return out
 }
 
 // entry is one display entry of the artifact detail.

@@ -8,7 +8,6 @@ import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/format/storage"
@@ -21,23 +20,14 @@ import (
 
 // nugetFormat is the registration of the nuget format.
 func nugetFormat() plugin.Format {
-	return plugin.Definition{
-		ID: "nuget",
-		NewHosted: func(d *plugin.Deps) (plugin.Hosted, error) {
-			return formatnuget.NewHTTPHandler(d.Log, d.DB, d.Served, d.BaseURL), nil
-		},
-		Supply: plugin.Analysis{
+	return plain("nuget", baseURLHosted(formatnuget.NewHTTPHandler),
+		plugin.Analysis{
 			Manifest: &manifest.NuGetRule,
 			Deps:     &pkgdeps.NuGetHooks,
 			License:  &licensemeta.NuGetHooks,
 			Vuln:     &vuln.NuGetHooks,
 		},
-		Snippets: clientsetup.NuGetBuilder,
-		Mirror:   plugin.ProxyOf(proxy.NuGetHooks),
-		Merge:    plugin.GroupOf(&group.NuGetHooks),
-		Meta:     lifecycle.None,
-		Store:    nugetStorage(),
-	}
+		clientsetup.NuGetBuilder, proxy.NuGetHooks, &group.NuGetHooks, nugetStorage())
 }
 
 // nugetStorage describes how the generic engines treat nuget rows.
