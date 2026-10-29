@@ -300,6 +300,7 @@ func NewAuthHandler(
 		log:                   log,
 		evaluator:             evaluator,
 		loginIPLimiter:        newSlidingWindowLimiter(loginIPLimit, loginIPWindow),
+		loginUserLimiter:      newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
 		loginPairLimiter:      newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
 		loginAnyIPLimiter:     newSlidingWindowLimiter(loginDistributedFailureLimit, loginUserFailureWindow),
 		loginUnknownIPLimiter: newSlidingWindowLimiter(loginUnknownIPLimit, loginUnknownIPWindow),
