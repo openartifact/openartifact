@@ -9,12 +9,36 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // RPMStore owns the RPM format tables.
+//
+// An rpm package lives on the generic package tables (packages P, package_versions V,
+// package_files F) plus the side table rpm_files. Grain 1:1: one .rpm (name, version,
+// release, epoch, arch) is one P (shared by name), one V and one F. The mapping:
+//
+//	P  name, name_key = Name; attrs = {}
+//	V  version        = Version (no release, no epoch)
+//	   version_key    = version-release:epoch|arch (the part before '|' is the cleanup
+//	                    ordering text; with the arch it is the whole legacy live key)
+//	   metadata       = {summary, description, license, url, vendor, group_name, packager,
+//	                    source_rpm, build_host} (empty = absent)
+//	F  path           = filename, prefixed with '<epoch>:' when epoch is not 0; filename is
+//	                    the canonical name-version-release.arch.rpm, rendered from the
+//	                    columns when empty
+//	   filename, arch = Filename, Arch; blob_id = the .rpm blob
+//	   size_bytes     = package_size (wins over the blob size in listings; NULL = 0)
+//	   part           = ''
+//	   attrs          = {release, epoch, build_time, archive_size, installed_size}, a key only
+//	                    when it is not ''/0; build_time is whole unix seconds
+//	   checksums      = {}
+//	rpm_files (id = F.id): header_start, header_end, rpm_extra (the parsed header extras,
+//	   stored exactly as parsed and copied as-is; never reset or re-parse it)
 type RPMStore struct{ *core }
 
 func (p *RPMStore) GetRPMRepo(ctx context.Context, repositoryID string) (*models.RPMRepo, error) {
@@ -53,78 +77,127 @@ func (p *RPMStore) MarkRepoStale(ctx context.Context, repositoryID string) error
 	return p.q.MarkRepoStale(ctx, repositoryID)
 }
 
-// CreateRpmPackage inserts an RPM package.
-func (p *RPMStore) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {
-	err := p.db.QueryRowContext(
-		ctx,
-		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url,
-			vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename,
-			header_start, header_end, rpm_extra, created_at)
-		 VALUES
-			($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-			to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb),
-			COALESCE($25::timestamptz, now()))
-		 ON CONFLICT DO NOTHING
-		 RETURNING id, created_at, updated_at`,
-		pkg.RepositoryID,
-		pkg.ArtifactID,
-		pkg.Name,
-		pkg.Version,
-		pkg.Release,
-		int64(pkg.Epoch),
-		pkg.Arch,
-		pkg.Description,
-		pkg.Summary,
-		pkg.License,
-		pkg.URL,
-		pkg.Vendor,
-		pkg.Group,
-		pkg.Packager,
-		pkg.SourceRPM,
-		pkg.BuildHost,
-		pkg.BuildTime,
-		pkg.PackageSize,
-		pkg.ArchiveSize,
-		pkg.InstalledSize,
-		pkg.Filename,
-		pkg.HeaderStart,
-		pkg.HeaderEnd,
-		nullableJSON(pkg.RPMExtra),
-		createdAtOrNil(pkg.CreatedAt),
-	).Scan(&pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrDuplicate
-	}
-
-	return err
+// rpmVersionKey is the identity of an rpm inside its package: the legacy
+// ordering text "version-release:epoch" and the architecture.
+func rpmVersionKey(version, release string, epoch int, arch string) string {
+	return version + "-" + release + ":" + strconv.Itoa(epoch) + "|" + arch
 }
 
-// GetRpmPackageByID fetches an RPM package by its primary key.
-func (p *RPMStore) GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error) {
-	pkg := &models.RpmPackage{}
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, repository_id, blob_id,
-		        name, version, COALESCE(release,''), epoch, COALESCE(arch,''),
-		        COALESCE(summary,''), COALESCE(description,''), COALESCE(license,''),
-		        COALESCE(url,''), COALESCE(vendor,''), COALESCE(group_name,''),
-		        COALESCE(packager,''), COALESCE(source_rpm,''), COALESCE(build_host,''),
-		        build_time,
-		        COALESCE(filename,''), COALESCE(package_size,0), COALESCE(installed_size,0), COALESCE(archive_size,0),
-		        created_at, updated_at
-		 FROM rpm_packages WHERE id = $1 AND deleted_at IS NULL`, id).
-		Scan(&pkg.ID, &pkg.RepositoryID, &pkg.BlobID,
-			&pkg.Name, &pkg.Version, &pkg.Release, &pkg.Epoch, &pkg.Arch,
-			&pkg.Summary, &pkg.Description, &pkg.License,
-			&pkg.URL, &pkg.Vendor, &pkg.GroupName,
-			&pkg.Packager, &pkg.SourceRPM, &pkg.BuildHost,
-			&pkg.BuildTime,
-			&pkg.Filename, &pkg.PackageSize, &pkg.InstalledSize, &pkg.ArchiveSize,
-			&pkg.CreatedAt, &pkg.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+// CreateRpmPackage inserts an RPM package. A live package with the same NEVRA.arch
+// or the same path is ErrDuplicate.
+func (p *RPMStore) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {
+	path := pkg.Filename
+	if path == "" {
+		path = pkg.Name + "-" + pkg.Version + "-" + pkg.Release + "." + pkg.Arch + ".rpm"
 	}
+
+	if pkg.Epoch != 0 {
+		path = strconv.Itoa(pkg.Epoch) + ":" + path
+	}
+
+	attrs := map[string]any{}
+	if pkg.Release != "" {
+		attrs["release"] = pkg.Release
+	}
+
+	putNonZero(attrs, "epoch", int64(pkg.Epoch))
+	putNonZero(attrs, "build_time", pkg.BuildTime)
+	putNonZero(attrs, "archive_size", pkg.ArchiveSize)
+	putNonZero(attrs, "installed_size", pkg.InstalledSize)
+
+	var size *int64
+	if pkg.PackageSize != 0 {
+		size = &pkg.PackageSize
+	}
+
+	extra := pkg.RPMExtra
+	if len(extra) == 0 {
+		extra = []byte(`{}`)
+	}
+
+	written, err := p.writeOSPackage(ctx, &PackageWrite{
+		RepoID:     pkg.RepositoryID,
+		Format:     "rpm",
+		Name:       pkg.Name,
+		NameKey:    pkg.Name,
+		Version:    pkg.Version,
+		VersionKey: rpmVersionKey(pkg.Version, pkg.Release, pkg.Epoch, pkg.Arch),
+		VersionMeta: nonEmptyStrings(map[string]string{
+			"summary":     pkg.Summary,
+			"description": pkg.Description,
+			"license":     pkg.License,
+			"url":         pkg.URL,
+			"vendor":      pkg.Vendor,
+			"group_name":  pkg.Group,
+			"packager":    pkg.Packager,
+			"source_rpm":  pkg.SourceRPM,
+			"build_host":  pkg.BuildHost,
+		}),
+		Exclusive: true,
+		CreatedAt: pkg.CreatedAt,
+		Files: []FileWrite{{
+			Path:      path,
+			Filename:  pkg.Filename,
+			SizeBytes: size,
+			Arch:      pkg.Arch,
+			Attrs:     attrs,
+		}},
+	}, []*string{strOrNil(pkg.ArtifactID)}, func(q *dbsqlc.Queries, files []FileWritten) error {
+		if err := q.InsertRpmFile(ctx, dbsqlc.InsertRpmFileParams{
+			ID: files[0].ID, HeaderStart: pkg.HeaderStart, HeaderEnd: pkg.HeaderEnd, RpmExtra: extra,
+		}); err != nil {
+			return fmt.Errorf("insert rpm file: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("get rpm package: %w", err)
+		return err
 	}
-	return pkg, nil
+
+	pkg.ID, pkg.CreatedAt, pkg.UpdatedAt = written.Files[0].ID, written.Files[0].CreatedAt, written.Files[0].UpdatedAt
+
+	return nil
+}
+
+// GetRpmPackageByID fetches a live RPM package by its primary key, or (nil, nil).
+func (p *RPMStore) GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error) {
+	row, err := p.q.GetRpmPackageByID(ctx, id)
+
+	return mapRow(row, err, "get rpm package", func(row dbsqlc.GetRpmPackageByIDRow) *models.RpmPackage {
+		pkg := &models.RpmPackage{
+			ID:            row.ID,
+			RepositoryID:  row.RepositoryID,
+			Name:          row.Name,
+			Version:       row.Version,
+			Release:       row.Release,
+			Epoch:         int(row.Epoch),
+			Arch:          row.Arch,
+			Summary:       row.Summary,
+			Description:   row.Description,
+			License:       row.License,
+			URL:           row.Url,
+			Vendor:        row.Vendor,
+			GroupName:     row.GroupName,
+			Packager:      row.Packager,
+			SourceRPM:     row.SourceRpm,
+			BuildHost:     row.BuildHost,
+			Filename:      row.Filename,
+			PackageSize:   row.PackageSize,
+			InstalledSize: row.InstalledSize,
+			ArchiveSize:   row.ArchiveSize,
+			CreatedAt:     row.CreatedAt,
+			UpdatedAt:     row.UpdatedAt,
+		}
+		if row.BlobID != nil {
+			pkg.BlobID = *row.BlobID
+		}
+
+		if row.BuildTime != 0 {
+			t := time.Unix(row.BuildTime, 0)
+			pkg.BuildTime = &t
+		}
+
+		return pkg
+	})
 }

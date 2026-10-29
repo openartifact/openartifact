@@ -138,7 +138,7 @@ type ProxyCacheEntry struct {
 	UpdatedAt    time.Time
 }
 
-// RpmPackage represents an RPM package stored in the rpm_packages table.
+// RpmPackage represents an RPM package stored on the generic package tables (package_files and rpm_files).
 type RpmPackage struct {
 	ID            string
 	RepositoryID  string
