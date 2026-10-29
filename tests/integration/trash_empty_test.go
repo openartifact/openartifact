@@ -82,7 +82,7 @@ func TestTrashEmpty_PurgesItemsFreesUnsharedBlobsAndQuota(t *testing.T) {
 		t.Errorf("response = %+v, want purged 3, remaining 0", res)
 	}
 
-	if rows := tpoCount(t, `SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, tpoRepoID(t, repoA)); rows != 0 {
+	if rows := tpoCount(t, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, tpoRepoID(t, repoA)); rows != 0 {
 		t.Errorf("%d maven rows of %s survived", rows, repoA)
 	}
 

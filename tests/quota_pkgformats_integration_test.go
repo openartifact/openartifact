@@ -55,10 +55,9 @@ type qpfFormat struct {
 	// duplicateStatus lists the statuses a repeated upload may answer with.
 	duplicateStatus []int
 
-	// table and kind identify the package rows for the trash purge path
+	// kind is the trash kind of the package rows for the trash purge path
 	// (formats without a delete endpoint).
-	table string
-	kind  models.TrashKind
+	kind models.TrashKind
 }
 
 func qpfMount(
@@ -252,7 +251,6 @@ func qpfFormats() []qpfFormat {
 			}),
 			upload:          qpfGoUpload,
 			duplicateStatus: []int{http.StatusConflict, http.StatusInternalServerError},
-			table:           "gomod_modules",
 			kind:            models.TrashKindGoMod,
 		},
 		{
@@ -264,7 +262,6 @@ func qpfFormats() []qpfFormat {
 			}),
 			upload:          qpfCargoUpload,
 			duplicateStatus: []int{http.StatusConflict},
-			table:           "cargo_crates",
 			kind:            models.TrashKindCargo,
 		},
 	}
@@ -351,9 +348,9 @@ func (e *qrEnv) purgeAll(f qpfFormat) {
 
 	ctx := context.Background()
 
-	rows, err := e.pg.GetDB().QueryContext(ctx, `SELECT id FROM `+f.table+` WHERE repository_id = $1`, e.repoID)
+	rows, err := e.pg.GetDB().QueryContext(ctx, `SELECT id FROM package_files WHERE repository_id = $1 AND listed`, e.repoID)
 	if err != nil {
-		e.t.Fatalf("list %s rows: %v", f.table, err)
+		e.t.Fatalf("list %s files: %v", f.format, err)
 	}
 
 	defer func() { _ = rows.Close() }()
@@ -384,7 +381,7 @@ func (e *qrEnv) purgeAll(f qpfFormat) {
 	}
 
 	if _, err := e.pg.GetDB().
-		ExecContext(ctx, `UPDATE `+f.table+` SET deleted_at = now() - interval '30 days' WHERE repository_id = $1`, e.repoID); err != nil {
+		ExecContext(ctx, `UPDATE package_files SET deleted_at = now() - interval '30 days' WHERE repository_id = $1 AND deleted_at IS NOT NULL`, e.repoID); err != nil {
 		e.t.Fatalf("age deletion: %v", err)
 	}
 

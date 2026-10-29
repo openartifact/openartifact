@@ -129,23 +129,7 @@ func (e *cleanupQuotaEnv) pkg(repoID, format, name, version string, size, ageDay
 		e.t.Fatalf("ReserveStorageUsage = %v, %v", ok, err)
 	}
 
-	switch format {
-	case "helm":
-		e.exec(`INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at) VALUES ($1, $2, $3, $4, $5)`,
-			repoID, name, version, blobID, created)
-	case "rpm":
-		e.exec(`INSERT INTO rpm_packages (repository_id, blob_id, name, version, arch, created_at) VALUES ($1, $2, $3, $4, 'x86_64', $5)`,
-			repoID, blobID, name, version, created)
-	case "deb":
-		dist := e.queryID(`INSERT INTO debian_distributions (repository_id, name) VALUES ($1, 'stable')
-		                   ON CONFLICT (repository_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, repoID)
-		comp := e.queryID(`INSERT INTO debian_components (distribution_id, name) VALUES ($1, 'main')
-		                   ON CONFLICT (distribution_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, dist)
-		e.exec(`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, created_at)
-		        VALUES ($1, $2, $3, $4, $5, $6, 'amd64', $7)`, repoID, dist, comp, blobID, name, version, created)
-	default:
-		e.t.Fatalf("unsupported format %q", format)
-	}
+	e.writeGeneric(repoID, format, name, version, blobID, created)
 
 	return sha, blobBytes
 }

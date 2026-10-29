@@ -305,12 +305,6 @@ func (e *staleEnv) compare(s staleStep, d staleDoc, before staleResp) {
 	}
 }
 
-func (e *staleEnv) withBlob(sql string, args ...any) {
-	e.t.Helper()
-
-	e.exec(sql, append(args, e.blob())...)
-}
-
 // --- mounts --------------------------------------------------------------
 
 func mountRepoRoutes(
@@ -335,11 +329,19 @@ func TestCachedIndexStaysCurrentHelm(t *testing.T) {
 
 	add := func(version string) func() {
 		return func() {
-			e.withBlob(`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1,'web',$2,$3)`, e.repoID, version)
+			sha := fmt.Sprintf("%064x", len(version)*7919+int(version[0])+int(version[2]))
+			chart := &models.HelmChart{
+				RepositoryID: e.repoID, Name: "web", Version: version, BlobKey: sha, Digest: sha, SizeBytes: 5,
+			}
+
+			if err := e.pg.CreateHelmChart(context.Background(), chart); err != nil {
+				t.Fatalf("CreateHelmChart(%s): %v", version, err)
+			}
 		}
 	}
 	chart := func() string {
-		return e.id(`SELECT id FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '1.1.0'`, e.repoID)
 	}
 
 	add("1.0.0")()
@@ -352,7 +354,9 @@ func TestCachedIndexStaysCurrentHelm(t *testing.T) {
 		staleStep{name: "trash", do: func() { e.trash(models.TrashKindHelm, chart()) }, changes: []string{"index"}},
 		staleStep{name: "restore", do: func() { e.restore(models.TrashKindHelm, chart()) }, changes: []string{"index"}},
 		staleStep{name: "hard delete", do: func() {
-			e.exec(`DELETE FROM helm_charts WHERE repository_id = $1 AND version = '1.1.0'`, e.repoID)
+			if err := e.pg.DeleteHelmChart(context.Background(), e.repoID, "web", "1.1.0"); err != nil {
+				t.Fatalf("DeleteHelmChart: %v", err)
+			}
 		}, changes: []string{"index"}},
 	)
 
@@ -368,17 +372,23 @@ func TestCachedRepodataStaysCurrentConda(t *testing.T) {
 
 	add := func(platform, name string) func() {
 		return func() {
-			e.withBlob(
-				`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-			            VALUES ($1,$2,'1.0','h1',$3,'{}',$4,'.conda',0,'m',1,'{}')`,
-				e.repoID,
-				name,
-				platform,
-			)
+			sum := sha256.Sum256([]byte(e.repoID + platform + name))
+			sha := hex.EncodeToString(sum[:])
+
+			pkg := &models.CondaPackage{
+				RepositoryID: e.repoID, Name: name, Version: "1.0", BuildString: "h1", Platform: platform,
+				Extension: models.CondaExtConda, Timestamp: 1, Depends: []string{}, MD5: "m",
+				BlobKey: sha, SHA256: sha, SizeBytes: 5,
+			}
+
+			if err := e.pg.CreateCondaPackage(context.Background(), pkg); err != nil {
+				t.Fatalf("CreateCondaPackage(%s/%s): %v", platform, name, err)
+			}
 		}
 	}
 	pkg := func() string {
-		return e.id(`SELECT id FROM conda_packages WHERE repository_id = $1 AND name = 'numpy'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id JOIN packages p ON p.id = v.package_id
+		                 WHERE f.repository_id = $1 AND p.name = 'numpy'`, e.repoID)
 	}
 
 	add("linux-64", "base")()
@@ -547,7 +557,8 @@ func TestCachedRegistrationStaysCurrentNuGet(t *testing.T) {
 		}
 	}
 	pkg := func() string {
-		return e.id(`SELECT id FROM nuget_packages WHERE repository_id = $1 AND version = '2.0.0'`, e.repoID)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE f.repository_id = $1 AND v.version = '2.0.0'`, e.repoID)
 	}
 
 	add("1.0.0")()
@@ -666,10 +677,11 @@ func TestCachedPackumentStaysCurrentNPM(t *testing.T) {
 		return func() { call(http.MethodPut, e.url("/demo"), buildPublishBody(t, "demo", version)) }
 	}
 	pkgID := func() string {
-		return e.id(`SELECT id FROM npm_packages WHERE repository_id = $1 AND full_name = 'demo'`, e.repoID)
+		return e.id(`SELECT id FROM packages WHERE repository_id = $1 AND name = 'demo'`, e.repoID)
 	}
 	version := func(v string) string {
-		return e.id(`SELECT id FROM npm_versions WHERE package_id = $1 AND version = $2`, pkgID(), v)
+		return e.id(`SELECT f.id FROM package_files f JOIN package_versions v ON v.id = f.version_id
+		                 WHERE v.package_id = $1 AND v.version = $2`, pkgID(), v)
 	}
 	distTag := func(method, tag string) func() {
 		return func() { call(method, e.url("/-/package/demo/dist-tags/"+tag), []byte(`"1.0.0"`)) }

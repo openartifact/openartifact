@@ -112,7 +112,7 @@ func (h *TestHarness) Reset(t *testing.T) {
 	t.Helper()
 	tables := []string{
 		"repository_metadata",
-		"rpm_packages",
+		"packages",
 		"rpm_repos",
 		"blobs",
 		"repositories",

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -25,130 +26,19 @@ type fmtRow struct {
 	size    int64
 }
 
-// seedFormat inserts one version of a package of any cleanup format the way an
-// upload leaves it (blob in the store, row, quota reservation), aged by
-// ageDays. Formats with several rows per version take a unique tag in name.
+// seedFormat writes one version of a package of any cleanup format the way an
+// upload leaves it (blob in the store, quota reservation, generic rows), aged
+// by ageDays. Formats with several rows per version take a unique tag in name.
+// The returned id is the id of the listed file (the unit the trash and the
+// cleanup address); docker keeps its own tables.
 func (e *cleanupQuotaEnv) seedFormat(repoID, format, name, version string, ageDays int) fmtRow {
 	e.t.Helper()
 
 	blobID, sha := e.blob(10)
 	ts := time.Now().Add(-time.Duration(ageDays) * 24 * time.Hour)
 	e.seq++
-	uniq := fmt.Sprintf("%s-%s-%d", name, version, e.seq)
 
-	var id string
-
-	switch format {
-	case "npm":
-		pkg := e.queryID(`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, $2, $2)
-			ON CONFLICT (repository_id, full_name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, repoID, name)
-		id = e.queryID(
-			`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id, created_at, updated_at)
-			VALUES ($1, $2, '{}'::jsonb, 'sha512-x', 'abc', $3, $4, $5, $5) RETURNING id`,
-			pkg,
-			version,
-			uniq+".tgz",
-			blobID,
-			ts,
-		)
-	case "maven":
-		id = e.queryID(
-			`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id, created_at, updated_at)
-			VALUES ($1, 'org.acme', $2, $3, 'jar', $4, $5, $6, $6) RETURNING id`,
-			repoID,
-			name,
-			version,
-			uniq+".jar",
-			blobID,
-			ts,
-		)
-	case "ivy":
-		id = e.queryID(
-			`INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_ext, blob_id, created_at, updated_at)
-			VALUES ($1, 'org.acme', $2, $3, $2, 'jar', $4, $5, $5) RETURNING id`,
-			repoID,
-			name,
-			version,
-			blobID,
-			ts,
-		)
-	case "sbt":
-		id = e.queryID(
-			`INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, scala_version, filename, blob_id, created_at, updated_at)
-			VALUES ($1, 'org.acme', $2, $3, '2.13', $4, $5, $6, $6) RETURNING id`,
-			repoID,
-			name,
-			version,
-			uniq+".jar",
-			blobID,
-			ts,
-		)
-	case "cargo":
-		id = e.queryID(`INSERT INTO cargo_crates (repository_id, name, version, blob_id, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "composer":
-		id = e.queryID(
-			`INSERT INTO composer_packages (repository_id, name, version, version_normalized, sha1, blob_id, created_at, updated_at)
-			VALUES ($1, 'acme/' || $2::text, $3::text, $3::text, 'da39a3ee5e6b4b0d3255bfef95601890afd80709', $4, $5, $5) RETURNING id`,
-			repoID,
-			name,
-			version,
-			blobID,
-			ts,
-		)
-	case "rubygems":
-		id = e.queryID(`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size, created_at, updated_at)
-			VALUES ($1, $2, $3, 'ruby', $4, 10, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "conda":
-		id = e.queryID(`INSERT INTO conda_packages (repository_id, name, version, build_string, platform, blob_id, created_at, updated_at)
-			VALUES ($1, $2, $3, 'h0_0', 'linux-64', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "ansible":
-		id = e.queryID(`INSERT INTO ansible_collections (repository_id, namespace, name, version, filename, blob_id, created_at, updated_at)
-			VALUES ($1, 'acme', $2::text, $3::text, $2::text || '-' || $3::text || '.tar.gz', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "pacman":
-		id = e.queryID(
-			`INSERT INTO pacman_packages (repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5, created_at, updated_at)
-			VALUES ($1, $2::text, $2::text, $3::text, 'x86_64', 'x86_64', $2::text || '-' || $3::text || '-x86_64.pkg.tar.zst', $4, 'abc', $5, $5) RETURNING id`,
-			repoID,
-			name,
-			version,
-			blobID,
-			ts,
-		)
-	case "conan":
-		id = e.queryID(`INSERT INTO conan_packages (repository_id, name, version, blob_id, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "apk":
-		id = e.queryID(
-			`INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, blob_id, created_at, updated_at)
-			VALUES ($1, 'v3.20', 'main', 'x86_64', 'x86_64', $2, $3, 'Q1x', 'dh', $4, $5, $5) RETURNING id`,
-			repoID,
-			name,
-			version,
-			blobID,
-			ts,
-		)
-	case "nix":
-		id = e.queryID(
-			`INSERT INTO nix_paths (repository_id, store_hash, name, nar_hash, nar_size, nar_file, compression, blob_id, created_at, updated_at)
-			VALUES ($1, left(md5($2::text), 20) || lpad(replace($3::text, '.', ''), 12, '0'), $2, 'sha256:abc', 10,
-			        md5($2::text || $3::text) || '.nar.xz', 'xz', $4, $5, $5) RETURNING id`,
-			repoID,
-			name,
-			version,
-			blobID,
-			ts,
-		)
-	case "terraform":
-		id = e.queryID(`INSERT INTO terraform_modules (repository_id, name, system, version, archive_ext, blob_id, created_at, updated_at)
-			VALUES ($1, $2, 'aws', $3, 'zip', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "terraform-provider":
-		id = e.queryID(`INSERT INTO terraform_providers (repository_id, type, version, os, arch, blob_id, created_at, updated_at)
-			VALUES ($1, $2, $3, 'linux', 'amd64', $4, $5, $5) RETURNING id`, repoID, name, version, blobID, ts)
-	case "raw":
-		id = e.queryID(`INSERT INTO raw_artifacts (repository_id, path, blob_id, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $4) RETURNING id`, repoID, "dir/"+name+"-"+version+".bin", blobID, ts)
-	case "docker":
+	if format == "docker" {
 		digest := fmt.Sprintf("sha256:%064d", e.seq)
 		e.exec(
 			`INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1, $2, 'm', 10, $3)`,
@@ -156,18 +46,128 @@ func (e *cleanupQuotaEnv) seedFormat(repoID, format, name, version string, ageDa
 			digest,
 			blobID,
 		)
-		id = e.queryID(`INSERT INTO docker_tags (repository_id, name, manifest_digest, created_at, updated_at)
+		id := e.queryID(`INSERT INTO docker_tags (repository_id, name, manifest_digest, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $4) RETURNING id`, repoID, version, digest, ts)
-	default:
-		e.t.Fatalf("format %q is not seeded", format)
+
+		return fmtRow{id: id, sha: sha}
 	}
 
-	var size int64
-	if format != "docker" {
-		size = e.reserve(repoID, blobID)
-	}
+	// Reserve first, as an upload does: the file insert consumes the pending entry.
+	size := e.reserve(repoID, blobID)
+	id := e.writeGeneric(repoID, format, name, version, blobID, ts)
 
 	return fmtRow{id: id, sha: sha, size: size}
+}
+
+// writeGeneric inserts the package, version and file rows of one file pointing
+// at blobID, as the format's store writes them, and returns the file id. The
+// quota reservation is the caller's: the file insert consumes it.
+func (e *cleanupQuotaEnv) writeGeneric(repoID, format, name, version, blobID string, ts time.Time) string {
+	e.t.Helper()
+
+	e.seq++
+	row := genericRowFor(format, name, version, e.seq)
+
+	return e.queryID(
+		`WITH p AS (
+		   INSERT INTO packages (repository_id, format, name, name_key, attrs)
+		   VALUES ($1, $2, $3, $3, $4::jsonb)
+		   ON CONFLICT (repository_id, name_key) DO UPDATE SET name = EXCLUDED.name RETURNING id
+		 ), v AS (
+		   INSERT INTO package_versions (package_id, repository_id, version, version_key, metadata, created_at, updated_at)
+		   SELECT p.id, $1, $5, $6, $7::jsonb, $11, $11 FROM p RETURNING id
+		 )
+		 INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, arch, part, unit_key, created_at, updated_at)
+		 SELECT v.id, $1, $8, $8, $9, $10, $12, $8, $11, $11 FROM v RETURNING id`,
+		repoID, strings.TrimSuffix(format, "-provider"), row.name, row.attrs, version, row.versionKey, row.meta,
+		row.path, blobID, row.arch, ts, row.part,
+	)
+}
+
+// genericRow is the shape of one seeded file in the generic tables, as the
+// format's store writes it (the per-format mapping specs).
+type genericRow struct {
+	name, attrs, versionKey, meta, path, arch, part string
+}
+
+func genericRowFor(format, name, version string, seq int) genericRow {
+	uniq := fmt.Sprintf("%s-%s-%d", name, version, seq)
+	r := genericRow{name: name, attrs: "{}", versionKey: version, meta: "{}", path: uniq + ".bin"}
+
+	switch format {
+	case "npm":
+		r.attrs = fmt.Sprintf(`{"scope":"","name":%q}`, name)
+		r.meta = `{"manifest_json":{}}`
+		r.path = name + "/-/" + uniq + ".tgz"
+	case "maven":
+		r.name = "org.acme:" + name
+		r.attrs = fmt.Sprintf(`{"group_id":"org.acme","artifact_id":%q}`, name)
+		r.meta = `{"is_snapshot":false}`
+		r.part = "false"
+		r.path = "org/acme/" + uniq + ".jar"
+	case "ivy":
+		r.name = "org.acme:" + name
+		r.path = "org.acme/" + name + "/" + version + "/" + uniq + ".jar"
+	case "sbt":
+		r.name = "org.acme:" + name
+		r.path = "org.acme/" + name + "/" + version + "/" + uniq + ".jar"
+		r.arch = "2.13"
+	case "composer":
+		r.name = "acme/" + name
+	case "rubygems":
+		r.versionKey = version + "|ruby"
+		r.arch = "ruby"
+	case "rpm":
+		r.versionKey = version + "|x86_64"
+		r.arch = "x86_64"
+	case "deb":
+		r.versionKey = version + "|amd64"
+		r.arch = "amd64"
+	case "helm":
+		r.path = name + "-" + version + ".tgz"
+	case "conda":
+		r.versionKey = version + "|h0_0"
+		r.arch = "linux-64"
+	case "conan":
+		r.versionKey = version + "#rev"
+	case "apk", "pacman":
+		r.versionKey = version + "|x86_64"
+		r.arch = "x86_64"
+	case "terraform":
+		r.name = "modules/" + name + "/aws"
+		r.attrs = fmt.Sprintf(`{"kind":"module","name":%q,"system":"aws"}`, name)
+	case "terraform-provider":
+		r.name = "providers/" + name
+		r.attrs = fmt.Sprintf(`{"kind":"provider","type":%q}`, name)
+		r.arch = "linux_amd64"
+	case "raw":
+		// One package per path; every raw file is a release with version ''.
+		r.path = "dir/" + name + "-" + version + ".bin"
+		r.name, r.versionKey = r.path, ""
+	}
+
+	if strings.HasSuffix(version, "-SNAPSHOT") {
+		r.versionKey = version + "#" + fmt.Sprint(seq)
+	}
+
+	return r
+}
+
+// packageOf is the package id of a seeded file.
+func (e *cleanupQuotaEnv) packageOf(fileID string) string {
+	e.t.Helper()
+
+	return e.queryID(`SELECT v.package_id FROM package_files f JOIN package_versions v ON v.id = f.version_id WHERE f.id = $1`, fileID)
+}
+
+// markSnapshot turns a seeded maven file into one build of a snapshot, the way
+// the maven store records it: the version metadata and the file's cleanup part.
+func (e *cleanupQuotaEnv) markSnapshot(fileID, ts string, build int) {
+	e.t.Helper()
+
+	e.exec(`UPDATE package_versions SET metadata = jsonb_build_object('is_snapshot', true, 'snapshot_timestamp', $2::text,
+	         'snapshot_build_number', $3::int) WHERE id = (SELECT version_id FROM package_files WHERE id = $1)`, fileID, ts, build)
+	e.exec(`UPDATE package_files f SET part = 'true:' || v.version FROM package_versions v WHERE f.id = $1 AND v.id = f.version_id`, fileID)
 }
 
 func (e *cleanupQuotaEnv) reserve(repoID, blobID string) int64 {
@@ -187,14 +187,13 @@ func (e *cleanupQuotaEnv) reserve(repoID, blobID string) int64 {
 	return size
 }
 
-// rowTable is the table (and live-row filter) holding the rows of a format.
+// rowTable is the table holding the rows of a format: the generic files, or the docker tags.
 func rowTable(format string) string {
-	return map[string]string{
-		"npm": "npm_versions", "maven": "maven_artifacts", "ivy": "ivy_artifacts", "sbt": "sbt_artifacts",
-		"cargo": "cargo_crates", "composer": "composer_packages", "rubygems": "rubygems_gems", "conda": "conda_packages", "conan": "conan_packages", "apk": "apk_packages",
-		"terraform": "terraform_modules", "terraform-provider": "terraform_providers", "pacman": "pacman_packages", "nix": "nix_paths", "ansible": "ansible_collections",
-		"raw": "raw_artifacts", "docker": "docker_tags",
-	}[format]
+	if format == "docker" {
+		return "docker_tags"
+	}
+
+	return "package_files"
 }
 
 func (e *cleanupQuotaEnv) live(format, id string) bool {
@@ -372,8 +371,8 @@ func TestCleanupPolicyNPMKeepsDistTaggedVersions(t *testing.T) {
 	middle := e.seedFormat(repoID, "npm", "left-pad", "1.1.0", 20)
 	e.seedFormat(repoID, "npm", "left-pad", "1.2.0", 10)
 
-	pkg := e.queryID(`SELECT package_id FROM npm_versions WHERE id = $1`, tagged.id)
-	e.exec(`INSERT INTO npm_dist_tags (package_id, tag, version) VALUES ($1, 'stable', '1.0.0')`, pkg)
+	pkg := e.packageOf(tagged.id)
+	e.exec(`INSERT INTO package_tags (package_id, tag, version) VALUES ($1, 'stable', '1.0.0')`, pkg)
 
 	requireRun(t, e.runPolicy(repoID, 1), 1)
 
@@ -412,11 +411,11 @@ func TestCleanupPolicyNPMDropsEmptyPackage(t *testing.T) {
 
 	e.waitRun(policy.ID)
 
-	if n := e.countRows(`SELECT count(*) FROM npm_packages WHERE repository_id = $1 AND full_name = 'old-lib'`, repoID); n != 0 {
+	if n := e.countRows(`SELECT count(*) FROM packages WHERE repository_id = $1 AND name = 'old-lib'`, repoID); n != 0 {
 		t.Errorf("empty package old-lib still exists")
 	}
 
-	if n := e.countRows(`SELECT count(*) FROM npm_packages WHERE repository_id = $1 AND full_name = 'new-lib'`, repoID); n != 1 {
+	if n := e.countRows(`SELECT count(*) FROM packages WHERE repository_id = $1 AND name = 'new-lib'`, repoID); n != 1 {
 		t.Errorf("package new-lib was removed")
 	}
 }
@@ -434,12 +433,7 @@ func TestCleanupPolicyMavenSnapshotsAndMetadata(t *testing.T) {
 
 	snap := func(ts string, build, age int) fmtRow {
 		row := e.seedFormat(repoID, "maven", "lib", "2.0-SNAPSHOT", age)
-		e.exec(
-			`UPDATE maven_artifacts SET is_snapshot = true, snapshot_timestamp = $2, snapshot_build_number = $3 WHERE id = $1`,
-			row.id,
-			ts,
-			build,
-		)
+		e.markSnapshot(row.id, ts, build)
 
 		return row
 	}
@@ -470,10 +464,7 @@ func TestCleanupPolicyMavenKeepsNewestSnapshotBuild(t *testing.T) {
 	repoID := e.repo("maven")
 
 	row := e.seedFormat(repoID, "maven", "lib", "3.0-SNAPSHOT", 400)
-	e.exec(
-		`UPDATE maven_artifacts SET is_snapshot = true, snapshot_timestamp = '20250101.100000', snapshot_build_number = 1 WHERE id = $1`,
-		row.id,
-	)
+	e.markSnapshot(row.id, "20250101.100000", 1)
 
 	days := 30
 	policy := &models.CleanupPolicy{RepositoryID: repoID, Name: "age", KeepSinceDays: &days}
@@ -660,7 +651,7 @@ func TestDeletePackageGuardAndTrash(t *testing.T) {
 	}
 
 	// The trash entry names the requester, not the cleanup policy.
-	if n := e.countRows(`SELECT count(*) FROM cargo_crates WHERE id = $1 AND deleted_by = 'alice'`, a.id); n != 1 {
+	if n := e.countRows(`SELECT count(*) FROM package_files WHERE id = $1 AND deleted_by = 'alice'`, a.id); n != 1 {
 		t.Errorf("explicit delete: %d trashed rows attributed to the requester, want 1", n)
 	}
 
@@ -677,14 +668,14 @@ func TestDeletePackageNPMDropsDistTags(t *testing.T) {
 	npmID := e.repo("npm")
 	npmRepo, _ := e.pg.GetRepositoryByID(ctx, npmID)
 	v := e.seedFormat(npmID, "npm", "lib", "1.0.0", 5)
-	pkg := e.queryID(`SELECT package_id FROM npm_versions WHERE id = $1`, v.id)
-	e.exec(`INSERT INTO npm_dist_tags (package_id, tag, version) VALUES ($1, 'latest', '1.0.0')`, pkg)
+	pkg := e.packageOf(v.id)
+	e.exec(`INSERT INTO package_tags (package_id, tag, version) VALUES ($1, 'latest', '1.0.0')`, pkg)
 
 	if _, err := e.worker.DeletePackage(ctx, npmRepo, v.id, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
-	if n := e.countRows(`SELECT count(*) FROM npm_dist_tags WHERE package_id = $1`, pkg); n != 0 {
+	if n := e.countRows(`SELECT count(*) FROM package_tags WHERE package_id = $1`, pkg); n != 0 {
 		t.Errorf("%d dist-tags left for a deleted version", n)
 	}
 }
