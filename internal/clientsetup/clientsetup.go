@@ -3,65 +3,155 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package clientsetup builds native client URLs and per-client configure /
-// publish snippets for a repository. It is the Go port of `repoBaseUrl` and
-// `clientSetup` in web/src/lib/installCommands.ts; keep the two in sync.
+// publish snippets for a repository. It is the single source of those snippets:
+// the builders below write templates with {{placeholders}}, Snippets renders
+// them for the Go callers (the MCP repository tool), and cmd/genformats writes
+// the same templates into web/src/lib/clientsetup.generated.ts, which the web UI
+// renders with a trivial TypeScript substituter (see render for the syntax).
 // Credentials are always the literal `<USERNAME>` / `<TOKEN>` placeholders.
 package clientsetup
 
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/repotype"
 )
 
-// Snippet is the configure/publish commands for one client tool.
+// Snippet is the configure/publish commands for one client tool. In a template
+// (Templates) the fields carry {{placeholders}}; Snippets returns them rendered.
 type Snippet struct {
 	Client    string `json:"client"`
 	Configure string `json:"configure"`
 	Publish   string `json:"publish,omitempty"`
 }
 
-// target carries the values every snippet template needs.
+// Template placeholders. A builder writes these where the repository's real
+// values go; render substitutes them.
+const (
+	phOrigin   = "{{origin}}"   // server origin without trailing slash
+	phHost     = "{{host}}"     // host[:port] of the origin
+	phHostname = "{{hostname}}" // host of the origin without the port (what sbt and netrc match credentials on)
+	phRepo     = "{{repo}}"     // raw repository name
+	phEsc      = "{{esc}}"      // URL-path-escaped repository name
+	phBase     = "{{base}}"     // native repository base URL
+	phAuthBase = "{{authBase}}" // phBase with <USERNAME>:<TOKEN>@ after the scheme
+)
+
+// target carries the placeholders every snippet template needs, plus the
+// repository type the template is built for.
 type target struct {
-	origin   string // server origin without trailing slash
-	host     string // host[:port] of origin
-	name     string // host of origin without the port (what sbt matches credentials on)
-	repo     string // raw repository name
-	esc      string // URL-path-escaped repository name
-	base     string // native repository base URL
+	origin   string
+	host     string
+	name     string
+	repo     string
+	esc      string
+	base     string
+	authBase string
 	repoType string // hosted, proxy or group
 }
 
-// RepoBaseURL returns the native base URL of a repository for its format (no
-// trailing slash). Docker serves the registry API at the host root. origin
-// must not end in a slash.
-func RepoBaseURL(format, origin, repo string) string {
-	name := url.PathEscape(repo)
+// Repository types a template can differ by. Anything else is hosted.
+const (
+	typeHosted = repotype.Hosted
+	typeProxy  = repotype.Proxy
+	typeGroup  = repotype.Group
+)
 
+// Conditional blocks {{#http}}...{{/http}} are kept when the named condition
+// holds and dropped otherwise. The only condition is "http": the origin uses
+// plain http.
+var (
+	conditionRe = regexp.MustCompile(`(?s)\{\{#(\w+)\}\}(.*?)\{\{/\w+\}\}`)
+	// placeholderRe matches the {{name}} placeholders; nothing else in a
+	// template looks like one.
+	placeholderRe = regexp.MustCompile(`\{\{(\w+)\}\}`)
+)
+
+// BaseTemplate returns the native base URL template of a repository for its
+// format (no trailing slash): docker serves the registry API at the host root,
+// isolated formats live under /repos/<format>/, the rest under /repos/.
+func BaseTemplate(format string) string {
 	switch {
 	case format == "docker":
-		return origin
+		return phOrigin
 	case repotype.Isolated(format):
-		return origin + "/repos/" + format + "/" + name
+		return phOrigin + "/repos/" + format + "/" + phEsc
 	default:
-		return origin + "/repos/" + name
+		return phOrigin + "/repos/" + phEsc
 	}
 }
 
-// Snippets returns the configure/publish snippets for a repository of the
-// given format and type ("hosted", "proxy" or "group"; "" is hosted). Unknown
-// formats return a single bare-URL entry.
-func Snippets(format, origin, repo, repoType string) []Snippet {
-	origin = strings.TrimRight(origin, "/")
+// values are what the placeholders of a template stand for.
+type values map[string]string
+
+func valuesFor(format, origin, repo string) values {
+	v := values{
+		"origin":   origin,
+		"host":     hostOf(origin),
+		"hostname": hostnameOf(origin),
+		"repo":     repo,
+		"esc":      url.PathEscape(repo),
+	}
+	v["base"] = render(BaseTemplate(format), v)
+	v["authBase"] = authBaseOf(v["base"])
+
+	return v
+}
+
+// authBaseOf puts the credential placeholders after the scheme of a URL.
+func authBaseOf(base string) string {
+	if i := strings.Index(base, "://"); i >= 0 {
+		return base[:i+3] + "<USERNAME>:<TOKEN>@" + base[i+3:]
+	}
+
+	return base
+}
+
+// render substitutes a template: conditional blocks first, then each
+// {{placeholder}} in one pass, so substituted values are never rescanned. The
+// web renderer in web/src/lib/installCommands.ts implements the same two steps.
+func render(tmpl string, v values) string {
+	plain := strings.HasPrefix(v["origin"], "http://")
+
+	tmpl = conditionRe.ReplaceAllStringFunc(tmpl, func(m string) string {
+		sub := conditionRe.FindStringSubmatch(m)
+		if sub[1] == "http" && plain {
+			return sub[2]
+		}
+
+		return ""
+	})
+
+	return placeholderRe.ReplaceAllStringFunc(tmpl, func(m string) string {
+		return v[m[2:len(m)-2]]
+	})
+}
+
+// RepoBaseURL returns the native base URL of a repository for its format (no
+// trailing slash). origin must not end in a slash.
+func RepoBaseURL(format, origin, repo string) string {
+	return render(BaseTemplate(format), values{"origin": origin, "esc": url.PathEscape(repo)})
+}
+
+// Templates returns the unrendered snippets of a format for a repository type
+// ("hosted", "proxy" or "group"; anything else is hosted). Unknown formats
+// return a single bare-URL entry.
+func Templates(format, repoType string) []Snippet {
+	if repoType != typeProxy && repoType != typeGroup {
+		repoType = typeHosted
+	}
+
 	c := target{
-		origin:   origin,
-		host:     hostOf(origin),
-		name:     hostnameOf(origin),
-		repo:     repo,
-		esc:      url.PathEscape(repo),
-		base:     RepoBaseURL(format, origin, repo),
+		origin:   phOrigin,
+		host:     phHost,
+		name:     phHostname,
+		repo:     phRepo,
+		esc:      phEsc,
+		base:     phBase,
+		authBase: phAuthBase,
 		repoType: repoType,
 	}
 
@@ -69,7 +159,21 @@ func Snippets(format, origin, repo, repoType string) []Snippet {
 		return build(c)
 	}
 
-	return []Snippet{{Client: "URL", Configure: c.base + "/"}}
+	return []Snippet{{Client: "URL", Configure: phBase + "/"}}
+}
+
+// Snippets returns the configure/publish snippets for a repository of the
+// given format and type ("hosted", "proxy" or "group"; "" is hosted). Unknown
+// formats return a single bare-URL entry.
+func Snippets(format, origin, repo, repoType string) []Snippet {
+	v := valuesFor(format, strings.TrimRight(origin, "/"), repo)
+
+	out := Templates(format, repoType)
+	for i, s := range out {
+		out[i] = Snippet{Client: s.Client, Configure: render(s.Configure, v), Publish: render(s.Publish, v)}
+	}
+
+	return out
 }
 
 func hostOf(origin string) string {
@@ -351,11 +455,6 @@ func pacmanProxySnippets(c target) []Snippet {
 }
 
 func apkSnippets(c target) []Snippet {
-	authBase := c.base
-	if i := strings.Index(c.base, "://"); i >= 0 {
-		authBase = c.base[:i+3] + "<USERNAME>:<TOKEN>@" + c.base[i+3:]
-	}
-
 	if c.repoType == "proxy" {
 		// The index keeps the upstream's signature, so no key comes from this
 		// server: the client verifies it with the keys it already trusts.
@@ -366,7 +465,7 @@ func apkSnippets(c target) []Snippet {
 					"# private repository: put the credentials in the URL, %[2]s/v3.20/main\n"+
 					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\n"+
 					"echo \"%[1]s/v3.20/community\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
-				c.base, authBase,
+				c.base, c.authBase,
 			),
 		}}
 	}
@@ -382,7 +481,7 @@ func apkSnippets(c target) []Snippet {
 					"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
 					"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
 					"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
-				c.base, c.repo, authBase,
+				c.base, c.repo, c.authBase,
 			),
 		}}
 	}
@@ -394,7 +493,7 @@ func apkSnippets(c target) []Snippet {
 				"and fetch the key with wget --user <USERNAME> --password <TOKEN>\n"+
 				"wget -O /etc/apk/keys/openartifact-%[2]s.rsa.pub %[1]s/public.key\n"+
 				"echo \"%[1]s/v3.20/main\" >> /etc/apk/repositories\napk update\napk add PACKAGE",
-			c.base, c.repo, authBase,
+			c.base, c.repo, c.authBase,
 		),
 		Publish: fmt.Sprintf(
 			"curl -T my-pkg-1.0-r0.apk -H \"Authorization: Bearer <TOKEN>\" %[1]s/v3.20/main/x86_64/my-pkg-1.0-r0.apk\n\n"+
@@ -537,14 +636,13 @@ func composerSnippets(c target) []Snippet {
 		publish = "" // proxy and group repositories are read-only
 	}
 
+	// secure-http only needs turning off for a plain-http origin.
 	configure := fmt.Sprintf(
 		"# composer.json\n{\n  \"repositories\": [{\"type\": \"composer\", \"url\": \"%[1]s\"}]\n}"+
 			"\n\n# or from the command line\ncomposer config repositories.openartifact composer %[1]s",
 		c.base,
 	)
-	if strings.HasPrefix(c.origin, "http://") {
-		configure += "\ncomposer config secure-http false"
-	}
+	configure += "{{#http}}\ncomposer config secure-http false{{/http}}"
 
 	configure += fmt.Sprintf(
 		"\n\n# auth (or auth.json: {\"http-basic\": {\"%[1]s\": {\"username\": \"token\", \"password\": \"<TOKEN>\"}}})"+

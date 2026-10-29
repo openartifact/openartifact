@@ -18,6 +18,7 @@ on:
     paths:
       - "docs/**"
       - "web/src/lib/installCommands.ts"
+      - "web/src/lib/clientsetup.generated.ts"
       - ".github/workflows/docs-site-trigger.yml"
     tags: ["v*.*.*"]
 

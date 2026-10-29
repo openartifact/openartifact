@@ -337,3 +337,20 @@ describe('clientSetup', () => {
     }
   })
 })
+
+describe('generated templates', () => {
+  it('falls back to the bare repository URL for a format the registry does not know', () => {
+    expect(clientSetup('mystery', 'https://oa.example', 'r1')).toEqual([{ client: 'URL', configure: 'https://oa.example/repos/r1/' }])
+  })
+
+  it('does not treat a format named like an Object property as known', () => {
+    expect(repoBaseUrl('constructor', 'https://oa.example', 'r1')).toBe('https://oa.example/repos/r1')
+    expect(clientSetup('toString', 'https://oa.example', 'r1')[0]!.client).toBe('URL')
+  })
+
+  it('substitutes placeholders once: a repository named like a placeholder or a replacement pattern stays literal', () => {
+    const [setup] = clientSetup('cargo', 'https://oa.example', '{{base}}$&')
+    expect(setup!.configure).toContain('[registries.{{base}}$&]')
+    expect(setup!.publish).toBe('cargo publish --registry {{base}}$&')
+  })
+})

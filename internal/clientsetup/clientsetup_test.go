@@ -216,3 +216,56 @@ func TestApkProxySnippetHasNoKeyDownloadNorPublish(t *testing.T) {
 		t.Errorf("a proxy has no key to fetch and nothing to publish: %+v", s)
 	}
 }
+
+// Every placeholder a template uses is one render fills: a leftover {{name}}
+// would reach the user (Go and web) as literal text.
+func TestTemplatesUseKnownPlaceholdersOnly(t *testing.T) {
+	known := valuesFor("npm", origin, "r")
+
+	for _, format := range append(allFormats(), "mystery") {
+		for _, repoType := range []string{typeHosted, typeProxy, typeGroup} {
+			for _, s := range Templates(format, repoType) {
+				for _, text := range []string{s.Configure, s.Publish} {
+					for _, m := range placeholderRe.FindAllStringSubmatch(conditionRe.ReplaceAllString(text, ""), -1) {
+						if _, ok := known[m[1]]; !ok {
+							t.Errorf("%s/%s: unknown placeholder %s in %q", format, repoType, m[0], text)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestRenderSubstitutesOncePerPlaceholder(t *testing.T) {
+	// A repository named like a placeholder must not be expanded a second time.
+	got := render("{{repo}} at {{base}}", values{"repo": "{{base}}", "base": "B"})
+	if want := "{{base}} at B"; got != want {
+		t.Errorf("render = %q, want %q", got, want)
+	}
+}
+
+func TestRenderConditionalHTTPBlock(t *testing.T) {
+	const tmpl = "a{{#http}}-insecure{{/http}}"
+
+	if got := render(tmpl, values{"origin": "http://localhost:8080"}); got != "a-insecure" {
+		t.Errorf("http origin: %q", got)
+	}
+
+	if got := render(tmpl, values{"origin": "https://oa.example"}); got != "a" {
+		t.Errorf("https origin: %q", got)
+	}
+}
+
+func TestComposerSecureHTTPOnlyForPlainHTTP(t *testing.T) {
+	if got := Snippets("composer", "http://localhost:8080", "r", "hosted")[0].Configure; !strings.Contains(
+		got,
+		"composer config secure-http false",
+	) {
+		t.Errorf("http origin lacks the secure-http line: %s", got)
+	}
+
+	if got := Snippets("composer", origin, "r", "hosted")[0].Configure; strings.Contains(got, "secure-http") {
+		t.Errorf("https origin carries the secure-http line: %s", got)
+	}
+}
