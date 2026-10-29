@@ -19,6 +19,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 )
 
 // Go proxy repositories mirror a module proxy (default https://proxy.golang.org)
@@ -248,4 +249,13 @@ func verifyGoInfo(want string) func(io.ReadSeeker) error {
 
 		return nil
 	}
+}
+
+// GoHooks is the proxy hooks of the go format.
+var GoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveGo,
+	// .info/.mod/.zip of a canonical version, not list/@latest/queries.
+	Immutable:  goImmutable,
+	IsMetadata: func(key string) bool { return keyName(key) == "list" || strings.HasSuffix(key, "/@latest") },
+	BlobPath:   presign.GoBlobPath,
 }

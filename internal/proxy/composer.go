@@ -13,8 +13,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/publicurl"
 	pkgcomposer "github.com/openartifact/openartifact/pkg/composer"
 )
@@ -241,4 +243,13 @@ func composerDistImmutable(key string) bool {
 	normalized, err := pkgcomposer.Normalize(p.Version)
 
 	return err == nil && !pkgcomposer.IsDev(normalized)
+}
+
+// ComposerHooks is the proxy hooks of the composer format.
+var ComposerHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveComposer,
+	// Dists of released versions; the reference in their key names the content.
+	Immutable:  composerDistImmutable,
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, composerDistDir) },
+	BlobPath:   presign.ComposerBlobPath,
 }

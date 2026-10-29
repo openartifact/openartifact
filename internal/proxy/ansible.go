@@ -14,10 +14,12 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgansible "github.com/openartifact/openartifact/pkg/ansible"
 )
 
@@ -440,4 +442,13 @@ func (s *Service) locateAnsibleTarball(ctx context.Context, repo *models.Reposit
 	}
 
 	return download{url: target, opts: fetchOpts{wantSHA256: doc.Artifact.SHA256}}, nil
+}
+
+// AnsibleHooks is the proxy hooks of the ansible format.
+var AnsibleHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveAnsible,
+	// Tarballs, checked against the artifact sha256 of their version document.
+	Immutable:  func(key string) bool { return strings.HasPrefix(key, ansibleArtifactDir) },
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, ansibleArtifactDir) },
+	BlobPath:   presign.AnsibleBlobPath,
 }

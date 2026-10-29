@@ -18,6 +18,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 )
 
@@ -354,4 +355,15 @@ func helmDigest(digest string) (string, bool) {
 	}
 
 	return d, true
+}
+
+// HelmHooks is the proxy hooks of the helm format.
+var HelmHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveHelm,
+	// Chart archives (charts/<file>), not index.yaml or provenance files.
+	Immutable: func(key string) bool {
+		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(keyName(key), helmProvExt)
+	},
+	IsMetadata: func(key string) bool { return keyName(key) == helmIndexKey },
+	BlobPath:   presign.HelmBlobPath,
 }

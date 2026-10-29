@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgnix "github.com/openartifact/openartifact/pkg/nix"
 )
 
@@ -298,4 +299,15 @@ func (s *Service) nixNarFetchOpts(ctx context.Context, repo *models.Repository, 
 			return nil
 		},
 	}, nil
+}
+
+// NixHooks is the proxy hooks of the nix format.
+var NixHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	// NARs, which are only cached once they matched the FileHash and FileSize
+	// of their narinfo (nix.go); narinfo and nix-cache-info move.
+	Fetch:       (*Service).fetchNix,
+	Immutable:   nixNarKey,
+	IsMetadata:  nixMetadataKey,
+	PackageExts: []string{".nar", ".nar.xz", ".nar.zst", ".nar.bz2", ".nar.br", ".nar.gz", ".nar.lz4"},
+	BlobPath:    presign.NixBlobPath,
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/presign"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 )
 
@@ -149,4 +150,17 @@ func (s *Service) locateCargoCrate(ctx context.Context, repo *models.Repository,
 		url:  pkgcargo.DownloadURL(dl, p.Crate, p.Version, entry.Cksum),
 		opts: fetchOpts{wantSHA256: strings.ToLower(entry.Cksum)},
 	}, nil
+}
+
+// cargoCrateDir is the key prefix of the crate download endpoint; everything
+// outside it is index data or config.json.
+const cargoCrateDir = "api/v1/crates/"
+
+// CargoHooks is the proxy hooks of the cargo format.
+var CargoHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	Serve: (*Service).serveCargo,
+	// Crate files, not index files or config.json.
+	Immutable:  func(key string) bool { return strings.HasPrefix(key, cargoCrateDir) && keyName(key) == "download" },
+	IsMetadata: func(key string) bool { return !strings.HasPrefix(key, cargoCrateDir) },
+	BlobPath:   presign.CargoBlobPath,
 }

@@ -67,9 +67,6 @@ var ivyPackageExts = []string{ //nolint:gochecknoglobals // read-only table
 	".md5", ".sha1", ".sha256", ".sha512", ".asc",
 }
 
-// isIvyFormat reports whether format is one of the two Ivy-family layouts.
-func isIvyFormat(format string) bool { return format == "ivy" || format == "sbt" }
-
 // isIvySidecar reports whether key is a checksum or signature file.
 func isIvySidecar(key string) bool {
 	for _, ext := range ivySidecarExts {
@@ -218,4 +215,23 @@ func parseIvyDigest(body []byte, size int) (string, bool) {
 	}
 
 	return hex.EncodeToString(raw), true
+}
+
+// IvyHooks is the proxy hooks of the ivy format; the sbt format shares them
+// (SbtHooks): the two layouts differ in the upstream's directory naming only.
+var IvyHooks = Hooks{ //nolint:gochecknoglobals // format hook table
+	// Released files that matched the upstream's checksum; see ivyFetchOpts.
+	Fetch:       (*Service).fetchIvy,
+	Immutable:   ivyImmutable,
+	IsMetadata:  func(key string) bool { return isIvyMetadata(key) || isIvySidecar(key) || keyName(key) == "ivy.xml" },
+	PackageExts: ivyPackageExts,
+}
+
+// SbtHooks is the proxy hooks of the sbt format: the same as IvyHooks.
+var SbtHooks = IvyHooks //nolint:gochecknoglobals // format hook table
+
+// fetchIvy is Hooks.Fetch of ivy and sbt: a verifiable file is checked against
+// the checksum sidecar the upstream publishes.
+func (s *Service) fetchIvy(ctx context.Context, repo *models.Repository, key, target string) (*models.ProxyCacheEntry, error) {
+	return s.fetchURL(ctx, repo, key, target, s.ivyFetchOpts(ctx, repo, key))
 }
