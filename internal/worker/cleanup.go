@@ -17,6 +17,8 @@ import (
 
 	"database/sql"
 
+	"github.com/google/uuid"
+
 	"github.com/openartifact/openartifact/internal/cron"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -66,6 +68,7 @@ type CleanupStore interface {
 	GetCleanupPolicy(ctx context.Context, id string) (*models.CleanupPolicy, error)
 	GetDB() *sql.DB
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	HardDeleteFiles(ctx context.Context, repoID string, ids []string) ([]models.FileDeletion, error)
 	ListEnabledCleanupPolicies(ctx context.Context) ([]*models.CleanupPolicy, error)
 	ListProjectCleanupRepositories(ctx context.Context, projectID string) ([]string, error)
 	MarkPackumentStale(ctx context.Context, packageID string) error
@@ -379,17 +382,16 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 		return 0, ErrRepositoryNotFound
 	}
 
-	tables := cleanupFormatTables(repo.Format)
-	if len(tables) == 0 {
+	t, ok := cleanupTableFor(repo.Format)
+	if !ok {
 		return 0, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
-	run, deleted, err := w.deleteArtifacts(ctx, policy, repo, tables)
+	run, deleted, err := w.deleteArtifacts(ctx, policy, repo, t)
 	// Also after a partial run: whatever was removed before the error must
 	// leave the generated metadata.
 	if deleted > 0 {
-		w.refreshMetadata(ctx, repo)
-		w.refreshFormatMetadata(ctx, repo, run)
+		w.refreshMetadata(ctx, repo, run)
 	}
 
 	return deleted, err
@@ -401,7 +403,7 @@ var errUnsupportedCleanupFormat = errors.New("unsupported format for cleanup")
 // runProjectPolicy applies a project default policy: it is expanded into one
 // run per live hosted repository of the project that has no enabled policy of
 // its own (a repository-level policy overrides the default, it never adds to
-// it), each with that repository's format table. Repositories whose format has
+// it), each with that repository's format descriptor. Repositories whose format has
 // no cleanup support, or that vanished meanwhile, are skipped; other failures
 // do not stop the remaining repositories and are reported together.
 func (w *CleanupWorker) runProjectPolicy(ctx context.Context, policy *models.CleanupPolicy) (int, error) {
@@ -455,45 +457,16 @@ func (w *CleanupWorker) SetPacmanNotifier(n MetadataNotifier) { w.pacmanNotifier
 // packages regenerates the repository's APKINDEX files. It may be nil.
 func (w *CleanupWorker) SetApkNotifier(apk MetadataNotifier) { w.apkNotifier = apk }
 
-// refreshMetadata runs once per policy run for the repository the run touched.
-// rpm is marked stale in the database first, so the stale sweep recovers the
-// refresh even if the notifier is absent or the process dies.
-func (w *CleanupWorker) refreshMetadata(ctx context.Context, repo *models.Repository) {
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), policyRecordTimeout)
-	defer cancel()
-
-	switch repo.Format {
-	case "rpm":
-		if err := w.db.MarkRepoStale(rctx, repo.ID); err != nil {
-			w.log.Warnw("cleanup: failed to mark rpm repository stale", "repository_id", repo.ID, "error", err)
-		}
-
-		if w.rpmNotifier != nil {
-			w.rpmNotifier.NotifyStale(repo.ID)
-		}
-	case "deb":
-		if w.debNotifier != nil {
-			w.debNotifier.NotifyStale(repo.ID)
-		}
-	case "pacman":
-		if w.pacmanNotifier != nil {
-			w.pacmanNotifier.NotifyStale(repo.ID)
-		}
-	case "apk":
-		if w.apkNotifier != nil {
-			w.apkNotifier.NotifyStale(repo.ID)
-		}
-	}
-}
-
-// cleanupCandidate is a row selected for deletion: its primary key (for the
-// DELETE), its version (for the immutable-release guard) and the blob IDs it
-// references (to resolve sha256 for SafeDeleteBlob).
+// cleanupCandidate is a row selected for deletion: its primary key (the listed
+// package_files id, or the docker tag id), its package (for the metadata
+// refresh), its version (for the immutable-release guard) and the blob IDs it
+// holds (for the release-bundle protection).
 type cleanupCandidate struct {
-	id      string
-	name    string
-	version string
-	blobIDs []string
+	id        string
+	name      string
+	version   string
+	packageID string
+	blobIDs   []string
 }
 
 // cleanupActor is the deleted_by recorded on rows a cleanup policy moves to the
@@ -504,7 +477,7 @@ const cleanupActor = "cleanup-policy"
 // when it is outside the newest keep_last_n versions of its package (if set)
 // AND older than keep_since_days (if set), i.e. it is kept when either
 // criterion protects it; name_pattern then restricts the selection.
-func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.CleanupPolicy, t formatTable) ([]cleanupCandidate, error) {
+func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.CleanupPolicy, t cleanupTable) ([]cleanupCandidate, error) {
 	var nameRegex *regexp.Regexp
 
 	if policy.NamePattern != "" {
@@ -515,12 +488,6 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 			return nil, fmt.Errorf("invalid name pattern regex: %w", err)
 		}
 	}
-
-	partition := strings.Join(t.partitionCols, ", ")
-
-	// Blob columns are appended as ", b0, b1": a format without any (docker
-	// tags) contributes nothing.
-	blobSelect, blobOut := t.blobSQL()
 
 	args := []any{policy.RepositoryID}
 	conds := []string{"NOT prot"}
@@ -535,37 +502,7 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 		conds = append(conds, fmt.Sprintf("created_at < now() - make_interval(days => $%d)", len(args)))
 	}
 
-	// Inner: the newest timestamp per (package, version) so that multi-file
-	// versions rank as one. Middle: dense rank of versions within a package.
-	// Outer: protected rows stay ranked (they occupy a slot) but are never
-	// selected.
-	ts := t.timeColumn()
-	query := fmt.Sprintf(`
-		SELECT id, cname, cver%[1]s FROM (
-			SELECT id, cname, cver%[1]s, created_at, prot,
-			       DENSE_RANK() OVER (PARTITION BY %[2]s ORDER BY vts DESC, ver DESC) AS rk
-			FROM (
-				SELECT id, %[3]s AS cname, %[4]s AS cver%[5]s, %[6]s AS created_at,
-				       (%[7]s) AS prot,
-				       %[8]s,
-				       (%[9]s) AS ver,
-				       MAX(%[6]s) OVER (PARTITION BY %[10]s, (%[9]s)) AS vts
-				FROM %[11]s src
-				WHERE repository_id = $1 AND deleted_at IS NULL
-			) base
-		) ranked
-		WHERE %[12]s`,
-		blobOut,
-		partitionAliases(len(t.partitionCols)),
-		t.nameCol, t.versionColumn(), blobSelect, ts,
-		t.protection(),
-		partitionSelect(t.partitionCols),
-		t.versionExpr,
-		partition,
-		t.sourceExpr(),
-		strings.Join(conds, " AND "))
-
-	rows, err := w.db.GetDB().QueryContext(ctx, query, args...)
+	rows, err := w.db.GetDB().QueryContext(ctx, t.sql().query(conds), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query artifacts for deletion: %w", err)
 	}
@@ -575,15 +512,9 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 	var candidates []cleanupCandidate
 
 	for rows.Next() {
-		c := cleanupCandidate{blobIDs: make([]string, len(t.blobCols))}
-		dest := []any{&c.id, &c.name, &c.version}
-
-		for i := range c.blobIDs {
-			dest = append(dest, &c.blobIDs[i])
-		}
-
-		if err := rows.Scan(dest...); err != nil {
-			return nil, fmt.Errorf("failed to scan artifact row: %w", err)
+		c, err := scanCandidate(rows)
+		if err != nil {
+			return nil, err
 		}
 
 		if nameRegex != nil && !nameRegex.MatchString(c.name) {
@@ -600,22 +531,24 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 	return candidates, nil
 }
 
-func partitionAliases(n int) string {
-	parts := make([]string, n)
-	for i := range parts {
-		parts[i] = fmt.Sprintf("p%d", i)
+// scanCandidate reads one row of the candidate query: id, name, version,
+// package id, comma-separated blob ids and the artifact count (unused here).
+func scanCandidate(rows interface{ Scan(...any) error }) (cleanupCandidate, error) {
+	var (
+		c         cleanupCandidate
+		blobs     string
+		artifacts int
+	)
+
+	if err := rows.Scan(&c.id, &c.name, &c.version, &c.packageID, &blobs, &artifacts); err != nil {
+		return c, fmt.Errorf("failed to scan artifact row: %w", err)
 	}
 
-	return strings.Join(parts, ", ")
-}
-
-func partitionSelect(cols []string) string {
-	parts := make([]string, len(cols))
-	for i, c := range cols {
-		parts[i] = fmt.Sprintf("%s AS p%d", c, i)
+	if blobs != "" {
+		c.blobIDs = strings.Split(blobs, ",")
 	}
 
-	return strings.Join(parts, ", ")
+	return c, nil
 }
 
 // trashOutcome is what trashCandidates did with a batch of selected rows.
@@ -634,7 +567,7 @@ const (
 // trashCandidates moves cs to the trash, in one transaction, when the
 // repository's retention allows it. A failed move skips the rows: deleting
 // permanently because the soft path broke would defeat the point of the trash.
-func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate) trashOutcome {
+func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t cleanupTable, cs []cleanupCandidate) trashOutcome {
 	outcome, err := w.moveToTrash(ctx, repoID, t, cs, cleanupActor)
 	if err != nil && !errors.Is(err, database.ErrTrashNotFound) {
 		w.log.Warnw("failed to move artifacts to trash", "count", len(cs), "error", err)
@@ -649,7 +582,7 @@ func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t fo
 func (w *CleanupWorker) moveToTrash(
 	ctx context.Context,
 	repoID string,
-	t formatTable,
+	t cleanupTable,
 	cs []cleanupCandidate,
 	actor string,
 ) (trashOutcome, error) {
@@ -676,29 +609,50 @@ func (w *CleanupWorker) moveToTrash(
 }
 
 // cleanupRun is the state of one policy run on one repository: the usage the
-// run took out of the repository's quota and the names of the packages it
-// removed rows of (their generated metadata needs a refresh afterwards).
+// run took out of the repository's quota and the packages it removed rows of
+// (their generated metadata needs a refresh afterwards).
 type cleanupRun struct {
 	released quotaRelease
-	touched  map[string]struct{}
+	// touched maps a package (its id, or its name for docker tags) to its name.
+	touched map[string]string
 	// hard counts the rows removed permanently (not moved to the trash).
 	hard int
 }
 
-func newCleanupRun() *cleanupRun { return &cleanupRun{touched: map[string]struct{}{}} }
+func newCleanupRun() *cleanupRun { return &cleanupRun{touched: map[string]string{}} }
 
 // touch records the packages cs belong to.
 func (r *cleanupRun) touch(cs []cleanupCandidate) {
 	for _, c := range cs {
-		r.touched[c.name] = struct{}{}
+		key := c.packageID
+		if key == "" {
+			key = c.name
+		}
+
+		r.touched[key] = c.name
 	}
 }
 
-// names returns the touched package names.
+// names returns the touched package names, sorted and without duplicates.
 func (r *cleanupRun) names() []string {
 	out := make([]string, 0, len(r.touched))
-	for n := range r.touched {
+	for _, n := range r.touched {
 		out = append(out, n)
+	}
+
+	slices.Sort(out)
+
+	return slices.Compact(out)
+}
+
+// packageIDs returns the ids of the touched packages (none for docker tags).
+func (r *cleanupRun) packageIDs() []string {
+	out := make([]string, 0, len(r.touched))
+
+	for id := range r.touched {
+		if uuid.Validate(id) == nil {
+			out = append(out, id)
+		}
 	}
 
 	slices.Sort(out)
@@ -710,7 +664,7 @@ func (w *CleanupWorker) deleteArtifacts(
 	ctx context.Context,
 	policy *models.CleanupPolicy,
 	repo *models.Repository,
-	tables []formatTable,
+	t cleanupTable,
 ) (*cleanupRun, int, error) {
 	run := newCleanupRun()
 	totalDeleted := 0
@@ -720,19 +674,17 @@ func (w *CleanupWorker) deleteArtifacts(
 	// cancelled); a crash in between leaves it to the periodic reconcile.
 	defer func() { w.releaseQuota(ctx, policy.RepositoryID, run.released) }()
 
-	for _, tableInfo := range tables {
-		toDelete, err := w.selectCandidates(ctx, policy, tableInfo)
-		if err != nil {
-			return run, totalDeleted, err
+	toDelete, err := w.selectCandidates(ctx, policy, t)
+	if err != nil {
+		return run, totalDeleted, err
+	}
+
+	for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
+		if err := ctx.Err(); err != nil {
+			return run, totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
 		}
 
-		for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
-			if err := ctx.Err(); err != nil {
-				return run, totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
-			}
-
-			totalDeleted += w.deleteChunk(ctx, policy, repo, tableInfo, chunk, run)
-		}
+		totalDeleted += w.deleteChunk(ctx, policy, repo, t, chunk, run)
 	}
 
 	return run, totalDeleted, nil
@@ -745,21 +697,19 @@ const cleanupChunkSize = 200
 
 // blobFacts is what the cleanup needs to know about one blob row.
 type blobFacts struct {
-	sha256 string
-	size   int64
 	// bundled: a release bundle references the blob and pins it.
 	bundled bool
 }
 
 // deleteChunk removes the rows of chunk the policy may remove and returns how
 // many it removed (or moved to the trash). The blob facts of the whole chunk
-// come from one query; the rows go with one statement; the underlying blobs
+// come from one query; the rows go with one transaction; the underlying blobs
 // leave storage only when no other row still references them.
 func (w *CleanupWorker) deleteChunk(
 	ctx context.Context,
 	policy *models.CleanupPolicy,
 	repo *models.Repository,
-	t formatTable,
+	t cleanupTable,
 	chunk []cleanupCandidate,
 	run *cleanupRun,
 ) int {
@@ -788,61 +738,43 @@ func (w *CleanupWorker) deleteChunk(
 	case trashHard:
 	}
 
-	return w.hardDelete(ctx, t, eligible, facts, run)
+	return w.hardDelete(ctx, repo.ID, t, eligible, run)
 }
 
-// hardDelete removes rows permanently: the rows go with one statement, the
+// hardDelete removes rows permanently: the rows go in one transaction, the
 // usage they reserved is added to run for release, and each blob leaves
 // storage once no other row references it. It returns how many rows it removed.
 func (w *CleanupWorker) hardDelete(
 	ctx context.Context,
-	t formatTable,
+	repoID string,
+	t cleanupTable,
 	eligible []cleanupCandidate,
-	facts map[string]blobFacts,
 	run *cleanupRun,
 ) int {
-	deleted := w.deleteRows(ctx, t.table, eligible)
+	byID := make(map[string]cleanupCandidate, len(eligible))
+	for _, c := range eligible {
+		byID[c.id] = c
+	}
 
 	var (
 		removed int
 		shas    []string
-		seen    = map[string]struct{}{}
 	)
 
-	for _, c := range eligible {
-		if _, ok := deleted[c.id]; !ok {
-			continue
-		}
-
+	for _, d := range w.deleteRows(ctx, repoID, t, eligible) {
 		removed++
 
-		run.touched[c.name] = struct{}{}
+		run.touch([]cleanupCandidate{byID[d.ID]})
+
 		run.hard++
-
-		if t.quotaTracked {
-			run.released.rows++
-		}
-
-		for _, blobID := range c.blobIDs {
-			f, ok := facts[blobID]
-			if !ok {
-				continue
-			}
-
-			// The usage an upload of the row reserved, read before the rows went
-			// (a concurrent delete could drop the blob and its size after).
-			if t.quotaTracked {
-				run.released.bytes += f.size
-			}
-
-			if _, dup := seen[f.sha256]; !dup {
-				seen[f.sha256] = struct{}{}
-				shas = append(shas, f.sha256)
-			}
-		}
+		run.released.rows += d.QuotaArtifacts
+		run.released.bytes += d.QuotaBytes
+		shas = append(shas, d.BlobSHA256...)
 	}
 
-	for _, sha256 := range shas {
+	slices.Sort(shas)
+
+	for _, sha256 := range slices.Compact(shas) {
 		if ctx.Err() != nil {
 			break
 		}
@@ -951,9 +883,9 @@ func (w *CleanupWorker) quarantinedIDs(ctx context.Context, repoID string, chunk
 	return out, rows.Err()
 }
 
-// loadBlobFacts reads sha256, size and release-bundle pinning of every blob the
-// chunk's rows reference, keyed by blob id, in one query. Blobs that no longer
-// exist are simply absent.
+// loadBlobFacts reads the release-bundle pinning of every blob the chunk's rows
+// reference, keyed by blob id, in one query. Blobs that no longer exist are
+// simply absent.
 func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandidate) (map[string]blobFacts, error) {
 	var ids []string
 
@@ -971,8 +903,7 @@ func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandid
 	}
 
 	rows, err := w.db.GetDB().QueryContext(ctx,
-		`SELECT b.id::text, b.sha256, b.size_bytes,
-		        EXISTS(SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256)
+		`SELECT b.id::text, EXISTS(SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256)
 		 FROM blobs b WHERE b.id = ANY($1::uuid[])`, uuidArrayLiteral(ids))
 	if err != nil {
 		return nil, fmt.Errorf("query blobs: %w", err)
@@ -986,7 +917,7 @@ func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandid
 			f  blobFacts
 		)
 
-		if err := rows.Scan(&id, &f.sha256, &f.size, &f.bundled); err != nil {
+		if err := rows.Scan(&id, &f.bundled); err != nil {
 			return nil, fmt.Errorf("scan blob: %w", err)
 		}
 
@@ -996,61 +927,87 @@ func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandid
 	return facts, rows.Err()
 }
 
-// deleteRows deletes the rows with one statement and returns the ids it
-// removed; rows a concurrent API delete got to first are not among them (that
-// delete already released their quota and blobs). If the batch statement fails
-// the rows are retried one by one, so one bad row cannot keep the rest.
-func (w *CleanupWorker) deleteRows(ctx context.Context, table string, cs []cleanupCandidate) map[string]struct{} {
-	conn := w.db.GetDB()
-	deleted := make(map[string]struct{}, len(cs))
-
+// deleteRows deletes the rows permanently and returns what it removed; rows a
+// concurrent API delete got to first are not among them (that delete already
+// released their quota and blobs). If the batch fails the rows are retried one
+// by one, so one bad row cannot keep the rest.
+func (w *CleanupWorker) deleteRows(ctx context.Context, repoID string, t cleanupTable, cs []cleanupCandidate) []models.FileDeletion {
 	ids := make([]string, len(cs))
 	for i, c := range cs {
 		ids[i] = c.id
 	}
 
-	//nolint:gosec // G201: table is a constant of the format registry; ids are a bound argument
-	batch := fmt.Sprintf("DELETE FROM %s WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL RETURNING id::text", table)
+	if t.docker {
+		return w.deleteDockerTags(ctx, repoID, ids)
+	}
 
-	rows, err := conn.QueryContext(ctx, batch, uuidArrayLiteral(ids))
+	out, err := w.db.HardDeleteFiles(ctx, repoID, ids)
+	if err == nil {
+		return out
+	}
+
+	w.log.Warnw("failed to delete artifacts in one batch, retrying one by one", "count", len(ids), "error", err)
+
+	out = nil
+
+	for _, id := range ids {
+		one, err := w.db.HardDeleteFiles(ctx, repoID, []string{id})
+		if err != nil {
+			w.log.Warnw("failed to delete artifact from database", "id", id, "error", err)
+			continue
+		}
+
+		out = append(out, one...)
+	}
+
+	return out
+}
+
+// deleteDockerTags is deleteRows for docker: tags hold no blobs and no quota
+// (the manifests and layers they leave behind are collected by registry GC).
+func (w *CleanupWorker) deleteDockerTags(ctx context.Context, repoID string, ids []string) []models.FileDeletion {
+	conn := w.db.GetDB()
+
+	var out []models.FileDeletion
+
+	rows, err := conn.QueryContext(ctx,
+		`DELETE FROM docker_tags WHERE id = ANY($1::uuid[]) AND repository_id = $2 AND deleted_at IS NULL RETURNING id::text`,
+		uuidArrayLiteral(ids), repoID)
 	if err == nil {
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var id string
 			if scanErr := rows.Scan(&id); scanErr != nil {
-				w.log.Warnw("failed to read deleted artifact id", "error", scanErr)
+				w.log.Warnw("failed to read deleted tag id", "error", scanErr)
 				break
 			}
 
-			deleted[id] = struct{}{}
+			out = append(out, models.FileDeletion{ID: id})
 		}
 
 		if rowsErr := rows.Err(); rowsErr != nil {
-			w.log.Warnw("failed to read deleted artifact ids", "error", rowsErr)
+			w.log.Warnw("failed to read deleted tag ids", "error", rowsErr)
 		}
 
-		return deleted
+		return out
 	}
 
-	w.log.Warnw("failed to delete artifacts in one batch, retrying one by one", "count", len(ids), "error", err)
-
-	//nolint:gosec // G201: see above
-	single := fmt.Sprintf("DELETE FROM %s WHERE id = $1 AND deleted_at IS NULL", table)
+	w.log.Warnw("failed to delete tags in one batch, retrying one by one", "count", len(ids), "error", err)
 
 	for _, id := range ids {
-		res, err := conn.ExecContext(ctx, single, id)
+		res, err := conn.ExecContext(ctx, `DELETE FROM docker_tags WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL`, id, repoID)
 		if err != nil {
-			w.log.Warnw("failed to delete artifact from database", "id", id, "error", err)
+			w.log.Warnw("failed to delete tag from database", "id", id, "error", err)
 			continue
 		}
 
 		if n, rowsErr := res.RowsAffected(); rowsErr == nil && n > 0 {
-			deleted[id] = struct{}{}
+			out = append(out, models.FileDeletion{ID: id})
 		}
 	}
 
-	return deleted
+	return out
 }
 
 // uuidArrayLiteral renders ids as a Postgres array literal for ANY($1::uuid[]).

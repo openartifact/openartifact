@@ -12,61 +12,35 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/repotype/repotypetest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// TestCleanupFormatTablesCoverEveryFormat: every format has cleanup tables, and
-// they are the format's package tables from the registry. Docker's manifests
-// are not ranked: they are reclaimed by registry garbage collection once their
-// tags are gone.
-func TestCleanupFormatTablesCoverEveryFormat(t *testing.T) {
-	t.Parallel()
+// TestCleanupFormatSupported: a format is supported when it has a storage
+// descriptor (what the plugin layer registers for every package format) or is
+// docker, the one special case with dedicated tables.
+func TestCleanupFormatSupported(t *testing.T) {
+	storage.Reset()
+	t.Cleanup(storage.Reset)
 
-	repotypetest.Classified(t, "worker.cleanupFormatTables", repotype.Names(), nil)
+	storage.Register("fixture", storage.Storage{Trash: storage.Trash{Kind: "fixture_item"}})
 
-	repotypetest.Each(t, func(t *testing.T, format string) {
-		t.Helper()
-
-		t.Parallel()
-
-		if !CleanupFormatSupported(format) {
-			t.Fatalf("CleanupFormatSupported(%s) = false: add cleanup tables for the format", format)
+	for format, want := range map[string]bool{"fixture": true, "docker": true, "no-such-format": false} {
+		if got := CleanupFormatSupported(format); got != want {
+			t.Errorf("CleanupFormatSupported(%s) = %v, want %v", format, got, want)
 		}
+	}
 
-		spec, _ := repotype.Lookup(format)
+	tbl, ok := cleanupTableFor("fixture")
+	if !ok || tbl.kind != "fixture_item" || tbl.docker {
+		t.Errorf("cleanupTableFor(fixture) = %+v, %v", tbl, ok)
+	}
 
-		var got []string
-
-		for _, tbl := range cleanupFormatTables(format) {
-			got = append(got, tbl.table)
-
-			if tbl.kind == "" || len(tbl.partitionCols) == 0 || tbl.versionExpr == "" {
-				t.Errorf("%s: table %s has no trash kind, partition or version expression", format, tbl.table)
-			}
-		}
-
-		want := slices.Clone(spec.PackageTables)
-		switch format {
-		case "docker":
-			want = []string{"docker_tags"}
-		case "npm":
-			// Versions are ranked; a package row goes with its last version (refreshNPM).
-			want = []string{"npm_versions"}
-		}
-
-		slices.Sort(got)
-		slices.Sort(want)
-
-		if !slices.Equal(got, want) {
-			t.Errorf("cleanup tables of %s = %v, want %v", format, got, want)
-		}
-	})
-
-	if CleanupFormatSupported("no-such-format") {
-		t.Error("CleanupFormatSupported accepted an unregistered format")
+	if tbl, _ := cleanupTableFor("docker"); !tbl.docker || tbl.kind != models.TrashKindDockerTag {
+		t.Errorf("cleanupTableFor(docker) = %+v", tbl)
 	}
 }
 
@@ -86,59 +60,6 @@ type notifyCounter struct{ calls int }
 
 func (n *notifyCounter) NotifyStale(string) { n.calls++ }
 
-// TestRefreshMetadataCoversEveryFormat: the formats whose metadata a cleanup run
-// regenerates through a notifier are the registry's generated-metadata formats.
-func TestRefreshMetadataCoversEveryFormat(t *testing.T) {
-	t.Parallel()
-
-	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshMetadata",
-		[]string{"apk", "deb", "pacman", "rpm"},
-		[]string{
-			"ansible", "cargo", "composer", "conan", "conda", "docker", "go", "helm", "ivy", "maven", "nix", "npm", "nuget",
-			"pypi", "raw", "rubygems", "sbt", "terraform",
-		},
-	)
-
-	for _, f := range repotype.Names() {
-		if repotype.GeneratedGroupMetadata(f) != slices.Contains(handled, f) {
-			t.Errorf(
-				"refreshMetadata: %s: GeneratedGroupMetadata = %v disagrees with the notifier branches",
-				f,
-				!slices.Contains(handled, f),
-			)
-		}
-	}
-
-	log, err := logger.New("error", "console", "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	repotypetest.Each(t, func(t *testing.T, format string) {
-		t.Helper()
-
-		t.Parallel()
-
-		db := &staleMarkDB{}
-		rpm, deb, pac, apk := &notifyCounter{}, &notifyCounter{}, &notifyCounter{}, &notifyCounter{}
-		w := NewCleanupWorker(db, nil, log)
-		w.SetMetadataNotifiers(rpm, deb)
-		w.SetPacmanNotifier(pac)
-		w.SetApkNotifier(apk)
-
-		w.refreshMetadata(t.Context(), &models.Repository{ID: "r", Format: format})
-
-		notified := rpm.calls + deb.calls + pac.calls + apk.calls
-		if want := slices.Contains(handled, format); (notified > 0) != want {
-			t.Errorf("refreshMetadata(%s) notified %d workers, handled = %v", format, notified, want)
-		}
-
-		if marked := len(db.marked) > 0; marked != (format == "rpm") {
-			t.Errorf("refreshMetadata(%s) marked stale = %v, want only rpm", format, marked)
-		}
-	})
-}
-
 type mavenNotifyCounter struct{ calls int }
 
 func (n *mavenNotifyCounter) NotifyStale(_, _, _ string) { n.calls++ }
@@ -153,19 +74,27 @@ func (g *dockerGCCounter) RunRepo(context.Context, *models.Repository, DockerGCO
 
 func (*dockerGCCounter) DefaultGrace() time.Duration { return 0 }
 
-// TestRefreshFormatMetadataCoversEveryFormat: docker, maven and npm have a
-// follow-up of a run that removed rows; every other format computes its
-// indexes live from the tables.
-func TestRefreshFormatMetadataCoversEveryFormat(t *testing.T) {
+// TestRefreshMetadataCoversEveryFormat: the formats with a follow-up after a run
+// that removed rows are apk, deb, pacman and rpm (their metadata workers, rpm
+// also marks the repository stale), maven (per artifact), npm (packument, needs
+// a database: classified only) and docker (registry GC); every other format
+// computes its indexes live from the tables.
+func TestRefreshMetadataCoversEveryFormat(t *testing.T) {
 	t.Parallel()
 
-	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshFormatMetadata",
-		[]string{"docker", "maven", "npm"},
+	handled := repotypetest.Classified(t, "worker.CleanupWorker.refreshMetadata",
+		[]string{"apk", "deb", "docker", "maven", "npm", "pacman", "rpm"},
 		[]string{
-			"ansible", "apk", "cargo", "composer", "conan", "conda", "deb", "go", "helm", "ivy", "nix", "nuget", "pacman", "pypi",
-			"raw", "rpm", "rubygems", "sbt", "terraform",
+			"ansible", "cargo", "composer", "conan", "conda", "go", "helm", "ivy", "nix", "nuget", "pypi", "raw", "rubygems",
+			"sbt", "terraform",
 		},
 	)
+
+	for _, f := range repotype.Names() {
+		if repotype.GeneratedGroupMetadata(f) != slices.Contains([]string{"apk", "deb", "pacman", "rpm"}, f) {
+			t.Errorf("refreshMetadata: %s: GeneratedGroupMetadata disagrees with the notifier branches", f)
+		}
+	}
 
 	log, err := logger.New("error", "console", "stderr")
 	if err != nil {
@@ -177,24 +106,32 @@ func TestRefreshFormatMetadataCoversEveryFormat(t *testing.T) {
 
 		t.Parallel()
 
-		// npm needs a database connection to resolve its packages: classified only.
 		if format == "npm" {
 			return
 		}
 
+		db := &staleMarkDB{}
+		rpm, deb, pac, apk := &notifyCounter{}, &notifyCounter{}, &notifyCounter{}, &notifyCounter{}
 		mvn, gc := &mavenNotifyCounter{}, &dockerGCCounter{}
-		w := NewCleanupWorker(&staleMarkDB{}, nil, log)
+		w := NewCleanupWorker(db, nil, log)
+		w.SetMetadataNotifiers(rpm, deb)
+		w.SetPacmanNotifier(pac)
+		w.SetApkNotifier(apk)
 		w.SetRegenNotifiers(mvn, nil, gc)
 
 		run := newCleanupRun()
 		run.touch([]cleanupCandidate{{name: "org:lib"}})
 		run.hard = 1
 
-		w.refreshFormatMetadata(t.Context(), &models.Repository{ID: "r", Format: format}, run)
+		w.refreshMetadata(t.Context(), &models.Repository{ID: "r", Format: format}, run)
 
-		acted := mvn.calls+gc.runs > 0
+		acted := rpm.calls+deb.calls+pac.calls+apk.calls+mvn.calls+gc.runs > 0
 		if want := slices.Contains(handled, format); acted != want {
-			t.Errorf("refreshFormatMetadata(%s) acted = %v, handled = %v", format, acted, want)
+			t.Errorf("refreshMetadata(%s) acted = %v, handled = %v", format, acted, want)
+		}
+
+		if marked := len(db.marked) > 0; marked != (format == "rpm") {
+			t.Errorf("refreshMetadata(%s) marked stale = %v, want only rpm", format, marked)
 		}
 	})
 }

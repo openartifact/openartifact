@@ -49,8 +49,8 @@ func (w *CleanupWorker) DeletePackage(
 	guard func(DeletedPackage) error,
 	actor string,
 ) (*DeletedPackage, error) {
-	tables := cleanupFormatTables(repo.Format)
-	if len(tables) == 0 {
+	t, ok := cleanupTableFor(repo.Format)
+	if !ok {
 		return nil, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
@@ -58,7 +58,7 @@ func (w *CleanupWorker) DeletePackage(
 		return nil, ErrPackageNotFound
 	}
 
-	t, rows, err := w.findUnit(ctx, repo.ID, tables, id)
+	rows, err := w.loadUnit(ctx, repo.ID, t, id)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +75,6 @@ func (w *CleanupWorker) DeletePackage(
 		}
 	}
 
-	facts, err := w.loadBlobFacts(ctx, rows)
-	if err != nil {
-		return nil, fmt.Errorf("failed to look up blobs: %w", err)
-	}
-
 	run := newCleanupRun()
 
 	outcome, err := w.moveToTrash(ctx, repo.ID, t, rows, actor)
@@ -94,47 +89,27 @@ func (w *CleanupWorker) DeletePackage(
 
 		run.touch(rows)
 	default:
-		if w.hardDelete(ctx, t, rows, facts, run) == 0 {
+		if w.hardDelete(ctx, repo.ID, t, rows, run) == 0 {
 			return nil, ErrPackageNotFound
-		}
-
-		if repo.Format == "npm" {
-			w.dropNPMDistTags(ctx, repo.ID, rows)
 		}
 
 		w.releaseQuota(ctx, repo.ID, run.released)
 	}
 
-	w.refreshMetadata(ctx, repo)
-	w.refreshFormatMetadata(ctx, repo, run)
+	w.refreshMetadata(ctx, repo, run)
 
 	return res, nil
 }
 
-// findUnit looks id up in the tables of a format (ids are unique across them)
-// and returns the table that holds it with the rows an explicit delete removes.
-func (w *CleanupWorker) findUnit(
-	ctx context.Context,
-	repoID string,
-	tables []formatTable,
-	id string,
-) (formatTable, []cleanupCandidate, error) {
-	for _, t := range tables {
-		rows, err := w.loadUnit(ctx, repoID, t, id)
-		if err != nil || len(rows) > 0 {
-			return t, rows, err
-		}
-	}
+// loadUnit reads the candidate an explicit delete of id removes: the live
+// listed file (or docker tag) with that id, as a one-element slice. A row of
+// another repository or one that is not live yields none.
+func (w *CleanupWorker) loadUnit(ctx context.Context, repoID string, t cleanupTable, id string) ([]cleanupCandidate, error) {
+	c := t.sql()
 
-	return tables[0], nil, nil
-}
-
-// loadUnit reads the rows an explicit delete of id removes.
-func (w *CleanupWorker) loadUnit(ctx context.Context, repoID string, t formatTable, id string) ([]cleanupCandidate, error) {
-	blobSelect, _ := t.blobSQL()
-
-	query := fmt.Sprintf(`SELECT id::text, %s, %s%s FROM %s src WHERE repository_id = $1::uuid AND deleted_at IS NULL AND id = $2::uuid`,
-		t.nameCol, t.versionColumn(), blobSelect, t.sourceExpr())
+	// The same select-list as the candidate query, restricted to the one row.
+	query := fmt.Sprintf(`SELECT %s, %s, %s, %s, %s, %s %s AND %s = $2::uuid`,
+		c.id, c.name, c.version, c.pkg, c.blobs, c.artifacts, c.from, t.idColumn())
 
 	rows, err := w.db.GetDB().QueryContext(ctx, query, repoID, id)
 	if err != nil {
@@ -146,18 +121,12 @@ func (w *CleanupWorker) loadUnit(ctx context.Context, repoID string, t formatTab
 	var out []cleanupCandidate
 
 	for rows.Next() {
-		c := cleanupCandidate{blobIDs: make([]string, len(t.blobCols))}
-		dest := []any{&c.id, &c.name, &c.version}
-
-		for i := range c.blobIDs {
-			dest = append(dest, &c.blobIDs[i])
+		cand, err := scanCandidate(rows)
+		if err != nil {
+			return nil, err
 		}
 
-		if err := rows.Scan(dest...); err != nil {
-			return nil, fmt.Errorf("failed to scan package row: %w", err)
-		}
-
-		out = append(out, c)
+		out = append(out, cand)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -165,22 +134,4 @@ func (w *CleanupWorker) loadUnit(ctx context.Context, repoID string, t formatTab
 	}
 
 	return out, nil
-}
-
-// dropNPMDistTags removes the dist-tags of versions that were just deleted for
-// good (the rows are gone, so the tags are matched by the package and version
-// the removed ids had): a tag must not point at a version that no longer
-// exists. A live row with the same version, re-published meanwhile, keeps its
-// tags.
-func (w *CleanupWorker) dropNPMDistTags(ctx context.Context, repoID string, rows []cleanupCandidate) {
-	for _, c := range rows {
-		_, err := w.db.GetDB().ExecContext(ctx,
-			`DELETE FROM npm_dist_tags d USING npm_packages p
-			 WHERE p.repository_id = $3::uuid AND p.full_name = $1 AND d.package_id = p.id AND d.version = $2
-			   AND NOT EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = p.id AND v.version = $2 AND v.deleted_at IS NULL)`,
-			c.name, c.version, repoID)
-		if err != nil {
-			w.log.Warnw("failed to drop dist-tags of a deleted npm version", "package", c.name, "version", c.version, "error", err)
-		}
-	}
 }

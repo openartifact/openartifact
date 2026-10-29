@@ -39,18 +39,45 @@ func (w *CleanupWorker) SetRegenNotifiers(maven MavenNotifier, npm NPMNotifier, 
 	w.mavenNotifier, w.npmNotifier, w.dockerGC = maven, npm, dockerGC
 }
 
-// refreshFormatMetadata is the per-format follow-up of a run that removed rows
-// (moved to the trash or deleted). Formats not handled here compute their
-// indexes live from the tables (cargo index, conan, conda repodata, go,
-// helm index.yaml, ivy, nuget, pypi simple, raw, rubygems specs, sbt, terraform).
-func (w *CleanupWorker) refreshFormatMetadata(ctx context.Context, repo *models.Repository, run *cleanupRun) {
+// refreshMetadata is the follow-up of a run that removed rows (moved to the
+// trash or deleted), once per run and repository. It is the ONE place that maps
+// a format to the metadata worker that must refresh afterwards. Formats not
+// listed compute their indexes live from the tables (cargo index, conan, conda
+// repodata, go, helm index.yaml, ivy, nuget, pypi simple, raw, rubygems specs,
+// sbt, terraform). rpm is marked stale in the database first, so the stale
+// sweep recovers the refresh even if the notifier is absent or the process dies.
+func (w *CleanupWorker) refreshMetadata(ctx context.Context, repo *models.Repository, run *cleanupRun) {
 	switch repo.Format {
+	case "rpm":
+		w.markRPMStale(ctx, repo)
+		notifyRepo(w.rpmNotifier, repo.ID)
+	case "deb":
+		notifyRepo(w.debNotifier, repo.ID)
+	case "pacman":
+		notifyRepo(w.pacmanNotifier, repo.ID)
+	case "apk":
+		notifyRepo(w.apkNotifier, repo.ID)
 	case "maven":
 		w.refreshMaven(repo, run.names())
 	case "npm":
-		w.refreshNPM(ctx, repo, run.names())
-	case "docker":
+		w.refreshNPM(ctx, repo, run.packageIDs())
+	case dockerFormat:
 		w.collectDocker(ctx, repo, run)
+	}
+}
+
+func notifyRepo(n MetadataNotifier, repoID string) {
+	if n != nil {
+		n.NotifyStale(repoID)
+	}
+}
+
+func (w *CleanupWorker) markRPMStale(ctx context.Context, repo *models.Repository) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), policyRecordTimeout)
+	defer cancel()
+
+	if err := w.db.MarkRepoStale(rctx, repo.ID); err != nil {
+		w.log.Warnw("cleanup: failed to mark rpm repository stale", "repository_id", repo.ID, "error", err)
 	}
 }
 
@@ -73,35 +100,31 @@ func (w *CleanupWorker) refreshMaven(repo *models.Repository, names []string) {
 }
 
 // refreshNPM keeps the packuments of the packages a run removed versions of in
-// step with their versions: a package that lost its last version row is
-// dropped, the others get a new packument validator and a regeneration of the
-// latest version. Versions a dist-tag points at are never removed, so no
-// dist-tag is left dangling.
-func (w *CleanupWorker) refreshNPM(ctx context.Context, repo *models.Repository, names []string) {
-	for _, n := range names {
-		var pkgID string
+// step with their versions: each gets a new packument validator and a
+// regeneration of the latest version. A package row that is gone (purged with
+// its last version) has nothing to refresh. Versions a dist-tag points at are
+// never removed, so no dist-tag is left dangling.
+func (w *CleanupWorker) refreshNPM(ctx context.Context, repo *models.Repository, packageIDs []string) {
+	for _, id := range packageIDs {
+		var exists bool
 
 		err := w.db.GetDB().QueryRowContext(ctx,
-			`SELECT id::text FROM npm_packages WHERE repository_id = $1 AND full_name = $2`, repo.ID, n).Scan(&pkgID)
+			`SELECT EXISTS (SELECT 1 FROM packages WHERE id = $1::uuid AND repository_id = $2::uuid)`, id, repo.ID).Scan(&exists)
 		if err != nil {
-			w.log.Warnw("cleanup: failed to resolve npm package", "repository_id", repo.ID, "package", n, "error", err)
+			w.log.Warnw("cleanup: failed to resolve npm package", "repository_id", repo.ID, "package_id", id, "error", err)
 			continue
 		}
 
-		res, err := w.db.GetDB().ExecContext(ctx,
-			`DELETE FROM npm_packages p WHERE p.id = $1::uuid AND NOT EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = p.id)`, pkgID)
-		if err == nil {
-			if rows, _ := res.RowsAffected(); rows > 0 {
-				continue
-			}
+		if !exists {
+			continue
 		}
 
-		if err := w.db.MarkPackumentStale(ctx, pkgID); err != nil {
-			w.log.Warnw("cleanup: failed to mark packument stale", "repository_id", repo.ID, "package", n, "error", err)
+		if err := w.db.MarkPackumentStale(ctx, id); err != nil {
+			w.log.Warnw("cleanup: failed to mark packument stale", "repository_id", repo.ID, "package_id", id, "error", err)
 		}
 
 		if w.npmNotifier != nil {
-			w.npmNotifier.NotifyStale(pkgID)
+			w.npmNotifier.NotifyStale(id)
 		}
 	}
 }
