@@ -17,6 +17,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// TieringStore owns storage tiers, tiering policies, blob placement and the tier-move journal.
+type TieringStore struct{ *core }
+
 // backendIDString converts a blobs.storage_backend_id (NULL = primary store)
 // to the "" = primary convention used outside this file.
 func backendIDString(id *string) string {
@@ -60,7 +63,7 @@ func tierFromRow(
 }
 
 // ListStorageTiers lists every tier, hottest rank first.
-func (p *PostgresDB) ListStorageTiers(ctx context.Context) ([]*models.StorageTier, error) {
+func (p *TieringStore) ListStorageTiers(ctx context.Context) ([]*models.StorageTier, error) {
 	rows, err := p.q.ListStorageTiers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list storage tiers: %w", err)
@@ -89,7 +92,7 @@ func (p *PostgresDB) ListStorageTiers(ctx context.Context) ([]*models.StorageTie
 }
 
 // GetStorageTierByName returns the named tier, or nil when there is none.
-func (p *PostgresDB) GetStorageTierByName(ctx context.Context, name string) (*models.StorageTier, error) {
+func (p *TieringStore) GetStorageTierByName(ctx context.Context, name string) (*models.StorageTier, error) {
 	r, err := p.q.GetStorageTierByName(ctx, name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -114,7 +117,7 @@ func (p *PostgresDB) GetStorageTierByName(ctx context.Context, name string) (*mo
 }
 
 // CreateStorageTier inserts a tier (t.ID must be set).
-func (p *PostgresDB) CreateStorageTier(ctx context.Context, t *models.StorageTier) error {
+func (p *TieringStore) CreateStorageTier(ctx context.Context, t *models.StorageTier) error {
 	return p.q.CreateStorageTier(ctx, dbsqlc.CreateStorageTierParams{
 		ID:            t.ID,
 		Name:          t.Name,
@@ -125,7 +128,7 @@ func (p *PostgresDB) CreateStorageTier(ctx context.Context, t *models.StorageTie
 }
 
 // UpdateStorageTier updates a tier's name, rank and promote-on-read flag.
-func (p *PostgresDB) UpdateStorageTier(ctx context.Context, t *models.StorageTier) error {
+func (p *TieringStore) UpdateStorageTier(ctx context.Context, t *models.StorageTier) error {
 	return p.q.UpdateStorageTier(ctx, dbsqlc.UpdateStorageTierParams{
 		ID: t.ID, Name: t.Name, Rank: int32(t.Rank), PromoteOnRead: t.PromoteOnRead, //nolint:gosec // rank is validated by the API
 	})
@@ -138,7 +141,7 @@ func (p *PostgresDB) UpdateStorageTier(ctx context.Context, t *models.StorageTie
 // either commits before the check and is seen, or waits until the delete is
 // done. It returns "" when the tier was deleted (or was already gone) and the
 // human-readable reason otherwise.
-func (p *PostgresDB) DeleteStorageTierIfUnused(ctx context.Context, tierID string) (string, error) {
+func (p *TieringStore) DeleteStorageTierIfUnused(ctx context.Context, tierID string) (string, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", fmt.Errorf("begin delete storage tier tx: %w", err)
@@ -222,7 +225,7 @@ func policyFromRow(r dbsqlc.StoragePolicy) *models.StoragePolicy {
 }
 
 // ListStoragePolicies lists every policy in evaluation order.
-func (p *PostgresDB) ListStoragePolicies(ctx context.Context) ([]*models.StoragePolicy, error) {
+func (p *TieringStore) ListStoragePolicies(ctx context.Context) ([]*models.StoragePolicy, error) {
 	rows, err := p.q.ListStoragePolicies(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list storage policies: %w", err)
@@ -237,7 +240,7 @@ func (p *PostgresDB) ListStoragePolicies(ctx context.Context) ([]*models.Storage
 }
 
 // GetStoragePolicy returns a policy by id, or nil when there is none.
-func (p *PostgresDB) GetStoragePolicy(ctx context.Context, id string) (*models.StoragePolicy, error) {
+func (p *TieringStore) GetStoragePolicy(ctx context.Context, id string) (*models.StoragePolicy, error) {
 	r, err := p.q.GetStoragePolicy(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -251,7 +254,7 @@ func (p *PostgresDB) GetStoragePolicy(ctx context.Context, id string) (*models.S
 }
 
 // CreateStoragePolicy inserts a policy (pol.ID must be set).
-func (p *PostgresDB) CreateStoragePolicy(ctx context.Context, pol *models.StoragePolicy) error {
+func (p *TieringStore) CreateStoragePolicy(ctx context.Context, pol *models.StoragePolicy) error {
 	return p.q.CreateStoragePolicy(ctx, storagePolicyParams(pol))
 }
 
@@ -267,12 +270,12 @@ func storagePolicyParams(pol *models.StoragePolicy) dbsqlc.CreateStoragePolicyPa
 }
 
 // UpdateStoragePolicy overwrites every field of the policy.
-func (p *PostgresDB) UpdateStoragePolicy(ctx context.Context, pol *models.StoragePolicy) error {
+func (p *TieringStore) UpdateStoragePolicy(ctx context.Context, pol *models.StoragePolicy) error {
 	return p.q.UpdateStoragePolicy(ctx, dbsqlc.UpdateStoragePolicyParams(storagePolicyParams(pol)))
 }
 
 // DeleteStoragePolicy deletes a policy; it reports whether a row was removed.
-func (p *PostgresDB) DeleteStoragePolicy(ctx context.Context, id string) (bool, error) {
+func (p *TieringStore) DeleteStoragePolicy(ctx context.Context, id string) (bool, error) {
 	n, err := p.q.DeleteStoragePolicy(ctx, id)
 	if err != nil {
 		return false, fmt.Errorf("delete storage policy: %w", err)
@@ -282,7 +285,7 @@ func (p *PostgresDB) DeleteStoragePolicy(ctx context.Context, id string) (bool, 
 }
 
 // StorageTierUsage returns blob counts and bytes per placement ("" = primary store).
-func (p *PostgresDB) StorageTierUsage(ctx context.Context) ([]models.TierUsage, error) {
+func (p *TieringStore) StorageTierUsage(ctx context.Context) ([]models.TierUsage, error) {
 	rows, err := p.q.StorageTierUsage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("storage tier usage: %w", err)
@@ -298,7 +301,7 @@ func (p *PostgresDB) StorageTierUsage(ctx context.Context) ([]models.TierUsage, 
 
 // GetBlobPlacement returns where the blob lives ("" = primary store) and its
 // size. found is false when there is no blobs row.
-func (p *PostgresDB) GetBlobPlacement(ctx context.Context, sha256 string) (string, int64, bool, error) {
+func (p *TieringStore) GetBlobPlacement(ctx context.Context, sha256 string) (string, int64, bool, error) {
 	row, err := p.q.GetBlobPlacement(ctx, sha256)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", 0, false, nil
@@ -326,7 +329,7 @@ func moveFromRow(r dbsqlc.StorageTierMove) *models.StorageTierMove {
 // BeginStorageTierMove journals the start of a move. It returns the journal
 // row that is now authoritative for the blob and whether this call created it;
 // an existing row (a move in flight or one awaiting cleanup) is returned as is.
-func (p *PostgresDB) BeginStorageTierMove(ctx context.Context, m *models.StorageTierMove) (*models.StorageTierMove, bool, error) {
+func (p *TieringStore) BeginStorageTierMove(ctx context.Context, m *models.StorageTierMove) (*models.StorageTierMove, bool, error) {
 	n, err := p.q.BeginStorageTierMove(ctx, dbsqlc.BeginStorageTierMoveParams{
 		Sha256: m.SHA256, Reason: m.Reason, SizeBytes: m.SizeBytes,
 		FromBackendID: nullableBackendID(m.FromBackendID), ToBackendID: nullableBackendID(m.ToBackendID),
@@ -345,7 +348,7 @@ func (p *PostgresDB) BeginStorageTierMove(ctx context.Context, m *models.Storage
 
 // ListRecoverableStorageTierMoves returns journal rows that still have attempts
 // left, or that last failed more than retryAfter ago.
-func (p *PostgresDB) ListRecoverableStorageTierMoves(
+func (p *TieringStore) ListRecoverableStorageTierMoves(
 	ctx context.Context,
 	maxAttempts int,
 	retryAfter time.Duration,
@@ -362,7 +365,7 @@ func (p *PostgresDB) ListRecoverableStorageTierMoves(
 }
 
 // ListStorageTierMoves returns the most recently touched journal rows.
-func (p *PostgresDB) ListStorageTierMoves(ctx context.Context, limit int) ([]*models.StorageTierMove, error) {
+func (p *TieringStore) ListStorageTierMoves(ctx context.Context, limit int) ([]*models.StorageTierMove, error) {
 	rows, err := p.q.ListStorageTierMoves(ctx, int32(limit)) //nolint:gosec // small bounded value
 	if err != nil {
 		return nil, fmt.Errorf("list storage tier moves: %w", err)
@@ -381,12 +384,12 @@ func movesFromRows(rows []dbsqlc.StorageTierMove) []*models.StorageTierMove {
 }
 
 // CountStorageTierMoves counts the journal rows (moves in flight or awaiting cleanup).
-func (p *PostgresDB) CountStorageTierMoves(ctx context.Context) (int64, error) {
+func (p *TieringStore) CountStorageTierMoves(ctx context.Context) (int64, error) {
 	return p.q.CountStorageTierMoves(ctx)
 }
 
 // FailStorageTierMove records a failed attempt on the journal row.
-func (p *PostgresDB) FailStorageTierMove(ctx context.Context, sha256, message string) error {
+func (p *TieringStore) FailStorageTierMove(ctx context.Context, sha256, message string) error {
 	if len(message) > 500 {
 		message = message[:500]
 	}
@@ -395,7 +398,7 @@ func (p *PostgresDB) FailStorageTierMove(ctx context.Context, sha256, message st
 }
 
 // FinishStorageTierMove removes the journal row once the move is complete.
-func (p *PostgresDB) FinishStorageTierMove(ctx context.Context, sha256 string) error {
+func (p *TieringStore) FinishStorageTierMove(ctx context.Context, sha256 string) error {
 	return p.q.FinishStorageTierMove(ctx, sha256)
 }
 
@@ -410,7 +413,7 @@ func (p *PostgresDB) FinishStorageTierMove(ctx context.Context, sha256 string) e
 // still exists: every path that removes a copy (uploaders settling a race,
 // SafeDeleteBlob) does so under the same lock, so a copy confirmed here cannot
 // vanish before the flip commits.
-func (p *PostgresDB) FlipBlobPlacement(
+func (p *TieringStore) FlipBlobPlacement(
 	ctx context.Context,
 	sha256, from, to string,
 	verify func(ctx context.Context) error,
@@ -483,7 +486,7 @@ func (p *PostgresDB) FlipBlobPlacement(
 // flushing overlapping sets cannot deadlock each other. Every write here is a
 // non-HOT update (last_accessed_at is in the promotion index predicate), which
 // the access resolution bounds to one per blob per resolution window.
-func (p *PostgresDB) TouchBlobAccess(ctx context.Context, accessed map[string]time.Time, resolution time.Duration) (int64, error) {
+func (p *TieringStore) TouchBlobAccess(ctx context.Context, accessed map[string]time.Time, resolution time.Duration) (int64, error) {
 	if len(accessed) == 0 {
 		return 0, nil
 	}
@@ -525,7 +528,7 @@ func (p *PostgresDB) TouchBlobAccess(ctx context.Context, accessed map[string]ti
 
 // tierScanWindowUpper returns the sha256 that closes a window of at most
 // `window` blobs after the cursor, and valid=false when the table ends first.
-func (p *PostgresDB) tierScanWindowUpper(ctx context.Context, after string, window int) (string, bool, error) {
+func (p *TieringStore) tierScanWindowUpper(ctx context.Context, after string, window int) (string, bool, error) {
 	var s sql.NullString
 
 	err := p.db.QueryRowContext(ctx,
@@ -545,7 +548,7 @@ func (p *PostgresDB) tierScanWindowUpper(ctx context.Context, after string, wind
 // the cursor and returns those matching any clause (and not already being
 // moved). next is the cursor for the following call, "" once the end of the
 // table was reached; scanned is how many rows the window covered.
-func (p *PostgresDB) ScanTierCandidates(
+func (p *TieringStore) ScanTierCandidates(
 	ctx context.Context,
 	after string,
 	window int,
@@ -692,7 +695,7 @@ const promotionCandidatesQuery = `SELECT b.sha256, b.size_bytes, b.created_at, b
 // ListPromotionCandidates returns blobs placed on one of backendIDs that were
 // read after they arrived there (last_accessed_at > tier_changed_at), ordered
 // by sha256 after the cursor, skipping blobs with a move in flight.
-func (p *PostgresDB) ListPromotionCandidates(
+func (p *TieringStore) ListPromotionCandidates(
 	ctx context.Context,
 	backendIDs []string,
 	after string,
@@ -793,7 +796,7 @@ func buildBlobRefsSQL() string {
 
 // ListBlobRefs returns, per blob, the repository entries referencing it
 // (repository name, format and artifact path).
-func (p *PostgresDB) ListBlobRefs(ctx context.Context, shas []string) (map[string][]models.BlobRef, error) {
+func (p *TieringStore) ListBlobRefs(ctx context.Context, shas []string) (map[string][]models.BlobRef, error) {
 	out := make(map[string][]models.BlobRef, len(shas))
 	if len(shas) == 0 {
 		return out, nil
