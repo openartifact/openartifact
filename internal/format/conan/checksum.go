@@ -127,7 +127,7 @@ func (h *HTTPHandler) reusableSource(r *http.Request, repoID, sum string) (*mode
 	}
 
 	if source == nil {
-		return nil, nil //nolint:nilnil // not found is (nil, nil), as in the Database contract
+		return nil, nil //nolint:nilnil // not found is (nil, nil), as in the store contract
 	}
 
 	keys, err := h.quarantineKeys(r.Context(), source)

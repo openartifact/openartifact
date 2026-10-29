@@ -576,7 +576,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	var body createRepositoryBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -904,7 +904,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		SignPackages       *bool `json:"sign_packages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -1644,7 +1644,7 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 		MemberRepos []string `json:"member_repos"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

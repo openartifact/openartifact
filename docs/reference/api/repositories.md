@@ -880,7 +880,7 @@ Delete a package row (an id of the package listing) from a hosted repository of 
 
 Download a binary delta
 
-Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to deb and rpm packages. Requires read access.
+Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached, so the first request can take a while; concurrent requests for the same delta share one run. Generation is bounded: a package larger than 64 MiB (8 MiB when the caller is not signed in, for example on a public repository) is refused with 413, and a busy server answers 503 with `Retry-After`. An already stored delta is served whatever its size. Applies to deb and rpm packages. Requires read access.
 
 **Parameters**
 
@@ -898,7 +898,8 @@ Returns a binary diff that turns the package whose sha256 is given in `from` int
 | `400` | Missing or invalid from | `application/json`: [Error](schemas.md#error) |
 | `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository, target or source package not found | `application/json`: [Error](schemas.md#error) |
-| `413` | Package too large for delta generation | `application/json`: [Error](schemas.md#error) |
+| `413` | Package too large for delta generation (over 64 MiB, or over 8 MiB for a caller that is not signed in) | `application/json`: [Error](schemas.md#error) |
+| `503` | Delta generation is busy: the queue of generations waiting for a slot, or the callers waiting for this one, is full. Retry after the Retry-After delay Headers: `Retry-After`. | `application/json`: [Error](schemas.md#error) |
 
 ### `GET /api/v1/repositories/{name}/packages/{id}/deltas`
 

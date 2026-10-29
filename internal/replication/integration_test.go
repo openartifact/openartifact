@@ -586,7 +586,7 @@ func TestIntegrationVerifyRestoresJournalSidecars(t *testing.T) {
 	e := newE2E(t)
 	ctx := context.Background()
 
-	sidecar, err := e.store.Put(ctx, bytes.NewReader([]byte(`{"table":"raw_artifacts"}`)), nil)
+	sidecar, err := e.store.Put(ctx, bytes.NewReader([]byte(`{"table":"package_files"}`)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +597,7 @@ func TestIntegrationVerifyRestoresJournalSidecars(t *testing.T) {
 	}
 
 	if _, err := e.pg.GetDB().ExecContext(ctx,
-		`INSERT INTO recovery_sidecars (table_name, row_key, row_hash, sidecar_sha256) VALUES ('raw_artifacts', 'k1', 'h1', $1)`, sidecar); err != nil {
+		`INSERT INTO recovery_sidecars (table_name, row_key, row_hash, sidecar_sha256) VALUES ('package_files', 'k1', 'h1', $1)`, sidecar); err != nil {
 		t.Fatalf("insert sidecar tracking row: %v", err)
 	}
 

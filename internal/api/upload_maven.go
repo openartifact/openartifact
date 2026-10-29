@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/importmeta"
@@ -67,6 +68,17 @@ type MavenUploadHandler struct {
 	reg         *metrics.Registry
 	mavenWorker *worker.MavenMetadataWorker
 	publisher   webhook.Publisher
+	// rescans re-evaluates, in the background, the poms waiting for a parent
+	// after a pom that may be one was stored.
+	rescans *pomRescans
+}
+
+// WithTasks runs the re-evaluation of the poms waiting for a parent under the
+// server lifecycle: it is cancelled at shutdown, which waits for it, bounded.
+func (h *MavenUploadHandler) WithTasks(tasks *bgtask.Runner) *MavenUploadHandler {
+	h.rescans.tasks = tasks
+
+	return h
 }
 
 // SetPublisher wires the webhook publisher for artifact.* events.
@@ -80,7 +92,10 @@ func NewMavenUploadHandler(
 	blobStore storage.BlobStore,
 	reg *metrics.Registry,
 ) *MavenUploadHandler {
-	return &MavenUploadHandler{log: log, db: db, blobStore: blobStore, reg: reg}
+	h := &MavenUploadHandler{log: log, db: db, blobStore: blobStore, reg: reg}
+	h.rescans = newPOMRescans(bgtask.New(context.Background()), pomRescanInterval, h.reevaluateWaiting)
+
+	return h
 }
 
 // SetMavenWorker wires the debounced maven-metadata.xml regeneration worker.
@@ -535,24 +550,33 @@ func (h *MavenUploadHandler) enforcePomLicenses(
 
 // afterPOMStored does what follows a pom being stored: a pom that inherits its
 // licenses gets its scan result recorded (empty while the parent is not
-// stored), and a pom that may be a parent re-evaluates the poms still waiting
-// for one. Failures are logged; the upload has succeeded.
+// stored), and a pom that may be a parent schedules the re-evaluation of the
+// poms still waiting for one (in the background, coalesced per repository, see
+// pomRescans). Failures are logged; the upload has succeeded.
 func (h *MavenUploadHandler) afterPOMStored(ctx context.Context, repoID, artifactID string, info pomLicenseInfo) {
-	ctx = context.WithoutCancel(ctx)
-
 	if info.inherits {
-		if err := recordPOMLicenses(ctx, h.db, h.log, repoID, artifactID, info.inherited); err != nil {
+		err := recordPOMLicenses(context.WithoutCancel(ctx), h.db, h.log, repoID, artifactID, info.inherited)
+		if err != nil {
 			h.log.Warnw("maven upload: recording inherited licenses failed", "artifact_id", artifactID, "error", err)
 		}
 	}
 
-	if !info.mayBeParent {
+	if info.mayBeParent {
+		h.rescans.schedule(repoID)
+	}
+}
+
+// reevaluateWaiting is the scheduled re-evaluation of the poms of repoID that
+// wait for a parent.
+func (h *MavenUploadHandler) reevaluateWaiting(ctx context.Context, repoID string) {
+	n, err := reevaluateWaitingPOMs(ctx, h.db, h.blobStore, h.log, repoID)
+	if err != nil {
+		h.log.Warnw("maven upload: re-evaluating poms waiting for a parent failed", "repository_id", repoID, "error", err)
+
 		return
 	}
 
-	if n, err := reevaluateWaitingPOMs(ctx, h.db, h.blobStore, h.log, repoID); err != nil {
-		h.log.Warnw("maven upload: re-evaluating poms waiting for a parent failed", "error", err)
-	} else if n > 0 {
+	if n > 0 {
 		h.log.Infow("maven upload: poms re-evaluated after their parent was stored", "repository_id", repoID, "count", n)
 	}
 }

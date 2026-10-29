@@ -224,3 +224,102 @@ func TestScanError_PublicMessageIsFixedPerKind(t *testing.T) {
 		}
 	}
 }
+
+// OSV reports GHSA-… with the CVE as an alias where trivy and grype report the
+// CVE itself: one vulnerability, counted once, at the highest severity any
+// scanner gave it.
+func TestRun_MergesFindingsByAlias(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+
+	osvFinding := models.Vulnerability{
+		ID: "GHSA-aaaa-bbbb-cccc", Aliases: []string{"CVE-2024-0001"}, Severity: "MEDIUM", CVSS: 5.5,
+		Summary: "from osv", References: []string{"https://osv.example/a"}, CWEs: []string{"CWE-79"},
+	}
+	trivyFinding := models.Vulnerability{
+		ID: "CVE-2024-0001", Severity: "HIGH", CVSS: 8.1, FixedIn: "1.0.1",
+		References: []string{"https://osv.example/a", "https://trivy.example/b"}, CWEs: []string{"CWE-79", "CWE-80"},
+	}
+
+	for name, order := range map[string][]ScannerBackend{
+		"osv first":   {stubBackend{name: "osv", vulns: []models.Vulnerability{osvFinding}}, stubBackend{name: "trivy", vulns: []models.Vulnerability{trivyFinding}}},
+		"trivy first": {stubBackend{name: "trivy", vulns: []models.Vulnerability{trivyFinding}}, stubBackend{name: "osv", vulns: []models.Vulnerability{osvFinding}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := Run(context.Background(), log, order, Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"})
+
+			if len(out.Vulnerabilities) != 1 {
+				t.Fatalf("findings = %v, want one merged finding", vulnIDs(out.Vulnerabilities))
+			}
+
+			got := out.Vulnerabilities[0]
+			if got.Severity != "HIGH" || got.CVSS != 8.1 {
+				t.Errorf("severity = %s/%v, want the highest (HIGH/8.1)", got.Severity, got.CVSS)
+			}
+
+			ids := append([]string{got.ID}, got.Aliases...)
+			slices.Sort(ids)
+
+			if want := []string{"CVE-2024-0001", "GHSA-aaaa-bbbb-cccc"}; !slices.Equal(ids, want) {
+				t.Errorf("id and aliases = %v, want %v (both names stay discoverable)", ids, want)
+			}
+
+			if got.FixedIn != "1.0.1" || got.Summary == "" {
+				t.Errorf("merged finding lost data: fixed_in=%q summary=%q", got.FixedIn, got.Summary)
+			}
+
+			if len(got.References) != 2 || len(got.CWEs) != 2 {
+				t.Errorf("references = %v, cwes = %v, want the union without duplicates", got.References, got.CWEs)
+			}
+		})
+	}
+}
+
+// A third finding that names two earlier ones joins them into one.
+func TestRun_MergesFindingsThroughAChain(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+
+	backends := []ScannerBackend{
+		stubBackend{name: "a", vulns: []models.Vulnerability{
+			{ID: "GHSA-1", Aliases: []string{"CVE-1"}, Severity: "LOW"},
+			{ID: "GHSA-2", Aliases: []string{"CVE-2"}, Severity: "CRITICAL"},
+			{ID: "GHSA-3", Severity: "MEDIUM"},
+		}},
+		stubBackend{name: "b", vulns: []models.Vulnerability{{ID: "CVE-1", Aliases: []string{"CVE-2"}, Severity: "HIGH"}}},
+	}
+
+	out := Run(context.Background(), log, backends, Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"})
+
+	if len(out.Vulnerabilities) != 2 {
+		t.Fatalf("findings = %+v, want GHSA-1/2 merged and GHSA-3 apart", out.Vulnerabilities)
+	}
+
+	for _, v := range out.Vulnerabilities {
+		switch v.ID {
+		case "GHSA-1":
+			if v.Severity != "CRITICAL" || !slices.Contains(v.Aliases, "GHSA-2") || !slices.Contains(v.Aliases, "CVE-2") {
+				t.Errorf("merged finding = %+v", v)
+			}
+		case "GHSA-3":
+		default:
+			t.Errorf("unexpected finding %q", v.ID)
+		}
+	}
+}
+
+// Findings that share nothing stay apart, and one without an id is never merged.
+func TestRun_KeepsDistinctFindingsApart(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+
+	backends := []ScannerBackend{
+		stubBackend{name: "a", vulns: []models.Vulnerability{
+			{ID: "CVE-1", Aliases: []string{"GHSA-1"}}, {Summary: "anonymous 1"}, {Summary: "anonymous 2"},
+		}},
+		stubBackend{name: "b", vulns: []models.Vulnerability{{ID: "CVE-2", Aliases: []string{"GHSA-2"}}}},
+	}
+
+	out := Run(context.Background(), log, backends, Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"})
+
+	if len(out.Vulnerabilities) != 4 {
+		t.Fatalf("findings = %+v, want four", out.Vulnerabilities)
+	}
+}

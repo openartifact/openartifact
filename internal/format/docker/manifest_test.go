@@ -20,7 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 )
 
-// manifestFakeDB is a minimal in-memory Database for manifest-path tests
+// manifestFakeDB is a minimal in-memory store for manifest-path tests
 // (push, get, referrers, delete). Embeds the handler store so any method these
 // tests don't exercise returns a descriptive error instead of panicking.
 // Manifests and tags are scoped per (image, digest|name) like the real tables,

@@ -50,6 +50,14 @@ const (
 )
 
 const (
+	// headerDelivery carries the delivery ID, identical on every retry of one
+	// delivery, so a receiver can drop a duplicate.
+	headerDelivery = "X-Oa-Delivery"
+	// headerEvent carries the event name of the delivery.
+	headerEvent = "X-Oa-Event"
+)
+
+const (
 	maxWebhookResponseBodySize     = 64 * 1024
 	webhookResponseTruncatedMarker = "\n[response body truncated]"
 )
@@ -95,6 +103,12 @@ const (
 	// so a slow endpoint is not redelivered by another instance; a crashed
 	// instance's claims become due again once it expires.
 	claimLease = 2 * time.Minute
+	// leaseMargin is the slack a worker wants on top of the attempt timeout
+	// before it starts an attempt, so the lease cannot lapse under clock skew
+	// or a slow status write while the request is still in flight.
+	leaseMargin = 5 * time.Second
+	// defaultAttemptTimeout is the per-attempt limit of a webhook that sets none.
+	defaultAttemptTimeout = 30 * time.Second
 	// claimBatch bounds the deliveries claimed per retry-loop tick.
 	claimBatch = 100
 	// DefaultPollInterval is how often the retry loop claims due deliveries.
@@ -267,7 +281,38 @@ func (d *Dispatcher) process(delivery *models.WebhookDelivery) {
 		return
 	}
 
+	// A delivery can wait in the queue longer than its lease (a full batch of
+	// slow endpoints behind 8 workers): another instance may have claimed it
+	// meanwhile, or will during the attempt. Leave it pending for the retry
+	// loop rather than send it twice.
+	if !leaseCoversAttempt(delivery, wh, time.Now()) {
+		d.log.Infow("webhook delivery lease too short for an attempt; left for the retry loop",
+			"webhook_id", wh.ID, "delivery_id", delivery.ID)
+
+		return
+	}
+
 	d.deliver(wh, delivery)
+}
+
+// attemptTimeout is the per-attempt limit of the webhook.
+func attemptTimeout(wh *models.Webhook) time.Duration {
+	if timeout := time.Duration(wh.TimeoutSeconds) * time.Second; timeout > 0 {
+		return timeout
+	}
+
+	return defaultAttemptTimeout
+}
+
+// leaseCoversAttempt reports whether the delivery's claim lease (NextRetryAt)
+// outlives an attempt started at now: only then no other instance can claim the
+// row while this one sends it. A delivery without a lease is always sendable.
+func leaseCoversAttempt(delivery *models.WebhookDelivery, wh *models.Webhook, now time.Time) bool {
+	if delivery.NextRetryAt == nil {
+		return true
+	}
+
+	return delivery.NextRetryAt.Sub(now) > attemptTimeout(wh)+leaseMargin
 }
 
 func (d *Dispatcher) retryLoop() {
@@ -341,11 +386,7 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 		return
 	}
 
-	timeout := time.Duration(wh.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	ctx, cancel := context.WithTimeout(d.ctx, timeout)
+	ctx, cancel := context.WithTimeout(d.ctx, attemptTimeout(wh))
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.URL, bytes.NewReader(payloadJSON))
@@ -359,6 +400,11 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "OpenArtifact-Webhook/1.0")
+	// Identify the delivery and event for receivers: delivery is at least once,
+	// so the ID is how a receiver drops a repeat. Like every header these are
+	// outside the signature, which still covers the body only.
+	req.Header.Set(headerDelivery, delivery.ID)
+	req.Header.Set(headerEvent, delivery.EventType)
 
 	// Add HMAC signature if secret is provided
 	if wh.SecretEnc != "" {

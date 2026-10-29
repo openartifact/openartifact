@@ -55,8 +55,8 @@ func (q *quotaFake) DecrementStorageUsage(_ context.Context, _ string, size int6
 	return nil
 }
 
-// tfDB is an in-memory terraform_modules and terraform_providers table with
-// the semantics of the real ones: one live row per coordinates (a second one is
+// tfDB is an in-memory store of terraform modules and providers with the semantics
+// of the generic package tables: one live row per coordinates (a second one is
 // a unique violation), oldest first listings and stamps that change with the
 // set of rows.
 type tfDB struct {

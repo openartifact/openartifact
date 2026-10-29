@@ -221,7 +221,7 @@ func (h *AdminTieringHandler) handleCreateTier(w http.ResponseWriter, r *http.Re
 
 	var body createTierBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -318,7 +318,7 @@ func (h *AdminTieringHandler) handleUpdateTier(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := decodeJSON(r, &patch); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -648,7 +648,7 @@ func (h *AdminTieringHandler) handleCreatePolicy(w http.ResponseWriter, r *http.
 
 	var body tierPolicyBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -728,7 +728,7 @@ func (h *AdminTieringHandler) handleReplacePolicy(w http.ResponseWriter, r *http
 
 	var body tierPolicyBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -805,7 +805,7 @@ func (h *AdminTieringHandler) handleDryRun(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

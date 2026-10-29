@@ -26,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -50,11 +52,41 @@ const (
 	// inputs, so unbounded distinct (from,to) pairs would exhaust memory.
 	maxConcurrentDeltas = 2
 
+	// maxQueuedDeltas bounds the distinct generations waiting for one of those
+	// slots. A request that would be the next one is refused with 503 and a
+	// Retry-After, so a flood of distinct (from,to) pairs cannot pile up parked
+	// requests. Requests for a pair that is already being generated wait for
+	// that run and take no queue place; they are bounded per run by
+	// maxDeltaWaiters.
+	maxQueuedDeltas = 8
+
+	// maxDeltaWaiters bounds the requests that wait for one shared generation.
+	maxDeltaWaiters = 32
+
+	// deltaGenerationTimeout bounds one generation, the wait for a slot
+	// included. The run belongs to every request waiting for it, so it does not
+	// follow the context of the request that happened to start it.
+	deltaGenerationTimeout = 2 * time.Minute
+
+	// deltaRetryAfter is the Retry-After (seconds) of a refused generation.
+	deltaRetryAfter = "10"
+
+	// maxAnonymousDeltaInput caps each input of a delta generated for an
+	// anonymous reader of a public repository (or for a request without a
+	// resolved principal); signed-in readers get pkgdelta.MaxInputSize. A
+	// stored delta is served to everyone whatever its size: the cap limits only
+	// the CPU and memory an unauthenticated request can make the server spend.
+	maxAnonymousDeltaInput = int64(8 << 20)
+
 	// maxRepoDeltas and maxRepoDeltaBytes bound the cached patches kept per
 	// repository; the oldest are pruned (and their blobs released) beyond them.
 	maxRepoDeltas     = 256
 	maxRepoDeltaBytes = int64(1 << 30)
 )
+
+// errDeltaBusy is returned when every generation slot is taken and the queue
+// for them is full (or the wait outlasted deltaGenerationTimeout).
+var errDeltaBusy = errors.New("delta generation is busy")
 
 // deltaPruner is implemented by databases that can bound the stored deltas of
 // a repository.
@@ -63,10 +95,12 @@ type deltaPruner interface {
 }
 
 // deltaCall is a single in-flight delta generation shared by concurrent callers.
+// delta and err are set before done is closed.
 type deltaCall struct {
-	wg    sync.WaitGroup
-	delta *models.PackageDelta
-	err   error
+	done    chan struct{}
+	waiters atomic.Int32 // requests parked on done, besides the one running it
+	delta   *models.PackageDelta
+	err     error
 }
 
 // DeltaStore is the part of the database DeltaHandler needs.
@@ -87,6 +121,7 @@ type DeltaHandler struct {
 	inflightMu sync.Mutex
 	inflight   map[string]*deltaCall
 	slots      chan struct{} // bounds concurrent generations
+	queued     atomic.Int32  // generations waiting for a slot
 
 	log       *logger.Logger
 	db        DeltaStore
@@ -179,9 +214,21 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No pre-computed delta — generate on-the-fly.
-	delta, err := h.generateDeltaOnce(r, repo.ID, fromSHA256, fromFilename, toComp)
+	delta, err := h.generateDeltaOnce(r, repo.ID, fromSHA256, fromFilename, toComp, deltaInputLimit(r))
 	if errors.Is(err, errDeltaInputTooLarge) {
 		writeError(w, http.StatusRequestEntityTooLarge, "DELTA_TOO_LARGE", "package too large for delta generation")
+		return
+	}
+
+	if errors.Is(err, errDeltaBusy) {
+		w.Header().Set("Retry-After", deltaRetryAfter)
+		writeError(w, http.StatusServiceUnavailable, "DELTA_BUSY", "delta generation is busy, retry later")
+
+		return
+	}
+
+	if err != nil && r.Context().Err() != nil {
+		// The client went away while waiting for the shared generation.
 		return
 	}
 
@@ -265,36 +312,85 @@ func componentQuarantineKeys(c *models.Component) []string {
 	return quarantine.PathKeys(c.ID, c.Filename, "Packages/"+c.Filename, "gems/"+c.Filename)
 }
 
-// acquire takes a generation slot, or reports false when ctx ends first.
-func (h *DeltaHandler) acquire(ctx context.Context) bool {
+// deltaInputLimit is the largest input a delta generated for r may read: the
+// full cap for a signed-in reader, the small one for an anonymous reader and for
+// a request without a resolved principal (it fails closed).
+func deltaInputLimit(r *http.Request) int64 {
+	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {
+		return pkgdelta.MaxInputSize
+	}
+
+	return maxAnonymousDeltaInput
+}
+
+// acquire takes a generation slot. When every slot is busy it waits in a queue
+// of at most maxQueuedDeltas places and returns errDeltaBusy beyond that, or
+// when the wait outlasts the deadline of ctx; it returns ctx's error when ctx
+// is canceled.
+func (h *DeltaHandler) acquire(ctx context.Context) error {
 	select {
 	case h.slots <- struct{}{}:
-		return true
+		return nil
+	default:
+	}
+
+	if h.queued.Add(1) > maxQueuedDeltas {
+		h.queued.Add(-1)
+
+		return errDeltaBusy
+	}
+
+	defer h.queued.Add(-1)
+
+	select {
+	case h.slots <- struct{}{}:
+		return nil
 	case <-ctx.Done():
-		return false
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return errDeltaBusy
+		}
+
+		return fmt.Errorf("wait for a delta slot: %w", ctx.Err())
 	}
 }
 
 // generateDeltaOnce collapses concurrent requests for the same
-// (repo, from, to) delta into a single generation.
+// (repo, from, to) delta into a single generation. The run belongs to all the
+// requests waiting for it: it uses a context detached from the first request's
+// (a client that gives up must not fail the others) and bounded by
+// deltaGenerationTimeout, while every waiter also stops waiting when its own
+// request ends. limit is the input cap of the callers; it is part of the key so
+// a run capped for an anonymous reader never answers a signed-in one.
 func (h *DeltaHandler) generateDeltaOnce(
 	r *http.Request,
 	repoID, fromSHA256, fromFilename string,
 	toComp *models.Component,
+	limit int64,
 ) (*models.PackageDelta, error) {
-	key := repoID + "|" + fromSHA256 + "|" + toComp.SHA256
+	key := repoID + "|" + fromSHA256 + "|" + toComp.SHA256 + "|" + strconv.FormatInt(limit, 10)
 
 	h.inflightMu.Lock()
 
 	if c, ok := h.inflight[key]; ok {
 		h.inflightMu.Unlock()
-		c.wg.Wait()
 
-		return c.delta, c.err
+		if c.waiters.Add(1) > maxDeltaWaiters {
+			c.waiters.Add(-1)
+
+			return nil, errDeltaBusy
+		}
+
+		defer c.waiters.Add(-1)
+
+		select {
+		case <-c.done:
+			return c.delta, c.err
+		case <-r.Context().Done():
+			return nil, fmt.Errorf("wait for delta generation: %w", r.Context().Err())
+		}
 	}
 
-	c := &deltaCall{}
-	c.wg.Add(1)
+	c := &deltaCall{done: make(chan struct{})}
 	h.inflight[key] = c
 	h.inflightMu.Unlock()
 
@@ -302,37 +398,45 @@ func (h *DeltaHandler) generateDeltaOnce(
 		h.inflightMu.Lock()
 		delete(h.inflight, key)
 		h.inflightMu.Unlock()
-		c.wg.Done()
+		close(c.done)
 	}()
 
-	c.delta, c.err = h.generateDelta(r, repoID, fromSHA256, fromFilename, toComp)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), deltaGenerationTimeout)
+	defer cancel()
+
+	c.delta, c.err = h.generateDelta(ctx, repoID, fromSHA256, fromFilename, toComp, limit)
 
 	return c.delta, c.err
 }
 
-// readCapped reads a blob after verifying its stored size is within the delta cap.
-func (h *DeltaHandler) readCapped(r *http.Request, id string) ([]byte, error) {
-	size, err := h.blobStore.GetSize(r.Context(), id)
+// checkSize verifies the stored size of a blob is within limit.
+func (h *DeltaHandler) checkSize(ctx context.Context, id string, limit int64) error {
+	size, err := h.blobStore.GetSize(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("stat blob %s: %w", id, err)
+		return fmt.Errorf("stat blob %s: %w", id, err)
 	}
 
-	if size > pkgdelta.MaxInputSize {
-		return nil, fmt.Errorf("%w: %s is %d bytes", errDeltaInputTooLarge, id, size)
+	if size > limit {
+		return fmt.Errorf("%w: %s is %d bytes", errDeltaInputTooLarge, id, size)
 	}
 
-	rc, err := h.blobStore.Get(r.Context(), id)
+	return nil
+}
+
+// readCapped reads a blob of at most limit bytes.
+func (h *DeltaHandler) readCapped(ctx context.Context, id string, limit int64) ([]byte, error) {
+	rc, err := h.blobStore.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("fetch blob %s: %w", id, err)
 	}
 	defer func() { base.CloseLog(rc, h.log) }()
 
-	data, err := io.ReadAll(io.LimitReader(rc, pkgdelta.MaxInputSize+1))
+	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read blob %s: %w", id, err)
 	}
 
-	if len(data) > pkgdelta.MaxInputSize {
+	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("%w: %s", errDeltaInputTooLarge, id)
 	}
 
@@ -340,24 +444,33 @@ func (h *DeltaHandler) readCapped(r *http.Request, id string) ([]byte, error) {
 }
 
 // generateDelta generates a bsdiff patch from fromSHA256 to toComp, stores it,
-// and returns the PackageDelta record.
+// and returns the PackageDelta record. Each input may be at most limit bytes;
+// the sizes are checked before a generation slot is taken, so an oversized
+// request never occupies the queue.
 func (h *DeltaHandler) generateDelta(
-	r *http.Request,
+	ctx context.Context,
 	repoID, fromSHA256, fromFilename string,
 	toComp *models.Component,
+	limit int64,
 ) (*models.PackageDelta, error) {
-	if !h.acquire(r.Context()) {
-		return nil, r.Context().Err()
+	for _, id := range []string{fromSHA256, toComp.SHA256} {
+		if err := h.checkSize(ctx, id, limit); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := h.acquire(ctx); err != nil {
+		return nil, err
 	}
 
 	defer func() { <-h.slots }()
 
-	fromData, err := h.readCapped(r, fromSHA256)
+	fromData, err := h.readCapped(ctx, fromSHA256, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	toData, err := h.readCapped(r, toComp.SHA256)
+	toData, err := h.readCapped(ctx, toComp.SHA256, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +500,7 @@ func (h *DeltaHandler) generateDelta(
 		"type":   "delta",
 	})
 
-	err = storage.CommitBlob(r.Context(), h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
+	err = storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
 		if _, err := h.db.UpsertBlob(ctx, patchSHA256, patchSHA256, d.DeltaSize); err != nil {
 			return fmt.Errorf("register delta blob: %w", err)
 		}
@@ -398,7 +511,7 @@ func (h *DeltaHandler) generateDelta(
 		return nil, err
 	}
 
-	h.pruneDeltas(r.Context(), repoID)
+	h.pruneDeltas(ctx, repoID)
 
 	return d, nil
 }

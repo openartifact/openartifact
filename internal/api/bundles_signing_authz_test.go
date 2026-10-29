@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -226,21 +225,6 @@ func TestBundleOwnerIsDecidedByUserID(t *testing.T) {
 		http.StatusForbidden,
 	)
 	expectStatus(t, "seal by the creator", original.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/seal", ""), http.StatusOK)
-}
-
-// auditSink records audit rows.
-type auditSink struct {
-	mu   sync.Mutex
-	rows []*models.AuditLog
-}
-
-func (s *auditSink) InsertAuditLog(_ context.Context, e *models.AuditLog) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.rows = append(s.rows, e)
-
-	return nil
 }
 
 func TestBundleLifecycleIsAudited(t *testing.T) {

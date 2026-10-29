@@ -58,7 +58,7 @@ func (d *sbtDB) CreateSBTArtifact(_ context.Context, a *models.SBTArtifact) erro
 func (d *sbtDB) GetSBTArtifact(_ context.Context, _, group, artifact, version, filename string) (*models.SBTArtifact, error) {
 	row := d.rows[rowKey(group, artifact, version, filename)]
 	if row == nil {
-		return nil, nil // not found is (nil, nil) in the Database contract
+		return nil, nil // not found is (nil, nil) in the store contract
 	}
 
 	cp := *row // a copy, as a database returns: callers keep the old blob key after an overwrite

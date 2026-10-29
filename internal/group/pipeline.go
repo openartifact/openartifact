@@ -105,13 +105,13 @@ func (h *Handler) askMember(sess *mergeSession, mr *http.Request, m *models.Repo
 	be.ServeMember(cw, mr, m, path)
 
 	switch {
-	case cw.status == http.StatusNotFound:
+	case cw.code() == http.StatusNotFound:
 		return answer{member: m}
-	case cw.status == http.StatusOK && !cw.overflow:
+	case cw.code() == http.StatusOK && !cw.overflow:
 		return answer{member: m, body: cw.body.Bytes(), contentType: cw.header.Get("Content-Type"), found: true}
 	}
 
-	h.log.Warnw("group member failed to serve a document", "group_member", m.Name, "path", path, "status", cw.status)
+	h.log.Warnw("group member failed to serve a document", "group_member", m.Name, "path", path, "status", cw.code())
 
 	return answer{member: m, failed: true}
 }

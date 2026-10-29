@@ -51,13 +51,27 @@ func validatePropertyKey(key string) string {
 
 // decodeProperties reads a properties request body and validates it. The body
 // is a flat string map, or the same map wrapped as {"properties": {...}} (the
-// shape the web UI sends). It returns a client-facing message on failure.
-func decodeProperties(r *http.Request) (map[string]string, string) {
+// shape the web UI sends). On failure it answers 400 (413 for an oversize
+// body) and reports false.
+func decodeProperties(w http.ResponseWriter, r *http.Request) (map[string]string, bool) {
 	var raw map[string]json.RawMessage
 	if err := decodeJSON(r, &raw); err != nil {
-		return nil, "invalid JSON body"
+		writeBadJSON(w, err)
+		return nil, false
 	}
 
+	props, msg := validateProperties(raw)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
+		return nil, false
+	}
+
+	return props, true
+}
+
+// validateProperties turns a decoded properties body into a string map. It
+// returns a client-facing message on failure.
+func validateProperties(raw map[string]json.RawMessage) (map[string]string, string) {
 	if inner, ok := raw["properties"]; ok && len(raw) == 1 {
 		var wrapped map[string]json.RawMessage
 		if json.Unmarshal(inner, &wrapped) == nil && wrapped != nil {
@@ -157,9 +171,8 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	body, msg := decodeProperties(r)
-	if msg != "" {
-		writeError(w, http.StatusBadRequest, "bad_request", msg)
+	body, ok := decodeProperties(w, r)
+	if !ok {
 		return
 	}
 
@@ -236,9 +249,8 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 		return
 	}
 
-	body, msg := decodeProperties(r)
-	if msg != "" {
-		writeError(w, http.StatusBadRequest, "bad_request", msg)
+	body, ok := decodeProperties(w, r)
+	if !ok {
 		return
 	}
 

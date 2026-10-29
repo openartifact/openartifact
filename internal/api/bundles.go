@@ -270,7 +270,7 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 		Stages      []models.PipelineStage `json:"stages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -354,7 +354,7 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 		Stages      *[]models.PipelineStage `json:"stages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -466,7 +466,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		Pipeline string `json:"pipeline"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -810,7 +810,7 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 		Items []bundleItemInput `json:"items"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -932,7 +932,7 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	// The body is optional, but a present, malformed body is a client error
 	// rather than something to silently ignore.
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -981,7 +981,6 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auditAdmin(r, audit.ActionBundleSealed, "bundle", bundle.ID, details)
-
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
 }
 
@@ -1120,7 +1119,7 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 		Notes      string `json:"notes"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

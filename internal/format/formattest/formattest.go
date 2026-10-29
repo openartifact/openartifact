@@ -444,7 +444,7 @@ func (d *DB) GetRepositoryByName(_ context.Context, name string) (*models.Reposi
 		return d.Repo, nil
 	}
 
-	return nil, nil //nolint:nilnil // not found is (nil, nil) in the Database contract
+	return nil, nil //nolint:nilnil // not found is (nil, nil) in the store contract
 }
 
 // BlobReferenceCount always reports no references.

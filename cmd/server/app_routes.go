@@ -231,7 +231,7 @@ func (a *app) restUploadHandlers() map[string]any {
 	npm := api.NewNPMUploadHandler(log, db, blobStore, reg)
 	npm.SetNPMWorker(wk.npm)
 
-	maven := api.NewMavenUploadHandler(log, db, blobStore, reg)
+	maven := api.NewMavenUploadHandler(log, db, blobStore, reg).WithTasks(a.tasks)
 	maven.SetMavenWorker(wk.maven)
 
 	return map[string]any{"rpm": rpm, "deb": deb, "raw": raw, "npm": npm, "maven": maven}

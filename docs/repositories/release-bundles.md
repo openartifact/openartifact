@@ -167,7 +167,7 @@ A docker image whose layer references are not indexed yet (registry GC records t
 
 `200` with `{"promotion": {...}, "copied": N, "existing": N, "replaced": N, "items": [...]}`. `copied` and `existing` count artifacts (one item can be several, for instance an npm version or a docker image); each entry of `items` has `sha256`, `artifact_path`, `format` and the `copied`, `existing` and `replaced` artifact lists (`name`, `version`, `path`, `sha256`, `size`). The same record is listed by `GET .../promotions` (`status: success`, `completed_at`, `item_count`, `notes`).
 
-A successful promotion is written to the [audit log](../operations/monitoring.md) as `bundle.promoted` (repository: the target) and emits the [`bundle.promoted` webhook event](../operations/webhooks.md) to the target repository's and the global webhooks.
+Creating, sealing and archiving a bundle are written to the [audit log](../operations/monitoring.md#audit-log) as `bundle.created`, `bundle.sealed` (the details say `unsigned`, or name the fingerprint of the GPG key that signed the manifest) and `bundle.archived`. A successful promotion is written to the [audit log](../operations/monitoring.md) as `bundle.promoted` (repository: the target) and emits the [`bundle.promoted` webhook event](../operations/webhooks.md) to the target repository's and the global webhooks.
 
 ```sh
 curl -X POST HOST/api/v1/bundles/shop/2.4.0/promote -H "Authorization: Bearer <TOKEN>" \

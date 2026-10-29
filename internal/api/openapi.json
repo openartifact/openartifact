@@ -24348,7 +24348,7 @@
     "/api/v1/repositories/{name}/packages/{id}/delta": {
       "get": {
         "summary": "Download a binary delta",
-        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to deb and rpm packages. Requires read access.",
+        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached, so the first request can take a while; concurrent requests for the same delta share one run. Generation is bounded: a package larger than 64 MiB (8 MiB when the caller is not signed in, for example on a public repository) is refused with 413, and a busy server answers 503 with `Retry-After`. An already stored delta is served whatever its size. Applies to deb and rpm packages. Requires read access.",
         "tags": [
           "Repositories"
         ],
@@ -24443,7 +24443,24 @@
             }
           },
           "413": {
-            "description": "Package too large for delta generation",
+            "description": "Package too large for delta generation (over 64 MiB, or over 8 MiB for a caller that is not signed in)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Delta generation is busy: the queue of generations waiting for a slot, or the callers waiting for this one, is full. Retry after the Retry-After delay",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {

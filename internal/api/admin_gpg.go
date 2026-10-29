@@ -242,7 +242,7 @@ func (h *AdminGPGHandler) handleImport(w http.ResponseWriter, r *http.Request) {
 		Activate   *bool  `json:"activate"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -281,7 +281,7 @@ func (h *AdminGPGHandler) handleGenerate(w http.ResponseWriter, r *http.Request)
 		Activate  *bool  `json:"activate"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -428,7 +428,7 @@ func (h *AdminGPGHandler) handleActivate(w http.ResponseWriter, r *http.Request)
 	}
 	// The body is optional: an empty one means the global scope.
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

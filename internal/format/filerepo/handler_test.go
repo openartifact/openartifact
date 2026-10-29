@@ -51,7 +51,7 @@ func newSpec(format string, kind models.TrashKind, groupKey string, s *store) fi
 				return &cp, nil
 			}
 
-			return nil, nil // not found is (nil, nil) in the Database contract
+			return nil, nil // not found is (nil, nil) in the store contract
 		},
 		New: func(_ string, c artifactpath.Path, size int64, sha256Hex string) *fileRow {
 			return &fileRow{Path: key(c), Size: size, SHA256: sha256Hex}

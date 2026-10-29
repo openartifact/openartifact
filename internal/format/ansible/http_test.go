@@ -29,7 +29,8 @@ import (
 	"github.com/openartifact/openartifact/pkg/ansible/ansibletest"
 )
 
-// ansibleDB is an in-memory ansible_collections table with its live unique key.
+// ansibleDB is an in-memory store of ansible collections with the live unique key of the
+// generic package tables.
 type ansibleDB struct {
 	*formattest.DB
 

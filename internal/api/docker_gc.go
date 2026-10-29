@@ -91,7 +91,7 @@ func (h *DockerGCHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	var body dockerGCRequest
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

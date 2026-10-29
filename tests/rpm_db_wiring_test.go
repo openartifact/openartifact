@@ -935,6 +935,26 @@ func (m *MockDatabase) RemoveUserFromGroup(ctx context.Context, userID, groupID 
 	return nil
 }
 
+// SetGroupMembers makes userIDs the members of the group, as the store does in
+// one transaction.
+func (m *MockDatabase) SetGroupMembers(ctx context.Context, groupID string, userIDs []string) error {
+	for userID, groups := range m.authUserGroups {
+		delete(groups, groupID)
+
+		if len(groups) == 0 {
+			delete(m.authUserGroups, userID)
+		}
+	}
+
+	for _, userID := range userIDs {
+		if err := m.AddUserToGroup(ctx, userID, groupID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *MockDatabase) ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error) {
 	var groups []*models.Group
 

@@ -9,10 +9,12 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
@@ -287,9 +289,13 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 		Enabled *bool `json:"enabled"`
 	}
 
-	if err := decodeJSON(r, &body); err != nil || body.Enabled == nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: enabled is required")
+	if err := decodeJSON(r, &body); err != nil {
+		writeBadBody(w, err, "bad_request", "invalid JSON body: enabled is required")
+		return
+	}
 
+	if body.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: enabled is required")
 		return
 	}
 
@@ -322,6 +328,13 @@ func (h *FederationHandler) handleSetEnabled(w http.ResponseWriter, r *http.Requ
 
 		return
 	}
+
+	state := "disabled"
+	if *body.Enabled {
+		state = "enabled"
+	}
+
+	auditRepository(r, repo, audit.ActionFederationEnabledChanged, "repository", repo.ID, "federation of "+repo.Name+" "+state)
 
 	h.writeStatus(r.Context(), w, repo, http.StatusOK)
 }
@@ -384,8 +397,7 @@ func (h *FederationHandler) handleCreatePeer(w http.ResponseWriter, r *http.Requ
 
 	var body peerBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -417,6 +429,9 @@ func (h *FederationHandler) handleCreatePeer(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	auditRepository(r, repo, audit.ActionFederationPeerCreated, "federation_peer", peer.ID,
+		"federation peer "+peer.Name+" of "+repo.Name+" created")
+
 	h.wake()
 	writeJSON(w, http.StatusCreated, peerResponse(peer, time.Now()))
 }
@@ -435,8 +450,7 @@ func (h *FederationHandler) handleUpdatePeer(w http.ResponseWriter, r *http.Requ
 
 	var body peerBody
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -461,27 +475,52 @@ func (h *FederationHandler) handleUpdatePeer(w http.ResponseWriter, r *http.Requ
 	case err != nil:
 		h.internalError(w, "update peer", err)
 	default:
+		auditRepository(r, repo, audit.ActionFederationPeerUpdated, "federation_peer", peer.ID,
+			"federation peer "+peer.Name+" of "+repo.Name+" updated: "+body.changedFields())
+
 		h.wake()
 		writeJSON(w, http.StatusOK, peerResponse(peer, time.Now()))
 	}
 }
 
+// changedFields names the fields the patch sets, never their values.
+func (b *peerBody) changedFields() string {
+	var fields []string
+
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"name", b.Name != nil}, {"base_url", b.BaseURL != nil}, {"token", b.Token != nil},
+		{"ca_pem", b.CAPEM != nil}, {"client_cert", b.ClientCert != nil}, {"client_key", b.ClientKey != nil},
+		{"enabled", b.Enabled != nil},
+	} {
+		if f.set {
+			fields = append(fields, f.name)
+		}
+	}
+
+	return strings.Join(fields, ", ")
+}
+
 func (h *FederationHandler) handleDeletePeer(w http.ResponseWriter, r *http.Request) {
-	h.deleteChild(w, r, h.store.DeletePeer, "peer", "delete peer")
+	h.deleteChild(w, r, h.store.DeletePeer, "peer", "delete peer", audit.ActionFederationPeerDeleted)
 }
 
 // deleteChild deletes the {id} child (a peer or a token, named by noun) of the
-// federated repository with del and answers 204; a missing child is a 404 and
-// any other failure a 500 logged as op.
+// federated repository with del and answers 204, recording action; a missing
+// child is a 404 and any other failure a 500 logged as op.
 func (h *FederationHandler) deleteChild(
-	w http.ResponseWriter, r *http.Request, del func(ctx context.Context, repoID, id string) error, noun, op string,
+	w http.ResponseWriter, r *http.Request, del func(ctx context.Context, repoID, id string) error, noun, op, action string,
 ) {
 	repo, ok := h.enabledRepo(w, r)
 	if !ok {
 		return
 	}
 
-	err := del(r.Context(), repo.ID, urlparams.Vars(r)["id"])
+	id := urlparams.Vars(r)["id"]
+
+	err := del(r.Context(), repo.ID, id)
 
 	switch {
 	case errors.Is(err, federation.ErrNotFound):
@@ -489,6 +528,8 @@ func (h *FederationHandler) deleteChild(
 	case err != nil:
 		h.internalError(w, op, err)
 	default:
+		auditRepository(r, repo, action, "federation_"+noun, id, "federation "+noun+" "+id+" of "+repo.Name+" removed")
+
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -520,6 +561,9 @@ func (h *FederationHandler) handleResync(w http.ResponseWriter, r *http.Request)
 
 		return
 	}
+
+	auditRepository(r, repo, audit.ActionFederationPeerResynced, "federation_peer", id,
+		"resync of federation peer "+peer.Name+" of "+repo.Name+" requested")
 
 	h.wake()
 	writeJSON(w, http.StatusAccepted, peerResponse(peer, time.Now()))
@@ -573,8 +617,7 @@ func (h *FederationHandler) handleCreateToken(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -601,9 +644,12 @@ func (h *FederationHandler) handleCreateToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	auditRepository(r, repo, audit.ActionFederationTokenCreated, "federation_token", tok.ID,
+		"federation token "+tok.Name+" of "+repo.Name+" created")
+
 	writeJSON(w, http.StatusCreated, FederationTokenCreatedResponse{ID: tok.ID, Name: tok.Name, Token: secret, CreatedAt: tok.CreatedAt})
 }
 
 func (h *FederationHandler) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
-	h.deleteChild(w, r, h.store.RevokeToken, "token", "revoke token")
+	h.deleteChild(w, r, h.store.RevokeToken, "token", "revoke token", audit.ActionFederationTokenRevoked)
 }

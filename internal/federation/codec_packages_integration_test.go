@@ -483,3 +483,40 @@ func TestPackageCodecNPMDeleteRemovesTagsAndEmptyPackage(t *testing.T) {
 		t.Fatalf("tag of the deleted version kept: %d", n)
 	}
 }
+
+// Trashing the files of a unit never restamps a version that is already in the
+// trash: its deleted_at starts the retention clock.
+func TestPackageCodecTrashKeepsTheStampOfATrashedVersion(t *testing.T) {
+	db := pkgDB{t: t, db: freshDB(t).GetDB()}
+	repo := seedRepo(t, db.db, "npm-trash", "npm")
+
+	db.seedVersion(repo, "npm", npmPlainPkg, npmPlainPkg, `{}`, "2.0.0", `{}`,
+		seedFile{path: "plain/-/plain-2.0.0.tgz", content: "tgz", role: "primary", unitKey: npmPlainVer, listed: true, attrs: `{}`})
+	db.exec(`UPDATE package_versions SET deleted_at = now() - interval '10 days', deleted_by = 'earlier' WHERE repository_id = $1`, repo)
+
+	pc, ok := codecOf(t, "npm").(*packageCodec)
+	if !ok {
+		t.Fatal("npm codec is not a packageCodec")
+	}
+
+	tx, err := db.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	u := &unitRows{}
+	u.ver.id = db.text(`SELECT id::text FROM package_versions WHERE repository_id = $1`, repo)
+	fileID := db.text(`SELECT id::text FROM package_files WHERE repository_id = $1`, repo)
+
+	if err := pc.trash(context.Background(), tx, u, []string{fileID}, "federation:test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := db.text(`SELECT deleted_by FROM package_versions WHERE repository_id = $1`, repo); got != "earlier" {
+		t.Fatalf("deleted_by = %q, want the earlier stamp kept", got)
+	}
+}

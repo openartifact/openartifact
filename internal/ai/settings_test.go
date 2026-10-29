@@ -9,6 +9,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -143,5 +144,36 @@ func TestCustomProviderWithoutBaseURLNeverFallsBackToOpenAI(t *testing.T) {
 
 	if got := NewClient(Config{Provider: "custom", Model: "m", APIKey: "k"}).baseURL; got != "" {
 		t.Errorf("baseURL = %q, want empty so the key cannot be sent to api.openai.com", got)
+	}
+}
+
+type failingSettings struct{ err error }
+
+func (f failingSettings) GetSystemSetting(context.Context, string) (string, error) {
+	return "", f.err
+}
+
+func TestLoadSettingsCheckedReportsAFailedRead(t *testing.T) {
+	t.Parallel()
+
+	env := Settings{Config: Config{Model: "env-model"}}
+	down := errors.New("database unavailable")
+
+	// LoadSettings alone cannot tell the outage from "nothing stored".
+	if got := LoadSettings(t.Context(), failingSettings{err: down}, env); got != env {
+		t.Fatalf("LoadSettings on failing reads = %+v, want the env settings", got)
+	}
+
+	if _, err := LoadSettingsChecked(t.Context(), failingSettings{err: down}, env); !errors.Is(err, down) {
+		t.Fatalf("LoadSettingsChecked err = %v, want the read error", err)
+	}
+
+	got, err := LoadSettingsChecked(t.Context(), mapSettings{SettingEnabled: "true", SettingModel: "db-model"}, env)
+	if err != nil {
+		t.Fatalf("LoadSettingsChecked on good reads: %v", err)
+	}
+
+	if !got.Enabled || got.Config.Model != "db-model" {
+		t.Fatalf("LoadSettingsChecked = %+v, want the stored settings", got)
 	}
 }

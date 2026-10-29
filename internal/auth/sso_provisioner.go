@@ -69,7 +69,6 @@ var ErrEmailAlreadyInUse = errors.New("email already in use")
 
 // ErrUsernameUnavailable is returned when no free username could be derived.
 var ErrUsernameUnavailable = errors.New("no free username available")
-var ErrEmailLinkAmbiguous = errors.New("multiple users share email")
 
 // ErrIdentityConflict is returned when an SSO login would re-bind a local user
 // that is already bound to a different external identity or provider.

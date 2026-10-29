@@ -5,6 +5,7 @@
 package license
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -286,5 +287,59 @@ func TestDetectFromMetadata_MapShapes(t *testing.T) {
 	got = d.DetectFromMetadata(map[string]any{"licenses": []any{map[string]any{"type": "MIT"}, map[string]any{"name": "Apache-2.0"}}})
 	if len(got) != 2 {
 		t.Fatalf("list of maps = %v", got)
+	}
+}
+
+// "/", ";" and "|" join licenses as AND, OR and a comma do: a deny list matches
+// every identifier on either side, and an allow list needs every one of them
+// (such a string does not say which of the licenses a user may pick).
+func TestEvaluatePolicy_ExpressionSeparatorsSlashSemicolonPipe(t *testing.T) {
+	d := NewDetector(nil)
+
+	for _, expr := range []string{
+		"GPL-3.0/MIT", "MIT/GPL-3.0", "GPL-3.0;MIT", "MIT;GPL-3.0", "MIT|GPL-3.0", "GPL-3.0|MIT",
+		"MIT / GPL-3.0", "MIT; GPL-3.0", "MIT | GPL-3.0", "(MIT)/(GPL-3.0)", "MIT/Apache-2.0/GPL-3.0", "gpl-3.0/mit",
+	} {
+		deny := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"GPL-3.0"}}
+		if ok, _ := d.EvaluatePolicy([]string{expr}, deny); ok {
+			t.Errorf("%q must be denied by [GPL-3.0]", expr)
+		}
+
+		allow := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{"MIT"}}
+		if ok, _ := d.EvaluatePolicy([]string{expr}, allow); ok {
+			t.Errorf("%q must not be allowed by [MIT]: GPL-3.0 is not listed", expr)
+		}
+	}
+
+	// Every identifier listed: allowed.
+	both := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{"MIT", "Apache-2.0"}}
+	for _, expr := range []string{"MIT/Apache-2.0", "Apache-2.0;MIT", "MIT|Apache-2.0", "MIT / Apache-2.0"} {
+		if ok, v := d.EvaluatePolicy([]string{expr}, both); !ok {
+			t.Errorf("%q must be allowed by [MIT, Apache-2.0]: %v", expr, v)
+		}
+	}
+
+	// Another license in the list, not denied.
+	deny := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"GPL-3.0"}}
+	for _, expr := range []string{"MIT/Apache-2.0", "MIT;BSD-3-Clause", "MIT|ISC"} {
+		if ok, v := d.EvaluatePolicy([]string{expr}, deny); !ok {
+			t.Errorf("%q must pass the deny list [GPL-3.0]: %v", expr, v)
+		}
+	}
+}
+
+// SPDX identifiers keep their "+", "-", "." and ":" and are not cut by the
+// separators.
+func TestSPDXIdentifiersKeepWholeIdentifiers(t *testing.T) {
+	for expr, want := range map[string][]string{
+		"GPL-2.0-only WITH Classpath-exception-2.0":      {"gpl-2.0-only with classpath-exception-2.0", "gpl-2.0", "classpath-exception-2.0"},
+		"LicenseRef-Acme.Custom-1.0/MIT":                 {"licenseref-acme.custom-1.0/mit", "licenseref-acme.custom-1.0", "mit"},
+		"DocumentRef-spdx-tool-1.2:LicenseRef-MyLicense": {"documentref-spdx-tool-1.2:licenseref-mylicense", "documentref-spdx-tool-1.2:licenseref-mylicense"},
+		"Apache-2.0 OR GPL-2.0+":                         {"apache-2.0 or gpl-2.0", "apache-2.0", "gpl-2.0"},
+		"MIT;Zlib":                                       {"mit;zlib", "mit", "zlib"},
+	} {
+		if got := spdxIdentifiers(expr); !slices.Equal(got, want) {
+			t.Errorf("spdxIdentifiers(%q) = %q, want %q", expr, got, want)
+		}
 	}
 }

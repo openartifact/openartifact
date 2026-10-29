@@ -7,7 +7,7 @@ package audit
 // Audit action names. The audit_logs.chk_audit_action constraint admits exactly
 // the values in KnownActions; every action an emitter can produce MUST be
 // declared here, listed in KnownActions and allowed by the latest migration
-// that rewrites the constraint (see migrations/031_audit_actions.sql). The
+// that rewrites the constraint (see migrations/002_audit_actions.sql). The
 // integration test TestKnownActionsAcceptedByDatabase inserts each entry of
 // KnownActions into a freshly migrated database.
 const (
@@ -137,6 +137,30 @@ const (
 	ActionGPGKeyActivated   = "gpg_key.activated"
 	ActionGPGKeyDeactivated = "gpg_key.deactivated"
 	ActionGPGKeyExported    = "gpg_key.exported"
+
+	// Backup and restore.
+
+	ActionBackupRestoreStarted = "backup.restore_started"
+
+	// Repository cleanup policies.
+
+	ActionCleanupPolicyChanged = "cleanup.policy_changed"
+	ActionCleanupRunStarted    = "cleanup.run_started"
+
+	// Federation.
+
+	ActionFederationEnabledChanged = "federation.enabled_changed"
+	ActionFederationPeerCreated    = "federation.peer_created"
+	ActionFederationPeerUpdated    = "federation.peer_updated"
+	ActionFederationPeerDeleted    = "federation.peer_deleted"
+	ActionFederationPeerResynced   = "federation.peer_resynced"
+	ActionFederationTokenCreated   = "federation.token_created"
+	ActionFederationTokenRevoked   = "federation.token_revoked"
+
+	// Integrations and policies.
+
+	ActionDependencyTrackConfigChanged = "dependency_track.config_changed"
+	ActionLicensePolicyChanged         = "license.policy_changed"
 )
 
 // KnownActions lists every action the audit_logs constraint accepts.
@@ -189,4 +213,13 @@ var KnownActions = []string{
 	ActionTokenCreatedForUser,
 
 	ActionGPGKeyCreated, ActionGPGKeyDeleted, ActionGPGKeyActivated, ActionGPGKeyDeactivated, ActionGPGKeyExported,
+
+	ActionBackupRestoreStarted,
+
+	ActionCleanupPolicyChanged, ActionCleanupRunStarted,
+
+	ActionFederationEnabledChanged, ActionFederationPeerCreated, ActionFederationPeerUpdated,
+	ActionFederationPeerDeleted, ActionFederationPeerResynced, ActionFederationTokenCreated, ActionFederationTokenRevoked,
+
+	ActionDependencyTrackConfigChanged, ActionLicensePolicyChanged,
 }

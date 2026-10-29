@@ -36,9 +36,9 @@ import (
 
 const MaxNPMUploadBytes int64 = 200 << 20
 
-// maxConcurrentNPMPublishes bounds the publishes buffering a body at once: a
-// publish holds roughly three copies of its body (raw bytes, the decoded
-// base64 string and the tarball), up to ~600 MiB for a 200 MiB upload.
+// maxConcurrentNPMPublishes bounds the publishes that work on a spooled body
+// at once (hash, scan, store the tarball). The slot is taken after the body is
+// read, so a slow sender never holds one.
 const maxConcurrentNPMPublishes = 4
 
 // maxNPMDistTagBody caps the dist-tag PUT body, a JSON string holding a version.
@@ -323,19 +323,6 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		defer func() { h.reg.CountUpload(metrics.FormatNPM, uploadResult) }()
 	}
 
-	if h.publishSlots != nil {
-		select {
-		case h.publishSlots <- struct{}{}:
-			defer func() { <-h.publishSlots }()
-		case <-r.Context().Done():
-			uploadResult = "error"
-
-			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
-
-			return
-		}
-	}
-
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	rawPkg := vars["*"]
@@ -373,6 +360,21 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 	}
 
 	defer cleanup()
+
+	// The slot is taken only once the body is in: a client that is still
+	// sending must not hold one, or a few slow clients block every publish.
+	if h.publishSlots != nil {
+		select {
+		case h.publishSlots <- struct{}{}:
+			defer func() { <-h.publishSlots }()
+		case <-r.Context().Done():
+			uploadResult = "error"
+
+			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
+
+			return
+		}
+	}
 
 	pub := *parsed
 

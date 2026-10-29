@@ -249,7 +249,7 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 
 	var req CreatePresignedUploadRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		writeBadBody(w, err, "invalid_request", "invalid request body")
 		return
 	}
 

@@ -94,7 +94,7 @@ func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request
 		Role     string `json:"role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeBadBody(w, err, "bad_request", "invalid request body")
 		return
 	}
 
@@ -193,7 +193,7 @@ func (h *ProjectsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Requ
 		Role string `json:"role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeBadBody(w, err, "bad_request", "invalid request body")
 		return
 	}
 

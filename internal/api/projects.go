@@ -501,7 +501,7 @@ func (h *ProjectsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	var req createProjectRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeBadBody(w, err, "bad_request", "invalid request body")
 		return
 	}
 
@@ -700,7 +700,7 @@ func (h *ProjectsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		writeBadBody(w, err, "bad_request", "invalid request body")
 		return
 	}
 

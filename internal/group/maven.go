@@ -178,6 +178,16 @@ func newCaptureWriter(limit int) *captureWriter {
 
 func (c *captureWriter) Header() http.Header { return c.header }
 
+// code is the status of the capture: a handler that wrote nothing answers an
+// empty 200, as net/http does.
+func (c *captureWriter) code() int {
+	if c.status == 0 {
+		return http.StatusOK
+	}
+
+	return c.status
+}
+
 func (c *captureWriter) WriteHeader(code int) {
 	if c.status == 0 {
 		c.status = code

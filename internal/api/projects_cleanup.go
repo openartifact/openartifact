@@ -75,7 +75,7 @@ func (h *ProjectsHandler) handleCreateCleanupPolicy(w http.ResponseWriter, r *ht
 		ScheduleCron            string `json:"schedule_cron"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *ProjectsHandler) handleUpdateCleanupPolicy(w http.ResponseWriter, r *ht
 
 	var body cleanupPolicyPatch
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

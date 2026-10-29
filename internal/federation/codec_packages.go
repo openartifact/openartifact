@@ -1064,7 +1064,8 @@ func (c *packageCodec) trash(ctx context.Context, tx *sql.Tx, u *unitRows, ids [
 	// A version is trashed with its last live file.
 	_, err := tx.ExecContext(ctx,
 		`UPDATE package_versions v SET deleted_at = now(), deleted_by = $2
-		  WHERE v.id = $1::uuid AND NOT EXISTS (SELECT 1 FROM package_files f WHERE f.version_id = v.id AND f.deleted_at IS NULL)`,
+		  WHERE v.id = $1::uuid AND v.deleted_at IS NULL
+		    AND NOT EXISTS (SELECT 1 FROM package_files f WHERE f.version_id = v.id AND f.deleted_at IS NULL)`,
 		u.ver.id, by)
 	if err != nil {
 		return fmt.Errorf("trash version: %w", err)

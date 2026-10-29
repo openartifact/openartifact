@@ -137,7 +137,7 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		Metadata    map[string]any `json:"metadata"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		writeBadJSON(w, err)
 		return
 	}
 

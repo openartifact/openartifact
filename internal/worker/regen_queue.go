@@ -374,9 +374,9 @@ func (q *regenQueue[K]) execute(key K) {
 	delete(q.entries, key)
 
 	if q.settle != nil {
-		// A key that gave up on a busy lock is not done: its request stays for
-		// a later claim.
-		q.settle(key, !busy)
+		// A key that gave up on a busy lock or failed is not done: its request
+		// stays for a later claim, once the lease lapses.
+		q.settle(key, err == nil)
 	}
 
 	q.maybeDrainedLocked()

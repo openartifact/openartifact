@@ -83,7 +83,7 @@ func (d *debAPIDB) UpsertBlob(_ context.Context, sha string, _ string, _ int64) 
 }
 
 func (d *debAPIDB) CreateDebPackage(_ context.Context, p *models.Component, _, _ string) error {
-	p.ID = "pkg-1"
+	p.ID = lookupPackageID
 	d.pkgs[p.ID] = p
 
 	return nil
@@ -209,7 +209,7 @@ func TestDebUploadDeleteEmitEventsAndQuota(t *testing.T) {
 		t.Errorf("quota reserve=%d release=%d", db.reserved, db.decrCalls)
 	}
 
-	req = httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/repositories/myrepo/debs/pkg-1", nil)
+	req = httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/repositories/myrepo/debs/"+lookupPackageID, nil)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -268,7 +268,7 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 				t.Fatalf("upload status = %d: %s", w.Code, w.Body.String())
 			}
 
-			if got := db.pkgs["pkg-1"].CreatedAt; !got.Equal(tc.want) {
+			if got := db.pkgs[lookupPackageID].CreatedAt; !got.Equal(tc.want) {
 				t.Errorf("created_at = %v, want %v", got, tc.want)
 			}
 
@@ -277,7 +277,7 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 					ID string `json:"id"`
 				} `json:"data"`
 			}
-			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || resp.Data.ID != "pkg-1" {
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || resp.Data.ID != lookupPackageID {
 				t.Errorf("response id = %q (err %v), body %s", resp.Data.ID, err, w.Body.String())
 			}
 		})

@@ -27,6 +27,7 @@ type fakeBackend struct {
 	kinds    []string
 	renewed  [][]ref
 	finished []finishCall
+	released []ref
 	claimErr error
 }
 
@@ -62,6 +63,22 @@ func (f *fakeBackend) finish(_ context.Context, r ref, upTo time.Time) error {
 	f.finished = append(f.finished, finishCall{ref: r, upTo: upTo})
 
 	return nil
+}
+
+func (f *fakeBackend) release(_ context.Context, r ref) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.released = append(f.released, r)
+
+	return nil
+}
+
+func (f *fakeBackend) releasedRefs() []ref {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]ref(nil), f.released...)
 }
 
 func (f *fakeBackend) finishedCalls() []finishCall {
@@ -171,6 +188,37 @@ func TestConsumerGivingUpLeavesTheRequestForALaterClaim(t *testing.T) {
 
 	if fb.renewCalls() != 0 {
 		t.Fatal("the claim of work that gave up is still renewed; it must lapse so another process can take over")
+	}
+}
+
+func TestConsumerReleaseGivesBackGivenUpAndHeldClaims(t *testing.T) {
+	at := time.Now()
+	fb := &fakeBackend{queue: []Request{
+		{Kind: "regen:rpm", Key: "gaveup", RequestedAt: at},
+		{Kind: "regen:rpm", Key: "running", RequestedAt: at},
+		{Kind: "regen:rpm", Key: "done", RequestedAt: at},
+	}}
+	c := newConsumer(fb, testLog(t))
+	c.Handle("regen:rpm", func(context.Context, Request) Result { return Later })
+
+	ctx := context.Background()
+
+	c.tick(ctx, []string{"regen:rpm"})
+	c.Settle("regen:rpm", "gaveup", false)
+	c.Settle("regen:rpm", "done", true)
+	c.Release(ctx)
+
+	got := map[string]bool{}
+	for _, r := range fb.releasedRefs() {
+		got[r.key] = true
+	}
+
+	if !got["gaveup"] || !got["running"] || got["done"] || len(got) != 2 {
+		t.Fatalf("released = %v, want gaveup and running only", got)
+	}
+
+	if n := len(fb.finishedCalls()); n != 1 {
+		t.Fatalf("finished = %d, want 1 (the done request)", n)
 	}
 }
 
