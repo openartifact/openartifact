@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // A member is asked for the document itself: a GET without the client's
@@ -92,4 +95,25 @@ func TestServeMergedDoc_Ladder(t *testing.T) {
 			t.Errorf("partial merge carries validators: ETag %q, Cache-Control %q", w.Header().Get("ETag"), w.Header().Get("Cache-Control"))
 		}
 	})
+}
+
+// A member handler that writes nothing answers an empty 200, as net/http does:
+// it is the (empty) document, not a failed member.
+func TestAskMember_EmptyResponseIsAnEmptyOK(t *testing.T) {
+	t.Parallel()
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Handler{log: log}
+	sess := &mergeSession{ctx: context.Background()}
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
+	be := Backend{ServeMember: func(http.ResponseWriter, *http.Request, *models.Repository, string) {}}
+
+	got := h.askMember(sess, req, &models.Repository{Name: "m"}, "doc", 1024, be)
+	if got.failed || !got.found {
+		t.Fatalf("answer = %+v, want found and not failed", got)
+	}
 }

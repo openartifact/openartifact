@@ -371,14 +371,10 @@ func (h *Handler) ownsByDoc(mr *http.Request, m *models.Repository, ref PkgRef, 
 	cw := sess.capture(maxConanProbeBytes)
 	be.ServeMember(cw, mr, m, ref.probe)
 
-	if cw.status == 0 {
-		cw.status = http.StatusOK
-	}
-
 	switch {
-	case cw.status == http.StatusNotFound:
+	case cw.code() == http.StatusNotFound:
 		return ownsNot
-	case cw.status != http.StatusOK || cw.overflow:
+	case cw.code() != http.StatusOK || cw.overflow:
 		return ownsUnknown
 	}
 
@@ -405,9 +401,9 @@ func (h *Handler) ownsChart(mr *http.Request, m *models.Repository, ref PkgRef, 
 	be.ServeMember(cw, mr, m, "index.yaml")
 
 	switch {
-	case cw.status == http.StatusNotFound:
+	case cw.code() == http.StatusNotFound:
 		return ownsNot
-	case cw.status != http.StatusOK || cw.overflow:
+	case cw.code() != http.StatusOK || cw.overflow:
 		return ownsUnknown
 	}
 
