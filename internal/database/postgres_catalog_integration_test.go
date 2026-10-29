@@ -22,7 +22,7 @@ type catalogFixture struct {
 	db   *sql.DB
 	repo string
 	seed *quotaSeeder
-	// ids maps "name@version" to the npm_versions row id.
+	// ids maps "name@version" to the package file id.
 	ids map[string]string
 }
 
@@ -30,14 +30,10 @@ type catalogFixture struct {
 func (f *catalogFixture) seedNPMVersion(t *testing.T, name, version string, size int64, created time.Time) {
 	t.Helper()
 
-	pkg := mustScan[string](t, f.db, `INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, $2, $2)
-		ON CONFLICT (repository_id, full_name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, f.repo, name)
-	blob := f.seed.blob(size)
-
-	f.ids[name+"@"+version] = mustScan[string](t, f.db, `INSERT INTO npm_versions
-		(package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id, created_at)
-		VALUES ($1, $2, '{}', 'sha512-x', $3, $4, $5, $6) RETURNING id`,
-		pkg, version, fmt.Sprintf("%040d", len(f.ids)+1), name+"-"+version+".tgz", blob, created)
+	f.ids[name+"@"+version] = seedPackageFile(t, f.pg, packageSeed{
+		repo: f.repo, format: "npm", name: name, version: version, filename: name + "-" + version + ".tgz",
+		blobSeed: fmt.Sprintf("%s/%s/%s", f.repo, name, version), blobSize: size, created: created,
+	})
 }
 
 func newCatalogFixture(t *testing.T) *catalogFixture {
