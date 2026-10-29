@@ -173,15 +173,7 @@ func (p *APKStore) ListApkPackages(ctx context.Context, repoID string) ([]*model
 		return nil, fmt.Errorf("failed to list apk packages: %w", err)
 	}
 
-	pkgs := make([]*models.ApkPackage, len(rows))
-
-	for i, row := range rows {
-		if pkgs[i], err = apkPackageFromRow(row); err != nil {
-			return nil, err
-		}
-	}
-
-	return pkgs, nil
+	return mapRowsErr(rows, apkPackageFromRow)
 }
 
 // DeleteApkPackage removes one live package row (and its version and package

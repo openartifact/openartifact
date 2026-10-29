@@ -199,15 +199,7 @@ func (p *PacmanStore) ListPacmanPackages(ctx context.Context, repoID string) ([]
 		return nil, fmt.Errorf("failed to list pacman packages: %w", err)
 	}
 
-	pkgs := make([]*models.PacmanPackage, len(rows))
-
-	for i, row := range rows {
-		if pkgs[i], err = pacmanFromRow(row); err != nil {
-			return nil, err
-		}
-	}
-
-	return pkgs, nil
+	return mapRowsErr(rows, pacmanFromRow)
 }
 
 // ListPacmanFileLists returns the file lists of the live packages that have one.
