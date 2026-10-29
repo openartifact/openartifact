@@ -97,139 +97,34 @@ func searchSource(filter SearchFilter) (string, bool) {
 		FROM ` + narrowSearchView() + ` AS n ` + fmt.Sprintf(searchBlobJoins, "n") + `)`, joinRepo
 }
 
-// searchBranch renders one branch of the view: alias, repository column and
-// per-format expressions are given in searchColumns order.
-func searchBranch(format, name, version, path, groupID, artifactID, blobID, manifestDigest, from string) string {
-	manifestImage := "NULL"
-	if manifestDigest != "NULL" {
-		manifestImage = from + ".image"
-	}
+// genericSearchBranch is every format but docker: one row per live, listed
+// package_files row, named after its package (P.name) at its version. The
+// listed flag keeps one row per artifact (go: the zip, not the .mod; conan: the
+// recipe manifest). group_id/artifact_id_coord are the maven coordinates held in
+// packages.attrs and are reported for maven only (sbt keeps the same attrs keys
+// but never showed them); scope is npm's. The trigram index of packages.name
+// serves the name predicates.
+const genericSearchBranch = `SELECT f.repository_id, p.format::text AS format, p.name::text AS name, v.version::text AS version,
+			f.created_at, f.id, f.filename::text AS path,
+			CASE WHEN p.format = 'maven' THEN p.attrs ->> 'group_id' END::text AS group_id,
+			CASE WHEN p.format = 'maven' THEN p.attrs ->> 'artifact_id' END::text AS artifact_id_coord,
+			CASE WHEN p.format = 'npm' THEN NULLIF(p.attrs ->> 'scope', '') END::text AS scope,
+			f.blob_id::uuid AS blob_id, NULL::text AS manifest_image, NULL::text AS manifest_digest
+		FROM package_files f
+		JOIN package_versions v ON v.id = f.version_id
+		JOIN packages p ON p.id = v.package_id
+		WHERE f.deleted_at IS NULL AND f.listed`
 
-	return `SELECT ` + from + `.repository_id, '` + format + `'::text AS format, ` + name + `::text AS name, ` + version + `::text AS version,
-			` + from + `.created_at, ` + from + `.id, ` + path + `::text AS path,
-			` + groupID + `::text AS group_id, ` + artifactID + `::text AS artifact_id_coord, NULL::text AS scope,
-			` + blobID + `::uuid AS blob_id, ` + manifestImage + `::text AS manifest_image, ` + manifestDigest + `::text AS manifest_digest`
-}
+// dockerSearchBranch is the one explicit docker special case: docker keeps its
+// own tables, a tag is the result and its size/digest come from the manifest.
+const dockerSearchBranch = `SELECT dt.repository_id, 'docker'::text AS format, dt.name::text AS name, ''::text AS version,
+			dt.created_at, dt.id, ''::text AS path,
+			NULL::text AS group_id, NULL::text AS artifact_id_coord, NULL::text AS scope,
+			NULL::uuid AS blob_id, dt.image::text AS manifest_image, dt.manifest_digest::text AS manifest_digest
+		FROM docker_tags dt WHERE dt.deleted_at IS NULL`
 
 func unifiedSearchBranches() []string {
-	const null = "NULL"
-
-	return []string{
-		searchBranch(
-			"apk",
-			"ap.branch || '/' || ap.repo || '/' || ap.name",
-			"ap.version",
-			"ap.name || '-' || ap.version || '.apk'",
-			null,
-			null,
-			"ap.blob_id",
-			null,
-			"ap",
-		) +
-			"\n\t\tFROM apk_packages ap WHERE ap.deleted_at IS NULL",
-		searchBranch("nix", "np.name", "np.store_hash", "np.store_hash || '.narinfo'", null, null, "np.blob_id", null, "np") +
-			"\n\t\tFROM nix_paths np WHERE np.deleted_at IS NULL",
-		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
-			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
-		searchBranch("composer", "cmp.name", "cmp.version", "''", null, null, "cmp.blob_id", null, "cmp") +
-			"\n\t\tFROM composer_packages cmp WHERE cmp.deleted_at IS NULL",
-		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
-			"\n\t\tFROM conda_packages cp WHERE cp.deleted_at IS NULL",
-		searchBranch("ansible", "ac.namespace || '.' || ac.name", "ac.version", "ac.filename", null, null, "ac.blob_id", null, "ac") +
-			"\n\t\tFROM ansible_collections ac WHERE ac.deleted_at IS NULL",
-		searchBranch("pacman", "pk.name", "pk.version", "pk.filename", null, null, "pk.blob_id", null, "pk") +
-			"\n\t\tFROM pacman_packages pk WHERE pk.deleted_at IS NULL",
-		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +
-			// One result per recipe revision: its manifest row, or a pre-0.5.0 row without a file name.
-			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL AND co.package_id = '' AND co.filename IN ('', 'conanmanifest.txt')",
-		searchBranch(
-			"terraform",
-			"'modules/' || tm.name || '/' || tm.system",
-			"tm.version",
-			"tm.name || '-' || tm.system || '-' || tm.version || '.' || tm.archive_ext",
-			null,
-			null,
-			"tm.blob_id",
-			null,
-			"tm",
-		) +
-			"\n\t\tFROM terraform_modules tm WHERE tm.deleted_at IS NULL",
-		searchBranch(
-			"terraform",
-			"'providers/' || tp.type",
-			"tp.version",
-			"'terraform-provider-' || tp.type || '_' || tp.version || '_' || tp.os || '_' || tp.arch || '.zip'",
-			null,
-			null,
-			"tp.blob_id",
-			null,
-			"tp",
-		) +
-			"\n\t\tFROM terraform_providers tp WHERE tp.deleted_at IS NULL",
-		searchBranch("docker", "dt.name", "''", "''", null, null, null, "dt.manifest_digest", "dt") +
-			"\n\t\tFROM docker_tags dt WHERE dt.deleted_at IS NULL",
-		// go: only the zip blob is reported (a module with just a .mod has none).
-		searchBranch("go", "gm.module_path", "gm.version", "''", null, null, "gm.zip_blob_id", null, "gm") +
-			"\n\t\tFROM gomod_modules gm WHERE gm.deleted_at IS NULL",
-		searchBranch("helm", "hc.name", "hc.version", "hc.name || '-' || hc.version || '.tgz'", null, null, "hc.blob_id", null, "hc") +
-			"\n\t\tFROM helm_charts hc WHERE hc.deleted_at IS NULL",
-		searchBranch(
-			"ivy",
-			"iv.organisation || '/' || iv.module",
-			"iv.revision",
-			"iv.artifact_name || '.' || iv.artifact_ext",
-			null,
-			null,
-			"iv.blob_id",
-			null,
-			"iv",
-		) +
-			"\n\t\tFROM ivy_artifacts iv WHERE iv.deleted_at IS NULL",
-		searchBranch(
-			"maven",
-			"ma.group_id || ':' || ma.artifact_id_coord",
-			"ma.version",
-			"ma.repo_path",
-			"ma.group_id",
-			"ma.artifact_id_coord",
-			"ma.blob_id",
-			null,
-			"ma",
-		) +
-			"\n\t\tFROM maven_artifacts ma WHERE ma.deleted_at IS NULL",
-		// npm: id and created_at are the version's, repository and name the package's.
-		`SELECT np.repository_id, 'npm'::text AS format, np.full_name::text AS name, nv.version::text AS version,
-			nv.created_at, nv.id, nv.tarball_filename::text AS path,
-			NULL::text AS group_id, NULL::text AS artifact_id_coord, NULLIF(np.scope, '')::text AS scope,
-			nv.blob_id::uuid AS blob_id, NULL::text AS manifest_image, NULL::text AS manifest_digest
-		FROM npm_packages np
-		JOIN npm_versions nv ON nv.package_id = np.id
-		WHERE nv.deleted_at IS NULL`,
-		searchBranch(
-			"nuget",
-			"ng.package_id",
-			"ng.version",
-			"ng.package_id || '.' || ng.version || '.nupkg'",
-			null,
-			null,
-			"ng.blob_id",
-			null,
-			"ng",
-		) +
-			"\n\t\tFROM nuget_packages ng WHERE ng.deleted_at IS NULL",
-		searchBranch("pypi", "pp.name", "pp.version", "pp.filename", null, null, "pp.blob_id", null, "pp") +
-			"\n\t\tFROM pypi_packages pp WHERE pp.deleted_at IS NULL",
-		searchBranch("raw", "ra.path", "''", "ra.path", null, null, "ra.blob_id", null, "ra") +
-			"\n\t\tFROM raw_artifacts ra WHERE ra.deleted_at IS NULL",
-		searchBranch("rubygems", "rg.name", "rg.version", "rg.name || '-' || rg.version || '.gem'", null, null, "rg.blob_id", null, "rg") +
-			"\n\t\tFROM rubygems_gems rg WHERE rg.deleted_at IS NULL",
-		searchBranch("sbt", "sa.group_id || '/' || sa.artifact_id", "sa.version", "sa.filename", null, null, "sa.blob_id", null, "sa") +
-			"\n\t\tFROM sbt_artifacts sa WHERE sa.deleted_at IS NULL",
-		searchBranch("rpm", "rp.name", "rp.version", "COALESCE(rp.filename, '')", null, null, "rp.blob_id", null, "rp") +
-			"\n\t\tFROM rpm_packages rp WHERE rp.deleted_at IS NULL",
-		searchBranch("deb", "dp.name", "dp.version", "COALESCE(dp.filename, '')", null, null, "dp.blob_id", null, "dp") +
-			"\n\t\tFROM deb_packages dp WHERE dp.deleted_at IS NULL",
-	}
+	return []string{genericSearchBranch, dockerSearchBranch}
 }
 
 // CountResults returns how many rows the filter matches (capped at

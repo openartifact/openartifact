@@ -26,11 +26,14 @@ func seedChecksumData(t *testing.T, db *sql.DB) (uuid.UUID, uuid.UUID) {
 		`INSERT INTO repositories (name, format, project_id)
 		 VALUES ('ck-visible', 'npm', '00000000-0000-0000-0000-000000000001'),
 		        ('ck-hidden', 'npm', '00000000-0000-0000-0000-000000000001')`,
-		`INSERT INTO npm_packages (repository_id, name, full_name)
-		 SELECT id, 'widget', 'widget' FROM repositories WHERE name LIKE 'ck-%'`,
-		`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
-		 SELECT id, '1.0.0', '{}', 'x', repeat('d', 40), 'widget-1.0.0.tgz', '00000000-0000-0000-0000-0000000000c1'
-		 FROM npm_packages`,
+		`INSERT INTO packages (repository_id, format, name, name_key)
+		 SELECT id, 'npm', 'widget', 'widget' FROM repositories WHERE name LIKE 'ck-%'`,
+		`INSERT INTO package_versions (package_id, repository_id, version, version_key)
+		 SELECT id, repository_id, '1.0.0', '1.0.0' FROM packages`,
+		`INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, checksums)
+		 SELECT id, repository_id, 'widget/-/widget-1.0.0.tgz', 'widget-1.0.0.tgz',
+		        '00000000-0000-0000-0000-0000000000c1', jsonb_build_object('shasum', repeat('d', 40), 'integrity', 'x')
+		 FROM package_versions`,
 	}
 
 	for _, s := range stmts {
