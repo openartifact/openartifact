@@ -158,7 +158,7 @@ const (
 	// endpoint (provider or base URL) without supplying the API key: the
 	// stored key only ever goes to the endpoint it was stored for.
 	aiAPIKeyRequiredCode = "api_key_required"
-	aiAPIKeyRequiredMsg  = "api_key is required when the provider or base_url changes: the stored key is only used with the stored endpoint"
+	aiEndpointChangedMsg = "api_key is required when the provider or base_url changes: the stored key is only used with the stored endpoint"
 	aiTestFailedReason   = "could not list models from the AI provider; check the endpoint, credentials and server logs"
 )
 
@@ -285,7 +285,7 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 		case h.sameEndpointAsStored(ctx, &cfg):
 			cfg.APIKey = stored
 		case stored != "" && (body.APIKey == nil || *body.APIKey == aiAPIKeyMask):
-			return ai.Config{}, aiAPIKeyRequiredMsg
+			return ai.Config{}, aiEndpointChangedMsg
 		default:
 			// An explicitly empty key tests a keyless endpoint.
 			cfg.APIKey = ""
@@ -297,7 +297,7 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 
 // aiPatchErrorCode is the error code for a message of patchedTestConfig.
 func aiPatchErrorCode(msg string) string {
-	if msg == aiAPIKeyRequiredMsg {
+	if msg == aiEndpointChangedMsg {
 		return aiAPIKeyRequiredCode
 	}
 
@@ -335,6 +335,24 @@ func (h *AdminAIHandler) sameEndpointAsStored(ctx context.Context, cfg *ai.Confi
 	return ai.EffectiveBaseURL(cfg.Provider, cfg.BaseURL) == ai.EffectiveBaseURL(provider, baseURL)
 }
 
+// putConfigProblem returns the error code and message of a PUT body that must
+// be refused, or an empty message when it is acceptable.
+func (h *AdminAIHandler) putConfigProblem(ctx context.Context, body *aiConfigPatch) (string, string) {
+	if msg := body.validate(); msg != "" {
+		return "validation_failed", msg
+	}
+
+	if msg := h.customNeedsBaseURL(ctx, body); msg != "" {
+		return "validation_failed", msg
+	}
+
+	if h.keyWouldFollowEndpoint(ctx, body) {
+		return aiAPIKeyRequiredCode, aiEndpointChangedMsg
+	}
+
+	return "", ""
+}
+
 func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {
 		return
@@ -347,18 +365,8 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if msg := body.validate(); msg != "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", msg)
-		return
-	}
-
-	if msg := h.customNeedsBaseURL(r.Context(), &body); msg != "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", msg)
-		return
-	}
-
-	if h.keyWouldFollowEndpoint(r.Context(), &body) {
-		writeError(w, http.StatusBadRequest, aiAPIKeyRequiredCode, aiAPIKeyRequiredMsg)
+	if code, msg := h.putConfigProblem(r.Context(), &body); msg != "" {
+		writeError(w, http.StatusBadRequest, code, msg)
 		return
 	}
 

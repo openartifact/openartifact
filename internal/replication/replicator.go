@@ -274,7 +274,7 @@ func (r *Replicator) handle(ctx context.Context, op database.BlobReplication, re
 	func() {
 		defer func() {
 			if p := recover(); p != nil {
-				err = fmt.Errorf("%w: %v", errPanic, p) //nolint:err113 // converted panic
+				err = fmt.Errorf("%w: %v", errPanic, p)
 			}
 		}()
 

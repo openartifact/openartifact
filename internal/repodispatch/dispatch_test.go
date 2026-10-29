@@ -42,6 +42,11 @@ type fakeDB struct {
 	entries map[string]*models.ProxyCacheEntry
 }
 
+// IsArtifactQuarantined: nothing is quarantined in these tests.
+func (d *fakeDB) IsArtifactQuarantined(context.Context, string, []string) (bool, error) {
+	return false, nil
+}
+
 func (d *fakeDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
 	return d.repos[name], nil
 }

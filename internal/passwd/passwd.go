@@ -184,10 +184,10 @@ func deriveBounded(plain, salt []byte, time, memory uint32, threads uint8, keyLe
 // hash, which an attacker with write access to the users table (or a hash
 // imported from elsewhere) controls: argon2.IDKey panics for t < 1 or p < 1
 // and would allocate m KiB.
-func parseArgonParams(segment string) (memory, passes uint32, threads uint8, err error) {
-	var lanes uint32
+func parseArgonParams(segment string) (uint32, uint32, uint8, error) {
+	var memory, passes, lanes uint32
 
-	if _, err = fmt.Sscanf(segment, "m=%d,t=%d,p=%d", &memory, &passes, &lanes); err != nil {
+	if _, err := fmt.Sscanf(segment, "m=%d,t=%d,p=%d", &memory, &passes, &lanes); err != nil {
 		return 0, 0, 0, fmt.Errorf("parse params: %w", err)
 	}
 
@@ -200,5 +200,5 @@ func parseArgonParams(segment string) (memory, passes uint32, threads uint8, err
 		return 0, 0, 0, fmt.Errorf("%w: m=%d", ErrInvalidHashParams, memory)
 	}
 
-	return memory, passes, uint8(lanes), nil //nolint:gosec // lanes <= maxArgonThreads
+	return memory, passes, uint8(lanes), nil
 }

@@ -254,27 +254,7 @@ func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any)
 			return validationError("config.path must not contain '..'")
 		}
 	case "s3", "garage", "seaweedfs":
-		if cfgString(cfg, "bucket") == "" {
-			return validationError("config.bucket is required")
-		}
-
-		endpoint := cfgString(cfg, "endpoint")
-		if endpoint == "" && kind != "s3" {
-			return validationError("config.endpoint is required for " + kind + " backends")
-		}
-
-		if endpoint != "" {
-			if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
-				return fmt.Errorf("config.endpoint is not allowed: %w", err)
-			}
-		}
-
-		hasAccess := cfgString(cfg, "access_key", "accessKey") != ""
-		hasSecret := cfgString(cfg, "secret_key", "secretKey") != ""
-
-		if hasAccess != hasSecret {
-			return validationError("config.access_key and config.secret_key must be set together")
-		}
+		return validateS3Config(ctx, kind, cfg)
 	case "oci":
 		endpoint := ociEndpoint(cfg)
 		if endpoint == "" {
@@ -289,19 +269,54 @@ func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any)
 			return validationError("config.bucket is required for gcs backends")
 		}
 	case "azure":
-		account := cfgString(cfg, "account", "account_name", "accountName")
-		if account == "" || cfgString(cfg, "container") == "" {
-			return validationError("config.account and config.container are required for azure backends")
-		}
+		return validateAzureConfig(ctx, cfg)
+	}
 
-		if !storage.ValidAzureAccountName(account) {
-			return validationError("config.account must be 3-24 lowercase letters and digits")
-		}
+	return nil
+}
 
-		if endpoint := cfgString(cfg, "endpoint"); endpoint != "" {
-			if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
-				return fmt.Errorf("config.endpoint is not allowed: %w", err)
-			}
+// validateS3Config checks the S3-compatible kinds (s3, garage, seaweedfs).
+func validateS3Config(ctx context.Context, kind string, cfg map[string]any) error {
+	if cfgString(cfg, "bucket") == "" {
+		return validationError("config.bucket is required")
+	}
+
+	endpoint := cfgString(cfg, "endpoint")
+	if endpoint == "" && kind != "s3" {
+		return validationError("config.endpoint is required for " + kind + " backends")
+	}
+
+	if endpoint != "" {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
+			return fmt.Errorf("config.endpoint is not allowed: %w", err)
+		}
+	}
+
+	hasAccess := cfgString(cfg, "access_key", "accessKey") != ""
+	hasSecret := cfgString(cfg, "secret_key", "secretKey") != ""
+
+	if hasAccess != hasSecret {
+		return validationError("config.access_key and config.secret_key must be set together")
+	}
+
+	return nil
+}
+
+// validateAzureConfig checks an azure backend: the account becomes a host
+// label, so it must be a well-formed account name.
+func validateAzureConfig(ctx context.Context, cfg map[string]any) error {
+	account := cfgString(cfg, "account", "account_name", "accountName")
+	if account == "" || cfgString(cfg, "container") == "" {
+		return validationError("config.account and config.container are required for azure backends")
+	}
+
+	if !storage.ValidAzureAccountName(account) {
+		return validationError("config.account must be 3-24 lowercase letters and digits")
+	}
+
+	if endpoint := cfgString(cfg, "endpoint"); endpoint != "" {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
+			return fmt.Errorf("config.endpoint is not allowed: %w", err)
 		}
 	}
 

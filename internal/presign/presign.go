@@ -257,22 +257,18 @@ func contentDisposition(filename string) string {
 	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
 }
 
-// safeContentTypes are the exact media types a presigned response may declare.
-var safeContentTypes = map[string]bool{
-	"application/octet-stream":     true,
-	"application/gzip":             true,
-	"application/x-gzip":           true,
-	"application/zip":              true,
-	"application/java-archive":     true,
-	"application/x-tar":            true,
-	"application/x-bzip2":          true,
-	"application/x-xz":             true,
-	"application/zstd":             true,
-	"application/x-rpm":            true,
-	"application/x-nix-nar":        true,
-	"application/x-debian-package": true,
-	"application/json":             true,
-	"text/plain":                   true,
+// safeContentTypeExact reports whether mediaType is one of the exact media
+// types a presigned response may declare.
+func safeContentTypeExact(mediaType string) bool {
+	switch mediaType {
+	case "application/octet-stream", "application/gzip", "application/x-gzip", "application/zip",
+		"application/java-archive", "application/x-tar", "application/x-bzip2", "application/x-xz",
+		"application/zstd", "application/x-rpm", "application/x-nix-nar", "application/x-debian-package",
+		"application/json", "text/plain":
+		return true
+	default:
+		return false
+	}
 }
 
 // safeContentType returns contentType when a browser cannot run it as a page
@@ -294,7 +290,7 @@ func safeContentType(contentType string) string {
 	}
 
 	switch {
-	case safeContentTypes[mediaType]:
+	case safeContentTypeExact(mediaType):
 		return mediaType
 	case strings.HasPrefix(mediaType, "application/vnd.") && !strings.HasSuffix(mediaType, "+xml") && !strings.HasSuffix(mediaType, "+html"):
 		return mediaType

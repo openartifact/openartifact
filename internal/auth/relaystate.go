@@ -67,12 +67,11 @@ func verifyRelayStateAt(encoded, key string, now time.Time) (string, error) {
 		return "", ErrInvalidRelayState
 	}
 
-	cut := strings.LastIndexByte(rest, '|')
-	if cut < 0 {
+	redirect, gotSig, ok := strings.CutLast(rest, "|")
+	if !ok {
 		return "", ErrInvalidRelayState
 	}
 
-	redirect, gotSig := rest[:cut], rest[cut+1:]
 	if !hmac.Equal([]byte(gotSig), []byte(relayStateMAC(issued, redirect, key))) {
 		return "", ErrInvalidRelayState
 	}

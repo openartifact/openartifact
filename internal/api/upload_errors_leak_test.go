@@ -51,6 +51,8 @@ func TestUploadErrorsDoNotLeakTheCause(t *testing.T) {
 		{
 			name: "rpm signing failure",
 			run: func(t *testing.T) *httptest.ResponseRecorder {
+				t.Helper()
+
 				log, db, store := newUploadLeakEnv(t)
 				cause := fmt.Errorf("%w: %w", errSigningFailed, errors.New(leakSecret))
 				rw := httptest.NewRecorder()
@@ -63,6 +65,8 @@ func TestUploadErrorsDoNotLeakTheCause(t *testing.T) {
 		{
 			name: "rpm unreadable multipart form",
 			run: func(t *testing.T) *httptest.ResponseRecorder {
+				t.Helper()
+
 				return postBrokenForm(t, "/api/v1/repositories/rpms/packages", true)
 			},
 			want: http.StatusBadRequest,
@@ -70,6 +74,8 @@ func TestUploadErrorsDoNotLeakTheCause(t *testing.T) {
 		{
 			name: "deb unreadable multipart form",
 			run: func(t *testing.T) *httptest.ResponseRecorder {
+				t.Helper()
+
 				return postBrokenForm(t, "/api/v1/repositories/debs/debs", false)
 			},
 			want: http.StatusBadRequest,

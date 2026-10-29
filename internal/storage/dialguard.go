@@ -15,8 +15,6 @@ import (
 // azureAccountName is the shape Azure gives a storage account: it becomes the
 // host label in https://<account>.blob.core.windows.net, so anything else
 // (a slash, a dot, an IP) would point the client somewhere else.
-//
-//nolint:gochecknoglobals // compiled once
 var azureAccountName = regexp.MustCompile(`^[a-z0-9]{3,24}$`)
 
 // ValidAzureAccountName reports whether name is a well-formed Azure storage
