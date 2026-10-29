@@ -1289,3 +1289,121 @@ func (g *flightGroup) do(ctx context.Context, key string, fn func() (*resolution
 
 	return f.res, f.err
 }
+
+// serveCachedFetch answers a request for the cached file key: it resolves the
+// entry through the cache (fetch runs on a miss) and serves it, refetching once
+// when the cached blob turns out to be gone.
+func (s *Service) serveCachedFetch(w http.ResponseWriter, r *http.Request, repo *models.Repository, key string, fetch fetchFunc) {
+	resolve := func() (*resolution, error) { return s.resolveWith(r.Context(), repo, key, fetch) }
+
+	res, err := resolve()
+	if err != nil {
+		s.writeResolveError(w, r, err)
+		return
+	}
+
+	s.serveResolved(w, r, repo, key, res, resolve)
+}
+
+// fetchKey is the fetchFunc of the document at the repository's upstream URL
+// plus key, fetched with o.
+func (s *Service) fetchKey(repo *models.Repository, key string, o fetchOpts) fetchFunc {
+	return s.fetchKeyWith(repo, key, func(context.Context, string) fetchOpts { return o })
+}
+
+// fetchKeyWith is fetchKey for options that depend on the request context or
+// on the upstream URL the document is fetched from.
+func (s *Service) fetchKeyWith(repo *models.Repository, key string, opts func(fctx context.Context, target string) fetchOpts) fetchFunc {
+	return func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		target, err := upstreamURL(repo.UpstreamURL, key)
+		if err != nil {
+			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
+			return nil, errInternal
+		}
+
+		return s.fetchURL(fctx, repo, key, target, opts(fctx, target))
+	}
+}
+
+// jsonDocOpts are the fetch options of a JSON document checked by verify.
+func jsonDocOpts(verify func(io.ReadSeeker) error) fetchOpts {
+	return fetchOpts{accept: jsonMediaType, contentType: jsonMediaType, verify: verify}
+}
+
+// readBlobCapped reads the blob blobKey in full; a blob larger than limit
+// bytes is errInternal.
+func (s *Service) readBlobCapped(ctx context.Context, blobKey, what string, limit int) ([]byte, error) {
+	rc, err := s.blobStore.Get(ctx, blobKey)
+	if err != nil {
+		return nil, fmt.Errorf("open cached %s: %w", what, err)
+	}
+	defer func() { base.CloseLog(rc, s.log) }()
+
+	body, err := io.ReadAll(io.LimitReader(rc, int64(limit)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read cached %s: %w", what, err)
+	}
+
+	if len(body) > limit {
+		return nil, fmt.Errorf("%w: %s exceeds %d bytes", errInternal, what, limit)
+	}
+
+	return body, nil
+}
+
+// loadCachedBody reads the body of the resolved document at key (what names it
+// in logs; limit bounds it), holding one of the bounded in-memory document
+// slots; the caller must call release once it is done with the body (release
+// is nil when err != nil). When the cache row outlived its blob the row is
+// dropped and the document refetched once through refetch, with the slot given
+// up for the duration of the network fetch.
+func (s *Service) loadCachedBody(
+	ctx context.Context,
+	repo *models.Repository,
+	key string,
+	res *resolution,
+	limit int,
+	what string,
+	refetch func() (*resolution, error),
+) (*resolution, []byte, func(), error) {
+	if err := s.packuments.Acquire(ctx); err != nil {
+		return nil, nil, nil, err //nolint:wrapcheck // caller checks for cancellation
+	}
+
+	body, err := s.readBlobCapped(ctx, res.entry.BlobKey, what, limit)
+	if err == nil {
+		return res, body, s.packuments.Release, nil
+	}
+
+	s.packuments.Release()
+
+	if !res.fromCache {
+		s.log.Errorw("failed to read fetched "+what, "repo", repo.Name, "path", key, "error", err)
+		return nil, nil, nil, errInternal
+	}
+
+	s.log.Warnw("proxy cache blob missing, refetching", "repo", repo.Name, "path", key, "error", err)
+
+	if derr := s.db.DeleteProxyCacheEntry(ctx, repo.ID, key); derr != nil {
+		s.log.Errorw("failed to drop stale proxy cache entry", "repo", repo.Name, "path", key, "error", derr)
+	}
+
+	res, err = refetch()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return nil, nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
+	}
+
+	body, err = s.readBlobCapped(ctx, res.entry.BlobKey, what, limit)
+	if err != nil {
+		s.packuments.Release()
+		s.log.Errorw("failed to read fetched "+what, "repo", repo.Name, "path", key, "error", err)
+
+		return nil, nil, nil, errInternal
+	}
+
+	return res, body, s.packuments.Release, nil
+}

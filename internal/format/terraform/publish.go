@@ -100,9 +100,7 @@ func (h *HTTPHandler) commitUpload(
 		return true
 	}
 
-	if relErr := quota.Release(ctx, h.DB, repo.ID, size); relErr != nil {
-		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", relErr)
-	}
+	h.ReleaseQuota(ctx, repo.ID, repo.Name, size)
 
 	// The blob is content-addressed and may be shared; this drops it unless
 	// another row references it.

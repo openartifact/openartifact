@@ -110,15 +110,7 @@ func verifyHelmIndex(spool io.ReadSeeker) error {
 // fetching it when absent or expired (and serving stale when the upstream is
 // down).
 func (s *Service) resolveHelmIndex(ctx context.Context, repo *models.Repository) (*resolution, error) {
-	return s.resolveWith(ctx, repo, helmIndexKey, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, err := upstreamURL(repo.UpstreamURL, helmIndexKey)
-		if err != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", err)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, helmIndexKey, target, fetchOpts{verify: verifyHelmIndex})
-	})
+	return s.resolveWith(ctx, repo, helmIndexKey, s.fetchKey(repo, helmIndexKey, fetchOpts{verify: verifyHelmIndex}))
 }
 
 // loadHelmIndex reads the body of the resolved index, holding one of the
@@ -127,65 +119,9 @@ func (s *Service) resolveHelmIndex(ctx context.Context, repo *models.Repository)
 // the cache row outlived its blob the row is dropped and the index refetched
 // once, with the slot given up for the duration of the network fetch.
 func (s *Service) loadHelmIndex(ctx context.Context, repo *models.Repository, res *resolution) (*resolution, []byte, func(), error) {
-	if err := s.packuments.Acquire(ctx); err != nil {
-		return nil, nil, nil, err //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	body, err := s.readHelmIndexBlob(ctx, res.entry.BlobKey)
-	if err == nil {
-		return res, body, s.packuments.Release, nil
-	}
-
-	s.packuments.Release()
-
-	if !res.fromCache {
-		s.log.Errorw("failed to read fetched helm index", "repo", repo.Name, "error", err)
-		return nil, nil, nil, errInternal
-	}
-
-	s.log.Warnw("proxy cache blob missing, refetching", "repo", repo.Name, "path", helmIndexKey, "error", err)
-
-	if derr := s.db.DeleteProxyCacheEntry(ctx, repo.ID, helmIndexKey); derr != nil {
-		s.log.Errorw("failed to drop stale proxy cache entry", "repo", repo.Name, "path", helmIndexKey, "error", derr)
-	}
-
-	res, err = s.resolveHelmIndex(ctx, repo)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return nil, nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	body, err = s.readHelmIndexBlob(ctx, res.entry.BlobKey)
-	if err != nil {
-		s.packuments.Release()
-		s.log.Errorw("failed to read fetched helm index", "repo", repo.Name, "error", err)
-
-		return nil, nil, nil, errInternal
-	}
-
-	return res, body, s.packuments.Release, nil
-}
-
-func (s *Service) readHelmIndexBlob(ctx context.Context, blobKey string) ([]byte, error) {
-	rc, err := s.blobStore.Get(ctx, blobKey)
-	if err != nil {
-		return nil, fmt.Errorf("open cached helm index: %w", err)
-	}
-	defer func() { base.CloseLog(rc, s.log) }()
-
-	body, err := io.ReadAll(io.LimitReader(rc, maxHelmIndexBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read cached helm index: %w", err)
-	}
-
-	if len(body) > maxHelmIndexBytes {
-		return nil, fmt.Errorf("%w: index exceeds %d bytes", errInternal, maxHelmIndexBytes)
-	}
-
-	return body, nil
+	return s.loadCachedBody(ctx, repo, helmIndexKey, res, maxHelmIndexBytes, "helm index", func() (*resolution, error) {
+		return s.resolveHelmIndex(ctx, repo)
+	})
 }
 
 // helmIndexETag identifies one rendering of a cached index: the upstream body
@@ -336,19 +272,9 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 
 func (s *Service) serveHelmChart(w http.ResponseWriter, r *http.Request, repo *models.Repository, file string) {
 	key := helmChartsDir + file
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchHelmChart(fctx, repo, file, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchHelmChart(fctx, repo, file, key)
+	})
 }
 
 // fetchHelmChart downloads file from the URL the cached index lists for it and

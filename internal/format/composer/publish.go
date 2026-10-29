@@ -199,9 +199,7 @@ func (h *HTTPHandler) store(
 		return true
 	}
 
-	if relErr := quota.Release(r.Context(), h.DB, repo.ID, row.SizeBytes); relErr != nil {
-		h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", relErr)
-	}
+	h.ReleaseQuota(r.Context(), repo.ID, repo.Name, row.SizeBytes)
 
 	if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 		writeConflict(w, composer.Path{Name: row.Name, Version: row.Version})

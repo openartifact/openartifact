@@ -90,19 +90,9 @@ func (s *Service) serveConanV2(w http.ResponseWriter, r *http.Request, repo *mod
 
 func (s *Service) serveConanCached(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgconan.Path) {
 	key := p.String()
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchConan(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchConan(fctx, repo, p, key)
+	})
 }
 
 // conanFetchOpts is how one cached path is fetched and checked. It is built

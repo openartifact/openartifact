@@ -154,16 +154,8 @@ func (h *HTTPHandler) handleVersionManifest(w http.ResponseWriter, r *http.Reque
 	pkgName := resolvePackageName(vars["pkg"])
 	versionOrTag := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -225,16 +217,8 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 
 	tarball := vars["tarball"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -360,16 +344,8 @@ func (h *HTTPHandler) handleGetDistTags(w http.ResponseWriter, r *http.Request) 
 	repoName := vars["name"]
 	pkgName := resolvePackageName(vars["pkg"])
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 

@@ -9,6 +9,7 @@ package base
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -87,6 +89,56 @@ func (h *Handler) ResolveRepoID(ctx context.Context, name string) (string, error
 		return "", nil
 	}
 	return repo.ID, nil
+}
+
+// ResolveRepoIDOrRespond is ResolveRepoID for handlers that answer the request
+// themselves: on a lookup failure it writes a 500, for an unknown repository a
+// 404, and returns "" in both cases; the caller MUST then return immediately.
+func (h *Handler) ResolveRepoIDOrRespond(w http.ResponseWriter, r *http.Request, name string) string {
+	repoID, err := h.ResolveRepoID(r.Context(), name)
+	if err != nil {
+		h.Log.Errorw("failed to resolve repo", "name", name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return ""
+	}
+
+	if repoID == "" {
+		http.NotFound(w, r)
+	}
+
+	return repoID
+}
+
+// ReserveQuotaOrRespond reserves size bytes (one artifact) of the repository's
+// storage quota before an upload is persisted. When it cannot it writes the
+// response (the quota-exceeded one, or a 500 for a lookup failure) and returns
+// false; the caller MUST then return immediately. After a successful
+// reservation every failure path must return it with quota.Release.
+func (h *Handler) ReserveQuotaOrRespond(ctx context.Context, w http.ResponseWriter, repoID, repoName string, size int64) bool {
+	err := quota.Enforce(ctx, h.DB, repoID, size)
+	if err == nil {
+		return true
+	}
+
+	if errors.Is(err, quota.ErrExceeded) {
+		quota.WriteExceeded(w)
+
+		return false
+	}
+
+	h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+
+	return false
+}
+
+// ReleaseQuota returns size bytes (one artifact) to the repository's storage
+// quota; a failure is only logged, repoName names the repository in the log.
+func (h *Handler) ReleaseQuota(ctx context.Context, repoID, repoName string, size int64) {
+	if err := quota.Release(ctx, h.DB, repoID, size); err != nil {
+		h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
+	}
 }
 
 // TryPresign answers a blob download with a 307 to a presigned object-store URL

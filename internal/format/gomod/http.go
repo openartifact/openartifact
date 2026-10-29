@@ -24,7 +24,6 @@ import (
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -183,16 +182,8 @@ func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	modulePath := vars["module"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -242,16 +233,8 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -322,16 +305,8 @@ func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -364,16 +339,8 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -448,16 +415,8 @@ func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	modulePath := vars["module"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -502,16 +461,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	modulePath := vars["module"]
 	version := vars["version"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -586,15 +537,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// the reservation.
 	usage := mod.ZipSizeBytes + int64(len(goModContent))
 
-	if err := quota.EnforceN(r.Context(), h.DB, repoID, usage, 1); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, usage) {
 		return
 	}
 
@@ -632,9 +575,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	lockErr := storage.CommitBlobs(r.Context(), h.DB, h.BlobStore, blobs, store)
 	if lockErr != nil {
-		if err := quota.Release(r.Context(), h.DB, repoID, usage); err != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, usage)
 
 		if h.failStore(w, r, lockErr, zipSHA, modSHA) {
 			return

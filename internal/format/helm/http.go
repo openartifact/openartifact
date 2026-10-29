@@ -27,7 +27,6 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -139,16 +138,8 @@ func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -197,16 +188,8 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -388,22 +371,12 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, size); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, size) {
 		return
 	}
 
 	if status, msg := h.storeChart(r.Context(), chart, spool); status != 0 {
-		if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, size)
 
 		http.Error(w, msg, status)
 
@@ -444,16 +417,8 @@ func (h *HTTPHandler) handleDeleteChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -501,9 +466,7 @@ func (h *HTTPHandler) handleDeleteChart(w http.ResponseWriter, r *http.Request) 
 			return fmt.Errorf("delete helm chart record: %w", delErr)
 		}
 
-		if relErr := quota.Release(r.Context(), h.DB, repoID, size); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, size)
 
 		if blobErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, chart.Digest); blobErr != nil {
 			h.Log.Warnw("failed to delete chart blob", "sha256", chart.Digest, "error", blobErr)
@@ -540,16 +503,8 @@ func (h *HTTPHandler) handleListCharts(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 

@@ -120,27 +120,17 @@ func (h *HTTPHandler) handleRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) handleInRelease(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	dist := vars["dist"]
-	name := vars["name"]
-
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
-		http.NotFound(w, r)
-
-		return
-	}
-
-	path := GetInReleasePath(dist)
-	if !h.tryServeRepoBlob(w, r, repo, path, "text/plain") {
-		http.NotFound(w, r)
-	}
+	h.serveDistBlob(w, r, GetInReleasePath, "text/plain")
 }
 
 func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
+	h.serveDistBlob(w, r, GetReleaseGPGPath, "application/pgp-signature")
+}
+
+// serveDistBlob serves the pre-generated blob blobPath names for the request's
+// distribution, or answers 404 when the repository or the blob is missing.
+func (h *HTTPHandler) serveDistBlob(w http.ResponseWriter, r *http.Request, blobPath func(dist string) string, contentType string) {
 	vars := urlparams.Vars(r)
-	dist := vars["dist"]
 	name := vars["name"]
 
 	repo, err := h.resolveRepo(r.Context(), name)
@@ -151,8 +141,7 @@ func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := GetReleaseGPGPath(dist)
-	if !h.tryServeRepoBlob(w, r, repo, path, "application/pgp-signature") {
+	if !h.tryServeRepoBlob(w, r, repo, blobPath(vars["dist"]), contentType) {
 		http.NotFound(w, r)
 	}
 }

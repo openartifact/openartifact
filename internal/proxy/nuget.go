@@ -633,19 +633,9 @@ func renderNuGetDoc(doc []byte, p nugetPath, idx *pkgnuget.ServiceIndex, repoURL
 
 func (s *Service) serveNuGetPackageFile(w http.ResponseWriter, r *http.Request, repo *models.Repository, p nugetPath) {
 	key := p.key()
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchNuGetPackageFile(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchNuGetPackageFile(fctx, repo, p, key)
+	})
 }
 
 // fetchNuGetPackageFile downloads the .nupkg or .nuspec p names from the

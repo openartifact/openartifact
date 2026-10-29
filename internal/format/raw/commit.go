@@ -117,14 +117,14 @@ func commitWith(req *http.Request, h *base.Handler, repoName string, a *models.R
 
 	if err := persist(ctx, h, a, stage, only); err != nil {
 		if reserved {
-			releaseQuota(ctx, h, repoName, a.RepositoryID, a.SizeBytes)
+			h.ReleaseQuota(ctx, a.RepositoryID, repoName, a.SizeBytes)
 		}
 
 		return nil, err
 	}
 
 	if reserved && previous != nil {
-		releaseQuota(ctx, h, repoName, a.RepositoryID, previous.SizeBytes)
+		h.ReleaseQuota(ctx, a.RepositoryID, repoName, previous.SizeBytes)
 	}
 
 	// An overwrite leaves the previous content unreferenced.
@@ -172,13 +172,6 @@ func persist(ctx context.Context, h *base.Handler, a *models.RawArtifact, stage 
 
 		return nil
 	})
-}
-
-// releaseQuota returns size bytes and one artifact to the repository's quota.
-func releaseQuota(ctx context.Context, h *base.Handler, repoName, repoID string, size int64) {
-	if err := quota.Release(ctx, h.DB, repoID, size); err != nil {
-		h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-	}
 }
 
 // StoredID is the id of the row an upload ended up in: an overwrite keeps the

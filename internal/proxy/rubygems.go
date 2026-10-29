@@ -94,23 +94,13 @@ func (s *Service) serveRubyGems(w http.ResponseWriter, r *http.Request, repo *mo
 	}
 
 	key := strings.TrimPrefix(relPath, "/")
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			if p.Kind == compactindex.KindGem {
-				return s.fetchRubyGem(fctx, repo, p, key)
-			}
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		if p.Kind == compactindex.KindGem {
+			return s.fetchRubyGem(fctx, repo, p, key)
+		}
 
-			return s.fetchRubyGemsDoc(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+		return s.fetchRubyGemsDoc(fctx, repo, p, key)
+	})
 }
 
 // fetchRubyGemsDoc fetches a compact index file, gemspec or legacy specs index

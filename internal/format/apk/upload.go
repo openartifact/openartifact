@@ -105,9 +105,7 @@ func (h *HTTPHandler) ingest(w http.ResponseWriter, r *http.Request, in ingestRe
 	}
 
 	if err := h.store(r, row, in.body); err != nil {
-		if relErr := quota.Release(ctx, h.DB, in.repo.ID, row.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", in.repo.Name, "error", relErr)
-		}
+		h.ReleaseQuota(ctx, in.repo.ID, in.repo.Name, row.SizeBytes)
 
 		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 			return nil, errExists
@@ -456,9 +454,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("delete apk package: %w", delErr)
 		}
 
-		if relErr := quota.Release(ctx, h.DB, repo.ID, pkg.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", relErr)
-		}
+		h.ReleaseQuota(ctx, repo.ID, repo.Name, pkg.SizeBytes)
 
 		// The blob is content-addressed and may be shared: remove it only once
 		// no row references it any more.

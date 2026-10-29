@@ -32,7 +32,6 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -285,16 +284,8 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	filename := vars["filename"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -421,16 +412,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -502,15 +485,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, pkg.SizeBytes); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, pkg.SizeBytes) {
 		return
 	}
 
@@ -561,9 +536,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 			status, msg = http.StatusInternalServerError, "failed to create package"
 		}
 
-		if err := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); err != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, pkg.SizeBytes)
 
 		http.Error(w, msg, status)
 
@@ -589,16 +562,8 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	filename := vars["filename"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -648,9 +613,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 				return fmt.Errorf("delete pypi package: %w", err)
 			}
 
-			if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); relErr != nil {
-				h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-			}
+			h.ReleaseQuota(r.Context(), repoID, repoName, pkg.SizeBytes)
 
 			// Blob is content-addressed and may be shared by other artifacts; only
 			// remove it from storage once no other row references the same sha256.
@@ -691,16 +654,8 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	pkgName := vars["package"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 

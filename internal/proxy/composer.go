@@ -107,19 +107,7 @@ func (s *Service) serveComposerRoot(w http.ResponseWriter, r *http.Request, repo
 func (s *Service) composerDocument(ctx context.Context, repo *models.Repository, name string, dev bool) (*resolution, []byte, error) {
 	key := composerKey(name, dev)
 
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, key)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      jsonMediaType,
-			contentType: jsonMediaType,
-			verify:      composerVerifyDocument(name),
-		})
-	})
+	res, err := s.resolveWith(ctx, repo, key, s.fetchKey(repo, key, jsonDocOpts(composerVerifyDocument(name))))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -211,19 +199,9 @@ func (s *Service) serveComposerDist(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchComposerDist(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchComposerDist(fctx, repo, p, key)
+	})
 }
 
 // composerPublishedDist finds the dist the upstream's documents publish for the

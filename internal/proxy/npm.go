@@ -267,19 +267,9 @@ func renderNPM(doc []byte, p pkgnpm.Path, tarballBase string) ([]byte, error) {
 
 func (s *Service) serveNPMTarball(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgnpm.Path) {
 	key := p.Package + "/-/" + p.File
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchNPMTarball(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchNPMTarball(fctx, repo, p, key)
+	})
 }
 
 // fetchNPMTarball downloads p.File from the URL its version's dist object in

@@ -36,7 +36,6 @@ import (
 	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -221,16 +220,8 @@ func (h *HTTPHandler) handleGemspec(w http.ResponseWriter, r *http.Request) {
 
 	nameVersion := strings.TrimSuffix(filename, suffix)
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -296,16 +287,8 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 
 	nameVersion := strings.TrimSuffix(filename, suffix)
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -359,16 +342,8 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -465,22 +440,12 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
-	if err := quota.Enforce(r.Context(), h.DB, repoID, size); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, size) {
 		return
 	}
 
 	if status, msg := h.storeGem(r.Context(), gem, spool); status != 0 {
-		if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, size)
 
 		http.Error(w, msg, status)
 
@@ -595,16 +560,8 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -721,16 +678,8 @@ func (h *HTTPHandler) handleGemInfo(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	gemName := chi.URLParam(r, "gem")
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -761,16 +710,8 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 

@@ -110,19 +110,9 @@ func (s *Service) serveCargoIndex(w http.ResponseWriter, r *http.Request, repo *
 
 func (s *Service) serveCargoCrate(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgcargo.Path) {
 	key := "api/v1/crates/" + p.Crate + "/" + p.Version + "/download"
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchCargoCrate(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchCargoCrate(fctx, repo, p, key)
+	})
 }
 
 // readCachedDoc loads a cached index file or config document (at most limit bytes).
@@ -148,15 +138,8 @@ func (s *Service) readCachedDoc(ctx context.Context, entry *models.ProxyCacheEnt
 // cargoDownloadTemplate returns the "dl" of the upstream's config.json,
 // fetching it when it is not cached.
 func (s *Service) cargoDownloadTemplate(ctx context.Context, repo *models.Repository) (string, error) {
-	res, err := s.resolveWith(ctx, repo, cargoConfigKey, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, cargoConfigKey)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, cargoConfigKey, target, fetchOpts{accept: "application/json", verify: pkgcargo.VerifyConfig})
-	})
+	res, err := s.resolveWith(ctx, repo, cargoConfigKey,
+		s.fetchKey(repo, cargoConfigKey, fetchOpts{accept: "application/json", verify: pkgcargo.VerifyConfig}))
 	if errors.Is(err, errNotFound) {
 		// A registry without config.json is not a sparse registry.
 		s.log.Warnw("proxy upstream has no config.json", "repo", repo.Name)

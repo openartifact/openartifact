@@ -178,19 +178,12 @@ func (s *Service) ansibleVersionList(
 ) (*resolution, []pkgansible.VersionRef, error) {
 	key := ansibleVersionsKey(p.Namespace, p.Name)
 
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, key)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
+	res, err := s.resolveWith(ctx, repo, key, s.fetchKeyWith(repo, key, func(fctx context.Context, target string) fetchOpts {
+		o := jsonDocOpts(nil)
+		o.transform = func(resp *http.Response) error { return s.ansibleVersionsTransform(fctx, repo, target, resp) }
 
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      jsonMediaType,
-			contentType: jsonMediaType,
-			transform:   func(resp *http.Response) error { return s.ansibleVersionsTransform(fctx, repo, target, resp) },
-		})
-	})
+		return o
+	}))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -407,19 +400,7 @@ func (s *Service) ansibleVersionDoc(
 ) (*resolution, *pkgansible.VersionDoc, error) {
 	key := ansibleVersionKey(p.Namespace, p.Name, p.Version)
 
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		target, uerr := upstreamURL(repo.UpstreamURL, key)
-		if uerr != nil {
-			s.log.Errorw("invalid proxy upstream url", "repo", repo.Name, "error", uerr)
-			return nil, errInternal
-		}
-
-		return s.fetchURL(fctx, repo, key, target, fetchOpts{
-			accept:      jsonMediaType,
-			contentType: jsonMediaType,
-			verify:      ansibleVerifyDoc(p),
-		})
-	})
+	res, err := s.resolveWith(ctx, repo, key, s.fetchKey(repo, key, jsonDocOpts(ansibleVerifyDoc(p))))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -451,19 +432,9 @@ func (s *Service) serveAnsibleVersion(w http.ResponseWriter, r *http.Request, re
 
 func (s *Service) serveAnsibleDownload(w http.ResponseWriter, r *http.Request, repo *models.Repository, p pkgansible.Path) {
 	key := ansibleArtifactDir + pkgansible.FileName(p.Namespace, p.Name, p.Version)
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchAnsibleTarball(fctx, repo, p, key)
-		})
-	}
-
-	res, err := resolve()
-	if err != nil {
-		s.writeResolveError(w, r, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveCachedFetch(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchAnsibleTarball(fctx, repo, p, key)
+	})
 }
 
 // ansibleDownloadTarget resolves the download_url of a version document against

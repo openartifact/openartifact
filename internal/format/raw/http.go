@@ -74,16 +74,8 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -190,16 +182,8 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	// Normalize path
 	path = strings.TrimPrefix(path, "/")
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -313,16 +297,8 @@ func (h *HTTPHandler) handleHead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -363,16 +339,8 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.ResolveRepoIDOrRespond(w, r, repoName)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -404,9 +372,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("delete raw artifact: %w", delErr)
 		}
 
-		if relErr := quota.Release(r.Context(), h.DB, repoID, artifact.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
-		}
+		h.ReleaseQuota(r.Context(), repoID, repoName, artifact.SizeBytes)
 
 		// The blob is content-addressed and may be shared; remove it only once
 		// no row references it any more.

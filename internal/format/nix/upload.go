@@ -380,15 +380,7 @@ func (h *HTTPHandler) findNar(ctx context.Context, repoID string, up *uploadedNa
 func (h *HTTPHandler) commitPath(w http.ResponseWriter, r *http.Request, repo *models.Repository, row *models.NixPath) {
 	ctx := r.Context()
 
-	if err := quota.Enforce(ctx, h.DB, repo.ID, row.SizeBytes); err != nil {
-		if errors.Is(err, quota.ErrExceeded) {
-			quota.WriteExceeded(w)
-			return
-		}
-
-		h.Log.Errorw("failed to reserve quota", "repo", repo.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if !h.ReserveQuotaOrRespond(ctx, w, repo.ID, repo.Name, row.SizeBytes) {
 		return
 	}
 
@@ -403,9 +395,7 @@ func (h *HTTPHandler) commitPath(w http.ResponseWriter, r *http.Request, repo *m
 			return nil
 		})
 	if err != nil {
-		if relErr := quota.Release(ctx, h.DB, repo.ID, row.SizeBytes); relErr != nil {
-			h.Log.Warnw("failed to release quota", "repo", repo.Name, "error", relErr)
-		}
+		h.ReleaseQuota(ctx, repo.ID, repo.Name, row.SizeBytes)
 
 		h.writeCommitError(w, row, err)
 

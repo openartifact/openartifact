@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -154,65 +153,9 @@ func (s *Service) readPage(
 	key, target string,
 	res *resolution,
 ) (*resolution, []byte, func(), error) {
-	if err := s.packuments.Acquire(ctx); err != nil {
-		return nil, nil, nil, err //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	body, err := s.readBlob(ctx, res.entry.BlobKey)
-	if err == nil {
-		return res, body, s.packuments.Release, nil
-	}
-
-	s.packuments.Release()
-
-	if !res.fromCache {
-		s.log.Errorw("failed to read fetched simple page", "repo", repo.Name, "path", key, "error", err)
-		return nil, nil, nil, errInternal
-	}
-
-	s.log.Warnw("proxy cache blob missing, refetching", "repo", repo.Name, "path", key, "error", err)
-
-	if derr := s.db.DeleteProxyCacheEntry(ctx, repo.ID, key); derr != nil {
-		s.log.Errorw("failed to drop stale proxy cache entry", "repo", repo.Name, "path", key, "error", derr)
-	}
-
-	res, err = s.fetchPage(ctx, repo, key, target)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	if aerr := s.packuments.Acquire(ctx); aerr != nil {
-		return nil, nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
-	}
-
-	body, err = s.readBlob(ctx, res.entry.BlobKey)
-	if err != nil {
-		s.packuments.Release()
-		s.log.Errorw("failed to read fetched simple page", "repo", repo.Name, "path", key, "error", err)
-
-		return nil, nil, nil, errInternal
-	}
-
-	return res, body, s.packuments.Release, nil
-}
-
-func (s *Service) readBlob(ctx context.Context, blobKey string) ([]byte, error) {
-	rc, err := s.blobStore.Get(ctx, blobKey)
-	if err != nil {
-		return nil, fmt.Errorf("open blob: %w", err)
-	}
-	defer func() { base.CloseLog(rc, s.log) }()
-
-	body, err := io.ReadAll(io.LimitReader(rc, maxPyPIPageBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read blob: %w", err)
-	}
-
-	if len(body) > maxPyPIPageBytes {
-		return nil, fmt.Errorf("%w: page exceeds %d bytes", errUpstream, maxPyPIPageBytes)
-	}
-
-	return body, nil
+	return s.loadCachedBody(ctx, repo, key, res, maxPyPIPageBytes, "simple page", func() (*resolution, error) {
+		return s.fetchPage(ctx, repo, key, target)
+	})
 }
 
 // servePyPIPage answers one rewritten simple page from the cached upstream
