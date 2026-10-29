@@ -220,6 +220,7 @@ var (
 	errHostRequired     = errors.New("URL host is required")
 	errTooManyRedirects = errors.New("too many redirects")
 	errRedirectScheme   = errors.New("redirect to unsupported scheme")
+	errRedirectBody     = errors.New("redirect would send the request body to another origin")
 )
 
 // ValidateOutboundURLContext checks scheme, host and (resolved) addresses of
@@ -258,20 +259,43 @@ func sameOrigin(a, b *url.URL) bool {
 	return a.Scheme == b.Scheme && a.Host == b.Host
 }
 
-// stripCredentials removes the headers that authenticate the caller. Go's own
-// client forwards the initial request's headers on redirects and only drops
-// sensitive ones on a cross-domain hop, so a scheme downgrade on the same host
-// would otherwise leak them.
+// crossOriginHeaders are the only request headers that survive a redirect to
+// another origin: they describe what the caller can accept or resume and carry
+// no secret. Everything else (Authorization, Cookie, X-Api-Key, PRIVATE-TOKEN,
+// signatures, ...) is dropped, so a credential header the code adds later is
+// safe without anyone having to remember to list it.
+//
+//nolint:gochecknoglobals // read-only table
+var crossOriginHeaders = map[string]bool{
+	"Accept":              true,
+	"Accept-Encoding":     true,
+	"Accept-Language":     true,
+	"User-Agent":          true,
+	"Range":               true,
+	"If-Range":            true,
+	"If-Match":            true,
+	"If-None-Match":       true,
+	"If-Modified-Since":   true,
+	"If-Unmodified-Since": true,
+}
+
+// stripCredentials drops every header that is not in crossOriginHeaders. Go's
+// own client forwards the initial request's headers on redirects and only
+// drops the well-known sensitive ones on a cross-domain hop, so a custom
+// credential header (X-Api-Key) or a scheme downgrade on the same host would
+// otherwise leak them.
 func stripCredentials(h http.Header) {
-	h.Del("Authorization")
-	h.Del("Proxy-Authorization")
-	h.Del("Cookie")
-	h.Del("Cookie2")
+	for k := range h {
+		if !crossOriginHeaders[http.CanonicalHeaderKey(k)] {
+			delete(h, k)
+		}
+	}
 }
 
 // SafeHTTPClient returns a client that refuses to connect to blocked
 // addresses (checked at dial time, defeating DNS rebinding) and caps and
-// re-validates redirects, dropping credentials on cross-host redirects.
+// re-validates redirects, dropping every header but a small allowlist (and
+// refusing to replay a request body) on cross-origin redirects.
 func SafeHTTPClient(timeout time.Duration) *http.Client {
 	return SafeHTTPClientWithHeaderTimeout(timeout, 0)
 }
@@ -329,6 +353,11 @@ func SafeHTTPClientWithStallTimeout(timeout, responseHeaderTimeout, stallTimeout
 			// credential dropped once is never sent again (https://a ->
 			// https://b -> https://a), and a scheme change drops it too.
 			if !sameOrigin(req.URL, via[0].URL) || !sameOrigin(req.URL, via[len(via)-1].URL) {
+				// A 307/308 replays the body: never hand it to another origin.
+				if req.Body != nil && req.Body != http.NoBody {
+					return errRedirectBody
+				}
+
 				stripCredentials(req.Header)
 			}
 			return nil
