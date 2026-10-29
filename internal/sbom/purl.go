@@ -21,7 +21,9 @@ func purlType(format string) string {
 }
 
 // purlEncode percent-encodes one purl component: everything but the
-// unreserved characters (and ':' in versions) per the purl specification.
+// unreserved characters (letters, digits, "." "-" "_" "~"), a ':' included
+// ("1:2.0" is "1%3A2.0"), the strictest form, which every purl parser decodes
+// and which the vulnerability side produces too.
 func purlEncode(s string) string {
 	const hexdigits = "0123456789ABCDEF"
 
@@ -32,7 +34,7 @@ func purlEncode(s string) string {
 
 		switch {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
-			c == '.', c == '-', c == '_', c == '~', c == ':':
+			c == '.', c == '-', c == '_', c == '~':
 			b.WriteByte(c)
 		default:
 			b.WriteByte('%')
@@ -63,11 +65,20 @@ func generatePURL(format, name, version string) string {
 
 // generatePURLNS is generatePURL with an explicit namespace for the formats that
 // require one (deb: the distribution, rpm: the vendor); other formats ignore it.
+// Without one the version tells it where it can (a deb with an Ubuntu suffix, an
+// rpm release ".el9"), so a package never gets a namespace-less purl that no
+// vulnerability report matches.
 func generatePURLNS(format, namespace, name, version string) string {
 	typ := purlType(format)
 
-	if h, ok := hooks.Lookup(strings.ToLower(format)); ok && h.PURLName != nil {
-		name = h.PURLName(namespace, name)
+	if h, ok := hooks.Lookup(strings.ToLower(format)); ok {
+		if namespace == "" && h.Namespace != nil {
+			namespace = h.Namespace(version)
+		}
+
+		if h.PURLName != nil {
+			name = h.PURLName(namespace, name)
+		}
 	}
 
 	purl := "pkg:" + typ + "/" + purlPath(name)

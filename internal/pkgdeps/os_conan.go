@@ -57,6 +57,16 @@ func debNamespace(version, maintainer string) string {
 	return "debian"
 }
 
+// DebVersionNamespace is the purl namespace of a deb told from its version
+// alone, when the package file is not at hand: "ubuntu" for an Ubuntu version
+// suffix, else "debian".
+func DebVersionNamespace(version string) string { return debNamespace(version, "") }
+
+// RPMVersionNamespace is the purl namespace of an rpm told from its version
+// alone: the distribution tag of its release (".el9" is "redhat", ".fc39"
+// "fedora"); "" when the version has none.
+func RPMVersionNamespace(version string) string { return rpmNamespace("", version) }
+
 // debRelations parses "a (>= 1), b | c, d:any". Of a set of alternatives the
 // first is listed.
 func debRelations(field string) []Dep {

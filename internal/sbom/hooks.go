@@ -7,17 +7,23 @@ package sbom
 import (
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/pkgdeps"
 	"github.com/openartifact/openartifact/internal/registry"
 )
 
 // Hooks is what SBOM generation needs to know about one format beyond its
-// repotype.Spec (which gives the Package URL type). Both fields are optional.
+// repotype.Spec (which gives the Package URL type). Every field is optional.
 type Hooks struct {
 	// PURLName rewrites the package name into the name part of the Package
 	// URL (which may carry namespace segments joined with "/"). namespace is
 	// the caller's explicit namespace: the distribution of a deb, the vendor
 	// of an rpm; most formats ignore it. nil means the name as given.
 	PURLName func(namespace, name string) string
+
+	// Namespace tells the namespace of a package from its version, for a
+	// package whose file is not read (the distribution of a deb, the vendor of
+	// an rpm); "" when the version does not tell. nil means no namespace.
+	Namespace func(version string) string
 
 	// RootType is the CycloneDX component type of the SBOM root ("container",
 	// "file"). "" means "library".
@@ -44,9 +50,9 @@ var PyPIHooks = Hooks{PURLName: pypiPURLName} //nolint:gochecknoglobals // immut
 // PacmanHooks: pkg:alpm/arch/NAME, Arch Linux is the only pacman distro.
 var PacmanHooks = Hooks{PURLName: pacmanPURLName} //nolint:gochecknoglobals // immutable format hook value
 // DebHooks: the distribution is the namespace.
-var DebHooks = Hooks{PURLName: namespacedPURLName} //nolint:gochecknoglobals // immutable format hook value
+var DebHooks = Hooks{PURLName: namespacedPURLName, Namespace: pkgdeps.DebVersionNamespace} //nolint:gochecknoglobals // immutable format hook value
 // RPMHooks: the vendor is the namespace.
-var RPMHooks = Hooks{PURLName: namespacedPURLName} //nolint:gochecknoglobals // immutable format hook value
+var RPMHooks = Hooks{PURLName: namespacedPURLName, Namespace: pkgdeps.RPMVersionNamespace} //nolint:gochecknoglobals // immutable format hook value
 // DockerHooks: an image is a container.
 var DockerHooks = Hooks{RootType: "container"} //nolint:gochecknoglobals // immutable format hook value
 // RawHooks: a raw artifact is a bare file.

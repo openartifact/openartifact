@@ -177,6 +177,12 @@ func (g *Generator) loadPackageDeps(ctx context.Context, repoID string, in *Inpu
 		return nil
 	}
 
+	// The package file tells its distribution or vendor better than its version
+	// does: the subject takes the namespace its dependencies have.
+	if res.Namespace != "" {
+		in.PURL = generatePURLNS(in.Format, res.Namespace, in.Name, in.Version)
+	}
+
 	in.addPackageDeps(res)
 
 	return nil
