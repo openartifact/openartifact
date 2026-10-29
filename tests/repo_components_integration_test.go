@@ -126,7 +126,11 @@ func seedNpmAndRaw(t *testing.T, pg *database.PostgresDB) npmRawFixture {
 	otherNpmRepo := newRepo(t, pg, "npm-other", "npm")
 
 	for _, v := range []string{"1.0.0", "1.1.0"} {
-		seedFile(t, pg, seedRow{repo: f.npmRepo, format: "npm", name: "@acme/widget", version: v, filename: "widget-" + v + ".tgz", blobID: blobID})
+		seedFile(
+			t,
+			pg,
+			seedRow{repo: f.npmRepo, format: "npm", name: "@acme/widget", version: v, filename: "widget-" + v + ".tgz", blobID: blobID},
+		)
 	}
 
 	// A package in another repository must not leak into npm-main.
@@ -228,6 +232,7 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 
 	seeds := []struct {
 		want
+
 		row seedRow
 	}{
 		{want{"deb", "dpkg", "1.0", "amd64", "dpkg_1.0_amd64.deb"}, seedRow{path: "pool/main/d/dpkg/dpkg_1.0_amd64.deb"}},
@@ -280,12 +285,19 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		seedFile(t, pg, seedRow{repo: repo, format: "cargo", name: "gone", version: "1", filename: "gone-1.crate", blobID: blobID}))
 
 	// Docker keeps its own tables: one row per tag.
-	execSQL(t, pg, `WITH m AS (INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1, $2, 'application/vnd.oci.image.manifest.v1+json', 4096, $3) RETURNING repository_id, digest)
+	execSQL(
+		t,
+		pg,
+		`WITH m AS (INSERT INTO docker_manifests (repository_id, digest, media_type, size, blob_id) VALUES ($1, $2, 'application/vnd.oci.image.manifest.v1+json', 4096, $3) RETURNING repository_id, digest)
 		INSERT INTO docker_tags (repository_id, name, manifest_digest) SELECT repository_id, 'latest', digest FROM m`,
-		repo, "sha256:"+componentsBlobSHA, blobID)
+		repo,
+		"sha256:"+componentsBlobSHA,
+		blobID,
+	)
 
 	seeds = append(seeds, struct {
 		want
+
 		row seedRow
 	}{want{"docker", "everything", "latest", "", "sha256:" + componentsBlobSHA}, seedRow{}})
 
@@ -324,7 +336,11 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 	}
 
 	// The by-name order and the name filter see the same rows.
-	byName, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Format: "terraform", Page: 1, Limit: 100, SortByName: true})
+	byName, total, err := pg.SearchComponents(
+		ctx,
+		repo,
+		database.ComponentListOptions{Format: "terraform", Page: 1, Limit: 100, SortByName: true},
+	)
 	if err != nil || total != 3 || len(byName) != 3 || byName[0].Name != "modules/vpc/aws" {
 		t.Fatalf("sort by name: total=%d len=%d err=%v first=%+v", total, len(byName), err, byName)
 	}
@@ -417,7 +433,11 @@ func TestDownloadPackage_NpmAndRaw(t *testing.T) {
 	}
 
 	npmRepo, rawRepo, otherNpm := newRepo(t, pg, "npm-main", "npm"), newRepo(t, pg, "raw-main", "raw"), newRepo(t, pg, "npm-other", "npm")
-	seedFile(t, pg, seedRow{repo: npmRepo, format: "npm", name: "@acme/widget", version: "1.0.0", filename: "widget-1.0.0.tgz", blobID: blobID})
+	seedFile(
+		t,
+		pg,
+		seedRow{repo: npmRepo, format: "npm", name: "@acme/widget", version: "1.0.0", filename: "widget-1.0.0.tgz", blobID: blobID},
+	)
 	seedFile(t, pg, seedRow{repo: otherNpm, format: "npm", name: "leak", version: "9.9.9", filename: "leak-9.9.9.tgz", blobID: blobID})
 	seedFile(t, pg, seedRow{repo: rawRepo, format: "raw", name: "dir/a.txt", filename: "dir/a.txt", blobID: blobID})
 

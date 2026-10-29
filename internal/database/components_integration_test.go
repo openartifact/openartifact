@@ -93,6 +93,8 @@ func listComponentsOf(t *testing.T, pg *PostgresDB, repo string, opts ComponentL
 // reads something other than the plain name/version/filename and checks the
 // listing, the by-name order, the filters, the download lookup and the name
 // resolution against the expected rows.
+//
+//nolint:gocyclo,cyclop // one scenario table per format; splitting would repeat the seeding
 func TestComponentListingShapes(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 	db := pg.GetDB()
@@ -104,32 +106,107 @@ func TestComponentListingShapes(t *testing.T) {
 		seed packageSeed
 		want *listed
 	}{
-		{packageSeed{format: "maven", name: "org.acme:lib", version: "5.0", arch: "sources", filename: "org/acme/lib/5.0/lib-5.0-sources.jar", blobSize: 10},
-			&listed{"org.acme:lib", "5.0", "maven", "sources", "org/acme/lib/5.0/lib-5.0-sources.jar", 10}},
+		{
+			packageSeed{
+				format:   "maven",
+				name:     "org.acme:lib",
+				version:  "5.0",
+				arch:     "sources",
+				filename: "org/acme/lib/5.0/lib-5.0-sources.jar",
+				blobSize: 10,
+			},
+			&listed{"org.acme:lib", "5.0", "maven", "sources", "org/acme/lib/5.0/lib-5.0-sources.jar", 10},
+		},
 		{packageSeed{format: "npm", name: "@acme/widget", version: "1.0.0", filename: "widget-1.0.0.tgz", blobSize: 20},
 			&listed{"@acme/widget", "1.0.0", "npm", "", "widget-1.0.0.tgz", 20}},
-		{packageSeed{format: "apk", name: "v3.20/main/musl", version: "1.2.5-r0", arch: "x86_64", filename: "musl-1.2.5-r0.apk", blobSize: 30,
-			attrs: map[string]any{"build_time": 1700000000, "installed_size": 99}},
-			&listed{"v3.20/main/musl", "1.2.5-r0", "apk", "x86_64", "musl-1.2.5-r0.apk", 30}},
-		{packageSeed{format: "terraform", name: "providers/null", version: "16.0.0", arch: "linux_arm64", filename: "terraform-provider-null_16.0.0_linux_arm64.zip", blobSize: 40},
-			&listed{"providers/null", "16.0.0", "terraform", "linux_arm64", "terraform-provider-null_16.0.0_linux_arm64.zip", 40}},
+		{
+			packageSeed{
+				format:   "apk",
+				name:     "v3.20/main/musl",
+				version:  "1.2.5-r0",
+				arch:     "x86_64",
+				filename: "musl-1.2.5-r0.apk",
+				blobSize: 30,
+				attrs:    map[string]any{"build_time": 1700000000, "installed_size": 99},
+			},
+			&listed{"v3.20/main/musl", "1.2.5-r0", "apk", "x86_64", "musl-1.2.5-r0.apk", 30},
+		},
+		{
+			packageSeed{
+				format:   "terraform",
+				name:     "providers/null",
+				version:  "16.0.0",
+				arch:     "linux_arm64",
+				filename: "terraform-provider-null_16.0.0_linux_arm64.zip",
+				blobSize: 40,
+			},
+			&listed{"providers/null", "16.0.0", "terraform", "linux_arm64", "terraform-provider-null_16.0.0_linux_arm64.zip", 40},
+		},
 		{packageSeed{format: "terraform", name: "modules/vpc/aws", version: "1.0.0", filename: "vpc-aws-1.0.0.zip", blobSize: 50},
 			&listed{"modules/vpc/aws", "1.0.0", "terraform", "", "vpc-aws-1.0.0.zip", 50}},
-		{packageSeed{format: "go", name: "example.com/mod", version: "v1.0.0", path: "example.com/mod/@v/v1.0.0.zip", filename: "v1.0.0.zip", blobSize: 60},
-			&listed{"example.com/mod", "v1.0.0", "go", "", "v1.0.0.zip", 60}},
+		{
+			packageSeed{
+				format:   "go",
+				name:     "example.com/mod",
+				version:  "v1.0.0",
+				path:     "example.com/mod/@v/v1.0.0.zip",
+				filename: "v1.0.0.zip",
+				blobSize: 60,
+			},
+			&listed{"example.com/mod", "v1.0.0", "go", "", "v1.0.0.zip", 60},
+		},
 		// The go .mod is a second file of the same version and stays out.
-		{packageSeed{format: "go", name: "example.com/mod", version: "v1.0.0", path: "example.com/mod/@v/v1.0.0.mod", filename: "v1.0.0.mod", blobSize: 5,
-			unlisted: true, role: "mod"}, nil},
+		{
+			packageSeed{
+				format:   "go",
+				name:     "example.com/mod",
+				version:  "v1.0.0",
+				path:     "example.com/mod/@v/v1.0.0.mod",
+				filename: "v1.0.0.mod",
+				blobSize: 5,
+				unlisted: true,
+				role:     "mod",
+			},
+			nil,
+		},
 		// A conan recipe is listed through its manifest by its full reference.
-		{packageSeed{format: "conan", name: "zlib", version: "1.3", path: "zlib/1.3/_/_/r1/export/conanmanifest.txt", filename: "zlib/1.3@_/_#r1",
-			attrs: map[string]any{"release": "r1"}},
-			&listed{"zlib", "1.3", "conan", "", "zlib/1.3@_/_#r1", 0}},
-		{packageSeed{format: "conan", name: "zlib", version: "1.3", path: "zlib/1.3/_/_/r1/export/conan_export.tgz", filename: "conan_export.tgz", blobSize: 7,
-			unlisted: true}, nil},
+		{
+			packageSeed{
+				format:   "conan",
+				name:     "zlib",
+				version:  "1.3",
+				path:     "zlib/1.3/_/_/r1/export/conanmanifest.txt",
+				filename: "zlib/1.3@_/_#r1",
+				attrs:    map[string]any{"release": "r1"},
+			},
+			&listed{"zlib", "1.3", "conan", "", "zlib/1.3@_/_#r1", 0},
+		},
+		{
+			packageSeed{
+				format:   "conan",
+				name:     "zlib",
+				version:  "1.3",
+				path:     "zlib/1.3/_/_/r1/export/conan_export.tgz",
+				filename: "conan_export.tgz",
+				blobSize: 7,
+				unlisted: true,
+			},
+			nil,
+		},
 		{packageSeed{format: "raw", name: "dir/a.txt", filename: "dir/a.txt", blobSize: 70},
 			&listed{"dir/a.txt", "", "raw", "", "dir/a.txt", 70}},
-		{packageSeed{format: "rubygems", name: "rack", version: "3.0", arch: "java", filename: "rack-3.0-java.gem", blobSize: 80, size: 4096},
-			&listed{"rack", "3.0", "rubygems", "java", "rack-3.0-java.gem", 4096}},
+		{
+			packageSeed{
+				format:   "rubygems",
+				name:     "rack",
+				version:  "3.0",
+				arch:     "java",
+				filename: "rack-3.0-java.gem",
+				blobSize: 80,
+				size:     4096,
+			},
+			&listed{"rack", "3.0", "rubygems", "java", "rack-3.0-java.gem", 4096},
+		},
 		{packageSeed{format: "rpm", name: "bash", version: "5.2", arch: "x86_64", filename: "bash-5.2-1.x86_64.rpm", blobSize: 90,
 			attrs: map[string]any{"release": "1", "epoch": 1, "build_time": 1700000001, "archive_size": 3, "installed_size": 4}},
 			&listed{"bash", "5.2", "rpm", "x86_64", "bash-5.2-1.x86_64.rpm", 90}},
@@ -167,14 +244,16 @@ func TestComponentListingShapes(t *testing.T) {
 	// Newest first: the seeds were written oldest first.
 	for i, c := range got {
 		w := want[len(want)-1-i]
-		if c.Name != w.name || c.Version != w.version || c.Format != w.format || c.Arch != w.arch || c.Filename != w.filename || c.PackageSize != w.size {
+		if c.Name != w.name || c.Version != w.version || c.Format != w.format || c.Arch != w.arch || c.Filename != w.filename ||
+			c.PackageSize != w.size {
 			t.Errorf("row %d = %s %s %s %q %s %d, want %+v", i, c.Name, c.Version, c.Format, c.Arch, c.Filename, c.PackageSize, w)
 		}
 	}
 
 	t.Run("attrs", func(t *testing.T) {
 		rpm, _ := listComponentsOf(t, pg, repo, ComponentListOptions{Format: "rpm"})
-		if len(rpm) != 1 || rpm[0].Release != "1" || rpm[0].Epoch != 1 || rpm[0].BuildTime != 1700000001 || rpm[0].ArchiveSize != 3 || rpm[0].InstalledSize != 4 {
+		if len(rpm) != 1 || rpm[0].Release != "1" || rpm[0].Epoch != 1 || rpm[0].BuildTime != 1700000001 || rpm[0].ArchiveSize != 3 ||
+			rpm[0].InstalledSize != 4 {
 			t.Fatalf("rpm attrs %+v", rpm)
 		}
 
@@ -268,7 +347,8 @@ func TestComponentListingShapes(t *testing.T) {
 
 	t.Run("go mod is not addressable", func(t *testing.T) {
 		var modID string
-		if err := db.QueryRowContext(ctx, `SELECT id FROM package_files WHERE repository_id = $1 AND filename = 'v1.0.0.mod'`, repo).Scan(&modID); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT id FROM package_files WHERE repository_id = $1 AND filename = 'v1.0.0.mod'`, repo).
+			Scan(&modID); err != nil {
 			t.Fatal(err)
 		}
 
@@ -280,6 +360,8 @@ func TestComponentListingShapes(t *testing.T) {
 
 // TestComponentStoreOnGenericTables round-trips a deb and an rpm component
 // through the specs' mapping and the ComponentStore reads.
+//
+//nolint:gocyclo,cyclop // one scenario table per format; splitting would repeat the seeding
 func TestComponentStoreOnGenericTables(t *testing.T) {
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
@@ -287,14 +369,39 @@ func TestComponentStoreOnGenericTables(t *testing.T) {
 	store := &ComponentStore{core: pg.core}
 
 	rpmID := seedPackageFile(t, pg, packageSeed{
-		repo: repo, format: "rpm", name: "bash", version: "5.2", arch: "x86_64", filename: "bash-5.2-1.x86_64.rpm",
-		blobSeed: "bash", blobSize: 100, size: 123,
-		attrs: map[string]any{"release": "1", "epoch": 2, "build_time": 1700000001, "archive_size": 3, "installed_size": 4},
-		meta:  map[string]any{"summary": "shell", "description": "d", "license": "GPL", "url": "u", "vendor": "v", "group_name": "g", "packager": "p", "source_rpm": "s.src.rpm", "build_host": "h"},
+		repo:     repo,
+		format:   "rpm",
+		name:     "bash",
+		version:  "5.2",
+		arch:     "x86_64",
+		filename: "bash-5.2-1.x86_64.rpm",
+		blobSeed: "bash",
+		blobSize: 100,
+		size:     123,
+		attrs:    map[string]any{"release": "1", "epoch": 2, "build_time": 1700000001, "archive_size": 3, "installed_size": 4},
+		meta: map[string]any{
+			"summary":     "shell",
+			"description": "d",
+			"license":     "GPL",
+			"url":         "u",
+			"vendor":      "v",
+			"group_name":  "g",
+			"packager":    "p",
+			"source_rpm":  "s.src.rpm",
+			"build_host":  "h",
+		},
 	})
 	debID := seedPackageFile(t, pg, packageSeed{
-		repo: repo, format: "deb", name: "dpkg", version: "1.0", arch: "amd64", filename: "dpkg_1.0_amd64.deb", blobSeed: "dpkg", blobSize: 50,
-		attrs: map[string]any{"installed_size": 7}, meta: map[string]any{"summary": "tool", "license": "GPL"},
+		repo:     repo,
+		format:   "deb",
+		name:     "dpkg",
+		version:  "1.0",
+		arch:     "amd64",
+		filename: "dpkg_1.0_amd64.deb",
+		blobSeed: "dpkg",
+		blobSize: 50,
+		attrs:    map[string]any{"installed_size": 7},
+		meta:     map[string]any{"summary": "tool", "license": "GPL"},
 	})
 	seedPackageFile(t, pg, packageSeed{repo: repo, format: "raw", name: "x", filename: "x", blobSeed: "x", blobSize: 1})
 
@@ -311,7 +418,8 @@ func TestComponentStoreOnGenericTables(t *testing.T) {
 	}
 
 	d, err := store.GetComponentByFilename(ctx, repo, "dpkg_1.0_amd64.deb")
-	if err != nil || d == nil || d.ID != debID || d.Format != "deb" || d.PackageSize != 50 || d.InstalledSize != 7 || d.Summary != "tool" || d.Release != "" {
+	if err != nil || d == nil || d.ID != debID || d.Format != "deb" || d.PackageSize != 50 || d.InstalledSize != 7 || d.Summary != "tool" ||
+		d.Release != "" {
 		t.Fatalf("deb by filename: %+v %v", d, err)
 	}
 
@@ -337,7 +445,10 @@ func TestComponentStoreOnGenericTables(t *testing.T) {
 	}
 
 	var left int
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT count(*) FROM packages WHERE repository_id = $1 AND name = 'bash'`, repo).Scan(&left); err != nil || left != 0 {
+	if err := pg.GetDB().
+		QueryRowContext(ctx, `SELECT count(*) FROM packages WHERE repository_id = $1 AND name = 'bash'`, repo).
+		Scan(&left); err != nil ||
+		left != 0 {
 		t.Fatalf("empty package not pruned: %d %v", left, err)
 	}
 }
