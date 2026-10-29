@@ -82,7 +82,7 @@ func hostedBranch() catalogBranch {
 		prefSize: "t.size_bytes::bigint", fbSize: nullBigint,
 		// The packages table has one row per package; a package with no live
 		// version is not listed (every file of it is trashed).
-		packageCount: `(SELECT count(*) FROM packages pk WHERE pk.repository_id = cr.id
+		packageCount: `(SELECT count(*) FROM packages pk WHERE pk.repository_id = cr.id AND cr.deleted_at IS NULL
 			AND EXISTS (SELECT 1 FROM package_versions v WHERE v.package_id = pk.id AND v.deleted_at IS NULL))`,
 	}
 }
