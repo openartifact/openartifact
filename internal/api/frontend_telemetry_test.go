@@ -24,6 +24,8 @@ import (
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	colllogs "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // collectorRequest is what the fake collector received.
@@ -93,13 +95,21 @@ func frontendConfig(endpoint string) telemetry.Config {
 }
 
 func newFrontendRouter(cfg telemetry.Config, reg *metrics.Registry, p *auth.Principal) http.Handler {
+	h := NewFrontendTelemetryHandler(cfg, reg, nil)
+	h.limit = newUserLimiter(1e6, 1e6) // the rate limit has its own test
+
+	return routerFor(h, p)
+}
+
+// routerFor mounts h behind a middleware that authenticates every request as p.
+func routerFor(h *FrontendTelemetryHandler, p *auth.Principal) http.Handler {
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			next.ServeHTTP(w, req.WithContext(middleware.WithPrincipal(req.Context(), p)))
 		})
 	})
-	NewFrontendTelemetryHandler(cfg, reg, nil).RegisterAuthed(r)
+	h.RegisterAuthed(r)
 
 	return r
 }
@@ -124,7 +134,7 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 	id := "user-1"
 	deployToken := &auth.Principal{UserID: &id, Username: "ci", Credential: auth.CredentialBearerToken, TokenKind: auth.TokenKindAccess}
 	anon := &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}
-	payload := []byte("\x0a\x00otlp")
+	tracesBody, logsBody := tracePayload(1), logsPayload(1)
 
 	tests := []struct {
 		name     string
@@ -139,7 +149,7 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 			"relayed",
 			frontendConfig(collector.srv.URL),
 			sessionPrincipal("user-1"),
-			relayRequest("traces", otlpProtobuf, payload),
+			relayRequest("traces", otlpProtobuf, tracesBody),
 			200,
 			relayRelayed,
 			true,
@@ -148,7 +158,7 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 			"unauthenticated",
 			frontendConfig(collector.srv.URL),
 			anon,
-			relayRequest("logs", otlpProtobuf, payload),
+			relayRequest("logs", otlpProtobuf, logsBody),
 			401,
 			relayRejected,
 			false,
@@ -157,7 +167,7 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 			"deploy token",
 			frontendConfig(collector.srv.URL),
 			deployToken,
-			relayRequest("logs", otlpProtobuf, payload),
+			relayRequest("logs", otlpProtobuf, logsBody),
 			403,
 			relayRejected,
 			false,
@@ -170,7 +180,7 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 			"wrong content type",
 			frontendConfig(collector.srv.URL),
 			sessionPrincipal("user-1"),
-			relayRequest("logs", "application/json", payload),
+			relayRequest("logs", "application/json", logsBody),
 			415,
 			relayRejected,
 			false,
@@ -179,17 +189,17 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 			"metrics signal",
 			frontendConfig(collector.srv.URL),
 			sessionPrincipal("user-1"),
-			relayRequest("metrics", otlpProtobuf, payload),
+			relayRequest("metrics", otlpProtobuf, logsBody),
 			404,
 			"",
 			false,
 		},
-		{"feature off", telemetry.DefaultConfig(), sessionPrincipal("user-1"), relayRequest("logs", otlpProtobuf, payload), 404, "", false},
+		{"feature off", telemetry.DefaultConfig(), sessionPrincipal("user-1"), relayRequest("logs", otlpProtobuf, logsBody), 404, "", false},
 		{
 			"collector down",
 			frontendConfig(downURL),
 			sessionPrincipal("user-1"),
-			relayRequest("logs", otlpProtobuf, payload),
+			relayRequest("logs", otlpProtobuf, logsBody),
 			502,
 			relayFailed,
 			false,
@@ -228,12 +238,12 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 	}
 }
 
-// TestFrontendTelemetryRelayForwardsUnchanged checks what reaches the
-// collector: the body as sent, the OTLP/HTTP signal path, the configured
-// headers, and never the browser's cookies.
-func TestFrontendTelemetryRelayForwardsUnchanged(t *testing.T) {
+// TestFrontendTelemetryRelayForwardsValidated checks what reaches the
+// collector: the validated export as sent, the OTLP/HTTP signal path, the
+// configured headers, and never the browser's cookies.
+func TestFrontendTelemetryRelayForwardsValidated(t *testing.T) {
 	collector := newFakeCollector(t)
-	payload := []byte("\x0a\x03abc")
+	payload, tracesBody := logsPayload(3), tracePayload(3)
 
 	rec := httptest.NewRecorder()
 	newFrontendRouter(frontendConfig(collector.srv.URL+"/otlp/"), nil, sessionPrincipal("user-1")).
@@ -248,8 +258,17 @@ func TestFrontendTelemetryRelayForwardsUnchanged(t *testing.T) {
 		t.Fatal("nothing forwarded")
 	}
 
-	if got.path != "/otlp/v1/logs" || !bytes.Equal(got.body, payload) || got.ctype != otlpProtobuf {
+	if got.path != "/otlp/v1/logs" || got.ctype != otlpProtobuf {
 		t.Errorf("collector got path %q, body %q, type %q", got.path, got.body, got.ctype)
+	}
+
+	var forwarded colllogs.ExportLogsServiceRequest
+	if err := proto.Unmarshal(got.body, &forwarded); err != nil {
+		t.Fatalf("forwarded body is not an OTLP logs request: %v", err)
+	}
+
+	if n := len(forwarded.GetResourceLogs()[0].GetScopeLogs()[0].GetLogRecords()); n != 3 {
+		t.Errorf("forwarded %d log records, want the 3 sent", n)
 	}
 
 	if got.auth != "Bearer collector-secret" || got.cookies != "" {
@@ -262,7 +281,7 @@ func TestFrontendTelemetryRelayForwardsUnchanged(t *testing.T) {
 		frontendConfig(collector.srv.URL),
 		nil,
 		sessionPrincipal("user-1"),
-	).ServeHTTP(rec, relayRequest("traces", otlpProtobuf, payload))
+	).ServeHTTP(rec, relayRequest("traces", otlpProtobuf, tracesBody))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("collector 400 answered %d, want 400", rec.Code)
@@ -274,7 +293,7 @@ func TestFrontendTelemetryRelayForwardsUnchanged(t *testing.T) {
 		frontendConfig(collector.srv.URL),
 		nil,
 		sessionPrincipal("user-1"),
-	).ServeHTTP(rec, relayRequest("traces", otlpProtobuf, payload))
+	).ServeHTTP(rec, relayRequest("traces", otlpProtobuf, tracesBody))
 
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("collector 503 answered %d, want 502", rec.Code)
@@ -296,7 +315,7 @@ func TestFrontendTelemetryRelayRefusesRedirects(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	newFrontendRouter(frontendConfig(redirector.URL), nil, sessionPrincipal("user-1")).
-		ServeHTTP(rec, relayRequest("traces", otlpProtobuf, []byte("\x0a\x03abc")))
+		ServeHTTP(rec, relayRequest("traces", otlpProtobuf, tracePayload(1)))
 
 	if rec.Code != http.StatusBadGateway || hits.Load() != 0 {
 		t.Errorf("answered %d with %d requests at the redirect target, want 502 and none", rec.Code, hits.Load())
@@ -321,7 +340,7 @@ func TestFrontendTelemetryRelayBusy(t *testing.T) {
 	t.Cleanup(func() { release.Do(func() { close(gate) }) }) // runs first: Close waits for the requests
 
 	router := newFrontendRouter(frontendConfig(collector.URL), nil, sessionPrincipal("user-1"))
-	payload := []byte("\x0a\x03abc")
+	tracesBody, logsBody := tracePayload(1), logsPayload(1)
 	codes := make([]int, frontendTelemetryMaxInflight)
 
 	var wg sync.WaitGroup
@@ -329,7 +348,7 @@ func TestFrontendTelemetryRelayBusy(t *testing.T) {
 	for i := range codes {
 		wg.Go(func() {
 			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, relayRequest("traces", otlpProtobuf, payload))
+			router.ServeHTTP(rec, relayRequest("traces", otlpProtobuf, tracesBody))
 			codes[i] = rec.Code
 		})
 	}
@@ -344,7 +363,7 @@ func TestFrontendTelemetryRelayBusy(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, relayRequest("logs", otlpProtobuf, payload))
+	router.ServeHTTP(rec, relayRequest("logs", otlpProtobuf, logsBody))
 
 	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
 		t.Errorf("over the cap = %d (Retry-After %q), want 503 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
@@ -360,7 +379,7 @@ func TestFrontendTelemetryRelayBusy(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, relayRequest("traces", otlpProtobuf, payload))
+	router.ServeHTTP(rec, relayRequest("traces", otlpProtobuf, tracesBody))
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("after the forwards finished = %d, want 200", rec.Code)
