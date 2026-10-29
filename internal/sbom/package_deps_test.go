@@ -237,7 +237,7 @@ func TestSBOMDebDependenciesCarryDistroNamespace(t *testing.T) {
 		t.Errorf("libc6 missing from %v", keys(comps))
 	}
 
-	if _, ok := comps["pkg:deb/ubuntu/zlib1g@1:1.2.11"]; !ok {
+	if _, ok := comps["pkg:deb/ubuntu/zlib1g@1%3A1.2.11"]; !ok {
 		t.Errorf("zlib1g missing from %v", keys(comps))
 	}
 }

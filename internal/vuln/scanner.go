@@ -114,12 +114,24 @@ type osvQueryRequest struct {
 		Name      string `json:"name"`
 		Ecosystem string `json:"ecosystem"`
 	} `json:"package"`
+	// PageToken continues a query the previous response did not finish.
+	PageToken string `json:"page_token,omitempty"`
 }
 
 // osvQueryResponse is the response format from OSV API.
 type osvQueryResponse struct {
 	Vulns []osvVulnerability `json:"vulns"`
+	// NextPageToken is set while the answer has more pages.
+	NextPageToken string `json:"next_page_token"`
 }
+
+// maxOSVPages bounds the pages one scan follows. OSV answers a query in pages
+// of up to a few hundred findings, so a package that needs more than this is
+// not a real package; the scan fails instead of returning a partial answer.
+const maxOSVPages = 10
+
+// maxOSVResponseBytes bounds one page of the OSV API answer.
+const maxOSVResponseBytes = 8 << 20
 
 // osvVulnerability represents a vulnerability from OSV API.
 type osvVulnerability struct {
@@ -163,19 +175,62 @@ func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerabil
 		return vulns, nil
 	}
 
-	// Build request
 	req := osvQueryRequest{
 		Version: version,
 	}
 	req.Package.Name = packageName
 	req.Package.Ecosystem = osvEcosystem
 
+	// OSV answers a query in pages; every page but the last carries the token
+	// that fetches the next. Findings after the first page are not optional.
+	var vulns []models.Vulnerability
+
+	for page := 0; ; page++ {
+		if page == maxOSVPages {
+			return nil, newScanError(s.Name(), FailureUpstream, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
+				"OSV API still has more results for %s %s@%s after %d pages", osvEcosystem, packageName, version, maxOSVPages))
+		}
+
+		osvResp, err := s.queryPage(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert OSV vulnerabilities to our format
+		for _, osvVuln := range osvResp.Vulns {
+			vuln := models.Vulnerability{
+				ID:          osvVuln.ID,
+				Aliases:     cleanAliases(osvVuln.ID, osvVuln.Aliases),
+				Summary:     osvVuln.Summary,
+				PublishedAt: osvVuln.Published,
+				References:  extractReferencesFromOSV(osvVuln.References),
+				CWEs:        osvVuln.DatabaseSpecific.CWEIDs,
+			}
+
+			// Extract severity and CVSS
+			vuln.Severity, vuln.CVSS = parseSeverityFromOSV(osvVuln.Severity, osvVuln.DatabaseSpecific.Severity)
+
+			// Extract fixed version
+			vuln.FixedIn = extractFixedVersionFromOSV(osvVuln.Affected)
+
+			vulns = append(vulns, vuln)
+		}
+
+		if osvResp.NextPageToken == "" {
+			return vulns, nil
+		}
+
+		req.PageToken = osvResp.NextPageToken
+	}
+}
+
+// queryPage posts one /query request and decodes the page it answers with.
+func (s *OSVScanner) queryPage(ctx context.Context, req *osvQueryRequest) (*osvQueryResponse, *ScanError) {
 	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, newScanError(s.Name(), FailureInternal, fmt.Errorf("failed to marshal OSV request: %w", err))
 	}
 
-	// Make HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.osvBaseURL+"/query", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, newScanError(s.Name(), FailureInternal, fmt.Errorf("failed to create OSV request: %w", err))
@@ -189,46 +244,22 @@ func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerabil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Read response
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOSVResponseBytes))
 	if err != nil {
 		return nil, s.requestFailure(ctx, fmt.Errorf("failed to read OSV response: %w", err))
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, newScanError(s.Name(), FailureUpstream, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
-			"OSV API returned status %d for %s %s@%s", resp.StatusCode, osvEcosystem, packageName, version))
+			"OSV API returned status %d for %s %s@%s", resp.StatusCode, req.Package.Ecosystem, req.Package.Name, req.Version))
 	}
 
-	// Parse response
 	var osvResp osvQueryResponse
 	if err := json.Unmarshal(body, &osvResp); err != nil {
 		return nil, newScanError(s.Name(), FailureInvalidOutput, fmt.Errorf("failed to parse OSV response: %w", err))
 	}
 
-	// Convert OSV vulnerabilities to our format
-	var vulns []models.Vulnerability
-
-	for _, osvVuln := range osvResp.Vulns {
-		vuln := models.Vulnerability{
-			ID:          osvVuln.ID,
-			Aliases:     cleanAliases(osvVuln.ID, osvVuln.Aliases),
-			Summary:     osvVuln.Summary,
-			PublishedAt: osvVuln.Published,
-			References:  extractReferencesFromOSV(osvVuln.References),
-			CWEs:        osvVuln.DatabaseSpecific.CWEIDs,
-		}
-
-		// Extract severity and CVSS
-		vuln.Severity, vuln.CVSS = parseSeverityFromOSV(osvVuln.Severity, osvVuln.DatabaseSpecific.Severity)
-
-		// Extract fixed version
-		vuln.FixedIn = extractFixedVersionFromOSV(osvVuln.Affected)
-
-		vulns = append(vulns, vuln)
-	}
-
-	return vulns, nil
+	return &osvResp, nil
 }
 
 // requestFailure classifies a transport error: an expired scan context is a
@@ -392,14 +423,13 @@ func (s *TrivyScanner) parseTrivyOutput(data []byte) ([]models.Vulnerability, er
 				CWEs:        tv.CweIDs,
 			}
 
-			// Extract CVSS score
+			// The report holds one score per source (nvd, ghsa, redhat, ...) in a
+			// map: take the highest, so the stored score does not depend on the
+			// order the map happens to be iterated.
 			var cvssScore float64
 
 			for _, cvss := range tv.CVSS {
-				if cvss.V3Score > 0 {
-					cvssScore = cvss.V3Score
-					break
-				}
+				cvssScore = max(cvssScore, cvss.V3Score)
 			}
 
 			vuln.CVSS = cvssScore
@@ -628,21 +658,37 @@ func parseSeverityFromOSV(severities []struct {
 		}
 	}
 
-	// Try to extract from CVSS score
-	for _, sev := range severities {
-		if sev.Type == "CVSS_V3" {
-			// Parse CVSS vector like "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-			// Extract the base score from the vector
-			cvssScore := extractCVSSScore(sev.Score)
-			if cvssScore > 0 {
-				severity := cvssScoreToSeverity(cvssScore)
-				return severity, cvssScore
+	// Score from the CVSS entries: v3 first, then v4 and v2 when the record has
+	// no v3 entry or none of them can be scored.
+	for _, typ := range []string{"CVSS_V3", "CVSS_V4", "CVSS_V2"} {
+		for _, sev := range severities {
+			if sev.Type != typ {
+				continue
+			}
+
+			if cvssScore := osvSeverityScore(typ, sev.Score); cvssScore > 0 {
+				return cvssScoreToSeverity(cvssScore), cvssScore
 			}
 		}
 	}
 
 	// Default to UNKNOWN
 	return "UNKNOWN", 0.0
+}
+
+// osvSeverityScore returns the base score of one OSV severity entry, 0 when it
+// cannot be scored. A v3 vector like "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+// and a v2 vector like "AV:N/AC:L/Au:N/C:P/I:P/A:P" are computed; a bare number
+// is taken as is. A v4 vector is not computed (its score needs the FIRST
+// MacroVector tables), so only a v4 entry holding a number counts.
+func osvSeverityScore(typ, score string) float64 {
+	if typ == "CVSS_V2" {
+		if s, ok := cvss2BaseScore(score); ok {
+			return s
+		}
+	}
+
+	return extractCVSSScore(score)
 }
 
 // extractCVSSScore returns the CVSS v3 base score for a vector string or a

@@ -126,23 +126,34 @@ var defaultPatterns = []SecretPattern{
 	},
 }
 
+// MaxFindings caps the findings one ScanText call returns. A scan of text
+// full of matches would otherwise return, and the caller store, as many
+// findings as the text has matches.
+const MaxFindings = 1000
+
 // span is a half-open byte range [start,end) of a detected secret.
 type span struct{ start, end int }
 
-// ScanText scans a text string for secrets.
+// ScanText scans a text string for secrets. It returns at most MaxFindings
+// findings, those of the first patterns in pattern order and, within a
+// pattern, in text order; every match, reported or not, is masked in the line
+// hints.
 func (s *Scanner) ScanText(text string) []models.SecretFinding {
 	type hit struct {
-		pattern SecretPattern
+		pattern *SecretPattern
 		sp      span
 	}
 
-	var hits []hit
+	var (
+		hits  []hit
+		spans []span
+	)
 
 	// Collect every match first so each line hint can mask all neighbouring
 	// secrets, not only its own.
-	spans := make([]span, 0, 4)
+	for i := range s.patterns {
+		pattern := &s.patterns[i]
 
-	for _, pattern := range s.patterns {
 		for _, match := range pattern.Regex.FindAllStringIndex(text, -1) {
 			sp := span{match[0], match[1]}
 			hits = append(hits, hit{pattern, sp})
@@ -150,7 +161,18 @@ func (s *Scanner) ScanText(text string) []models.SecretFinding {
 		}
 	}
 
-	var findings []models.SecretFinding
+	if len(hits) == 0 {
+		return nil
+	}
+
+	if len(hits) > MaxFindings {
+		s.log.Warnw("secret scan findings truncated", "matches", len(hits), "limit", MaxFindings)
+
+		hits = hits[:MaxFindings]
+	}
+
+	masked := mergeSpans(spans)
+	findings := make([]models.SecretFinding, 0, len(hits))
 
 	for _, h := range hits {
 		findings = append(findings, models.SecretFinding{
@@ -158,7 +180,7 @@ func (s *Scanner) ScanText(text string) []models.SecretFinding {
 			Description:   h.pattern.Description,
 			Severity:      h.pattern.Severity,
 			RedactedValue: redactValue(text[h.sp.start:h.sp.end]),
-			LineHint:      getLineHint(text, h.sp.start, h.sp.end, spans),
+			LineHint:      getLineHint(text, h.sp.start, h.sp.end, masked),
 		})
 	}
 
@@ -188,41 +210,61 @@ func redactValue(value string) string {
 	return value[:n] + "****"
 }
 
-// getLineHint returns up to 100 chars around the match with every detected
-// secret (spans, which includes the match itself) replaced by "****".
-func getLineHint(text string, start, end int, spans []span) string {
+// hintWindow is the byte range of the text a line hint is built from: the match
+// plus up to 50 bytes either side, cut at the line boundaries and widened to
+// rune boundaries.
+func hintWindow(text string, start, end int) (int, int) {
 	const contextSize = 50
 
-	// Find line boundaries
-	lineStart := start
-	for lineStart > 0 && text[lineStart-1] != '\n' {
-		lineStart--
-	}
-
-	lineEnd := end
-	for lineEnd < len(text) && text[lineEnd] != '\n' {
-		lineEnd++
-	}
-
-	contextStart := max(start-contextSize, lineStart)
-	contextEnd := min(end+contextSize, lineEnd)
-
-	// Window edges may land inside a multibyte rune; widen them to boundaries.
-	for contextStart > lineStart && !utf8.RuneStart(text[contextStart]) {
+	contextStart := start
+	for contextStart > 0 && start-contextStart < contextSize && text[contextStart-1] != '\n' {
 		contextStart--
 	}
 
-	for contextEnd < lineEnd && !utf8.RuneStart(text[contextEnd]) {
+	contextEnd := end
+	for contextEnd < len(text) && contextEnd-end < contextSize && text[contextEnd] != '\n' {
 		contextEnd++
 	}
+
+	// A window edge may land inside a multibyte rune; widen it to a rune
+	// boundary, at most utf8.UTFMax-1 bytes and not across the line.
+	for range utf8.UTFMax - 1 {
+		if contextStart == 0 || text[contextStart-1] == '\n' || utf8.RuneStart(text[contextStart]) {
+			break
+		}
+
+		contextStart--
+	}
+
+	for range utf8.UTFMax - 1 {
+		if contextEnd >= len(text) || text[contextEnd] == '\n' || utf8.RuneStart(text[contextEnd]) {
+			break
+		}
+
+		contextEnd++
+	}
+
+	return contextStart, contextEnd
+}
+
+// getLineHint returns up to 100 chars around the match, within its line, with
+// every detected secret (masked: the merged spans of all matches, which include
+// the match itself) replaced by "****". It reads a bounded window around the
+// match, however long the line is.
+func getLineHint(text string, start, end int, masked []span) string {
+	contextStart, contextEnd := hintWindow(text, start, end)
 
 	var b strings.Builder
 
 	pos := contextStart
 
-	for _, sp := range sortedSpans(spans) {
-		if sp.end <= pos || sp.start >= contextEnd {
-			continue
+	// masked is sorted and disjoint: skip to the first span that reaches into
+	// the window and stop at the first that starts after it.
+	first, _ := slices.BinarySearchFunc(masked, contextStart, func(sp span, at int) int { return cmp.Compare(sp.end, at+1) })
+
+	for _, sp := range masked[first:] {
+		if sp.start >= contextEnd {
+			break
 		}
 
 		if sp.start > pos {
@@ -231,7 +273,7 @@ func getLineHint(text string, start, end int, spans []span) string {
 
 		b.WriteString("****")
 
-		pos = max(pos, sp.end)
+		pos = sp.end
 	}
 
 	if pos < contextEnd {
@@ -253,9 +295,22 @@ func getLineHint(text string, start, end int, spans []span) string {
 	return strings.ToValidUTF8(hint, "")
 }
 
-func sortedSpans(spans []span) []span {
-	out := slices.Clone(spans)
-	slices.SortFunc(out, func(a, b span) int { return cmp.Compare(a.start, b.start) })
+// mergeSpans sorts spans by start and joins those that overlap or touch, which
+// gives disjoint spans in increasing order. It reorders spans in place.
+func mergeSpans(spans []span) []span {
+	slices.SortFunc(spans, func(a, b span) int { return cmp.Compare(a.start, b.start) })
 
-	return out
+	merged := spans[:0]
+
+	for _, sp := range spans {
+		if n := len(merged); n > 0 && sp.start <= merged[n-1].end {
+			merged[n-1].end = max(merged[n-1].end, sp.end)
+
+			continue
+		}
+
+		merged = append(merged, sp)
+	}
+
+	return merged
 }
