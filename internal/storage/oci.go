@@ -12,7 +12,8 @@ package storage
 // repository namespace via StorageConfig.Bucket (used as the OCI repository prefix).
 //
 // Authentication uses HTTP Basic credentials (OCIUsername / OCIPassword).
-// Set OCIInsecure=true to allow plain HTTP (development only).
+// An http:// endpoint is refused unless OCIInsecure=true (development only);
+// TLS verification is never disabled.
 //
 // OCI Distribution Spec v1.1 endpoints used:
 //   POST   /v2/<repo>/blobs/uploads/          – initiate upload session
@@ -27,18 +28,22 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
 
 // Sentinel errors for OCI Blob Store.
 var (
-	ErrOCIEndpointRequired      = errors.New("oci: Endpoint (registry URL) is required")
+	ErrOCIEndpointRequired = errors.New("oci: Endpoint (registry URL) is required")
+	ErrOCIInsecureEndpoint = errors.New(
+		"oci: Endpoint is plain http://; set ociInsecure (STORAGE_OCI_INSECURE) to allow it",
+	)
+	ErrOCIStagingPathRequired = errors.New(
+		"oci: storage.stagingPath (STORAGE_STAGING_PATH) must be set to a persistent directory when uploads are relayed through the server",
+	)
 	ErrOCIBucketRequired        = errors.New("oci: Bucket (repository name) is required")
 	ErrOCIPutRequiresSHA256     = errors.New("oci: Put requires \"sha256\" in metadata")
 	ErrOCIMissingLocationHeader = errors.New("oci: initiate upload: missing Location header")
@@ -55,7 +60,11 @@ type OCIBlobStore struct {
 	repo     string // OCI repository, e.g. "openartifact/blobs"
 	username string
 	password string
+	spoolDir string
 }
+
+// ociErrBodyLimit caps how much of an error response is read into a message.
+const ociErrBodyLimit = 4 << 10
 
 // NewOCIBlobStore creates a new OCIBlobStore from the provided StorageConfig.
 // StorageConfig.Endpoint must be the registry base URL (e.g. "https://registry.example.com").
@@ -69,19 +78,31 @@ func NewOCIBlobStore(cfg StorageConfig) (*OCIBlobStore, error) {
 		return nil, ErrOCIBucketRequired
 	}
 
-	var transport http.RoundTripper
-	if cfg.OCIInsecure {
-		transport = insecureTransport()
+	if u, err := url.Parse(cfg.Endpoint); err == nil && strings.EqualFold(u.Scheme, "http") && !cfg.OCIInsecure {
+		return nil, ErrOCIInsecureEndpoint
 	}
 
-	stagingDir := cfg.StagingPath
-	if stagingDir == "" {
-		stagingDir = filepath.Join(os.TempDir(), "openartifact-staging")
+	relayWanted := cfg.PublicURL != "" || cfg.PublicURLFromRequest
+	if relayWanted && cfg.StagingPath == "" {
+		// The staging dir also holds the relay signing key: a temp dir would
+		// regenerate it on reboot and differ per replica.
+		return nil, ErrOCIStagingPathRequired
+	}
+
+	spool, err := prepareSpoolDir(cfg.SpoolPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var rl *relay
+	if relayWanted {
+		rl = openRelay(cfg.StagingPath, cfg.PublicURL, cfg.PublicURLFromRequest)
 	}
 
 	return &OCIBlobStore{
-		relay:    openRelay(stagingDir, cfg.PublicURL, cfg.PublicURLFromRequest),
-		client:   newStreamingHTTPClient(transport),
+		relay:    rl,
+		spoolDir: spool,
+		client:   newStreamingHTTPClient(nil),
 		base:     strings.TrimRight(cfg.Endpoint, "/"),
 		repo:     cfg.Bucket,
 		username: cfg.OCIUsername,
@@ -129,7 +150,7 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 
 	// Verify locally before talking to the registry, so a mismatch never
 	// leaves an upload session behind and the bytes sent are the bytes hashed.
-	spool, size, err := spoolVerified(data, sha, "", "oci-put-*.tmp")
+	spool, size, err := spoolVerified(data, sha, o.spoolDir, "oci-put-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("oci: %w", err)
 	}
@@ -165,7 +186,7 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 	defer func() { _ = initResp.Body.Close() }()
 
 	if initResp.StatusCode != http.StatusAccepted {
-		body, _ := io.ReadAll(initResp.Body)
+		body, _ := io.ReadAll(io.LimitReader(initResp.Body, ociErrBodyLimit))
 		//nolint:err113 // dynamic error with runtime context
 		return "", fmt.Errorf("oci: initiate upload: status %d: %s", initResp.StatusCode, body)
 	}
@@ -209,7 +230,7 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 	defer func() { _ = putResp.Body.Close() }()
 
 	if putResp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(putResp.Body)
+		body, _ := io.ReadAll(io.LimitReader(putResp.Body, ociErrBodyLimit))
 		//nolint:err113 // dynamic error with runtime context
 		return "", fmt.Errorf("oci: complete upload: status %d: %s", putResp.StatusCode, body)
 	}
@@ -239,7 +260,7 @@ func (o *OCIBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, ociErrBodyLimit))
 		_ = resp.Body.Close()
 
 		//nolint:err113 // dynamic error with runtime context
@@ -280,7 +301,7 @@ func (o *OCIBlobStore) GetFrom(ctx context.Context, id string, offset int64) (io
 		return rc, err
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, ociErrBodyLimit))
 	_ = resp.Body.Close()
 
 	//nolint:err113 // dynamic error with runtime context
@@ -309,7 +330,7 @@ func (o *OCIBlobStore) Delete(ctx context.Context, id string) error {
 		return nil
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, ociErrBodyLimit))
 
 	//nolint:err113 // dynamic error with runtime context
 	return fmt.Errorf("oci: delete %s: status %d: %s", id, resp.StatusCode, body)
@@ -454,15 +475,6 @@ func (o *OCIBlobStore) HealthCheck(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// insecureTransport returns an http.RoundTripper that skips TLS verification.
-// Used only when OCIInsecure=true (development/testing).
-func insecureTransport() http.RoundTripper {
-	return &http.Transport{ // plain HTTP; TLS not configured
-		DialContext:           (&net.Dialer{Timeout: storageDialTimeout}).DialContext,
-		ResponseHeaderTimeout: storageResponseHeaderTimeout,
-	}
 }
 
 var (

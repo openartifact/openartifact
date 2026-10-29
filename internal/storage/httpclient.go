@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 const (
@@ -21,7 +23,8 @@ const (
 // that deadline covers reading the response body, so it would cut off any
 // blob that takes longer than the limit to stream (and any large upload).
 // Slow or dead peers are bounded by dial, TLS and response-header timeouts;
-// the caller's context bounds the transfer itself. A nil base uses a clone of
+// the caller's context bounds the transfer itself. Requests are traced (client
+// spans carry method, host and status, never the path or query). A nil base uses a clone of
 // http.DefaultTransport semantics.
 func newStreamingHTTPClient(base http.RoundTripper) *http.Client {
 	if base == nil {
@@ -37,5 +40,5 @@ func newStreamingHTTPClient(base http.RoundTripper) *http.Client {
 		}
 	}
 
-	return &http.Client{Transport: base}
+	return telemetry.WrapClient(&http.Client{Transport: base})
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/branding"
@@ -26,10 +27,11 @@ import (
 const placeholderPassword = "CHANGE_ME"
 
 var (
-	errInvalidPort       = errors.New("invalid server port")
-	errMalformedKeyValue = errors.New("expected key=value")
-	errMCPTransport      = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
-	errMCPLimits         = errors.New(
+	errInvalidServerLimit = errors.New("invalid server limit")
+	errInvalidPort        = errors.New("invalid server port")
+	errInvalidEnv         = errors.New("invalid environment override")
+	errMCPTransport       = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
+	errMCPLimits          = errors.New(
 		"mcp.maxBodyBytes must be positive; mcp.rateLimitPerMinute and mcp.aiTriggerPerMinute must not be negative",
 	)
 	errMCPOrigin          = errors.New("mcp.allowedOrigins entries must be origins like https://host[:port]")
@@ -420,6 +422,12 @@ type ServerConfig struct {
 	// seconds. It stays short regardless of readTimeout to still mitigate
 	// slowloris-style attacks even when body reads are unbounded.
 	ReadHeaderTimeout int `yaml:"readHeaderTimeout"`
+	// IdleTimeout is how many seconds an idle keep-alive connection is kept
+	// open before the server closes it. 0 disables the limit.
+	IdleTimeout int `yaml:"idleTimeout"`
+	// MaxHeaderBytes caps the size of request headers in bytes. 0 uses the Go
+	// default (1 MiB).
+	MaxHeaderBytes int `yaml:"maxHeaderBytes"`
 	// MaxBodyBytes caps the body of every request (http.MaxBytesReader), a
 	// last line of defence behind the per-handler limits so no endpoint can be
 	// made to spool or buffer an unbounded body. 0 disables the cap.
@@ -587,7 +595,9 @@ func Load(filePath string) (*Config, error) {
 	}
 
 	// 3. Apply environment variable overrides
-	applyEnvOverrides(cfg)
+	if err := applyEnvChecked(cfg); err != nil {
+		return nil, err
+	}
 
 	// 4. Finalize config (handle special cases)
 	finalizeConfig(cfg)
@@ -609,6 +619,8 @@ func defaultConfig() *Config {
 			ReadTimeout:       0,
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20,
+			IdleTimeout:       120,
+			MaxHeaderBytes:    1 << 20,
 			MaxBodyBytes:      16 << 30,
 			ShutdownTimeout:   30,
 			ShutdownDelay:     0,
@@ -792,6 +804,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
 	overrideInt(&cfg.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
 	overrideInt(&cfg.Server.ReadHeaderTimeout, "SERVER_READ_HEADER_TIMEOUT")
+	overrideInt(&cfg.Server.IdleTimeout, "SERVER_IDLE_TIMEOUT")
+	overrideInt(&cfg.Server.MaxHeaderBytes, "SERVER_MAX_HEADER_BYTES")
 	overrideInt64(&cfg.Server.MaxBodyBytes, "SERVER_MAX_BODY_BYTES")
 	overrideInt(&cfg.Server.ShutdownTimeout, "SERVER_SHUTDOWN_TIMEOUT")
 	overrideInt(&cfg.Server.ShutdownDelay, "SERVER_SHUTDOWN_DELAY")
@@ -851,6 +865,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.AzureContainerName, "OPENARTIFACT_AZURE_CONTAINER_NAME")
 	overrideString(&cfg.Storage.AzureEndpoint, "OPENARTIFACT_AZURE_ENDPOINT")
 	overrideString(&cfg.Storage.StagingPath, "STORAGE_STAGING_PATH")
+	overrideString(&cfg.Storage.SpoolPath, "STORAGE_SPOOL_PATH")
 	overrideString(&cfg.Storage.OCIUsername, "STORAGE_OCI_USERNAME")
 	overrideString(&cfg.Storage.OCIPassword, "STORAGE_OCI_PASSWORD")
 	overrideBool(&cfg.Storage.OCIInsecure, "STORAGE_OCI_INSECURE")
@@ -1260,10 +1275,32 @@ func (c *Config) validatePresign() error {
 
 // Override helper functions — only override if env var is set.
 
-// warnBadEnv reports an unparseable env override without echoing the value
-// (it may be a secret) and keeps the previous setting.
-func warnBadEnv(key, _ string, err error) {
-	fmt.Fprintf(os.Stderr, "WARN: ignoring invalid value for %s: %v\n", key, err)
+// envProblems collects the invalid environment overrides of one Load. Only the
+// variable name is recorded, never the value, which may be a secret.
+var (
+	envMu       sync.Mutex //nolint:gochecknoglobals // collector for applyEnvOverrides, whose signature docgen parses
+	envProblems []string   //nolint:gochecknoglobals // guarded by envMu
+)
+
+// badEnv records an unparseable env override; Load turns it into an error.
+func badEnv(key, want string) {
+	envProblems = append(envProblems, fmt.Sprintf("%s (expected %s)", key, want))
+}
+
+// applyEnvChecked runs applyEnvOverrides and returns one error naming every
+// variable whose value could not be parsed.
+func applyEnvChecked(cfg *Config) error {
+	envMu.Lock()
+	defer envMu.Unlock()
+
+	envProblems = nil
+	applyEnvOverrides(cfg)
+
+	if len(envProblems) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %s", errInvalidEnv, strings.Join(envProblems, ", "))
 }
 
 func overrideString(cfg *string, key string) {
@@ -1273,13 +1310,20 @@ func overrideString(cfg *string, key string) {
 }
 
 // overrideParsed sets cfg from the environment variable key when it is set,
-// parsing the raw value with parse; a value that does not parse is reported and
-// leaves cfg alone.
+// parsing the raw value with parse. A blank value counts as unset; any other
+// value that does not parse is recorded and makes Load fail, naming key only.
 func overrideParsed[T any](cfg *T, key string, parse func(string) (T, error)) {
 	if v, ok := os.LookupEnv(key); ok {
+		if strings.TrimSpace(v) == "" {
+			return
+		}
+
 		n, err := parse(v)
 		if err != nil {
-			warnBadEnv(key, v, err)
+			var zero T
+
+			badEnv(key, fmt.Sprintf("%T", zero))
+
 			return
 		}
 		*cfg = n
@@ -1310,15 +1354,18 @@ func overrideSlice(cfg *[]string, key string) {
 			}
 		}
 
-		if len(result) > 0 {
-			*cfg = result
+		// An explicitly empty value clears the list set by YAML or defaults.
+		if len(result) == 0 {
+			result = nil
 		}
+
+		*cfg = result
 	}
 }
 
 // overrideKeyValues merges comma-separated key=value pairs from the
 // environment into dst, replacing values of keys already set (for example by
-// YAML). Entries without a key are ignored with a warning.
+// YAML). An entry without a key makes Load fail, naming key only.
 func overrideKeyValues(dst *map[string]string, key string) {
 	v, ok := os.LookupEnv(key)
 	if !ok {
@@ -1336,7 +1383,7 @@ func overrideKeyValues(dst *map[string]string, key string) {
 
 		k, val, found := strings.Cut(pair, "=")
 		if k = strings.TrimSpace(k); !found || k == "" {
-			warnBadEnv(key, pair, errMalformedKeyValue)
+			badEnv(key, "comma-separated key=value pairs")
 
 			continue
 		}

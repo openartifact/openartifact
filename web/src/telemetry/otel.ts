@@ -21,7 +21,7 @@ import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
 import { BatchSpanProcessor, ParentBasedSampler, TraceIdRatioBasedSampler, TracerProvider } from '@opentelemetry/sdk-trace'
 import { version } from '../../package.json'
-import { csrfHeader, type ClientSpan } from '../api/client'
+import { ApiError, csrfHeader, type ClientSpan } from '../api/client'
 import type { FrontendTelemetryConfig } from '../api/telemetry'
 
 export const SERVICE_NAME = 'openartifact-web'
@@ -51,8 +51,14 @@ function relayURL(path: string): string {
   return new URL(path, window.location.origin).href
 }
 
-/** The `exception` log event attributes of err, as the errors instrumentation records them. */
+/**
+ * The `exception` log event attributes of err, as the errors instrumentation records them.
+ * An ApiError carries the server's error text, which can quote entity names (repository,
+ * package, user), so only its type is exported: V8 starts `stack` with the message, so the
+ * stack goes too.
+ */
 export function exceptionAttributes(err: unknown): Attributes {
+  if (err instanceof ApiError) return { 'exception.type': err.name }
   if (!(err instanceof Error)) return { 'exception.message': String(err) }
   const attrs: Attributes = { 'exception.type': err.name, 'exception.message': err.message }
   if (err.stack) attrs['exception.stacktrace'] = err.stack

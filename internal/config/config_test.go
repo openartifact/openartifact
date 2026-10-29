@@ -614,16 +614,11 @@ func TestEnvOverrides_HMACAndOCI(t *testing.T) {
 	}
 }
 
-func TestBadBoolIgnoredNotFalse(t *testing.T) {
+func TestBadBoolIsLoadError(t *testing.T) {
 	t.Setenv("SERVER_TLS_ENABLED", "maybe")
 
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if cfg.Server.TLSEnabled {
-		t.Fatal("invalid bool must keep default")
+	if _, err := Load(""); !errors.Is(err, errInvalidEnv) {
+		t.Fatalf("invalid bool must fail Load, got %v", err)
 	}
 }
 
@@ -853,7 +848,7 @@ func TestValidate_PresignMaxPendingUploadsNegative(t *testing.T) {
 }
 
 func TestLoad_OptionsEnv(t *testing.T) {
-	t.Setenv("DB_OPTIONS", "connect_timeout=5, application_name = oa ,bogus")
+	t.Setenv("DB_OPTIONS", "connect_timeout=5, application_name = oa")
 	t.Setenv("STORAGE_OPTIONS", "k=v=w")
 
 	cfg, err := Load("")

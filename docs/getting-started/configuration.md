@@ -66,6 +66,8 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `SERVER_READ_TIMEOUT` | `readTimeout` | `0` | Seconds for a whole request; `0` = unlimited |
 | `SERVER_WRITE_TIMEOUT` | `writeTimeout` | `0` | Seconds for writing a response; `0` = unlimited |
 | `SERVER_READ_HEADER_TIMEOUT` | `readHeaderTimeout` | `20` | Seconds to read request headers |
+| `SERVER_IDLE_TIMEOUT` | `idleTimeout` | `120` | Seconds an idle keep-alive connection stays open; `0` = no limit |
+| `SERVER_MAX_HEADER_BYTES` | `maxHeaderBytes` | `1048576` | Request header size cap in bytes (1024 to 16 MiB); `0` = Go default |
 | `SERVER_MAX_BODY_BYTES` | `maxBodyBytes` | `17179869184` | Maximum request body (bytes) accepted by any endpoint; `0` = unlimited. Format handlers enforce lower limits of their own |
 | `SERVER_SHUTDOWN_TIMEOUT` | `shutdownTimeout` | `30` | Seconds allowed for graceful shutdown |
 | `SERVER_SHUTDOWN_DELAY` | `shutdownDelay` | `0` | Seconds to keep serving, with `/ready` answering 503, after a shutdown signal and before the listener closes; a second signal skips it. See [rolling updates](../operations/monitoring.md#graceful-shutdown-and-rolling-updates) |
@@ -202,7 +204,8 @@ An optional second copy of every blob on another backend, with read fallback and
 | `OPENARTIFACT_STORAGE_REPLICA_AZURE_ENDPOINT` | `azureEndpoint` | empty | Blob service URL for Azurite or a sovereign cloud |
 | `OPENARTIFACT_STORAGE_REPLICA_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
 | `OPENARTIFACT_STORAGE_REPLICA_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
-| `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | `ociInsecure` | `false` | Plain HTTP to the registry (dev/test only) |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | `ociInsecure` | `false` | Allow an `http://` registry endpoint (dev/test only) |
+| `OPENARTIFACT_STORAGE_REPLICA_SPOOL_PATH` | `spoolPath` | empty | Spool directory of the replica backend (`s3`, `azure`, `oci`); default system temp dir |
 | `OPENARTIFACT_STORAGE_REPLICA_READ_FALLBACK` | `readFallback` | `notfound` | When reads fall back to the replica: `notfound` (the primary says the blob is missing), `error` (also when the primary fails), `off` |
 | `OPENARTIFACT_STORAGE_REPLICA_INTERVAL` | `interval` | `5s` | Pause between replication queue passes; must be positive |
 | `OPENARTIFACT_STORAGE_REPLICA_BATCH` | `batch` | `100` | Queued operations claimed per pass (at least 1) |
@@ -284,10 +287,11 @@ Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `gar
 | `OPENARTIFACT_AZURE_ACCOUNT_KEY` | `azureAccountKey` | empty | Azure account key (**secret**) |
 | `OPENARTIFACT_AZURE_CONTAINER_NAME` | `azureContainerName` | empty | Azure container |
 | `OPENARTIFACT_AZURE_ENDPOINT` | `azureEndpoint` | empty | Azure blob service URL (Azurite, sovereign clouds); empty uses `https://<account>.blob.core.windows.net` |
-| `STORAGE_STAGING_PATH` | `stagingPath` | empty | Spool directory for server-relayed presigned uploads on `oci` storage (default `<tmp>/openartifact-staging`) |
+| `STORAGE_STAGING_PATH` | `stagingPath` | empty | Spool directory for server-relayed presigned uploads on `oci` storage; required (persistent) while uploads are relayed, it also holds the relay signing key |
+| `STORAGE_SPOOL_PATH` | `spoolPath` | empty | Directory where `s3`, `azure` and `oci` spool a blob while verifying it; stale leftovers are swept at startup (default: system temp dir, not swept) |
 | `STORAGE_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
 | `STORAGE_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
-| `STORAGE_OCI_INSECURE` | `ociInsecure` | `false` | Plain HTTP to the registry (dev/test only) |
+| `STORAGE_OCI_INSECURE` | `ociInsecure` | `false` | Allow an `http://` registry endpoint (dev/test only); without it such an endpoint is refused at startup. TLS verification is never disabled |
 | - | `options` | none | YAML only; accepted by the schema but not read by any backend |
 
 ### Authentication and security (`auth`)

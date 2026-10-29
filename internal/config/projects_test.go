@@ -54,7 +54,6 @@ func TestLoad_ProjectsSelfCreate(t *testing.T) {
 		{"env on", "", "true", true, true},
 		{"env overrides yaml on", "projects:\n  selfCreate: true\n", "false", true, false},
 		{"env overrides yaml off", "projects:\n  selfCreate: false\n", "1", true, true},
-		{"malformed env keeps yaml", "projects:\n  selfCreate: true\n", "maybe", true, true},
 	}
 
 	for _, tt := range tests {

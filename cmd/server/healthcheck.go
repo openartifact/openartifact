@@ -6,11 +6,14 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/config"
@@ -28,21 +31,66 @@ func runHealthcheck(configFile string) error {
 		return fmt.Errorf("healthcheck: load configuration: %w", err)
 	}
 
-	return probeHealth(net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Server.Port)), healthcheckTimeout)
+	scheme, addr := healthTarget(cfg.Server)
+
+	return probeHealth(scheme, addr, healthcheckTimeout)
 }
 
-// probeHealth GETs http://addr/health and succeeds only on HTTP 200.
-func probeHealth(addr string, timeout time.Duration) error {
+// healthTarget picks the URL scheme and host:port of the self-probe: https when
+// TLS is enabled, and server.host when it is a concrete address, else loopback.
+func healthTarget(s config.ServerConfig) (string, string) {
+	scheme := "http"
+	if s.TLSEnabled {
+		scheme = "https"
+	}
+
+	host := strings.Trim(strings.TrimSpace(s.Host), "[]")
+	if ip, err := netip.ParseAddr(host); host == "" || (err == nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+
+	return scheme, net.JoinHostPort(host, strconv.Itoa(s.Port))
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback address.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip, err := netip.ParseAddr(host)
+
+	return err == nil && ip.IsLoopback()
+}
+
+// probeHealth GETs scheme://addr/health and succeeds only on HTTP 200. The
+// certificate of an https probe is verified unless addr is a loopback address:
+// the probe then reaches this very process, whose certificate rarely names an
+// IP, so skipping verification there exposes nothing.
+func probeHealth(scheme, addr string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	//nolint:gosec // G704: addr is loopback plus the operator-configured port, never request input
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/health", http.NoBody)
+	//nolint:gosec // G704: addr is the operator-configured listen address, never request input
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://"+addr+"/health", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("healthcheck: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: see above
+	client := http.DefaultClient
+
+	if host, _, splitErr := net.SplitHostPort(addr); scheme == "https" && splitErr == nil && isLoopbackHost(host) {
+		tr := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib default is *http.Transport
+		tr.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // loopback self-probe, see above
+			MinVersion:         tls.VersionTLS12,
+		}
+		client = &http.Client{Transport: tr}
+
+		defer tr.CloseIdleConnections()
+	}
+
+	resp, err := client.Do(req) //nolint:gosec // G704: see above
 	if err != nil {
 		return fmt.Errorf("healthcheck: %w", err)
 	}

@@ -17,7 +17,7 @@
 #   OA_STACK_PROJECT  compose project name (default oa-smoke)
 #   OA_STACK_PORT     published host port (default 18080)
 #   OA_STACK_BUILD    1 builds the image on `up` (default); 0 uses the image
-#                     already tagged <project>-openartifact (CI loads it)
+#                     already tagged openartifact:<project> (CI loads it)
 #   OA_STACK_BASE_URL BASE_URL of the stack (default http://127.0.0.1:<port>); "none" leaves it
 #                     unset, so package-client URLs follow the request host and the stack can be
 #                     reached through several host names (127.0.0.1 and localhost, a reverse proxy)
@@ -59,6 +59,8 @@ OPENARTIFACT_SECRET_KEY=$(hex 32)
 AUTH_HMAC_KEY=$(hex 32)
 OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD=$pass
 OPENARTIFACT_PORT=$port
+# Per-project image tag (openartifact:<project>): parallel stacks and worktrees never share an image.
+OPENARTIFACT_VERSION=$project
 BASE_URL=$base_url
 OPENARTIFACT_TRUSTED_PROXIES=${OA_STACK_TRUSTED_PROXIES:-}
 ENV

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -92,11 +93,15 @@ func openRelay(dir, publicURL string, fromRequest bool) *relay {
 	}
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		slog.Error("storage: server-relayed uploads disabled: cannot create staging dir", "dir", dir, "error", err)
+
 		return nil
 	}
 
 	key, err := loadOrCreateRelayKey(dir)
 	if err != nil {
+		slog.Error("storage: server-relayed uploads disabled: cannot load or create the signing key", "dir", dir, "error", err)
+
 		return nil
 	}
 
@@ -769,6 +774,12 @@ func (r *relay) putPart(id string, part int, meta relayMeta, length int64, body 
 // partial upload, syncs it and records the part marker. It returns the part's
 // SHA-256 as the ETag.
 func (r *relay) writePart(id string, part int, meta relayMeta, length int64, body io.Reader) (string, error) {
+	// A marker from an earlier attempt must not vouch for a part that is
+	// being overwritten: a crash mid-write would leave it claiming complete.
+	if err := os.Remove(r.markerPath(id, part)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("clear part marker: %w", err)
+	}
+
 	f, err := os.OpenFile(r.uploadPath(id), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("open partial upload: %w", err)

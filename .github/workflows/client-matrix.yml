@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       formats:
-        description: "Space-separated subset of scripts/smoke/*.sh (empty: all)"
+        description: "Space-separated subset of scripts/smoke/*.sh (empty: all; a subset never closes the tracking issue)"
         required: false
         default: ""
 
@@ -31,10 +31,11 @@ permissions:
   contents: read
 
 env:
-  # docker compose names the built image <project>-<service>; the stack script
-  # runs with OA_STACK_BUILD=0 so it uses the image this workflow loaded.
+  # smoke-stack.sh sets OPENARTIFACT_VERSION=<project>, so compose runs the image
+  # openartifact:<project>; the stack script runs with OA_STACK_BUILD=0 so it uses
+  # the image this workflow loaded under that tag.
   STACK_PROJECT: oa-smoke
-  IMAGE_TAG: oa-smoke-openartifact:latest
+  IMAGE_TAG: openartifact:oa-smoke
 
 jobs:
   image:
@@ -147,6 +148,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       RUN_ID: ${{ github.run_id }}
+      FORMATS_INPUT: ${{ inputs.formats }}
       IMAGE_RESULT: ${{ needs.image.result }}
       SMOKE_RESULT: ${{ needs.smoke.result }}
       LABEL: client-matrix
@@ -155,7 +157,8 @@ jobs:
         run: |
           existing=$(gh issue list --label "$LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')
           if [ "$IMAGE_RESULT" = success ] && [ "$SMOKE_RESULT" = success ]; then
-            if [ -n "$existing" ]; then
+            # A green run of a subset proves nothing about the other formats.
+            if [ -n "$existing" ] && [ -z "${FORMATS_INPUT// /}" ]; then
               gh issue comment "$existing" --body "The client compatibility matrix is green again: $RUN_URL"
               gh issue close "$existing"
             fi

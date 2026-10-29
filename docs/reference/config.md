@@ -34,6 +34,8 @@ This page lists every configuration key with its type, built-in default and the 
 | `server.readTimeout` | `SERVER_READ_TIMEOUT` | int | `0` | `readTimeout` bounds an entire request (headers + body), in seconds. 0 (the default) means no limit so large artifact uploads are never truncated; slowloris protection instead comes from readHeaderTimeout. |
 | `server.writeTimeout` | `SERVER_WRITE_TIMEOUT` | int | `0` | `writeTimeout` bounds writing the response, in seconds. 0 (the default) means no limit: large artifact downloads and streams rely on per-handler deadlines instead of one server-wide cutoff. |
 | `server.readHeaderTimeout` | `SERVER_READ_HEADER_TIMEOUT` | int | `20` | `readHeaderTimeout` bounds only the time to read request headers, in seconds. It stays short regardless of readTimeout to still mitigate slowloris-style attacks even when body reads are unbounded. |
+| `server.idleTimeout` | `SERVER_IDLE_TIMEOUT` | int | `120` | `idleTimeout` is how many seconds an idle keep-alive connection is kept open before the server closes it. 0 disables the limit. |
+| `server.maxHeaderBytes` | `SERVER_MAX_HEADER_BYTES` | int | `1048576` | `maxHeaderBytes` caps the size of request headers in bytes. 0 uses the Go default (1 MiB). |
 | `server.maxBodyBytes` | `SERVER_MAX_BODY_BYTES` | int | `17179869184` | `maxBodyBytes` caps the body of every request (http.MaxBytesReader), a last line of defence behind the per-handler limits so no endpoint can be made to spool or buffer an unbounded body. 0 disables the cap. |
 | `server.shutdownTimeout` | `SERVER_SHUTDOWN_TIMEOUT` | int | `30` | `shutdownTimeout` is how many seconds in-flight requests get to finish during a graceful shutdown. |
 | `server.shutdownDelay` | `SERVER_SHUTDOWN_DELAY` | int | `0` | `shutdownDelay` is how many seconds the server keeps serving, reporting not ready on /ready, after a shutdown signal and before it stops accepting connections, so load balancers stop routing to it first. A second signal skips the delay. 0 disables it. |
@@ -96,7 +98,8 @@ This page lists every configuration key with its type, built-in default and the 
 | `storage.azureAccountKey` | `OPENARTIFACT_AZURE_ACCOUNT_KEY` | string | `empty` | **Secret.** `azureAccountKey` is the Azure storage account key. |
 | `storage.azureContainerName` | `OPENARTIFACT_AZURE_CONTAINER_NAME` | string | `empty` | `azureContainerName` is the Azure container name. |
 | `storage.azureEndpoint` | `OPENARTIFACT_AZURE_ENDPOINT` | string | `empty` | `azureEndpoint` is the blob service URL, for Azurite or a sovereign cloud; empty uses https://\<account>.blob.core.windows.net. |
-| `storage.stagingPath` | `STORAGE_STAGING_PATH` | string | `empty` | `stagingPath` is the spool directory for server-relayed presigned uploads on oci storage (filesystem uses \<path>/staging); empty means \<tmp>/openartifact-staging. |
+| `storage.stagingPath` | `STORAGE_STAGING_PATH` | string | `empty` | `stagingPath` is the spool directory for server-relayed presigned uploads on oci storage (filesystem uses \<path>/staging). Required for oci when uploads are relayed (it also holds the relay signing key); use a persistent directory. |
+| `storage.spoolPath` | `STORAGE_SPOOL_PATH` | string | `empty` | `spoolPath` is the directory where s3, azure and oci spool a blob to disk while verifying it before the upload; leftovers of a crash are swept from it at startup. Empty means the system temp dir (not swept). |
 | `storage.ociInsecure` | `STORAGE_OCI_INSECURE` | bool | `false` | `ociInsecure` allows plain HTTP to the OCI registry (dev and testing only). |
 | `storage.ociUsername` | `STORAGE_OCI_USERNAME` | string | `empty` | `ociUsername` is the OCI registry user. |
 | `storage.ociPassword` | `STORAGE_OCI_PASSWORD` | string | `empty` | **Secret.** `ociPassword` is the OCI registry password. |
@@ -123,6 +126,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `storage.replica.azureAccountKey` | `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_KEY` | string | `empty` | **Secret.** `azureAccountKey` is the Azure storage account key. |
 | `storage.replica.azureContainerName` | `OPENARTIFACT_STORAGE_REPLICA_AZURE_CONTAINER_NAME` | string | `empty` | `azureContainerName` is the Azure container name. |
 | `storage.replica.azureEndpoint` | `OPENARTIFACT_STORAGE_REPLICA_AZURE_ENDPOINT` | string | `empty` | `azureEndpoint` is the blob service URL, for Azurite or a sovereign cloud; empty uses https://\<account>.blob.core.windows.net. |
+| `storage.replica.spoolPath` | `OPENARTIFACT_STORAGE_REPLICA_SPOOL_PATH` | string | `empty` | `spoolPath` is the directory where s3, azure and oci spool a blob to disk while verifying it before the upload; leftovers of a crash are swept from it at startup. Empty means the system temp dir (not swept). |
 | `storage.replica.ociInsecure` | `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | bool | `false` | `ociInsecure` allows plain HTTP to the OCI registry (dev and testing only). |
 | `storage.replica.ociUsername` | `OPENARTIFACT_STORAGE_REPLICA_OCI_USERNAME` | string | `empty` | `ociUsername` is the OCI registry user. |
 | `storage.replica.ociPassword` | `OPENARTIFACT_STORAGE_REPLICA_OCI_PASSWORD` | string | `empty` | **Secret.** `ociPassword` is the OCI registry password. |

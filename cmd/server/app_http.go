@@ -76,6 +76,8 @@ func (a *app) newHTTPServer() *api.HTTPServer {
 		time.Duration(cfg.Server.ReadHeaderTimeout)*time.Second,
 	)
 
+	srv.SetConnLimits(time.Duration(cfg.Server.IdleTimeout)*time.Second, cfg.Server.MaxHeaderBytes)
+
 	if cfg.Server.TLSEnabled {
 		srv.EnableTLS(cfg.Server.TLSCert, cfg.Server.TLSKey)
 	}
