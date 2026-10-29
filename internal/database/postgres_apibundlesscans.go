@@ -55,16 +55,6 @@ func (p *PostgresDB) DeleteVulnScanResult(ctx context.Context, repoID, id string
 		  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1`, repoID, id)
 }
 
-// DeleteSecretScanResult deletes a secret scan result (and its owning scan job)
-// by ID, scoped to repoID. Returns ErrSecretScanNotFound when nothing matched.
-func (p *PostgresDB) DeleteSecretScanResult(ctx context.Context, repoID, id string) error {
-	return p.execMatching(ctx, "delete secret scan result", ErrSecretScanNotFound, `
-		DELETE FROM scan_jobs sj
-		USING secret_results sr, artifact_refs ref
-		WHERE sr.id = $2 AND sr.scan_job_id = sj.id AND sj.scan_type = 'secret'
-		  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1`, repoID, id)
-}
-
 // SetVulnScanQuarantine sets the quarantined flag of exactly one vuln scan
 // result (by ID, scoped to repoID). Returns ErrVulnScanNotFound when nothing matched.
 func (p *PostgresDB) SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error {

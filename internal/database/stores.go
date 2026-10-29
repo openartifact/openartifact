@@ -24,6 +24,7 @@ type PostgresDB struct {
 	*BackupStore
 	*BundleStore
 	*QuarantineStore
+	*SecretScanStore
 	// STORES-STRUCT
 }
 
@@ -45,6 +46,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		BackupStore:          &BackupStore{core: c},
 		BundleStore:          &BundleStore{core: c},
 		QuarantineStore:      &QuarantineStore{core: c},
+		SecretScanStore:      &SecretScanStore{core: c},
 		// STORES-INIT
 	}
 }
