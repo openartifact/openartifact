@@ -55,20 +55,18 @@ func (h *Handler) serveNPM(
 		return false
 	}
 
-	// Members are asked for the packument itself, always with GET and without
-	// the client's conditional headers. A version manifest is cut from the
-	// full packument.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
-
+	// Members are asked for the packument itself; a version manifest is cut
+	// from the full packument.
 	abbreviated := p.Kind == pkgnpm.KindPackument && pkgnpm.WantsAbbreviated(r.Header.Get("Accept"))
-	if p.Kind == pkgnpm.KindVersion || !abbreviated {
-		mr.Header.Set("Accept", "application/json")
+	ask := memberAsk{
+		path:  samePath(strings.Replace(p.Package, "/", "%2f", 1)),
+		limit: maxPackumentBytes,
+		prepare: func(mr *http.Request) {
+			if !abbreviated {
+				mr.Header.Set("Accept", "application/json")
+			}
+		},
 	}
-
-	memberPath := strings.Replace(p.Package, "/", "%2f", 1)
 
 	// Every member's packument is held whole until merged: bound how many
 	// merges run at once. The slot is taken only once a member starts
@@ -77,32 +75,15 @@ func (h *Handler) serveNPM(
 	sess := h.newSession(r.Context())
 	defer sess.release()
 
-	var (
-		docs   [][]byte
-		failed bool
-	)
-
-	for _, m := range members {
-		cw := sess.capture(maxPackumentBytes)
-		be.ServeMember(cw, mr, m, memberPath)
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			docs = append(docs, cw.body.Bytes())
-		default:
-			failed = true
-		}
+	c := h.collect(r, sess, members, ask, be)
+	if len(c.docs) == 0 {
+		writeNoDocument(w, r, c.partial())
+		return true
 	}
 
-	if len(docs) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
-
-		return true
+	docs := make([][]byte, len(c.docs))
+	for i, d := range c.docs {
+		docs[i] = d.body
 	}
 
 	// The merge is a pure function of the members' documents, so its result is
@@ -137,7 +118,7 @@ func (h *Handler) serveNPM(
 
 	w.Header().Add("Vary", "Accept")
 
-	if revalidateMerged(w, r, grp.Public, `"`+key[:32]+`"`, packumentMaxAge, failed) {
+	if revalidateMerged(w, r, grp.Public, `"`+key[:32]+`"`, packumentMaxAge, c.partial()) {
 		return true
 	}
 

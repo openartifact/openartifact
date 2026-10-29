@@ -6,11 +6,8 @@ package group
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -46,66 +43,24 @@ func (h *Handler) serveGo(
 		return false
 	}
 
-	// Members are asked with a plain GET, never with the client's conditional
-	// headers: the merged body is what gets revalidated.
-	mr := r.Clone(r.Context())
-	mr.Method = http.MethodGet
-	mr.Header.Del("If-None-Match")
-	mr.Header.Del("If-Modified-Since")
-
-	var (
-		versions [][]byte
-		answered bool
-		failed   bool
-	)
-
-	sess := h.newSession(r.Context())
-	defer sess.release()
-
-	for _, m := range members {
-		cw := sess.capture(maxGoListBytes)
-		be.ServeMember(cw, mr, m, relPath)
-
-		switch {
-		case cw.status == http.StatusNotFound:
-		case cw.status == http.StatusOK && !cw.overflow:
-			answered = true
-			versions = append(versions, bytes.Fields(cw.body.Bytes())...)
-		default:
-			failed = true
-		}
-	}
-
 	// Members that failed are skipped as long as another one answered (as for
 	// npm packuments); with no answer at all a failure is 502, not 404, so a
 	// client does not conclude the module does not exist.
-	if !answered {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath(relPath), limit: maxGoListBytes},
+		what:        "go version lists",
+		maxAge:      goListMaxAge,
+		contentType: "text/plain; charset=utf-8",
+		merge: func(c *collection) ([]byte, error) {
+			var versions [][]byte
 
-		return true
-	}
+			for _, d := range c.docs {
+				versions = append(versions, bytes.Fields(d.body)...)
+			}
 
-	body := mergeGoVersions(versions)
-
-	sess.release()
-
-	sum := sha256.Sum256(body)
-
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, goListMaxAge, failed) {
-		return true
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+			return mergeGoVersions(versions), nil
+		},
+	})
 
 	return true
 }
