@@ -59,6 +59,10 @@ type bundlesScansMockDB struct {
 	deleteSBOMCalled          bool
 }
 
+func (db *bundlesScansMockDB) BundleItemStored(context.Context, string, string, string, string, string) (bool, error) {
+	return true, nil
+}
+
 func (db *bundlesScansMockDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
 	return &models.Repository{ID: testRepoID, Name: name, Format: "raw"}, nil
 }

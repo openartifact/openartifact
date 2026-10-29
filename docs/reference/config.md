@@ -154,6 +154,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `gpg.keyPath` | `GPG_KEY_PATH` | string | `empty` | `keyPath` is the private key file (the read-only fallback key). |
 | `gpg.passphrase` | `GPG_PASSPHRASE` | string | `empty` | **Secret.** `passphrase` unlocks the key at keyPath. |
 | `gpg.autoGenerate` | `GPG_AUTO_GENERATE` | bool | `false` | `autoGenerate` generates an RSA-4096 global signing key at startup when no key exists yet. It needs `OPENARTIFACT_SECRET_KEY` and is replica-safe. |
+| `gpg.bundleSigners` | `GPG_BUNDLE_SIGNERS` | list | `empty` | `bundleSigners` lets users other than administrators seal release bundles with a stored key: each entry is "\<key id or fingerprint>=\<username>". Administrators (global manage) may use any stored key; the key at keyPath never signs bundles (see [security/signing.md](../security/signing.md)). |
 
 ## attestation
 

@@ -42,6 +42,8 @@ type authzMockDB struct {
 	bundles map[string]*models.ReleaseBundle
 	items   map[string][]*models.ReleaseBundleItem // by bundle id
 	nextID  int
+	// stored says whether a repository backs an item; nil: it always does.
+	stored func(repoID, sha, path string) bool
 }
 
 func newAuthzDB() *authzMockDB {
@@ -69,6 +71,10 @@ func (d *authzMockDB) GetPermissionTargetsForPrincipal(_ context.Context, userID
 
 func (d *authzMockDB) ListProjectGrantsByUser(context.Context, string) ([]*models.ProjectGrant, error) {
 	return nil, nil
+}
+
+func (d *authzMockDB) BundleItemStored(_ context.Context, repoID, _, _, sha, path string) (bool, error) {
+	return d.stored == nil || d.stored(repoID, sha, path), nil
 }
 
 func (d *authzMockDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
@@ -114,6 +120,7 @@ func (d *authzMockDB) GetPromotionPipelineByID(context.Context, string) (*models
 func (d *authzMockDB) CreateReleaseBundle(_ context.Context, b *models.ReleaseBundle) error {
 	d.nextID++
 	b.ID = "cccccccc-0000-4000-8000-00000000000" + string(rune('0'+d.nextID))
+	b.CreatorID = b.CreatedBy + "-id" // the real store resolves the creator's id from the username
 	d.bundles[b.Name+"/"+b.Version] = b
 
 	return nil
@@ -347,6 +354,7 @@ func TestBundleAuthzPromote(t *testing.T) {
 		State:      models.BundleStateSealed,
 		PipelineID: &pipe,
 		CreatedBy:  "owner",
+		CreatorID:  "owner-id",
 	}
 	db.items[db.bundles["b/1"].ID] = []*models.ReleaseBundleItem{{SourceRepoID: authzSrcID, SHA256: strings.Repeat("a", 64)}}
 

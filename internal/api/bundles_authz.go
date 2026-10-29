@@ -30,8 +30,13 @@ import (
 //   - listing bundles and managing pipelines stay administrative.
 //
 // Repository checks are repository-level (empty artifact path), so a
-// permission target limited to a path pattern does not qualify: the server
-// does not verify that an item's digest is stored at its declared path.
+// permission target limited to a path pattern does not qualify. Adding an item
+// verifies that the source repository holds a live artifact stored as the
+// item's digest and located by its path, and that the item's format is the
+// repository's; the signed manifest therefore only states what the repository
+// backs. Choosing a signing key at seal time needs `manage` or a
+// gpg.bundleSigners grant, and the configured package-signing key never signs
+// bundles.
 
 // bundleNeed is the minimum standing a handler requires on an existing bundle.
 type bundleNeed int
@@ -57,9 +62,10 @@ func (a bundleAccess) visible() bool {
 	return a.admin || a.owner || (a.reads && len(a.items) > 0)
 }
 
-// isBundleOwner reports whether p created the bundle.
+// isBundleOwner reports whether p created the bundle. It compares user ids: a
+// username can be reused after its owner is deleted, an id never is.
 func isBundleOwner(p *auth.Principal, b *models.ReleaseBundle) bool {
-	return p != nil && !p.IsAnonymous && p.Username != "" && b.CreatedBy == p.Username
+	return p != nil && !p.IsAnonymous && p.UserID != nil && b.CreatorID != "" && b.CreatorID == *p.UserID
 }
 
 // bundleAccessFor resolves the caller's standing on a bundle.

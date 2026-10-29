@@ -185,6 +185,7 @@ gpg:
   # keyPath: /etc/openartifact/gpg/private.key
   # passphrase: ""
   # autoGenerate: false  # generate a global RSA-4096 signing key at startup when none exists; needs OPENARTIFACT_SECRET_KEY (keys can also be managed via the admin API / `oa gpg`)
+  # bundleSigners: []  # non-admins allowed to seal release bundles with a stored key: "<key id or fingerprint>=<username>"; administrators may use any stored key, the keyPath key never signs bundles
 
 # Signing key of SBOM / VEX attestations (GET .../download?attest=true, see
 # docs/security/sbom.md). Unset: an ECDSA P-256 key is generated on first use

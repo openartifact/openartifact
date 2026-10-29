@@ -117,13 +117,15 @@ oa gpg delete old-key --force
 
 ### Signing release bundles
 
-Sealing a bundle with `{"gpg_key_id": "<key id | fingerprint | config>"}` signs a canonical JSON manifest (`openartifact.release-bundle/v1`: bundle name, version, description and its items ordered by digest). The armored detached signature is stored with the bundle: the bundle's `gpg_key_id` is the signer's fingerprint (it survives deleting the key) and `gpg_signature` the signature. Download both and verify:
+Sealing a bundle with `{"gpg_key_id": "<key id | fingerprint>"}` signs a canonical JSON manifest (`openartifact.release-bundle/v1`: bundle name, version, description and its items ordered by digest). The armored detached signature is stored with the bundle: the bundle's `gpg_key_id` is the signer's fingerprint (it survives deleting the key) and `gpg_signature` the signature. Download both and verify:
 
 ```sh
 curl -H "Authorization: Bearer $TOKEN" -o manifest.json     HOST/api/v1/bundles/NAME/VERSION/manifest
 curl -H "Authorization: Bearer $TOKEN" -o manifest.json.asc HOST/api/v1/bundles/NAME/VERSION/manifest.asc
 gpg --import public.key && gpg --verify manifest.json.asc manifest.json
 ```
+
+Who may sign: a user with the global `manage` permission may use any stored key; everybody else needs a `gpg.bundleSigners` entry (`GPG_BUNDLE_SIGNERS`, comma separated) of the form `<key id or fingerprint>=<username>`, for example `0123…4567=release-bot`. The key of `gpg.keyPath` / `GPG_KEY_PATH` signs package metadata only: it is refused for bundles, also for administrators. The seal is an audit event (`bundle.sealed`) that records the signing fingerprint.
 
 See [release bundles](../repositories/release-bundles.md).
 

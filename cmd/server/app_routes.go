@@ -312,6 +312,7 @@ func (a *app) registerRepositoryRoutes() {
 
 	api.NewBundlesHandler(db, log, evaluator).
 		WithGPGKeys(w.gpgKeys).
+		WithBundleSigners(a.cfg.GPG.BundleSigners).
 		WithPublisher(w.webhook).
 		WithWorkers(w.metadata).
 		RegisterAuthed(authedAPI)
