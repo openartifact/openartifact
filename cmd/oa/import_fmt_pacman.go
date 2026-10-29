@@ -22,7 +22,7 @@ func init() { //nolint:gochecknoinits // every format registers itself with the 
 				return uploadResult{}, fmt.Errorf("%w: %q is not a pacman package file", errImportUsage, r.Asset.Path)
 			}
 
-			return t.putFile(ctx, p, r.Asset, r.Body, r.Meta, false)
+			return t.putFile(ctx, p, r.Asset, r.Body, r.Meta, true)
 		},
 		remove: func(ctx context.Context, t *importTarget, dst string, a sourceAsset, _ uploadResult) error {
 			p, ok := pacmanPath(dst, a.Path)
