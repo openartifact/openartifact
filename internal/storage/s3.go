@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
@@ -62,6 +63,10 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 		opts = append(opts, config.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
 		))
+	}
+
+	if cfg.SafeDial {
+		opts = append(opts, config.WithHTTPClient(awshttp.NewBuildableClient().WithTransportOptions(netutil.GuardTransport)))
 	}
 
 	awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)

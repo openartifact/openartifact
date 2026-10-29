@@ -436,6 +436,8 @@ func (h *AttestationAttachHandler) attachError(w http.ResponseWriter, err error)
 		writeError(w, http.StatusNotFound, "not_found", "no image in the repository matches the artifact")
 	case errors.Is(err, quota.ErrExceeded):
 		writeError(w, http.StatusInsufficientStorage, "quota_exceeded", quota.Message)
+	case errors.Is(err, attest.ErrSecretKeyRequired):
+		writeAttestKeyError(w, h.log, err)
 	default:
 		h.log.Errorw("attestation attach failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to attach the attestation")

@@ -445,7 +445,9 @@ func ConfigFromBackend(kind string, raw []byte) (storage.StorageConfig, error) {
 		return false
 	}
 
-	out := storage.StorageConfig{Type: kind}
+	// A backend stored in the database was defined through the admin API: its
+	// endpoint is checked when it is saved and again at every connection.
+	out := storage.StorageConfig{Type: kind, SafeDial: true}
 
 	var err error
 

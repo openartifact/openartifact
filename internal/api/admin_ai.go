@@ -270,13 +270,33 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 		}
 	}
 
-	// A masked key means "use the stored one".
+	// A masked (or empty) key means "use the stored one", but only for the
+	// stored endpoint: testing another one with the stored key would hand that
+	// key to whatever the endpoint is.
 	if cfg.APIKey == aiAPIKeyMask || cfg.APIKey == "" {
 		stored, _ := h.db.GetSystemSetting(ctx, ai.SettingAPIKey)
-		cfg.APIKey = stored
+
+		switch {
+		case h.sameEndpointAsStored(ctx, &cfg):
+			cfg.APIKey = stored
+		case stored != "" && (body.APIKey == nil || *body.APIKey == aiAPIKeyMask):
+			return ai.Config{}, "api_key is required to test another endpoint: the stored key is only used with the stored one"
+		default:
+			// An explicitly empty key tests a keyless endpoint.
+			cfg.APIKey = ""
+		}
 	}
 
 	return cfg, ""
+}
+
+// sameEndpointAsStored reports whether cfg reaches the endpoint of the stored
+// provider and base URL.
+func (h *AdminAIHandler) sameEndpointAsStored(ctx context.Context, cfg *ai.Config) bool {
+	provider, _ := h.db.GetSystemSetting(ctx, ai.SettingProvider)
+	baseURL, _ := h.db.GetSystemSetting(ctx, ai.SettingBaseURL)
+
+	return ai.EffectiveBaseURL(cfg.Provider, cfg.BaseURL) == ai.EffectiveBaseURL(provider, baseURL)
 }
 
 func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {

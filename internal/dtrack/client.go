@@ -47,6 +47,10 @@ var ErrNotFound = errors.New("dependency-track: not found")
 // ErrInvalidURL is returned for a base URL that is not an absolute http(s) URL.
 var ErrInvalidURL = errors.New("dependency-track URL must be an absolute http(s) URL")
 
+// ErrCrossOriginRedirect is returned when Dependency-Track answers with a
+// redirect to another origin; the API key is never sent there.
+var ErrCrossOriginRedirect = errors.New("dependency-track: redirect to another origin refused")
+
 // HTTPError is a non-2xx answer from Dependency-Track. The body is not kept: it
 // can echo request data and is never shown to API clients.
 type HTTPError struct {
@@ -73,7 +77,20 @@ func NewClient(baseURL, apiKey string) (*Client, error) {
 		return nil, ErrInvalidURL
 	}
 
-	return &Client{base: u, key: apiKey, hc: telemetry.WrapClient(netutil.SafeHTTPClient(requestTimeout))}, nil
+	hc := netutil.SafeHTTPClient(requestTimeout)
+	inner := hc.CheckRedirect
+	// The API key and the BOM/VEX body belong to the configured server only:
+	// a redirect to another origin (host, port or scheme) is an error, not a
+	// hop to follow.
+	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+			return ErrCrossOriginRedirect
+		}
+
+		return inner(req, via)
+	}
+
+	return &Client{base: u, key: apiKey, hc: telemetry.WrapClient(hc)}, nil
 }
 
 func (c *Client) endpoint(path string, q url.Values) string {

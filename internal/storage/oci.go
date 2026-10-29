@@ -69,8 +69,8 @@ func NewOCIBlobStore(cfg StorageConfig) (*OCIBlobStore, error) {
 		return nil, ErrOCIBucketRequired
 	}
 
-	var transport http.RoundTripper
-	if cfg.OCIInsecure {
+	transport := cfg.dialGuardedTransport()
+	if transport == nil && cfg.OCIInsecure {
 		transport = insecureTransport()
 	}
 

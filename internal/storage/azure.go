@@ -30,6 +30,7 @@ const azureAPIVersion = "2020-10-02"
 // Sentinel errors for Azure Blob Store.
 var (
 	ErrAzureAccountNameRequired        = errors.New("azure: AzureAccountName is required")
+	ErrAzureAccountNameInvalid         = errors.New("azure: AzureAccountName must be 3-24 lowercase letters and digits")
 	ErrAzureAccountKeyRequired         = errors.New("azure: AzureAccountKey is required")
 	ErrAzureAccountKeyInvalid          = errors.New("azure: AzureAccountKey is not valid base64")
 	ErrAzureContainerNameRequired      = errors.New("azure: AzureContainerName is required")
@@ -60,6 +61,10 @@ type AzureBlobStore struct {
 func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 	if cfg.AzureAccountName == "" {
 		return nil, ErrAzureAccountNameRequired
+	}
+
+	if !ValidAzureAccountName(cfg.AzureAccountName) {
+		return nil, ErrAzureAccountNameInvalid
 	}
 
 	if cfg.AzureAccountKey == "" {
@@ -96,7 +101,7 @@ func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 		containerName:    cfg.AzureContainerName,
 		baseURL:          endpoint + "/" + cfg.AzureContainerName,
 		presignTTL:       ttl,
-		client:           newStreamingHTTPClient(nil),
+		client:           newStreamingHTTPClient(cfg.dialGuardedTransport()),
 		now:              time.Now,
 		copyPollInterval: azureCopyPollInterval,
 	}, nil
