@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"slices"
 	"testing"
 
@@ -78,8 +79,8 @@ func TestApkPackageLifecycle(t *testing.T) {
 	}
 
 	dup := apkTestPackage(repo, "v3.20", "zlib", "1.3.1-r0")
-	if err := pg.CreateApkPackage(ctx, dup); !database.IsUniqueViolation(err) {
-		t.Fatalf("duplicate create = %v, want a unique violation", err)
+	if err := pg.CreateApkPackage(ctx, dup); !errors.Is(err, database.ErrDuplicate) {
+		t.Fatalf("duplicate create = %v, want ErrDuplicate", err)
 	}
 
 	got, err := pg.GetApkPackageFile(ctx, repo, "v3.20", "main", "x86_64", "zlib", "1.3.1-r0")

@@ -7,6 +7,7 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -113,12 +114,179 @@ func (q *Queries) GetRepoMetadataByRepo(ctx context.Context, repositoryID string
 	return items, nil
 }
 
+const getRpmPackageByID = `-- name: GetRpmPackageByID :one
+SELECT f.id, f.repository_id, f.blob_id,
+       p.name, v.version,
+       COALESCE(f.attrs ->> 'release', '')::text AS release,
+       COALESCE((f.attrs ->> 'epoch')::int, 0)::int AS epoch,
+       f.arch,
+       COALESCE(v.metadata ->> 'summary', '')::text AS summary,
+       COALESCE(v.metadata ->> 'description', '')::text AS description,
+       COALESCE(v.metadata ->> 'license', '')::text AS license,
+       COALESCE(v.metadata ->> 'url', '')::text AS url,
+       COALESCE(v.metadata ->> 'vendor', '')::text AS vendor,
+       COALESCE(v.metadata ->> 'group_name', '')::text AS group_name,
+       COALESCE(v.metadata ->> 'packager', '')::text AS packager,
+       COALESCE(v.metadata ->> 'source_rpm', '')::text AS source_rpm,
+       COALESCE(v.metadata ->> 'build_host', '')::text AS build_host,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_time,
+       f.filename,
+       COALESCE(f.size_bytes, 0)::bigint AS package_size,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       COALESCE((f.attrs ->> 'archive_size')::bigint, 0)::bigint AS archive_size,
+       f.created_at, f.updated_at
+FROM package_files f
+JOIN rpm_files r ON r.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+WHERE f.id = $1 AND f.deleted_at IS NULL
+`
+
+type GetRpmPackageByIDRow struct {
+	ID            string    `db:"id" json:"id"`
+	RepositoryID  string    `db:"repository_id" json:"repository_id"`
+	BlobID        *string   `db:"blob_id" json:"blob_id"`
+	Name          string    `db:"name" json:"name"`
+	Version       string    `db:"version" json:"version"`
+	Release       string    `db:"release" json:"release"`
+	Epoch         int32     `db:"epoch" json:"epoch"`
+	Arch          string    `db:"arch" json:"arch"`
+	Summary       string    `db:"summary" json:"summary"`
+	Description   string    `db:"description" json:"description"`
+	License       string    `db:"license" json:"license"`
+	Url           string    `db:"url" json:"url"`
+	Vendor        string    `db:"vendor" json:"vendor"`
+	GroupName     string    `db:"group_name" json:"group_name"`
+	Packager      string    `db:"packager" json:"packager"`
+	SourceRpm     string    `db:"source_rpm" json:"source_rpm"`
+	BuildHost     string    `db:"build_host" json:"build_host"`
+	BuildTime     int64     `db:"build_time" json:"build_time"`
+	Filename      string    `db:"filename" json:"filename"`
+	PackageSize   int64     `db:"package_size" json:"package_size"`
+	InstalledSize int64     `db:"installed_size" json:"installed_size"`
+	ArchiveSize   int64     `db:"archive_size" json:"archive_size"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetRpmPackageByID(ctx context.Context, id string) (GetRpmPackageByIDRow, error) {
+	row := q.db.QueryRow(ctx, getRpmPackageByID, id)
+	var i GetRpmPackageByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.BlobID,
+		&i.Name,
+		&i.Version,
+		&i.Release,
+		&i.Epoch,
+		&i.Arch,
+		&i.Summary,
+		&i.Description,
+		&i.License,
+		&i.Url,
+		&i.Vendor,
+		&i.GroupName,
+		&i.Packager,
+		&i.SourceRpm,
+		&i.BuildHost,
+		&i.BuildTime,
+		&i.Filename,
+		&i.PackageSize,
+		&i.InstalledSize,
+		&i.ArchiveSize,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const insertRpmFile = `-- name: InsertRpmFile :exec
+
+INSERT INTO rpm_files (id, header_start, header_end, rpm_extra)
+VALUES ($1, $2, $3, $4::jsonb)
+`
+
+type InsertRpmFileParams struct {
+	ID          string          `db:"id" json:"id"`
+	HeaderStart int64           `db:"header_start" json:"header_start"`
+	HeaderEnd   int64           `db:"header_end" json:"header_end"`
+	RpmExtra    json.RawMessage `db:"rpm_extra" json:"rpm_extra"`
+}
+
+// RPM packages on the generic tables (see pkg_rpm.go for the mapping).
+func (q *Queries) InsertRpmFile(ctx context.Context, arg InsertRpmFileParams) error {
+	_, err := q.db.Exec(ctx, insertRpmFile,
+		arg.ID,
+		arg.HeaderStart,
+		arg.HeaderEnd,
+		arg.RpmExtra,
+	)
+	return err
+}
+
 const markRepoStale = `-- name: MarkRepoStale :exec
 UPDATE rpm_repos SET metadata_stale = true WHERE repository_id = $1
 `
 
 func (q *Queries) MarkRepoStale(ctx context.Context, repositoryID string) error {
 	_, err := q.db.Exec(ctx, markRepoStale, repositoryID)
+	return err
+}
+
+const rpmPackageExists = `-- name: RpmPackageExists :one
+SELECT EXISTS (
+    SELECT 1 FROM packages p
+    JOIN package_versions v ON v.package_id = p.id
+    WHERE p.repository_id = $1 AND p.name_key = $2 AND v.version_key = $3 AND v.deleted_at IS NULL
+)::boolean
+`
+
+type RpmPackageExistsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	NameKey      string `db:"name_key" json:"name_key"`
+	VersionKey   string `db:"version_key" json:"version_key"`
+}
+
+// A live version of the NEVRA.arch: the package by its (repository, name_key)
+// unique index, then the live version key.
+func (q *Queries) RpmPackageExists(ctx context.Context, arg RpmPackageExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rpmPackageExists, arg.RepositoryID, arg.NameKey, arg.VersionKey)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const updateRpmPackageExtra = `-- name: UpdateRpmPackageExtra :exec
+WITH target AS (
+    SELECT f.id FROM package_files f
+    WHERE f.repository_id = $2 AND f.deleted_at IS NULL
+      AND f.blob_id IN (SELECT b.id FROM blobs b WHERE b.sha256 = $3)
+), side AS (
+    UPDATE rpm_files r SET rpm_extra = $1::jsonb
+    FROM target t WHERE r.id = t.id
+    RETURNING r.id
+)
+UPDATE package_files f
+SET attrs = (f.attrs - 'installed_size' - 'archive_size') || jsonb_strip_nulls(jsonb_build_object(
+        'installed_size', NULLIF(COALESCE(($1::jsonb ->> 'installed_size')::bigint, 0), 0),
+        'archive_size', NULLIF(COALESCE(($1::jsonb ->> 'archive_size')::bigint, 0), 0)))
+FROM target t
+WHERE f.id = t.id AND ($1::jsonb ->> 'sizes_parsed') = 'true'
+`
+
+type UpdateRpmPackageExtraParams struct {
+	Extra        json.RawMessage `db:"extra" json:"extra"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Sha256       string          `db:"sha256" json:"sha256"`
+}
+
+// Replaces rpm_extra of the live packages of a repository backed by the blob
+// with the given sha256. Extra data that carries sizes (sizes_parsed) corrects
+// installed_size/archive_size of the file too: rows stored before the header
+// size tags were read properly hold 0 (a zero size is an absent key).
+func (q *Queries) UpdateRpmPackageExtra(ctx context.Context, arg UpdateRpmPackageExtraParams) error {
+	_, err := q.db.Exec(ctx, updateRpmPackageExtra, arg.Extra, arg.RepositoryID, arg.Sha256)
 	return err
 }
 

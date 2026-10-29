@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -72,17 +73,22 @@ func (p *DebStore) GetOrCreateDebianArchitecture(ctx context.Context, distID, na
 	return m, nil
 }
 
-// SetDebControlFields stores the control stanza, maintainer and homepage of a deb package.
+// SetDebControlFields stores the control stanza of a live deb package (deb_files.control_fields)
+// and its maintainer and homepage (the version metadata).
 func (p *DebStore) SetDebControlFields(ctx context.Context, packageID, maintainer, homepage string, fields map[string]string) error {
 	raw, err := json.Marshal(fields)
 	if err != nil {
 		return fmt.Errorf("marshal control fields: %w", err)
 	}
 
-	_, err = p.db.ExecContext(ctx,
-		`UPDATE deb_packages SET control_fields = $2::jsonb, maintainer = $3, homepage = $4 WHERE id = $1 AND deleted_at IS NULL`,
-		packageID, string(raw), maintainer, homepage)
+	meta, err := json.Marshal(nonEmptyStrings(map[string]string{"maintainer": maintainer, "homepage": homepage}))
 	if err != nil {
+		return fmt.Errorf("marshal deb metadata: %w", err)
+	}
+
+	if err := p.q.SetDebControlFields(ctx, dbsqlc.SetDebControlFieldsParams{
+		ID: packageID, ControlFields: raw, Metadata: meta,
+	}); err != nil {
 		return fmt.Errorf("set deb control fields: %w", err)
 	}
 
@@ -112,42 +118,32 @@ func (p *DebStore) GetDebBlobInfo(ctx context.Context, blobID string) (string, i
 // ListDebPackageEntries returns package entries for a repository in a single
 // query. Empty dist/comp/arch act as wildcards.
 func (p *DebStore) ListDebPackageEntries(ctx context.Context, repoID, dist, comp, arch string) ([]models.DebPackageEntry, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT dp.id, dp.name, dp.version, dp.arch, COALESCE(dp.filename, ''),
-		        dp.distribution_id, dd.name, dc.name,
-		        COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0), COALESCE(dp.installed_size, 0),
-		        dp.control_fields
-		 FROM deb_packages dp
-		 LEFT JOIN blobs b ON b.id = dp.blob_id
-		 JOIN debian_distributions dd ON dd.id = dp.distribution_id
-		 JOIN debian_components dc ON dc.id = dp.component_id
-		 WHERE dp.repository_id = $1 AND dp.deleted_at IS NULL
-		   AND ($2 = '' OR dd.name = $2)
-		   AND ($3 = '' OR dc.name = $3)
-		   AND ($4 = '' OR dp.arch = $4)
-		 ORDER BY dd.name, dc.name, dp.arch, dp.name, dp.version`, repoID, dist, comp, arch)
+	rows, err := p.q.ListDebPackageEntries(ctx, dbsqlc.ListDebPackageEntriesParams{
+		RepositoryID: repoID, Dist: dist, Comp: comp, Arch: arch,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list deb package entries: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
 	var out []models.DebPackageEntry
 
-	for rows.Next() {
-		var (
-			e   models.DebPackageEntry
-			raw []byte
-		)
-
-		if err := rows.Scan(&e.ID, &e.Name, &e.Version, &e.Arch, &e.Filename,
-			&e.DistributionID, &e.Distribution, &e.ComponentName,
-			&e.SHA256, &e.Size, &e.InstalledSize, &raw); err != nil {
-			return nil, fmt.Errorf("scan deb package entry: %w", err)
+	for _, row := range rows {
+		e := models.DebPackageEntry{
+			ID:             row.ID,
+			Name:           row.Name,
+			Version:        row.Version,
+			Arch:           row.Arch,
+			Filename:       row.Filename,
+			DistributionID: row.DistributionID,
+			Distribution:   row.Distribution,
+			ComponentName:  row.ComponentName,
+			SHA256:         row.Sha256,
+			Size:           row.Size,
+			InstalledSize:  row.InstalledSize,
 		}
 
-		if len(raw) > 0 {
-			if err := json.Unmarshal(raw, &e.ControlFields); err != nil {
+		if len(row.ControlFields) > 0 {
+			if err := json.Unmarshal(row.ControlFields, &e.ControlFields); err != nil {
 				return nil, fmt.Errorf("decode control fields for %s: %w", e.ID, err)
 			}
 		}
@@ -155,5 +151,5 @@ func (p *DebStore) ListDebPackageEntries(ctx context.Context, repoID, dist, comp
 		out = append(out, e)
 	}
 
-	return out, rows.Err()
+	return out, nil
 }

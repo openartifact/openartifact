@@ -8,6 +8,7 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -41,16 +42,16 @@ func TestPacmanCreateListDeleteUnique(t *testing.T) {
 	}
 
 	// Same file name, other blob.
-	if err := pg.CreatePacmanPackage(ctx, pacmanFixture(repoID, "tool", "1:2.0-1", "x86_64", 2)); !database.IsUniqueViolation(err) {
-		t.Fatalf("duplicate = %v, want a unique violation", err)
+	if err := pg.CreatePacmanPackage(ctx, pacmanFixture(repoID, "tool", "1:2.0-1", "x86_64", 2)); !errors.Is(err, database.ErrDuplicate) {
+		t.Fatalf("duplicate = %v, want ErrDuplicate", err)
 	}
 
 	// Same coordinates, other file name.
 	other := pacmanFixture(repoID, "tool", "1:2.0-1", "x86_64", 3)
 	other.Filename = "tool-1:2.0-1-x86_64.pkg.tar.xz"
 
-	if err := pg.CreatePacmanPackage(ctx, other); !database.IsUniqueViolation(err) {
-		t.Fatalf("same coordinates = %v, want a unique violation", err)
+	if err := pg.CreatePacmanPackage(ctx, other); !errors.Is(err, database.ErrDuplicate) {
+		t.Fatalf("same coordinates = %v, want ErrDuplicate", err)
 	}
 
 	if err := pg.CreatePacmanPackage(ctx, pacmanFixture(repoID, "tool", "1:2.1-1", "x86_64", 4)); err != nil {

@@ -296,7 +296,7 @@ func parseSpooled(sp *rpmSpool) (*pkgrpm.Package, error) {
 	return pkg, nil
 }
 
-// newComponent builds the rpm_packages row for pkg referencing blob blobUUID.
+// newComponent builds the stored rpm package record for pkg referencing blob blobUUID.
 func newComponent(repoID, blobUUID, filename string, size int64, pkg *pkgrpm.Package, extra []byte, createdAt time.Time) *models.Component {
 	return &models.Component{
 		CreatedAt:     createdAt,

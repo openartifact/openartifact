@@ -41,7 +41,7 @@ func pacmanSigner(t *testing.T) (*gpg.LocalSigner, *openpgp.Entity) {
 	return signer, entity
 }
 
-// storePacmanPackage stores body as a blob and a pacman_packages row for it.
+// storePacmanPackage stores body as a blob and a pacman package for it.
 func storePacmanPackage(
 	t *testing.T,
 	pg *database.PostgresDB,

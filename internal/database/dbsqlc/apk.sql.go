@@ -7,80 +7,9 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
-
-const createApkPackage = `-- name: CreateApkPackage :one
-INSERT INTO apk_packages (repository_id, branch, repo, arch, pkg_arch, name, version, checksum, data_sha256, description, url, license, origin,
-                          maintainer, commit, build_time, installed_size, depends, provides, install_if, provider_priority,
-                          blob_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-        COALESCE($23::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateApkPackageParams struct {
-	RepositoryID     string     `db:"repository_id" json:"repository_id"`
-	Branch           string     `db:"branch" json:"branch"`
-	Repo             string     `db:"repo" json:"repo"`
-	Arch             string     `db:"arch" json:"arch"`
-	PkgArch          string     `db:"pkg_arch" json:"pkg_arch"`
-	Name             string     `db:"name" json:"name"`
-	Version          string     `db:"version" json:"version"`
-	Checksum         string     `db:"checksum" json:"checksum"`
-	DataSha256       string     `db:"data_sha256" json:"data_sha256"`
-	Description      string     `db:"description" json:"description"`
-	Url              string     `db:"url" json:"url"`
-	License          string     `db:"license" json:"license"`
-	Origin           string     `db:"origin" json:"origin"`
-	Maintainer       string     `db:"maintainer" json:"maintainer"`
-	Commit           string     `db:"commit" json:"commit"`
-	BuildTime        int64      `db:"build_time" json:"build_time"`
-	InstalledSize    int64      `db:"installed_size" json:"installed_size"`
-	Depends          []string   `db:"depends" json:"depends"`
-	Provides         []string   `db:"provides" json:"provides"`
-	InstallIf        []string   `db:"install_if" json:"install_if"`
-	ProviderPriority int32      `db:"provider_priority" json:"provider_priority"`
-	BlobID           string     `db:"blob_id" json:"blob_id"`
-	CreatedAt        *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreateApkPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateApkPackage(ctx context.Context, arg CreateApkPackageParams) (CreateApkPackageRow, error) {
-	row := q.db.QueryRow(ctx, createApkPackage,
-		arg.RepositoryID,
-		arg.Branch,
-		arg.Repo,
-		arg.Arch,
-		arg.PkgArch,
-		arg.Name,
-		arg.Version,
-		arg.Checksum,
-		arg.DataSha256,
-		arg.Description,
-		arg.Url,
-		arg.License,
-		arg.Origin,
-		arg.Maintainer,
-		arg.Commit,
-		arg.BuildTime,
-		arg.InstalledSize,
-		arg.Depends,
-		arg.Provides,
-		arg.InstallIf,
-		arg.ProviderPriority,
-		arg.BlobID,
-		arg.CreatedAt,
-	)
-	var i CreateApkPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
 
 const createApkSigningKeyIfAbsent = `-- name: CreateApkSigningKeyIfAbsent :execrows
 INSERT INTO apk_signing_keys (repository_id, key_name, fingerprint, public_key, private_key, created_by)
@@ -112,79 +41,54 @@ func (q *Queries) CreateApkSigningKeyIfAbsent(ctx context.Context, arg CreateApk
 	return result.RowsAffected(), nil
 }
 
-const deleteApkPackage = `-- name: DeleteApkPackage :exec
-DELETE FROM apk_packages WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeleteApkPackageParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeleteApkPackage(ctx context.Context, arg DeleteApkPackageParams) error {
-	_, err := q.db.Exec(ctx, deleteApkPackage, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const getApkPackageFile = `-- name: GetApkPackageFile :one
-SELECT ap.id, ap.repository_id, ap.branch, ap.repo, ap.arch, ap.pkg_arch, ap.name, ap.version, ap.checksum, ap.data_sha256, ap.description, ap.url,
-       ap.license, ap.origin, ap.maintainer, ap.commit, ap.build_time, ap.installed_size, ap.depends, ap.provides, ap.install_if,
-       ap.provider_priority, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, ap.download_count, ap.created_at, ap.updated_at
-FROM apk_packages ap
-JOIN blobs b ON b.id = ap.blob_id
-WHERE ap.repository_id = $1 AND ap.branch = $2 AND ap.repo = $3 AND ap.arch = $4 AND ap.name = $5 AND ap.version = $6
-  AND ap.deleted_at IS NULL
+
+SELECT f.id, f.repository_id,
+       COALESCE(p.attrs ->> 'branch', '')::text AS branch,
+       COALESCE(p.attrs ->> 'repo', '')::text AS repo,
+       f.arch,
+       COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, v.metadata,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_time,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetApkPackageFileParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Branch       string `db:"branch" json:"branch"`
-	Repo         string `db:"repo" json:"repo"`
-	Arch         string `db:"arch" json:"arch"`
-	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
+	Path         string `db:"path" json:"path"`
 }
 
 type GetApkPackageFileRow struct {
-	ID               string    `db:"id" json:"id"`
-	RepositoryID     string    `db:"repository_id" json:"repository_id"`
-	Branch           string    `db:"branch" json:"branch"`
-	Repo             string    `db:"repo" json:"repo"`
-	Arch             string    `db:"arch" json:"arch"`
-	PkgArch          string    `db:"pkg_arch" json:"pkg_arch"`
-	Name             string    `db:"name" json:"name"`
-	Version          string    `db:"version" json:"version"`
-	Checksum         string    `db:"checksum" json:"checksum"`
-	DataSha256       string    `db:"data_sha256" json:"data_sha256"`
-	Description      string    `db:"description" json:"description"`
-	Url              string    `db:"url" json:"url"`
-	License          string    `db:"license" json:"license"`
-	Origin           string    `db:"origin" json:"origin"`
-	Maintainer       string    `db:"maintainer" json:"maintainer"`
-	Commit           string    `db:"commit" json:"commit"`
-	BuildTime        int64     `db:"build_time" json:"build_time"`
-	InstalledSize    int64     `db:"installed_size" json:"installed_size"`
-	Depends          []string  `db:"depends" json:"depends"`
-	Provides         []string  `db:"provides" json:"provides"`
-	InstallIf        []string  `db:"install_if" json:"install_if"`
-	ProviderPriority int32     `db:"provider_priority" json:"provider_priority"`
-	BlobKey          string    `db:"blob_key" json:"blob_key"`
-	BlobSha256       string    `db:"blob_sha256" json:"blob_sha256"`
-	SizeBytes        int64     `db:"size_bytes" json:"size_bytes"`
-	DownloadCount    int64     `db:"download_count" json:"download_count"`
-	CreatedAt        time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	Branch        string          `db:"branch" json:"branch"`
+	Repo          string          `db:"repo" json:"repo"`
+	Arch          string          `db:"arch" json:"arch"`
+	Name          string          `db:"name" json:"name"`
+	Version       string          `db:"version" json:"version"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BuildTime     int64           `db:"build_time" json:"build_time"`
+	InstalledSize int64           `db:"installed_size" json:"installed_size"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	BlobSha256    string          `db:"blob_sha256" json:"blob_sha256"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Apk packages on the generic tables (see pkg_apk.go for the mapping): the
+// package identity branch/repo/name is in packages.attrs, the APKINDEX stanza
+// fields in package_versions.metadata. Reads hide trashed files.
+// The live .apk of a mirror-tree path. uq_package_files_path serves it.
 func (q *Queries) GetApkPackageFile(ctx context.Context, arg GetApkPackageFileParams) (GetApkPackageFileRow, error) {
-	row := q.db.QueryRow(ctx, getApkPackageFile,
-		arg.RepositoryID,
-		arg.Branch,
-		arg.Repo,
-		arg.Arch,
-		arg.Name,
-		arg.Version,
-	)
+	row := q.db.QueryRow(ctx, getApkPackageFile, arg.RepositoryID, arg.Path)
 	var i GetApkPackageFileRow
 	err := row.Scan(
 		&i.ID,
@@ -192,23 +96,11 @@ func (q *Queries) GetApkPackageFile(ctx context.Context, arg GetApkPackageFilePa
 		&i.Branch,
 		&i.Repo,
 		&i.Arch,
-		&i.PkgArch,
 		&i.Name,
 		&i.Version,
-		&i.Checksum,
-		&i.DataSha256,
-		&i.Description,
-		&i.Url,
-		&i.License,
-		&i.Origin,
-		&i.Maintainer,
-		&i.Commit,
+		&i.Metadata,
 		&i.BuildTime,
 		&i.InstalledSize,
-		&i.Depends,
-		&i.Provides,
-		&i.InstallIf,
-		&i.ProviderPriority,
 		&i.BlobKey,
 		&i.BlobSha256,
 		&i.SizeBytes,
@@ -241,7 +133,7 @@ func (q *Queries) GetApkSigningKey(ctx context.Context, repositoryID string) (Ap
 }
 
 const incrementApkDownloadCount = `-- name: IncrementApkDownloadCount :exec
-UPDATE apk_packages SET download_count = download_count + 1
+UPDATE package_files SET download_count = download_count + 1
 WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
 `
 
@@ -256,44 +148,40 @@ func (q *Queries) IncrementApkDownloadCount(ctx context.Context, arg IncrementAp
 }
 
 const listApkPackages = `-- name: ListApkPackages :many
-SELECT ap.id, ap.repository_id, ap.branch, ap.repo, ap.arch, ap.pkg_arch, ap.name, ap.version, ap.checksum, ap.data_sha256, ap.description, ap.url,
-       ap.license, ap.origin, ap.maintainer, ap.commit, ap.build_time, ap.installed_size, ap.depends, ap.provides, ap.install_if,
-       ap.provider_priority, b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, ap.download_count, ap.created_at, ap.updated_at
-FROM apk_packages ap
-JOIN blobs b ON b.id = ap.blob_id
-WHERE ap.repository_id = $1 AND ap.deleted_at IS NULL
-ORDER BY ap.branch, ap.repo, ap.arch, ap.name, ap.version
+SELECT f.id, f.repository_id,
+       COALESCE(p.attrs ->> 'branch', '')::text AS branch,
+       COALESCE(p.attrs ->> 'repo', '')::text AS repo,
+       f.arch,
+       COALESCE(p.attrs ->> 'name', '')::text AS name,
+       v.version, v.metadata,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_time,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       b.blob_key, b.sha256 AS blob_sha256, b.size_bytes, f.download_count, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.attrs ->> 'branch', p.attrs ->> 'repo', f.arch, p.attrs ->> 'name', v.version
 `
 
 type ListApkPackagesRow struct {
-	ID               string    `db:"id" json:"id"`
-	RepositoryID     string    `db:"repository_id" json:"repository_id"`
-	Branch           string    `db:"branch" json:"branch"`
-	Repo             string    `db:"repo" json:"repo"`
-	Arch             string    `db:"arch" json:"arch"`
-	PkgArch          string    `db:"pkg_arch" json:"pkg_arch"`
-	Name             string    `db:"name" json:"name"`
-	Version          string    `db:"version" json:"version"`
-	Checksum         string    `db:"checksum" json:"checksum"`
-	DataSha256       string    `db:"data_sha256" json:"data_sha256"`
-	Description      string    `db:"description" json:"description"`
-	Url              string    `db:"url" json:"url"`
-	License          string    `db:"license" json:"license"`
-	Origin           string    `db:"origin" json:"origin"`
-	Maintainer       string    `db:"maintainer" json:"maintainer"`
-	Commit           string    `db:"commit" json:"commit"`
-	BuildTime        int64     `db:"build_time" json:"build_time"`
-	InstalledSize    int64     `db:"installed_size" json:"installed_size"`
-	Depends          []string  `db:"depends" json:"depends"`
-	Provides         []string  `db:"provides" json:"provides"`
-	InstallIf        []string  `db:"install_if" json:"install_if"`
-	ProviderPriority int32     `db:"provider_priority" json:"provider_priority"`
-	BlobKey          string    `db:"blob_key" json:"blob_key"`
-	BlobSha256       string    `db:"blob_sha256" json:"blob_sha256"`
-	SizeBytes        int64     `db:"size_bytes" json:"size_bytes"`
-	DownloadCount    int64     `db:"download_count" json:"download_count"`
-	CreatedAt        time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	Branch        string          `db:"branch" json:"branch"`
+	Repo          string          `db:"repo" json:"repo"`
+	Arch          string          `db:"arch" json:"arch"`
+	Name          string          `db:"name" json:"name"`
+	Version       string          `db:"version" json:"version"`
+	Metadata      json.RawMessage `db:"metadata" json:"metadata"`
+	BuildTime     int64           `db:"build_time" json:"build_time"`
+	InstalledSize int64           `db:"installed_size" json:"installed_size"`
+	BlobKey       string          `db:"blob_key" json:"blob_key"`
+	BlobSha256    string          `db:"blob_sha256" json:"blob_sha256"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
+	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListApkPackages(ctx context.Context, repositoryID string) ([]ListApkPackagesRow, error) {
@@ -311,23 +199,11 @@ func (q *Queries) ListApkPackages(ctx context.Context, repositoryID string) ([]L
 			&i.Branch,
 			&i.Repo,
 			&i.Arch,
-			&i.PkgArch,
 			&i.Name,
 			&i.Version,
-			&i.Checksum,
-			&i.DataSha256,
-			&i.Description,
-			&i.Url,
-			&i.License,
-			&i.Origin,
-			&i.Maintainer,
-			&i.Commit,
+			&i.Metadata,
 			&i.BuildTime,
 			&i.InstalledSize,
-			&i.Depends,
-			&i.Provides,
-			&i.InstallIf,
-			&i.ProviderPriority,
 			&i.BlobKey,
 			&i.BlobSha256,
 			&i.SizeBytes,

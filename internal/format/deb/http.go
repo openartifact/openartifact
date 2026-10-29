@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -20,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	pkgdeb "github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -288,17 +288,10 @@ func (h *HTTPHandler) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetPoolPath(component, packageName, version, filename string) string {
-	if packageName == "" {
-		return ""
-	}
-
-	prefix := string(packageName[0])
-	if strings.HasPrefix(packageName, "lib") && len(packageName) > 3 {
-		prefix = "lib" + string(packageName[3])
-	}
-
-	return "pool/" + component + "/" + prefix + "/" + packageName + "/" + filename
+// GetPoolPath renders the pool location of a package file (see pkgdeb.PoolPath).
+// The version is not part of the path; it is kept for the callers' symmetry.
+func GetPoolPath(component, packageName, _, filename string) string {
+	return pkgdeb.PoolPath(component, packageName, filename)
 }
 
 func GetPackagesPath(distribution, component, architecture string) string {

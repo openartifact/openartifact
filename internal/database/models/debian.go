@@ -36,7 +36,7 @@ type DebianArchitecture struct {
 	UpdatedAt      time.Time
 }
 
-// DebPackage represents a Debian package stored in the deb_packages table.
+// DebPackage represents a Debian package published on the generic package tables (package_files and deb_files).
 type DebPackage struct {
 	ID             string
 	RepositoryID   string

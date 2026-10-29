@@ -23,7 +23,7 @@ import (
 	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
-// pacmanDB is an in-memory pacman_packages table with the unique live file name.
+// pacmanDB is an in-memory pacman package store with the unique live file name.
 type pacmanDB struct {
 	*formattest.DB
 
