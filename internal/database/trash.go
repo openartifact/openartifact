@@ -14,6 +14,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// TrashDB owns the trash (soft-deleted repositories and packages), its retention and purge.
+type TrashDB struct{ *core }
+
 var (
 	// ErrTrashNotFound means no trashed row matches the kind/id (it was never
 	// deleted, was already restored, or was purged).
@@ -90,7 +93,7 @@ var _ TrashStore = (*PostgresDB)(nil)
 
 // SetTrashRetentionDays sets the server-wide default retention, in days, for
 // repositories whose trash_retention_days is NULL.
-func (p *PostgresDB) SetTrashRetentionDays(days int) {
+func (p *TrashDB) SetTrashRetentionDays(days int) {
 	if days < 0 {
 		days = 0
 	}
@@ -101,12 +104,12 @@ func (p *PostgresDB) SetTrashRetentionDays(days int) {
 // maxTrashRetentionDays caps retention so interval arithmetic cannot overflow.
 const maxTrashRetentionDays = 36500
 
-func (p *PostgresDB) trashDefault() int {
+func (p *TrashDB) trashDefault() int {
 	return int(p.trashDefaultDays.Load())
 }
 
 // effectiveRetention is the repository's retention in days (0 = no trash).
-func (p *PostgresDB) effectiveRetention(ctx context.Context, q interface {
+func (p *TrashDB) effectiveRetention(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, repoID string,
 ) (int, error) {
@@ -128,7 +131,7 @@ func (p *PostgresDB) effectiveRetention(ctx context.Context, q interface {
 }
 
 // TrashRows implements TrashStore.
-func (p *PostgresDB) TrashRows(ctx context.Context, repoID string, kind models.TrashKind, ids []string, deletedBy string) (bool, error) {
+func (p *TrashDB) TrashRows(ctx context.Context, repoID string, kind models.TrashKind, ids []string, deletedBy string) (bool, error) {
 	spec, ok := trashSpecByKind(kind)
 	if !ok {
 		return false, fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
@@ -219,7 +222,7 @@ func uuidArray(ids []string) string {
 }
 
 // TrashRepository implements TrashStore.
-func (p *PostgresDB) TrashRepository(ctx context.Context, id, deletedBy string) (bool, error) {
+func (p *TrashDB) TrashRepository(ctx context.Context, id, deletedBy string) (bool, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -296,7 +299,7 @@ func scanTrashItem(sc interface{ Scan(...any) error }) (*models.TrashItem, error
 }
 
 // ListTrash implements TrashStore.
-func (p *PostgresDB) ListTrash(ctx context.Context, f models.TrashFilter) ([]*models.TrashItem, int, error) {
+func (p *TrashDB) ListTrash(ctx context.Context, f models.TrashFilter) ([]*models.TrashItem, int, error) {
 	limit := f.Limit
 	if limit <= 0 {
 		limit = defaultTrashPageLimit
@@ -380,7 +383,7 @@ func (p *PostgresDB) ListTrash(ctx context.Context, f models.TrashFilter) ([]*mo
 }
 
 // getTrashItem loads one trashed row; lock adds FOR UPDATE.
-func (p *PostgresDB) getTrashItem(
+func (p *TrashDB) getTrashItem(
 	ctx context.Context,
 	q trashQuerier,
 	kind models.TrashKind,
@@ -424,7 +427,7 @@ func (p *PostgresDB) getTrashItem(
 }
 
 // GetTrashItem implements TrashStore.
-func (p *PostgresDB) GetTrashItem(ctx context.Context, kind models.TrashKind, id string) (*models.TrashItem, error) {
+func (p *TrashDB) GetTrashItem(ctx context.Context, kind models.TrashKind, id string) (*models.TrashItem, error) {
 	return p.getTrashItem(ctx, p.db, kind, id, false)
 }
 
@@ -432,7 +435,7 @@ func (p *PostgresDB) GetTrashItem(ctx context.Context, kind models.TrashKind, id
 // (its name stays reserved until it is purged or restored), ErrTrashNotFound
 // when no trashed repository has it. It is not part of TrashStore: only the
 // repository-create conflict message needs it.
-func (p *PostgresDB) TrashedRepositoryByName(ctx context.Context, name string) (*models.TrashItem, error) {
+func (p *TrashDB) TrashedRepositoryByName(ctx context.Context, name string) (*models.TrashItem, error) {
 	it, err := scanTrashItem(p.db.QueryRowContext(ctx, repoItemSelect(" AND r.name = $2"), p.trashDefault(), name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTrashNotFound
@@ -457,7 +460,7 @@ func repoTrashed(ctx context.Context, q trashQuerier, repoID string) (bool, erro
 }
 
 // RestoreTrash implements TrashStore.
-func (p *PostgresDB) RestoreTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashItem, error) {
+func (p *TrashDB) RestoreTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashItem, error) {
 	if kind == models.TrashKindRepository {
 		return p.restoreRepository(ctx, id)
 	}
@@ -537,7 +540,7 @@ func ensureTagManifestLive(ctx context.Context, tx *sql.Tx, tagID string) error 
 	return nil
 }
 
-func (p *PostgresDB) restoreRepository(ctx context.Context, id string) (*models.TrashItem, error) {
+func (p *TrashDB) restoreRepository(ctx context.Context, id string) (*models.TrashItem, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -611,7 +614,7 @@ func (s *trashSpec) restoreCascade() []string {
 }
 
 // PurgeTrash implements TrashStore.
-func (p *PostgresDB) PurgeTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
+func (p *TrashDB) PurgeTrash(ctx context.Context, kind models.TrashKind, id string) (*models.TrashPurgeResult, error) {
 	if kind == models.TrashKindRepository {
 		return p.purgeRepository(ctx, id)
 	}
@@ -715,7 +718,7 @@ func purgeCascades(ctx context.Context, tx *sql.Tx, spec *trashSpec, id string) 
 	return "", nil
 }
 
-func (p *PostgresDB) purgeRepository(ctx context.Context, id string) (*models.TrashPurgeResult, error) {
+func (p *TrashDB) purgeRepository(ctx context.Context, id string) (*models.TrashPurgeResult, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -758,7 +761,7 @@ func (p *PostgresDB) purgeRepository(ctx context.Context, id string) (*models.Tr
 }
 
 // RegenKeys implements TrashStore.
-func (p *PostgresDB) RegenKeys(ctx context.Context, kind models.TrashKind, id string) (string, string, error) {
+func (p *TrashDB) RegenKeys(ctx context.Context, kind models.TrashKind, id string) (string, string, error) {
 	var a, b string
 
 	var err error
@@ -784,7 +787,7 @@ func (p *PostgresDB) RegenKeys(ctx context.Context, kind models.TrashKind, id st
 }
 
 // ListExpiredTrash implements TrashStore.
-func (p *PostgresDB) ListExpiredTrash(ctx context.Context, limit int) ([]models.TrashRef, error) {
+func (p *TrashDB) ListExpiredTrash(ctx context.Context, limit int) ([]models.TrashRef, error) {
 	refs := make([]models.TrashRef, 0, limit)
 
 	collect := func(kind models.TrashKind, query string) error {
