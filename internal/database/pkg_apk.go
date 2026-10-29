@@ -7,6 +7,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -15,18 +16,58 @@ import (
 )
 
 // APKStore owns the Alpine apk packages and the signing key.
+//
+// An apk lives on the generic package tables (packages P, package_versions V,
+// package_files F); there is no side table: the APKINDEX stanza fields are small,
+// read only as a whole by the index generation and ride in V.metadata. Grain 1:1: one
+// .apk of the mirror tree branch/repo/arch/name-version.apk is one P (shared by
+// branch/repo/name), one V and one F. The mapping:
+//
+//	P  name, name_key = branch/repo/name; attrs = {branch, repo, name}
+//	V  version        = version
+//	   version_key    = version|arch (arch is the mirror directory, not pkg_arch)
+//	   metadata       = {pkg_arch, checksum, data_sha256, description, url, license, origin,
+//	                    maintainer, commit, depends[], provides[], install_if[],
+//	                    provider_priority}; all keys written, the arrays keep their order
+//	F  path           = branch/repo/arch/name-version.apk; filename = name-version.apk
+//	   arch           = the mirror directory; blob_id = the .apk blob; size_bytes = NULL
+//	   part           = ''; checksums = {}
+//	   attrs          = {build_time, installed_size} (only when not zero)
+//	   download_count = the download counter
 type APKStore struct{ *core }
 
 // apkMediaType is the media type of a stored .apk (concatenated gzip streams).
 const apkMediaType = "application/gzip"
+
+// apkMeta is package_versions.metadata of an apk.
+type apkMeta struct {
+	PkgArch          string   `json:"pkg_arch"`
+	Checksum         string   `json:"checksum"`
+	DataSHA256       string   `json:"data_sha256"`
+	Description      string   `json:"description"`
+	URL              string   `json:"url"`
+	License          string   `json:"license"`
+	Origin           string   `json:"origin"`
+	Maintainer       string   `json:"maintainer"`
+	Commit           string   `json:"commit"`
+	Depends          []string `json:"depends"`
+	Provides         []string `json:"provides"`
+	InstallIf        []string `json:"install_if"`
+	ProviderPriority int      `json:"provider_priority"`
+}
 
 // apkPackageRow lists the sqlc row types apkPackageFromRow converts; they share the columns of GetApkPackageFileRow.
 type apkPackageRow interface {
 	dbsqlc.GetApkPackageFileRow | dbsqlc.ListApkPackagesRow
 }
 
-func apkPackageFromRow[R apkPackageRow](in R) *models.ApkPackage {
+func apkPackageFromRow[R apkPackageRow](in R) (*models.ApkPackage, error) {
 	row := dbsqlc.GetApkPackageFileRow(in)
+
+	var meta apkMeta
+	if err := json.Unmarshal(row.Metadata, &meta); err != nil {
+		return nil, fmt.Errorf("decode apk metadata of %s: %w", row.ID, err)
+	}
 
 	return &models.ApkPackage{
 		ID:               row.ID,
@@ -34,89 +75,119 @@ func apkPackageFromRow[R apkPackageRow](in R) *models.ApkPackage {
 		Branch:           row.Branch,
 		Repo:             row.Repo,
 		Arch:             row.Arch,
-		PkgArch:          row.PkgArch,
+		PkgArch:          meta.PkgArch,
 		Name:             row.Name,
 		Version:          row.Version,
-		Checksum:         row.Checksum,
-		DataHash:         row.DataSha256,
-		Description:      row.Description,
-		URL:              row.Url,
-		License:          row.License,
-		Origin:           row.Origin,
-		Maintainer:       row.Maintainer,
-		Commit:           row.Commit,
+		Checksum:         meta.Checksum,
+		DataHash:         meta.DataSHA256,
+		Description:      meta.Description,
+		URL:              meta.URL,
+		License:          meta.License,
+		Origin:           meta.Origin,
+		Maintainer:       meta.Maintainer,
+		Commit:           meta.Commit,
 		BuildTime:        row.BuildTime,
 		InstalledSize:    row.InstalledSize,
-		Depends:          row.Depends,
-		Provides:         row.Provides,
-		InstallIf:        row.InstallIf,
-		ProviderPriority: int(row.ProviderPriority),
+		Depends:          meta.Depends,
+		Provides:         meta.Provides,
+		InstallIf:        meta.InstallIf,
+		ProviderPriority: meta.ProviderPriority,
 		BlobKey:          row.BlobKey,
 		BlobSHA256:       row.BlobSha256,
 		SizeBytes:        row.SizeBytes,
 		DownloadCount:    row.DownloadCount,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
-	}
+	}, nil
 }
 
-// CreateApkPackage stores one .apk. A live row with the same coordinates is a
-// unique violation (IsUniqueViolation).
+// apkPath is the mirror-tree path of a package: branch/repo/arch/name-version.apk.
+func apkPath(branch, repo, arch, name, version string) string {
+	return branch + "/" + repo + "/" + arch + "/" + name + "-" + version + ".apk"
+}
+
+// CreateApkPackage stores one .apk. A live row with the same coordinates is
+// ErrDuplicate.
 func (p *APKStore) CreateApkPackage(ctx context.Context, pkg *models.ApkPackage) error {
-	blobID, err := p.upsertBlobWithMediaType(ctx, pkg.BlobSHA256, pkg.BlobKey, apkMediaType, pkg.SizeBytes)
+	attrs := map[string]any{}
+	putNonZero(attrs, "build_time", pkg.BuildTime)
+	putNonZero(attrs, "installed_size", pkg.InstalledSize)
+
+	listName := pkg.Branch + "/" + pkg.Repo + "/" + pkg.Name
+
+	written, err := p.writePackage(ctx, &PackageWrite{
+		RepoID:   pkg.RepositoryID,
+		Format:   "apk",
+		Name:     listName,
+		NameKey:  listName,
+		PkgAttrs: map[string]any{"branch": pkg.Branch, "repo": pkg.Repo, "name": pkg.Name},
+		Version:  pkg.Version, VersionKey: pkg.Version + "|" + pkg.Arch,
+		VersionMeta: apkMeta{
+			PkgArch:          pkg.PkgArch,
+			Checksum:         pkg.Checksum,
+			DataSHA256:       pkg.DataHash,
+			Description:      pkg.Description,
+			URL:              pkg.URL,
+			License:          pkg.License,
+			Origin:           pkg.Origin,
+			Maintainer:       pkg.Maintainer,
+			Commit:           pkg.Commit,
+			Depends:          nonNilStrings(pkg.Depends),
+			Provides:         nonNilStrings(pkg.Provides),
+			InstallIf:        nonNilStrings(pkg.InstallIf),
+			ProviderPriority: pkg.ProviderPriority,
+		},
+		Exclusive: true,
+		CreatedAt: pkg.CreatedAt,
+		Files: []FileWrite{{
+			Path:     apkPath(pkg.Branch, pkg.Repo, pkg.Arch, pkg.Name, pkg.Version),
+			Filename: pkg.Name + "-" + pkg.Version + ".apk",
+			Blob:     BlobWrite{SHA256: pkg.BlobSHA256, Key: pkg.BlobKey, MediaType: apkMediaType, Size: pkg.SizeBytes},
+			Arch:     pkg.Arch,
+			Attrs:    attrs,
+		}},
+	})
 	if err != nil {
-		return fmt.Errorf("failed to upsert blob for apk package: %w", err)
+		return err
 	}
 
-	row, err := p.q.CreateApkPackage(ctx, dbsqlc.CreateApkPackageParams{
-		RepositoryID:     pkg.RepositoryID,
-		Branch:           pkg.Branch,
-		Repo:             pkg.Repo,
-		Arch:             pkg.Arch,
-		PkgArch:          pkg.PkgArch,
-		Name:             pkg.Name,
-		Version:          pkg.Version,
-		Checksum:         pkg.Checksum,
-		DataSha256:       pkg.DataHash,
-		Description:      pkg.Description,
-		Url:              pkg.URL,
-		License:          pkg.License,
-		Origin:           pkg.Origin,
-		Maintainer:       pkg.Maintainer,
-		Commit:           pkg.Commit,
-		BuildTime:        pkg.BuildTime,
-		InstalledSize:    pkg.InstalledSize,
-		Depends:          nonNilStrings(pkg.Depends),
-		Provides:         nonNilStrings(pkg.Provides),
-		InstallIf:        nonNilStrings(pkg.InstallIf),
-		ProviderPriority: int32(pkg.ProviderPriority), //nolint:gosec // a small signed priority from PKGINFO
-		BlobID:           blobID,
-		CreatedAt:        createdAtOrNil(pkg.CreatedAt),
-	})
+	pkg.ID, pkg.CreatedAt, pkg.UpdatedAt = written.Files[0].ID, written.Files[0].CreatedAt, written.Files[0].UpdatedAt
 
-	return finishCreate(insertedRow(row), err, "create apk package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
+	return nil
 }
 
 // GetApkPackageFile returns the live .apk, or (nil, nil).
 func (p *APKStore) GetApkPackageFile(ctx context.Context, repoID, branch, repo, arch, name, version string) (*models.ApkPackage, error) {
 	row, err := p.q.GetApkPackageFile(ctx, dbsqlc.GetApkPackageFileParams{
-		RepositoryID: repoID, Branch: branch, Repo: repo, Arch: arch, Name: name, Version: version,
+		RepositoryID: repoID, Path: apkPath(branch, repo, arch, name, version),
 	})
 
-	return mapRow(row, err, "get apk package", apkPackageFromRow)
+	return mapRowErr(row, err, "get apk package", apkPackageFromRow)
 }
 
 // ListApkPackages returns every live package of the repository ordered by
 // branch, repo, arch, name and version.
 func (p *APKStore) ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error) {
 	rows, err := p.q.ListApkPackages(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list apk packages: %w", err)
+	}
 
-	return mapRows(rows, err, "list apk packages", apkPackageFromRow)
+	pkgs := make([]*models.ApkPackage, len(rows))
+
+	for i, row := range rows {
+		if pkgs[i], err = apkPackageFromRow(row); err != nil {
+			return nil, err
+		}
+	}
+
+	return pkgs, nil
 }
 
-// DeleteApkPackage removes one package row.
+// DeleteApkPackage removes one live package row (and its version and package
+// when nothing else holds them).
 func (p *APKStore) DeleteApkPackage(ctx context.Context, id, repoID string) error {
-	if err := p.q.DeleteApkPackage(ctx, dbsqlc.DeleteApkPackageParams{ID: id, RepositoryID: repoID}); err != nil {
+	if _, err := p.deleteLiveFiles(ctx, repoID, nil, []string{id}); err != nil {
 		return fmt.Errorf("failed to delete apk package: %w", err)
 	}
 
