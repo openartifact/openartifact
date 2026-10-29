@@ -213,11 +213,6 @@ func (p *PostgresDB) GetTokenByHash(ctx context.Context, hash string) (*models.T
 	return cachedPtr(ctx, &p.authCache, &p.authCache.tokens, hash, cloneToken, p.GetTokenByHashUncached)
 }
 
-// GetUserByID returns the user with the given ID, from the auth cache when fresh.
-func (p *PostgresDB) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	return cachedPtr(ctx, &p.authCache, &p.authCache.users, id, cloneShallow, p.GetUserByIDUncached)
-}
-
 // ListGroupsByUser returns the groups of a user, from the auth cache when fresh.
 func (p *PostgresDB) ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error) {
 	return cachedList(ctx, &p.authCache, &p.authCache.groups, userID, cloneShallowSlice, p.ListGroupsByUserUncached)

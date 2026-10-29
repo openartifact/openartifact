@@ -207,21 +207,6 @@ func scanSSOProviderRows(rows *sql.Rows) ([]*models.SSOProvider, error) {
 	return providers, nil
 }
 
-func (p *PostgresDB) UpdateUserSSO(ctx context.Context, userID string, externalID, providerSlug string) error {
-	// Cached auth lookups must not outlive this write.
-	defer p.authCache.invalidate()
-
-	_, err := p.db.ExecContext(ctx,
-		`UPDATE auth_users SET external_id=$2, provider_slug=$3 WHERE id=$1`,
-		userID, externalID, providerSlug,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update user sso: %w", err)
-	}
-
-	return nil
-}
-
 func (p *PostgresDB) SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
@@ -259,14 +244,6 @@ func (p *PostgresDB) SyncSSOGroups(ctx context.Context, userID string, groupIDs 
 	}
 
 	return nil
-}
-
-func (p *PostgresDB) GetUserByExternalID(ctx context.Context, externalID, providerSlug string) (*models.User, error) {
-	return p.getUserWhere(ctx, "external id", "u.external_id=$1 AND u.provider_slug=$2", externalID, providerSlug)
-}
-
-func (p *PostgresDB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	return p.getUserWhere(ctx, "email", "u.email=$1", email)
 }
 
 func (p *PostgresDB) GetGroupByName(ctx context.Context, name string) (*models.Group, error) {
