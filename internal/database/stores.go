@@ -32,6 +32,7 @@ type PostgresDB struct {
 	*ExploitDB
 	*OSVDB
 	*DependencyTrackStore
+	*AIAnalysisStore
 	// STORES-STRUCT
 }
 
@@ -61,6 +62,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		ExploitDB:            &ExploitDB{core: c},
 		OSVDB:                &OSVDB{core: c},
 		DependencyTrackStore: &DependencyTrackStore{core: c},
+		AIAnalysisStore:      &AIAnalysisStore{core: c},
 		// STORES-INIT
 	}
 }
