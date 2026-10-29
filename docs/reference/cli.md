@@ -29,8 +29,8 @@ oa [--server URL] [--token TOKEN] [--format table|json] <command> [args]
 | Variable | Named by |
 |---|---|
 | `OA_GPG_PASSPHRASE` | `oa gpg import` |
-| `OA_IMPORT_SOURCE_TOKEN` | `oa import artifactory`, `oa import nexus` |
-| `OA_IMPORT_SOURCE_USER` | `oa import artifactory`, `oa import nexus` |
+| `OA_IMPORT_SOURCE_TOKEN` | `oa import artifactory`, `oa import nexus`, `oa import openartifact` |
+| `OA_IMPORT_SOURCE_USER` | `oa import artifactory`, `oa import nexus`, `oa import openartifact` |
 | `OA_SERVER` | `--server` |
 | `OA_TOKEN` | `--token` |
 | `OA_WEBHOOK_SECRET` | `oa webhook create` |
@@ -536,20 +536,24 @@ Usage of bundle show:
 ## Migration
 
 ```text
-import nexus|artifactory --source-url URL --repo SRC[:DST]... [--dry-run] [--create-repos]
-                                   [--concurrency N] [--state-file F]  Import from Nexus / Artifactory
+import nexus|artifactory|openartifact --source-url URL --repo SRC[:DST]... [--dry-run] [--create-repos]
+                                   [--concurrency N] [--state-file F]  Import from Nexus / Artifactory / a 0.14 OpenArtifact (--all for every hosted repository)
+import config openartifact --source-url URL --output DIR [--kind K]...
+                                   Write oa apply manifests and a mapping report from a 0.14 OpenArtifact
 ```
 
 ### `oa import nexus`
 
 | Flag | Value | Description |
 |---|---|---|
+| `-all` | none | openartifact source: import every hosted repository, under the same name |
 | `-artifactory-listing` | `string` | Artifactory listing mode: aql or storage (default "aql") |
 | `-concurrency` | `int` | parallel transfers (default 4) |
 | `-create-repos` | none | create missing destination repositories (hosted, matching format) |
 | `-deb-component` | `string` | fallback Debian component when the source does not say |
 | `-deb-distribution` | `string` | fallback Debian distribution when the source does not say |
 | `-dry-run` | none | print the plan without writing anything |
+| `-formats` | `string` | with --all: only repositories of these formats (comma-separated) |
 | `-path-prefix` | `string` | only import assets whose repository path starts with this prefix (e.g. com/acme/) |
 | `-properties` | `string` | properties to copy: comma-separated keys or prefix* patterns, 'none' to disable (default "deb.*,rpm.*,build.name,build.number,vcs.*") |
 | `-quiet` | none | only print the summary |
@@ -562,6 +566,10 @@ import nexus|artifactory --source-url URL --repo SRC[:DST]... [--dry-run] [--cre
 | `-state-file` | `string` | resume file: completed assets are skipped on the next run |
 
 ### `oa import artifactory`
+
+Same flags as `oa import nexus`.
+
+### `oa import openartifact`
 
 Same flags as `oa import nexus`.
 

@@ -41,6 +41,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Properties](repositories/properties.md) | Artifact key/value properties: API, limits, search |
 | [Release bundles](repositories/release-bundles.md) | Release bundles and promotion pipelines |
 | [Migrating from Nexus / Artifactory](migration/nexus-artifactory.md) | `oa import`: flags, retries, what is preserved |
+| [Migrating from OpenArtifact 0.14](migration/openartifact.md) | `oa import openartifact` and `oa import config`: the 0.14 to 0.15 runbook |
 
 ## Security
 

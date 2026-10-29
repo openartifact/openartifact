@@ -421,7 +421,7 @@ func TestImportDockerParseDigestPath(t *testing.T) {
 		{"v2/app/manifests/latest", "", false},
 		{"v2/app/manifests/sha256:short", "", false},
 		{"v2/app/manifests/sha256:" + strings.Repeat("A", 64), "", false},
-		{"v2/manifests/" + d, "", false},
+		{"v2/manifests/" + d, "", true}, // a digest manifest of an image with no name
 		{"team/app/" + folder + "/manifest.json", "team/app", true},
 		{"team/app/" + folder + "/list.manifest.json", "team/app", true},
 		{"team/app/1.0/" + folder, "", false},

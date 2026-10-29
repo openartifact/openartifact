@@ -34,7 +34,13 @@ var (
 )
 
 const (
-	importUsage = "Usage: oa import <nexus|artifactory> --source-url URL --repo SRC[:DST] [--repo ...] [flags]"
+	importUsage = "Usage: oa import <nexus|artifactory|openartifact> --source-url URL --repo SRC[:DST] [--repo ...] [flags]\n" +
+		"       oa import openartifact --source-url URL --all [--formats LIST] [flags]\n" +
+		"       oa import config openartifact --source-url URL --output DIR [flags]"
+
+	kindNexus        = "nexus"
+	kindArtifactory  = "artifactory"
+	kindOpenArtifact = "openartifact"
 
 	envSourceURL   = "OA_IMPORT_SOURCE_URL"
 	envSourceUser  = "OA_IMPORT_SOURCE_USER"
@@ -63,10 +69,17 @@ type importConfig struct {
 	CreateRepos bool
 	DebDist     string
 	DebComp     string
-	Properties  []string
-	Listing     string
-	Quiet       bool
-	PathPrefix  string
+	// DebDists are the distributions an OpenArtifact source is searched for
+	// the placement of its debs (--deb-distribution, comma-separated).
+	DebDists []string
+	// AllRepos imports every hosted repository of an OpenArtifact source,
+	// restricted to Formats when that is not empty.
+	AllRepos   bool
+	Formats    []string
+	Properties []string
+	Listing    string
+	Quiet      bool
+	PathPrefix string
 
 	Retries      int
 	RetryMaxWait time.Duration
@@ -101,8 +114,8 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 	}
 
 	cfg := importConfig{Kind: args[0]}
-	if cfg.Kind != "nexus" && cfg.Kind != "artifactory" {
-		return importConfig{}, fmt.Errorf("%w: unknown source type %q (want nexus or artifactory)", errImportUsage, cfg.Kind)
+	if cfg.Kind != kindNexus && cfg.Kind != kindArtifactory && cfg.Kind != kindOpenArtifact {
+		return importConfig{}, fmt.Errorf("%w: unknown source type %q (want nexus, artifactory or openartifact)", errImportUsage, cfg.Kind)
 	}
 
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
@@ -120,7 +133,10 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 		)
 	)
 
+	formats := fs.String("formats", "", "with --all: only repositories of these formats (comma-separated)")
+
 	fs.Var(&repos, "repo", "repository to import as SRC or SRC:DST (repeatable)")
+	fs.BoolVar(&cfg.AllRepos, "all", false, "openartifact source: import every hosted repository, under the same name")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "print the plan without writing anything")
 	fs.IntVar(&cfg.Concurrency, "concurrency", defaultImportConcurrency, "parallel transfers")
 	fs.StringVar(&cfg.StateFile, "state-file", "", "resume file: completed assets are skipped on the next run")
@@ -153,7 +169,31 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 
 	cfg.Repos = repos
 	cfg.SourceUser = *user
+
+	propsSet := false
+
+	fs.Visit(func(f *flag.Flag) { propsSet = propsSet || f.Name == "properties" })
+
+	// An OpenArtifact source has no property conventions to filter by: all of
+	// an artifact's properties are its own.
+	if cfg.Kind == kindOpenArtifact && !propsSet {
+		*props = "*"
+	}
+
 	cfg.Properties = parsePropertyPatterns(*props)
+
+	if *formats != "" {
+		cfg.Formats = parsePropertyPatterns(*formats)
+	}
+
+	if cfg.Kind == kindOpenArtifact {
+		cfg.DebDists = parsePropertyPatterns(cfg.DebDist)
+		if len(cfg.DebDists) == 0 {
+			cfg.DebDists = []string{"stable"}
+		}
+
+		cfg.DebDist = cfg.DebDists[0]
+	}
 
 	if err := cfg.resolveSource(*sourceURL, *tokenFile, getenv, stdin); err != nil {
 		return importConfig{}, err
@@ -170,8 +210,14 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 
 func (c *importConfig) validate() error {
 	switch {
-	case len(c.Repos) == 0:
-		return fmt.Errorf("%w: at least one --repo is required", errImportUsage)
+	case c.AllRepos && c.Kind != kindOpenArtifact:
+		return fmt.Errorf("%w: --all is only available for an openartifact source", errImportUsage)
+	case c.AllRepos && len(c.Repos) > 0:
+		return fmt.Errorf("%w: --all and --repo exclude each other", errImportUsage)
+	case len(c.Formats) > 0 && !c.AllRepos:
+		return fmt.Errorf("%w: --formats needs --all", errImportUsage)
+	case len(c.Repos) == 0 && !c.AllRepos:
+		return fmt.Errorf("%w: at least one --repo is required (an openartifact source also takes --all)", errImportUsage)
 	case c.Concurrency < 1:
 		return fmt.Errorf("%w: --concurrency must be at least 1", errImportUsage)
 	case c.Retries < 0:
@@ -249,8 +295,11 @@ func readSourceToken(file string, getenv func(string) string, stdin io.Reader) (
 func newImportSource(cfg importConfig, hc *http.Client) importSource {
 	h := newSourceHTTP(cfg.SourceURL, cfg.SourceUser, cfg.SourceToken, hc)
 	h.retry = cfg.retrier
-	if cfg.Kind == "artifactory" {
+	switch cfg.Kind {
+	case kindArtifactory:
 		return &artifactorySource{http: h, listing: cfg.Listing}
+	case kindOpenArtifact:
+		return &openartifactSource{http: h, props: len(cfg.Properties) > 0, debDists: cfg.DebDists}
 	}
 
 	return &nexusSource{http: h}
@@ -258,6 +307,10 @@ func newImportSource(cfg importConfig, hc *http.Client) importSource {
 
 // handleImport implements `oa import` and returns the process exit code.
 func handleImport(args []string, client *Client, outFmt string) int {
+	if len(args) > 0 && args[0] == "config" {
+		return handleImportConfig(args[1:], outFmt)
+	}
+
 	cfg, err := parseImportFlags(args, os.Getenv, os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -327,6 +380,37 @@ type importReport struct {
 	Retries     int             `json:"retries"`
 	Interrupted bool            `json:"interrupted"`
 	Failures    []importFailure `json:"failures"`
+	// Repositories is the outcome per repository, in import order.
+	Repositories []repoReport `json:"repositories"`
+}
+
+// repoReport is the share of one repository in the totals of the report. The
+// counts are the same as the totals', so a dry run answers what would be
+// copied per repository and format.
+type repoReport struct {
+	Source   string       `json:"source"`
+	Target   string       `json:"target"`
+	Format   importFormat `json:"format"`
+	Assets   int          `json:"assets"` // listed by the source
+	Uploaded int          `json:"uploaded"`
+	Bytes    int64        `json:"bytes"`
+	Present  int          `json:"skipped_present"`
+	Resumed  int          `json:"skipped_state"`
+	Ignored  int          `json:"ignored"`
+	Failed   int          `json:"failed"`
+}
+
+// finishRepo records the repository's share: what the counters gained since
+// before, a snapshot taken when it started (repositories run one at a time).
+func (r *importReport) finishRepo(m repoMapping, format importFormat, listed int, before *importReport) {
+	r.add(func(r *importReport) {
+		r.Repositories = append(r.Repositories, repoReport{
+			Source: m.Src, Target: m.Dst, Format: format, Assets: listed,
+			Uploaded: r.Uploaded - before.Uploaded, Bytes: r.Bytes - before.Bytes,
+			Present: r.Present - before.Present, Resumed: r.Resumed - before.Resumed,
+			Ignored: r.Ignored - before.Ignored, Failed: r.Failed - before.Failed,
+		})
+	})
 }
 
 func (r *importReport) logf(format string, args ...any) {
@@ -365,7 +449,8 @@ func (r *importReport) snapshot() *importReport {
 	cp := &importReport{
 		DryRun: r.DryRun, Uploaded: r.Uploaded, Bytes: r.Bytes, Present: r.Present,
 		Resumed: r.Resumed, Ignored: r.Ignored, Failed: r.Failed, Retries: r.Retries, Interrupted: r.Interrupted,
-		Failures: append([]importFailure{}, r.Failures...),
+		Failures:     append([]importFailure{}, r.Failures...),
+		Repositories: append([]repoReport{}, r.Repositories...),
 	}
 
 	return cp
@@ -386,6 +471,28 @@ func (r *importReport) print(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "not importable:", s.Ignored)
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "retries:", s.Retries)
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "failed:", s.Failed)
+
+	if len(s.Repositories) > 1 || (len(s.Repositories) == 1 && s.Repositories[0].Source != s.Repositories[0].Target) {
+		_, _ = fmt.Fprintf(
+			w,
+			"\n  %-28s %-10s %7s %9s %8s %8s %8s %7s\n",
+			"repository",
+			"format",
+			"listed",
+			verb,
+			"present",
+			"resumed",
+			"ignored",
+			"failed",
+		)
+
+		for _, p := range s.Repositories {
+			_, _ = fmt.Fprintf(w, "  %-28s %-10s %7d %9d %8d %8d %8d %7d\n",
+				p.Source, p.Format, p.Assets, p.Uploaded, p.Present, p.Resumed, p.Ignored, p.Failed)
+		}
+
+		_, _ = fmt.Fprintln(w)
+	}
 
 	if s.Interrupted {
 		_, _ = fmt.Fprintln(w, "  interrupted: not every asset was processed; re-run to resume")
@@ -460,12 +567,21 @@ type importJob struct {
 }
 
 func (im *importer) run(ctx context.Context) *importReport {
-	for _, m := range im.cfg.Repos {
+	repos, err := im.repoMappings(ctx)
+	if err != nil {
+		im.rep.fail("", "", err)
+
+		return im.rep
+	}
+
+	for _, m := range repos {
 		if ctx.Err() != nil {
 			break
 		}
 
-		im.importRepo(ctx, m)
+		before := im.rep.snapshot()
+		format, listed := im.importRepo(ctx, m)
+		im.rep.finishRepo(m, format, listed, before)
 	}
 
 	if ctx.Err() != nil {
@@ -475,18 +591,59 @@ func (im *importer) run(ctx context.Context) *importReport {
 	return im.rep
 }
 
-func (im *importer) importRepo(ctx context.Context, m repoMapping) {
+// repoMappings is the list of repositories to copy: the --repo mappings, or with
+// --all every hosted repository of an OpenArtifact source (restricted to
+// --formats), each under its own name. Repositories that hold no data of their
+// own (proxy, group) or that the importer has no format for are named in the
+// log: `oa import config` recreates the first kind.
+func (im *importer) repoMappings(ctx context.Context) ([]repoMapping, error) {
+	if !im.cfg.AllRepos {
+		return im.cfg.Repos, nil
+	}
+
+	src, ok := im.src.(*openartifactSource)
+	if !ok {
+		return nil, fmt.Errorf("%w: --all needs an openartifact source", errImportUsage)
+	}
+
+	hosted, skipped, err := src.hostedRepositories(ctx, im.cfg.Formats)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range skipped {
+		im.rep.logf(
+			"not copied: %s repository %q [%s] (no content of its own, or no importer for its format)",
+			r.RepoType,
+			r.Name,
+			r.Format,
+		)
+	}
+
+	out := make([]repoMapping, 0, len(hosted))
+	for _, r := range hosted {
+		out = append(out, repoMapping{Src: r.Name, Dst: r.Name})
+	}
+
+	return out, nil
+}
+
+// importRepo copies one repository and names its format and how many assets the
+// source listed (zero when it could not be read).
+func (im *importer) importRepo(ctx context.Context, m repoMapping) (importFormat, int) {
 	repo, err := im.src.Repository(ctx, m.Src)
 	if err != nil {
 		im.rep.fail(m.Src, "", err)
-		return
+		return "", 0
 	}
 
 	assets, err := im.src.Assets(ctx, repo)
 	if err != nil {
 		im.rep.fail(m.Src, "", err)
-		return
+		return repo.Format, 0
 	}
+
+	format, listed := repo.Format, len(assets)
 
 	todo := im.selectAssets(repo, assets)
 	im.rep.logf("%s -> %s [%s]: %d assets, %d to consider", repo.Name, m.Dst, repo.Format, len(assets), len(todo))
@@ -494,7 +651,7 @@ func (im *importer) importRepo(ctx context.Context, m repoMapping) {
 	exists, err := im.tgt.ensureRepo(ctx, m.Dst, repo.Format, im.cfg.CreateRepos, im.cfg.DryRun)
 	if err != nil {
 		im.rep.fail(m.Src, "", err)
-		return
+		return format, listed
 	}
 
 	var ix *targetIndex
@@ -502,7 +659,7 @@ func (im *importer) importRepo(ctx context.Context, m repoMapping) {
 	if exists {
 		if ix, err = im.tgt.loadIndex(ctx, m.Dst, repo.Format); err != nil {
 			im.rep.fail(m.Src, "", err)
-			return
+			return format, listed
 		}
 	} else {
 		im.rep.logf("would create hosted %s repository %q", repo.Format, m.Dst)
@@ -519,6 +676,8 @@ func (im *importer) importRepo(ctx context.Context, m repoMapping) {
 	}
 
 	im.runJobs(ctx, jobs)
+
+	return format, listed
 }
 
 // groupUnits arranges the selected assets into transfer units.
@@ -752,11 +911,16 @@ func (im *importer) uploadMeta(j importJob, a sourceAsset) (uploadMeta, error) {
 		m.Created = a.Created
 	}
 
-	if j.repo.Format == formatDeb {
+	switch j.repo.Format {
+	case formatDeb:
 		var err error
 		if m.DebDist, m.DebComponent, err = im.debPlacement(j, a); err != nil {
 			return m, err
 		}
+	case formatComposer:
+		// A dist rarely carries its version in composer.json; a source that
+		// knows it (an OpenArtifact repository) says so.
+		m.Version = a.Component.Version
 	}
 
 	return m, nil

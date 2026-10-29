@@ -79,6 +79,10 @@ type ociRegistry struct {
 }
 
 func (r ociRegistry) url(image, kind, ref string) string {
+	if image == "" {
+		return r.base + "/" + kind + "/" + url.PathEscape(ref)
+	}
+
 	return r.base + "/" + escapePath(image) + "/" + kind + "/" + url.PathEscape(ref)
 }
 

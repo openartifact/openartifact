@@ -22,7 +22,7 @@ import (
 func init() { //nolint:gochecknoinits // every format registers itself with the importer
 	registerFormat(formatDef{
 		format:     formatComposer,
-		importable: func(string) bool { return false }, // no Nexus or Artifactory repository imports into it
+		importable: func(p string) bool { return strings.HasSuffix(p, ".zip") }, // only an OpenArtifact source holds composer repositories
 		match:      matchSHA,
 		upload:     composerUpload,
 	})

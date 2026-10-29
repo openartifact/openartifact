@@ -170,8 +170,17 @@ func cargoParseIndex(r io.Reader) ([]cargoIndexLine, error) {
 // cargoReadIndex reads the index file of the crate the unit holds. It returns
 // no lines when the source cannot tell (not Artifactory, no such file).
 func cargoReadIndex(ctx context.Context, src importSource, sample sourceAsset) ([]cargoIndexLine, string, error) {
-	as, ok := src.(*artifactorySource)
-	if !ok {
+	var (
+		h    *sourceHTTP
+		urls func(a sourceAsset, rel string) []string
+	)
+
+	switch s := src.(type) {
+	case *artifactorySource:
+		h, urls = s.http, cargoIndexURLs
+	case *openartifactSource:
+		h, urls = s.http, s.cargoIndexURLs
+	default:
 		return nil, "", nil
 	}
 
@@ -180,8 +189,8 @@ func cargoReadIndex(ctx context.Context, src importSource, sample sourceAsset) (
 		return nil, "", nil
 	}
 
-	for _, u := range cargoIndexURLs(sample, rel) {
-		lines, err := as.cargoIndex(ctx, u)
+	for _, u := range urls(sample, rel) {
+		lines, err := h.cargoIndex(ctx, u)
 
 		switch {
 		case errors.Is(err, errNotFound):
@@ -197,11 +206,11 @@ func cargoReadIndex(ctx context.Context, src importSource, sample sourceAsset) (
 }
 
 // cargoIndex GETs and parses one index file; a 404 is errNotFound.
-func (a *artifactorySource) cargoIndex(ctx context.Context, rawURL string) ([]cargoIndexLine, error) {
+func (s *sourceHTTP) cargoIndex(ctx context.Context, rawURL string) ([]cargoIndexLine, error) {
 	var lines []cargoIndexLine
 
-	err := a.http.retry.do(ctx, "GET "+redactURL(rawURL), func(int) error {
-		body, err := a.http.open(ctx, rawURL)
+	err := s.retry.do(ctx, "GET "+redactURL(rawURL), func(int) error {
+		body, err := s.open(ctx, rawURL)
 		if err != nil {
 			var se *httpStatusError
 			if errors.As(err, &se) && se.status == http.StatusNotFound {
