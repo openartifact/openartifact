@@ -107,7 +107,13 @@ func TestBundleSealSignerAuthorization(t *testing.T) {
 		{"grant by fingerprint, key by id", []string{"KEYFPR=ci"}, false, "KEYID", http.StatusOK},
 		{"grant by id, key by lower-case fingerprint", []string{"KEYID=ci"}, false, "lower:KEYFPR", http.StatusOK},
 		{"grant is not enough for the config key", []string{"KEYID=ci"}, false, "config", http.StatusForbidden},
-		{"grant is not enough for an unknown key", []string{"KEYID=ci"}, false, "00000000-0000-4000-8000-00000000ffff", http.StatusForbidden},
+		{
+			"grant is not enough for an unknown key",
+			[]string{"KEYID=ci"},
+			false,
+			"00000000-0000-4000-8000-00000000ffff",
+			http.StatusForbidden,
+		},
 		{"administrator signs with any stored key", nil, true, "KEYID", http.StatusOK},
 		{"administrator may not use the config key", nil, true, "config", http.StatusForbidden},
 		{"administrator may not use the config key by fingerprint", nil, true, "CONFIGFPR", http.StatusForbidden},
@@ -155,7 +161,12 @@ func TestBundleItemsMustBeStoredInTheSourceRepository(t *testing.T) {
 		format string
 		want   int
 	}{
-		{"stored under that path", func(r, s, p string) bool { return r == authzSrcID && s == sha && p == "x.bin" }, "", http.StatusCreated},
+		{
+			"stored under that path",
+			func(r, s, p string) bool { return r == authzSrcID && s == sha && p == "x.bin" },
+			"",
+			http.StatusCreated,
+		},
 		{"digest stored under another path", func(_, _, p string) bool { return p != "x.bin" }, "", http.StatusBadRequest},
 		{"digest not stored in the repository", func(string, string, string) bool { return false }, "", http.StatusBadRequest},
 		{"format of another kind", nil, "npm", http.StatusBadRequest},
@@ -202,8 +213,18 @@ func TestBundleOwnerIsDecidedByUserID(t *testing.T) {
 	id := "ci-new-id"
 	reused.p.UserID = &id
 
-	expectStatus(t, "add by a user with the same name", reused.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", authzItemBody(authzSrcID)), http.StatusForbidden)
-	expectStatus(t, "seal by a user with the same name", reused.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/seal", ""), http.StatusForbidden)
+	expectStatus(
+		t,
+		"add by a user with the same name",
+		reused.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/items", authzItemBody(authzSrcID)),
+		http.StatusForbidden,
+	)
+	expectStatus(
+		t,
+		"seal by a user with the same name",
+		reused.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/seal", ""),
+		http.StatusForbidden,
+	)
 	expectStatus(t, "seal by the creator", original.do(t, h, http.MethodPost, "/api/v1/bundles/b/1/seal", ""), http.StatusOK)
 }
 

@@ -1055,7 +1055,13 @@ func TestNPMPublishUniqueViolation(t *testing.T) {
 			1,
 		},
 		{"package already exists", nil, fmt.Errorf("insert package: %w", database.ErrDuplicate), http.StatusConflict, 0},
-		{"error text alone is not a violation", errors.New("package already exists (23505, unique)"), nil, http.StatusInternalServerError, 1},
+		{
+			"error text alone is not a violation",
+			errors.New("package already exists (23505, unique)"),
+			nil,
+			http.StatusInternalServerError,
+			1,
+		},
 		{"other database failure", errors.New("connection reset"), nil, http.StatusInternalServerError, 1},
 		{"other package failure", nil, errors.New("connection reset"), http.StatusInternalServerError, 0},
 	}

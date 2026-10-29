@@ -257,7 +257,12 @@ func TestTryRedirect_ContentTypeIsAllowlisted(t *testing.T) {
 		{"archive kept", "application/zip", "application/zip", "attachment; filename=f.bin"},
 		{"parameters dropped", "application/gzip; charset=binary", "application/gzip", "attachment; filename=f.bin"},
 		{"case folded", "Application/Java-Archive", "application/java-archive", "attachment; filename=f.bin"},
-		{"vendor package type kept", "application/vnd.debian.binary-package", "application/vnd.debian.binary-package", "attachment; filename=f.bin"},
+		{
+			"vendor package type kept",
+			"application/vnd.debian.binary-package",
+			"application/vnd.debian.binary-package",
+			"attachment; filename=f.bin",
+		},
 		{"json kept", "application/json", "application/json", "attachment; filename=f.bin"},
 		{"html", "text/html", "application/octet-stream", "attachment; filename=f.bin"},
 		{"html with charset", "text/html; charset=utf-8", "application/octet-stream", "attachment; filename=f.bin"},

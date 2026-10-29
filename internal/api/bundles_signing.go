@@ -185,7 +185,11 @@ func (h *BundlesHandler) resolveSigner(
 
 	switch {
 	case key == nil:
-		return nil, &apiFailure{http.StatusForbidden, "forbidden", "the package-signing key of the server configuration cannot sign bundles"}
+		return nil, &apiFailure{
+			http.StatusForbidden,
+			"forbidden",
+			"the package-signing key of the server configuration cannot sign bundles",
+		}
 	case !access.admin && !h.mayUseSigner(p.Username, key):
 		return nil, signerForbidden()
 	}

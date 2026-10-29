@@ -690,7 +690,12 @@ func TestHandlerLogin_PerUsernameFailureLimit(t *testing.T) {
 	// let anyone lock the owner out); an address that has not logged in as it
 	// before gets three tries a minute.
 	for i := range 3 {
-		if rw := loginFrom(router, fmt.Sprintf("198.51.200.%d:5000", i+1), "bruteforced", "wrong-guess"); rw.Code != http.StatusUnauthorized {
+		if rw := loginFrom(
+			router,
+			fmt.Sprintf("198.51.200.%d:5000", i+1),
+			"bruteforced",
+			"wrong-guess",
+		); rw.Code != http.StatusUnauthorized {
 			t.Fatalf("throttled try %d: expected 401, got %d", i+1, rw.Code)
 		}
 	}

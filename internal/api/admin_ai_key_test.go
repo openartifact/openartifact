@@ -129,7 +129,12 @@ func TestAdminAITestUsesStoredKeyOnlyForStoredEndpoint(t *testing.T) {
 			r := chi.NewRouter()
 			NewAdminAIHandler(db, log, auth.NewEvaluator(db, log, false)).Register(r)
 
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/admin/ai/test", strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPost,
+				"/api/v1/admin/ai/test",
+				strings.NewReader(tc.body),
+			)
 			req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
 
 			rw := httptest.NewRecorder()
@@ -196,7 +201,12 @@ func TestAdminAIPutKeepsStoredKeyOnlyForStoredEndpoint(t *testing.T) {
 			r := chi.NewRouter()
 			NewAdminAIHandler(db, log, auth.NewEvaluator(db, log, false)).Register(r)
 
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/admin/ai/config", strings.NewReader(tc.body))
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPut,
+				"/api/v1/admin/ai/config",
+				strings.NewReader(tc.body),
+			)
 			req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
 
 			rw := httptest.NewRecorder()

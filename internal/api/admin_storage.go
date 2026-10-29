@@ -846,7 +846,11 @@ func (h *AdminStorageHandler) testAzureBackend(ctx context.Context, name string,
 	})
 	if err != nil {
 		h.log.Warnw("storage test: azure client init failed", "backend", name, "error", err)
-		return storageTestResult{false, "invalid_config", storageInitMessage(err, azureInitMessages, "could not initialise the Azure client")}
+		return storageTestResult{
+			false,
+			"invalid_config",
+			storageInitMessage(err, azureInitMessages, "could not initialise the Azure client"),
+		}
 	}
 
 	return h.healthCheckStore(ctx, name, "azure", store)

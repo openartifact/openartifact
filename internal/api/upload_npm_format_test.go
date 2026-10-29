@@ -37,7 +37,14 @@ func TestNPMHandlersRejectOtherFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newNPMEnv(t)
-			demo := e.db.addPackage(npmTestRepoID, "demo", time.Hour, map[string]string{"latest": "1.0.0", "stable": "1.0.0"}, "1.0.0", "2.0.0")
+			demo := e.db.addPackage(
+				npmTestRepoID,
+				"demo",
+				time.Hour,
+				map[string]string{"latest": "1.0.0", "stable": "1.0.0"},
+				"1.0.0",
+				"2.0.0",
+			)
 
 			e.db.Repo.Format = "pypi"
 
