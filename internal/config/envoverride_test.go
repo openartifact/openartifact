@@ -56,7 +56,11 @@ func TestLoadBlankScalarEnvIsUnset(t *testing.T) {
 
 func TestEmptyListEnvClearsYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "c.yaml")
-	if err := os.WriteFile(path, []byte("server:\n  corsOrigins: [\"https://a\"]\n  trustedProxies: [\"10.0.0.0/8\"]\n"), 0o600); err != nil {
+	if err := os.WriteFile(
+		path,
+		[]byte("server:\n  corsOrigins: [\"https://a\"]\n  trustedProxies: [\"10.0.0.0/8\"]\n"),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 

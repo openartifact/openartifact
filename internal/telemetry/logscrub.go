@@ -141,12 +141,17 @@ func scrubField(f zapcore.Field) ([]zapcore.Field, bool) {
 // stringerValue calls String on v, as zap does, without letting a panicking
 // implementation (a nil pointer receiver) take the caller down; such a value
 // is left to zap's own handling.
-func stringerValue(v any) (s string, ok bool) {
+func stringerValue(v any) (string, bool) {
 	st, isStringer := v.(fmt.Stringer)
 	if !isStringer {
 		return "", false
 	}
 
+	return safeString(st)
+}
+
+// safeString calls st.String, reporting false when it panics.
+func safeString(st fmt.Stringer) (s string, ok bool) { //nolint:nonamedreturns // recover must overwrite the results
 	defer func() {
 		if recover() != nil {
 			s, ok = "", false

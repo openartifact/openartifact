@@ -38,8 +38,8 @@ func runHealthcheck(configFile string) error {
 
 // healthTarget picks the URL scheme and host:port of the self-probe: https when
 // TLS is enabled, and server.host when it is a concrete address, else loopback.
-func healthTarget(s config.ServerConfig) (scheme, addr string) {
-	scheme = "http"
+func healthTarget(s config.ServerConfig) (string, string) {
+	scheme := "http"
 	if s.TLSEnabled {
 		scheme = "https"
 	}
@@ -80,8 +80,11 @@ func probeHealth(scheme, addr string, timeout time.Duration) error {
 	client := http.DefaultClient
 
 	if host, _, splitErr := net.SplitHostPort(addr); scheme == "https" && splitErr == nil && isLoopbackHost(host) {
-		tr := http.DefaultTransport.(*http.Transport).Clone()                                    //nolint:forcetypeassert // stdlib default is *http.Transport
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12} //nolint:gosec // loopback self-probe, see above
+		tr := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib default is *http.Transport
+		tr.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // loopback self-probe, see above
+			MinVersion:         tls.VersionTLS12,
+		}
 		client = &http.Client{Transport: tr}
 
 		defer tr.CloseIdleConnections()

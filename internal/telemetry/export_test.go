@@ -5,6 +5,8 @@
 package telemetry
 
 // Sampler and HasCredentials expose the internals to the external test package.
+//
+//nolint:gochecknoglobals // test-only export shim
 var (
 	Sampler        = sampler
 	HasCredentials = hasCredentials

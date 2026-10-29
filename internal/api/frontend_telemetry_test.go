@@ -194,7 +194,15 @@ func TestFrontendTelemetryRelayMatrix(t *testing.T) {
 			"",
 			false,
 		},
-		{"feature off", telemetry.DefaultConfig(), sessionPrincipal("user-1"), relayRequest("logs", otlpProtobuf, logsBody), 404, "", false},
+		{
+			"feature off",
+			telemetry.DefaultConfig(),
+			sessionPrincipal("user-1"),
+			relayRequest("logs", otlpProtobuf, logsBody),
+			404,
+			"",
+			false,
+		},
 		{
 			"collector down",
 			frontendConfig(downURL),

@@ -37,9 +37,13 @@ import (
 
 // Sentinel errors for OCI Blob Store.
 var (
-	ErrOCIEndpointRequired      = errors.New("oci: Endpoint (registry URL) is required")
-	ErrOCIInsecureEndpoint      = errors.New("oci: Endpoint is plain http://; set ociInsecure (STORAGE_OCI_INSECURE) to allow it")
-	ErrOCIStagingPathRequired   = errors.New("oci: storage.stagingPath (STORAGE_STAGING_PATH) must be set to a persistent directory when uploads are relayed through the server")
+	ErrOCIEndpointRequired = errors.New("oci: Endpoint (registry URL) is required")
+	ErrOCIInsecureEndpoint = errors.New(
+		"oci: Endpoint is plain http://; set ociInsecure (STORAGE_OCI_INSECURE) to allow it",
+	)
+	ErrOCIStagingPathRequired = errors.New(
+		"oci: storage.stagingPath (STORAGE_STAGING_PATH) must be set to a persistent directory when uploads are relayed through the server",
+	)
 	ErrOCIBucketRequired        = errors.New("oci: Bucket (repository name) is required")
 	ErrOCIPutRequiresSHA256     = errors.New("oci: Put requires \"sha256\" in metadata")
 	ErrOCIMissingLocationHeader = errors.New("oci: initiate upload: missing Location header")

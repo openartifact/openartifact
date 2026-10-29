@@ -202,7 +202,7 @@ func shutdownWith[P interface{ Shutdown(context.Context) error }](p P, uninstall
 	}
 }
 
-// sampler is the trace sampler for sample ratio ratio (see inboundSampler).
+// sampler is the trace sampler for the sample ratio (see inboundSampler).
 func sampler(ratio float64) sdktrace.Sampler { return newInboundSampler(ratio) }
 
 func newResource(ctx context.Context, o OTLPConfig, b Build) (*resource.Resource, error) {

@@ -24,7 +24,7 @@ func TestStreamingHTTPClientIsTraced(t *testing.T) {
 	var traceparent string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		traceparent = r.Header.Get("traceparent")
+		traceparent = r.Header.Get("Traceparent")
 	}))
 	t.Cleanup(srv.Close)
 
@@ -50,7 +50,7 @@ func TestStreamingHTTPClientIsTraced(t *testing.T) {
 	}
 
 	for _, kv := range ended[0].Attributes() {
-		if kv.Value.Emit() == "/blob" || kv.Value.Emit() == "sig=secret" {
+		if kv.Value.String() == "/blob" || kv.Value.String() == "sig=secret" {
 			t.Errorf("span attribute %s carries the path or query", kv.Key)
 		}
 	}

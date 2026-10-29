@@ -89,7 +89,9 @@ func spoolVerified(data io.Reader, want, dir, pattern string) (*os.File, int64, 
 const staleSpoolAge = time.Hour
 
 // spoolPatterns match the spool files of the S3, Azure and OCI backends.
-var spoolPatterns = []string{"s3-put-*.tmp", "azure-put-*.tmp", "oci-put-*.tmp"}
+func spoolPatterns() []string {
+	return []string{"s3-put-*.tmp", "azure-put-*.tmp", "oci-put-*.tmp"}
+}
 
 // prepareSpoolDir creates the configured spool directory and removes the
 // spool files a crashed Put left in it. An empty dir means os.TempDir and is
@@ -112,7 +114,7 @@ func prepareSpoolDir(dir string) (string, error) {
 func sweepSpool(dir string, minAge time.Duration) {
 	cutoff := time.Now().Add(-minAge)
 
-	for _, pat := range spoolPatterns {
+	for _, pat := range spoolPatterns() {
 		matches, err := filepath.Glob(filepath.Join(dir, pat))
 		if err != nil {
 			continue

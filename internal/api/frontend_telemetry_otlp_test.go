@@ -131,7 +131,10 @@ func TestSanitizeOTLPTraces(t *testing.T) {
 
 	// The resource claims to be the server and carries extra attributes: it is
 	// replaced by the web UI's identity.
-	if res := attrMap(rs.GetResource().GetAttributes()); len(res) != 2 || res["service.name"] != frontendServiceName || res["service.version"] != "1.2.3" {
+	if res := attrMap(
+		rs.GetResource().GetAttributes(),
+	); len(res) != 2 || res["service.name"] != frontendServiceName ||
+		res["service.version"] != "1.2.3" {
 		t.Errorf("resource = %v, want service.name %q and service.version only", res, frontendServiceName)
 	}
 
@@ -196,7 +199,9 @@ func TestSanitizeOTLPRefusals(t *testing.T) {
 func TestSanitizeOTLPLogValues(t *testing.T) {
 	deep := &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "leaf"}}
 	for range relayMaxDepth + 2 {
-		deep = &commonpb.AnyValue{Value: &commonpb.AnyValue_ArrayValue{ArrayValue: &commonpb.ArrayValue{Values: []*commonpb.AnyValue{deep}}}}
+		deep = &commonpb.AnyValue{
+			Value: &commonpb.AnyValue_ArrayValue{ArrayValue: &commonpb.ArrayValue{Values: []*commonpb.AnyValue{deep}}},
+		}
 	}
 
 	rec := newLogRecord()

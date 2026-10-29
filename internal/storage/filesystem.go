@@ -78,6 +78,41 @@ func NewFilesystemStore(basePath string) (*FilesystemStore, error) {
 	}, nil
 }
 
+// encodeBlobMeta stamps metadata with the verified size and digest and returns
+// its sidecar encoding; nil metadata yields no sidecar.
+func encodeBlobMeta(metadata map[string]string, size int64, sha string) ([]byte, error) {
+	if metadata == nil {
+		return nil, nil
+	}
+
+	metadata["_size"] = strconv.FormatInt(size, 10)
+	metadata["_sha256"] = sha
+
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode blob metadata: %w", err)
+	}
+
+	return data, nil
+}
+
+// restoreBlobMeta rewrites a missing sidecar of an already stored blob.
+func restoreBlobMeta(dir, metaPath string, metaData []byte) error {
+	if metaData == nil {
+		return nil
+	}
+
+	if _, err := os.Stat(metaPath); err == nil {
+		return nil
+	}
+
+	if err := writeFileAtomic(dir, metaPath, metaData); err != nil {
+		return fmt.Errorf("failed to write blob metadata: %w", err)
+	}
+
+	return nil
+}
+
 // Put stores a blob and returns its identifier.
 // The blob ID is the computed SHA-256 of the content; if metadata contains a
 // "sha256" key it must equal it, else ErrDigestMismatch is returned and nothing is stored.
@@ -139,26 +174,17 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		return "", fmt.Errorf("failed to create blob directory: %w", err)
 	}
 
-	if metadata != nil {
-		metadata["_size"] = strconv.FormatInt(written, 10)
-		metadata["_sha256"] = computedSHA256
-	}
-
 	// The sidecar is written before the blob becomes visible: a crash between
 	// the two leaves an orphan sidecar (harmless, List skips it), never a blob
 	// without metadata. A dedupe hit also restores a sidecar that is missing.
 	metaPath := blobPath + ".meta"
 
-	var metaData []byte
+	metaData, err := encodeBlobMeta(metadata, written, computedSHA256)
+	if err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 
-	if metadata != nil {
-		metaData, err = json.Marshal(metadata)
-		if err != nil {
-			_ = tmpFile.Close()
-			_ = os.Remove(tmpPath)
-
-			return "", fmt.Errorf("failed to encode blob metadata: %w", err)
-		}
+		return "", err
 	}
 
 	// Verified content already present stays untouched: never replace an
@@ -167,12 +193,8 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 
-		if metaData != nil {
-			if _, mErr := os.Stat(metaPath); mErr != nil {
-				if err := writeFileAtomic(dir, metaPath, metaData); err != nil {
-					return "", fmt.Errorf("failed to write blob metadata: %w", err)
-				}
-			}
+		if err := restoreBlobMeta(dir, metaPath, metaData); err != nil {
+			return "", err
 		}
 
 		return id, nil

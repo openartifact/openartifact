@@ -28,7 +28,7 @@ func TestPeerClientIsTraced(t *testing.T) {
 	var traceparent string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		traceparent = r.Header.Get("traceparent")
+		traceparent = r.Header.Get("Traceparent")
 	}))
 	t.Cleanup(srv.Close)
 

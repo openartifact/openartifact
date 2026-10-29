@@ -27,13 +27,25 @@ const testTicket = "djF8cmVwby0xfHByb3ZpZGVyfGhhc2hpY29ycC9hd3N8NS4wLjB8bGludXhf
 func TestScrubText(t *testing.T) {
 	tests := []struct{ name, in, want string }{
 		{"short text untouched", "no such file", "no such file"},
-		{"userinfo and query", `Get "https://user:pw@registry.example.com/v1/x?token=abc&sig=1": EOF`, `Get "https://registry.example.com/v1/x": EOF`},
+		{
+			"userinfo and query",
+			`Get "https://user:pw@registry.example.com/v1/x?token=abc&sig=1": EOF`,
+			`Get "https://registry.example.com/v1/x": EOF`,
+		},
 		{"fragment", "see https://example.com/a#frag.", "see https://example.com/a."},
-		{"ticket in url path", "fetch https://oa.example.com/terraform/dl/" + testTicket + "/p.zip failed", "fetch https://oa.example.com/terraform/dl/[redacted]/p.zip failed"},
+		{
+			"ticket in url path",
+			"fetch https://oa.example.com/terraform/dl/" + testTicket + "/p.zip failed",
+			"fetch https://oa.example.com/terraform/dl/[redacted]/p.zip failed",
+		},
 		{"bare ticket", "bad ticket " + testTicket, "bad ticket [redacted]"},
 		{"quoted path query", "GET /api/v1/x?access_token=abc: 500", "GET /api/v1/x?[redacted] 500"},
 		{"unparsable url", "dial http://[::1: bad", "dial [redacted]: bad"},
-		{"long host names stay", "lookup my-long-service-name.my-long-namespace-name.svc: no such host", "lookup my-long-service-name.my-long-namespace-name.svc: no such host"},
+		{
+			"long host names stay",
+			"lookup my-long-service-name.my-long-namespace-name.svc: no such host",
+			"lookup my-long-service-name.my-long-namespace-name.svc: no such host",
+		},
 	}
 
 	for _, tc := range tests {
@@ -138,7 +150,10 @@ func TestLogCoreScrubsExportedRecords(t *testing.T) {
 
 	log := zap.New(LogCore()).Sugar()
 
-	secretErr := fmt.Errorf("upstream: %w", &url.Error{Op: "Get", URL: "https://user:hunter2@up.example.com/p?X-Amz-Signature=sekrit", Err: errors.New("EOF")})
+	secretErr := fmt.Errorf(
+		"upstream: %w",
+		&url.Error{Op: "Get", URL: "https://user:hunter2@up.example.com/p?X-Amz-Signature=sekrit", Err: errors.New("EOF")},
+	)
 
 	log.With("upstream_url", "https://user:hunter2@up.example.com/p?sig=sekrit").
 		Errorw("proxy fetch failed https://user:hunter2@up.example.com/m?k=sekrit",
@@ -156,15 +171,17 @@ func TestLogCoreScrubsExportedRecords(t *testing.T) {
 	r := exp.records[0]
 	attrs := map[string]string{}
 	r.WalkAttributes(func(kv attribute.KeyValue) bool {
-		attrs[string(kv.Key)] = kv.Value.Emit()
+		attrs[string(kv.Key)] = kv.Value.String()
 
 		return true
 	})
 
-	all := r.Body().String()
+	parts := []string{r.Body().String()}
 	for _, v := range attrs {
-		all += "\n" + v
+		parts = append(parts, v)
 	}
+
+	all := strings.Join(parts, "\n")
 
 	for _, leak := range []string{"hunter2", "sekrit", "X-Amz-Signature", testTicket} {
 		if strings.Contains(all, leak) {

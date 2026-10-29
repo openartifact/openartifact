@@ -1278,8 +1278,8 @@ func (c *Config) validatePresign() error {
 // envProblems collects the invalid environment overrides of one Load. Only the
 // variable name is recorded, never the value, which may be a secret.
 var (
-	envMu       sync.Mutex
-	envProblems []string
+	envMu       sync.Mutex //nolint:gochecknoglobals // collector for applyEnvOverrides, whose signature docgen parses
+	envProblems []string   //nolint:gochecknoglobals // guarded by envMu
 )
 
 // badEnv records an unparseable env override; Load turns it into an error.

@@ -148,7 +148,7 @@ func TestGCSComposerIsTraced(t *testing.T) {
 	var traceparent string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceparent = r.Header.Get("traceparent")
+		traceparent = r.Header.Get("Traceparent")
 		w.Header().Set("ETag", gcsTestETag)
 		w.Header().Set(gcsGenerationHeader, gcsTestGeneration)
 	}))

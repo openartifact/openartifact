@@ -23,8 +23,10 @@ const sampledParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 // headers/cookies through the middleware, under a tracer provider that uses the
 // sampler Setup installs for ratio, and reports how many server spans were
 // recorded and whether the handler saw a sampled span.
-func serveSampled(t *testing.T, ratio float64, mutate func(*http.Request)) (recorded int, sampled bool) {
+func serveSampled(t *testing.T, ratio float64, mutate func(*http.Request)) (int, bool) {
 	t.Helper()
+
+	var sampled bool
 
 	rec := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(
@@ -38,7 +40,7 @@ func serveSampled(t *testing.T, ratio float64, mutate func(*http.Request)) (reco
 	}))
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
-	req.Header.Set("traceparent", sampledParent)
+	req.Header.Set("Traceparent", sampledParent)
 
 	if mutate != nil {
 		mutate(req)
