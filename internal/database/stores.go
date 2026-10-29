@@ -5,9 +5,18 @@
 package database
 
 // PostgresDB is the PostgreSQL database: the composition root that embeds one
-// store per domain (see stores.go). Consumers never depend on this type but on
-// the small interfaces they declare themselves; PostgresDB satisfies them
-// through the promoted store methods.
+// store per domain. Every store is a struct around the shared *core (pool,
+// sqlc queries, caches) and lives in its own file(s); the method sets are
+// promoted, so *PostgresDB satisfies whatever narrow interface a consumer
+// declares. Consumers never depend on this type but on the small interfaces
+// they declare themselves.
+//
+// Package storage is split per format on purpose, so a generic packages store
+// can replace the Deb/RPM/.../SBT stores one by one (see pkg_*.go): everything
+// that spans formats already goes through CatalogStore (cross-format listing,
+// catalog_branches.go, catalog_sql.go) and the blobRefSpecs table in
+// blob_refs.go, which lists every package table referencing a blob. A new
+// package table needs a row in both and in internal/recovery/tables.go.
 type PostgresDB struct {
 	*core
 	*BlobRefStore

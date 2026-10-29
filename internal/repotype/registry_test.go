@@ -216,8 +216,8 @@ var unions = map[string]map[string]string{
 	"../database/queries/security.sql":       {"docker_manifests": "docker images are scanned per tag, not per manifest row"},
 	"../database/queries/repo_usage.sql":     {"docker_manifests": "docker usage is accounted through its tags"},
 	"../database/catalog_branches.go":        nil,
-	"../database/postgres_quota.go":          {"docker_tags": "tags own no blob: the manifests carry the quota"},
-	"../database/postgres_tiering.go":        {"docker_tags": "tags own no blob: the manifests are tiered"},
+	"../database/quotas.go":                  {"docker_tags": "tags own no blob: the manifests carry the quota"},
+	"../database/tiering.go":                 {"docker_tags": "tags own no blob: the manifests are tiered"},
 	"../database/trash_kinds.go":             nil,
 	"../recovery/tables.go":                  nil,
 	"../backup/backup.go":                    {"rubygems_gems": "exported through ListRubyGems, not by table name"},
@@ -297,7 +297,7 @@ func TestSQLFormatLists(t *testing.T) {
 	}
 
 	// Groups that serve generated metadata.
-	check("../database/postgres_groupmeta.go", generated, 2)
+	check("../database/repo_groups.go", generated, 2)
 	// Hosted repositories whose generated metadata is GPG-signed.
 	check("../database/queries/gpg.sql", gpgGenerated, 1)
 }

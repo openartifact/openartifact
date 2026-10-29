@@ -308,10 +308,6 @@ type rowQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Package delta methods
-
-// Proxy/Group repository methods
-
 // PostgresTx implements the Transaction interface for PostgreSQL.
 type PostgresTx struct {
 	tx *sql.Tx
@@ -327,8 +323,7 @@ func (t *PostgresTx) Rollback() error {
 	return t.tx.Rollback()
 }
 
-// NuGet methods
-
+// ExecContext executes a query without returning rows.
 func (t *PostgresTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return t.tx.ExecContext(ctx, query, args...)
 }
@@ -342,8 +337,6 @@ func (t *PostgresTx) QueryContext(ctx context.Context, query string, args ...any
 func (t *PostgresTx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return t.tx.QueryRowContext(ctx, query, args...)
 }
-
-// Cargo methods
 
 // Helper functions for nullable types with pgx/v5.
 func strPtr(s string) *string {
@@ -361,8 +354,6 @@ func derefStr(s *string) string {
 
 	return *s
 }
-
-// RubyGems methods
 
 func vulnScanStatusFromJob(status string) string {
 	if status == "running" {
