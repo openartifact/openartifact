@@ -17,7 +17,14 @@ import (
 // apkMediaType is the media type of a stored .apk (concatenated gzip streams).
 const apkMediaType = "application/gzip"
 
-func apkPackageFromRow(row dbsqlc.GetApkPackageFileRow) *models.ApkPackage {
+// apkPackageRow lists the sqlc row types apkPackageFromRow converts; they share the columns of GetApkPackageFileRow.
+type apkPackageRow interface {
+	dbsqlc.GetApkPackageFileRow | dbsqlc.ListApkPackagesRow
+}
+
+func apkPackageFromRow[R apkPackageRow](in R) *models.ApkPackage {
+	row := dbsqlc.GetApkPackageFileRow(in)
+
 	return &models.ApkPackage{
 		ID:               row.ID,
 		RepositoryID:     row.RepositoryID,
@@ -83,15 +90,8 @@ func (p *PostgresDB) CreateApkPackage(ctx context.Context, pkg *models.ApkPackag
 		BlobID:           blobID,
 		CreatedAt:        createdAtOrNil(pkg.CreatedAt),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create apk package: %w", err)
-	}
 
-	pkg.ID = row.ID
-	pkg.CreatedAt = row.CreatedAt
-	pkg.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create apk package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 }
 
 // GetApkPackageFile returns the live .apk, or (nil, nil).
@@ -99,31 +99,16 @@ func (p *PostgresDB) GetApkPackageFile(ctx context.Context, repoID, branch, repo
 	row, err := p.q.GetApkPackageFile(ctx, dbsqlc.GetApkPackageFileParams{
 		RepositoryID: repoID, Branch: branch, Repo: repo, Arch: arch, Name: name, Version: version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get apk package: %w", err)
-	}
-
-	return apkPackageFromRow(row), nil
+	return mapRow(row, err, "get apk package", apkPackageFromRow)
 }
 
 // ListApkPackages returns every live package of the repository ordered by
 // branch, repo, arch, name and version.
 func (p *PostgresDB) ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error) {
 	rows, err := p.q.ListApkPackages(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list apk packages: %w", err)
-	}
 
-	pkgs := make([]*models.ApkPackage, 0, len(rows))
-	for _, row := range rows {
-		pkgs = append(pkgs, apkPackageFromRow(dbsqlc.GetApkPackageFileRow(row)))
-	}
-
-	return pkgs, nil
+	return mapRows(rows, err, "list apk packages", apkPackageFromRow)
 }
 
 // DeleteApkPackage removes one package row.

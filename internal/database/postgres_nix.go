@@ -18,7 +18,14 @@ import (
 // nixMediaType is the media type of a stored NAR file.
 const nixMediaType = "application/x-nix-nar"
 
-func nixPathFromRow(row dbsqlc.GetNixPathByHashRow) *models.NixPath {
+// nixPathRow lists the sqlc row types nixPathFromRow converts; they share the columns of GetNixPathByHashRow.
+type nixPathRow interface {
+	dbsqlc.GetNixPathByHashRow | dbsqlc.ListNixPathsRow | dbsqlc.GetNixPathByNarFileRow
+}
+
+func nixPathFromRow[R nixPathRow](in R) *models.NixPath {
+	row := dbsqlc.GetNixPathByHashRow(in)
+
 	return &models.NixPath{
 		ID:            row.ID,
 		RepositoryID:  row.RepositoryID,
@@ -79,29 +86,15 @@ func (p *PostgresDB) GetNixPendingNar(ctx context.Context, repoID, sha256 string
 // GetNixPathByNarFile returns a live path whose NAR file is narFile, or (nil, nil).
 func (p *PostgresDB) GetNixPathByNarFile(ctx context.Context, repoID, narFile string) (*models.NixPath, error) {
 	row, err := p.q.GetNixPathByNarFile(ctx, dbsqlc.GetNixPathByNarFileParams{RepositoryID: repoID, NarFile: narFile})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nix path by nar file: %w", err)
-	}
-
-	return nixPathFromRow(dbsqlc.GetNixPathByHashRow(row)), nil
+	return mapRow(row, err, "get nix path by nar file", nixPathFromRow)
 }
 
 // GetNixPathByHash returns the live path of the store hash, or (nil, nil).
 func (p *PostgresDB) GetNixPathByHash(ctx context.Context, repoID, storeHash string) (*models.NixPath, error) {
 	row, err := p.q.GetNixPathByHash(ctx, dbsqlc.GetNixPathByHashParams{RepositoryID: repoID, StoreHash: storeHash})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nix path: %w", err)
-	}
-
-	return nixPathFromRow(row), nil
+	return mapRow(row, err, "get nix path", nixPathFromRow)
 }
 
 // CreateNixPath stores the path and drops the staging row of its NAR file in
@@ -159,16 +152,8 @@ func (p *PostgresDB) CreateNixPath(ctx context.Context, np *models.NixPath) erro
 // ListNixPaths returns every live path of the repository ordered by store hash.
 func (p *PostgresDB) ListNixPaths(ctx context.Context, repoID string) ([]*models.NixPath, error) {
 	rows, err := p.q.ListNixPaths(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list nix paths: %w", err)
-	}
 
-	paths := make([]*models.NixPath, 0, len(rows))
-	for _, row := range rows {
-		paths = append(paths, nixPathFromRow(dbsqlc.GetNixPathByHashRow(row)))
-	}
-
-	return paths, nil
+	return mapRows(rows, err, "list nix paths", nixPathFromRow)
 }
 
 // DeleteNixPath removes one path row.

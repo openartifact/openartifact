@@ -259,24 +259,23 @@ func (p *PostgresDB) GetStoragePolicy(ctx context.Context, id string) (*models.S
 
 // CreateStoragePolicy inserts a policy (pol.ID must be set).
 func (p *PostgresDB) CreateStoragePolicy(ctx context.Context, pol *models.StoragePolicy) error {
-	return p.q.CreateStoragePolicy(ctx, dbsqlc.CreateStoragePolicyParams{
+	return p.q.CreateStoragePolicy(ctx, storagePolicyParams(pol))
+}
+
+// storagePolicyParams maps a policy to the insert params; the update query takes the same columns in the same order.
+func storagePolicyParams(pol *models.StoragePolicy) dbsqlc.CreateStoragePolicyParams {
+	return dbsqlc.CreateStoragePolicyParams{
 		ID: pol.ID, Name: pol.Name, Enabled: pol.Enabled, Position: int32(pol.Position), //nolint:gosec // validated by the API
 		TargetTierID: pol.TargetTierID, Formats: nonNilStrings(pol.Formats), FromTierID: nullableString(pol.FromTierID),
 		MinAgeSeconds: pol.MinAgeSeconds, MinIdleSeconds: pol.MinIdleSeconds,
 		MinSizeBytes: pol.MinSizeBytes, MaxSizeBytes: pol.MaxSizeBytes,
 		RepoGlob: nullableString(pol.RepoGlob), PathGlob: nullableString(pol.PathGlob),
-	})
+	}
 }
 
 // UpdateStoragePolicy overwrites every field of the policy.
 func (p *PostgresDB) UpdateStoragePolicy(ctx context.Context, pol *models.StoragePolicy) error {
-	return p.q.UpdateStoragePolicy(ctx, dbsqlc.UpdateStoragePolicyParams{
-		ID: pol.ID, Name: pol.Name, Enabled: pol.Enabled, Position: int32(pol.Position), //nolint:gosec // validated by the API
-		TargetTierID: pol.TargetTierID, Formats: nonNilStrings(pol.Formats), FromTierID: nullableString(pol.FromTierID),
-		MinAgeSeconds: pol.MinAgeSeconds, MinIdleSeconds: pol.MinIdleSeconds,
-		MinSizeBytes: pol.MinSizeBytes, MaxSizeBytes: pol.MaxSizeBytes,
-		RepoGlob: nullableString(pol.RepoGlob), PathGlob: nullableString(pol.PathGlob),
-	})
+	return p.q.UpdateStoragePolicy(ctx, dbsqlc.UpdateStoragePolicyParams(storagePolicyParams(pol)))
 }
 
 // DeleteStoragePolicy deletes a policy; it reports whether a row was removed.

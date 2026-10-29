@@ -231,20 +231,16 @@ func repoScanDest(r *models.Repository) []any {
 }
 
 func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name string) (*models.Repository, error) {
-	r := &models.Repository{}
+	return p.getRepositoryWhere(ctx, "name", "name = $1", name)
+}
 
-	err := p.db.QueryRowContext(ctx,
-		`SELECT `+repoColumns+` FROM repositories WHERE name = $1 AND deleted_at IS NULL`, name,
-	).Scan(repoScanDest(r)...)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
+// getRepositoryWhere returns the live repository matching the WHERE clause, or nil when there is none.
+func (p *PostgresDB) getRepositoryWhere(ctx context.Context, what, where string, arg any) (*models.Repository, error) {
+	r, err := scanRepository(
+		p.db.QueryRowContext(ctx, `SELECT `+repoColumns+` FROM repositories WHERE `+where+` AND deleted_at IS NULL`, arg),
+	)
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get repository by name: %w", err)
-	}
-
-	return r, nil
+	return orNotFound(r, err, "get repository by "+what)
 }
 
 // ListPublicRepositoryNames returns the names of all repositories flagged public.
@@ -254,42 +250,12 @@ func (p *PostgresDB) ListPublicRepositoryNames(ctx context.Context) ([]string, e
 		return nil, fmt.Errorf("failed to list public repositories: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var names []string
-
-	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
-			return nil, fmt.Errorf("failed to scan public repository: %w", err)
-		}
-
-		names = append(names, n)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate public repositories: %w", err)
-	}
-
-	return names, nil
+	return collectRows(rows, "failed to scan public repository", "failed to iterate public repositories", scanString)
 }
 
 // GetRepositoryByID retrieves a repository by its primary key.
 func (p *PostgresDB) GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error) {
-	r := &models.Repository{}
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT `+repoColumns+` FROM repositories WHERE id = $1 AND deleted_at IS NULL`, id,
-	).Scan(repoScanDest(r)...)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get repository by id: %w", err)
-	}
-
-	return r, nil
+	return p.getRepositoryWhere(ctx, "id", "id = $1", id)
 }
 
 func (p *PostgresDB) ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error) {
@@ -600,15 +566,8 @@ func (p *PostgresDB) CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) er
 		RepositoryID: repo.RepositoryID,
 		BaseArch:     repo.BaseArch,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create rpm repo: %w", err)
-	}
 
-	repo.ID = row.ID
-	repo.CreatedAt = row.CreatedAt
-	repo.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create rpm repo", &repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 
 // MarkRepoStale marks repository metadata as stale for regeneration.
@@ -717,175 +676,109 @@ func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component
 	return err
 }
 
-// scanRpmComponent runs a query against rpm_packages (LEFT JOIN blobs for
-// sha256) and scans a single result into a models.Component.
-func (p *PostgresDB) scanRpmComponent(ctx context.Context, query string, args ...any) (*models.Component, error) {
-	c := &models.Component{Format: "rpm"}
-	err := p.db.QueryRowContext(ctx, query, args...).Scan(
+// rpmComponentDest lists the scan targets of an rpmComponentColumns row.
+func rpmComponentDest(c *models.Component) []any {
+	return []any{
 		&c.ID, &c.RepositoryID, &c.SHA256, &c.Name, &c.Version,
 		&c.Release, &c.Epoch, &c.Arch, &c.Summary, &c.Description, &c.License,
 		&c.URL, &c.Vendor, &c.Group, &c.Packager, &c.SourceRPM, &c.BuildHost, &c.BuildTime,
 		&c.PackageSize, &c.InstalledSize, &c.ArchiveSize, &c.Filename, &c.CreatedAt, &c.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
+	}
+}
+
+// scanRpmComponent scans one rpmComponentColumns row into a models.Component.
+func scanRpmComponent(row rowScanner) (*models.Component, error) {
+	c := &models.Component{Format: "rpm"}
+	if err := row.Scan(rpmComponentDest(c)...); err != nil {
+		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
 
 	return c, nil
 }
 
-// scanDebComponent runs a query against deb_packages (LEFT JOIN blobs for
-// sha256/size) and scans a single result into a models.Component. deb_packages
-// has no rpm-only columns (release, epoch, source_rpm, ...); those fields are
-// left at their zero value.
-func (p *PostgresDB) scanDebComponent(ctx context.Context, query string, args ...any) (*models.Component, error) {
+// scanDebComponent scans one debComponentColumns row into a models.Component.
+// deb_packages has no rpm-only columns (release, epoch, source_rpm, ...); those
+// fields are left at their zero value.
+func scanDebComponent(row rowScanner) (*models.Component, error) {
 	c := &models.Component{Format: "deb"}
-	err := p.db.QueryRowContext(ctx, query, args...).Scan(
+	if err := row.Scan(
 		&c.ID, &c.RepositoryID, &c.SHA256, &c.Name, &c.Version,
 		&c.Arch, &c.Summary, &c.Description, &c.License,
 		&c.PackageSize, &c.InstalledSize, &c.Filename, &c.CreatedAt, &c.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
+	); err != nil {
+		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
 
 	return c, nil
 }
 
-const rpmComponentColumns = `rp.id, rp.repository_id, COALESCE(b.sha256,''), rp.name, rp.version,
-		       COALESCE(rp.release,''), rp.epoch, COALESCE(rp.arch,''),
-		       COALESCE(rp.summary,''), COALESCE(rp.description,''), COALESCE(rp.license,''),
-		       COALESCE(rp.url,''), COALESCE(rp.vendor,''), COALESCE(rp.group_name,''),
-		       COALESCE(rp.packager,''), COALESCE(rp.source_rpm,''), COALESCE(rp.build_host,''),
-		       COALESCE(EXTRACT(EPOCH FROM rp.build_time)::bigint,0),
-		       COALESCE(rp.package_size,0), COALESCE(rp.installed_size,0), COALESCE(rp.archive_size,0),
-		       COALESCE(rp.filename,''), rp.created_at, rp.updated_at
-		FROM rpm_packages rp LEFT JOIN blobs b ON b.id = rp.blob_id`
+// rpmComponentColumns selects an RPM package (alias pk, LEFT JOIN blobs for sha256).
+const rpmComponentColumns = `pk.id, pk.repository_id, COALESCE(b.sha256,''), pk.name, pk.version,
+		       COALESCE(pk.release,''), pk.epoch, COALESCE(pk.arch,''),
+		       COALESCE(pk.summary,''), COALESCE(pk.description,''), COALESCE(pk.license,''),
+		       COALESCE(pk.url,''), COALESCE(pk.vendor,''), COALESCE(pk.group_name,''),
+		       COALESCE(pk.packager,''), COALESCE(pk.source_rpm,''), COALESCE(pk.build_host,''),
+		       COALESCE(EXTRACT(EPOCH FROM pk.build_time)::bigint,0),
+		       COALESCE(pk.package_size,0), COALESCE(pk.installed_size,0), COALESCE(pk.archive_size,0),
+		       COALESCE(pk.filename,''), pk.created_at, pk.updated_at
+		FROM rpm_packages pk LEFT JOIN blobs b ON b.id = pk.blob_id`
 
-const debComponentColumns = `dp.id, dp.repository_id, COALESCE(b.sha256,''), dp.name, dp.version,
-		       COALESCE(dp.arch,''), COALESCE(dp.summary,''), COALESCE(dp.description,''),
-		       COALESCE(dp.license,''), COALESCE(b.size_bytes,0), COALESCE(dp.installed_size,0),
-		       COALESCE(dp.filename,''), dp.created_at, dp.updated_at
-		FROM deb_packages dp LEFT JOIN blobs b ON b.id = dp.blob_id`
+// debComponentColumns selects a DEB package (alias pk, LEFT JOIN blobs for sha256/size).
+const debComponentColumns = `pk.id, pk.repository_id, COALESCE(b.sha256,''), pk.name, pk.version,
+		       COALESCE(pk.arch,''), COALESCE(pk.summary,''), COALESCE(pk.description,''),
+		       COALESCE(pk.license,''), COALESCE(b.size_bytes,0), COALESCE(pk.installed_size,0),
+		       COALESCE(pk.filename,''), pk.created_at, pk.updated_at
+		FROM deb_packages pk LEFT JOIN blobs b ON b.id = pk.blob_id`
 
-// GetComponentByID looks up a package by its primary key, trying rpm_packages
-// then deb_packages (row IDs are shared across the rpm_packages and
-// deb_packages tables).
-func (p *PostgresDB) GetComponentByID(ctx context.Context, id string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.id = $1 AND rp.deleted_at IS NULL", id)
+// getComponentWhere finds the first live package matching where (written
+// against the alias pk), trying rpm_packages then deb_packages (row IDs are
+// shared across both tables). what names the lookup in the error message.
+func (p *PostgresDB) getComponentWhere(ctx context.Context, what, where string, args ...any) (*models.Component, error) {
+	const live = " AND pk.deleted_at IS NULL LIMIT 1"
+
+	c, err := scanRpmComponent(p.db.QueryRowContext(ctx, "SELECT "+rpmComponentColumns+" WHERE "+where+live, args...))
 	if err == nil {
 		return c, nil
 	}
 
 	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get component by id: %w", err)
+		return nil, fmt.Errorf("failed to get component by %s: %w", what, err)
 	}
 
-	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.id = $1 AND dp.deleted_at IS NULL", id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
+	c, err = scanDebComponent(p.db.QueryRowContext(ctx, "SELECT "+debComponentColumns+" WHERE "+where+live, args...))
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get component by id: %w", err)
-	}
+	return orNotFound(c, err, "get component by "+what)
+}
 
-	return c, nil
+// GetComponentByID looks up a package by its primary key, trying rpm_packages
+// then deb_packages.
+func (p *PostgresDB) GetComponentByID(ctx context.Context, id string) (*models.Component, error) {
+	return p.getComponentWhere(ctx, "id", "pk.id = $1", id)
 }
 
 func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(
-		ctx,
-		"SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.filename = $2 AND rp.deleted_at IS NULL",
-		repoID,
-		filename,
-	)
-	if err == nil {
-		return c, nil
-	}
-
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get component by filename: %w", err)
-	}
-
-	c, err = p.scanDebComponent(
-		ctx,
-		"SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND dp.filename = $2 AND dp.deleted_at IS NULL",
-		repoID,
-		filename,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get component by filename: %w", err)
-	}
-
-	return c, nil
+	return p.getComponentWhere(ctx, "filename", "pk.repository_id = $1 AND pk.filename = $2", repoID, filename)
 }
 
 // GetComponentBySHA256 finds a live deb or rpm package in a repository by the
 // sha256 of its blob using a single-row lookup per table.
 func (p *PostgresDB) GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(
-		ctx,
-		"SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND b.sha256 = $2 AND rp.deleted_at IS NULL LIMIT 1",
-		repoID,
-		sha256,
-	)
-	if err == nil {
-		return c, nil
-	}
-
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get component by sha256: %w", err)
-	}
-
-	c, err = p.scanDebComponent(
-		ctx,
-		"SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND b.sha256 = $2 AND dp.deleted_at IS NULL LIMIT 1",
-		repoID,
-		sha256,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get component by sha256: %w", err)
-	}
-
-	return c, nil
+	return p.getComponentWhere(ctx, "sha256", "pk.repository_id = $1 AND b.sha256 = $2", repoID, sha256)
 }
 
 // GetComponentsByRepo lists RPM packages for a repository.
 func (p *PostgresDB) GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error) {
-	rows, err := p.db.QueryContext(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.deleted_at IS NULL", repoID)
+	rows, err := p.db.QueryContext(ctx, "SELECT "+rpmComponentColumns+" WHERE pk.repository_id = $1 AND pk.deleted_at IS NULL", repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query components: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var components []models.Component
+	return collectRows(rows, "failed to scan component", "failed to iterate components",
+		func(row rowScanner) (models.Component, error) {
+			c := models.Component{Format: "rpm"}
 
-	for rows.Next() {
-		c := models.Component{Format: "rpm"}
-		if err := rows.Scan(&c.ID, &c.RepositoryID, &c.SHA256, &c.Name, &c.Version, &c.Release, &c.Epoch, &c.Arch,
-			&c.Summary, &c.Description, &c.License, &c.URL, &c.Vendor, &c.Group, &c.Packager, &c.SourceRPM,
-			&c.BuildHost, &c.BuildTime, &c.PackageSize, &c.InstalledSize, &c.ArchiveSize, &c.Filename,
-			&c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan component: %w", err)
-		}
-
-		components = append(components, c)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate components: %w", err)
-	}
-
-	return components, nil
+			return c, row.Scan(rpmComponentDest(&c)...) //nolint:wrapcheck // collectRows wraps
+		})
 }
 
 func (p *PostgresDB) DeleteComponent(ctx context.Context, componentID string) error {
@@ -1101,15 +994,8 @@ func (p *PostgresDB) CreateDebianDistribution(ctx context.Context, dist *models.
 		Codename:     strPtr(dist.Codename),
 		Description:  strPtr(dist.Description),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create debian distribution: %w", err)
-	}
 
-	dist.ID = row.ID
-	dist.CreatedAt = row.CreatedAt
-	dist.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create debian distribution", &dist.ID, &dist.CreatedAt, &dist.UpdatedAt)
 }
 
 func (p *PostgresDB) GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error) {
@@ -1140,15 +1026,8 @@ func (p *PostgresDB) CreateDebianComponent(ctx context.Context, comp *models.Deb
 		Name:           comp.Name,
 		Description:    strPtr(comp.Description),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create debian component: %w", err)
-	}
 
-	comp.ID = row.ID
-	comp.CreatedAt = row.CreatedAt
-	comp.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create debian component", &comp.ID, &comp.CreatedAt, &comp.UpdatedAt)
 }
 
 func (p *PostgresDB) GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error) {
@@ -1177,15 +1056,8 @@ func (p *PostgresDB) CreateDebianArchitecture(ctx context.Context, arch *models.
 		DistributionID: arch.DistributionID,
 		Name:           arch.Name,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create debian architecture: %w", err)
-	}
 
-	arch.ID = row.ID
-	arch.CreatedAt = row.CreatedAt
-	arch.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create debian architecture", &arch.ID, &arch.CreatedAt, &arch.UpdatedAt)
 }
 
 func (p *PostgresDB) GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error) {
@@ -1213,13 +1085,17 @@ func (p *PostgresDB) GetDebianPackageByFilename(ctx context.Context, repoID stri
 		RepositoryID: repoID,
 		Filename:     strPtr(filename),
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get debian package by filename: %w", err)
-	}
+	return mapRow(row, err, "get debian package by filename", debianComponentFromRow)
+}
+
+// debianComponentRow lists the sqlc row types debianComponentFromRow converts.
+type debianComponentRow interface {
+	dbsqlc.GetDebianPackageByFilenameRow | dbsqlc.GetDebianPackagesByDistCompRow
+}
+
+func debianComponentFromRow[R debianComponentRow](in R) *models.Component {
+	row := dbsqlc.GetDebianPackageByFilenameRow(in)
 
 	return &models.Component{
 		ID:            row.ID,
@@ -1237,7 +1113,7 @@ func (p *PostgresDB) GetDebianPackageByFilename(ctx context.Context, repoID stri
 		InstalledSize: row.InstalledSize,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
-	}, nil
+	}
 }
 
 func (p *PostgresDB) GetDebianPackagesByDistComp(
@@ -1253,32 +1129,10 @@ func (p *PostgresDB) GetDebianPackagesByDistComp(
 		Comp:         comp,
 		Arch:         arch,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query debian packages: %w", err)
-	}
 
-	components := make([]models.Component, 0, len(rows))
-	for _, row := range rows {
-		components = append(components, models.Component{
-			ID:            row.ID,
-			RepositoryID:  row.RepositoryID,
-			SHA256:        row.Sha256,
-			Format:        "deb",
-			Name:          row.Name,
-			Version:       row.Version,
-			Arch:          row.Arch,
-			Summary:       row.Summary,
-			Description:   row.Description,
-			License:       row.License,
-			Filename:      row.Filename,
-			PackageSize:   row.PackageSize,
-			InstalledSize: row.InstalledSize,
-			CreatedAt:     row.CreatedAt,
-			UpdatedAt:     row.UpdatedAt,
-		})
-	}
-
-	return components, nil
+	return mapRows(rows, err, "query debian packages", func(row dbsqlc.GetDebianPackagesByDistCompRow) models.Component {
+		return *debianComponentFromRow(row)
+	})
 }
 
 func (p *PostgresDB) CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error {
@@ -1311,15 +1165,19 @@ func (p *PostgresDB) GetMavenArtifactByPath(ctx context.Context, repoID, path st
 		RepositoryID: repoID,
 		RepoPath:     path,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get maven artifact by path: %w", err)
-	}
+	return getMavenArtifact(ctx, p, row, err, "maven artifact by path")
+}
 
-	art := &models.MavenArtifact{
+// mavenArtifactRow lists the sqlc row types mavenArtifactFromRow converts.
+type mavenArtifactRow interface {
+	dbsqlc.GetMavenArtifactByPathRow | dbsqlc.GetMavenArtifactsByGAVRow | dbsqlc.GetLatestSnapshotRow | dbsqlc.GetLatestSnapshotFileRow
+}
+
+func mavenArtifactFromRow[R mavenArtifactRow](in R) *models.MavenArtifact {
+	row := dbsqlc.GetMavenArtifactByPathRow(in)
+
+	return &models.MavenArtifact{
 		ID:                  row.ID,
 		RepositoryID:        row.RepositoryID,
 		BlobID:              row.BlobID,
@@ -1334,6 +1192,21 @@ func (p *PostgresDB) GetMavenArtifactByPath(ctx context.Context, repoID, path st
 		RepoPath:            row.RepoPath,
 		CreatedAt:           row.CreatedAt,
 		UpdatedAt:           row.UpdatedAt,
+	}
+}
+
+// getMavenArtifact converts the result of a single-row sqlc query and fills in
+// its checksums; (nil, nil) when there is no such artifact.
+func getMavenArtifact[R mavenArtifactRow](
+	ctx context.Context,
+	p *PostgresDB,
+	row R,
+	err error,
+	what string,
+) (*models.MavenArtifact, error) {
+	art, err := mapRow(row, err, "get "+what, mavenArtifactFromRow[R])
+	if art == nil || err != nil {
+		return nil, err
 	}
 
 	if err := p.fillMavenChecksums(ctx, art); err != nil {
@@ -1353,29 +1226,10 @@ func (p *PostgresDB) GetMavenArtifactsByGAV(
 		ArtifactIDCoord: artifactID,
 		Version:         version,
 	})
+
+	artifacts, err := mapRowsOrNil(rows, err, "query maven artifacts by gav", mavenArtifactFromRow)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query maven artifacts by gav: %w", err)
-	}
-
-	var artifacts []*models.MavenArtifact
-
-	for _, row := range rows {
-		artifacts = append(artifacts, &models.MavenArtifact{
-			ID:                  row.ID,
-			RepositoryID:        row.RepositoryID,
-			BlobID:              row.BlobID,
-			GroupID:             row.GroupID,
-			ArtifactCoord:       row.ArtifactIDCoord,
-			Version:             row.Version,
-			Classifier:          row.Classifier,
-			Extension:           row.Extension,
-			SnapshotTimestamp:   derefStr(row.SnapshotTimestamp),
-			SnapshotBuildNumber: int(row.SnapshotBuildNumber),
-			IsSnapshot:          row.IsSnapshot,
-			RepoPath:            row.RepoPath,
-			CreatedAt:           row.CreatedAt,
-			UpdatedAt:           row.UpdatedAt,
-		})
+		return nil, err
 	}
 
 	if err := p.fillMavenChecksums(ctx, artifacts...); err != nil {
@@ -1425,36 +1279,8 @@ func (p *PostgresDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, art
 		ArtifactIDCoord: artifactID,
 		Version:         version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest snapshot: %w", err)
-	}
-
-	art := &models.MavenArtifact{
-		ID:                  row.ID,
-		RepositoryID:        row.RepositoryID,
-		BlobID:              row.BlobID,
-		GroupID:             row.GroupID,
-		ArtifactCoord:       row.ArtifactIDCoord,
-		Version:             row.Version,
-		Classifier:          row.Classifier,
-		Extension:           row.Extension,
-		SnapshotTimestamp:   derefStr(row.SnapshotTimestamp),
-		SnapshotBuildNumber: int(row.SnapshotBuildNumber),
-		IsSnapshot:          row.IsSnapshot,
-		RepoPath:            row.RepoPath,
-		CreatedAt:           row.CreatedAt,
-		UpdatedAt:           row.UpdatedAt,
-	}
-
-	if err := p.fillMavenChecksums(ctx, art); err != nil {
-		return nil, err
-	}
-
-	return art, nil
+	return getMavenArtifact(ctx, p, row, err, "latest snapshot")
 }
 
 func (p *PostgresDB) GetLatestSnapshotFile(
@@ -1469,36 +1295,8 @@ func (p *PostgresDB) GetLatestSnapshotFile(
 		Classifier:      classifier,
 		Extension:       extension,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest snapshot file: %w", err)
-	}
-
-	art := &models.MavenArtifact{
-		ID:                  row.ID,
-		RepositoryID:        row.RepositoryID,
-		BlobID:              row.BlobID,
-		GroupID:             row.GroupID,
-		ArtifactCoord:       row.ArtifactIDCoord,
-		Version:             row.Version,
-		Classifier:          row.Classifier,
-		Extension:           row.Extension,
-		SnapshotTimestamp:   derefStr(row.SnapshotTimestamp),
-		SnapshotBuildNumber: int(row.SnapshotBuildNumber),
-		IsSnapshot:          row.IsSnapshot,
-		RepoPath:            row.RepoPath,
-		CreatedAt:           row.CreatedAt,
-		UpdatedAt:           row.UpdatedAt,
-	}
-
-	if err := p.fillMavenChecksums(ctx, art); err != nil {
-		return nil, err
-	}
-
-	return art, nil
+	return getMavenArtifact(ctx, p, row, err, "latest snapshot file")
 }
 
 func (p *PostgresDB) DeleteMavenArtifact(ctx context.Context, id string) error {
@@ -1515,33 +1313,18 @@ func (p *PostgresDB) DeleteMavenArtifact(ctx context.Context, id string) error {
 // UUID). Used only by backup export.
 func (p *PostgresDB) ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error) {
 	rows, err := p.q.ListMavenArtifactsByRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list maven artifacts by repo: %w", err)
-	}
 
-	var artifacts []*models.MavenArtifact
-
-	for _, row := range rows {
-		artifacts = append(artifacts, &models.MavenArtifact{
-			ID:                  row.ID,
-			RepositoryID:        row.RepositoryID,
-			GroupID:             row.GroupID,
-			ArtifactCoord:       row.ArtifactIDCoord,
-			Version:             row.Version,
-			Classifier:          row.Classifier,
-			Extension:           row.Extension,
-			SnapshotTimestamp:   derefStr(row.SnapshotTimestamp),
-			SnapshotBuildNumber: int(row.SnapshotBuildNumber),
-			IsSnapshot:          row.IsSnapshot,
-			RepoPath:            row.RepoPath,
-			BlobSHA256:          row.BlobSha256,
-			BlobSizeBytes:       row.BlobSizeBytes,
-			CreatedAt:           row.CreatedAt,
-			UpdatedAt:           row.UpdatedAt,
+	return mapRowsOrNil(rows, err, "list maven artifacts by repo", func(row dbsqlc.ListMavenArtifactsByRepoRow) *models.MavenArtifact {
+		art := mavenArtifactFromRow(dbsqlc.GetMavenArtifactByPathRow{
+			ID: row.ID, RepositoryID: row.RepositoryID, GroupID: row.GroupID, ArtifactIDCoord: row.ArtifactIDCoord,
+			Version: row.Version, Classifier: row.Classifier, Extension: row.Extension,
+			SnapshotTimestamp: row.SnapshotTimestamp, SnapshotBuildNumber: row.SnapshotBuildNumber,
+			IsSnapshot: row.IsSnapshot, RepoPath: row.RepoPath, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
-	}
+		art.BlobSHA256, art.BlobSizeBytes = row.BlobSha256, row.BlobSizeBytes
 
-	return artifacts, nil
+		return art
+	})
 }
 
 func (p *PostgresDB) CreateNPMPackage(ctx context.Context, pkg *models.NPMPackage) (*models.NPMPackage, error) {
@@ -2301,19 +2084,19 @@ func (p *PostgresDB) CreateHelmChart(ctx context.Context, chart *models.HelmChar
 		Type:         chart.Type,
 		BlobID:       blobID,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create helm chart: %w", err)
-	}
 
-	chart.ID = row.ID
-	chart.CreatedAt = row.CreatedAt
-	chart.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create helm chart", &chart.ID, &chart.CreatedAt, &chart.UpdatedAt)
 }
 
 // helmChartFromRow maps a sqlc helm chart row; the list rows convert to it.
-func helmChartFromRow(row dbsqlc.GetHelmChartRow) *models.HelmChart {
+// helmChartRow lists the sqlc row types helmChartFromRow converts; they share the columns of GetHelmChartRow.
+type helmChartRow interface {
+	dbsqlc.GetHelmChartRow | dbsqlc.ListHelmChartsRow
+}
+
+func helmChartFromRow[R helmChartRow](in R) *models.HelmChart {
+	row := dbsqlc.GetHelmChartRow(in)
+
 	chart := &models.HelmChart{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
@@ -2347,15 +2130,8 @@ func (p *PostgresDB) GetHelmChart(ctx context.Context, repoID, name, version str
 		Name:         name,
 		Version:      version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get helm chart: %w", err)
-	}
-
-	return helmChartFromRow(row), nil
+	return mapRow(row, err, "get helm chart", helmChartFromRow)
 }
 
 func (p *PostgresDB) DeleteHelmChart(ctx context.Context, repoID, name, version string) error {
@@ -2373,17 +2149,8 @@ func (p *PostgresDB) DeleteHelmChart(ctx context.Context, repoID, name, version 
 
 func (p *PostgresDB) ListHelmCharts(ctx context.Context, repoID string) ([]*models.HelmChart, error) {
 	rows, err := p.q.ListHelmCharts(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list helm charts: %w", err)
-	}
 
-	var charts []*models.HelmChart
-
-	for _, row := range rows {
-		charts = append(charts, helmChartFromRow(dbsqlc.GetHelmChartRow(row)))
-	}
-
-	return charts, nil
+	return mapRowsOrNil(rows, err, "list helm charts", helmChartFromRow)
 }
 
 func (p *PostgresDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error {
@@ -2411,19 +2178,19 @@ func (p *PostgresDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPack
 		Classifiers:    pkg.Classifiers,
 		BlobID:         blobID,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create pypi package: %w", err)
-	}
 
-	pkg.ID = row.ID
-	pkg.CreatedAt = row.CreatedAt
-	pkg.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create pypi package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 }
 
 // pypiPackageFromRow maps a sqlc PyPI package row; the list rows convert to it.
-func pypiPackageFromRow(row dbsqlc.GetPyPIPackagesByFilenameRow) *models.PyPIPackage {
+// pypiPackageRow lists the sqlc row types pypiPackageFromRow converts; they share the columns of GetPyPIPackagesByFilenameRow.
+type pypiPackageRow interface {
+	dbsqlc.GetPyPIPackagesByFilenameRow | dbsqlc.ListPyPIPackagesRow | dbsqlc.ListPyPIPackageVersionsRow
+}
+
+func pypiPackageFromRow[R pypiPackageRow](in R) *models.PyPIPackage {
+	row := dbsqlc.GetPyPIPackagesByFilenameRow(in)
+
 	return &models.PyPIPackage{
 		ID:             row.ID,
 		RepositoryID:   row.RepositoryID,
@@ -2482,17 +2249,8 @@ func (p *PostgresDB) DeletePyPIPackage(ctx context.Context, repoID, name, versio
 
 func (p *PostgresDB) ListPyPIPackages(ctx context.Context, repoID string) ([]*models.PyPIPackage, error) {
 	rows, err := p.q.ListPyPIPackages(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pypi packages: %w", err)
-	}
 
-	var packages []*models.PyPIPackage
-
-	for _, row := range rows {
-		packages = append(packages, pypiPackageFromRow(dbsqlc.GetPyPIPackagesByFilenameRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "list pypi packages", pypiPackageFromRow)
 }
 
 func (p *PostgresDB) ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error) {
@@ -2509,17 +2267,8 @@ func (p *PostgresDB) ListPyPIPackageVersions(ctx context.Context, repoID, name s
 		RepositoryID: repoID,
 		Name:         name,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pypi package versions: %w", err)
-	}
 
-	var packages []*models.PyPIPackage
-
-	for _, row := range rows {
-		packages = append(packages, pypiPackageFromRow(dbsqlc.GetPyPIPackagesByFilenameRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "list pypi package versions", pypiPackageFromRow)
 }
 
 // NuGet methods
@@ -2562,15 +2311,7 @@ func (p *PostgresDB) CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPa
 		return ErrDuplicate
 	}
 
-	if err != nil {
-		return fmt.Errorf("failed to create nuget package: %w", err)
-	}
-
-	pkg.ID = row.ID
-	pkg.CreatedAt = row.CreatedAt
-	pkg.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create nuget package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 }
 
 func (p *PostgresDB) GetNuGetPackage(ctx context.Context, repoID, packageID, version string) (*models.NuGetPackage, error) {
@@ -2579,15 +2320,8 @@ func (p *PostgresDB) GetNuGetPackage(ctx context.Context, repoID, packageID, ver
 		PackageID:    packageID,
 		Version:      version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nuget package: %w", err)
-	}
-
-	return nugetRowToModel(row), nil
+	return mapRow(row, err, "get nuget package", nugetRowToModel)
 }
 
 func (p *PostgresDB) DeleteNuGetPackage(ctx context.Context, repoID, packageID, version string) error {
@@ -2620,17 +2354,8 @@ func (p *PostgresDB) SetNuGetDependencyGroups(ctx context.Context, repoID, packa
 
 func (p *PostgresDB) ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error) {
 	rows, err := p.q.ListNuGetPackages(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list nuget packages: %w", err)
-	}
 
-	var packages []*models.NuGetPackage
-
-	for _, row := range rows {
-		packages = append(packages, nugetRowToModel(dbsqlc.GetNuGetPackageRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "list nuget packages", nugetRowToModel)
 }
 
 func (p *PostgresDB) ListNuGetPackageVersions(ctx context.Context, repoID, packageID string) ([]*models.NuGetPackage, error) {
@@ -2638,17 +2363,8 @@ func (p *PostgresDB) ListNuGetPackageVersions(ctx context.Context, repoID, packa
 		RepositoryID: repoID,
 		PackageID:    packageID,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list nuget package versions: %w", err)
-	}
 
-	var packages []*models.NuGetPackage
-
-	for _, row := range rows {
-		packages = append(packages, nugetRowToModel(dbsqlc.GetNuGetPackageRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "list nuget package versions", nugetRowToModel)
 }
 
 // SearchNuGetPackages pages over matching packages: skip/take count packages,
@@ -3039,15 +2755,8 @@ func (p *PostgresDB) CreateGoModule(ctx context.Context, mod *models.GoModule) e
 		ZipBlobID:    &zipBlobID,
 		ModBlobID:    &modBlobID,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create go module: %w", err)
-	}
 
-	mod.ID = row.ID
-	mod.CreatedAt = row.CreatedAt
-	mod.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create go module", &mod.ID, &mod.CreatedAt, &mod.UpdatedAt)
 }
 
 // GetGoModule retrieves a Go module by repo, path, and version.
@@ -3057,13 +2766,17 @@ func (p *PostgresDB) GetGoModule(ctx context.Context, repoID, modulePath, versio
 		ModulePath:   modulePath,
 		Version:      version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get go module: %w", err)
-	}
+	return mapRow(row, err, "get go module", goModuleFromRow)
+}
+
+// goModuleRow lists the sqlc row types goModuleFromRow converts.
+type goModuleRow interface {
+	dbsqlc.GetGoModuleRow | dbsqlc.ListGoModuleVersionsRow | dbsqlc.ListGoModulesByRepoRow
+}
+
+func goModuleFromRow[R goModuleRow](in R) *models.GoModule {
+	row := dbsqlc.GetGoModuleRow(in)
 
 	return &models.GoModule{
 		ID:           row.ID,
@@ -3077,7 +2790,7 @@ func (p *PostgresDB) GetGoModule(ctx context.Context, repoID, modulePath, versio
 		ZipHash:      row.ZipHash,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
-	}, nil
+	}
 }
 
 // ListGoModuleVersions lists all versions of a module.
@@ -3086,29 +2799,8 @@ func (p *PostgresDB) ListGoModuleVersions(ctx context.Context, repoID, modulePat
 		RepositoryID: repoID,
 		ModulePath:   modulePath,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list go module versions: %w", err)
-	}
 
-	var modules []*models.GoModule
-
-	for _, row := range rows {
-		modules = append(modules, &models.GoModule{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			ModulePath:   row.ModulePath,
-			Version:      row.Version,
-			GoModContent: row.GoModContent,
-			ZipBlobKey:   row.ZipBlobKey,
-			ModBlobKey:   row.ModBlobKey,
-			ZipSizeBytes: row.ZipSizeBytes,
-			ZipHash:      row.ZipHash,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		})
-	}
-
-	return modules, nil
+	return mapRowsOrNil(rows, err, "list go module versions", goModuleFromRow)
 }
 
 // ListGoModulesByRepo lists every module version for a repository. Used
@@ -3116,29 +2808,8 @@ func (p *PostgresDB) ListGoModuleVersions(ctx context.Context, repoID, modulePat
 // filter would silently drop every other module.
 func (p *PostgresDB) ListGoModulesByRepo(ctx context.Context, repoID string) ([]*models.GoModule, error) {
 	rows, err := p.q.ListGoModulesByRepo(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list go modules by repo: %w", err)
-	}
 
-	var modules []*models.GoModule
-
-	for _, row := range rows {
-		modules = append(modules, &models.GoModule{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			ModulePath:   row.ModulePath,
-			Version:      row.Version,
-			GoModContent: row.GoModContent,
-			ZipBlobKey:   row.ZipBlobKey,
-			ModBlobKey:   row.ModBlobKey,
-			ZipSizeBytes: row.ZipSizeBytes,
-			ZipHash:      row.ZipHash,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		})
-	}
-
-	return modules, nil
+	return mapRowsOrNil(rows, err, "list go modules by repo", goModuleFromRow)
 }
 
 // cleanupPolicyToModel converts a dbsqlc.CleanupPolicy to *models.CleanupPolicy.
@@ -3224,29 +2895,15 @@ func createCleanupPolicyParams(policy *models.CleanupPolicy) dbsqlc.CreateCleanu
 // CreateCleanupPolicy creates a new cleanup policy.
 func (p *PostgresDB) CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error {
 	row, err := p.q.CreateCleanupPolicy(ctx, createCleanupPolicyParams(policy))
-	if err != nil {
-		return fmt.Errorf("failed to create cleanup policy: %w", err)
-	}
 
-	policy.ID = row.ID
-	policy.CreatedAt = row.CreatedAt
-	policy.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create cleanup policy", &policy.ID, &policy.CreatedAt, &policy.UpdatedAt)
 }
 
 // GetCleanupPolicy retrieves a cleanup policy by ID.
 func (p *PostgresDB) GetCleanupPolicy(ctx context.Context, id string) (*models.CleanupPolicy, error) {
 	row, err := p.q.GetCleanupPolicy(ctx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cleanup policy: %w", err)
-	}
-
-	return cleanupPolicyToModel(row), nil
+	return mapRow(row, err, "get cleanup policy", cleanupPolicyToModel)
 }
 
 // UpdateCleanupPolicy updates an existing cleanup policy.
@@ -3300,31 +2957,15 @@ func (p *PostgresDB) DeleteCleanupPolicy(ctx context.Context, id string) error {
 // ListCleanupPolicies lists all cleanup policies for a repository.
 func (p *PostgresDB) ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error) {
 	rows, err := p.q.ListCleanupPolicies(ctx, &repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list cleanup policies: %w", err)
-	}
 
-	policies := make([]*models.CleanupPolicy, len(rows))
-	for i, row := range rows {
-		policies[i] = cleanupPolicyToModel(row)
-	}
-
-	return policies, nil
+	return mapRows(rows, err, "list cleanup policies", cleanupPolicyToModel)
 }
 
 // ListProjectCleanupPolicies lists the default cleanup policies of a project.
 func (p *PostgresDB) ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error) {
 	rows, err := p.q.ListProjectCleanupPolicies(ctx, &projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list project cleanup policies: %w", err)
-	}
 
-	policies := make([]*models.CleanupPolicy, len(rows))
-	for i, row := range rows {
-		policies[i] = cleanupPolicyToModel(row)
-	}
-
-	return policies, nil
+	return mapRows(rows, err, "list project cleanup policies", cleanupPolicyToModel)
 }
 
 // ListProjectCleanupRepositories returns the IDs of the live hosted
@@ -3397,15 +3038,8 @@ func (p *PostgresDB) CreateWebhook(ctx context.Context, wh *models.Webhook) erro
 		MaxRetries:     int32(wh.MaxRetries),     //nolint:gosec // G115: value is bounded by API validation
 		TimeoutSeconds: int32(wh.TimeoutSeconds), //nolint:gosec // G115: value is bounded by API validation
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create webhook: %w", err)
-	}
 
-	wh.ID = row.ID
-	wh.CreatedAt = row.CreatedAt
-	wh.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create webhook", &wh.ID, &wh.CreatedAt, &wh.UpdatedAt)
 }
 
 // GetWebhook retrieves a webhook by ID.
@@ -3440,15 +3074,8 @@ func webhookFromRow(r dbsqlc.GetWebhookRow) *models.Webhook {
 
 func (p *PostgresDB) GetWebhook(ctx context.Context, id string) (*models.Webhook, error) {
 	row, err := p.q.GetWebhook(ctx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get webhook: %w", err)
-	}
-
-	return webhookFromRow(row), nil
+	return mapRow(row, err, "get webhook", webhookFromRow)
 }
 
 // UpdateWebhook updates an existing webhook.
@@ -3582,15 +3209,8 @@ func (p *PostgresDB) CreateWebhookDelivery(ctx context.Context, delivery *models
 		AttemptCount: int32(delivery.AttemptCount), //nolint:gosec // G115: bounded by retry logic
 		NextRetryAt:  delivery.NextRetryAt,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create webhook delivery: %w", err)
-	}
 
-	delivery.ID = row.ID
-	delivery.CreatedAt = row.CreatedAt
-	delivery.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create webhook delivery", &delivery.ID, &delivery.CreatedAt, &delivery.UpdatedAt)
 }
 
 // UpdateWebhookDelivery updates a webhook delivery record.
@@ -3802,15 +3422,8 @@ func (p *PostgresDB) CreateCargoCrate(ctx context.Context, crate *models.CargoCr
 		Yanked:        crate.Yanked,
 		DownloadCount: int64(crate.DownloadCount),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create cargo crate: %w", err)
-	}
 
-	crate.ID = row.ID
-	crate.CreatedAt = row.CreatedAt
-	crate.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create cargo crate", &crate.ID, &crate.CreatedAt, &crate.UpdatedAt)
 }
 
 func (p *PostgresDB) GetCargoCrate(ctx context.Context, repoID, name, version string) (*models.CargoCrate, error) {
@@ -3883,17 +3496,8 @@ func (p *PostgresDB) ListCargoCrateVersions(ctx context.Context, repoID, name st
 		RepositoryID: repoID,
 		Name:         name,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query cargo crate versions: %w", err)
-	}
 
-	var crates []*models.CargoCrate
-
-	for _, row := range rows {
-		crates = append(crates, cargoCrateFromRow(row))
-	}
-
-	return crates, nil
+	return mapRowsOrNil(rows, err, "query cargo crate versions", cargoCrateFromRow)
 }
 
 func (p *PostgresDB) SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error) {
@@ -3999,7 +3603,14 @@ func derefStr(s *string) string {
 // Go's struct conversion rule (identical field sequence, tags ignored).
 // The schema has no package_hash_algorithm column, so PackageHashAlgorithm
 // never round-trips.
-func nugetRowToModel(row dbsqlc.GetNuGetPackageRow) *models.NuGetPackage {
+// nugetPackageRow lists the sqlc row types nugetRowToModel converts; they share the columns of GetNuGetPackageRow.
+type nugetPackageRow interface {
+	dbsqlc.GetNuGetPackageRow | dbsqlc.ListNuGetPackagesRow | dbsqlc.ListNuGetPackageVersionsRow
+}
+
+func nugetRowToModel[R nugetPackageRow](in R) *models.NuGetPackage {
+	row := dbsqlc.GetNuGetPackageRow(in)
+
 	return &models.NuGetPackage{
 		ID:                       row.ID,
 		RepositoryID:             row.RepositoryID,
@@ -4057,20 +3668,20 @@ func (p *PostgresDB) CreateRubyGem(ctx context.Context, gem *models.RubyGem) err
 		DownloadCount: int64(gem.DownloadCount),
 		Size:          gem.Size,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create ruby gem: %w", err)
-	}
 
-	gem.ID = row.ID
-	gem.CreatedAt = row.CreatedAt
-	gem.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create ruby gem", &gem.ID, &gem.CreatedAt, &gem.UpdatedAt)
 }
 
 // rubyGemFromRow maps a sqlc ruby gem row to the model. The List/Search row
 // types share GetRubyGemRow's layout and are converted to it by the callers.
-func rubyGemFromRow(row dbsqlc.GetRubyGemRow) *models.RubyGem {
+// rubyGemRow lists the sqlc row types rubyGemFromRow converts; they share the columns of GetRubyGemRow.
+type rubyGemRow interface {
+	dbsqlc.GetRubyGemRow | dbsqlc.ListRubyGemsRow | dbsqlc.ListRubyGemVersionsRow
+}
+
+func rubyGemFromRow[R rubyGemRow](in R) *models.RubyGem {
+	row := dbsqlc.GetRubyGemRow(in)
+
 	return &models.RubyGem{
 		ID:             row.ID,
 		RepositoryID:   row.RepositoryID,
@@ -4101,30 +3712,14 @@ func (p *PostgresDB) GetRubyGem(ctx context.Context, repoID, name, version, plat
 		Version:      version,
 		Platform:     platform,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ruby gem: %w", err)
-	}
-
-	return rubyGemFromRow(row), nil
+	return mapRow(row, err, "get ruby gem", rubyGemFromRow)
 }
 
 func (p *PostgresDB) ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
 	rows, err := p.q.ListRubyGems(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query ruby gems: %w", err)
-	}
 
-	var gems []*models.RubyGem
-
-	for _, row := range rows {
-		gems = append(gems, rubyGemFromRow(dbsqlc.GetRubyGemRow(row)))
-	}
-
-	return gems, nil
+	return mapRowsOrNil(rows, err, "query ruby gems", rubyGemFromRow)
 }
 
 func (p *PostgresDB) ListRubyGemVersions(ctx context.Context, repoID, name string) ([]*models.RubyGem, error) {
@@ -4132,17 +3727,8 @@ func (p *PostgresDB) ListRubyGemVersions(ctx context.Context, repoID, name strin
 		RepositoryID: repoID,
 		Name:         name,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query ruby gem versions: %w", err)
-	}
 
-	var gems []*models.RubyGem
-
-	for _, row := range rows {
-		gems = append(gems, rubyGemFromRow(dbsqlc.GetRubyGemRow(row)))
-	}
-
-	return gems, nil
+	return mapRowsOrNil(rows, err, "query ruby gem versions", rubyGemFromRow)
 }
 
 func (p *PostgresDB) SearchRubyGems(ctx context.Context, repoID, query string) ([]*models.RubyGem, error) {
@@ -4551,15 +4137,8 @@ func (p *PostgresDB) GetLicenseScanResult(ctx context.Context, repoID, artifactI
 		WHERE sj.scan_type = 'license' AND ref.repository_id = $1 AND ref.artifact_path = $2`,
 		repoID, artifactID,
 	))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get license scan result: %w", err)
-	}
-
-	return result, nil
+	return orNotFound(result, err, "get license scan result")
 }
 
 // ListLicenseScanResults lists all license scan results for a repository.
@@ -4941,15 +4520,8 @@ func (p *PostgresDB) GetVulnScanResult(ctx context.Context, repoID, artifactID s
 		LIMIT 1`,
 		repoID, artifactID,
 	))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vuln scan result: %w", err)
-	}
-
-	return result, nil
+	return orNotFound(result, err, "get vuln scan result")
 }
 
 // UpdateVulnScanResult updates a vulnerability scan result.
@@ -5266,15 +4838,8 @@ func (p *PostgresDB) CreateProject(ctx context.Context, project *models.Project)
 		MaxRepositories:  int32(project.MaxRepositories), //nolint:gosec // validated range by callers, column is integer
 		TokenMaxTtlDays:  int32(project.TokenMaxTTLDays), //nolint:gosec // validated range by callers, column is integer
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create project: %w", err)
-	}
 
-	project.ID = row.ID
-	project.CreatedAt = row.CreatedAt
-	project.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create project", &project.ID, &project.CreatedAt, &project.UpdatedAt)
 }
 
 func (p *PostgresDB) GetProject(ctx context.Context, id string) (*models.Project, error) {
@@ -5427,39 +4992,32 @@ func (p *PostgresDB) GetProjectMember(ctx context.Context, projectID, userID str
 
 func (p *PostgresDB) ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error) {
 	rows, err := p.q.ListProjectGroups(ctx, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list project groups: %w", err)
+
+	return mapRows(rows, err, "list project groups", projectGroupFromRow)
+}
+
+// projectGroupRow lists the sqlc row types projectGroupFromRow converts.
+type projectGroupRow interface {
+	dbsqlc.GetProjectGroupRow | dbsqlc.ListProjectGroupsRow
+}
+
+func projectGroupFromRow[R projectGroupRow](in R) *models.ProjectGroup {
+	row := dbsqlc.GetProjectGroupRow(in)
+
+	return &models.ProjectGroup{
+		ProjectID: row.ProjectID,
+		GroupID:   row.GroupID,
+		GroupName: row.GroupName,
+		Role:      row.Role,
+		CreatedBy: row.CreatedBy,
+		CreatedAt: row.CreatedAt,
 	}
-
-	groups := make([]*models.ProjectGroup, 0, len(rows))
-
-	for _, row := range rows {
-		groups = append(groups, &models.ProjectGroup{
-			ProjectID: row.ProjectID,
-			GroupID:   row.GroupID,
-			GroupName: row.GroupName,
-			Role:      row.Role,
-			CreatedBy: row.CreatedBy,
-			CreatedAt: row.CreatedAt,
-		})
-	}
-
-	return groups, nil
 }
 
 func (p *PostgresDB) GetProjectGroup(ctx context.Context, projectID, groupID string) (*models.ProjectGroup, error) {
 	row, err := p.q.GetProjectGroup(ctx, dbsqlc.GetProjectGroupParams{ProjectID: projectID, GroupID: groupID})
 
-	return mapRow(row, err, "project group", func(r dbsqlc.GetProjectGroupRow) *models.ProjectGroup {
-		return &models.ProjectGroup{
-			ProjectID: r.ProjectID,
-			GroupID:   r.GroupID,
-			GroupName: r.GroupName,
-			Role:      r.Role,
-			CreatedBy: r.CreatedBy,
-			CreatedAt: r.CreatedAt,
-		}
-	})
+	return mapRow(row, err, "get project group", projectGroupFromRow)
 }
 
 // SetProjectGroup attaches the group to the project with role, or changes the
@@ -5577,20 +5135,20 @@ func (p *PostgresDB) GetCondaPackageFile(
 		Platform:     platform,
 		Extension:    extension,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get conda package: %w", err)
-	}
-
-	return condaRowToModel(row), nil
+	return mapRow(row, err, "get conda package", condaRowToModel)
 }
 
 // condaRowToModel converts any of the three structurally identical conda row
 // types (GetFile/List/ListAll share the same SELECT list).
-func condaRowToModel(row dbsqlc.GetCondaPackageFileRow) *models.CondaPackage {
+// condaPackageRow lists the sqlc row types condaRowToModel converts; they share the columns of GetCondaPackageFileRow.
+type condaPackageRow interface {
+	dbsqlc.GetCondaPackageFileRow | dbsqlc.ListCondaPackagesRow | dbsqlc.ListAllCondaPackagesRow
+}
+
+func condaRowToModel[R condaPackageRow](in R) *models.CondaPackage {
+	row := dbsqlc.GetCondaPackageFileRow(in)
+
 	return &models.CondaPackage{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
@@ -5626,17 +5184,8 @@ func (p *PostgresDB) ListCondaPackages(ctx context.Context, repoID, platform str
 		RepositoryID: repoID,
 		Platform:     platform,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query conda packages: %w", err)
-	}
 
-	var packages []*models.CondaPackage
-
-	for _, row := range rows {
-		packages = append(packages, condaRowToModel(dbsqlc.GetCondaPackageFileRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "query conda packages", condaRowToModel)
 }
 
 // ListAllCondaPackages lists all conda packages for a repository across
@@ -5644,17 +5193,8 @@ func (p *PostgresDB) ListCondaPackages(ctx context.Context, repoID, platform str
 // mandatory platform filter would silently drop everything else.
 func (p *PostgresDB) ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error) {
 	rows, err := p.q.ListAllCondaPackages(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query all conda packages: %w", err)
-	}
 
-	var packages []*models.CondaPackage
-
-	for _, row := range rows {
-		packages = append(packages, condaRowToModel(dbsqlc.GetCondaPackageFileRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "query all conda packages", condaRowToModel)
 }
 
 // CreateConanPackage stores one Conan file, replacing the blob of the live row
@@ -5693,19 +5233,19 @@ func (p *PostgresDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPa
 		Md5:             pkg.MD5,
 		Sha1:            pkg.SHA1,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create conan package: %w", err)
-	}
 
-	pkg.ID = row.ID
-	pkg.CreatedAt = row.CreatedAt
-	pkg.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create conan package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 }
 
 // conanPackageFromRow converts a conan_packages row joined with its blob.
-func conanPackageFromRow(row dbsqlc.GetConanPackageRow) *models.ConanPackage {
+// conanPackageRow lists the sqlc row types conanPackageFromRow converts; they share the columns of GetConanPackageRow.
+type conanPackageRow interface {
+	dbsqlc.GetConanPackageRow | dbsqlc.ListConanPackagesRow | dbsqlc.FindConanPackageBySHA1Row
+}
+
+func conanPackageFromRow[R conanPackageRow](in R) *models.ConanPackage {
+	row := dbsqlc.GetConanPackageRow(in)
+
 	return &models.ConanPackage{
 		ID:              row.ID,
 		RepositoryID:    row.RepositoryID,
@@ -5738,15 +5278,8 @@ func (p *PostgresDB) GetConanPackage(ctx context.Context, repoID string, key mod
 		PackageRevision: key.PackageRevision,
 		Filename:        key.Filename,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get conan package: %w", err)
-	}
-
-	return conanPackageFromRow(row), nil
+	return mapRow(row, err, "get conan package", conanPackageFromRow)
 }
 
 // ListConanRecipeFiles returns every live file of one recipe (all its recipe
@@ -5791,15 +5324,8 @@ func (p *PostgresDB) ListConanRecipes(ctx context.Context, repoID string) ([]mod
 // has the given SHA-1, or (nil, nil).
 func (p *PostgresDB) FindConanPackageBySHA1(ctx context.Context, repoID, sha1 string) (*models.ConanPackage, error) {
 	row, err := p.q.FindConanPackageBySHA1(ctx, dbsqlc.FindConanPackageBySHA1Params{RepositoryID: repoID, Sha1: sha1})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to find conan package by sha1: %w", err)
-	}
-
-	return conanPackageFromRow(dbsqlc.GetConanPackageRow(row)), nil
+	return mapRow(row, err, "find conan package by sha1", conanPackageFromRow)
 }
 
 // SetConanPackageDigests records the MD5 and SHA-1 of a file stored without
@@ -5822,17 +5348,8 @@ func (p *PostgresDB) DeleteConanPackage(ctx context.Context, id string) error {
 
 func (p *PostgresDB) ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error) {
 	rows, err := p.q.ListConanPackages(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query conan packages: %w", err)
-	}
 
-	var packages []*models.ConanPackage
-
-	for _, row := range rows {
-		packages = append(packages, conanPackageFromRow(dbsqlc.GetConanPackageRow(row)))
-	}
-
-	return packages, nil
+	return mapRowsOrNil(rows, err, "query conan packages", conanPackageFromRow)
 }
 
 // CreateIvyArtifact stores an Ivy artifact; a live artifact with the same
@@ -5854,15 +5371,8 @@ func (p *PostgresDB) CreateIvyArtifact(ctx context.Context, artifact *models.Ivy
 		ArtifactExt:  artifact.ArtifactExt,
 		BlobID:       blobID,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create ivy artifact: %w", err)
-	}
 
-	artifact.ID = row.ID
-	artifact.CreatedAt = row.CreatedAt
-	artifact.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create ivy artifact", &artifact.ID, &artifact.CreatedAt, &artifact.UpdatedAt)
 }
 
 func (p *PostgresDB) GetIvyArtifact(
@@ -5974,15 +5484,8 @@ func (p *PostgresDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBT
 		Filename:     artifact.Filename,
 		BlobID:       blobID,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create sbt artifact: %w", err)
-	}
 
-	artifact.ID = row.ID
-	artifact.CreatedAt = row.CreatedAt
-	artifact.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create sbt artifact", &artifact.ID, &artifact.CreatedAt, &artifact.UpdatedAt)
 }
 
 func (p *PostgresDB) GetSBTArtifact(
@@ -5996,15 +5499,12 @@ func (p *PostgresDB) GetSBTArtifact(
 		Version:      version,
 		Filename:     filename,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sbt artifact: %w", err)
-	}
+	return mapRow(row, err, "get sbt artifact", sbtArtifactFromRow)
+}
 
-	return &models.SBTArtifact{
+func sbtArtifactFromRow(row dbsqlc.GetSBTArtifactRow) *models.SBTArtifact {
+	art := &models.SBTArtifact{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
 		GroupID:      row.GroupID,
@@ -6014,9 +5514,10 @@ func (p *PostgresDB) GetSBTArtifact(
 		BlobKey:      row.BlobKey,
 		SizeBytes:    row.SizeBytes,
 		SHA256:       row.Sha256,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
-	}, nil
+	}
+	art.CreatedAt, art.UpdatedAt = row.CreatedAt, row.UpdatedAt
+
+	return art
 }
 
 func (p *PostgresDB) DeleteSBTArtifact(ctx context.Context, id string) error {
@@ -6029,29 +5530,10 @@ func (p *PostgresDB) DeleteSBTArtifact(ctx context.Context, id string) error {
 
 func (p *PostgresDB) ListSBTArtifacts(ctx context.Context, repoID string) ([]*models.SBTArtifact, error) {
 	rows, err := p.q.ListSBTArtifacts(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query sbt artifacts: %w", err)
-	}
 
-	var artifacts []*models.SBTArtifact
-
-	for _, row := range rows {
-		artifacts = append(artifacts, &models.SBTArtifact{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			GroupID:      row.GroupID,
-			ArtifactID:   row.ArtifactID,
-			Version:      row.Version,
-			Filename:     row.Filename,
-			BlobKey:      row.BlobKey,
-			SizeBytes:    row.SizeBytes,
-			SHA256:       row.Sha256,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		})
-	}
-
-	return artifacts, nil
+	return mapRowsOrNil(rows, err, "query sbt artifacts", func(r dbsqlc.ListSBTArtifactsRow) *models.SBTArtifact {
+		return sbtArtifactFromRow(dbsqlc.GetSBTArtifactRow(r))
+	})
 }
 
 // UpsertAIAnalysis inserts or updates an AI analysis record.

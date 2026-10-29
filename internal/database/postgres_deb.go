@@ -10,56 +10,66 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// GetOrCreateDebianDistribution returns the distribution, creating it atomically if missing.
-func (p *PostgresDB) GetOrCreateDebianDistribution(ctx context.Context, repoID, name string) (*models.DebianDistribution, error) {
-	d := &models.DebianDistribution{RepositoryID: repoID, Name: name}
-
-	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO debian_distributions (repository_id, name) VALUES ($1, $2)
-		 ON CONFLICT (repository_id, name) DO UPDATE SET name = EXCLUDED.name
-		 RETURNING id, created_at, updated_at`, repoID, name).
-		Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("get or create debian distribution: %w", err)
+// upsertDebian runs an idempotent "insert, or touch the existing row" upsert on a
+// (parent id, name) keyed debian table and stores the generated columns in the model.
+func (p *PostgresDB) upsertDebian(
+	ctx context.Context,
+	query, parentID, name, what string,
+	id *string,
+	createdAt, updatedAt *time.Time,
+) error {
+	if err := p.db.QueryRowContext(ctx, query, parentID, name).Scan(id, createdAt, updatedAt); err != nil {
+		return fmt.Errorf("get or create debian %s: %w", what, err)
 	}
 
-	return d, nil
+	return nil
+}
+
+// GetOrCreateDebianDistribution returns the distribution, creating it atomically if missing.
+func (p *PostgresDB) GetOrCreateDebianDistribution(ctx context.Context, repoID, name string) (*models.DebianDistribution, error) {
+	m := &models.DebianDistribution{RepositoryID: repoID, Name: name}
+
+	err := p.upsertDebian(ctx, `INSERT INTO debian_distributions (repository_id, name) VALUES ($1, $2)
+		 ON CONFLICT (repository_id, name) DO UPDATE SET name = EXCLUDED.name
+		 RETURNING id, created_at, updated_at`, repoID, name, "distribution", &m.ID, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return m, nil
 }
 
 // GetOrCreateDebianComponent returns the component, creating it atomically if missing.
 func (p *PostgresDB) GetOrCreateDebianComponent(ctx context.Context, distID, name string) (*models.DebianComponent, error) {
-	c := &models.DebianComponent{DistributionID: distID, Name: name}
+	m := &models.DebianComponent{DistributionID: distID, Name: name}
 
-	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO debian_components (distribution_id, name) VALUES ($1, $2)
+	err := p.upsertDebian(ctx, `INSERT INTO debian_components (distribution_id, name) VALUES ($1, $2)
 		 ON CONFLICT (distribution_id, name) DO UPDATE SET name = EXCLUDED.name
-		 RETURNING id, created_at, updated_at`, distID, name).
-		Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
+		 RETURNING id, created_at, updated_at`, distID, name, "component", &m.ID, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("get or create debian component: %w", err)
+		return nil, err
 	}
 
-	return c, nil
+	return m, nil
 }
 
 // GetOrCreateDebianArchitecture returns the architecture, creating it atomically if missing.
 func (p *PostgresDB) GetOrCreateDebianArchitecture(ctx context.Context, distID, name string) (*models.DebianArchitecture, error) {
-	a := &models.DebianArchitecture{DistributionID: distID, Name: name}
+	m := &models.DebianArchitecture{DistributionID: distID, Name: name}
 
-	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO debian_architectures (distribution_id, name) VALUES ($1, $2)
+	err := p.upsertDebian(ctx, `INSERT INTO debian_architectures (distribution_id, name) VALUES ($1, $2)
 		 ON CONFLICT (distribution_id, name) DO UPDATE SET name = EXCLUDED.name
-		 RETURNING id, created_at, updated_at`, distID, name).
-		Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+		 RETURNING id, created_at, updated_at`, distID, name, "architecture", &m.ID, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("get or create debian architecture: %w", err)
+		return nil, err
 	}
 
-	return a, nil
+	return m, nil
 }
 
 // SetDebControlFields stores the control stanza, maintainer and homepage of a deb package.

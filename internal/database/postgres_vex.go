@@ -35,7 +35,13 @@ func vexFromRow(r dbsqlc.VexStatement) *models.VEXStatement {
 // UpsertVEXStatement records (or replaces) the decision for
 // (RepositoryID, ArtifactID, VulnID) and fills the stored row back into s.
 func (p *PostgresDB) UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error {
-	row, err := p.q.UpsertVEXStatement(ctx, dbsqlc.UpsertVEXStatementParams{
+	row, err := p.q.UpsertVEXStatement(ctx, vexStatementParams(s))
+
+	return storeRow(s, row, err, "upsert VEX statement", vexFromRow)
+}
+
+func vexStatementParams(s *models.VEXStatement) dbsqlc.UpsertVEXStatementParams {
+	return dbsqlc.UpsertVEXStatementParams{
 		RepositoryID:    s.RepositoryID,
 		ArtifactID:      s.ArtifactID,
 		VulnID:          s.VulnID,
@@ -44,30 +50,15 @@ func (p *PostgresDB) UpsertVEXStatement(ctx context.Context, s *models.VEXStatem
 		ImpactStatement: s.ImpactStatement,
 		ActionStatement: s.ActionStatement,
 		CreatedBy:       s.CreatedBy,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upsert VEX statement: %w", err)
 	}
-
-	*s = *vexFromRow(row)
-
-	return nil
 }
 
 // ListVEXStatements lists the decisions of a repository, optionally only those
 // of one artifact (artifactID != "").
 func (p *PostgresDB) ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error) {
 	rows, err := p.q.ListVEXStatements(ctx, dbsqlc.ListVEXStatementsParams{RepositoryID: repoID, ArtifactID: artifactID})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list VEX statements: %w", err)
-	}
 
-	out := make([]*models.VEXStatement, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, vexFromRow(r))
-	}
-
-	return out, nil
+	return mapRows(rows, err, "list VEX statements", vexFromRow)
 }
 
 // DeleteVEXStatement deletes a decision scoped to repoID; ErrVEXStatementNotFound when absent.

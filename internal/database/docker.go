@@ -188,15 +188,8 @@ func (p *PostgresDB) CreateDockerUpload(ctx context.Context, upload *models.Dock
 		UploadUuid:   upload.UploadUUID,
 		Offset:       upload.Offset,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create docker upload: %w", err)
-	}
 
-	upload.ID = row.ID
-	upload.CreatedAt = row.CreatedAt
-	upload.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create docker upload", &upload.ID, &upload.CreatedAt, &upload.UpdatedAt)
 }
 
 func (p *PostgresDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
@@ -205,16 +198,18 @@ func (p *PostgresDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUU
 		UploadUuid:   uploadUUID,
 	})
 
-	return mapRow(row, err, "docker upload", func(r dbsqlc.DockerUpload) *models.DockerUpload {
-		return &models.DockerUpload{
-			ID:           r.ID,
-			RepositoryID: r.RepositoryID,
-			UploadUUID:   r.UploadUuid,
-			Offset:       r.Offset,
-			CreatedAt:    r.CreatedAt,
-			UpdatedAt:    r.UpdatedAt,
-		}
-	})
+	return mapRow(row, err, "get docker upload", dockerUploadFromRow)
+}
+
+func dockerUploadFromRow(row dbsqlc.DockerUpload) *models.DockerUpload {
+	return &models.DockerUpload{
+		ID:           row.ID,
+		RepositoryID: row.RepositoryID,
+		UploadUUID:   row.UploadUuid,
+		Offset:       row.Offset,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}
 }
 
 // UpdateDockerUploadOffset moves the session's offset from oldOffset to

@@ -57,20 +57,19 @@ func clampInt32(n int) int32 {
 // GetRepositoryDependencyTrack returns the repository's override, nil when none is set.
 func (p *PostgresDB) GetRepositoryDependencyTrack(ctx context.Context, repoID string) (*models.RepositoryDependencyTrack, error) {
 	row, err := p.q.GetRepositoryDependencyTrack(ctx, repoID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil means "no override"
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get repository Dependency-Track settings: %w", err)
-	}
-
-	return dtrackConfigFromRow(row), nil
+	return mapRow(row, err, "get repository Dependency-Track settings", dtrackConfigFromRow)
 }
 
 // UpsertRepositoryDependencyTrack stores the override and fills the stored row back into c.
 func (p *PostgresDB) UpsertRepositoryDependencyTrack(ctx context.Context, c *models.RepositoryDependencyTrack) error {
-	row, err := p.q.UpsertRepositoryDependencyTrack(ctx, dbsqlc.UpsertRepositoryDependencyTrackParams{
+	row, err := p.q.UpsertRepositoryDependencyTrack(ctx, dtrackConfigParams(c))
+
+	return storeRow(c, row, err, "upsert repository Dependency-Track settings", dtrackConfigFromRow)
+}
+
+func dtrackConfigParams(c *models.RepositoryDependencyTrack) dbsqlc.UpsertRepositoryDependencyTrackParams {
+	return dbsqlc.UpsertRepositoryDependencyTrackParams{
 		RepositoryID:   c.RepositoryID,
 		Enabled:        c.Enabled,
 		BaseUrl:        c.BaseURL,
@@ -79,14 +78,7 @@ func (p *PostgresDB) UpsertRepositoryDependencyTrack(ctx context.Context, c *mod
 		ProjectVersion: c.ProjectVersion,
 		AutoPush:       c.AutoPush,
 		PushVex:        c.PushVEX,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upsert repository Dependency-Track settings: %w", err)
 	}
-
-	*c = *dtrackConfigFromRow(row)
-
-	return nil
 }
 
 // DeleteRepositoryDependencyTrack removes the override; it reports whether one existed.
@@ -115,27 +107,15 @@ func (p *PostgresDB) UpsertDependencyTrackPush(ctx context.Context, s *models.De
 		BomPushedAt:    s.BOMPushedAt,
 		VexPushedAt:    s.VEXPushedAt,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to upsert Dependency-Track push: %w", err)
-	}
 
-	*s = *dtrackPushFromRow(row)
-
-	return nil
+	return storeRow(s, row, err, "upsert Dependency-Track push", dtrackPushFromRow)
 }
 
 // GetDependencyTrackPush returns the push state of an artifact, nil when it was never pushed.
 func (p *PostgresDB) GetDependencyTrackPush(ctx context.Context, repoID, artifactID string) (*models.DependencyTrackPush, error) {
 	row, err := p.q.GetDependencyTrackPush(ctx, dbsqlc.GetDependencyTrackPushParams{RepositoryID: repoID, ArtifactID: artifactID})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil means "never pushed"
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Dependency-Track push: %w", err)
-	}
-
-	return dtrackPushFromRow(row), nil
+	return mapRow(row, err, "get Dependency-Track push", dtrackPushFromRow)
 }
 
 // ListDependencyTrackPushes lists the pushes of a repository, most recently updated first.

@@ -149,24 +149,18 @@ func cloneToken(t *models.Token) *models.Token {
 	return &cp
 }
 
-func cloneUser(u *models.User) *models.User {
-	cp := *u
+// cloneShallow copies a value that holds no slices or maps.
+func cloneShallow[T any](v *T) *T {
+	cp := *v
 
 	return &cp
 }
 
-func cloneRepo(r *models.Repository) *models.Repository {
-	cp := *r
+func cloneShallowSlice[T any](vs []*T) []*T {
+	out := make([]*T, len(vs))
 
-	return &cp
-}
-
-func cloneGroups(gs []*models.Group) []*models.Group {
-	out := make([]*models.Group, len(gs))
-
-	for i, g := range gs {
-		cp := *g
-		out[i] = &cp
+	for i, v := range vs {
+		out[i] = cloneShallow(v)
 	}
 
 	return out
@@ -184,37 +178,49 @@ func clonePermTargets(ts []*models.PermissionTarget) []*models.PermissionTarget 
 	return out
 }
 
-func cloneProjectGrants(gs []*models.ProjectGrant) []*models.ProjectGrant {
-	out := make([]*models.ProjectGrant, len(gs))
+// cachedPtr is cachedLookup for a lookup of one pointer value, where nil means
+// not found.
+func cachedPtr[T any](
+	ctx context.Context,
+	c *authCache,
+	m *map[string]cacheEntry[*T],
+	key string,
+	clone func(*T) *T,
+	load func(context.Context, string) (*T, error),
+) (*T, error) {
+	return cachedLookup(ctx, c, m, key, clone,
+		func(v *T) bool { return v == nil },
+		func(ctx context.Context) (*T, error) { return load(ctx, key) })
+}
 
-	for i, g := range gs {
-		cp := *g
-		out[i] = &cp
-	}
-
-	return out
+// cachedList is cachedLookup for a lookup of a list; an empty list is cached.
+func cachedList[T any](
+	ctx context.Context,
+	c *authCache,
+	m *map[string]cacheEntry[[]*T],
+	key string,
+	clone func([]*T) []*T,
+	load func(context.Context, string) ([]*T, error),
+) ([]*T, error) {
+	return cachedLookup(ctx, c, m, key, clone,
+		func([]*T) bool { return false },
+		func(ctx context.Context) ([]*T, error) { return load(ctx, key) })
 }
 
 // GetTokenByHash returns the token with the given hash, from the auth cache
 // when fresh.
 func (p *PostgresDB) GetTokenByHash(ctx context.Context, hash string) (*models.Token, error) {
-	return cachedLookup(ctx, &p.authCache, &p.authCache.tokens, hash, cloneToken,
-		func(t *models.Token) bool { return t == nil },
-		func(ctx context.Context) (*models.Token, error) { return p.GetTokenByHashUncached(ctx, hash) })
+	return cachedPtr(ctx, &p.authCache, &p.authCache.tokens, hash, cloneToken, p.GetTokenByHashUncached)
 }
 
 // GetUserByID returns the user with the given ID, from the auth cache when fresh.
 func (p *PostgresDB) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	return cachedLookup(ctx, &p.authCache, &p.authCache.users, id, cloneUser,
-		func(u *models.User) bool { return u == nil },
-		func(ctx context.Context) (*models.User, error) { return p.GetUserByIDUncached(ctx, id) })
+	return cachedPtr(ctx, &p.authCache, &p.authCache.users, id, cloneShallow, p.GetUserByIDUncached)
 }
 
 // ListGroupsByUser returns the groups of a user, from the auth cache when fresh.
 func (p *PostgresDB) ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error) {
-	return cachedLookup(ctx, &p.authCache, &p.authCache.groups, userID, cloneGroups,
-		func([]*models.Group) bool { return false },
-		func(ctx context.Context) ([]*models.Group, error) { return p.ListGroupsByUserUncached(ctx, userID) })
+	return cachedList(ctx, &p.authCache, &p.authCache.groups, userID, cloneShallowSlice, p.ListGroupsByUserUncached)
 }
 
 // GetPermissionTargetsForPrincipal returns the permission targets held by a
@@ -226,9 +232,8 @@ func (p *PostgresDB) GetPermissionTargetsForPrincipal(
 ) ([]*models.PermissionTarget, error) {
 	key := userID + "\x00" + strings.Join(groupIDs, "\x00")
 
-	return cachedLookup(ctx, &p.authCache, &p.authCache.perms, key, clonePermTargets,
-		func([]*models.PermissionTarget) bool { return false },
-		func(ctx context.Context) ([]*models.PermissionTarget, error) {
+	return cachedList(ctx, &p.authCache, &p.authCache.perms, key, clonePermTargets,
+		func(ctx context.Context, _ string) ([]*models.PermissionTarget, error) {
 			return p.GetPermissionTargetsForPrincipalUncached(ctx, userID, groupIDs)
 		})
 }
@@ -236,19 +241,13 @@ func (p *PostgresDB) GetPermissionTargetsForPrincipal(
 // GetRepositoryByName returns the repository with the given name, from the
 // auth cache when fresh.
 func (p *PostgresDB) GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error) {
-	return cachedLookup(ctx, &p.authCache, &p.authCache.repos, name, cloneRepo,
-		func(r *models.Repository) bool { return r == nil },
-		func(ctx context.Context) (*models.Repository, error) { return p.GetRepositoryByNameUncached(ctx, name) })
+	return cachedPtr(ctx, &p.authCache, &p.authCache.repos, name, cloneShallow, p.GetRepositoryByNameUncached)
 }
 
 // ListProjectGrantsByUser returns the project grants of a user (see
 // models.ProjectGrant), from the auth cache when fresh.
 func (p *PostgresDB) ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {
-	return cachedLookup(ctx, &p.authCache, &p.authCache.projects, userID, cloneProjectGrants,
-		func([]*models.ProjectGrant) bool { return false },
-		func(ctx context.Context) ([]*models.ProjectGrant, error) {
-			return p.listProjectGrantsByUserUncached(ctx, userID)
-		})
+	return cachedList(ctx, &p.authCache, &p.authCache.projects, userID, cloneShallowSlice, p.listProjectGrantsByUserUncached)
 }
 
 func (p *PostgresDB) listProjectGrantsByUserUncached(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {

@@ -5,10 +5,12 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -29,6 +31,29 @@ const vulnResultColumns = `vr.id, ref.repository_id, ref.artifact_path, vr.packa
 	       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
 	       vr.quarantined, sj.error_message, vr.failed_scanners, sj.completed_at, sj.created_at, sj.updated_at,
 	       vr.kev_count, vr.max_epss`
+
+// nullStringPtr returns a pointer to the string of a valid NullString, or nil.
+func nullStringPtr(ns sql.NullString) *string {
+	if !ns.Valid {
+		return nil
+	}
+
+	return &ns.String
+}
+
+// orNotFound maps sql.ErrNoRows to a nil result with a nil error, and wraps any
+// other error as "failed to <action>".
+func orNotFound[T any](v *T, err error, action string) (*T, error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to %s: %w", action, err)
+	}
+
+	return v, nil
+}
 
 // rowScanner is satisfied by *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -158,15 +183,101 @@ func scanRepository(row rowScanner) (*models.Repository, error) {
 }
 
 // mapRow turns the result of a sqlc single-row query into a model: sql.ErrNoRows
-// yields (nil, nil), any other error is wrapped with "failed to get what".
-func mapRow[R, T any](row R, err error, what string, mapf func(R) *T) (*T, error) {
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+// yields (nil, nil), any other error is wrapped as "failed to <action>".
+func mapRow[R, T any](row R, err error, action string, mapf func(R) *T) (*T, error) {
+	v, err := orNotFound(&row, err, action)
+	if v == nil || err != nil {
+		return nil, err
 	}
 
+	return mapf(*v), nil
+}
+
+// mapSlice converts every element of in with f.
+func mapSlice[R, T any](in []R, f func(R) T) []T {
+	out := make([]T, len(in))
+	for i, v := range in {
+		out[i] = f(v)
+	}
+
+	return out
+}
+
+// execMatching runs a write statement and returns notFound when it matched no
+// row; a failure is wrapped as "failed to <action>".
+func (p *PostgresDB) execMatching(ctx context.Context, action string, notFound error, query string, args ...any) error {
+	res, err := p.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get %s: %w", what, err)
+		return fmt.Errorf("failed to %s: %w", action, err)
 	}
 
-	return mapf(row), nil
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to %s: %w", action, err)
+	}
+
+	if n == 0 {
+		return notFound
+	}
+
+	return nil
+}
+
+// mapRows is the tail of a sqlc list query: a failure is wrapped as
+// "failed to <action>", otherwise every row is converted with mapf.
+func mapRows[R, T any](rows []R, err error, action string, mapf func(R) T) ([]T, error) {
+	if err != nil {
+		return nil, fmt.Errorf("failed to %s: %w", action, err)
+	}
+
+	return mapSlice(rows, mapf), nil
+}
+
+// mapRowsOrNil is mapRows for lists that are nil, not empty, when there are no rows.
+func mapRowsOrNil[R, T any](rows []R, err error, action string, mapf func(R) T) ([]T, error) {
+	out, err := mapRows(rows, err, action, mapf)
+	if len(out) == 0 {
+		return nil, err
+	}
+
+	return out, err
+}
+
+// scanString reads a single text column.
+func scanString(row rowScanner) (string, error) {
+	var s string
+
+	return s, row.Scan(&s) //nolint:wrapcheck // collectRows wraps with the caller's message
+}
+
+// insertedRow is what an INSERT ... RETURNING id, created_at, updated_at yields;
+// the sqlc Create...Row types of such queries convert to it.
+type insertedRow struct {
+	ID        string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// finishCreate copies the generated columns of a created row into the model's
+// fields, or wraps a failed insert as "failed to <action>".
+func finishCreate(row insertedRow, err error, action string, id *string, createdAt, updatedAt *time.Time) error {
+	if err != nil {
+		return fmt.Errorf("failed to %s: %w", action, err)
+	}
+
+	*id, *createdAt, *updatedAt = row.ID, row.CreatedAt, row.UpdatedAt
+
+	return nil
+}
+
+// storeRow is the tail of an upsert that returns the stored row: a failure is
+// wrapped as "failed to <action>", otherwise the converted row replaces *dst.
+func storeRow[R, T any](dst *T, row R, err error, action string, mapf func(R) *T) error {
+	if err != nil {
+		return fmt.Errorf("failed to %s: %w", action, err)
+	}
+
+	*dst = *mapf(row)
+
+	return nil
 }

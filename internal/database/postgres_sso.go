@@ -262,106 +262,11 @@ func (p *PostgresDB) SyncSSOGroups(ctx context.Context, userID string, groupIDs 
 }
 
 func (p *PostgresDB) GetUserByExternalID(ctx context.Context, externalID, providerSlug string) (*models.User, error) {
-	u := &models.User{}
-
-	var (
-		email, passwordHash, fullName, extID, provSlug sql.NullString
-		lastLoginAt                                    sql.NullTime
-	)
-
-	err := p.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
-			updated_at, external_id, provider_slug, sso_managed_groups
-		FROM auth_users WHERE external_id=$1 AND provider_slug=$2`,
-		externalID,
-		providerSlug,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt,
-		&u.UpdatedAt, &extID, &provSlug, &u.SSOManagedGroups)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user by external id: %w", err)
-	}
-
-	if email.Valid {
-		u.Email = &email.String
-	}
-
-	if passwordHash.Valid {
-		u.PasswordHash = &passwordHash.String
-	}
-
-	if fullName.Valid {
-		u.FullName = &fullName.String
-	}
-
-	if lastLoginAt.Valid {
-		u.LastLoginAt = &lastLoginAt.Time
-	}
-
-	if extID.Valid {
-		u.ExternalID = &extID.String
-	}
-
-	if provSlug.Valid {
-		u.ProviderSlug = &provSlug.String
-	}
-
-	return u, nil
+	return p.getUserWhere(ctx, "external id", "u.external_id=$1 AND u.provider_slug=$2", externalID, providerSlug)
 }
 
 func (p *PostgresDB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	u := &models.User{}
-
-	var (
-		emailVal, passwordHash, fullName, externalID, providerSlug sql.NullString
-		lastLoginAt                                                sql.NullTime
-	)
-
-	err := p.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
-			updated_at, external_id, provider_slug, sso_managed_groups
-		FROM auth_users WHERE email=$1`,
-		email,
-	).Scan(&u.ID, &u.Username, &emailVal, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt,
-		&u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user by email: %w", err)
-	}
-
-	if emailVal.Valid {
-		u.Email = &emailVal.String
-	}
-
-	if passwordHash.Valid {
-		u.PasswordHash = &passwordHash.String
-	}
-
-	if fullName.Valid {
-		u.FullName = &fullName.String
-	}
-
-	if lastLoginAt.Valid {
-		u.LastLoginAt = &lastLoginAt.Time
-	}
-
-	if externalID.Valid {
-		u.ExternalID = &externalID.String
-	}
-
-	if providerSlug.Valid {
-		u.ProviderSlug = &providerSlug.String
-	}
-
-	return u, nil
+	return p.getUserWhere(ctx, "email", "u.email=$1", email)
 }
 
 func (p *PostgresDB) GetGroupByName(ctx context.Context, name string) (*models.Group, error) {

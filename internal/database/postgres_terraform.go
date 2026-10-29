@@ -6,8 +6,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
@@ -27,7 +25,14 @@ func terraformModuleMediaType(ext string) string {
 	}
 }
 
-func terraformModuleFromRow(row dbsqlc.GetTerraformModuleRow) *models.TerraformModule {
+// terraformModuleRow lists the sqlc row types terraformModuleFromRow converts; they share the columns of GetTerraformModuleRow.
+type terraformModuleRow interface {
+	dbsqlc.GetTerraformModuleRow | dbsqlc.ListTerraformModuleVersionsRow | dbsqlc.ListTerraformModulesRow
+}
+
+func terraformModuleFromRow[R terraformModuleRow](in R) *models.TerraformModule {
+	row := dbsqlc.GetTerraformModuleRow(in)
+
 	return &models.TerraformModule{
 		ID:            row.ID,
 		RepositoryID:  row.RepositoryID,
@@ -44,7 +49,15 @@ func terraformModuleFromRow(row dbsqlc.GetTerraformModuleRow) *models.TerraformM
 	}
 }
 
-func terraformProviderFromRow(row dbsqlc.GetTerraformProviderRow) *models.TerraformProvider {
+// terraformProviderRow lists the sqlc row types terraformProviderFromRow converts; they share the columns of GetTerraformProviderRow.
+type terraformProviderRow interface {
+	dbsqlc.GetTerraformProviderRow | dbsqlc.ListTerraformProviderPlatformsRow |
+		dbsqlc.ListTerraformProviderVersionPlatformsRow | dbsqlc.ListTerraformProvidersRow
+}
+
+func terraformProviderFromRow[R terraformProviderRow](in R) *models.TerraformProvider {
+	row := dbsqlc.GetTerraformProviderRow(in)
+
 	return &models.TerraformProvider{
 		ID:            row.ID,
 		RepositoryID:  row.RepositoryID,
@@ -79,15 +92,8 @@ func (p *PostgresDB) CreateTerraformModule(ctx context.Context, mod *models.Terr
 		BlobID:       blobID,
 		CreatedAt:    createdAtOrNil(mod.CreatedAt),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create terraform module: %w", err)
-	}
 
-	mod.ID = row.ID
-	mod.CreatedAt = row.CreatedAt
-	mod.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create terraform module", &mod.ID, &mod.CreatedAt, &mod.UpdatedAt)
 }
 
 // GetTerraformModule returns the live module version, or (nil, nil).
@@ -95,15 +101,8 @@ func (p *PostgresDB) GetTerraformModule(ctx context.Context, repoID, name, syste
 	row, err := p.q.GetTerraformModule(ctx, dbsqlc.GetTerraformModuleParams{
 		RepositoryID: repoID, Name: name, System: system, Version: version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get terraform module: %w", err)
-	}
-
-	return terraformModuleFromRow(row), nil
+	return mapRow(row, err, "get terraform module", terraformModuleFromRow)
 }
 
 // ListTerraformModuleVersions returns the live versions of one module, oldest
@@ -112,31 +111,15 @@ func (p *PostgresDB) ListTerraformModuleVersions(ctx context.Context, repoID, na
 	rows, err := p.q.ListTerraformModuleVersions(ctx, dbsqlc.ListTerraformModuleVersionsParams{
 		RepositoryID: repoID, Name: name, System: system,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list terraform module versions: %w", err)
-	}
 
-	mods := make([]*models.TerraformModule, 0, len(rows))
-	for _, row := range rows {
-		mods = append(mods, terraformModuleFromRow(dbsqlc.GetTerraformModuleRow(row)))
-	}
-
-	return mods, nil
+	return mapRows(rows, err, "list terraform module versions", terraformModuleFromRow)
 }
 
 // ListTerraformModules returns every live module version of the repository.
 func (p *PostgresDB) ListTerraformModules(ctx context.Context, repoID string) ([]*models.TerraformModule, error) {
 	rows, err := p.q.ListTerraformModules(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list terraform modules: %w", err)
-	}
 
-	mods := make([]*models.TerraformModule, 0, len(rows))
-	for _, row := range rows {
-		mods = append(mods, terraformModuleFromRow(dbsqlc.GetTerraformModuleRow(row)))
-	}
-
-	return mods, nil
+	return mapRows(rows, err, "list terraform modules", terraformModuleFromRow)
 }
 
 // DeleteTerraformModule removes one module version row.
@@ -191,15 +174,8 @@ func (p *PostgresDB) CreateTerraformProvider(ctx context.Context, prov *models.T
 		BlobID:       blobID,
 		CreatedAt:    createdAtOrNil(prov.CreatedAt),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create terraform provider: %w", err)
-	}
 
-	prov.ID = row.ID
-	prov.CreatedAt = row.CreatedAt
-	prov.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create terraform provider", &prov.ID, &prov.CreatedAt, &prov.UpdatedAt)
 }
 
 // GetTerraformProvider returns the live platform zip, or (nil, nil).
@@ -210,31 +186,16 @@ func (p *PostgresDB) GetTerraformProvider(
 	row, err := p.q.GetTerraformProvider(ctx, dbsqlc.GetTerraformProviderParams{
 		RepositoryID: repoID, Type: typ, Version: version, Os: osName, Arch: arch,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get terraform provider: %w", err)
-	}
-
-	return terraformProviderFromRow(row), nil
+	return mapRow(row, err, "get terraform provider", terraformProviderFromRow)
 }
 
 // ListTerraformProviderPlatforms returns every live platform zip of one
 // provider type, ordered by version, os and arch.
 func (p *PostgresDB) ListTerraformProviderPlatforms(ctx context.Context, repoID, typ string) ([]*models.TerraformProvider, error) {
 	rows, err := p.q.ListTerraformProviderPlatforms(ctx, dbsqlc.ListTerraformProviderPlatformsParams{RepositoryID: repoID, Type: typ})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list terraform provider platforms: %w", err)
-	}
 
-	provs := make([]*models.TerraformProvider, 0, len(rows))
-	for _, row := range rows {
-		provs = append(provs, terraformProviderFromRow(dbsqlc.GetTerraformProviderRow(row)))
-	}
-
-	return provs, nil
+	return mapRows(rows, err, "list terraform provider platforms", terraformProviderFromRow)
 }
 
 // ListTerraformProviderVersionPlatforms returns every live platform zip of one
@@ -246,32 +207,17 @@ func (p *PostgresDB) ListTerraformProviderVersionPlatforms(
 	rows, err := p.q.ListTerraformProviderVersionPlatforms(ctx, dbsqlc.ListTerraformProviderVersionPlatformsParams{
 		RepositoryID: repoID, Type: typ, Version: version,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list terraform provider version platforms: %w", err)
-	}
 
-	provs := make([]*models.TerraformProvider, 0, len(rows))
-	for _, row := range rows {
-		provs = append(provs, terraformProviderFromRow(dbsqlc.GetTerraformProviderRow(row)))
-	}
-
-	return provs, nil
+	return mapRows(rows, err, "list terraform provider version platforms",
+		terraformProviderFromRow)
 }
 
 // ListTerraformProviders returns every live provider platform zip of the
 // repository.
 func (p *PostgresDB) ListTerraformProviders(ctx context.Context, repoID string) ([]*models.TerraformProvider, error) {
 	rows, err := p.q.ListTerraformProviders(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list terraform providers: %w", err)
-	}
 
-	provs := make([]*models.TerraformProvider, 0, len(rows))
-	for _, row := range rows {
-		provs = append(provs, terraformProviderFromRow(dbsqlc.GetTerraformProviderRow(row)))
-	}
-
-	return provs, nil
+	return mapRows(rows, err, "list terraform providers", terraformProviderFromRow)
 }
 
 // DeleteTerraformProvider removes one provider platform row.

@@ -74,15 +74,8 @@ func (p *PostgresDB) CreateAnsibleCollection(ctx context.Context, c *models.Ansi
 		RequiresAnsible: c.RequiresAnsible,
 		CreatedAt:       createdAtOrNil(c.CreatedAt),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create ansible collection: %w", err)
-	}
 
-	c.ID = row.ID
-	c.CreatedAt = row.CreatedAt
-	c.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create ansible collection", &c.ID, &c.CreatedAt, &c.UpdatedAt)
 }
 
 func nonNilMap(m map[string]string) map[string]string {

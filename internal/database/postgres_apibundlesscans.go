@@ -43,87 +43,38 @@ const vulnScanByIDSelect = `
 // GetVulnScanResultByID returns the vuln scan result with the given ID scoped to repoID, or nil.
 func (p *PostgresDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
 	result, err := scanVulnResult(p.db.QueryRowContext(ctx, vulnScanByIDSelect, repoID, id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vuln scan result by id: %w", err)
-	}
-
-	return result, nil
+	return orNotFound(result, err, "get vuln scan result by id")
 }
 
 // DeleteVulnScanResult deletes a vuln scan result (and its owning scan job)
 // by ID, scoped to repoID. Returns ErrVulnScanNotFound when nothing matched.
 func (p *PostgresDB) DeleteVulnScanResult(ctx context.Context, repoID, id string) error {
-	res, err := p.db.ExecContext(ctx, `
+	return p.execMatching(ctx, "delete vuln scan result", ErrVulnScanNotFound, `
 		DELETE FROM scan_jobs sj
 		USING vuln_results vr, artifact_refs ref
 		WHERE vr.id = $2 AND vr.scan_job_id = sj.id AND sj.scan_type = 'vuln'
 		  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1`, repoID, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete vuln scan result: %w", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to delete vuln scan result: %w", err)
-	}
-
-	if n == 0 {
-		return ErrVulnScanNotFound
-	}
-
-	return nil
 }
 
 // DeleteSecretScanResult deletes a secret scan result (and its owning scan job)
 // by ID, scoped to repoID. Returns ErrSecretScanNotFound when nothing matched.
 func (p *PostgresDB) DeleteSecretScanResult(ctx context.Context, repoID, id string) error {
-	res, err := p.db.ExecContext(ctx, `
+	return p.execMatching(ctx, "delete secret scan result", ErrSecretScanNotFound, `
 		DELETE FROM scan_jobs sj
 		USING secret_results sr, artifact_refs ref
 		WHERE sr.id = $2 AND sr.scan_job_id = sj.id AND sj.scan_type = 'secret'
 		  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1`, repoID, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete secret scan result: %w", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to delete secret scan result: %w", err)
-	}
-
-	if n == 0 {
-		return ErrSecretScanNotFound
-	}
-
-	return nil
 }
 
 // SetVulnScanQuarantine sets the quarantined flag of exactly one vuln scan
 // result (by ID, scoped to repoID). Returns ErrVulnScanNotFound when nothing matched.
 func (p *PostgresDB) SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error {
-	res, err := p.db.ExecContext(ctx, `
+	return p.execMatching(ctx, "set vuln scan quarantine", ErrVulnScanNotFound, `
 		UPDATE vuln_results vr SET quarantined = $3
 		FROM scan_jobs sj, artifact_refs ref
 		WHERE vr.id = $2 AND sj.id = vr.scan_job_id AND sj.scan_type = 'vuln'
 		  AND ref.id = sj.artifact_ref_id AND ref.repository_id = $1`, repoID, id, quarantined)
-	if err != nil {
-		return fmt.Errorf("failed to set vuln scan quarantine: %w", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to set vuln scan quarantine: %w", err)
-	}
-
-	if n == 0 {
-		return ErrVulnScanNotFound
-	}
-
-	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -139,15 +90,8 @@ func (p *PostgresDB) GetLicenseScanResultByID(ctx context.Context, repoID, id st
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 		WHERE sj.scan_type = 'license' AND ref.repository_id = $1 AND lr.id = $2`, repoID, id,
 	))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get license scan result by id: %w", err)
-	}
-
-	return result, nil
+	return orNotFound(result, err, "get license scan result by id")
 }
 
 // ListGlobalLicensePolicies lists only the global (repository_id IS NULL) license policies.

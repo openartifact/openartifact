@@ -40,118 +40,52 @@ func (p *PostgresDB) CreateUser(ctx context.Context, user *models.User) (*models
 	return user, nil
 }
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
-func (p *PostgresDB) GetUserByIDUncached(ctx context.Context, id string) (*models.User, error) {
+// userColumns is the column list scanUser reads; queries select it FROM auth_users u.
+const userColumns = `u.id, u.username, u.email, u.password_hash, u.full_name, u.disabled, u.must_change_password, u.last_login_at,
+	u.created_at, u.updated_at, u.external_id, u.provider_slug, u.sso_managed_groups, u.kind, u.project_id`
+
+// scanUser reads one row selected with userColumns.
+func scanUser(row rowScanner) (*models.User, error) {
 	u := &models.User{}
 
 	var (
-		email, passwordHash, fullName, externalID, providerSlug sql.NullString
-		lastLoginAt                                             sql.NullTime
-		userProject                                             sql.NullString
+		email, passwordHash, fullName, externalID, providerSlug, userProject sql.NullString
+		lastLoginAt                                                          sql.NullTime
 	)
 
-	err := p.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
-			updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
-		FROM auth_users WHERE id = $1`,
-		id,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt,
-		&u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	if err := row.Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt,
+		&u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject); err != nil {
+		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user by id: %w", err)
-	}
-
-	if email.Valid {
-		u.Email = &email.String
-	}
-
-	if passwordHash.Valid {
-		u.PasswordHash = &passwordHash.String
-	}
-
-	if fullName.Valid {
-		u.FullName = &fullName.String
-	}
+	u.Email = nullStringPtr(email)
+	u.PasswordHash = nullStringPtr(passwordHash)
+	u.FullName = nullStringPtr(fullName)
+	u.ExternalID = nullStringPtr(externalID)
+	u.ProviderSlug = nullStringPtr(providerSlug)
+	u.ProjectID = nullStringPtr(userProject)
 
 	if lastLoginAt.Valid {
 		u.LastLoginAt = &lastLoginAt.Time
-	}
-
-	if externalID.Valid {
-		u.ExternalID = &externalID.String
-	}
-
-	if providerSlug.Valid {
-		u.ProviderSlug = &providerSlug.String
-	}
-
-	if userProject.Valid {
-		u.ProjectID = &userProject.String
 	}
 
 	return u, nil
 }
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
+// getUserWhere returns the single user matching the WHERE clause, or nil when
+// there is none. what names the lookup in the error message.
+func (p *PostgresDB) getUserWhere(ctx context.Context, what, where string, args ...any) (*models.User, error) {
+	u, err := scanUser(p.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM auth_users u WHERE `+where, args...))
+
+	return orNotFound(u, err, "get user by "+what)
+}
+
+func (p *PostgresDB) GetUserByIDUncached(ctx context.Context, id string) (*models.User, error) {
+	return p.getUserWhere(ctx, "id", "u.id = $1", id)
+}
+
 func (p *PostgresDB) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	u := &models.User{}
-
-	var (
-		email, passwordHash, fullName, externalID, providerSlug sql.NullString
-		lastLoginAt                                             sql.NullTime
-		userProject                                             sql.NullString
-	)
-
-	err := p.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
-			updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
-		FROM auth_users WHERE username = $1`,
-		username,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt,
-		&u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user by username: %w", err)
-	}
-
-	if email.Valid {
-		u.Email = &email.String
-	}
-
-	if passwordHash.Valid {
-		u.PasswordHash = &passwordHash.String
-	}
-
-	if fullName.Valid {
-		u.FullName = &fullName.String
-	}
-
-	if lastLoginAt.Valid {
-		u.LastLoginAt = &lastLoginAt.Time
-	}
-
-	if externalID.Valid {
-		u.ExternalID = &externalID.String
-	}
-
-	if providerSlug.Valid {
-		u.ProviderSlug = &providerSlug.String
-	}
-
-	if userProject.Valid {
-		u.ProjectID = &userProject.String
-	}
-
-	return u, nil
+	return p.getUserWhere(ctx, "username", "u.username = $1", username)
 }
 
 func (p *PostgresDB) UpdateUser(ctx context.Context, user *models.User) error {
@@ -250,73 +184,18 @@ func (p *PostgresDB) ListUsers(ctx context.Context, page, perPage int) ([]*model
 
 	rows, err := p.db.QueryContext(
 		ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at,
-			updated_at, external_id, provider_slug, sso_managed_groups
-		FROM auth_users WHERE kind = 'human' ORDER BY created_at ASC, id LIMIT $1 OFFSET $2`,
+		`SELECT `+userColumns+`
+		FROM auth_users u WHERE u.kind = 'human' ORDER BY u.created_at ASC, u.id LIMIT $1 OFFSET $2`,
 		perPage,
 		offset,
 	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list users: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var users []*models.User
-
-	for rows.Next() {
-		u := &models.User{}
-
-		var (
-			email, passwordHash, fullName, externalID, providerSlug sql.NullString
-			lastLoginAt                                             sql.NullTime
-		)
-		if err := rows.Scan(
-			&u.ID,
-			&u.Username,
-			&email,
-			&passwordHash,
-			&fullName,
-			&u.Disabled,
-			&u.MustChangePassword,
-			&lastLoginAt,
-			&u.CreatedAt,
-			&u.UpdatedAt,
-			&externalID,
-			&providerSlug,
-			&u.SSOManagedGroups,
-		); err != nil {
-			return nil, 0, fmt.Errorf("failed to scan user: %w", err)
-		}
-
-		if email.Valid {
-			u.Email = &email.String
-		}
-
-		if passwordHash.Valid {
-			u.PasswordHash = &passwordHash.String
-		}
-
-		if fullName.Valid {
-			u.FullName = &fullName.String
-		}
-
-		if lastLoginAt.Valid {
-			u.LastLoginAt = &lastLoginAt.Time
-		}
-
-		if externalID.Valid {
-			u.ExternalID = &externalID.String
-		}
-
-		if providerSlug.Valid {
-			u.ProviderSlug = &providerSlug.String
-		}
-
-		users = append(users, u)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("failed to iterate users: %w", err)
+	users, err := collectRows(rows, "failed to scan user", "failed to iterate users", scanUser)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	return users, total, nil
@@ -347,29 +226,29 @@ func (p *PostgresDB) GetGroupByID(ctx context.Context, id string) (*models.Group
 	return p.getGroup(ctx, "id", id)
 }
 
-// getGroup reads one auth group by its id or name column.
-func (p *PostgresDB) getGroup(ctx context.Context, column, value string) (*models.Group, error) {
+// groupColumns is the column list scanGroup reads; queries select it FROM auth_groups g.
+const groupColumns = `g.id, g.name, g.description, g.created_at, g.updated_at`
+
+// scanGroup reads one row selected with groupColumns.
+func scanGroup(row rowScanner) (*models.Group, error) {
 	g := &models.Group{}
 
 	var description sql.NullString
 
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, name, description, created_at, updated_at FROM auth_groups WHERE `+column+` = $1`,
-		value,
-	).Scan(&g.ID, &g.Name, &description, &g.CreatedAt, &g.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	if err := row.Scan(&g.ID, &g.Name, &description, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get group by %s: %w", column, err)
-	}
-
-	if description.Valid {
-		g.Description = &description.String
-	}
+	g.Description = nullStringPtr(description)
 
 	return g, nil
+}
+
+// getGroup reads one auth group by its id or name column.
+func (p *PostgresDB) getGroup(ctx context.Context, column, value string) (*models.Group, error) {
+	g, err := scanGroup(p.db.QueryRowContext(ctx, `SELECT `+groupColumns+` FROM auth_groups g WHERE g.`+column+` = $1`, value))
+
+	return orNotFound(g, err, "get group by "+column)
 }
 
 func (p *PostgresDB) UpdateGroup(ctx context.Context, group *models.Group) error {
@@ -422,36 +301,12 @@ func (p *PostgresDB) DeleteGroup(ctx context.Context, id string) error {
 }
 
 func (p *PostgresDB) ListGroups(ctx context.Context) ([]*models.Group, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, name, description, created_at, updated_at FROM auth_groups ORDER BY name ASC`,
-	)
+	rows, err := p.db.QueryContext(ctx, `SELECT `+groupColumns+` FROM auth_groups g ORDER BY g.name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list groups: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var groups []*models.Group
-
-	for rows.Next() {
-		g := &models.Group{}
-
-		var description sql.NullString
-		if err := rows.Scan(&g.ID, &g.Name, &description, &g.CreatedAt, &g.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan group: %w", err)
-		}
-
-		if description.Valid {
-			g.Description = &description.String
-		}
-
-		groups = append(groups, g)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate groups: %w", err)
-	}
-
-	return groups, nil
+	return collectRows(rows, "failed to scan group", "failed to iterate groups", scanGroup)
 }
 
 func (p *PostgresDB) AddUserToGroup(ctx context.Context, userID, groupID string) error {
@@ -501,7 +356,7 @@ func (p *PostgresDB) RemoveUserFromGroup(ctx context.Context, userID, groupID st
 
 func (p *PostgresDB) ListGroupsByUserUncached(ctx context.Context, userID string) ([]*models.Group, error) {
 	rows, err := p.db.QueryContext(ctx,
-		`SELECT g.id, g.name, g.description, g.created_at, g.updated_at
+		`SELECT `+groupColumns+`
 		FROM auth_groups g
 		JOIN auth_user_groups ug ON ug.group_id = g.id
 		WHERE ug.user_id = $1
@@ -511,37 +366,14 @@ func (p *PostgresDB) ListGroupsByUserUncached(ctx context.Context, userID string
 	if err != nil {
 		return nil, fmt.Errorf("failed to list groups by user: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var groups []*models.Group
-
-	for rows.Next() {
-		g := &models.Group{}
-
-		var description sql.NullString
-		if err := rows.Scan(&g.ID, &g.Name, &description, &g.CreatedAt, &g.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan group: %w", err)
-		}
-
-		if description.Valid {
-			g.Description = &description.String
-		}
-
-		groups = append(groups, g)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate groups: %w", err)
-	}
-
-	return groups, nil
+	return collectRows(rows, "failed to scan group", "failed to iterate groups", scanGroup)
 }
 
 func (p *PostgresDB) ListUsersByGroup(ctx context.Context, groupID string) ([]*models.User, error) {
 	rows, err := p.db.QueryContext(
 		ctx,
-		`SELECT u.id, u.username, u.email, u.password_hash, u.full_name, u.disabled, u.must_change_password, u.last_login_at,
-			u.created_at, u.updated_at, u.external_id, u.provider_slug, u.sso_managed_groups
+		`SELECT `+userColumns+`
 		FROM auth_users u
 		JOIN auth_user_groups ug ON ug.user_id = u.id
 		WHERE ug.group_id = $1
@@ -551,67 +383,8 @@ func (p *PostgresDB) ListUsersByGroup(ctx context.Context, groupID string) ([]*m
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users by group: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var users []*models.User
-
-	for rows.Next() {
-		u := &models.User{}
-
-		var (
-			email, passwordHash, fullName, externalID, providerSlug sql.NullString
-			lastLoginAt                                             sql.NullTime
-		)
-		if err := rows.Scan(
-			&u.ID,
-			&u.Username,
-			&email,
-			&passwordHash,
-			&fullName,
-			&u.Disabled,
-			&u.MustChangePassword,
-			&lastLoginAt,
-			&u.CreatedAt,
-			&u.UpdatedAt,
-			&externalID,
-			&providerSlug,
-			&u.SSOManagedGroups,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan user: %w", err)
-		}
-
-		if email.Valid {
-			u.Email = &email.String
-		}
-
-		if passwordHash.Valid {
-			u.PasswordHash = &passwordHash.String
-		}
-
-		if fullName.Valid {
-			u.FullName = &fullName.String
-		}
-
-		if lastLoginAt.Valid {
-			u.LastLoginAt = &lastLoginAt.Time
-		}
-
-		if externalID.Valid {
-			u.ExternalID = &externalID.String
-		}
-
-		if providerSlug.Valid {
-			u.ProviderSlug = &providerSlug.String
-		}
-
-		users = append(users, u)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate users: %w", err)
-	}
-
-	return users, nil
+	return collectRows(rows, "failed to scan user", "failed to iterate users", scanUser)
 }
 
 func (p *PostgresDB) CreateSession(ctx context.Context, session *models.Session) (*models.Session, error) {
@@ -729,30 +502,19 @@ func (p *PostgresDB) CreateToken(ctx context.Context, token *models.Token) (*mod
 	return token, nil
 }
 
+// getTokenWhere returns the single token matching the WHERE clause, or nil when there is none.
+func (p *PostgresDB) getTokenWhere(ctx context.Context, what, where string, arg any) (*models.Token, error) {
+	t, err := scanToken(p.db.QueryRowContext(ctx, `SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE `+where, arg))
+
+	return orNotFound(t, err, "get token by "+what)
+}
+
 func (p *PostgresDB) GetTokenByHashUncached(ctx context.Context, hash string) (*models.Token, error) {
-	t, err := scanToken(p.db.QueryRowContext(ctx, `SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.token_hash = $1`, hash))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get token by hash: %w", err)
-	}
-
-	return t, nil
+	return p.getTokenWhere(ctx, "hash", "t.token_hash = $1", hash)
 }
 
 func (p *PostgresDB) GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error) {
-	t, err := scanToken(p.db.QueryRowContext(ctx, `SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.id = $1`, tokenID))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get token by id: %w", err)
-	}
-
-	return t, nil
+	return p.getTokenWhere(ctx, "id", "t.id = $1", tokenID)
 }
 
 func (p *PostgresDB) RevokeToken(ctx context.Context, tokenID string) error {
@@ -791,24 +553,8 @@ func (p *PostgresDB) ListTokensByUser(ctx context.Context, userID string) ([]*mo
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens by user: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var tokens []*models.Token
-
-	for rows.Next() {
-		t, err := scanToken(rows)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan token: %w", err)
-		}
-
-		tokens = append(tokens, t)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate tokens: %w", err)
-	}
-
-	return tokens, nil
+	return collectRows(rows, "failed to scan token", "failed to iterate tokens", scanToken)
 }
 
 func (p *PostgresDB) CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error) {
@@ -829,16 +575,7 @@ func (p *PostgresDB) CreatePermissionTarget(ctx context.Context, target *models.
 	return target, nil
 }
 
-func (p *PostgresDB) GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error) {
-	row, err := p.q.GetPermissionTargetByID(ctx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get permission target by id: %w", err)
-	}
-
+func permissionTargetFromRow(row dbsqlc.GetPermissionTargetByIDRow) *models.PermissionTarget {
 	return &models.PermissionTarget{
 		ID:               row.ID,
 		Name:             row.Name,
@@ -847,28 +584,19 @@ func (p *PostgresDB) GetPermissionTargetByID(ctx context.Context, id string) (*m
 		Actions:          row.Actions,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
-	}, nil
+	}
+}
+
+func (p *PostgresDB) GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error) {
+	row, err := p.q.GetPermissionTargetByID(ctx, id)
+
+	return mapRow(row, err, "get permission target by id", permissionTargetFromRow)
 }
 
 func (p *PostgresDB) GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error) {
 	row, err := p.q.GetPermissionTargetByName(ctx, name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get permission target by name: %w", err)
-	}
-
-	return &models.PermissionTarget{
-		ID:               row.ID,
-		Name:             row.Name,
-		RepositoryFilter: row.RepositoryFilter,
-		PathPattern:      row.PathPattern,
-		Actions:          row.Actions,
-		CreatedAt:        row.CreatedAt,
-		UpdatedAt:        row.UpdatedAt,
-	}, nil
+	return mapRow(dbsqlc.GetPermissionTargetByIDRow(row), err, "get permission target by name", permissionTargetFromRow)
 }
 
 func (p *PostgresDB) UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error {

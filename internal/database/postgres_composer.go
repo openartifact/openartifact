@@ -6,9 +6,7 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
@@ -17,7 +15,14 @@ import (
 
 const composerMediaType = "application/zip"
 
-func composerFromRow(row dbsqlc.ListComposerPackageVersionsRow) *models.ComposerPackage {
+// composerRow lists the sqlc row types composerFromRow converts; they share the columns of ListComposerPackageVersionsRow.
+type composerRow interface {
+	dbsqlc.ListComposerPackageVersionsRow | dbsqlc.GetComposerPackageRow | dbsqlc.GetComposerPackageByIDRow
+}
+
+func composerFromRow[R composerRow](in R) *models.ComposerPackage {
+	row := dbsqlc.ListComposerPackageVersionsRow(in)
+
 	return &models.ComposerPackage{
 		ID:                row.ID,
 		RepositoryID:      row.RepositoryID,
@@ -57,15 +62,8 @@ func (p *PostgresDB) CreateComposerPackage(ctx context.Context, c *models.Compos
 		ComposerJson:      doc,
 		CreatedAt:         createdAtOrNil(c.CreatedAt),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create composer package: %w", err)
-	}
 
-	c.ID = row.ID
-	c.CreatedAt = row.CreatedAt
-	c.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create composer package", &c.ID, &c.CreatedAt, &c.UpdatedAt)
 }
 
 // GetComposerPackage returns the live version of a package, or (nil, nil).
@@ -73,30 +71,16 @@ func (p *PostgresDB) GetComposerPackage(ctx context.Context, repoID, name, versi
 	row, err := p.q.GetComposerPackage(ctx, dbsqlc.GetComposerPackageParams{
 		RepositoryID: repoID, Name: name, VersionNormalized: versionNormalized,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get composer package: %w", err)
-	}
-
-	return composerFromRow(dbsqlc.ListComposerPackageVersionsRow(row)), nil
+	return mapRow(row, err, "get composer package", composerFromRow)
 }
 
 // GetComposerPackageByID returns the live package version of the repository
 // with the ID, or (nil, nil).
 func (p *PostgresDB) GetComposerPackageByID(ctx context.Context, repoID, id string) (*models.ComposerPackage, error) {
 	row, err := p.q.GetComposerPackageByID(ctx, dbsqlc.GetComposerPackageByIDParams{RepositoryID: repoID, ID: id})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get composer package by id: %w", err)
-	}
-
-	return composerFromRow(dbsqlc.ListComposerPackageVersionsRow(row)), nil
+	return mapRow(row, err, "get composer package by id", composerFromRow)
 }
 
 // ListComposerPackageVersions returns every live version of one package, oldest upload first.

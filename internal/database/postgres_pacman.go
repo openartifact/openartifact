@@ -6,8 +6,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -30,7 +28,14 @@ func pacmanMediaType(filename string) string {
 	}
 }
 
-func pacmanFromRow(row dbsqlc.ListPacmanPackagesRow) *models.PacmanPackage {
+// pacmanRow lists the sqlc row types pacmanFromRow converts; they share the columns of ListPacmanPackagesRow.
+type pacmanRow interface {
+	dbsqlc.ListPacmanPackagesRow | dbsqlc.GetPacmanPackageByFilenameRow
+}
+
+func pacmanFromRow[R pacmanRow](in R) *models.PacmanPackage {
+	row := dbsqlc.ListPacmanPackagesRow(in)
+
 	return &models.PacmanPackage{
 		ID:              row.ID,
 		RepositoryID:    row.RepositoryID,
@@ -104,30 +109,16 @@ func (p *PostgresDB) CreatePacmanPackage(ctx context.Context, pkg *models.Pacman
 		SignatureKey:    pkg.SignatureKey,
 		CreatedAt:       createdAtOrNil(pkg.CreatedAt),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create pacman package: %w", err)
-	}
 
-	pkg.ID = row.ID
-	pkg.CreatedAt = row.CreatedAt
-	pkg.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return finishCreate(insertedRow(row), err, "create pacman package", &pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 }
 
 // GetPacmanPackageByFilename returns the live package published under the file
 // name, or (nil, nil).
 func (p *PostgresDB) GetPacmanPackageByFilename(ctx context.Context, repoID, filename string) (*models.PacmanPackage, error) {
 	row, err := p.q.GetPacmanPackageByFilename(ctx, dbsqlc.GetPacmanPackageByFilenameParams{RepositoryID: repoID, Filename: filename})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pacman package: %w", err)
-	}
-
-	return pacmanFromRow(dbsqlc.ListPacmanPackagesRow(row)), nil
+	return mapRow(row, err, "get pacman package", pacmanFromRow)
 }
 
 // ListPacmanPackages returns every live package of the repository, without file lists.

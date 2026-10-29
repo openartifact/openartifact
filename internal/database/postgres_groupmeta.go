@@ -65,24 +65,7 @@ func (p *PostgresDB) ListMetadataGroupsOfMember(ctx context.Context, memberRepoI
 		return nil, fmt.Errorf("list groups of member: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var ids []string
-
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan group id: %w", err)
-		}
-
-		ids = append(ids, id)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list groups of member: %w", err)
-	}
-
-	return ids, nil
+	return collectRows(rows, "scan group id", "list groups of member", scanString)
 }
 
 // ListStaleMetadataGroups returns the apk, deb, pacman or rpm group repositories whose merged
@@ -97,24 +80,7 @@ func (p *PostgresDB) ListStaleMetadataGroups(ctx context.Context) ([]string, err
 		return nil, fmt.Errorf("list stale metadata groups: %w", err)
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var ids []string
-
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan group id: %w", err)
-		}
-
-		ids = append(ids, id)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list stale metadata groups: %w", err)
-	}
-
-	return ids, nil
+	return collectRows(rows, "scan group id", "list stale metadata groups", scanString)
 }
 
 // GetGroupPackageOwner returns the member repository that owns path (a Debian

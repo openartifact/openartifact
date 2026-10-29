@@ -478,20 +478,20 @@ func (q *Queries) StorageTierUsage(ctx context.Context) ([]StorageTierUsageRow, 
 
 const updateStoragePolicy = `-- name: UpdateStoragePolicy :exec
 UPDATE storage_policies SET
-    name = $1, enabled = $2, position = $3, target_tier_id = $4, from_tier_id = $7,
+    name = $2, enabled = $3, position = $4, target_tier_id = $5, from_tier_id = $7,
     min_age_seconds = $8, min_idle_seconds = $9,
     min_size_bytes = $10, max_size_bytes = $11,
-    repo_glob = $12, formats = $5, path_glob = $13
-WHERE id = $6
+    repo_glob = $12, formats = $6, path_glob = $13
+WHERE id = $1
 `
 
 type UpdateStoragePolicyParams struct {
+	ID             string   `db:"id" json:"id"`
 	Name           string   `db:"name" json:"name"`
 	Enabled        bool     `db:"enabled" json:"enabled"`
 	Position       int32    `db:"position" json:"position"`
 	TargetTierID   string   `db:"target_tier_id" json:"target_tier_id"`
 	Formats        []string `db:"formats" json:"formats"`
-	ID             string   `db:"id" json:"id"`
 	FromTierID     *string  `db:"from_tier_id" json:"from_tier_id"`
 	MinAgeSeconds  *int64   `db:"min_age_seconds" json:"min_age_seconds"`
 	MinIdleSeconds *int64   `db:"min_idle_seconds" json:"min_idle_seconds"`
@@ -503,12 +503,12 @@ type UpdateStoragePolicyParams struct {
 
 func (q *Queries) UpdateStoragePolicy(ctx context.Context, arg UpdateStoragePolicyParams) error {
 	_, err := q.db.Exec(ctx, updateStoragePolicy,
+		arg.ID,
 		arg.Name,
 		arg.Enabled,
 		arg.Position,
 		arg.TargetTierID,
 		arg.Formats,
-		arg.ID,
 		arg.FromTierID,
 		arg.MinAgeSeconds,
 		arg.MinIdleSeconds,
