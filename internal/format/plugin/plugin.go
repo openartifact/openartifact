@@ -227,6 +227,3 @@ func All() []Format {
 
 	return out
 }
-
-// Lookup returns the format registered under name.
-func Lookup(name string) (Format, bool) { return formats.Lookup(name) }

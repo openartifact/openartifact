@@ -17,8 +17,6 @@ import (
 
 	"database/sql"
 
-	"github.com/google/uuid"
-
 	"github.com/openartifact/openartifact/internal/cron"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -619,21 +617,6 @@ func (r *cleanupRun) names() []string {
 	slices.Sort(out)
 
 	return slices.Compact(out)
-}
-
-// packageIDs returns the ids of the touched packages (none for docker tags).
-func (r *cleanupRun) packageIDs() []string {
-	out := make([]string, 0, len(r.touched))
-
-	for id := range r.touched {
-		if uuid.Validate(id) == nil {
-			out = append(out, id)
-		}
-	}
-
-	slices.Sort(out)
-
-	return out
 }
 
 func (w *CleanupWorker) deleteArtifacts(
