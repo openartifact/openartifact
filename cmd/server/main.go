@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	formatgomod "github.com/openartifact/openartifact/internal/format/gomod"
+	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -39,6 +40,10 @@ func versionLine() string {
 }
 
 func main() {
+	// Every subcommand reads what the formats register: the hooks of the
+	// libraries and the lifecycles.
+	formats.Register()
+
 	if err := run(os.Args[1:]); err != nil {
 		ee, hasCode := errors.AsType[exitError](err)
 		if _, reported := errors.AsType[reportedError](err); !reported && !hasCode {

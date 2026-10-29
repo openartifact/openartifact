@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/recovery"
@@ -214,7 +215,10 @@ type rebuildWorkers struct {
 	pacman *worker.PacmanMetadataWorker
 	maven  *worker.MavenMetadataWorker
 	npm    *worker.NPMMetadataWorker
-	once   sync.Once
+	// metadata is the same workers as the format lifecycles see them.
+	metadata *lifecycle.Workers
+	log      *logger.Logger
+	once     sync.Once
 }
 
 func newRebuildWorkers(db *database.PostgresDB, cfg *config.Config, log *logger.Logger) *rebuildWorkers {
@@ -231,7 +235,8 @@ func newRebuildWorkers(db *database.PostgresDB, cfg *config.Config, log *logger.
 	limiter := worker.NewRegenLimiter(cfg.Workers.MetadataRegenConcurrency)
 	keys := gpgkeys.New(db, log, fileSigner(cfg, log))
 
-	return &rebuildWorkers{
+	w := &rebuildWorkers{
+		log: log,
 		rpm: worker.NewRPMetadataWorker(db, blobs, keys, log, reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 		deb: worker.NewDebMetadataWorker(db, blobs, keys, log).
 			WithMetrics(reg).
@@ -248,6 +253,16 @@ func newRebuildWorkers(db *database.PostgresDB, cfg *config.Config, log *logger.
 		maven: worker.NewMavenMetadataWorker(db, blobs, db.GetDB(), log, reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 		npm:   worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(limiter).WithDrainTimeout(rebuildRegenDrain),
 	}
+
+	w.metadata = lifecycle.NewWorkers()
+	w.metadata.Bind("rpm", w.rpm)
+	w.metadata.Bind("deb", w.deb)
+	w.metadata.Bind("pacman", w.pacman)
+	w.metadata.Bind("apk", w.apk)
+	w.metadata.Bind("maven", w.maven)
+	w.metadata.Bind("npm", w.npm)
+
+	return w
 }
 
 // stop drains the pending regenerations and stops the workers; idempotent.
@@ -300,42 +315,21 @@ func (w *rebuildWorkers) regenerate(db *database.PostgresDB) func(ctx context.Co
 	}
 }
 
+// notifyRepo refreshes the generated metadata of a repository that received
+// rows, through the stale hook of its format.
 func (w *rebuildWorkers) notifyRepo(ctx context.Context, db *database.PostgresDB, id, format string) error {
-	switch format {
-	case "rpm":
-		if err := db.MarkRepoStale(ctx, id); err != nil {
-			return fmt.Errorf("mark rpm repository stale: %w", err)
-		}
-
-		w.rpm.NotifyStale(id)
-	case "deb":
-		w.deb.NotifyStale(id)
-	case "pacman":
-		w.pacman.NotifyStale(id)
-	case "apk":
-		w.apk.NotifyStale(id)
-	case "maven":
-		rows, err := db.GetDB().QueryContext(ctx,
-			`SELECT DISTINCT group_id, artifact_id_coord FROM maven_artifacts WHERE repository_id = $1 AND deleted_at IS NULL`, id)
-		if err != nil {
-			return fmt.Errorf("list maven artifacts: %w", err)
-		}
-
-		defer func() { _ = rows.Close() }()
-
-		for rows.Next() {
-			var g, a string
-			if err := rows.Scan(&g, &a); err != nil {
-				return fmt.Errorf("scan maven artifact: %w", err)
-			}
-
-			w.maven.NotifyStale(id, g, a)
-		}
-
-		return rows.Err() //nolint:wrapcheck // iteration error
+	hooks, ok := lifecycle.Lookup(format)
+	if !ok || hooks.Stale == nil {
+		return nil
 	}
 
-	return nil
+	return hooks.Stale(ctx, &lifecycle.Env{ //nolint:wrapcheck // the hook names the failing step
+		Log:                w.log,
+		Workers:            w.metadata,
+		MarkRepoStale:      db.MarkRepoStale,
+		MarkPackumentStale: db.MarkPackumentStale,
+		SQL:                db.GetDB(),
+	}, id)
 }
 
 // emitReport writes the report: JSON to stdout with --json (a summary goes to

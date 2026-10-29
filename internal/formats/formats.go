@@ -25,12 +25,20 @@ import (
 
 // registrations lists the format registrations; a new format adds its file's
 // constructor here.
+//
+// The order is the registration order of plugin.All, which the shared
+// /repos/{name} subrouter mounts the formats in. chi keeps one handler per
+// route shape, so where two formats register the same shape the later one
+// serves it: npm's GET /{pkg}/{version} is taken over by conda's
+// GET /{platform}/{filename} and rpm's GET /public.key by deb's, as they always
+// were. Formats that share no route shape with another can go anywhere;
+// TestSharedRouteClashesAreKnown in cmd/server fails on a new clash.
 func registrations() []plugin.Format {
 	return []plugin.Format{
-		ansibleFormat(), apkFormat(), cargoFormat(), composerFormat(), conanFormat(), condaFormat(),
-		debFormat(), dockerFormat(), goFormat(), helmFormat(), ivyFormat(), mavenFormat(), nixFormat(),
-		npmFormat(), nugetFormat(), pacmanFormat(), pypiFormat(), rawFormat(), rpmFormat(),
-		rubygemsFormat(), sbtFormat(), terraformFormat(),
+		rpmFormat(), debFormat(), helmFormat(), pypiFormat(), nugetFormat(), npmFormat(), cargoFormat(),
+		rubygemsFormat(), condaFormat(), pacmanFormat(), ansibleFormat(), conanFormat(), goFormat(), terraformFormat(),
+		// Not on the shared subrouter, or guarded.
+		apkFormat(), composerFormat(), dockerFormat(), ivyFormat(), mavenFormat(), nixFormat(), rawFormat(), sbtFormat(),
 	}
 }
 

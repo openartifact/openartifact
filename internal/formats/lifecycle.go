@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
@@ -19,6 +20,9 @@ import (
 // indexes live from the tables (cargo index, conan, conda repodata, go, helm
 // index.yaml, ivy, nuget, pypi simple, raw, rubygems specs, sbt, terraform) and
 // has lifecycle.None.
+
+// markTimeout bounds the write of a stale flag.
+const markTimeout = 15 * time.Second
 
 // repoNotifier is the metadata worker of a format that regenerates the whole
 // index of a repository (*worker.DebMetadataWorker and friends).
@@ -33,7 +37,12 @@ func notifyRepo(format string, mark bool) func(ctx context.Context, env *lifecyc
 		var err error
 
 		if mark && env.MarkRepoStale != nil {
-			if markErr := env.MarkRepoStale(ctx, repoID); markErr != nil {
+			// The flag must land even when the request or run that caused the
+			// refresh is already cancelled.
+			mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markTimeout)
+			defer cancel()
+
+			if markErr := env.MarkRepoStale(mctx, repoID); markErr != nil {
 				err = fmt.Errorf("mark %s repository stale: %w", format, markErr)
 			}
 		}
@@ -132,7 +141,8 @@ func mavenLifecycle() lifecycle.Hooks {
 
 			group, artifact, err := r.RegenKeys(ctx)
 			if err != nil {
-				env.Log.Warnw("trash restore: resolve regeneration keys failed", "repository", r.RepositoryName, "kind", r.Kind, "error", err)
+				env.Log.Warnw("trash restore: resolve regeneration keys failed",
+					"repository", r.RepositoryName, "kind", r.Kind, "error", err)
 				return
 			}
 
@@ -187,7 +197,8 @@ func npmLifecycle() lifecycle.Hooks {
 
 			packageID, _, err := r.RegenKeys(ctx)
 			if err != nil {
-				env.Log.Warnw("trash restore: resolve regeneration keys failed", "repository", r.RepositoryName, "kind", r.Kind, "error", err)
+				env.Log.Warnw("trash restore: resolve regeneration keys failed",
+					"repository", r.RepositoryName, "kind", r.Kind, "error", err)
 				return
 			}
 

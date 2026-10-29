@@ -5,12 +5,14 @@
 package formats_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	"github.com/openartifact/openartifact/internal/formats"
@@ -33,6 +35,8 @@ func TestRegistrationsMatchSpecs(t *testing.T) {
 	for _, f := range plugin.All() {
 		names = append(names, f.Name())
 	}
+
+	slices.Sort(names)
 
 	if want := repotype.Names(); !slices.Equal(names, want) {
 		t.Fatalf("registered plugins %v, repotype.Names() %v", names, want)
@@ -90,6 +94,112 @@ func TestHostedHandlersAgreeWithMounts(t *testing.T) {
 
 		if len(routes.Routes()) == 0 {
 			t.Errorf("%s: the handler registers no route", spec.Name)
+		}
+	}
+}
+
+type repoCounter struct{ calls int }
+
+func (c *repoCounter) NotifyStale(string) { c.calls++ }
+
+type artifactCounter struct{ calls int }
+
+func (c *artifactCounter) NotifyStale(_, _, _ string) { c.calls++ }
+
+type collectCounter struct{ runs int }
+
+func (c *collectCounter) CollectRemoved(context.Context, *models.Repository) error {
+	c.runs++
+
+	return nil
+}
+
+// TestRemovalRefreshesGeneratedMetadata: a cleanup run that removed rows
+// refreshes the generated metadata of the formats that have some, and does
+// nothing for the formats that compute their indexes live.
+func TestRemovalRefreshesGeneratedMetadata(t *testing.T) {
+	t.Parallel()
+
+	// Formats whose Removed hook acts on a worker, with the worker they use.
+	acting := map[string]bool{"apk": true, "deb": true, "maven": true, "pacman": true, "rpm": true, "docker": true}
+
+	for _, f := range plugin.All() {
+		t.Run(f.Name(), func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				repo   = &repoCounter{}
+				art    = &artifactCounter{}
+				gc     = &collectCounter{}
+				marked []string
+				ws     = lifecycle.NewWorkers()
+			)
+
+			// Every worker of a format gets the counter of its kind.
+			for _, name := range repotype.Names() {
+				switch name {
+				case "maven":
+					ws.Bind(name, art)
+				case "docker":
+					ws.Bind(name, gc)
+				default:
+					ws.Bind(name, repo)
+				}
+			}
+
+			env := &lifecycle.Env{
+				Workers:       ws,
+				MarkRepoStale: func(_ context.Context, id string) error { marked = append(marked, id); return nil },
+			}
+
+			hooks, ok := lifecycle.Lookup(f.Name())
+			if !ok {
+				t.Fatal("no lifecycle registered")
+			}
+
+			if hooks.Removed != nil {
+				hooks.Removed(t.Context(), env, lifecycle.Removal{
+					Repo:  &models.Repository{ID: "r", Name: "n", Format: f.Name()},
+					Names: []string{"org:lib"},
+					Hard:  1,
+				})
+			}
+
+			acted := repo.calls+art.calls+gc.runs > 0
+			if acted != acting[f.Name()] {
+				t.Errorf("Removed acted = %v, want %v", acted, acting[f.Name()])
+			}
+
+			if got := len(marked) > 0; got != (f.Name() == "rpm") {
+				t.Errorf("marked the repository stale = %v, want only for rpm", got)
+			}
+
+			spec, _ := repotype.Lookup(f.Name())
+			if spec.GeneratedGroupMetadata && !acted {
+				t.Errorf("%s has generated group metadata but its cleanup refreshes nothing", f.Name())
+			}
+		})
+	}
+}
+
+// TestKeyChangeResignsStoredSignatures: a GPG key change must re-sign the
+// metadata of every format that stores a signature. terraform stores none: it
+// signs SHA256SUMS and publishes the signing key on every request, so it
+// follows a rotation without a refresh (internal/format/terraform
+// TestProviderSigningFollowsKeyRotation).
+func TestKeyChangeResignsStoredSignatures(t *testing.T) {
+	t.Parallel()
+
+	servedSigned := map[string]bool{"terraform": true}
+
+	for _, name := range repotype.Names() {
+		if !repotype.GPGSigned(name) {
+			continue
+		}
+
+		hooks, _ := lifecycle.Lookup(name)
+		if refreshes := hooks.Stale != nil; refreshes == servedSigned[name] {
+			t.Errorf("%s: GPG-signed, Stale hook = %v, signs when served = %v", name, refreshes, servedSigned[name])
 		}
 	}
 }

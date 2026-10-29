@@ -42,6 +42,7 @@ func (quiet) SetPublisher(webhook.Publisher) {}
 // format.
 type restHosted struct {
 	plugin.Hosted
+
 	rest restUpload
 }
 
@@ -80,6 +81,7 @@ func (h npmHosted) Guard(next http.Handler) http.Handler { return h.ShadowGuard(
 // mount only, and it is the catch-all of the shared PUT route.
 type npmPublishing struct {
 	npmHosted
+
 	publish npmPublisher
 }
 
@@ -98,6 +100,7 @@ func (h npmPublishing) PutClaim() plugin.PutClaim {
 // shared route.
 type goHosted struct {
 	*formatgomod.HTTPHandler
+
 	serve http.HandlerFunc
 }
 
