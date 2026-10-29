@@ -381,7 +381,7 @@ This page lists every configuration key with its type, built-in default and the 
 | `telemetry.otlp.traces` | `OTEL_TRACES_EXPORTER` | bool | `true` | `traces` exports distributed traces and installs the HTTP server middleware. On by default, so enabled alone keeps tracing. The environment form is `OTEL_TRACES_EXPORTER`: otlp turns it on, none turns it off. |
 | `telemetry.otlp.metrics` | `OTEL_METRICS_EXPORTER` | bool | `false` | `metrics` exports the Prometheus registry (Go runtime and openartifact_* families) over OTLP to the same endpoint. /metrics is unaffected. The environment form is `OTEL_METRICS_EXPORTER`: otlp turns it on, none turns it off. |
 | `telemetry.otlp.logs` | `OTEL_LOGS_EXPORTER` | bool | `false` | `logs` sends the application log records over OTLP as well, next to the configured log output; with it (or audit) on, an OTLP log provider is started on the same endpoint. The environment form is `OTEL_LOGS_EXPORTER`: otlp turns it on, none turns it off. |
-| `telemetry.otlp.audit` | `OPENARTIFACT_OTLP_AUDIT` | bool | `false` | `audit` is the switch for audit events over OTLP (scope openartifact.audit), independent of traces. It shares the log provider with logs. Reserved: no events are written to it yet (#193). The audit_logs table stays the source of truth. |
+| `telemetry.otlp.audit` | `OPENARTIFACT_OTLP_AUDIT` | bool | `false` | `audit` streams every audit event as an OTLP log event (scope and event name openartifact.audit), independent of traces. It shares the log provider with logs. The stream is best effort: the audit_logs table stays the source of truth. |
 
 ### `telemetry.frontend`
 

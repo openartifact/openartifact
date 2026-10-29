@@ -129,10 +129,10 @@ type OTLPConfig struct {
 	// started on the same endpoint. The environment form is
 	// OTEL_LOGS_EXPORTER: otlp turns it on, none turns it off.
 	Logs bool `yaml:"logs"`
-	// Audit is the switch for audit events over OTLP (scope
-	// openartifact.audit), independent of traces. It shares the log provider
-	// with logs. Reserved: no events are written to it yet (#193). The
-	// audit_logs table stays the source of truth.
+	// Audit streams every audit event as an OTLP log event (scope and event
+	// name openartifact.audit), independent of traces. It shares the log
+	// provider with logs. The stream is best effort: the audit_logs table
+	// stays the source of truth.
 	Audit bool `yaml:"audit"`
 }
 

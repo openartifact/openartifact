@@ -45,8 +45,13 @@ func TestRBACProjectTokenServiceAccount(t *testing.T) {
 	tok.ProjectID = &acme
 	db.tokens[tok.TokenHash] = tok
 
+	var seen *auth.Principal
+
 	handler := RBACMiddleware(RBACConfig{ProjectSettings: auth.NewProjectSettings(db, false)}, db, auth.NewEvaluator(db, log, false), log)(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = PrincipalFromContext(r.Context())
+			w.WriteHeader(http.StatusOK)
+		}))
 
 	tests := []struct {
 		method, path string
@@ -77,6 +82,11 @@ func TestRBACProjectTokenServiceAccount(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rw.Code, tc.want)
 			}
 		})
+	}
+
+	// The audit events of the request name the token.
+	if seen == nil || seen.TokenID == "" || seen.TokenID != tok.ID {
+		t.Errorf("principal token id = %v, want %q", seen, tok.ID)
 	}
 
 	t.Run("revoked token is refused", func(t *testing.T) {
