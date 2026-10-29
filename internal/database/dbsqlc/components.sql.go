@@ -12,7 +12,7 @@ import (
 
 const countRepoComponents = `-- name: CountRepoComponents :one
 WITH qm AS MATERIALIZED (
-    SELECT count(*) <= 2000 AS narrow FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text) m LIMIT 2001) c
+    SELECT CASE WHEN char_length($4::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT (
     -- generic files without name/q filter: package_files alone (index-only scan of idx_package_files_listing)
@@ -117,7 +117,7 @@ func (q *Queries) GetRepoComponentBlob(ctx context.Context, arg GetRepoComponent
 
 const listRepoComponents = `-- name: ListRepoComponents :many
 WITH qm AS MATERIALIZED (
-    SELECT count(*) <= 2000 AS narrow FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $7::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $7::text) m LIMIT 2001) c
+    SELECT CASE WHEN char_length($4::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $7::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $7::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
@@ -256,7 +256,9 @@ type ListRepoComponentsRow struct {
 // handful of index lookups for a rare term; otherwise the planner's estimate for
 // a pattern cannot be trusted (a term that is in every name matches everything),
 // and the listing index is walked with q as a filter, which stops at the first
-// page. A format_filter the repository has no package of skips the walk.
+// page. A q under 3 characters has no trigram: the probe would read a whole
+// index, so qm is false for it without probing. A format_filter the repository
+// has no package of skips the walk.
 func (q *Queries) ListRepoComponents(ctx context.Context, arg ListRepoComponentsParams) ([]ListRepoComponentsRow, error) {
 	rows, err := q.db.Query(ctx, listRepoComponents,
 		arg.RepoID,
@@ -304,7 +306,7 @@ func (q *Queries) ListRepoComponents(ctx context.Context, arg ListRepoComponents
 
 const listRepoComponentsByName = `-- name: ListRepoComponentsByName :many
 WITH qm AS MATERIALIZED (
-    SELECT count(*) <= 2000 AS narrow FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text) m LIMIT 2001) c
+    SELECT CASE WHEN char_length($2::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = $1::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE $5::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = $1::uuid AND pk3.name ILIKE $5::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,

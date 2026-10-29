@@ -42,10 +42,12 @@
 -- handful of index lookups for a rare term; otherwise the planner's estimate for
 -- a pattern cannot be trusted (a term that is in every name matches everything),
 -- and the listing index is walked with q as a filter, which stops at the first
--- page. A format_filter the repository has no package of skips the walk.
+-- page. A q under 3 characters has no trigram: the probe would read a whole
+-- index, so qm is false for it without probing. A format_filter the repository
+-- has no package of skips the walk.
 -- name: ListRepoComponents :many
 WITH qm AS MATERIALIZED (
-    SELECT count(*) <= 2000 AS narrow FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c
+    SELECT CASE WHEN char_length(sqlc.arg(q)::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
@@ -110,7 +112,7 @@ ORDER BY p.created_at DESC, p.id;
 
 -- name: ListRepoComponentsByName :many
 WITH qm AS MATERIALIZED (
-    SELECT count(*) <= 2000 AS narrow FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c
+    SELECT CASE WHEN char_length(sqlc.arg(q)::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT p.id::uuid AS id, p.repository_id::uuid AS repository_id, COALESCE(p.name, pk.name)::text AS name, COALESCE(p.version, v.version)::text AS version,
        COALESCE(p.format, pk.format)::text AS format, p.arch::text AS arch,
@@ -168,7 +170,7 @@ ORDER BY p.name, p.version, p.id;
 
 -- name: CountRepoComponents :one
 WITH qm AS MATERIALIZED (
-    SELECT count(*) <= 2000 AS narrow FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c
+    SELECT CASE WHEN char_length(sqlc.arg(q)::text) >= 3 THEN (SELECT count(*) <= 2000 FROM (SELECT 1 FROM (SELECT v2.id FROM package_versions v2 WHERE v2.repository_id = sqlc.arg(repo_id)::uuid AND v2.deleted_at IS NULL AND v2.version ILIKE sqlc.arg(q_pattern)::text UNION ALL SELECT v3.id FROM packages pk3 JOIN package_versions v3 ON v3.package_id = pk3.id AND v3.deleted_at IS NULL WHERE pk3.repository_id = sqlc.arg(repo_id)::uuid AND pk3.name ILIKE sqlc.arg(q_pattern)::text) m LIMIT 2001) c) ELSE false END AS narrow
 )
 SELECT (
     -- generic files without name/q filter: package_files alone (index-only scan of idx_package_files_listing)
