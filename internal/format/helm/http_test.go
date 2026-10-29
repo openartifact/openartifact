@@ -293,9 +293,9 @@ func TestUploadRefusesFilenameCollision(t *testing.T) {
 }
 
 func TestIndexURLsArePathEscaped(t *testing.T) {
-	idx := buildHelmIndex([]*models.HelmChart{{Name: "a", Version: "1.0.0+b#c?d"}})
+	entry := newHelmChartEntry(&models.HelmChart{Name: "a", Version: "1.0.0+b#c?d"})
 
-	got := idx.Entries["a"][0].URLs[0]
+	got := entry.URLs[0]
 	if want := "charts/a-1.0.0+b%23c%3Fd.tgz"; got != want {
 		t.Errorf("url = %q, want %q", got, want)
 	}
