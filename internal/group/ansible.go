@@ -120,6 +120,7 @@ func ansibleMemberRequest(r *http.Request, offset int) *http.Request {
 // last one. A list that cannot be read completely is failed: a partial list
 // would silently drop entries.
 func collectAnsibleList[T any](
+	h *Handler,
 	sess *mergeSession,
 	r *http.Request,
 	m *models.Repository,
@@ -130,21 +131,18 @@ func collectAnsibleList[T any](
 	var items []T
 
 	for range ansibleMaxPages {
-		cw := sess.capture(pkgansible.MaxDocBytes)
-		be.ServeMember(cw, ansibleMemberRequest(r, len(items)), m, path)
-
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
+		a := h.askMember(sess, ansibleMemberRequest(r, len(items)), m, path, pkgansible.MaxDocBytes, be)
 
 		switch {
-		case cw.status == http.StatusNotFound && len(items) == 0:
+		case a.failed:
+			return nil, ansibleListFailed
+		case !a.found && len(items) == 0:
 			return nil, ansibleListMissing
-		case cw.status != http.StatusOK || cw.overflow:
+		case !a.found:
 			return nil, ansibleListFailed
 		}
 
-		pg, err := parse(bytes.NewReader(cw.body.Bytes()))
+		pg, err := parse(bytes.NewReader(a.body))
 		if err != nil {
 			return nil, ansibleListFailed
 		}
@@ -213,7 +211,7 @@ func (h *Handler) ansibleVersions(
 	path := "api/v3/collections/" + p.Namespace + "/" + p.Name + "/versions/"
 
 	for _, m := range members {
-		refs, outcome := collectAnsibleList(sess, r, m, path, be, parseAnsibleVersionPage)
+		refs, outcome := collectAnsibleList(h, sess, r, m, path, be, parseAnsibleVersionPage)
 
 		switch outcome {
 		case ansibleListFailed:
@@ -256,7 +254,7 @@ func (h *Handler) serveAnsibleVersions(
 
 	refs, failed := h.ansibleVersions(r, l, p, members, be)
 	if len(refs) == 0 {
-		h.ansibleMissing(w, r, failed)
+		writeNoDocument(w, r, failed)
 		return
 	}
 
@@ -290,19 +288,14 @@ func (h *Handler) serveAnsibleVersion(
 	failed := false
 
 	for _, m := range members {
-		cw := sess.capture(pkgansible.MaxDocBytes)
-		be.ServeMember(cw, mr, m, relPath)
-
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
-
-		if cw.status == http.StatusNotFound {
+		a := h.askMember(sess, mr, m, relPath, pkgansible.MaxDocBytes, be)
+		if !a.found {
+			failed = failed || a.failed
 			continue
 		}
 
-		doc, err := pkgansible.ParseVersionDoc(bytes.NewReader(cw.body.Bytes()), p.Namespace, p.Name, p.Version)
-		if cw.status != http.StatusOK || cw.overflow || err != nil {
+		doc, err := pkgansible.ParseVersionDoc(bytes.NewReader(a.body), p.Namespace, p.Name, p.Version)
+		if err != nil {
 			failed = true
 			continue
 		}
@@ -314,7 +307,7 @@ func (h *Handler) serveAnsibleVersion(
 		return
 	}
 
-	h.ansibleMissing(w, r, failed)
+	writeNoDocument(w, r, failed)
 }
 
 // serveAnsibleIndex answers the collection index: the union of the hosted
@@ -348,7 +341,7 @@ func (h *Handler) serveAnsibleIndex(
 			continue
 		}
 
-		items, outcome := collectAnsibleList(sess, r, m, "api/v3/collections/", be, parseAnsibleIndexPage)
+		items, outcome := collectAnsibleList(h, sess, r, m, "api/v3/collections/", be, parseAnsibleIndexPage)
 
 		switch outcome {
 		case ansibleListFailed:
@@ -368,7 +361,7 @@ func (h *Handler) serveAnsibleIndex(
 	sess.release()
 
 	if len(docs) == 0 && failed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
+		writeNoDocument(w, r, true)
 		return
 	}
 
@@ -394,18 +387,6 @@ func relinkAnsibleCollection(l pkgansible.Links, d pkgansible.CollectionDoc) pkg
 	}
 
 	return d
-}
-
-// ansibleMissing answers a request no member could answer: 404, or 502 when a
-// member failed (so a client does not cache "does not exist" for something a
-// broken member might hold).
-func (h *Handler) ansibleMissing(w http.ResponseWriter, r *http.Request, failed bool) {
-	if failed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
-		return
-	}
-
-	http.NotFound(w, r)
 }
 
 // writeAnsible answers a generated document with a content ETag, honoring
