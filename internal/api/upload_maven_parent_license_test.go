@@ -11,7 +11,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,6 +32,9 @@ type mavenRepoDBStore interface {
 type mavenRepoDB struct {
 	mavenRepoDBStore
 
+	// mu guards the maps and counters below: the re-evaluation of waiting poms
+	// runs in the background while a test goes on uploading.
+	mu       sync.Mutex
 	policies []*models.LicensePolicy
 	// freePolicyReads is how many policy reads answer "no policies" first: the
 	// policy that blocks a license later found through a parent must not also
@@ -64,10 +69,16 @@ func (d *mavenRepoDB) addRepo(name, id, repoType string) *models.Repository {
 }
 
 func (d *mavenRepoDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	return d.repos[name], nil
 }
 
 func (d *mavenRepoDB) ListGroupsOfMember(_ context.Context, memberID string) ([]*models.Repository, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	var out []*models.Repository
 
 	for _, g := range d.repos {
@@ -82,10 +93,16 @@ func (d *mavenRepoDB) ListGroupsOfMember(_ context.Context, memberID string) ([]
 }
 
 func (d *mavenRepoDB) ListGroupMemberRepositories(_ context.Context, groupID string) ([]*models.Repository, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	return d.groupMembers[groupID], nil
 }
 
 func (d *mavenRepoDB) GetProxyCacheEntry(_ context.Context, repoID, key string) (*models.ProxyCacheEntry, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	return d.proxyCache[repoID+"|"+key], nil
 }
 
@@ -102,6 +119,9 @@ func (d *mavenRepoDB) UpsertBlob(_ context.Context, sha256, _ string, _ int64) (
 }
 
 func (d *mavenRepoDB) GetMavenArtifactByPath(_ context.Context, repoID, path string) (*models.MavenArtifact, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	return d.arts[repoID+"|"+path], nil
 }
 
@@ -118,6 +138,9 @@ func (d *mavenRepoDB) GetLatestSnapshotFile(
 }
 
 func (d *mavenRepoDB) CreateMavenArtifact(_ context.Context, a *models.MavenArtifact) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.nextID++
 	a.ID = "art-" + strconv.Itoa(d.nextID)
 	d.arts[a.RepositoryID+"|"+a.RepoPath] = a
@@ -126,6 +149,9 @@ func (d *mavenRepoDB) CreateMavenArtifact(_ context.Context, a *models.MavenArti
 }
 
 func (d *mavenRepoDB) GetMavenArtifactsByGAV(_ context.Context, repoID, g, a, v string) ([]*models.MavenArtifact, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	var out []*models.MavenArtifact
 
 	for _, art := range d.arts {
@@ -138,6 +164,9 @@ func (d *mavenRepoDB) GetMavenArtifactsByGAV(_ context.Context, repoID, g, a, v 
 }
 
 func (d *mavenRepoDB) ListMavenArtifactsByRepo(_ context.Context, repoID string) ([]*models.MavenArtifact, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	var out []*models.MavenArtifact
 
 	for _, art := range d.arts {
@@ -150,6 +179,9 @@ func (d *mavenRepoDB) ListMavenArtifactsByRepo(_ context.Context, repoID string)
 }
 
 func (d *mavenRepoDB) ListLicensePolicies(context.Context, string) ([]*models.LicensePolicy, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.freePolicyReads > 0 {
 		d.freePolicyReads--
 		return nil, nil
@@ -159,6 +191,9 @@ func (d *mavenRepoDB) ListLicensePolicies(context.Context, string) ([]*models.Li
 }
 
 func (d *mavenRepoDB) GetLicenseScanResult(_ context.Context, _, id string) (*models.LicenseScanResult, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if r := d.scans[id]; r != nil {
 		cp := *r
 		return &cp, nil
@@ -168,6 +203,9 @@ func (d *mavenRepoDB) GetLicenseScanResult(_ context.Context, _, id string) (*mo
 }
 
 func (d *mavenRepoDB) CreateLicenseScanResult(_ context.Context, r *models.LicenseScanResult) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	cp := *r
 	cp.ID = "scan-" + r.ArtifactID
 	d.scans[r.ArtifactID] = &cp
@@ -176,11 +214,15 @@ func (d *mavenRepoDB) CreateLicenseScanResult(_ context.Context, r *models.Licen
 }
 
 func (d *mavenRepoDB) ListLicenseScanResults(_ context.Context, repoID string) ([]*models.LicenseScanResult, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	var out []*models.LicenseScanResult
 
 	for _, s := range d.scans {
 		if s.RepositoryID == repoID {
-			out = append(out, s)
+			cp := *s
+			out = append(out, &cp)
 		}
 	}
 
@@ -192,6 +234,9 @@ func (d *mavenRepoDB) ListArtifactProperties(context.Context, string, string) (m
 }
 
 func (d *mavenRepoDB) GetRepoComponentBlob(_ context.Context, repoID, id string) (*models.ComponentBlob, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	for _, a := range d.arts {
 		if a.ID == id && a.RepositoryID == repoID {
 			return &models.ComponentBlob{
@@ -207,10 +252,11 @@ func (d *mavenRepoDB) GetRepoComponentBlob(_ context.Context, repoID, id string)
 }
 
 type mavenParentEnv struct {
-	t      *testing.T
-	db     *mavenRepoDB
-	blobs  *formattest.BlobStore
-	router chi.Router
+	t       *testing.T
+	db      *mavenRepoDB
+	blobs   *formattest.BlobStore
+	handler *MavenUploadHandler
+	router  chi.Router
 }
 
 func newMavenParentEnv(t *testing.T) *mavenParentEnv {
@@ -223,9 +269,13 @@ func newMavenParentEnv(t *testing.T) *mavenParentEnv {
 
 	db, blobs := newMavenRepoDB(), formattest.NewBlobStore()
 	router := chi.NewRouter()
-	NewMavenUploadHandler(log, db, blobs, nil).Register(router)
+	h := NewMavenUploadHandler(log, db, blobs, nil)
+	// The re-evaluation of waiting poms is a coalesced background task: a short
+	// interval keeps the tests quick, the coalescing test sets its own.
+	h.rescans.interval = time.Millisecond
+	h.Register(router)
 
-	return &mavenParentEnv{t: t, db: db, blobs: blobs, router: router}
+	return &mavenParentEnv{t: t, db: db, blobs: blobs, handler: h, router: router}
 }
 
 func (e *mavenParentEnv) put(group, artifact, version, body string) *httptest.ResponseRecorder {
@@ -264,14 +314,51 @@ func (e *mavenParentEnv) scanLicenses(id string) []string {
 }
 
 func (e *mavenParentEnv) scanOf(id string) *models.LicenseScanResult {
-	return e.db.scans[id]
+	e.db.mu.Lock()
+	defer e.db.mu.Unlock()
+
+	if r := e.db.scans[id]; r != nil {
+		cp := *r
+
+		return &cp
+	}
+
+	return nil
 }
+
+// waitForScan polls until the scan result of the artifact satisfies ok, which
+// the background re-evaluation of waiting poms is expected to bring about. It
+// returns the last result seen.
+func (e *mavenParentEnv) waitForScan(id string, ok func(*models.LicenseScanResult) bool) *models.LicenseScanResult {
+	e.t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		got := e.scanOf(id)
+		if ok(got) || time.Now().After(deadline) {
+			return got
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func hasLicenses(want ...string) func(*models.LicenseScanResult) bool {
+	return func(r *models.LicenseScanResult) bool { return r != nil && slices.Equal(r.Licenses, want) }
+}
+
+func isQuarantined(r *models.LicenseScanResult) bool { return r != nil && r.Quarantined }
 
 // cacheInProxy stores pom as an already proxied file of the proxy repository.
 func (e *mavenParentEnv) cacheInProxy(proxy *models.Repository, group, artifact, version, pom string) {
 	path := strings.ReplaceAll(group, ".", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
 	sha := "proxy-" + artifact + "-" + version
 	e.blobs.Blobs[sha] = []byte(pom)
+
+	e.db.mu.Lock()
+	defer e.db.mu.Unlock()
+
 	e.db.proxyCache[proxy.ID+"|"+path] = &models.ProxyCacheEntry{
 		RepositoryID: proxy.ID,
 		CacheKey:     path,
@@ -410,7 +497,7 @@ func TestMavenPut_MissingParentThenLaterUpload(t *testing.T) {
 	}
 
 	for _, artID := range []string{id, gid} {
-		if got := e.scanOf(artID); got == nil || !slices.Equal(got.Licenses, []string{"EPL-2.0"}) {
+		if got := e.waitForScan(artID, hasLicenses("EPL-2.0")); !hasLicenses("EPL-2.0")(got) {
 			t.Errorf("scan of %s after the parent upload = %+v, want EPL-2.0", artID, got)
 		}
 	}
@@ -427,10 +514,13 @@ func TestMavenPut_LaterParentQuarantinesBlockedChild(t *testing.T) {
 		t.Fatalf("child = %d: %s", rec.Code, rec.Body.String())
 	}
 
+	e.db.mu.Lock()
 	e.db.freePolicyReads = 1
+	e.db.mu.Unlock()
+
 	e.put("com.acme", "parent", "1", pomXML("com.acme", "parent", "1", "pom", "", "GPL-3.0-only"))
 
-	if got := e.scanOf(rec.Header().Get("X-Oa-Artifact-Id")); got == nil || !got.Quarantined {
+	if got := e.waitForScan(rec.Header().Get("X-Oa-Artifact-Id"), isQuarantined); !isQuarantined(got) {
 		t.Fatalf("child scan = %+v, want quarantined", got)
 	}
 }
@@ -523,7 +613,7 @@ func TestMavenPut_ParentLandsInGroupMemberLater(t *testing.T) {
 
 	e.putIn("other", "com.acme", "parent", "1", pomXML("com.acme", "parent", "1", "pom", "", "EPL-2.0"))
 
-	if got := e.scanOf(id); got == nil || !slices.Equal(got.Licenses, []string{"EPL-2.0"}) {
+	if got := e.waitForScan(id, hasLicenses("EPL-2.0")); !hasLicenses("EPL-2.0")(got) {
 		t.Fatalf("scan after the parent landed in a group member = %+v, want EPL-2.0", got)
 	}
 }
