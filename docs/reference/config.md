@@ -161,7 +161,7 @@ This page lists every configuration key with its type, built-in default and the 
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|
-| `attestation.keyPath` | `ATTESTATION_KEY_PATH` | string | `empty` | `keyPath` is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: a P-256 key is generated on first use and stored encrypted in the database. |
+| `attestation.keyPath` | `ATTESTATION_KEY_PATH` | string | `empty` | `keyPath` is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: a P-256 key is generated on first use and stored encrypted in the database; that needs `OPENARTIFACT_SECRET_KEY` (without it no key is generated). |
 
 ## auth
 
