@@ -13,7 +13,7 @@ import (
 
 // storeMavenChecksums persists the md5/sha1/sha512 digests of an artifact
 // (sha256 lives on the joined blob row).
-func (p *PostgresDB) storeMavenChecksums(ctx context.Context, a *models.MavenArtifact) error {
+func (p *MavenStore) storeMavenChecksums(ctx context.Context, a *models.MavenArtifact) error {
 	_, err := p.pool.Exec(ctx,
 		`UPDATE maven_artifacts SET md5 = $2, sha1 = $3, sha512 = $4 WHERE id = $1 AND deleted_at IS NULL`,
 		a.ID, a.MD5, a.SHA1, a.SHA512)
@@ -26,7 +26,7 @@ func (p *PostgresDB) storeMavenChecksums(ctx context.Context, a *models.MavenArt
 
 // fillMavenChecksums populates SHA256 (from the joined blob) and MD5/SHA1/
 // SHA512 for the given artifacts in a single query.
-func (p *PostgresDB) fillMavenChecksums(ctx context.Context, arts ...*models.MavenArtifact) error {
+func (p *MavenStore) fillMavenChecksums(ctx context.Context, arts ...*models.MavenArtifact) error {
 	if len(arts) == 0 {
 		return nil
 	}
