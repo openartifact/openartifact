@@ -134,7 +134,7 @@ func (e *importEnv) createRubygems(t *testing.T, repo string, at time.Time) (str
 		t.Fatal(err)
 	}
 
-	return "rubygems_gems", g.ID
+	return "package_files", g.ID
 }
 
 func (e *importEnv) createCargo(t *testing.T, repo string, at time.Time) (string, string) {
@@ -146,7 +146,7 @@ func (e *importEnv) createCargo(t *testing.T, repo string, at time.Time) (string
 		t.Fatal(err)
 	}
 
-	return "cargo_crates", c.ID
+	return "package_files", c.ID
 }
 
 func (e *importEnv) createGo(t *testing.T, repo string, at time.Time) (string, string) {
@@ -158,7 +158,7 @@ func (e *importEnv) createGo(t *testing.T, repo string, at time.Time) (string, s
 		t.Fatal(err)
 	}
 
-	return "gomod_modules", m.ID
+	return "package_files", m.ID
 }
 
 func (e *importEnv) createConda(t *testing.T, repo string, at time.Time) (string, string) {
@@ -192,7 +192,7 @@ func (e *importEnv) createComposer(t *testing.T, repo string, at time.Time) (str
 		t.Fatal(err)
 	}
 
-	return "composer_packages", p.ID
+	return "package_files", p.ID
 }
 
 func (e *importEnv) createAnsible(t *testing.T, repo string, at time.Time) (string, string) {

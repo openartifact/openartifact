@@ -30,6 +30,8 @@ func stampMoves(t *testing.T, what string, stamp func() string, mutate func()) {
 // A stamp is the validator of a rendered metadata document, so it has to move
 // whenever the document would change (rows added, removed, yanked) and stay
 // put when only download counters move.
+//
+//nolint:gocyclo,cyclop // one subtest per format
 func TestMetadataStamps(t *testing.T) {
 	pg := newQuotaTestDB(t, 8)
 	ctx := context.Background()
@@ -109,14 +111,18 @@ func TestMetadataStamps(t *testing.T) {
 		}
 
 		stampMoves(t, "publish", stamp, func() {
-			s.exec(
-				`INSERT INTO rubygems_gems (repository_id, name, version, platform, blob_id, size) VALUES ($1,'rake','1.0','ruby',$2,5)`,
-				s.repo,
-				s.blob(5),
-			)
+			gem := &models.RubyGem{
+				RepositoryID: s.repo, Name: "rake", Version: "1.0", Platform: "ruby",
+				ChecksumSHA256: langSHA("stamp-gem"), BlobKey: langSHA("stamp-gem"), Size: 5,
+			}
+			if err := pg.CreateRubyGem(ctx, gem); err != nil {
+				t.Fatal(err)
+			}
 		})
 		stampMoves(t, "yank", stamp, func() {
-			s.exec(`UPDATE rubygems_gems SET yanked = true WHERE repository_id = $1`, s.repo)
+			if err := pg.YankRubyGem(ctx, s.repo, "rake", "1.0", "", true); err != nil {
+				t.Fatal(err)
+			}
 		})
 
 		specs, err := pg.ListRubyGemSpecs(ctx, s.repo)
@@ -140,27 +146,30 @@ func TestMetadataStamps(t *testing.T) {
 			t.Fatalf("stamp of an unknown crate = %q, want 0:0", got)
 		}
 
-		insert := func(version string) {
-			s.exec(
-				`INSERT INTO cargo_crates (repository_id, name, version, metadata_json, blob_id) VALUES ($1,'serde',$2,'{}',$3)`,
-				s.repo,
-				version,
-				s.blob(5),
-			)
-		}
-
-		stampMoves(t, "publish (name matches case-insensitively)", stamp, func() { insert("1.0.0") })
+		stampMoves(t, "publish (name matches case-insensitively)", stamp, func() {
+			crate := &models.CargoCrate{
+				RepositoryID: s.repo, Name: "serde", Version: "1.0.0", Checksum: langSHA("stamp-crate"),
+				BlobKey: langSHA("stamp-crate"), SizeBytes: 5, MetadataJSON: []byte(`{}`),
+			}
+			if err := pg.CreateCargoCrate(ctx, crate); err != nil {
+				t.Fatal(err)
+			}
+		})
 
 		afterOne := stamp()
 
-		s.exec(`UPDATE cargo_crates SET download_count = download_count + 1, updated_at = now() WHERE repository_id = $1`, s.repo)
+		if err := pg.IncrementCargoDownloadCount(ctx, s.repo, "serde", "1.0.0"); err != nil {
+			t.Fatal(err)
+		}
 
 		if got := stamp(); got != afterOne {
 			t.Errorf("a download moved the stamp: %q -> %q", afterOne, got)
 		}
 
 		stampMoves(t, "yank", stamp, func() {
-			s.exec(`UPDATE cargo_crates SET yanked = true WHERE repository_id = $1`, s.repo)
+			if err := pg.YankCargoCrate(ctx, s.repo, "SERDE", "1.0.0", true); err != nil {
+				t.Fatal(err)
+			}
 		})
 
 		versions, err := pg.ListCargoIndexVersions(ctx, s.repo, "SERDE")

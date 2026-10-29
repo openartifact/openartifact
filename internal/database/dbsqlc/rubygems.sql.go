@@ -11,73 +11,30 @@ import (
 	"time"
 )
 
-const createRubyGem = `-- name: CreateRubyGem :one
-INSERT INTO rubygems_gems (repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, blob_id, yanked, download_count, size, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateRubyGemParams struct {
-	RepositoryID  string          `db:"repository_id" json:"repository_id"`
-	Name          string          `db:"name" json:"name"`
-	Version       string          `db:"version" json:"version"`
-	Platform      string          `db:"platform" json:"platform"`
-	Description   *string         `db:"description" json:"description"`
-	Summary       *string         `db:"summary" json:"summary"`
-	Homepage      *string         `db:"homepage" json:"homepage"`
-	Authors       []string        `db:"authors" json:"authors"`
-	Licenses      []string        `db:"licenses" json:"licenses"`
-	Dependencies  json.RawMessage `db:"dependencies" json:"dependencies"`
-	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
-	BlobID        string          `db:"blob_id" json:"blob_id"`
-	Yanked        bool            `db:"yanked" json:"yanked"`
-	DownloadCount int64           `db:"download_count" json:"download_count"`
-	Size          int64           `db:"size" json:"size"`
-	CreatedAt     *time.Time      `db:"created_at" json:"created_at"`
-}
-
-type CreateRubyGemRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateRubyGem(ctx context.Context, arg CreateRubyGemParams) (CreateRubyGemRow, error) {
-	row := q.db.QueryRow(ctx, createRubyGem,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.Platform,
-		arg.Description,
-		arg.Summary,
-		arg.Homepage,
-		arg.Authors,
-		arg.Licenses,
-		arg.Dependencies,
-		arg.MetadataJson,
-		arg.BlobID,
-		arg.Yanked,
-		arg.DownloadCount,
-		arg.Size,
-		arg.CreatedAt,
-	)
-	var i CreateRubyGemRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
 const getRubyGem = `-- name: GetRubyGem :one
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND rg.name = $2 AND rg.version = $3 AND rg.platform = $4
+
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetRubyGemParams struct {
+	VersionKey   string `db:"version_key" json:"version_key"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
-	Platform     string `db:"platform" json:"platform"`
 }
 
 type GetRubyGemRow struct {
@@ -86,11 +43,11 @@ type GetRubyGemRow struct {
 	Name           string          `db:"name" json:"name"`
 	Version        string          `db:"version" json:"version"`
 	Platform       string          `db:"platform" json:"platform"`
-	Description    *string         `db:"description" json:"description"`
-	Summary        *string         `db:"summary" json:"summary"`
-	Homepage       *string         `db:"homepage" json:"homepage"`
-	Authors        []string        `db:"authors" json:"authors"`
-	Licenses       []string        `db:"licenses" json:"licenses"`
+	Description    string          `db:"description" json:"description"`
+	Summary        string          `db:"summary" json:"summary"`
+	Homepage       string          `db:"homepage" json:"homepage"`
+	Authors        json.RawMessage `db:"authors" json:"authors"`
+	Licenses       json.RawMessage `db:"licenses" json:"licenses"`
 	Dependencies   json.RawMessage `db:"dependencies" json:"dependencies"`
 	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey        string          `db:"blob_key" json:"blob_key"`
@@ -102,13 +59,12 @@ type GetRubyGemRow struct {
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// rubygems on the generic package tables (the mapping is documented on
+// RubyGemsStore in pkg_rubygems.go): one package per gem name, one version and
+// one .gem file per (version, platform). The writes go through writePackage;
+// these are the typed reads and updates.
 func (q *Queries) GetRubyGem(ctx context.Context, arg GetRubyGemParams) (GetRubyGemRow, error) {
-	row := q.db.QueryRow(ctx, getRubyGem,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.Platform,
-	)
+	row := q.db.QueryRow(ctx, getRubyGem, arg.VersionKey, arg.RepositoryID, arg.Name)
 	var i GetRubyGemRow
 	err := row.Scan(
 		&i.ID,
@@ -135,10 +91,13 @@ func (q *Queries) GetRubyGem(ctx context.Context, arg GetRubyGemParams) (GetRuby
 }
 
 const listRubyGemSpecs = `-- name: ListRubyGemSpecs :many
-SELECT rg.name, rg.version, rg.platform
-FROM rubygems_gems rg
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked
-ORDER BY rg.name ASC, rg.version DESC
+SELECT p.name, v.version, f.arch AS platform
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.listed AND v.deleted_at IS NULL
+  AND NOT COALESCE((v.metadata->>'yanked')::boolean, false)
+ORDER BY p.name ASC, v.version DESC
 `
 
 type ListRubyGemSpecsRow struct {
@@ -169,10 +128,23 @@ func (q *Queries) ListRubyGemSpecs(ctx context.Context, repositoryID string) ([]
 }
 
 const listRubyGemVersions = `-- name: ListRubyGemVersions :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND rg.name = $2 ORDER BY rg.version DESC
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY v.version DESC, f.arch
 `
 
 type ListRubyGemVersionsParams struct {
@@ -186,11 +158,11 @@ type ListRubyGemVersionsRow struct {
 	Name           string          `db:"name" json:"name"`
 	Version        string          `db:"version" json:"version"`
 	Platform       string          `db:"platform" json:"platform"`
-	Description    *string         `db:"description" json:"description"`
-	Summary        *string         `db:"summary" json:"summary"`
-	Homepage       *string         `db:"homepage" json:"homepage"`
-	Authors        []string        `db:"authors" json:"authors"`
-	Licenses       []string        `db:"licenses" json:"licenses"`
+	Description    string          `db:"description" json:"description"`
+	Summary        string          `db:"summary" json:"summary"`
+	Homepage       string          `db:"homepage" json:"homepage"`
+	Authors        json.RawMessage `db:"authors" json:"authors"`
+	Licenses       json.RawMessage `db:"licenses" json:"licenses"`
 	Dependencies   json.RawMessage `db:"dependencies" json:"dependencies"`
 	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey        string          `db:"blob_key" json:"blob_key"`
@@ -243,10 +215,23 @@ func (q *Queries) ListRubyGemVersions(ctx context.Context, arg ListRubyGemVersio
 }
 
 const listRubyGems = `-- name: ListRubyGems :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL ORDER BY rg.name ASC, rg.version DESC
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND v.deleted_at IS NULL
+ORDER BY p.name ASC, v.version DESC
 `
 
 type ListRubyGemsRow struct {
@@ -255,11 +240,11 @@ type ListRubyGemsRow struct {
 	Name           string          `db:"name" json:"name"`
 	Version        string          `db:"version" json:"version"`
 	Platform       string          `db:"platform" json:"platform"`
-	Description    *string         `db:"description" json:"description"`
-	Summary        *string         `db:"summary" json:"summary"`
-	Homepage       *string         `db:"homepage" json:"homepage"`
-	Authors        []string        `db:"authors" json:"authors"`
-	Licenses       []string        `db:"licenses" json:"licenses"`
+	Description    string          `db:"description" json:"description"`
+	Summary        string          `db:"summary" json:"summary"`
+	Homepage       string          `db:"homepage" json:"homepage"`
+	Authors        json.RawMessage `db:"authors" json:"authors"`
+	Licenses       json.RawMessage `db:"licenses" json:"licenses"`
 	Dependencies   json.RawMessage `db:"dependencies" json:"dependencies"`
 	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey        string          `db:"blob_key" json:"blob_key"`
@@ -312,9 +297,11 @@ func (q *Queries) ListRubyGems(ctx context.Context, repositoryID string) ([]List
 }
 
 const rubyGemsSpecsStamp = `-- name: RubyGemsSpecsStamp :one
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(rg.id::text, 0)), 0)::text)::text AS stamp
-FROM rubygems_gems rg
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(f.id::text, 0)), 0)::text)::text AS stamp
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND f.listed AND v.deleted_at IS NULL
+  AND NOT COALESCE((v.metadata->>'yanked')::boolean, false)
 `
 
 // Fingerprint of the listed (not yanked) gems of a repository: every specs
@@ -327,11 +314,24 @@ func (q *Queries) RubyGemsSpecsStamp(ctx context.Context, repositoryID string) (
 }
 
 const searchRubyGems = `-- name: SearchRubyGems :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
-FROM rubygems_gems rg
-JOIN blobs b ON b.id = rg.blob_id
-WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND (rg.name ILIKE $2 OR rg.description ILIKE $2 OR rg.summary ILIKE $2)
-ORDER BY rg.name ASC, rg.version DESC
+SELECT f.id, f.repository_id, p.name, v.version, f.arch AS platform,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'summary', '')::text AS summary,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->'licenses', '[]'::jsonb)::jsonb AS licenses,
+       COALESCE(v.metadata->'dependencies', '[]'::jsonb)::jsonb AS dependencies,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum_sha256,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, COALESCE(f.size_bytes, 0)::bigint AS size, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND v.deleted_at IS NULL
+  AND (p.name ILIKE $2 OR v.metadata->>'description' ILIKE $2 OR v.metadata->>'summary' ILIKE $2)
+ORDER BY p.name ASC, v.version DESC
 LIMIT 1000
 `
 
@@ -346,11 +346,11 @@ type SearchRubyGemsRow struct {
 	Name           string          `db:"name" json:"name"`
 	Version        string          `db:"version" json:"version"`
 	Platform       string          `db:"platform" json:"platform"`
-	Description    *string         `db:"description" json:"description"`
-	Summary        *string         `db:"summary" json:"summary"`
-	Homepage       *string         `db:"homepage" json:"homepage"`
-	Authors        []string        `db:"authors" json:"authors"`
-	Licenses       []string        `db:"licenses" json:"licenses"`
+	Description    string          `db:"description" json:"description"`
+	Summary        string          `db:"summary" json:"summary"`
+	Homepage       string          `db:"homepage" json:"homepage"`
+	Authors        json.RawMessage `db:"authors" json:"authors"`
+	Licenses       json.RawMessage `db:"licenses" json:"licenses"`
 	Dependencies   json.RawMessage `db:"dependencies" json:"dependencies"`
 	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey        string          `db:"blob_key" json:"blob_key"`
@@ -403,7 +403,13 @@ func (q *Queries) SearchRubyGems(ctx context.Context, arg SearchRubyGemsParams) 
 }
 
 const yankRubyGem = `-- name: YankRubyGem :exec
-UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND ($5::text = '' OR platform = $5) AND deleted_at IS NULL
+UPDATE package_versions v
+SET metadata = jsonb_set(v.metadata, '{yanked}', to_jsonb($1::boolean)), updated_at = now()
+FROM packages p
+WHERE p.id = v.package_id AND p.repository_id = $2 AND p.name_key = $3
+  AND v.version = $4 AND v.deleted_at IS NULL
+  AND ($5::text = '' OR EXISTS (
+        SELECT 1 FROM package_files f WHERE f.version_id = v.id AND f.arch = $5::text AND f.deleted_at IS NULL))
 `
 
 type YankRubyGemParams struct {
@@ -411,16 +417,18 @@ type YankRubyGemParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Name         string `db:"name" json:"name"`
 	Version      string `db:"version" json:"version"`
-	Column5      string `db:"column_5" json:"column_5"`
+	Platform     string `db:"platform" json:"platform"`
 }
 
+// The yanked flag lives in the version metadata; a yank applies to the platform
+// builds of the version it names (every build when the platform is empty).
 func (q *Queries) YankRubyGem(ctx context.Context, arg YankRubyGemParams) error {
 	_, err := q.db.Exec(ctx, yankRubyGem,
 		arg.Yanked,
 		arg.RepositoryID,
 		arg.Name,
 		arg.Version,
-		arg.Column5,
+		arg.Platform,
 	)
 	return err
 }

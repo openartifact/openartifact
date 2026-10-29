@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -547,13 +548,37 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ZipHash: zipSHA,
 	}
 
-	// One module is one artifact: the zip and go.mod bytes are reserved
-	// together, matching the reconcile unit. Every failure path below returns
-	// the reservation.
-	usage := mod.ZipSizeBytes + int64(len(goModContent))
+	// One module is one artifact: the zip is reserved as (size, 1) and the
+	// go.mod as (size, 0), the two package_files rows the insert fires its quota
+	// trigger for (only the primary file counts as an artifact). Every failure
+	// path below returns both reservations.
+	modSize := int64(len(goModContent))
 
-	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, usage) {
+	if !h.ReserveQuotaOrRespond(r.Context(), w, repoID, repoName, mod.ZipSizeBytes) {
 		return
+	}
+
+	if err := quota.EnforceN(r.Context(), h.DB, repoID, modSize, 0); err != nil {
+		h.ReleaseQuota(r.Context(), repoID, repoName, mod.ZipSizeBytes)
+
+		if errors.Is(err, quota.ErrExceeded) {
+			quota.WriteExceeded(w)
+
+			return
+		}
+
+		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	releaseQuota := func() {
+		h.ReleaseQuota(r.Context(), repoID, repoName, mod.ZipSizeBytes)
+
+		if err := quota.ReleaseN(r.Context(), h.DB, repoID, modSize, 0); err != nil {
+			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
+		}
 	}
 
 	// Both blobs are stored first; their existence is re-checked and the
@@ -590,7 +615,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	lockErr := storage.CommitBlobs(r.Context(), h.DB, h.BlobStore, blobs, store)
 	if lockErr != nil {
-		h.ReleaseQuota(r.Context(), repoID, repoName, usage)
+		releaseQuota()
 
 		if h.failStore(w, r, lockErr, zipSHA, modSHA) {
 			return

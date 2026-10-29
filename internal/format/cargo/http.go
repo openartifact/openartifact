@@ -513,7 +513,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		h.ReleaseQuota(r.Context(), repoID, repoName, crate.SizeBytes)
 
 		// A concurrent publish of the same version won the race.
-		if database.IsUniqueViolation(err) {
+		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
 			writePublishError(w, http.StatusConflict, fmt.Sprintf("crate version `%s@%s` is already uploaded", crateName, version))
 			return
 		}

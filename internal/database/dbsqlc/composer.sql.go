@@ -11,73 +11,22 @@ import (
 	"time"
 )
 
-const createComposerPackage = `-- name: CreateComposerPackage :one
-INSERT INTO composer_packages (
-    repository_id, name, version, version_normalized, blob_id, sha1, composer_json, created_at
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateComposerPackageParams struct {
-	RepositoryID      string          `db:"repository_id" json:"repository_id"`
-	Name              string          `db:"name" json:"name"`
-	Version           string          `db:"version" json:"version"`
-	VersionNormalized string          `db:"version_normalized" json:"version_normalized"`
-	BlobID            string          `db:"blob_id" json:"blob_id"`
-	Sha1              string          `db:"sha1" json:"sha1"`
-	ComposerJson      json.RawMessage `db:"composer_json" json:"composer_json"`
-	CreatedAt         *time.Time      `db:"created_at" json:"created_at"`
-}
-
-type CreateComposerPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateComposerPackage(ctx context.Context, arg CreateComposerPackageParams) (CreateComposerPackageRow, error) {
-	row := q.db.QueryRow(ctx, createComposerPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.VersionNormalized,
-		arg.BlobID,
-		arg.Sha1,
-		arg.ComposerJson,
-		arg.CreatedAt,
-	)
-	var i CreateComposerPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteComposerPackage = `-- name: DeleteComposerPackage :exec
-DELETE FROM composer_packages WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeleteComposerPackageParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeleteComposerPackage(ctx context.Context, arg DeleteComposerPackageParams) error {
-	_, err := q.db.Exec(ctx, deleteComposerPackage, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const getComposerPackage = `-- name: GetComposerPackage :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.version_normalized, b.blob_key, b.size_bytes, b.sha256,
-       cp.sha1, cp.composer_json, cp.created_at, cp.updated_at
-FROM composer_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version_normalized = $3 AND cp.deleted_at IS NULL
+
+SELECT f.id, f.repository_id, p.name, v.version, v.version_key AS version_normalized, b.blob_key, b.size_bytes, b.sha256,
+       COALESCE(f.attrs->>'sha1', '')::text AS sha1,
+       COALESCE(v.metadata->'composer_json', '{}'::jsonb)::jsonb AS composer_json, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = $3
 `
 
 type GetComposerPackageParams struct {
+	VersionNormalized string `db:"version_normalized" json:"version_normalized"`
 	RepositoryID      string `db:"repository_id" json:"repository_id"`
 	Name              string `db:"name" json:"name"`
-	VersionNormalized string `db:"version_normalized" json:"version_normalized"`
 }
 
 type GetComposerPackageRow struct {
@@ -95,8 +44,12 @@ type GetComposerPackageRow struct {
 	UpdatedAt         time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// composer on the generic package tables (the mapping is documented on
+// ComposerStore in pkg_composer.go): one package per vendor/package, one
+// version and one zip file per published version. The writes go through
+// writePackage and deleteFiles; these are the typed reads.
 func (q *Queries) GetComposerPackage(ctx context.Context, arg GetComposerPackageParams) (GetComposerPackageRow, error) {
-	row := q.db.QueryRow(ctx, getComposerPackage, arg.RepositoryID, arg.Name, arg.VersionNormalized)
+	row := q.db.QueryRow(ctx, getComposerPackage, arg.VersionNormalized, arg.RepositoryID, arg.Name)
 	var i GetComposerPackageRow
 	err := row.Scan(
 		&i.ID,
@@ -116,11 +69,14 @@ func (q *Queries) GetComposerPackage(ctx context.Context, arg GetComposerPackage
 }
 
 const getComposerPackageByID = `-- name: GetComposerPackageByID :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.version_normalized, b.blob_key, b.size_bytes, b.sha256,
-       cp.sha1, cp.composer_json, cp.created_at, cp.updated_at
-FROM composer_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.id = $2 AND cp.deleted_at IS NULL
+SELECT f.id, f.repository_id, p.name, v.version, v.version_key AS version_normalized, b.blob_key, b.size_bytes, b.sha256,
+       COALESCE(f.attrs->>'sha1', '')::text AS sha1,
+       COALESCE(v.metadata->'composer_json', '{}'::jsonb)::jsonb AS composer_json, f.created_at, f.updated_at
+FROM package_files f
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.id = $2 AND f.deleted_at IS NULL
 `
 
 type GetComposerPackageByIDParams struct {
@@ -164,12 +120,14 @@ func (q *Queries) GetComposerPackageByID(ctx context.Context, arg GetComposerPac
 }
 
 const listComposerPackageNames = `-- name: ListComposerPackageNames :many
-SELECT DISTINCT ON (cp.name) cp.name,
-       COALESCE(cp.composer_json->>'description', '')::text AS description,
-       MAX(cp.updated_at) OVER (PARTITION BY cp.name)::timestamptz AS updated_at
-FROM composer_packages cp
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL
-ORDER BY cp.name, cp.created_at DESC, cp.id DESC
+SELECT p.name,
+       COALESCE((ARRAY_AGG(v.metadata->'composer_json'->>'description' ORDER BY v.created_at DESC, v.id DESC))[1], '')::text AS description,
+       MAX(v.updated_at)::timestamptz AS updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+WHERE p.repository_id = $1
+GROUP BY p.id, p.name
+ORDER BY p.name
 `
 
 type ListComposerPackageNamesRow struct {
@@ -201,12 +159,15 @@ func (q *Queries) ListComposerPackageNames(ctx context.Context, repositoryID str
 }
 
 const listComposerPackageVersions = `-- name: ListComposerPackageVersions :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.version_normalized, b.blob_key, b.size_bytes, b.sha256,
-       cp.sha1, cp.composer_json, cp.created_at, cp.updated_at
-FROM composer_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.deleted_at IS NULL
-ORDER BY cp.created_at, cp.id
+SELECT f.id, f.repository_id, p.name, v.version, v.version_key AS version_normalized, b.blob_key, b.size_bytes, b.sha256,
+       COALESCE(f.attrs->>'sha1', '')::text AS sha1,
+       COALESCE(v.metadata->'composer_json', '{}'::jsonb)::jsonb AS composer_json, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = $2
+ORDER BY v.created_at, v.id
 `
 
 type ListComposerPackageVersionsParams struct {
@@ -239,64 +200,6 @@ func (q *Queries) ListComposerPackageVersions(ctx context.Context, arg ListCompo
 	items := []ListComposerPackageVersionsRow{}
 	for rows.Next() {
 		var i ListComposerPackageVersionsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Name,
-			&i.Version,
-			&i.VersionNormalized,
-			&i.BlobKey,
-			&i.SizeBytes,
-			&i.Sha256,
-			&i.Sha1,
-			&i.ComposerJson,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listComposerPackages = `-- name: ListComposerPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.version_normalized, b.blob_key, b.size_bytes, b.sha256,
-       cp.sha1, cp.composer_json, cp.created_at, cp.updated_at
-FROM composer_packages cp
-JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL
-ORDER BY cp.name, cp.created_at, cp.id
-`
-
-type ListComposerPackagesRow struct {
-	ID                string          `db:"id" json:"id"`
-	RepositoryID      string          `db:"repository_id" json:"repository_id"`
-	Name              string          `db:"name" json:"name"`
-	Version           string          `db:"version" json:"version"`
-	VersionNormalized string          `db:"version_normalized" json:"version_normalized"`
-	BlobKey           string          `db:"blob_key" json:"blob_key"`
-	SizeBytes         int64           `db:"size_bytes" json:"size_bytes"`
-	Sha256            string          `db:"sha256" json:"sha256"`
-	Sha1              string          `db:"sha1" json:"sha1"`
-	ComposerJson      json.RawMessage `db:"composer_json" json:"composer_json"`
-	CreatedAt         time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt         time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-// Every live version of every package of the repository (backup export).
-func (q *Queries) ListComposerPackages(ctx context.Context, repositoryID string) ([]ListComposerPackagesRow, error) {
-	rows, err := q.db.Query(ctx, listComposerPackages, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListComposerPackagesRow{}
-	for rows.Next() {
-		var i ListComposerPackagesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RepositoryID,

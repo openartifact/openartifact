@@ -434,7 +434,7 @@ func pgJSONB(raw []byte) bool {
 	return ok(v)
 }
 
-// pgRejects mirrors the rubygems_gems column types (migrations/001): the
+// pgRejects mirrors the generic package column types: the
 // varchar lengths count characters, text and text[] need valid text, and
 // dependencies and metadata_json are jsonb.
 func pgRejects(g *models.RubyGem) error {

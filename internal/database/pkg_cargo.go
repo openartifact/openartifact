@@ -6,48 +6,108 @@ package database
 
 import (
 	"context"
-	"database/sql"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // CargoStore owns the Cargo crates.
+//
+// Crates live in the generic package tables (repository format "cargo"; the
+// mapping is the maintainers' reference, derived from migrations/001_baseline.sql):
+//
+//	packages          one per crate: name = the spelling of the first publish,
+//	                  name_key = lower(name) (crate names are case-insensitive), attrs {}
+//	package_versions  one per crate version: version = version_key = version;
+//	                  metadata {"name": <name as published with this version>,
+//	                  "description", "homepage", "documentation", "repository",
+//	                  "license", "readme": text, "keywords", "categories", "authors":
+//	                  arrays of text, "metadata_json": the publish metadata the sparse
+//	                  index is built from, "yanked": boolean (always written: the
+//	                  sparse-index stamp hashes the file id and the yanked flag)}.
+//	                  Empty values are omitted; a missing key reads as ""/empty.
+//	package_files     one primary listed file per version: path
+//	                  "<name>/<version>/<name>-<version>.crate", filename
+//	                  "<name>-<version>.crate", download_count, unit_key
+//	                  "<name>@<version>" (the federation unit, name as published). The
+//	                  blob's sha256 is the crate checksum of the sparse index.
+//
+// A second publish of an equal version in any spelling of the name is
+// ErrDuplicate (the live version key of the package).
 type CargoStore struct{ *core }
 
-// CreateCargoCrate creates a new Cargo crate.
-//
-// cargo_crates has no size_bytes column; the crate blob row takes its size
-// from crate.SizeBytes.
+const cargoFormat = "cargo"
+
+// cargoMetadata is package_versions.metadata of a crate version.
+type cargoMetadata struct {
+	Name          string          `json:"name"`
+	Description   string          `json:"description,omitempty"`
+	Homepage      string          `json:"homepage,omitempty"`
+	Documentation string          `json:"documentation,omitempty"`
+	Repository    string          `json:"repository,omitempty"`
+	License       string          `json:"license,omitempty"`
+	Readme        string          `json:"readme,omitempty"`
+	Keywords      []string        `json:"keywords,omitempty"`
+	Categories    []string        `json:"categories,omitempty"`
+	Authors       []string        `json:"authors,omitempty"`
+	MetadataJSON  json.RawMessage `json:"metadata_json"`
+	Yanked        bool            `json:"yanked"`
+}
+
+// CreateCargoCrate creates a new Cargo crate version. The crate blob row takes
+// its size from crate.SizeBytes; a live version of the same crate (any
+// spelling of the name) is ErrDuplicate.
 func (p *CargoStore) CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error {
-	blobID, err := p.upsertBlobWithMediaType(ctx, crate.Checksum, crate.BlobKey, "application/gzip", crate.SizeBytes)
-	if err != nil {
-		return fmt.Errorf("failed to upsert blob for cargo crate: %w", err)
+	meta := json.RawMessage(crate.MetadataJSON)
+	if len(meta) == 0 {
+		meta = json.RawMessage(`{}`)
 	}
 
-	row, err := p.q.CreateCargoCrate(ctx, dbsqlc.CreateCargoCrateParams{
-		CreatedAt:     createdAtOrNil(crate.CreatedAt),
-		RepositoryID:  crate.RepositoryID,
-		Name:          crate.Name,
-		Version:       crate.Version,
-		Description:   strPtr(crate.Description),
-		Homepage:      strPtr(crate.Homepage),
-		Documentation: strPtr(crate.Documentation),
-		Repository:    strPtr(crate.Repository),
-		License:       strPtr(crate.License),
-		Keywords:      crate.Keywords,
-		Categories:    crate.Categories,
-		Authors:       crate.Authors,
-		Readme:        strPtr(crate.Readme),
-		MetadataJson:  crate.MetadataJSON,
-		BlobID:        blobID,
-		Yanked:        crate.Yanked,
-		DownloadCount: int64(crate.DownloadCount),
-	})
+	filename := crate.Name + "-" + crate.Version + ".crate"
 
-	return finishCreate(insertedRow(row), err, "create cargo crate", &crate.ID, &crate.CreatedAt, &crate.UpdatedAt)
+	written, err := p.writePackage(ctx, &PackageWrite{
+		RepoID:     crate.RepositoryID,
+		Format:     cargoFormat,
+		Name:       crate.Name,
+		NameKey:    strings.ToLower(crate.Name),
+		Version:    crate.Version,
+		VersionKey: crate.Version,
+		VersionMeta: cargoMetadata{
+			Name:          crate.Name,
+			Description:   crate.Description,
+			Homepage:      crate.Homepage,
+			Documentation: crate.Documentation,
+			Repository:    crate.Repository,
+			License:       crate.License,
+			Readme:        crate.Readme,
+			Keywords:      crate.Keywords,
+			Categories:    crate.Categories,
+			Authors:       crate.Authors,
+			MetadataJSON:  meta,
+			Yanked:        crate.Yanked,
+		},
+		Exclusive: true,
+		CreatedAt: crate.CreatedAt,
+		Files: []FileWrite{{
+			Path:          crate.Name + "/" + crate.Version + "/" + filename,
+			Filename:      filename,
+			Blob:          BlobWrite{SHA256: crate.Checksum, Key: crate.BlobKey, MediaType: "application/gzip", Size: crate.SizeBytes},
+			UnitKey:       crate.Name + "@" + crate.Version,
+			DownloadCount: int64(crate.DownloadCount),
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create cargo crate: %w", err)
+	}
+
+	crate.ID = written.Files[0].ID
+	crate.CreatedAt = written.Files[0].CreatedAt
+	crate.UpdatedAt = written.Files[0].UpdatedAt
+
+	return nil
 }
 
 func (p *CargoStore) GetCargoCrate(ctx context.Context, repoID, name, version string) (*models.CargoCrate, error) {
@@ -56,29 +116,39 @@ func (p *CargoStore) GetCargoCrate(ctx context.Context, repoID, name, version st
 		Name:         name,
 		Version:      version,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+
+	return mapRow(row, err, "get cargo crate", cargoCrateFromRow)
+}
+
+// decodeStrings reads a JSON array of text; a malformed value reads as none.
+func decodeStrings(raw json.RawMessage) []string {
+	var out []string
+	if err := json.Unmarshal(raw, &out); err != nil || len(out) == 0 {
+		return nil
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cargo crate: %w", err)
-	}
+	return out
+}
+
+// cargoCrateFromRow maps a sqlc cargo crate row; ListCargoCrateVersionsRow converts to it.
+func cargoCrateFromRow[R cargoRow](in R) *models.CargoCrate {
+	row := dbsqlc.GetCargoCrateRow(in)
 
 	return &models.CargoCrate{
 		ID:            row.ID,
 		RepositoryID:  row.RepositoryID,
 		Name:          row.Name,
 		Version:       row.Version,
-		Description:   derefStr(row.Description),
-		Homepage:      derefStr(row.Homepage),
-		Documentation: derefStr(row.Documentation),
-		Repository:    derefStr(row.Repository),
-		License:       derefStr(row.License),
-		Keywords:      row.Keywords,
-		Categories:    row.Categories,
-		Authors:       row.Authors,
-		Readme:        derefStr(row.Readme),
-		MetadataJSON:  row.MetadataJson,
+		Description:   row.Description,
+		Homepage:      row.Homepage,
+		Documentation: row.Documentation,
+		Repository:    row.Repository,
+		License:       row.License,
+		Keywords:      decodeStrings(row.Keywords),
+		Categories:    decodeStrings(row.Categories),
+		Authors:       decodeStrings(row.Authors),
+		Readme:        row.Readme,
+		MetadataJSON:  []byte(row.MetadataJson),
 		BlobKey:       row.BlobKey,
 		Checksum:      row.Checksum,
 		SizeBytes:     row.SizeBytes,
@@ -86,33 +156,12 @@ func (p *CargoStore) GetCargoCrate(ctx context.Context, repoID, name, version st
 		DownloadCount: int(row.DownloadCount),
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
-	}, nil
+	}
 }
 
-// cargoCrateFromRow maps a sqlc cargo crate row; SearchCargoCratesRow converts to it.
-func cargoCrateFromRow(row dbsqlc.ListCargoCrateVersionsRow) *models.CargoCrate {
-	return &models.CargoCrate{
-		ID:            row.ID,
-		RepositoryID:  row.RepositoryID,
-		Name:          row.Name,
-		Version:       row.Version,
-		Description:   derefStr(row.Description),
-		Homepage:      derefStr(row.Homepage),
-		Documentation: derefStr(row.Documentation),
-		Repository:    derefStr(row.Repository),
-		License:       derefStr(row.License),
-		Keywords:      row.Keywords,
-		Categories:    row.Categories,
-		Authors:       row.Authors,
-		Readme:        derefStr(row.Readme),
-		MetadataJSON:  row.MetadataJson,
-		BlobKey:       row.BlobKey,
-		Checksum:      row.Checksum,
-		Yanked:        row.Yanked,
-		DownloadCount: int(row.DownloadCount),
-		CreatedAt:     row.CreatedAt,
-		UpdatedAt:     row.UpdatedAt,
-	}
+// cargoRow lists the sqlc row types cargoCrateFromRow converts.
+type cargoRow interface {
+	dbsqlc.GetCargoCrateRow | dbsqlc.ListCargoCrateVersionsRow
 }
 
 func (p *CargoStore) ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
@@ -122,26 +171,6 @@ func (p *CargoStore) ListCargoCrateVersions(ctx context.Context, repoID, name st
 	})
 
 	return mapRowsOrNil(rows, err, "query cargo crate versions", cargoCrateFromRow)
-}
-
-func (p *CargoStore) SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error) {
-	rows, err := p.q.SearchCargoCrates(ctx, dbsqlc.SearchCargoCratesParams{
-		RepositoryID: repoID,
-		Name:         "%" + escapeLike(query) + "%",
-		//nolint:gosec // G115: value is bounded by API validation
-		Limit: int32(limit),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to search cargo crates: %w", err)
-	}
-
-	var crates []*models.CargoCrate
-
-	for _, row := range rows {
-		crates = append(crates, cargoCrateFromRow(dbsqlc.ListCargoCrateVersionsRow(row)))
-	}
-
-	return crates, nil
 }
 
 // SearchCargoCrateSummaries matches crates by name or description and

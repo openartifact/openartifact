@@ -12,9 +12,12 @@ import (
 )
 
 const cargoIndexStamp = `-- name: CargoIndexStamp :one
-SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cc.id::text || cc.yanked::text, 0)), 0)::text)::text AS stamp
-FROM cargo_crates cc
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text)
+SELECT (count(*)::text || ':' ||
+        COALESCE(sum(hashtextextended(f.id::text || COALESCE(v.metadata->>'yanked', 'false'), 0)), 0)::text)::text AS stamp
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $1 AND p.name_key = lower($2::text)
 `
 
 type CargoIndexStampParams struct {
@@ -32,76 +35,33 @@ func (q *Queries) CargoIndexStamp(ctx context.Context, arg CargoIndexStampParams
 	return stamp, err
 }
 
-const createCargoCrate = `-- name: CreateCargoCrate :one
-INSERT INTO cargo_crates (repository_id, name, version, description, homepage, documentation, repository, license, keywords, categories, authors, readme, metadata_json, blob_id, yanked, download_count, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::timestamptz, NOW()))
-RETURNING id, created_at, updated_at
-`
-
-type CreateCargoCrateParams struct {
-	RepositoryID  string          `db:"repository_id" json:"repository_id"`
-	Name          string          `db:"name" json:"name"`
-	Version       string          `db:"version" json:"version"`
-	Description   *string         `db:"description" json:"description"`
-	Homepage      *string         `db:"homepage" json:"homepage"`
-	Documentation *string         `db:"documentation" json:"documentation"`
-	Repository    *string         `db:"repository" json:"repository"`
-	License       *string         `db:"license" json:"license"`
-	Keywords      []string        `db:"keywords" json:"keywords"`
-	Categories    []string        `db:"categories" json:"categories"`
-	Authors       []string        `db:"authors" json:"authors"`
-	Readme        *string         `db:"readme" json:"readme"`
-	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
-	BlobID        string          `db:"blob_id" json:"blob_id"`
-	Yanked        bool            `db:"yanked" json:"yanked"`
-	DownloadCount int64           `db:"download_count" json:"download_count"`
-	CreatedAt     *time.Time      `db:"created_at" json:"created_at"`
-}
-
-type CreateCargoCrateRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreateCargoCrate(ctx context.Context, arg CreateCargoCrateParams) (CreateCargoCrateRow, error) {
-	row := q.db.QueryRow(ctx, createCargoCrate,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Version,
-		arg.Description,
-		arg.Homepage,
-		arg.Documentation,
-		arg.Repository,
-		arg.License,
-		arg.Keywords,
-		arg.Categories,
-		arg.Authors,
-		arg.Readme,
-		arg.MetadataJson,
-		arg.BlobID,
-		arg.Yanked,
-		arg.DownloadCount,
-		arg.CreatedAt,
-	)
-	var i CreateCargoCrateRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
 const getCargoCrate = `-- name: GetCargoCrate :one
-SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, b.size_bytes, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
-FROM cargo_crates cc
-JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text) AND cc.version = $3
-ORDER BY (cc.name = $2::text) DESC
-LIMIT 1
+
+SELECT f.id, f.repository_id, COALESCE(v.metadata->>'name', p.name)::text AS name, v.version,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->>'documentation', '')::text AS documentation,
+       COALESCE(v.metadata->>'repository', '')::text AS repository,
+       COALESCE(v.metadata->>'license', '')::text AS license,
+       COALESCE(v.metadata->'keywords', '[]'::jsonb)::jsonb AS keywords,
+       COALESCE(v.metadata->'categories', '[]'::jsonb)::jsonb AS categories,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->>'readme', '')::text AS readme,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.version_key = $1 AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $2 AND p.name_key = lower($3::text)
 `
 
 type GetCargoCrateParams struct {
+	Version      string `db:"version" json:"version"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Name         string `db:"name" json:"name"`
-	Version      string `db:"version" json:"version"`
 }
 
 type GetCargoCrateRow struct {
@@ -109,15 +69,15 @@ type GetCargoCrateRow struct {
 	RepositoryID  string          `db:"repository_id" json:"repository_id"`
 	Name          string          `db:"name" json:"name"`
 	Version       string          `db:"version" json:"version"`
-	Description   *string         `db:"description" json:"description"`
-	Homepage      *string         `db:"homepage" json:"homepage"`
-	Documentation *string         `db:"documentation" json:"documentation"`
-	Repository    *string         `db:"repository" json:"repository"`
-	License       *string         `db:"license" json:"license"`
-	Keywords      []string        `db:"keywords" json:"keywords"`
-	Categories    []string        `db:"categories" json:"categories"`
-	Authors       []string        `db:"authors" json:"authors"`
-	Readme        *string         `db:"readme" json:"readme"`
+	Description   string          `db:"description" json:"description"`
+	Homepage      string          `db:"homepage" json:"homepage"`
+	Documentation string          `db:"documentation" json:"documentation"`
+	Repository    string          `db:"repository" json:"repository"`
+	License       string          `db:"license" json:"license"`
+	Keywords      json.RawMessage `db:"keywords" json:"keywords"`
+	Categories    json.RawMessage `db:"categories" json:"categories"`
+	Authors       json.RawMessage `db:"authors" json:"authors"`
+	Readme        string          `db:"readme" json:"readme"`
 	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey       string          `db:"blob_key" json:"blob_key"`
 	Checksum      string          `db:"checksum" json:"checksum"`
@@ -128,11 +88,17 @@ type GetCargoCrateRow struct {
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
-// Crate names are case-insensitive: cargo lowercases them in index paths, so
-// every lookup by name compares lower(name). A row whose name matches exactly
-// wins when legacy data holds two crates that differ only in case.
+// cargo on the generic package tables (the mapping is documented on CargoStore in
+// pkg_cargo.go): one package per lower-cased crate name, one version and one
+// .crate file per crate version. Crate names are case-insensitive: cargo
+// lowercases them in index paths, so packages.name_key is lower(name) and every
+// lookup by name compares it with lower($name).
+//
+// The writes go through writePackage; these are the typed reads and updates.
+// One crate version of the repository: the shared column list of the Get and
+// List queries below. name is the spelling this version was published with.
 func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (GetCargoCrateRow, error) {
-	row := q.db.QueryRow(ctx, getCargoCrate, arg.RepositoryID, arg.Name, arg.Version)
+	row := q.db.QueryRow(ctx, getCargoCrate, arg.Version, arg.RepositoryID, arg.Name)
 	var i GetCargoCrateRow
 	err := row.Scan(
 		&i.ID,
@@ -161,8 +127,12 @@ func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (G
 }
 
 const incrementCargoDownloadCount = `-- name: IncrementCargoDownloadCount :exec
-UPDATE cargo_crates SET download_count = download_count + 1, updated_at = NOW()
-WHERE repository_id = $1 AND lower(name) = lower($2::text) AND version = $3 AND deleted_at IS NULL
+UPDATE package_files f SET download_count = f.download_count + 1, updated_at = now()
+FROM package_versions v
+JOIN packages p ON p.id = v.package_id
+WHERE f.version_id = v.id AND f.deleted_at IS NULL AND v.deleted_at IS NULL
+  AND p.repository_id = $1 AND p.name_key = lower($2::text)
+  AND v.version_key = $3
 `
 
 type IncrementCargoDownloadCountParams struct {
@@ -177,11 +147,26 @@ func (q *Queries) IncrementCargoDownloadCount(ctx context.Context, arg Increment
 }
 
 const listCargoCrateVersions = `-- name: ListCargoCrateVersions :many
-SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
-FROM cargo_crates cc
-JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text)
-ORDER BY cc.created_at, cc.id
+SELECT f.id, f.repository_id, COALESCE(v.metadata->>'name', p.name)::text AS name, v.version,
+       COALESCE(v.metadata->>'description', '')::text AS description,
+       COALESCE(v.metadata->>'homepage', '')::text AS homepage,
+       COALESCE(v.metadata->>'documentation', '')::text AS documentation,
+       COALESCE(v.metadata->>'repository', '')::text AS repository,
+       COALESCE(v.metadata->>'license', '')::text AS license,
+       COALESCE(v.metadata->'keywords', '[]'::jsonb)::jsonb AS keywords,
+       COALESCE(v.metadata->'categories', '[]'::jsonb)::jsonb AS categories,
+       COALESCE(v.metadata->'authors', '[]'::jsonb)::jsonb AS authors,
+       COALESCE(v.metadata->>'readme', '')::text AS readme,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.blob_key, b.sha256 AS checksum, b.size_bytes,
+       COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked,
+       f.download_count, f.created_at, f.updated_at
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = lower($2::text)
+ORDER BY v.created_at, v.id
 `
 
 type ListCargoCrateVersionsParams struct {
@@ -194,18 +179,19 @@ type ListCargoCrateVersionsRow struct {
 	RepositoryID  string          `db:"repository_id" json:"repository_id"`
 	Name          string          `db:"name" json:"name"`
 	Version       string          `db:"version" json:"version"`
-	Description   *string         `db:"description" json:"description"`
-	Homepage      *string         `db:"homepage" json:"homepage"`
-	Documentation *string         `db:"documentation" json:"documentation"`
-	Repository    *string         `db:"repository" json:"repository"`
-	License       *string         `db:"license" json:"license"`
-	Keywords      []string        `db:"keywords" json:"keywords"`
-	Categories    []string        `db:"categories" json:"categories"`
-	Authors       []string        `db:"authors" json:"authors"`
-	Readme        *string         `db:"readme" json:"readme"`
+	Description   string          `db:"description" json:"description"`
+	Homepage      string          `db:"homepage" json:"homepage"`
+	Documentation string          `db:"documentation" json:"documentation"`
+	Repository    string          `db:"repository" json:"repository"`
+	License       string          `db:"license" json:"license"`
+	Keywords      json.RawMessage `db:"keywords" json:"keywords"`
+	Categories    json.RawMessage `db:"categories" json:"categories"`
+	Authors       json.RawMessage `db:"authors" json:"authors"`
+	Readme        string          `db:"readme" json:"readme"`
 	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey       string          `db:"blob_key" json:"blob_key"`
 	Checksum      string          `db:"checksum" json:"checksum"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
 	Yanked        bool            `db:"yanked" json:"yanked"`
 	DownloadCount int64           `db:"download_count" json:"download_count"`
 	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
@@ -238,6 +224,7 @@ func (q *Queries) ListCargoCrateVersions(ctx context.Context, arg ListCargoCrate
 			&i.MetadataJson,
 			&i.BlobKey,
 			&i.Checksum,
+			&i.SizeBytes,
 			&i.Yanked,
 			&i.DownloadCount,
 			&i.CreatedAt,
@@ -254,11 +241,15 @@ func (q *Queries) ListCargoCrateVersions(ctx context.Context, arg ListCargoCrate
 }
 
 const listCargoIndexVersions = `-- name: ListCargoIndexVersions :many
-SELECT cc.name, cc.version, cc.metadata_json, b.sha256 AS checksum, cc.yanked
-FROM cargo_crates cc
-JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text)
-ORDER BY cc.created_at, cc.id
+SELECT COALESCE(v.metadata->>'name', p.name)::text AS name, v.version,
+       COALESCE(v.metadata->'metadata_json', '{}'::jsonb)::jsonb AS metadata_json,
+       b.sha256 AS checksum, COALESCE((v.metadata->>'yanked')::boolean, false)::boolean AS yanked
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+JOIN blobs b ON b.id = f.blob_id
+WHERE p.repository_id = $1 AND p.name_key = lower($2::text)
+ORDER BY v.created_at, v.id
 `
 
 type ListCargoIndexVersionsParams struct {
@@ -303,16 +294,19 @@ func (q *Queries) ListCargoIndexVersions(ctx context.Context, arg ListCargoIndex
 }
 
 const searchCargoCrateSummaries = `-- name: SearchCargoCrateSummaries :many
-SELECT cc.name,
-       COALESCE((ARRAY_AGG(cc.description ORDER BY cc.created_at DESC))[1], '')::text AS description,
-       COALESCE(SUM(cc.download_count), 0)::bigint AS downloads,
-       ARRAY_AGG(cc.version ORDER BY cc.created_at, cc.id)::text[] AS versions,
-       (ARRAY_AGG(cc.version ORDER BY cc.created_at, cc.id) FILTER (WHERE NOT cc.yanked))::text[] AS live_versions,
+SELECT p.name::text AS name,
+       COALESCE((ARRAY_AGG(v.metadata->>'description' ORDER BY v.created_at DESC))[1], '')::text AS description,
+       COALESCE(SUM(f.download_count), 0)::bigint AS downloads,
+       ARRAY_AGG(v.version ORDER BY v.created_at, v.id)::text[] AS versions,
+       (ARRAY_AGG(v.version ORDER BY v.created_at, v.id)
+          FILTER (WHERE NOT COALESCE((v.metadata->>'yanked')::boolean, false)))::text[] AS live_versions,
        (COUNT(*) OVER ())::bigint AS total
-FROM cargo_crates cc
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND (cc.name ILIKE $2 OR cc.description ILIKE $2)
-GROUP BY cc.name
-ORDER BY cc.name ASC
+FROM packages p
+JOIN package_versions v ON v.package_id = p.id AND v.deleted_at IS NULL
+JOIN package_files f ON f.version_id = v.id AND f.deleted_at IS NULL
+WHERE p.repository_id = $1 AND (p.name ILIKE $2 OR v.metadata->>'description' ILIKE $2)
+GROUP BY p.id, p.name
+ORDER BY p.name ASC
 LIMIT $3
 `
 
@@ -361,88 +355,12 @@ func (q *Queries) SearchCargoCrateSummaries(ctx context.Context, arg SearchCargo
 	return items, nil
 }
 
-const searchCargoCrates = `-- name: SearchCargoCrates :many
-SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
-FROM cargo_crates cc
-JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND (cc.name ILIKE $2 OR cc.description ILIKE $2)
-ORDER BY cc.name ASC LIMIT $3
-`
-
-type SearchCargoCratesParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-	Limit        int32  `db:"limit" json:"limit"`
-}
-
-type SearchCargoCratesRow struct {
-	ID            string          `db:"id" json:"id"`
-	RepositoryID  string          `db:"repository_id" json:"repository_id"`
-	Name          string          `db:"name" json:"name"`
-	Version       string          `db:"version" json:"version"`
-	Description   *string         `db:"description" json:"description"`
-	Homepage      *string         `db:"homepage" json:"homepage"`
-	Documentation *string         `db:"documentation" json:"documentation"`
-	Repository    *string         `db:"repository" json:"repository"`
-	License       *string         `db:"license" json:"license"`
-	Keywords      []string        `db:"keywords" json:"keywords"`
-	Categories    []string        `db:"categories" json:"categories"`
-	Authors       []string        `db:"authors" json:"authors"`
-	Readme        *string         `db:"readme" json:"readme"`
-	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
-	BlobKey       string          `db:"blob_key" json:"blob_key"`
-	Checksum      string          `db:"checksum" json:"checksum"`
-	Yanked        bool            `db:"yanked" json:"yanked"`
-	DownloadCount int64           `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-// Per-version rows. Used by backup export (an empty query lists everything);
-// the search API uses SearchCargoCrateSummaries.
-func (q *Queries) SearchCargoCrates(ctx context.Context, arg SearchCargoCratesParams) ([]SearchCargoCratesRow, error) {
-	rows, err := q.db.Query(ctx, searchCargoCrates, arg.RepositoryID, arg.Name, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchCargoCratesRow{}
-	for rows.Next() {
-		var i SearchCargoCratesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.Name,
-			&i.Version,
-			&i.Description,
-			&i.Homepage,
-			&i.Documentation,
-			&i.Repository,
-			&i.License,
-			&i.Keywords,
-			&i.Categories,
-			&i.Authors,
-			&i.Readme,
-			&i.MetadataJson,
-			&i.BlobKey,
-			&i.Checksum,
-			&i.Yanked,
-			&i.DownloadCount,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const yankCargoCrate = `-- name: YankCargoCrate :exec
-UPDATE cargo_crates SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND lower(name) = lower($3::text) AND version = $4 AND deleted_at IS NULL
+UPDATE package_versions v
+SET metadata = jsonb_set(v.metadata, '{yanked}', to_jsonb($1::boolean)), updated_at = now()
+FROM packages p
+WHERE p.id = v.package_id AND p.repository_id = $2 AND p.name_key = lower($3::text)
+  AND v.version_key = $4 AND v.deleted_at IS NULL
 `
 
 type YankCargoCrateParams struct {
@@ -452,6 +370,8 @@ type YankCargoCrateParams struct {
 	Version      string `db:"version" json:"version"`
 }
 
+// The yanked flag lives in the version metadata; the version's updated_at
+// moves, the index stamp never reads it.
 func (q *Queries) YankCargoCrate(ctx context.Context, arg YankCargoCrateParams) error {
 	_, err := q.db.Exec(ctx, yankCargoCrate,
 		arg.Yanked,
