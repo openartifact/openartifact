@@ -7,7 +7,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
@@ -44,80 +43,6 @@ func scanUser(row rowScanner) (*models.User, error) {
 	}
 
 	return u, nil
-}
-
-func (p *PostgresDB) CreateToken(ctx context.Context, token *models.Token) (*models.Token, error) {
-	scopesJSON, err := json.Marshal(token.Scopes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal token scopes: %w", err)
-	}
-
-	err = p.db.QueryRowContext(ctx,
-		`INSERT INTO auth_tokens (user_id, name, kind, token_hash, scopes, expires_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6)
-		RETURNING id, created_at`,
-		token.UserID, token.Name, token.Kind, token.TokenHash, scopesJSON, token.ExpiresAt,
-	).Scan(&token.ID, &token.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token: %w", err)
-	}
-
-	return token, nil
-}
-
-// getTokenWhere returns the single token matching the WHERE clause, or nil when there is none.
-func (p *PostgresDB) getTokenWhere(ctx context.Context, what, where string, arg any) (*models.Token, error) {
-	t, err := scanToken(p.db.QueryRowContext(ctx, `SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE `+where, arg))
-
-	return orNotFound(t, err, "get token by "+what)
-}
-
-func (p *PostgresDB) GetTokenByHashUncached(ctx context.Context, hash string) (*models.Token, error) {
-	return p.getTokenWhere(ctx, "hash", "t.token_hash = $1", hash)
-}
-
-func (p *PostgresDB) GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error) {
-	return p.getTokenWhere(ctx, "id", "t.id = $1", tokenID)
-}
-
-func (p *PostgresDB) RevokeToken(ctx context.Context, tokenID string) error {
-	// Cached auth lookups must not outlive this write.
-	defer p.authCache.invalidate()
-
-	_, err := p.db.ExecContext(ctx,
-		`WITH r AS (UPDATE auth_tokens SET revoked_at=now() WHERE id=$1 RETURNING user_id)
-		UPDATE auth_users SET disabled = true WHERE kind = 'service' AND id IN (SELECT user_id FROM r)`,
-		tokenID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to revoke token: %w", err)
-	}
-
-	return nil
-}
-
-func (p *PostgresDB) UpdateTokenLastUsed(ctx context.Context, tokenID string) error {
-	_, err := p.db.ExecContext(ctx,
-		`UPDATE auth_tokens SET last_used_at=now() WHERE id=$1 AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')`,
-		tokenID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update token last used: %w", err)
-	}
-
-	return nil
-}
-
-func (p *PostgresDB) ListTokensByUser(ctx context.Context, userID string) ([]*models.Token, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.user_id=$1 ORDER BY t.created_at DESC`,
-		userID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tokens by user: %w", err)
-	}
-
-	return collectRows(rows, "failed to scan token", "failed to iterate tokens", scanToken)
 }
 
 func (p *PostgresDB) CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error) {

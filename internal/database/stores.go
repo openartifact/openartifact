@@ -46,6 +46,7 @@ type PostgresDB struct {
 	*UserStore
 	*SessionStore
 	*UserGroupStore
+	*TokenStore
 	// STORES-STRUCT
 }
 
@@ -89,6 +90,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		UserStore:            &UserStore{core: c},
 		SessionStore:         &SessionStore{core: c},
 		UserGroupStore:       &UserGroupStore{core: c},
+		TokenStore:           &TokenStore{core: c},
 		// STORES-INIT
 	}
 }

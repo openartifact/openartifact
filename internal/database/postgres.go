@@ -1574,35 +1574,6 @@ func (p *PostgresDB) IncrementNuGetDownloadCount(ctx context.Context, repoID, pa
 	return nil
 }
 
-func (p *PostgresDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error) {
-	var total int
-	if err := p.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM auth_tokens WHERE revoked_at IS NULL").Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count tokens: %w", err)
-	}
-
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.revoked_at IS NULL ORDER BY t.created_at DESC, t.id LIMIT $1 OFFSET $2`,
-		perPage, (page-1)*perPage,
-	)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list all tokens: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var tokens []*models.Token
-
-	for rows.Next() {
-		t, err := scanToken(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan token: %w", err)
-		}
-
-		tokens = append(tokens, t)
-	}
-
-	return tokens, total, rows.Err()
-}
-
 func (t *PostgresTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return t.tx.ExecContext(ctx, query, args...)
 }

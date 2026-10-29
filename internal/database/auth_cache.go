@@ -142,13 +142,6 @@ func cachedLookup[V any](
 	return v, nil
 }
 
-func cloneToken(t *models.Token) *models.Token {
-	cp := *t
-	cp.Scopes = append([]string(nil), t.Scopes...)
-
-	return &cp
-}
-
 // cloneShallow copies a value that holds no slices or maps.
 func cloneShallow[T any](v *T) *T {
 	cp := *v
@@ -205,12 +198,6 @@ func cachedList[T any](
 	return cachedLookup(ctx, c, m, key, clone,
 		func([]*T) bool { return false },
 		func(ctx context.Context) ([]*T, error) { return load(ctx, key) })
-}
-
-// GetTokenByHash returns the token with the given hash, from the auth cache
-// when fresh.
-func (p *PostgresDB) GetTokenByHash(ctx context.Context, hash string) (*models.Token, error) {
-	return cachedPtr(ctx, &p.authCache, &p.authCache.tokens, hash, cloneToken, p.GetTokenByHashUncached)
 }
 
 // GetPermissionTargetsForPrincipal returns the permission targets held by a
