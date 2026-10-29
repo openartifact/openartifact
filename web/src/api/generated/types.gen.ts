@@ -1230,6 +1230,28 @@ export type GpgKey = {
     expires_at?: string | null;
 };
 
+/**
+ * A stored GPG key the caller may seal bundles with. Never carries private key material, assignments or the creator.
+ */
+export type BundleSigningKey = {
+    /**
+     * UUID: the value to send as `gpg_key_id`
+     */
+    id: string;
+    name: string;
+    fingerprint: string;
+    /**
+     * Long key id (last 16 hex digits of the fingerprint)
+     */
+    key_id: string;
+    algorithm: string;
+    user_id: string;
+    /**
+     * The key that signs package metadata globally; the seal dialog preselects it
+     */
+    active_global: boolean;
+};
+
 export type EndSessionResponse = {
     /**
      * IdP RP-initiated logout URL (id_token_hint, client_id, post_logout_redirect_uri).
@@ -11179,6 +11201,33 @@ export type PostApiV1BundlesResponses = {
 };
 
 export type PostApiV1BundlesResponse = PostApiV1BundlesResponses[keyof PostApiV1BundlesResponses];
+
+export type GetApiV1BundlesSigningKeysData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bundles/signing-keys';
+};
+
+export type GetApiV1BundlesSigningKeysErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1BundlesSigningKeysError = GetApiV1BundlesSigningKeysErrors[keyof GetApiV1BundlesSigningKeysErrors];
+
+export type GetApiV1BundlesSigningKeysResponses = {
+    /**
+     * Success
+     */
+    200: {
+        keys: Array<BundleSigningKey>;
+    };
+};
+
+export type GetApiV1BundlesSigningKeysResponse = GetApiV1BundlesSigningKeysResponses[keyof GetApiV1BundlesSigningKeysResponses];
 
 export type DeleteApiV1BundlesByNameByVersionData = {
     body?: never;

@@ -188,6 +188,7 @@ func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
 	r.Delete("/api/v1/pipelines/{name}", h.handleDeletePipeline)
 
 	// Bundles
+	r.Get("/api/v1/bundles/signing-keys", h.handleListSigningKeys)
 	r.Get("/api/v1/bundles", h.handleListBundles)
 	r.Post("/api/v1/bundles", h.handleCreateBundle)
 	r.Get("/api/v1/bundles/{name}/{version}", h.handleGetBundle)

@@ -125,7 +125,7 @@ curl -H "Authorization: Bearer $TOKEN" -o manifest.json.asc HOST/api/v1/bundles/
 gpg --import public.key && gpg --verify manifest.json.asc manifest.json
 ```
 
-Who may sign: a user with the global `manage` permission may use any stored key; everybody else needs a `gpg.bundleSigners` entry (`GPG_BUNDLE_SIGNERS`, comma separated) of the form `<key id or fingerprint>=<username>`, for example `0123…4567=release-bot`. The key of `gpg.keyPath` / `GPG_KEY_PATH` signs package metadata only: it is refused for bundles, also for administrators. The seal is an audit event (`bundle.sealed`) that records the signing fingerprint.
+Who may sign: a user with the global `manage` permission may use any stored key; everybody else needs a `gpg.bundleSigners` entry (`GPG_BUNDLE_SIGNERS`, comma separated) of the form `<key id or fingerprint>=<username>`, for example `0123…4567=release-bot`. The key of `gpg.keyPath` / `GPG_KEY_PATH` signs package metadata only: it is refused for bundles, also for administrators. `GET /api/v1/bundles/signing-keys` returns the stored keys the calling user may sign bundles with (the web seal dialog uses it). The seal is an audit event (`bundle.sealed`) that records the signing fingerprint.
 
 See [release bundles](../repositories/release-bundles.md).
 

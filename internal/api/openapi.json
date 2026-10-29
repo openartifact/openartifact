@@ -2843,6 +2843,45 @@
           }
         }
       },
+      "BundleSigningKey": {
+        "type": "object",
+        "description": "A stored GPG key the caller may seal bundles with. Never carries private key material, assignments or the creator.",
+        "required": [
+          "id",
+          "name",
+          "fingerprint",
+          "key_id",
+          "algorithm",
+          "user_id",
+          "active_global"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID: the value to send as `gpg_key_id`"
+          },
+          "name": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string",
+            "description": "Long key id (last 16 hex digits of the fingerprint)"
+          },
+          "algorithm": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "active_global": {
+            "type": "boolean",
+            "description": "The key that signs package metadata globally; the seal dialog preselects it"
+          }
+        }
+      },
       "EndSessionResponse": {
         "type": "object",
         "required": [
@@ -20220,6 +20259,48 @@
         }
       }
     },
+    "/api/v1/bundles/signing-keys": {
+      "get": {
+        "summary": "List the keys the caller may seal bundles with",
+        "description": "Exactly the stored GPG keys the caller may send as `gpg_key_id` when sealing: every stored key for an administrator, otherwise the keys a `gpg.bundleSigners` grant names for the caller. The package-signing key of the server configuration (`config`) is never listed, since it cannot sign bundles. A key the caller may not use is indistinguishable from one that does not exist; an empty list means the seal dialog offers no signing.",
+        "tags": [
+          "Bundles"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "keys"
+                  ],
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BundleSigningKey"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/bundles/{name}/{version}": {
       "get": {
         "summary": "Get bundle",
@@ -20487,7 +20568,7 @@
     "/api/v1/bundles/{name}/{version}/seal": {
       "post": {
         "summary": "Seal bundle",
-        "description": "Seals a draft bundle. With `gpg_key_id` (a key id from the admin GPG list, a fingerprint, or `config`) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). An unknown key answers 400 validation_failed.",
+        "description": "Seals a draft bundle. With `gpg_key_id` (a stored key id or fingerprint; see `GET /api/v1/bundles/signing-keys` for the keys the caller may use) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). Signing needs the global `manage` permission or a `gpg.bundleSigners` grant for the key; the package-signing key of the server configuration (`config`) never signs bundles. Every refusal of the key answers 403 `signer_forbidden`; an administrator naming an unknown key gets 400 validation_failed.",
         "tags": [
           "Bundles"
         ],

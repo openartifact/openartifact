@@ -282,6 +282,20 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `target_repo_id` | string | yes | - |
 | `to_stage` | string | yes | - |
 
+### BundleSigningKey
+
+A stored GPG key the caller may seal bundles with. Never carries private key material, assignments or the creator.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `active_global` | boolean | yes | The key that signs package metadata globally; the seal dialog preselects it |
+| `algorithm` | string | yes | - |
+| `fingerprint` | string | yes | - |
+| `id` | string | yes | UUID: the value to send as `gpg_key_id` |
+| `key_id` | string | yes | Long key id (last 16 hex digits of the fingerprint) |
+| `name` | string | yes | - |
+| `user_id` | string | yes | - |
+
 ### ChecksumHit
 
 | Field | Type | Required | Description |

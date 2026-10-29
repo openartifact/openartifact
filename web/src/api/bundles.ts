@@ -9,6 +9,7 @@ import { request, JSON_HEADERS } from './client'
 
 import type {
   BundlePromotion,
+  BundleSigningKey,
   PipelineStage,
   PromotionPipeline,
   ReleaseBundle,
@@ -18,7 +19,7 @@ import type {
 export type Bundle = ReleaseBundle
 export type BundleItem = ReleaseBundleItem
 export type Pipeline = PromotionPipeline
-export type { BundlePromotion, PipelineStage }
+export type { BundlePromotion, BundleSigningKey, PipelineStage }
 export type BundleState = Bundle['state']
 export type PromotionStatus = NonNullable<BundlePromotion['status']>
 
@@ -116,7 +117,16 @@ export function removeBundleItem(name: string, version: string, sha256: string):
   return request<void>(`${bundlePath(name, version)}/items/${enc(sha256)}`, { method: 'DELETE' })
 }
 
-/** Seals a draft; `gpgKeyId` (a key fingerprint) additionally signs the manifest. */
+/**
+ * The stored GPG keys the current user may seal bundles with (every stored key for an administrator,
+ * the granted ones for anyone else; never the configured package-signing key). Empty: no signing.
+ */
+export async function listBundleSigningKeys(): Promise<BundleSigningKey[]> {
+  const res = await request<{ keys?: BundleSigningKey[] }>('/api/v1/bundles/signing-keys')
+  return res.keys ?? []
+}
+
+/** Seals a draft; `gpgKeyId` (the id of a key from `listBundleSigningKeys`) additionally signs the manifest. */
 export function sealBundle(name: string, version: string, gpgKeyId?: string): Promise<Bundle> {
   const init: RequestInit = gpgKeyId ? json('POST', { gpg_key_id: gpgKeyId }) : { method: 'POST' }
   return request<Bundle>(`${bundlePath(name, version)}/seal`, init)

@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Bundles API
 
-18 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+19 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -65,6 +65,25 @@ Creates a draft bundle owned by the caller. Allowed for administrators and for a
 |---|---|---|
 | `201` | Created | `application/json`: [ReleaseBundle](schemas.md#releasebundle) |
 | `default` | Error | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/bundles/signing-keys`
+
+List the keys the caller may seal bundles with
+
+Exactly the stored GPG keys the caller may send as `gpg_key_id` when sealing: every stored key for an administrator, otherwise the keys a `gpg.bundleSigners` grant names for the caller. The package-signing key of the server configuration (`config`) is never listed, since it cannot sign bundles. A key the caller may not use is indistinguishable from one that does not exist; an empty list means the seal dialog offers no signing.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | Success | `application/json`: object |
+| `default` | Error | `application/json`: [Error](schemas.md#error) |
+
+Fields of the `200` response (`application/json`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `keys` | array of [BundleSigningKey](schemas.md#bundlesigningkey) | yes | - |
 
 ### `GET /api/v1/bundles/{name}/{version}`
 
@@ -334,7 +353,7 @@ Fields of the `200` response (`application/json`):
 
 Seal bundle
 
-Seals a draft bundle. With `gpg_key_id` (a key id from the admin GPG list, a fingerprint, or `config`) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). An unknown key answers 400 validation_failed.
+Seals a draft bundle. With `gpg_key_id` (a stored key id or fingerprint; see `GET /api/v1/bundles/signing-keys` for the keys the caller may use) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). Signing needs the global `manage` permission or a `gpg.bundleSigners` grant for the key; the package-signing key of the server configuration (`config`) never signs bundles. Every refusal of the key answers 403 `signer_forbidden`; an administrator naming an unknown key gets 400 validation_failed.
 
 **Parameters**
 

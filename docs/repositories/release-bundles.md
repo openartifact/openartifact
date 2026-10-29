@@ -95,7 +95,7 @@ curl -H "Authorization: Bearer <TOKEN>" -o manifest.json.asc HOST/api/v1/bundles
 gpg --verify manifest.json.asc manifest.json
 ```
 
-The bundle's `gpg_key_id` is the signer's fingerprint (it stays meaningful after the key is deleted) and `gpg_signature` the armored signature. An unknown key answers `400 validation_failed` and leaves the bundle a draft. The seal fails with `409` if an item changed while the manifest was being signed.
+The bundle's `gpg_key_id` is the signer's fingerprint (it stays meaningful after the key is deleted) and `gpg_signature` the armored signature. `GET /api/v1/bundles/signing-keys` lists the keys the caller may use (the web seal dialog offers exactly these): every stored key for an administrator, only the keys granted through `gpg.bundleSigners` for anyone else, never the `gpg.keyPath` key. A key the caller may not use, the `gpg.keyPath` key and (for non-administrators) an unknown key all answer `403` with the error code `signer_forbidden`; an administrator naming an unknown key gets `400 validation_failed`. Either way the bundle stays a draft. The seal fails with `409` if an item changed while the manifest was being signed.
 
 ## Permissions
 
