@@ -17,6 +17,7 @@ type PostgresDB struct {
 	*WebhookStore
 	*CleanupStore
 	*PresignedUploadStore
+	*PropertyStore
 	// STORES-STRUCT
 }
 
@@ -31,6 +32,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		WebhookStore:         &WebhookStore{core: c},
 		CleanupStore:         &CleanupStore{core: c},
 		PresignedUploadStore: &PresignedUploadStore{core: c},
+		PropertyStore:        &PropertyStore{core: c},
 		// STORES-INIT
 	}
 }

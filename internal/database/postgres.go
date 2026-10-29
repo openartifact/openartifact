@@ -3829,53 +3829,6 @@ func (p *PostgresDB) UpdateStorageBackendStatus(ctx context.Context, id, status 
 	})
 }
 
-// DeleteArtifactProperty deletes an artifact property.
-func (p *PostgresDB) DeleteArtifactProperty(ctx context.Context, repoID, artifactID, key string) error {
-	err := p.q.DeleteArtifactProperty(ctx, dbsqlc.DeleteArtifactPropertyParams{
-		RepositoryID: repoID,
-		ArtifactPath: artifactID,
-		Key:          key,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to delete artifact property: %w", err)
-	}
-
-	return nil
-}
-
-// ListArtifactProperties lists all properties for an artifact.
-func (p *PostgresDB) ListArtifactProperties(ctx context.Context, repoID, artifactID string) (map[string]string, error) {
-	rows, err := p.q.ListArtifactProperties(ctx, dbsqlc.ListArtifactPropertiesParams{
-		RepositoryID: repoID,
-		ArtifactPath: artifactID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list artifact properties: %w", err)
-	}
-
-	result := make(map[string]string, len(rows))
-
-	for _, row := range rows {
-		result[row.Key] = row.Value
-	}
-
-	return result, nil
-}
-
-// SearchByProperty searches for artifacts by property key and value.
-func (p *PostgresDB) SearchByProperty(ctx context.Context, repoID, key, value string) ([]string, error) {
-	result, err := p.q.SearchByProperty(ctx, dbsqlc.SearchByPropertyParams{
-		RepositoryID: repoID,
-		Key:          key,
-		Value:        value,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to search by property: %w", err)
-	}
-
-	return result, nil
-}
-
 // Project methods
 
 func projectFromRow(row *dbsqlc.Project) *models.Project {
