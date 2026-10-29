@@ -60,10 +60,6 @@ func (d *pypiDB) CreatePyPIPackage(_ context.Context, p *models.PyPIPackage) err
 	return nil
 }
 
-func (d *pypiDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
-	return d.pkgs, nil
-}
-
 func (d *pypiDB) ListPyPIPackageNames(_ context.Context, _ string) ([]string, error) {
 	return distinctPyPINames(d.pkgs), nil
 }

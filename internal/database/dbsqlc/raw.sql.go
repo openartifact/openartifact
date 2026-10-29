@@ -11,26 +11,12 @@ import (
 	"time"
 )
 
-const deleteRawArtifact = `-- name: DeleteRawArtifact :exec
-DELETE FROM raw_artifacts WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL
-`
-
-type DeleteRawArtifactParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Path         string `db:"path" json:"path"`
-}
-
-func (q *Queries) DeleteRawArtifact(ctx context.Context, arg DeleteRawArtifactParams) error {
-	_, err := q.db.Exec(ctx, deleteRawArtifact, arg.RepositoryID, arg.Path)
-	return err
-}
-
 const getRawArtifact = `-- name: GetRawArtifact :one
-SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
-       b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at
-FROM raw_artifacts ra
-JOIN blobs b ON b.id = ra.blob_id
-WHERE ra.repository_id = $1 AND ra.path = $2 AND ra.deleted_at IS NULL
+SELECT f.id, f.repository_id, f.path, f.blob_id, f.attrs,
+       b.size_bytes, b.sha256, b.blob_key, f.created_at, f.updated_at
+FROM package_files f
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
 `
 
 type GetRawArtifactParams struct {
@@ -42,12 +28,11 @@ type GetRawArtifactRow struct {
 	ID           string          `db:"id" json:"id"`
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Path         string          `db:"path" json:"path"`
-	ContentType  string          `db:"content_type" json:"content_type"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
 	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
 	Sha256       string          `db:"sha256" json:"sha256"`
 	BlobKey      string          `db:"blob_key" json:"blob_key"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -59,45 +44,59 @@ func (q *Queries) GetRawArtifact(ctx context.Context, arg GetRawArtifactParams) 
 		&i.ID,
 		&i.RepositoryID,
 		&i.Path,
-		&i.ContentType,
 		&i.BlobID,
+		&i.Attrs,
 		&i.SizeBytes,
 		&i.Sha256,
 		&i.BlobKey,
-		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const insertRawArtifactIfAbsent = `-- name: InsertRawArtifactIfAbsent :execrows
-INSERT INTO raw_artifacts (id, repository_id, path, content_type, blob_id, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+const getRawFileID = `-- name: GetRawFileID :one
+SELECT id FROM package_files WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL
+`
+
+type GetRawFileIDParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Path         string `db:"path" json:"path"`
+}
+
+func (q *Queries) GetRawFileID(ctx context.Context, arg GetRawFileIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getRawFileID, arg.RepositoryID, arg.Path)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertRawFileIfAbsent = `-- name: InsertRawFileIfAbsent :execrows
+INSERT INTO package_files (id, version_id, repository_id, path, filename, blob_id, role, listed, attrs, unit_key, created_at)
+VALUES ($1, $2, $3, $4, $4, $5,
+        'primary', true, $6::jsonb, $4, $7::timestamptz)
 ON CONFLICT (repository_id, path) WHERE deleted_at IS NULL DO NOTHING
 `
 
-type InsertRawArtifactIfAbsentParams struct {
+type InsertRawFileIfAbsentParams struct {
 	ID           string          `db:"id" json:"id"`
+	VersionID    string          `db:"version_id" json:"version_id"`
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Path         string          `db:"path" json:"path"`
-	ContentType  string          `db:"content_type" json:"content_type"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
-func (q *Queries) InsertRawArtifactIfAbsent(ctx context.Context, arg InsertRawArtifactIfAbsentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, insertRawArtifactIfAbsent,
+func (q *Queries) InsertRawFileIfAbsent(ctx context.Context, arg InsertRawFileIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRawFileIfAbsent,
 		arg.ID,
+		arg.VersionID,
 		arg.RepositoryID,
 		arg.Path,
-		arg.ContentType,
 		arg.BlobID,
-		arg.Metadata,
+		arg.Attrs,
 		arg.CreatedAt,
-		arg.UpdatedAt,
 	)
 	if err != nil {
 		return 0, err
@@ -106,23 +105,22 @@ func (q *Queries) InsertRawArtifactIfAbsent(ctx context.Context, arg InsertRawAr
 }
 
 const listRawArtifacts = `-- name: ListRawArtifacts :many
-SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
-       b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at
-FROM raw_artifacts ra
-JOIN blobs b ON b.id = ra.blob_id
-WHERE ra.repository_id = $1 AND ra.deleted_at IS NULL ORDER BY ra.path ASC
+SELECT f.id, f.repository_id, f.path, f.blob_id, f.attrs,
+       b.size_bytes, b.sha256, b.blob_key, f.created_at, f.updated_at
+FROM package_files f
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL ORDER BY f.path ASC
 `
 
 type ListRawArtifactsRow struct {
 	ID           string          `db:"id" json:"id"`
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Path         string          `db:"path" json:"path"`
-	ContentType  string          `db:"content_type" json:"content_type"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
 	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
 	Sha256       string          `db:"sha256" json:"sha256"`
 	BlobKey      string          `db:"blob_key" json:"blob_key"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -140,12 +138,11 @@ func (q *Queries) ListRawArtifacts(ctx context.Context, repositoryID string) ([]
 			&i.ID,
 			&i.RepositoryID,
 			&i.Path,
-			&i.ContentType,
 			&i.BlobID,
+			&i.Attrs,
 			&i.SizeBytes,
 			&i.Sha256,
 			&i.BlobKey,
-			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -160,11 +157,11 @@ func (q *Queries) ListRawArtifacts(ctx context.Context, repositoryID string) ([]
 }
 
 const listRawArtifactsByPrefix = `-- name: ListRawArtifactsByPrefix :many
-SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
-       b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at
-FROM raw_artifacts ra
-JOIN blobs b ON b.id = ra.blob_id
-WHERE ra.repository_id = $1 AND ra.path LIKE $2 AND ra.deleted_at IS NULL ORDER BY ra.path ASC
+SELECT f.id, f.repository_id, f.path, f.blob_id, f.attrs,
+       b.size_bytes, b.sha256, b.blob_key, f.created_at, f.updated_at
+FROM package_files f
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.path LIKE $2 AND f.deleted_at IS NULL ORDER BY f.path ASC
 `
 
 type ListRawArtifactsByPrefixParams struct {
@@ -176,12 +173,11 @@ type ListRawArtifactsByPrefixRow struct {
 	ID           string          `db:"id" json:"id"`
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Path         string          `db:"path" json:"path"`
-	ContentType  string          `db:"content_type" json:"content_type"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
 	SizeBytes    int64           `db:"size_bytes" json:"size_bytes"`
 	Sha256       string          `db:"sha256" json:"sha256"`
 	BlobKey      string          `db:"blob_key" json:"blob_key"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -199,12 +195,11 @@ func (q *Queries) ListRawArtifactsByPrefix(ctx context.Context, arg ListRawArtif
 			&i.ID,
 			&i.RepositoryID,
 			&i.Path,
-			&i.ContentType,
 			&i.BlobID,
+			&i.Attrs,
 			&i.SizeBytes,
 			&i.Sha256,
 			&i.BlobKey,
-			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -218,37 +213,43 @@ func (q *Queries) ListRawArtifactsByPrefix(ctx context.Context, arg ListRawArtif
 	return items, nil
 }
 
-const upsertRawArtifact = `-- name: UpsertRawArtifact :exec
-INSERT INTO raw_artifacts (id, repository_id, path, content_type, blob_id, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+const upsertRawFile = `-- name: UpsertRawFile :one
+
+INSERT INTO package_files (id, version_id, repository_id, path, filename, blob_id, role, listed, attrs, unit_key, created_at)
+VALUES ($1, $2, $3, $4, $4, $5,
+        'primary', true, $6::jsonb, $4, $7::timestamptz)
 ON CONFLICT (repository_id, path) WHERE deleted_at IS NULL DO UPDATE SET
-    content_type = EXCLUDED.content_type,
     blob_id = EXCLUDED.blob_id,
-    metadata = EXCLUDED.metadata,
-    updated_at = NOW()
+    attrs = EXCLUDED.attrs,
+    updated_at = now()
+RETURNING id
 `
 
-type UpsertRawArtifactParams struct {
+type UpsertRawFileParams struct {
 	ID           string          `db:"id" json:"id"`
+	VersionID    string          `db:"version_id" json:"version_id"`
 	RepositoryID string          `db:"repository_id" json:"repository_id"`
 	Path         string          `db:"path" json:"path"`
-	ContentType  string          `db:"content_type" json:"content_type"`
-	BlobID       string          `db:"blob_id" json:"blob_id"`
-	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	BlobID       *string         `db:"blob_id" json:"blob_id"`
+	Attrs        json.RawMessage `db:"attrs" json:"attrs"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
 
-func (q *Queries) UpsertRawArtifact(ctx context.Context, arg UpsertRawArtifactParams) error {
-	_, err := q.db.Exec(ctx, upsertRawArtifact,
+// Raw on the generic package tables (see the mapping in pkg_raw.go). One
+// package, one version (”) and one file per path.
+// The file of a path: a live row at the path keeps its id and created_at and
+// takes the new blob and attributes.
+func (q *Queries) UpsertRawFile(ctx context.Context, arg UpsertRawFileParams) (string, error) {
+	row := q.db.QueryRow(ctx, upsertRawFile,
 		arg.ID,
+		arg.VersionID,
 		arg.RepositoryID,
 		arg.Path,
-		arg.ContentType,
 		arg.BlobID,
-		arg.Metadata,
+		arg.Attrs,
 		arg.CreatedAt,
-		arg.UpdatedAt,
 	)
-	return err
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }

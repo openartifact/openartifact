@@ -83,8 +83,13 @@ func TestGetPyPIPackageByFilename(t *testing.T) {
 	s := newQuotaSeeder(t, pg, "fmta-pypi", "pypi")
 
 	add := func(name, filename string) {
-		s.exec(`INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, blob_id)
-		        VALUES ($1,$2,'1.0',$3,'sdist',$4)`, s.repo, name, filename, s.blob(5))
+		sum := testSHA(s.repo + name + filename)
+		if err := pg.CreatePyPIPackage(ctx, &models.PyPIPackage{
+			RepositoryID: s.repo, Name: name, Version: "1.0", Filename: filename, PackageType: "sdist",
+			SHA256Digest: sum, BlobKey: sum, SizeBytes: 5,
+		}); err != nil {
+			t.Fatalf("CreatePyPIPackage %s: %v", name, err)
+		}
 	}
 
 	add("foo", "foo-1.0.tar.gz")
@@ -99,18 +104,10 @@ func TestGetPyPIPackageByFilename(t *testing.T) {
 		t.Fatalf("missing = %+v, %v", p, err)
 	}
 
-	add("foo-legacy", "foo-1.0.tar.gz")
+	add("foo-other", "foo-1.0.tar.gz")
 
 	if _, err := pg.GetPyPIPackageByFilename(ctx, s.repo, "foo-1.0.tar.gz"); !errors.Is(err, ErrAmbiguousPyPIFilename) {
 		t.Fatalf("duplicate = %v, want ErrAmbiguousPyPIFilename", err)
-	}
-
-	// Rows stored by older versions with a run of '-' stay reachable under the PEP 503 name.
-	add("my--pkg", "my_pkg-1.0.tar.gz")
-
-	vs, err := pg.ListPyPIPackageVersions(ctx, s.repo, "my-pkg")
-	if err != nil || len(vs) != 1 {
-		t.Fatalf("legacy name = %d rows, %v", len(vs), err)
 	}
 }
 

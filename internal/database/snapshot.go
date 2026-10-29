@@ -72,7 +72,6 @@ type SnapshotReads interface {
 		licenseReviewOnly bool,
 		limit, offset int,
 	) ([]*models.AIAnalysis, int, error)
-	ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error)
 	ListAllProjects(ctx context.Context) ([]*models.Project, error)
 	ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
 	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
@@ -100,7 +99,6 @@ type SnapshotReads interface {
 	ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error)
 	ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error)
 	ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error)
-	ListPyPIPackages(ctx context.Context, repoID string) ([]*models.PyPIPackage, error)
 	ListRawArtifacts(ctx context.Context, repoID, prefix string) ([]*models.RawArtifact, error)
 	ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error)
 	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)

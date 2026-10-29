@@ -19,7 +19,7 @@ import (
 // CondaRepodataStamp is a cheap validator of one platform's repodata.json:
 // it changes exactly when a live package is added or removed.
 func (p *CondaStore) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
-	stamp, err := p.q.CondaRepodataStamp(ctx, dbsqlc.CondaRepodataStampParams{RepositoryID: repoID, Platform: platform})
+	stamp, err := p.q.CondaRepodataStamp(ctx, dbsqlc.CondaRepodataStampParams{RepositoryID: repoID, Arch: platform})
 	if err != nil {
 		return "", fmt.Errorf("failed to stamp conda repodata: %w", err)
 	}

@@ -88,7 +88,7 @@ func fuzzDBText(v any) bool {
 }
 
 // fuzzCheckIndex checks the invariants of a parsed packageIndex: every field
-// is within what the conda_packages columns hold and what repodata.json carries.
+// is within what the package_files/version columns hold and what repodata.json carries.
 func fuzzCheckIndex(t *testing.T, idx packageIndex) {
 	t.Helper()
 
@@ -189,7 +189,7 @@ func FuzzParsePackageFilename(f *testing.F) {
 }
 
 // FuzzParsePackageIndex feeds arbitrary info/index.json documents to the
-// index reader, whose result is stored in conda_packages.
+// index reader, whose result is stored as a package file.
 func FuzzParsePackageIndex(f *testing.F) {
 	f.Add([]byte(fuzzIndexJSON))
 	f.Add([]byte(`{"depends":null,"build_number":-1,"timestamp":1e300,"license":5}`))
@@ -264,7 +264,7 @@ func FuzzIndexFromTar(f *testing.F) {
 	})
 }
 
-// fuzzColumns checks a stored package against the conda_packages column
+// fuzzColumns checks a stored package against the package_files column
 // definitions (migration 001): a longer or non-text value is a database error,
 // answered with a 500 instead of a refusal.
 func fuzzColumns(t *testing.T, pkg *models.CondaPackage) {
