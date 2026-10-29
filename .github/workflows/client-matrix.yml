@@ -1,0 +1,184 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Recurring client compatibility matrix: every package format is verified with
+# its real, latest client (apt, dnf, npm, pip, mvn, docker, helm, cargo, go, ...)
+# against a fresh stack, so protocol drift in a client release shows up the night
+# it ships instead of in a user's CI. One matrix entry per format (a failure does
+# not hide the others); the client logic is scripts/smoke/<format>.sh and the
+# matrix is whatever scripts exist there. A failing night opens (or updates) one
+# issue labelled client-matrix; the next green night comments and closes it.
+# See docs/development/README.md#client-compatibility-matrix.
+
+name: client-matrix
+
+on:
+  schedule:
+    - cron: "37 2 * * *" # nightly, 02:37 UTC
+  workflow_dispatch:
+    inputs:
+      formats:
+        description: "Space-separated subset of scripts/smoke/*.sh (empty: all)"
+        required: false
+        default: ""
+
+concurrency:
+  group: client-matrix
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # docker compose names the built image <project>-<service>; the stack script
+  # runs with OA_STACK_BUILD=0 so it uses the image this workflow loaded.
+  STACK_PROJECT: oa-smoke
+  IMAGE_TAG: oa-smoke-openartifact:latest
+
+jobs:
+  image:
+    name: build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      formats: ${{ steps.formats.outputs.formats }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: formats
+        env:
+          REQUESTED: ${{ inputs.formats }}
+        run: |
+          all=$(for f in scripts/smoke/*.sh; do n=$(basename "$f" .sh); [ "$n" = lib ] || echo "$n"; done | jq -R . | jq -sc .)
+          formats="$all"
+          if [ -n "${REQUESTED// /}" ]; then
+            formats=$(jq -nc --arg r "$REQUESTED" '$r | split(" ") | map(select(. != ""))')
+            unknown=$(jq -nr --argjson all "$all" --argjson want "$formats" '$want - $all | join(" ")')
+            [ -z "$unknown" ] || { echo "unknown formats: $unknown" >&2; exit 1; }
+          fi
+          echo "formats=$formats" >> "$GITHUB_OUTPUT"
+          echo "matrix: $formats"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The anonymous distroless runtime: scheduled runs need no registry login.
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          provenance: false
+          sbom: false
+          build-args: RUNTIME=distroless
+          tags: ${{ env.IMAGE_TAG }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          cache-from: type=gha,scope=client-matrix
+          cache-to: type=gha,scope=client-matrix,mode=max
+
+      - name: Compress image
+        run: zstd -T0 -3 --rm "$RUNNER_TEMP/image.tar" -o "$RUNNER_TEMP/image.tar.zst"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: client-matrix-image
+          path: ${{ runner.temp }}/image.tar.zst
+          compression-level: 0
+          retention-days: 1
+
+  smoke:
+    name: smoke (${{ matrix.format }})
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        format: ${{ fromJSON(needs.image.outputs.formats) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: client-matrix-image
+          path: ${{ runner.temp }}
+
+      - name: Load image and start a fresh stack
+        run: |
+          zstd -dc "$RUNNER_TEMP/image.tar.zst" | docker load
+          rm -f "$RUNNER_TEMP/image.tar.zst"
+          OA_STACK_PROJECT="$STACK_PROJECT" OA_STACK_BUILD=0 scripts/smoke-stack.sh up > "$RUNNER_TEMP/stack.env"
+          . "$RUNNER_TEMP/stack.env"
+          echo "::add-mask::$OA_TOKEN"
+          { echo "OA_URL=$OA_URL"; echo "OA_TOKEN=$OA_TOKEN"; } >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/stack.env"
+
+      - name: Run the ${{ matrix.format }} client
+        env:
+          FORMAT: ${{ matrix.format }}
+        run: scripts/smoke/"$FORMAT".sh
+
+      - name: Server log
+        if: ${{ failure() }}
+        run: OA_STACK_PROJECT="$STACK_PROJECT" scripts/smoke-stack.sh logs | tail -n 300
+
+      - name: Remove the stack
+        if: ${{ always() }}
+        run: OA_STACK_PROJECT="$STACK_PROJECT" scripts/smoke-stack.sh down
+
+  report:
+    name: report
+    needs: [image, smoke]
+    # Skipped when the run was cancelled; an image build failure skips the matrix, which counts as a failing night.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # list the jobs of this run
+      issues: write # open, update and close the tracking issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RUN_ID: ${{ github.run_id }}
+      IMAGE_RESULT: ${{ needs.image.result }}
+      SMOKE_RESULT: ${{ needs.smoke.result }}
+      LABEL: client-matrix
+    steps:
+      - name: Open, update or close the tracking issue
+        run: |
+          existing=$(gh issue list --label "$LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ "$IMAGE_RESULT" = success ] && [ "$SMOKE_RESULT" = success ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "The client compatibility matrix is green again: $RUN_URL"
+              gh issue close "$existing"
+            fi
+            exit 0
+          fi
+
+          failed=$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure") | "- " + .name' || true)
+          [ -n "$failed" ] || failed="- (see the run: the image build or the setup failed)"
+          body=$(cat <<EOF
+          The nightly client compatibility matrix failed: $RUN_URL
+
+          Failed jobs:
+
+          $failed
+
+          Each format runs the real latest client of that format in a container against a fresh stack (\`scripts/smoke/<format>.sh\`); a client release that changed its protocol is the usual cause. Reproduce locally with \`eval "\$(scripts/smoke-stack.sh up)" && FORMATS=<format> scripts/smoke-formats.sh\`.
+          EOF
+          )
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh label create "$LABEL" --color D93F0B --description "Nightly client compatibility matrix failures" 2>/dev/null || true
+            gh issue create --label "$LABEL" --title "Client compatibility matrix is failing" --body "$body"
+          fi
