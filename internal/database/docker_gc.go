@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -83,7 +84,7 @@ func dockerRepoLockKey(repoID string) string { return "docker-repo:" + repoID }
 
 // beginDockerGCTx starts a transaction holding the repository's exclusive
 // docker lock until it ends.
-func (p *PostgresDB) beginDockerGCTx(ctx context.Context, repoID string) (pgx.Tx, error) {
+func (p *DockerStore) beginDockerGCTx(ctx context.Context, repoID string) (pgx.Tx, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin docker gc tx: %w", err)
@@ -111,7 +112,7 @@ type DockerBlobImages interface {
 
 var _ DockerBlobImages = (*PostgresDB)(nil)
 
-func (p *PostgresDB) DockerBlobVisible(ctx context.Context, repoID, image, digest string) (bool, error) {
+func (p *DockerStore) DockerBlobVisible(ctx context.Context, repoID, image, digest string) (bool, error) {
 	v, err := p.q.DockerBlobVisibleToImage(ctx, dbsqlc.DockerBlobVisibleToImageParams{RepositoryID: repoID, Image: image, Digest: digest})
 	if err != nil {
 		return false, fmt.Errorf("check docker blob image link: %w", err)
@@ -120,7 +121,7 @@ func (p *PostgresDB) DockerBlobVisible(ctx context.Context, repoID, image, diges
 	return v != nil && *v, nil
 }
 
-func (p *PostgresDB) LinkDockerBlob(ctx context.Context, repoID, image, digest string) error {
+func (p *DockerStore) LinkDockerBlob(ctx context.Context, repoID, image, digest string) error {
 	if err := p.q.LinkDockerBlobImages(
 		ctx,
 		dbsqlc.LinkDockerBlobImagesParams{RepositoryID: repoID, Image: image, Digests: []string{digest}},
@@ -175,7 +176,7 @@ func insertDockerManifestRefs(
 	return nil
 }
 
-func (p *PostgresDB) ListUnindexedDockerManifests(ctx context.Context, repoID string, limit int) ([]*models.DockerGCManifest, error) {
+func (p *DockerStore) ListUnindexedDockerManifests(ctx context.Context, repoID string, limit int) ([]*models.DockerGCManifest, error) {
 	rows, err := p.q.ListUnindexedDockerManifests(ctx, dbsqlc.ListUnindexedDockerManifestsParams{
 		RepositoryID: repoID,
 		Limit:        toInt32(limit),
@@ -192,7 +193,7 @@ func (p *PostgresDB) ListUnindexedDockerManifests(ctx context.Context, repoID st
 	return out, nil
 }
 
-func (p *PostgresDB) SetDockerManifestRefs(
+func (p *DockerStore) SetDockerManifestRefs(
 	ctx context.Context,
 	repoID string,
 	m *models.DockerGCManifest,
@@ -220,7 +221,7 @@ func (p *PostgresDB) SetDockerManifestRefs(
 	return nil
 }
 
-func (p *PostgresDB) ListDockerGCManifests(ctx context.Context, repoID string, grace time.Duration) ([]*models.DockerGCManifest, error) {
+func (p *DockerStore) ListDockerGCManifests(ctx context.Context, repoID string, grace time.Duration) ([]*models.DockerGCManifest, error) {
 	rows, err := p.q.ListDockerGCManifests(ctx, dbsqlc.ListDockerGCManifestsParams{
 		RepositoryID: repoID,
 		GraceSeconds: grace.Seconds(),
@@ -251,7 +252,7 @@ func (p *PostgresDB) ListDockerGCManifests(ctx context.Context, repoID string, g
 	return out, nil
 }
 
-func (p *PostgresDB) DeleteDockerManifestsForGC(
+func (p *DockerStore) DeleteDockerManifestsForGC(
 	ctx context.Context,
 	repoID string,
 	ids []string,
@@ -289,7 +290,7 @@ func (p *PostgresDB) DeleteDockerManifestsForGC(
 	return out, nil
 }
 
-func (p *PostgresDB) ListDockerGCBlobs(
+func (p *DockerStore) ListDockerGCBlobs(
 	ctx context.Context,
 	repoID string,
 	grace time.Duration,
@@ -318,7 +319,7 @@ func (p *PostgresDB) ListDockerGCBlobs(
 	return out, nil
 }
 
-func (p *PostgresDB) DeleteDockerBlobsForGC(
+func (p *DockerStore) DeleteDockerBlobsForGC(
 	ctx context.Context,
 	repoID string,
 	digests []string,
@@ -356,7 +357,7 @@ func (p *PostgresDB) DeleteDockerBlobsForGC(
 	return out, nil
 }
 
-func (p *PostgresDB) BlobRowExists(ctx context.Context, sha256 string) (bool, error) {
+func (p *DockerStore) BlobRowExists(ctx context.Context, sha256 string) (bool, error) {
 	exists, err := p.q.BlobRowExists(ctx, sha256)
 	if err != nil {
 		return false, fmt.Errorf("check blob row: %w", err)

@@ -17,12 +17,15 @@ import (
 
 // Docker blob methods
 
+// DockerStore owns the OCI/Docker tables: blobs, uploads, manifests, tags, the catalog and garbage collection.
+type DockerStore struct{ *core }
+
 // CreateDockerBlob upserts the blob's content into the global blobs table
 // (docker_blobs.blob_id FKs into blobs, which holds the media type, size
 // and sha256) and inserts the per-repo
 // docker_blobs registry row referencing it. blob.Inserted reports whether the
 // repository's row is new (false: it already held the blob).
-func (p *PostgresDB) CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error {
+func (p *DockerStore) CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, blob.BlobSHA256, blob.BlobSHA256, blob.MediaType, blob.Size)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for docker blob: %w", err)
@@ -97,7 +100,7 @@ func (p *core) upsertBlobWithMediaType(ctx context.Context, sha256, blobKey, med
 	return blobID, nil
 }
 
-func (p *PostgresDB) GetDockerBlob(ctx context.Context, repoID, digest string) (*models.DockerBlob, error) {
+func (p *DockerStore) GetDockerBlob(ctx context.Context, repoID, digest string) (*models.DockerBlob, error) {
 	row, err := p.q.GetDockerBlob(ctx, dbsqlc.GetDockerBlobParams{
 		RepositoryID: repoID,
 		Digest:       digest,
@@ -128,7 +131,7 @@ var ErrDockerRowNotFound = errors.New("docker row not found")
 
 // DeleteDockerBlob removes the repository's row for the blob and returns
 // ErrDockerRowNotFound when there was none.
-func (p *PostgresDB) DeleteDockerBlob(ctx context.Context, repoID, digest string) error {
+func (p *DockerStore) DeleteDockerBlob(ctx context.Context, repoID, digest string) error {
 	n, err := p.q.DeleteDockerBlob(ctx, dbsqlc.DeleteDockerBlobParams{
 		RepositoryID: repoID,
 		Digest:       digest,
@@ -144,7 +147,7 @@ func (p *PostgresDB) DeleteDockerBlob(ctx context.Context, repoID, digest string
 	return nil
 }
 
-func (p *PostgresDB) ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error) {
+func (p *DockerStore) ListDockerBlobs(ctx context.Context, repoID string) ([]*models.DockerBlob, error) {
 	rows, err := p.q.ListDockerBlobs(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list docker blobs: %w", err)
@@ -168,7 +171,7 @@ func (p *PostgresDB) ListDockerBlobs(ctx context.Context, repoID string) ([]*mod
 
 // Docker upload methods
 
-func (p *PostgresDB) CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error {
+func (p *DockerStore) CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error {
 	row, err := p.q.CreateDockerUpload(ctx, dbsqlc.CreateDockerUploadParams{
 		RepositoryID: upload.RepositoryID,
 		UploadUuid:   upload.UploadUUID,
@@ -178,7 +181,7 @@ func (p *PostgresDB) CreateDockerUpload(ctx context.Context, upload *models.Dock
 	return finishCreate(insertedRow(row), err, "create docker upload", &upload.ID, &upload.CreatedAt, &upload.UpdatedAt)
 }
 
-func (p *PostgresDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
+func (p *DockerStore) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
 	row, err := p.q.GetDockerUpload(ctx, dbsqlc.GetDockerUploadParams{
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
@@ -201,7 +204,7 @@ func dockerUploadFromRow(row dbsqlc.DockerUpload) *models.DockerUpload {
 // UpdateDockerUploadOffset moves the session's offset from oldOffset to
 // newOffset and reports whether it did: false means the offset no longer
 // equals oldOffset (another request advanced or completed the session).
-func (p *PostgresDB) UpdateDockerUploadOffset(
+func (p *DockerStore) UpdateDockerUploadOffset(
 	ctx context.Context,
 	repositoryID, uploadUUID string,
 	oldOffset, newOffset int64,
@@ -219,7 +222,7 @@ func (p *PostgresDB) UpdateDockerUploadOffset(
 	return n == 1, nil
 }
 
-func (p *PostgresDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
+func (p *DockerStore) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
 	if err := p.q.DeleteDockerUpload(ctx, dbsqlc.DeleteDockerUploadParams{
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
@@ -232,7 +235,7 @@ func (p *PostgresDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploa
 
 // DeleteStaleDockerUploads deletes the upload sessions idle since before the
 // cutoff and returns their UUIDs.
-func (p *PostgresDB) DeleteStaleDockerUploads(ctx context.Context, cutoff time.Time) ([]string, error) {
+func (p *DockerStore) DeleteStaleDockerUploads(ctx context.Context, cutoff time.Time) ([]string, error) {
 	uuids, err := p.q.DeleteStaleDockerUploads(ctx, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete stale docker uploads: %w", err)
@@ -261,7 +264,7 @@ var ErrDockerBlobsMissing = errors.New("manifest references a blob that is not a
 // before it deletes anything: GC then sees either none of this push or all of
 // it, never a manifest whose references it cannot see yet. m.Inserted reports
 // whether the live row is new (false: a re-push refreshed the existing one).
-func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error {
+func (p *DockerStore) CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error {
 	params := dbsqlc.CreateDockerManifestParams{
 		RepositoryID: m.RepositoryID,
 		Image:        m.Image,
@@ -345,7 +348,7 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 // TouchDockerBlob records that a client has just relied on the blob (HEAD
 // probe, re-push, mount), so registry GC keeps it for its grace period. It
 // reports false when the repository no longer has the blob.
-func (p *PostgresDB) TouchDockerBlob(ctx context.Context, repoID, digest string) (bool, error) {
+func (p *DockerStore) TouchDockerBlob(ctx context.Context, repoID, digest string) (bool, error) {
 	_, err := p.q.TouchDockerBlob(ctx, dbsqlc.TouchDockerBlobParams{RepositoryID: repoID, Digest: digest})
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -358,7 +361,7 @@ func (p *PostgresDB) TouchDockerBlob(ctx context.Context, repoID, digest string)
 	return true, nil
 }
 
-func (p *PostgresDB) DockerImageExists(ctx context.Context, repoID, image string) (bool, error) {
+func (p *DockerStore) DockerImageExists(ctx context.Context, repoID, image string) (bool, error) {
 	exists, err := p.q.DockerImageExists(ctx, dbsqlc.DockerImageExistsParams{RepositoryID: repoID, Image: image})
 	if err != nil {
 		return false, fmt.Errorf("failed to check docker image: %w", err)
@@ -367,7 +370,7 @@ func (p *PostgresDB) DockerImageExists(ctx context.Context, repoID, image string
 	return exists, nil
 }
 
-func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
+func (p *DockerStore) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
 	row, err := p.q.GetDockerManifest(ctx, dbsqlc.GetDockerManifestParams{
 		RepositoryID: repoID,
 		Image:        image,
@@ -398,7 +401,7 @@ func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, image, diges
 // ListDockerManifestsByRepo lists every manifest for a repository, with its
 // blob's sha256 resolved via a JOIN (unlike BlobID above, which is the raw,
 // restore-incompatible blobs.id UUID). Used only by backup export.
-func (p *PostgresDB) ListDockerManifestsByRepo(ctx context.Context, repoID string) ([]*models.DockerManifest, error) {
+func (p *DockerStore) ListDockerManifestsByRepo(ctx context.Context, repoID string) ([]*models.DockerManifest, error) {
 	rows, err := p.q.ListDockerManifestsByRepo(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list docker manifests by repo: %w", err)
@@ -427,7 +430,7 @@ func (p *PostgresDB) ListDockerManifestsByRepo(ctx context.Context, repoID strin
 // `subject` field points at subjectDigest, for the Referrers API
 // (GET /v2/<name>/referrers/<digest>). No sqlc query exists for this
 // lookup, so it runs directly against p.db.
-func (p *PostgresDB) ListDockerManifestsBySubject(
+func (p *DockerStore) ListDockerManifestsBySubject(
 	ctx context.Context,
 	repoID, image, subjectDigest string,
 ) ([]*models.DockerManifest, error) {
@@ -465,7 +468,7 @@ func (p *PostgresDB) ListDockerManifestsBySubject(
 
 // DeleteDockerManifest permanently removes the live manifest row and returns
 // ErrDockerRowNotFound when there was none.
-func (p *PostgresDB) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
+func (p *DockerStore) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
 	n, err := p.q.DeleteDockerManifest(ctx, dbsqlc.DeleteDockerManifestParams{
 		RepositoryID: repoID,
 		Image:        image,
@@ -484,7 +487,7 @@ func (p *PostgresDB) DeleteDockerManifest(ctx context.Context, repoID, image, di
 
 // Docker tag methods
 
-func (p *PostgresDB) UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error {
+func (p *DockerStore) UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error {
 	row, err := p.q.UpsertDockerTag(ctx, dbsqlc.UpsertDockerTagParams{
 		RepositoryID:   tag.RepositoryID,
 		Image:          tag.Image,
@@ -503,7 +506,7 @@ func (p *PostgresDB) UpsertDockerTag(ctx context.Context, tag *models.DockerTag)
 	return nil
 }
 
-func (p *PostgresDB) GetDockerTag(ctx context.Context, repoID, image, name string) (*models.DockerTag, error) {
+func (p *DockerStore) GetDockerTag(ctx context.Context, repoID, image, name string) (*models.DockerTag, error) {
 	row, err := p.q.GetDockerTag(ctx, dbsqlc.GetDockerTagParams{
 		RepositoryID: repoID,
 		Image:        image,
@@ -528,7 +531,7 @@ func (p *PostgresDB) GetDockerTag(ctx context.Context, repoID, image, name strin
 	}, nil
 }
 
-func (p *PostgresDB) DeleteDockerTag(ctx context.Context, repoID, image, name string) error {
+func (p *DockerStore) DeleteDockerTag(ctx context.Context, repoID, image, name string) error {
 	if err := p.q.DeleteDockerTag(ctx, dbsqlc.DeleteDockerTagParams{
 		RepositoryID: repoID,
 		Image:        image,
@@ -540,7 +543,7 @@ func (p *PostgresDB) DeleteDockerTag(ctx context.Context, repoID, image, name st
 	return nil
 }
 
-func (p *PostgresDB) DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error {
+func (p *DockerStore) DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error {
 	if err := p.q.DeleteDockerTagsByDigest(ctx, dbsqlc.DeleteDockerTagsByDigestParams{
 		RepositoryID:   repoID,
 		Image:          image,
@@ -552,7 +555,7 @@ func (p *PostgresDB) DeleteDockerTagsByDigest(ctx context.Context, repoID, image
 	return nil
 }
 
-func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID, image, last string, n int) ([]*models.DockerTag, error) {
+func (p *DockerStore) ListDockerTags(ctx context.Context, repoID, image, last string, n int) ([]*models.DockerTag, error) {
 	if n <= 0 {
 		n = 100
 	}
@@ -589,7 +592,7 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID, image, last str
 
 // ListDockerTagsByRepo lists tags across every image of a repository, for
 // backup export.
-func (p *PostgresDB) ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error) {
+func (p *DockerStore) ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error) {
 	rows, err := p.q.ListDockerTagsByRepo(ctx, dbsqlc.ListDockerTagsByRepoParams{
 		RepositoryID: repoID,
 		Limit:        toInt32(limit),

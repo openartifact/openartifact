@@ -23,7 +23,7 @@ type DockerCatalog interface {
 
 var _ DockerCatalog = (*PostgresDB)(nil)
 
-func (p *PostgresDB) ListDockerCatalog(ctx context.Context, after string, limit int) ([]*models.DockerCatalogEntry, error) {
+func (p *DockerStore) ListDockerCatalog(ctx context.Context, after string, limit int) ([]*models.DockerCatalogEntry, error) {
 	rows, err := p.q.ListDockerCatalog(ctx, dbsqlc.ListDockerCatalogParams{After: after, PageLimit: toInt32(limit)})
 	if err != nil {
 		return nil, fmt.Errorf("list docker catalog: %w", err)
@@ -73,7 +73,7 @@ type DockerBlobTrash interface {
 
 var _ DockerBlobTrash = (*PostgresDB)(nil)
 
-func (p *PostgresDB) DockerBlobInTrash(ctx context.Context, repoID, digest string) (bool, error) {
+func (p *DockerStore) DockerBlobInTrash(ctx context.Context, repoID, digest string) (bool, error) {
 	trashed, err := p.q.DockerBlobHeldOnlyByTrash(ctx, dbsqlc.DockerBlobHeldOnlyByTrashParams{RepositoryID: repoID, Digest: digest})
 	if err != nil {
 		return false, fmt.Errorf("check docker blob in trash: %w", err)

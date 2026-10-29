@@ -61,6 +61,7 @@ type PostgresDB struct {
 	*AnsibleStore
 	*NixStore
 	*GoModStore
+	*DockerStore
 	// STORES-STRUCT
 }
 
@@ -119,6 +120,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		AnsibleStore:         &AnsibleStore{core: c},
 		NixStore:             &NixStore{core: c},
 		GoModStore:           &GoModStore{core: c},
+		DockerStore:          &DockerStore{core: c},
 		// STORES-INIT
 	}
 }
