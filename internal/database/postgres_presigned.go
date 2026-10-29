@@ -12,12 +12,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// PresignedUploadStore owns presigned upload sessions.
+type PresignedUploadStore struct{ *core }
+
 // CreatePresignedUpload records a presigned upload and fills u.ID and u.CreatedAt.
-func (p *PostgresDB) CreatePresignedUpload(ctx context.Context, u *models.PresignedUpload) error {
+func (p *PresignedUploadStore) CreatePresignedUpload(ctx context.Context, u *models.PresignedUpload) error {
 	row, err := p.q.CreatePresignedUpload(ctx, dbsqlc.CreatePresignedUploadParams{
 		RepositoryID: u.RepositoryID,
 		Path:         u.Path,
@@ -39,7 +43,7 @@ func (p *PostgresDB) CreatePresignedUpload(ctx context.Context, u *models.Presig
 
 // GetPresignedUpload returns the presigned upload id of repository repoID, or
 // nil, nil when there is none.
-func (p *PostgresDB) GetPresignedUpload(ctx context.Context, repoID, id string) (*models.PresignedUpload, error) {
+func (p *PresignedUploadStore) GetPresignedUpload(ctx context.Context, repoID, id string) (*models.PresignedUpload, error) {
 	if !isUUID(id) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -72,7 +76,7 @@ func (p *PostgresDB) GetPresignedUpload(ctx context.Context, repoID, id string) 
 }
 
 // DeletePresignedUpload removes a presigned upload row.
-func (p *PostgresDB) DeletePresignedUpload(ctx context.Context, id string) error {
+func (p *PresignedUploadStore) DeletePresignedUpload(ctx context.Context, id string) error {
 	if !isUUID(id) {
 		return nil
 	}
@@ -86,7 +90,7 @@ func (p *PostgresDB) DeletePresignedUpload(ctx context.Context, id string) error
 
 // ListExpiredPresignedUploads returns up to limit ids of presigned uploads
 // past their complete deadline.
-func (p *PostgresDB) ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error) {
+func (p *PresignedUploadStore) ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error) {
 	ids, err := p.q.ListExpiredPresignedUploads(ctx, int32(limit)) //nolint:gosec // limit is a small constant batch size
 	if err != nil {
 		return nil, fmt.Errorf("failed to list expired presigned uploads: %w", err)
@@ -98,7 +102,7 @@ func (p *PostgresDB) ListExpiredPresignedUploads(ctx context.Context, limit int)
 // ClaimPresignedUpload takes the complete lease of an upload for up to lease.
 // It reports false when the upload is already completed, does not exist, or
 // another complete holds an unexpired lease.
-func (p *PostgresDB) ClaimPresignedUpload(ctx context.Context, repoID, id string, lease time.Duration) (bool, error) {
+func (p *PresignedUploadStore) ClaimPresignedUpload(ctx context.Context, repoID, id string, lease time.Duration) (bool, error) {
 	if !isUUID(id) {
 		return false, nil
 	}
@@ -112,7 +116,7 @@ func (p *PostgresDB) ClaimPresignedUpload(ctx context.Context, repoID, id string
 }
 
 // ReleasePresignedUpload gives up the lease of an upload that was not completed.
-func (p *PostgresDB) ReleasePresignedUpload(ctx context.Context, id string) error {
+func (p *PresignedUploadStore) ReleasePresignedUpload(ctx context.Context, id string) error {
 	if !isUUID(id) {
 		return nil
 	}
@@ -125,7 +129,7 @@ func (p *PostgresDB) ReleasePresignedUpload(ctx context.Context, id string) erro
 }
 
 // MarkPresignedUploadCompleted records that the upload produced artifactID.
-func (p *PostgresDB) MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error {
+func (p *PresignedUploadStore) MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error {
 	if !isUUID(id) {
 		return nil
 	}
@@ -144,7 +148,7 @@ var ErrPresignedUploadCap = errors.New("too many pending presigned uploads")
 // CreatePresignedUploadCapped counts the user's outstanding uploads and inserts
 // the new one in one transaction holding a per-user advisory lock, so parallel
 // creates cannot all pass the check before any of them inserts.
-func (p *PostgresDB) CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error {
+func (p *PresignedUploadStore) CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error {
 	if maxPending <= 0 {
 		return p.CreatePresignedUpload(ctx, u)
 	}
@@ -188,7 +192,7 @@ func (p *PostgresDB) CreatePresignedUploadCapped(ctx context.Context, u *models.
 
 // ExistingPresignedUploadIDs returns the subset of ids that have a row. Ids
 // that are not UUIDs cannot have one and are dropped.
-func (p *PostgresDB) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+func (p *PresignedUploadStore) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
 	valid := make([]string, 0, len(ids))
 
 	for _, id := range ids {
@@ -210,7 +214,7 @@ func (p *PostgresDB) ExistingPresignedUploadIDs(ctx context.Context, ids []strin
 }
 
 // SetPresignedUploadMultipartID records the backend handle of the upload's open multipart upload.
-func (p *PostgresDB) SetPresignedUploadMultipartID(ctx context.Context, id, multipartID string) error {
+func (p *PresignedUploadStore) SetPresignedUploadMultipartID(ctx context.Context, id, multipartID string) error {
 	if !isUUID(id) {
 		return nil
 	}
@@ -227,7 +231,7 @@ func (p *PostgresDB) SetPresignedUploadMultipartID(ctx context.Context, id, mult
 
 // ExtendPresignedUploadExpiry moves the complete deadline of a pending upload
 // forward to expiresAt; it never shortens it.
-func (p *PostgresDB) ExtendPresignedUploadExpiry(ctx context.Context, id string, expiresAt time.Time) error {
+func (p *PresignedUploadStore) ExtendPresignedUploadExpiry(ctx context.Context, id string, expiresAt time.Time) error {
 	if !isUUID(id) {
 		return nil
 	}
