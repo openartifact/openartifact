@@ -39,9 +39,10 @@ func NewAdminAIHandler(db AdminAIStore, log *logger.Logger, evaluator *auth.Eval
 	return &AdminAIHandler{db: db, log: log, evaluator: evaluator}
 }
 
-// WithRuntime makes configuration changes take effect immediately: after every
-// saved change the worker's client and auto-analysis switch are rebuilt from
-// the stored settings layered over env (the env/YAML defaults).
+// WithRuntime makes configuration changes take effect immediately in this
+// process: after every saved change the worker's client and auto-analysis
+// switch are rebuilt from the stored settings layered over env (the env/YAML
+// defaults). The other processes follow by polling (worker.SyncSettings).
 func (h *AdminAIHandler) WithRuntime(w *worker.AIAnalysisWorker, env ai.Settings) *AdminAIHandler {
 	h.aiWorker = w
 	h.envAI = env
