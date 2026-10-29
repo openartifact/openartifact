@@ -7,120 +7,24 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
-const createPacmanPackage = `-- name: CreatePacmanPackage :one
-INSERT INTO pacman_packages (
-    repository_id, name, base, version, arch, repo_arch, filename, blob_id, md5,
-    description, url, packager, build_date, installed_size,
-    licenses, package_groups, replaces, conflicts, provides, depends, optdepends, makedepends, checkdepends,
-    file_list, signature, signature_source, signature_key, created_at
-)
-VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    $10, $11, $12, $13, $14,
-    $15, $16, $17, $18, $19, $20, $21, $22, $23,
-    $27::text, $24, $25, $26, COALESCE($28::timestamptz, NOW())
-)
-RETURNING id, created_at, updated_at
-`
-
-type CreatePacmanPackageParams struct {
-	RepositoryID    string     `db:"repository_id" json:"repository_id"`
-	Name            string     `db:"name" json:"name"`
-	Base            string     `db:"base" json:"base"`
-	Version         string     `db:"version" json:"version"`
-	Arch            string     `db:"arch" json:"arch"`
-	RepoArch        string     `db:"repo_arch" json:"repo_arch"`
-	Filename        string     `db:"filename" json:"filename"`
-	BlobID          string     `db:"blob_id" json:"blob_id"`
-	Md5             string     `db:"md5" json:"md5"`
-	Description     string     `db:"description" json:"description"`
-	Url             string     `db:"url" json:"url"`
-	Packager        string     `db:"packager" json:"packager"`
-	BuildDate       int64      `db:"build_date" json:"build_date"`
-	InstalledSize   int64      `db:"installed_size" json:"installed_size"`
-	Licenses        []string   `db:"licenses" json:"licenses"`
-	PackageGroups   []string   `db:"package_groups" json:"package_groups"`
-	Replaces        []string   `db:"replaces" json:"replaces"`
-	Conflicts       []string   `db:"conflicts" json:"conflicts"`
-	Provides        []string   `db:"provides" json:"provides"`
-	Depends         []string   `db:"depends" json:"depends"`
-	Optdepends      []string   `db:"optdepends" json:"optdepends"`
-	Makedepends     []string   `db:"makedepends" json:"makedepends"`
-	Checkdepends    []string   `db:"checkdepends" json:"checkdepends"`
-	Signature       string     `db:"signature" json:"signature"`
-	SignatureSource string     `db:"signature_source" json:"signature_source"`
-	SignatureKey    string     `db:"signature_key" json:"signature_key"`
-	FileList        *string    `db:"file_list" json:"file_list"`
-	CreatedAt       *time.Time `db:"created_at" json:"created_at"`
-}
-
-type CreatePacmanPackageRow struct {
-	ID        string    `db:"id" json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) CreatePacmanPackage(ctx context.Context, arg CreatePacmanPackageParams) (CreatePacmanPackageRow, error) {
-	row := q.db.QueryRow(ctx, createPacmanPackage,
-		arg.RepositoryID,
-		arg.Name,
-		arg.Base,
-		arg.Version,
-		arg.Arch,
-		arg.RepoArch,
-		arg.Filename,
-		arg.BlobID,
-		arg.Md5,
-		arg.Description,
-		arg.Url,
-		arg.Packager,
-		arg.BuildDate,
-		arg.InstalledSize,
-		arg.Licenses,
-		arg.PackageGroups,
-		arg.Replaces,
-		arg.Conflicts,
-		arg.Provides,
-		arg.Depends,
-		arg.Optdepends,
-		arg.Makedepends,
-		arg.Checkdepends,
-		arg.Signature,
-		arg.SignatureSource,
-		arg.SignatureKey,
-		arg.FileList,
-		arg.CreatedAt,
-	)
-	var i CreatePacmanPackageRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deletePacmanPackage = `-- name: DeletePacmanPackage :exec
-DELETE FROM pacman_packages WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
-`
-
-type DeletePacmanPackageParams struct {
-	ID           string `db:"id" json:"id"`
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DeletePacmanPackage(ctx context.Context, arg DeletePacmanPackageParams) error {
-	_, err := q.db.Exec(ctx, deletePacmanPackage, arg.ID, arg.RepositoryID)
-	return err
-}
-
 const getPacmanPackageByFilename = `-- name: GetPacmanPackageByFilename :one
-SELECT pp.id, pp.repository_id, pp.name, pp.base, pp.version, pp.arch, pp.repo_arch, pp.filename, b.blob_key, b.size_bytes, b.sha256, pp.md5,
-       pp.description, pp.url, pp.packager, pp.build_date, pp.installed_size,
-       pp.licenses, pp.package_groups, pp.replaces, pp.conflicts, pp.provides, pp.depends, pp.optdepends, pp.makedepends, pp.checkdepends,
-       pp.signature, pp.signature_source, pp.signature_key, pp.created_at, pp.updated_at
-FROM pacman_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.filename = $2 AND pp.deleted_at IS NULL
+SELECT f.id, f.repository_id, p.name, v.version, f.arch, f.filename,
+       b.blob_key, b.size_bytes, b.sha256,
+       COALESCE(f.attrs ->> 'md5', '')::text AS md5,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_date,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       v.metadata,
+       s.signature, s.signature_source, s.signature_key, f.created_at, f.updated_at
+FROM package_files f
+JOIN pacman_files s ON s.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.filename = $2 AND f.deleted_at IS NULL
 `
 
 type GetPacmanPackageByFilenameParams struct {
@@ -129,39 +33,27 @@ type GetPacmanPackageByFilenameParams struct {
 }
 
 type GetPacmanPackageByFilenameRow struct {
-	ID              string    `db:"id" json:"id"`
-	RepositoryID    string    `db:"repository_id" json:"repository_id"`
-	Name            string    `db:"name" json:"name"`
-	Base            string    `db:"base" json:"base"`
-	Version         string    `db:"version" json:"version"`
-	Arch            string    `db:"arch" json:"arch"`
-	RepoArch        string    `db:"repo_arch" json:"repo_arch"`
-	Filename        string    `db:"filename" json:"filename"`
-	BlobKey         string    `db:"blob_key" json:"blob_key"`
-	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
-	Sha256          string    `db:"sha256" json:"sha256"`
-	Md5             string    `db:"md5" json:"md5"`
-	Description     string    `db:"description" json:"description"`
-	Url             string    `db:"url" json:"url"`
-	Packager        string    `db:"packager" json:"packager"`
-	BuildDate       int64     `db:"build_date" json:"build_date"`
-	InstalledSize   int64     `db:"installed_size" json:"installed_size"`
-	Licenses        []string  `db:"licenses" json:"licenses"`
-	PackageGroups   []string  `db:"package_groups" json:"package_groups"`
-	Replaces        []string  `db:"replaces" json:"replaces"`
-	Conflicts       []string  `db:"conflicts" json:"conflicts"`
-	Provides        []string  `db:"provides" json:"provides"`
-	Depends         []string  `db:"depends" json:"depends"`
-	Optdepends      []string  `db:"optdepends" json:"optdepends"`
-	Makedepends     []string  `db:"makedepends" json:"makedepends"`
-	Checkdepends    []string  `db:"checkdepends" json:"checkdepends"`
-	Signature       string    `db:"signature" json:"signature"`
-	SignatureSource string    `db:"signature_source" json:"signature_source"`
-	SignatureKey    string    `db:"signature_key" json:"signature_key"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+	ID              string          `db:"id" json:"id"`
+	RepositoryID    string          `db:"repository_id" json:"repository_id"`
+	Name            string          `db:"name" json:"name"`
+	Version         string          `db:"version" json:"version"`
+	Arch            string          `db:"arch" json:"arch"`
+	Filename        string          `db:"filename" json:"filename"`
+	BlobKey         string          `db:"blob_key" json:"blob_key"`
+	SizeBytes       int64           `db:"size_bytes" json:"size_bytes"`
+	Sha256          string          `db:"sha256" json:"sha256"`
+	Md5             string          `db:"md5" json:"md5"`
+	BuildDate       int64           `db:"build_date" json:"build_date"`
+	InstalledSize   int64           `db:"installed_size" json:"installed_size"`
+	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
+	Signature       string          `db:"signature" json:"signature"`
+	SignatureSource string          `db:"signature_source" json:"signature_source"`
+	SignatureKey    string          `db:"signature_key" json:"signature_key"`
+	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Download by file name: idx_package_files_filename.
 func (q *Queries) GetPacmanPackageByFilename(ctx context.Context, arg GetPacmanPackageByFilenameParams) (GetPacmanPackageByFilenameRow, error) {
 	row := q.db.QueryRow(ctx, getPacmanPackageByFilename, arg.RepositoryID, arg.Filename)
 	var i GetPacmanPackageByFilenameRow
@@ -169,29 +61,16 @@ func (q *Queries) GetPacmanPackageByFilename(ctx context.Context, arg GetPacmanP
 		&i.ID,
 		&i.RepositoryID,
 		&i.Name,
-		&i.Base,
 		&i.Version,
 		&i.Arch,
-		&i.RepoArch,
 		&i.Filename,
 		&i.BlobKey,
 		&i.SizeBytes,
 		&i.Sha256,
 		&i.Md5,
-		&i.Description,
-		&i.Url,
-		&i.Packager,
 		&i.BuildDate,
 		&i.InstalledSize,
-		&i.Licenses,
-		&i.PackageGroups,
-		&i.Replaces,
-		&i.Conflicts,
-		&i.Provides,
-		&i.Depends,
-		&i.Optdepends,
-		&i.Makedepends,
-		&i.Checkdepends,
+		&i.Metadata,
 		&i.Signature,
 		&i.SignatureSource,
 		&i.SignatureKey,
@@ -201,10 +80,40 @@ func (q *Queries) GetPacmanPackageByFilename(ctx context.Context, arg GetPacmanP
 	return i, err
 }
 
+const insertPacmanFile = `-- name: InsertPacmanFile :exec
+
+INSERT INTO pacman_files (id, file_list, signature, signature_source, signature_key)
+VALUES ($1, $5::text, $2, $3, $4)
+`
+
+type InsertPacmanFileParams struct {
+	ID              string  `db:"id" json:"id"`
+	Signature       string  `db:"signature" json:"signature"`
+	SignatureSource string  `db:"signature_source" json:"signature_source"`
+	SignatureKey    string  `db:"signature_key" json:"signature_key"`
+	FileList        *string `db:"file_list" json:"file_list"`
+}
+
+// Pacman packages on the generic tables (see pkg_pacman.go for the mapping):
+// the package file is package_files, its version package_versions (the index
+// stanza fields in metadata), the file list and signature pacman_files. Reads
+// hide trashed files.
+func (q *Queries) InsertPacmanFile(ctx context.Context, arg InsertPacmanFileParams) error {
+	_, err := q.db.Exec(ctx, insertPacmanFile,
+		arg.ID,
+		arg.Signature,
+		arg.SignatureSource,
+		arg.SignatureKey,
+		arg.FileList,
+	)
+	return err
+}
+
 const listPacmanFileLists = `-- name: ListPacmanFileLists :many
-SELECT pp.id, pp.file_list
-FROM pacman_packages pp
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL AND pp.file_list IS NOT NULL
+SELECT s.id, s.file_list
+FROM pacman_files s
+JOIN package_files f ON f.id = s.id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL AND s.file_list IS NOT NULL
 `
 
 type ListPacmanFileListsRow struct {
@@ -234,48 +143,41 @@ func (q *Queries) ListPacmanFileLists(ctx context.Context, repositoryID string) 
 }
 
 const listPacmanPackages = `-- name: ListPacmanPackages :many
-SELECT pp.id, pp.repository_id, pp.name, pp.base, pp.version, pp.arch, pp.repo_arch, pp.filename, b.blob_key, b.size_bytes, b.sha256, pp.md5,
-       pp.description, pp.url, pp.packager, pp.build_date, pp.installed_size,
-       pp.licenses, pp.package_groups, pp.replaces, pp.conflicts, pp.provides, pp.depends, pp.optdepends, pp.makedepends, pp.checkdepends,
-       pp.signature, pp.signature_source, pp.signature_key, pp.created_at, pp.updated_at
-FROM pacman_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL
-ORDER BY pp.name, pp.created_at, pp.id
+SELECT f.id, f.repository_id, p.name, v.version, f.arch, f.filename,
+       b.blob_key, b.size_bytes, b.sha256,
+       COALESCE(f.attrs ->> 'md5', '')::text AS md5,
+       COALESCE((f.attrs ->> 'build_time')::bigint, 0)::bigint AS build_date,
+       COALESCE((f.attrs ->> 'installed_size')::bigint, 0)::bigint AS installed_size,
+       v.metadata,
+       s.signature, s.signature_source, s.signature_key, f.created_at, f.updated_at
+FROM package_files f
+JOIN pacman_files s ON s.id = f.id
+JOIN package_versions v ON v.id = f.version_id
+JOIN packages p ON p.id = v.package_id
+JOIN blobs b ON b.id = f.blob_id
+WHERE f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY p.name, f.created_at, f.id
 `
 
 type ListPacmanPackagesRow struct {
-	ID              string    `db:"id" json:"id"`
-	RepositoryID    string    `db:"repository_id" json:"repository_id"`
-	Name            string    `db:"name" json:"name"`
-	Base            string    `db:"base" json:"base"`
-	Version         string    `db:"version" json:"version"`
-	Arch            string    `db:"arch" json:"arch"`
-	RepoArch        string    `db:"repo_arch" json:"repo_arch"`
-	Filename        string    `db:"filename" json:"filename"`
-	BlobKey         string    `db:"blob_key" json:"blob_key"`
-	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
-	Sha256          string    `db:"sha256" json:"sha256"`
-	Md5             string    `db:"md5" json:"md5"`
-	Description     string    `db:"description" json:"description"`
-	Url             string    `db:"url" json:"url"`
-	Packager        string    `db:"packager" json:"packager"`
-	BuildDate       int64     `db:"build_date" json:"build_date"`
-	InstalledSize   int64     `db:"installed_size" json:"installed_size"`
-	Licenses        []string  `db:"licenses" json:"licenses"`
-	PackageGroups   []string  `db:"package_groups" json:"package_groups"`
-	Replaces        []string  `db:"replaces" json:"replaces"`
-	Conflicts       []string  `db:"conflicts" json:"conflicts"`
-	Provides        []string  `db:"provides" json:"provides"`
-	Depends         []string  `db:"depends" json:"depends"`
-	Optdepends      []string  `db:"optdepends" json:"optdepends"`
-	Makedepends     []string  `db:"makedepends" json:"makedepends"`
-	Checkdepends    []string  `db:"checkdepends" json:"checkdepends"`
-	Signature       string    `db:"signature" json:"signature"`
-	SignatureSource string    `db:"signature_source" json:"signature_source"`
-	SignatureKey    string    `db:"signature_key" json:"signature_key"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+	ID              string          `db:"id" json:"id"`
+	RepositoryID    string          `db:"repository_id" json:"repository_id"`
+	Name            string          `db:"name" json:"name"`
+	Version         string          `db:"version" json:"version"`
+	Arch            string          `db:"arch" json:"arch"`
+	Filename        string          `db:"filename" json:"filename"`
+	BlobKey         string          `db:"blob_key" json:"blob_key"`
+	SizeBytes       int64           `db:"size_bytes" json:"size_bytes"`
+	Sha256          string          `db:"sha256" json:"sha256"`
+	Md5             string          `db:"md5" json:"md5"`
+	BuildDate       int64           `db:"build_date" json:"build_date"`
+	InstalledSize   int64           `db:"installed_size" json:"installed_size"`
+	Metadata        json.RawMessage `db:"metadata" json:"metadata"`
+	Signature       string          `db:"signature" json:"signature"`
+	SignatureSource string          `db:"signature_source" json:"signature_source"`
+	SignatureKey    string          `db:"signature_key" json:"signature_key"`
+	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // Every live package of the repository, without its file list.
@@ -292,29 +194,16 @@ func (q *Queries) ListPacmanPackages(ctx context.Context, repositoryID string) (
 			&i.ID,
 			&i.RepositoryID,
 			&i.Name,
-			&i.Base,
 			&i.Version,
 			&i.Arch,
-			&i.RepoArch,
 			&i.Filename,
 			&i.BlobKey,
 			&i.SizeBytes,
 			&i.Sha256,
 			&i.Md5,
-			&i.Description,
-			&i.Url,
-			&i.Packager,
 			&i.BuildDate,
 			&i.InstalledSize,
-			&i.Licenses,
-			&i.PackageGroups,
-			&i.Replaces,
-			&i.Conflicts,
-			&i.Provides,
-			&i.Depends,
-			&i.Optdepends,
-			&i.Makedepends,
-			&i.Checkdepends,
+			&i.Metadata,
 			&i.Signature,
 			&i.SignatureSource,
 			&i.SignatureKey,
@@ -332,11 +221,12 @@ func (q *Queries) ListPacmanPackages(ctx context.Context, repositoryID string) (
 }
 
 const listPacmanPackagesWithoutFileList = `-- name: ListPacmanPackagesWithoutFileList :many
-SELECT pp.id, b.blob_key, pp.filename
-FROM pacman_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL AND pp.file_list IS NULL
-ORDER BY pp.created_at, pp.id
+SELECT s.id, b.blob_key, f.filename
+FROM pacman_files s
+JOIN package_files f ON f.id = s.id
+JOIN blobs b ON b.id = f.blob_id
+WHERE s.file_list IS NULL AND f.repository_id = $1 AND f.deleted_at IS NULL
+ORDER BY f.created_at, f.id
 `
 
 type ListPacmanPackagesWithoutFileListRow struct {
@@ -345,7 +235,8 @@ type ListPacmanPackagesWithoutFileListRow struct {
 	Filename string `db:"filename" json:"filename"`
 }
 
-// Live packages whose file list has not been read from the blob yet.
+// Live packages whose file list has not been read from the blob yet
+// (idx_pacman_files_no_list holds only those rows).
 func (q *Queries) ListPacmanPackagesWithoutFileList(ctx context.Context, repositoryID string) ([]ListPacmanPackagesWithoutFileListRow, error) {
 	rows, err := q.db.Query(ctx, listPacmanPackagesWithoutFileList, repositoryID)
 	if err != nil {
@@ -367,8 +258,9 @@ func (q *Queries) ListPacmanPackagesWithoutFileList(ctx context.Context, reposit
 }
 
 const setPacmanFileList = `-- name: SetPacmanFileList :exec
-UPDATE pacman_packages SET file_list = $3
-WHERE id = $1 AND repository_id = $2 AND file_list IS NULL
+UPDATE pacman_files s SET file_list = $3
+FROM package_files f
+WHERE s.id = $1 AND f.id = s.id AND f.repository_id = $2 AND s.file_list IS NULL
 `
 
 type SetPacmanFileListParams struct {
@@ -383,8 +275,9 @@ func (q *Queries) SetPacmanFileList(ctx context.Context, arg SetPacmanFileListPa
 }
 
 const setPacmanSignature = `-- name: SetPacmanSignature :exec
-UPDATE pacman_packages SET signature = $3, signature_source = $4, signature_key = $5
-WHERE id = $1 AND repository_id = $2 AND deleted_at IS NULL
+UPDATE pacman_files s SET signature = $3, signature_source = $4, signature_key = $5
+FROM package_files f
+WHERE s.id = $1 AND f.id = s.id AND f.repository_id = $2 AND f.deleted_at IS NULL
 `
 
 type SetPacmanSignatureParams struct {
@@ -395,6 +288,7 @@ type SetPacmanSignatureParams struct {
 	SignatureKey    string `db:"signature_key" json:"signature_key"`
 }
 
+// Touches the narrow side row only: not the listing row nor its updated_at.
 func (q *Queries) SetPacmanSignature(ctx context.Context, arg SetPacmanSignatureParams) error {
 	_, err := q.db.Exec(ctx, setPacmanSignature,
 		arg.ID,
