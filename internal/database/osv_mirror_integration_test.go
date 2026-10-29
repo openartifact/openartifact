@@ -38,7 +38,7 @@ func osvAffectedRows(t *testing.T, pg *PostgresDB, id string) []string {
 	t.Helper()
 
 	rows, err := pg.db.QueryContext(context.Background(),
-		`SELECT ecosystem || '/' || name_norm FROM osv_affected WHERE advisory_id = $1 ORDER BY 1`, id)
+		`SELECT ecosystem || '/' || name_norm FROM osv_affected WHERE advisory_id = $1`, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +58,8 @@ func osvAffectedRows(t *testing.T, pg *PostgresDB, id string) []string {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
+
+	slices.Sort(out) // byte order, whatever the database collation
 
 	return out
 }
