@@ -189,6 +189,46 @@ func (q *Quarantine) IsArtifactQuarantined(_ context.Context, _ string, keys []s
 	return false, nil
 }
 
+// StatusOf returns a function that GETs a path through register (mounted at
+// /repos/{name}) and reports the response status.
+func StatusOf(register func(chi.Router)) func(path string) int {
+	return func(path string) int {
+		return Do(register, Request(http.MethodGet, path, nil)).Code
+	}
+}
+
+// AssertQuarantinedByID checks the quarantine contract of a download handler for
+// a scan anchored on a row id alone: the identifier the package listing shows
+// and the UI, the license policy and the OSV worker key scans by, never a path
+// or file name. get returns the status of a GET of a path. Both blocked and
+// sibling are served while nothing is quarantined; with only id quarantined,
+// blocked is refused with 403 and sibling is still served.
+func AssertQuarantinedByID(tb testing.TB, q *Quarantine, id string, get func(path string) int, blocked, sibling string) {
+	tb.Helper()
+
+	if id == "" {
+		tb.Fatal("the fixture has no row id to quarantine by")
+	}
+
+	q.Keys = map[string]bool{}
+
+	for _, p := range []string{blocked, sibling} {
+		if c := get(p); c != http.StatusOK {
+			tb.Fatalf("GET %s = %d before the quarantine, want 200", p, c)
+		}
+	}
+
+	q.Keys = map[string]bool{id: true}
+
+	if c := get(blocked); c != http.StatusForbidden {
+		tb.Errorf("GET %s with row id %q quarantined = %d, want 403", blocked, id, c)
+	}
+
+	if c := get(sibling); c != http.StatusOK {
+		tb.Errorf("GET %s next to the quarantined row = %d, want 200", sibling, c)
+	}
+}
+
 // formatStore is what DB is used as.
 type formatStore interface {
 	ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error)

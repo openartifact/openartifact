@@ -25,6 +25,7 @@ import (
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)

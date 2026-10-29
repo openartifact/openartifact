@@ -25,6 +25,7 @@ import (
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/pathseg"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
@@ -69,6 +70,7 @@ var sha256HexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // PresignedUploadStore is the part of the database PresignedUploadHandler needs.
 type PresignedUploadStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	ClaimPresignedUpload(ctx context.Context, repoID string, id string, lease time.Duration) (bool, error)
 	CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error

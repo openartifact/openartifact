@@ -88,9 +88,13 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, s.repoID, quarantine.PathKeys(
-		s.filename, conanPath(s.recipe.Name, s.recipe.Version, s.recipe.UserChannel, s.filename),
-		s.resource()+"/"+s.filename, r.URL.Path)...) {
+	keys, err := h.quarantineKeys(r.Context(), file)
+	if err != nil {
+		h.fail(w, "failed to resolve conan quarantine keys", err, "path", s.resource()+"/"+s.filename)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, s.repoID, append(keys, quarantine.PathKeys(r.URL.Path)...)...) {
 		return
 	}
 

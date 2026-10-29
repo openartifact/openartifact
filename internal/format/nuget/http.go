@@ -62,6 +62,7 @@ var validPackageID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
@@ -682,7 +683,7 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
-		nupkgName(packageID, version), vars["filename"], r.URL.Path)...) {
+		pkg.ID, nupkgName(packageID, version), vars["filename"], r.URL.Path)...) {
 		return
 	}
 

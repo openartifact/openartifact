@@ -40,6 +40,7 @@ const maxRawUploadBytes = 5 << 30
 
 // HTTPStore is the part of the database HTTPHandler needs.
 type HTTPStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DeleteRawArtifact(ctx context.Context, repoID string, path string) error
@@ -223,7 +224,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(path, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(artifact.ID, path, r.URL.Path)...) {
 		return
 	}
 
@@ -332,7 +333,7 @@ func (h *HTTPHandler) handleHead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(path, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(artifact.ID, path, r.URL.Path)...) {
 		return
 	}
 

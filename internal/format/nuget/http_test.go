@@ -38,6 +38,8 @@ type nugetDB struct {
 	quotaFake
 
 	pkg *models.NuGetPackage
+	// more are further stored packages, looked up by id and version when set.
+	more []*models.NuGetPackage
 
 	// createErr, when set, is returned by CreateNuGetPackage.
 	createErr error
@@ -52,7 +54,13 @@ func (d *nugetDB) CreateNuGetPackage(_ context.Context, p *models.NuGetPackage) 
 	return nil
 }
 
-func (d *nugetDB) GetNuGetPackage(_ context.Context, _, _, _ string) (*models.NuGetPackage, error) {
+func (d *nugetDB) GetNuGetPackage(_ context.Context, _, id, version string) (*models.NuGetPackage, error) {
+	for _, p := range d.more {
+		if p.PackageID == id && p.Version == version {
+			return p, nil
+		}
+	}
+
 	return d.pkg, nil
 }
 

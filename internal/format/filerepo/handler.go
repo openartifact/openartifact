@@ -74,6 +74,7 @@ type Spec[A, S any] struct {
 
 // HandlerStore is the part of the database every Handler needs.
 type HandlerStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
@@ -176,7 +177,7 @@ func (h *Handler[A, S]) handleDownload(w http.ResponseWriter, r *http.Request, r
 
 	row := h.spec.View(artifact)
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filePath, cur.Filename, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(row.ID, filePath, cur.Filename, r.URL.Path)...) {
 		return
 	}
 

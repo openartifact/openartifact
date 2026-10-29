@@ -29,6 +29,7 @@ import (
 
 // HandlerStore is the part of the database Handler needs.
 type HandlerStore interface {
+	quarantine.Checker
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
