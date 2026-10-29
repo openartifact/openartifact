@@ -20,6 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white" alt="Go 1.27">
   <a href="https://api.reuse.software/info/github.com/openartifact/openartifact"><img src="https://api.reuse.software/badge/github.com/openartifact/openartifact" alt="REUSE"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/openartifact/openartifact"><img src="https://api.securityscorecards.dev/projects/github.com/openartifact/openartifact/badge" alt="OpenSSF Scorecard"></a>
 </p>
 
 <p align="center">
