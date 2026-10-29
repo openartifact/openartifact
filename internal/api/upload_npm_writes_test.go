@@ -66,11 +66,12 @@ func (d *npmMemDB) failure(method string) error {
 func newNPMMemDB() *npmMemDB {
 	d := &npmMemDB{
 		DB:       formattest.NewDB(),
-		other:    &models.Repository{ID: npmOtherRepoID, Name: "otherrepo"},
+		other:    &models.Repository{ID: npmOtherRepoID, Name: "otherrepo", Format: "npm"},
 		versions: map[string][]*models.NPMVersion{},
 		tags:     map[string]map[string]string{},
 	}
 	d.Repo.ID = npmTestRepoID
+	d.Repo.Format = "npm"
 
 	return d
 }

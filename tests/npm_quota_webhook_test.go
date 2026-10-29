@@ -72,7 +72,7 @@ func npmPublish(t *testing.T, router http.Handler, body []byte) *httptest.Respon
 func TestNPMPublish_ReservesQuotaAndEmitsUploaded(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	pub := &npmRecordingPublisher{}
 	router := setupUploadRouterWithPublisher(db, bs, pub)
@@ -107,7 +107,7 @@ func TestNPMPublish_ReservesQuotaAndEmitsUploaded(t *testing.T) {
 func TestNPMPublish_QuotaExceeded_507_NoStateNoEvent(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 	db.setQuotaExceeded(true)
 
 	pub := &npmRecordingPublisher{}
@@ -145,7 +145,7 @@ func TestNPMPublish_QuotaExceeded_507_NoStateNoEvent(t *testing.T) {
 func TestNPMPublish_Republish409_NoQuotaNoEvent(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 
 	pub := &npmRecordingPublisher{}
 	router := setupUploadRouterWithPublisher(db, bs, pub)
@@ -198,7 +198,7 @@ func seedNPMVersionWithBlob(t *testing.T, db *MockDatabase, bs *MockBlobStore, k
 func TestNPMUnpublish_ReleasesQuotaAndEmitsDeleted(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm"}
 	db.npmPackages["pkg-1"] = &models.NPMPackage{ID: "pkg-1", RepositoryID: "repo-1", FullName: "lodash", Name: "lodash"}
 	size1 := seedNPMVersionWithBlob(t, db, bs, "pkg-1:1.0.0", "v1", "1.0.0")
 	size2 := seedNPMVersionWithBlob(t, db, bs, "pkg-1:2.0.0", "v2", "2.0.0")

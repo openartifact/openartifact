@@ -21,7 +21,7 @@ func setupUnpublishScenario(t *testing.T, allowFull bool, versionAge time.Durati
 	bs := newMockBlobStore()
 
 	db.repositories["repo-1"] = &models.Repository{
-		ID: "repo-1", Name: "myrepo", AllowFullUnpublish: allowFull,
+		ID: "repo-1", Name: "myrepo", Format: "npm", AllowFullUnpublish: allowFull,
 	}
 	db.npmPackages["pkg-1"] = &models.NPMPackage{
 		ID: "pkg-1", RepositoryID: "repo-1", FullName: "lodash", Name: "lodash",
@@ -101,7 +101,7 @@ func TestNPMUnpublish_Over72h_WithOverride_200(t *testing.T) {
 func TestNPMUnpublish_SingleVersion(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", AllowFullUnpublish: true}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm", AllowFullUnpublish: true}
 	db.npmPackages["pkg-1"] = &models.NPMPackage{ID: "pkg-1", RepositoryID: "repo-1", FullName: "lodash"}
 	db.npmVersions["pkg-1:1.0.0"] = &models.NPMVersion{
 		ID: "v1", PackageID: "pkg-1", Version: "1.0.0", TarballFilename: "lodash-1.0.0.tgz",
@@ -146,7 +146,7 @@ func TestNPMUnpublish_SingleVersion(t *testing.T) {
 func TestNPMUnpublish_WholePackage(t *testing.T) {
 	db := newMockDatabase()
 	bs := newMockBlobStore()
-	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", AllowFullUnpublish: true}
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo", Format: "npm", AllowFullUnpublish: true}
 	db.npmPackages["pkg-1"] = &models.NPMPackage{ID: "pkg-1", RepositoryID: "repo-1", FullName: "lodash"}
 	db.npmVersions["pkg-1:1.0.0"] = &models.NPMVersion{
 		ID: "v1", PackageID: "pkg-1", Version: "1.0.0",
