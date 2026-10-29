@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -25,13 +27,28 @@ var validActions = map[string]bool{
 	"read": true, "write": true, "delete": true, "manage": true, "annotate": true,
 }
 
+// AdminPermissionsStore is the part of the database AdminPermissionsHandler uses needs.
+type AdminPermissionsStore interface {
+	CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error
+	CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error)
+	DeletePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	DeletePermissionTarget(ctx context.Context, id string) error
+	GetGroupByID(ctx context.Context, id string) (*models.Group, error)
+	GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error)
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error)
+	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
+	UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error
+}
+
 type AdminPermissionsHandler struct {
-	db        database.Database
+	db        AdminPermissionsStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminPermissionsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminPermissionsHandler {
+func NewAdminPermissionsHandler(db AdminPermissionsStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminPermissionsHandler {
 	return &AdminPermissionsHandler{db: db, log: log, evaluator: evaluator}
 }
 

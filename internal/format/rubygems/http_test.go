@@ -369,9 +369,14 @@ func TestIsPrerelease(t *testing.T) {
 	}
 }
 
+// pushWithLicensesStore is the part of the database pushWithLicenses uses needs.
+type pushWithLicensesStore interface {
+	HTTPStore
+}
+
 func pushWithLicenses(
 	t *testing.T,
-	db database.Database,
+	db pushWithLicensesStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	licenses []string,

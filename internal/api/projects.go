@@ -34,6 +34,57 @@ const (
 	projectGroupRoleMessage = "role must be maintainer, developer, or viewer"
 )
 
+// ProjectsStore is the part of the database ProjectsHandler uses needs.
+type ProjectsStore interface {
+	activityPageStore
+	auditExportStore
+	AddProjectMember(ctx context.Context, projectID string, userID string, role string) error
+	ChangeProjectGroup(
+		ctx context.Context,
+		projectID string,
+		groupID string,
+		newRole string,
+		createdBy *string,
+		guard database.ProjectRoleGuard,
+	) error
+	ChangeProjectMember(ctx context.Context, projectID string, userID string, newRole string, guard database.ProjectRoleGuard) error
+	CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error)
+	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
+	CreateProject(ctx context.Context, project *models.Project) error
+	CreateProjectToken(ctx context.Context, spec database.ProjectTokenSpec) (*models.Token, error)
+	DeleteCleanupPolicy(ctx context.Context, id string) error
+	DeleteProject(ctx context.Context, id string) error
+	GetCleanupPolicy(ctx context.Context, id string) (*models.CleanupPolicy, error)
+	GetGroupByID(ctx context.Context, id string) (*models.Group, error)
+	GetGroupByName(ctx context.Context, name string) (*models.Group, error)
+	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
+	GetProjectGroup(ctx context.Context, projectID string, groupID string) (*models.ProjectGroup, error)
+	GetProjectMember(ctx context.Context, projectID string, userID string) (*models.ProjectMember, error)
+	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
+	GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error)
+	GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
+	ListAllProjects(ctx context.Context) ([]*models.Project, error)
+	ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error)
+	ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error)
+	ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error)
+	ListProjectRepositories(ctx context.Context, projectID string, page int, limit int) ([]*models.Repository, int, error)
+	ListProjectStats(ctx context.Context, projectIDs []string) (map[string]*models.ProjectStats, error)
+	ListProjectTokens(ctx context.Context, projectID string, createdBy *string) ([]*models.Token, error)
+	ListProjects(ctx context.Context, userID string) ([]*models.Project, error)
+	RevokeProjectToken(ctx context.Context, projectID string, tokenID string) (bool, error)
+	SetProjectQuota(
+		ctx context.Context,
+		projectID string,
+		maxSizeBytes int64,
+		maxArtifactCount int64,
+		warnThresholdPercent int,
+	) (*models.ProjectQuota, error)
+	UpdateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
+	UpdateProject(ctx context.Context, project *models.Project) error
+}
+
 // ProjectsHandler serves /api/v1/projects: projects, their members and the
 // groups attached to them. The RBAC middleware is the first gate (project
 // scope, 404 for non-members, 403 below the required role); the handler
@@ -41,7 +92,7 @@ const (
 // way is still protected, and adds the escalation guards the middleware cannot
 // know (which role is granted to whom).
 type ProjectsHandler struct {
-	db        database.Database
+	db        ProjectsStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	settings  *auth.ProjectSettings
@@ -52,7 +103,7 @@ type ProjectsHandler struct {
 // who is a global admin (implicit owner of every project); settings holds the
 // projects.self_create switch.
 func NewProjectsHandler(
-	db database.Database,
+	db ProjectsStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	settings *auth.ProjectSettings,

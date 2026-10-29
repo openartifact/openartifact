@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/license"
 	"github.com/openartifact/openartifact/internal/licensemeta"
@@ -53,7 +52,7 @@ type resolvedLicenses struct {
 // upload that carried no (or false) license fields is still judged on its
 // contents.
 type artifactLicenseSource struct {
-	db       database.Database
+	db       LicenseStore
 	blobs    storage.BlobStore
 	log      *logger.Logger
 	detector *license.Detector

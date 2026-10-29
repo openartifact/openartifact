@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -46,6 +45,12 @@ func isMCPPath(urlPath string, cfg RBACConfig) bool {
 	return cfg.MCPPath != "" && (urlPath == cfg.MCPPath || strings.HasPrefix(urlPath, cfg.MCPPath+"/"))
 }
 
+// resolveMCPPrincipalStore is the part of the database resolveMCPPrincipal uses needs.
+type resolveMCPPrincipalStore interface {
+	principalForUserStore
+	tokenPrincipalStore
+}
+
 // resolveMCPPrincipal authenticates a request to the MCP endpoint. Only an
 // Authorization: Bearer credential counts: an API token, an OIDC access token
 // for this resource, or (deprecated) the legacy API key. The session cookie and
@@ -55,7 +60,7 @@ func resolveMCPPrincipal(
 	ctx context.Context,
 	r *http.Request,
 	cfg RBACConfig,
-	db database.Database,
+	db resolveMCPPrincipalStore,
 	log *logger.Logger,
 ) (*auth.Principal, string) {
 	bearer, _ := authorizationSecrets(r)
@@ -166,11 +171,16 @@ func gateMCP(
 	return true
 }
 
+// serveMCPStore is the part of the database serveMCP uses needs.
+type serveMCPStore interface {
+	resolveMCPPrincipalStore
+}
+
 // serveMCP authenticates a request to the MCP endpoint (bearer credentials
 // only) and lets it through when it carries an acceptable principal. The tools
 // authorize every repository access themselves, so the evaluator is not
 // consulted here.
-func serveMCP(w http.ResponseWriter, r *http.Request, next http.Handler, cfg RBACConfig, db database.Database, log *logger.Logger) {
+func serveMCP(w http.ResponseWriter, r *http.Request, next http.Handler, cfg RBACConfig, db serveMCPStore, log *logger.Logger) {
 	principal, credential := resolveMCPPrincipal(r.Context(), r, cfg, db, log)
 	r = r.WithContext(WithPrincipal(r.Context(), principal))
 

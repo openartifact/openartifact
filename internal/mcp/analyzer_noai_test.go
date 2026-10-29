@@ -9,7 +9,6 @@ package mcp
 import (
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -21,6 +20,6 @@ func (fakeAnalyzer) Enabled() bool { return true }
 
 func (fakeAnalyzer) Queue(AIAnalysisRequest) {}
 
-func newTestAnalyzer(*testing.T, database.Database, *logger.Logger) AIAnalyzer {
+func newTestAnalyzer(*testing.T, any, *logger.Logger) AIAnalyzer {
 	return fakeAnalyzer{}
 }

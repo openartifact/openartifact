@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -72,6 +74,12 @@ type OSVMirrorStats struct {
 	Busy bool
 }
 
+// OSVMirrorStore is the part of the database OSVMirrorWorker uses needs.
+type OSVMirrorStore interface {
+	GetDB() *sql.DB
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+}
+
 // OSVMirrorWorker keeps the local OSV mirror current and matches the stored
 // packages against it: once per interval it imports the export of every
 // configured ecosystem (a conditional download, incremental by `modified`),
@@ -89,7 +97,7 @@ type OSVMirrorStats struct {
 type OSVMirrorWorker struct {
 	*lifecycle
 
-	db         database.Database
+	db         OSVMirrorStore
 	store      database.OSVStore
 	importer   *osv.Importer
 	mirror     *vuln.Mirror
@@ -108,7 +116,7 @@ type OSVMirrorWorker struct {
 // non-positive interval disables the schedule (RunOnce still works). Without a
 // database that implements database.OSVStore the worker does nothing.
 func NewOSVMirrorWorker(
-	db database.Database, importer *osv.Importer, ecosystems []string, log *logger.Logger, interval time.Duration,
+	db OSVMirrorStore, importer *osv.Importer, ecosystems []string, log *logger.Logger, interval time.Duration,
 ) *OSVMirrorWorker {
 	store, _ := db.(database.OSVStore)
 

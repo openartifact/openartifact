@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
@@ -59,6 +60,26 @@ type RPMPackageLoader interface {
 	PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 }
 
+// GroupMetadataStore is the part of the database GroupMetadataWorker uses needs.
+type GroupMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
+	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
+	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
+	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error)
+	ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error)
+	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	ListStaleMetadataGroups(ctx context.Context) ([]string, error)
+	MarkGroupMetadataStale(ctx context.Context, groupID string) error
+}
+
 // GroupMetadataWorker generates the metadata of apk, deb, pacman and rpm group
 // repositories: the Release/Packages indexes, repodata, APKINDEX or databases a client needs, merged
 // across the group's hosted and proxy members in member order, plus the table
@@ -70,7 +91,7 @@ type RPMPackageLoader interface {
 // changes (NotifyStale, NotifyMemberChanged), and refreshed in the background
 // once a proxy member's cached upstream metadata may have changed.
 type GroupMetadataWorker struct {
-	db        sq.Database
+	db        GroupMetadataStore
 	blobStore storage.BlobStore
 	opener    MemberOpener
 	rpm       RPMPackageLoader
@@ -85,7 +106,7 @@ type GroupMetadataWorker struct {
 // each group's metadata (nil, or a nil result, for an unsigned group); it is
 // asked per generation so a key change takes effect.
 func NewGroupMetadataWorker(
-	db sq.Database,
+	db GroupMetadataStore,
 	blobStore storage.BlobStore,
 	opener MemberOpener,
 	rpm RPMPackageLoader,

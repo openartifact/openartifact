@@ -73,6 +73,13 @@ func (o *BootstrapOptions) suppliesAnything() bool {
 	return o.AdminPasswordFile != "" || o.AdminPassword != "" || o.AdminTokenFile != ""
 }
 
+// BootstrapIfEmptyStore is the part of the database BootstrapIfEmpty uses needs.
+type BootstrapIfEmptyStore interface {
+	createBootstrapAdminStore
+	CountUsers(ctx context.Context) (int, error)
+	RepairBootstrapAdmin(ctx context.Context, username string) (bool, error)
+}
+
 // BootstrapIfEmpty creates the first admin account on an empty instance.
 //
 // The user row, its admin-all assignment and the optional bootstrap token are
@@ -81,7 +88,7 @@ func (o *BootstrapOptions) suppliesAnything() bool {
 // bootstrap cannot leave an admin without rights. When users already exist it
 // ignores the supplied secrets and only repairs the "admin exists but nobody
 // holds admin-all" state left by older versions.
-func BootstrapIfEmpty(ctx context.Context, db database.Database, log *logger.Logger, opts BootstrapOptions) error {
+func BootstrapIfEmpty(ctx context.Context, db BootstrapIfEmptyStore, log *logger.Logger, opts BootstrapOptions) error {
 	count, err := db.CountUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("count users: %w", err)
@@ -107,7 +114,12 @@ func BootstrapIfEmpty(ctx context.Context, db database.Database, log *logger.Log
 	return createBootstrapAdmin(ctx, db, log, opts)
 }
 
-func createBootstrapAdmin(ctx context.Context, db database.Database, log *logger.Logger, opts BootstrapOptions) error {
+// createBootstrapAdminStore is the part of the database createBootstrapAdmin uses needs.
+type createBootstrapAdminStore interface {
+	CreateBootstrapAdmin(ctx context.Context, spec database.BootstrapAdmin) (bool, error)
+}
+
+func createBootstrapAdmin(ctx context.Context, db createBootstrapAdminStore, log *logger.Logger, opts BootstrapOptions) error {
 	if opts.AdminTokenTTL < 0 || opts.GeneratedPasswordTTL < 0 {
 		return errBootstrapTTL
 	}

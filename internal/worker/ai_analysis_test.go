@@ -220,7 +220,12 @@ func testLog(t *testing.T) *logger.Logger {
 	return log
 }
 
-func startWorker(t *testing.T, db database.Database, blobs storage.BlobStore) *AIAnalysisWorker {
+// startWorkerStore is the part of the database startWorker uses needs.
+type startWorkerStore interface {
+	AIAnalysisStore
+}
+
+func startWorker(t *testing.T, db startWorkerStore, blobs storage.BlobStore) *AIAnalysisWorker {
 	t.Helper()
 
 	w := NewAIAnalysisWorker(db, nil, testLog(t)).WithDebounce(time.Millisecond)

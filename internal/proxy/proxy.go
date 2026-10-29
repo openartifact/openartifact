@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/terraform"
@@ -117,10 +116,18 @@ var (
 // (RFC 7234 section 5.5.1, "Response is Stale").
 const staleWarning = `110 - "Response is Stale"`
 
+// ServiceStore is the part of the database Service uses needs.
+type ServiceStore interface {
+	DeleteProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) error
+	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
+	GetProxyCacheEntry(ctx context.Context, repoID string, cacheKey string) (*models.ProxyCacheEntry, error)
+	UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error
+}
+
 // Service fetches and caches upstream files for proxy repositories.
 type Service struct {
 	log       *logger.Logger
-	db        database.Database
+	db        ServiceStore
 	blobStore storage.BlobStore
 	client    *http.Client
 	flights   flightGroup
@@ -175,7 +182,7 @@ type Service struct {
 // NewService creates the proxy service. Upstream requests use an SSRF-safe
 // client: blocked destination addresses are refused at dial time and on every
 // redirect hop.
-func NewService(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Service {
+func NewService(log *logger.Logger, db ServiceStore, blobStore storage.BlobStore) *Service {
 	client := upstreamClient(DefaultUpstreamStallTimeout)
 
 	return &Service{

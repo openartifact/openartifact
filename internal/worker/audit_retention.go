@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -42,6 +44,11 @@ type AuditRetentionStats struct {
 	Busy bool
 }
 
+// AuditRetentionStore is the part of the database AuditRetentionWorker uses needs.
+type AuditRetentionStore interface {
+	GetDB() *sql.DB
+}
+
 // AuditRetentionWorker deletes audit entries older than audit.retentionDays,
 // oldest first in batches of a fixed size, paced by a ticker. Replicas are
 // excluded from each other by a Postgres advisory lock held on a pinned
@@ -53,7 +60,7 @@ type AuditRetentionStats struct {
 type AuditRetentionWorker struct {
 	*lifecycle
 
-	db            database.Database
+	db            AuditRetentionStore
 	store         database.AuditRetentionStore
 	log           *logger.Logger
 	retentionDays int
@@ -74,7 +81,7 @@ type AuditRetentionWorker struct {
 // one delete statement removes. Without a database that implements
 // database.AuditRetentionStore the worker does nothing.
 func NewAuditRetentionWorker(
-	db database.Database,
+	db AuditRetentionStore,
 	log *logger.Logger,
 	retentionDays int,
 	interval time.Duration,

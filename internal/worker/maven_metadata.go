@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	fmtmaven "github.com/openartifact/openartifact/internal/format/maven"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -28,8 +27,17 @@ import (
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
 
+// MavenMetadataStore is the part of the database MavenMetadataWorker uses needs.
+type MavenMetadataStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	GetDB() *sql.DB
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	ListMavenGARefs(ctx context.Context, repoID string, groupID string, artifactID string) (*models.MavenGARefs, error)
+	UpsertRepoMetadata(ctx context.Context, meta *models.RepoMetadata) error
+}
+
 type MavenMetadataWorker struct {
-	db        database.Database
+	db        MavenMetadataStore
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	sqlDB     *sql.DB
@@ -44,7 +52,7 @@ type mavenKey struct {
 func (k mavenKey) String() string { return k.repoID + ":" + k.groupID + ":" + k.artifactID }
 
 func NewMavenMetadataWorker(
-	db database.Database,
+	db MavenMetadataStore,
 	blobStore storage.BlobStore,
 	sqlDB *sql.DB,
 	log *logger.Logger,

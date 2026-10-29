@@ -40,15 +40,31 @@ import (
 	"github.com/openartifact/openartifact/pkg/pyversion"
 )
 
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeletePyPIPackage(ctx context.Context, repoID string, name string, version string, filename string) error
+	GetPyPIPackageByFilename(ctx context.Context, repoID string, filename string) (*models.PyPIPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error)
+	ListPyPIPackageVersions(ctx context.Context, repoID string, name string) ([]*models.PyPIPackage, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 type HTTPHandler struct {
 	*base.Handler
 
 	// maxUpload bounds one uploaded distribution file.
 	maxUpload int64
-	DB        database.Database
+	DB        HTTPStore
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes, DB: db}
 }
 

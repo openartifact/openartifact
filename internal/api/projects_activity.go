@@ -10,7 +10,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -63,11 +62,16 @@ func (h *ProjectsHandler) handleListActivity(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, activityPage(r.Context(), h.db, h.log, page, perPage))
 }
 
+// activityPageStore is the part of the database activityPage uses needs.
+type activityPageStore interface {
+	activityEntriesStore
+}
+
 // activityPage renders one page of audit rows as an activity feed page, names
 // resolved.
 func activityPage(
 	ctx context.Context,
-	db database.Database,
+	db activityPageStore,
 	log *logger.Logger,
 	page *models.AuditPage,
 	perPage int,

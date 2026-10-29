@@ -118,7 +118,12 @@ func (f *fakeDB) DeleteDockerUpload(_ context.Context, repositoryID, uploadUUID 
 	return nil
 }
 
-func newTestHandler(t *testing.T, db database.Database) (*HTTPHandler, storage.BlobStore) {
+// testHandlerStore is the part of the database newTestHandler uses needs.
+type testHandlerStore interface {
+	HTTPStore
+}
+
+func newTestHandler(t *testing.T, db testHandlerStore) (*HTTPHandler, storage.BlobStore) {
 	t.Helper()
 
 	log, err := logger.New("error", "console", "stderr")
@@ -131,7 +136,7 @@ func newTestHandler(t *testing.T, db database.Database) (*HTTPHandler, storage.B
 		t.Fatalf("store: %v", err)
 	}
 
-	h := NewHTTPHandler(log, db, store, "http://localhost")
+	h := NewHTTPHandler(log, db, store)
 	h.SetUploadDir(testUploadDir(t))
 	return h, store
 }

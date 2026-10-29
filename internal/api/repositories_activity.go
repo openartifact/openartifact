@@ -7,22 +7,30 @@ package api
 import (
 	"net/http"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// RepositoryActivityStore is the part of the database RepositoryActivityHandler uses needs.
+type RepositoryActivityStore interface {
+	activityPageStore
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error)
+}
+
 // RepositoryActivityHandler serves the audit feed of one repository.
 type RepositoryActivityHandler struct {
-	db        database.Database
+	db        RepositoryActivityStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewRepositoryActivityHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *RepositoryActivityHandler {
+func NewRepositoryActivityHandler(db RepositoryActivityStore, log *logger.Logger, evaluator *auth.Evaluator) *RepositoryActivityHandler {
 	return &RepositoryActivityHandler{db: db, log: log, evaluator: evaluator}
 }
 

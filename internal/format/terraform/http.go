@@ -27,7 +27,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -47,6 +48,42 @@ const versionsMaxAge = 60
 // ticketPath is the bare-router prefix of the credential-free download URLs.
 const ticketPath = "/terraform/dl/"
 
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error
+	CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteTerraformModule(ctx context.Context, repoID string, id string) error
+	DeleteTerraformProvider(ctx context.Context, repoID string, id string) error
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	GetTerraformModule(ctx context.Context, repoID string, name string, system string, version string) (*models.TerraformModule, error)
+	GetTerraformProvider(
+		ctx context.Context,
+		repoID string,
+		typ string,
+		version string,
+		osName string,
+		arch string,
+	) (*models.TerraformProvider, error)
+	IncrementTerraformModuleDownloadCount(ctx context.Context, repoID string, id string) error
+	IncrementTerraformProviderDownloadCount(ctx context.Context, repoID string, id string) error
+	ListTerraformModuleVersions(ctx context.Context, repoID string, name string, system string) ([]*models.TerraformModule, error)
+	ListTerraformProviderPlatforms(ctx context.Context, repoID string, typ string) ([]*models.TerraformProvider, error)
+	ListTerraformProviderVersionPlatforms(
+		ctx context.Context,
+		repoID string,
+		typ string,
+		version string,
+	) ([]*models.TerraformProvider, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	TerraformModuleStamp(ctx context.Context, repoID string, name string, system string) (string, error)
+	TerraformProviderStamp(ctx context.Context, repoID string, typ string) (string, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // HTTPHandler serves the module and provider registry protocols and their
 // publishing API.
 type HTTPHandler struct {
@@ -56,7 +93,7 @@ type HTTPHandler struct {
 	proxy     ProxyServer
 	ticketKey []byte
 	now       func() time.Time
-	DB        database.Database
+	DB        HTTPStore
 }
 
 // NewHTTPHandler creates the handler. baseURL is the configured server URL
@@ -64,7 +101,7 @@ type HTTPHandler struct {
 // discovery values are path-absolute references. Providers need WithSigner and
 // download tickets need WithTicketKey; without them the matching endpoints
 // answer 503.
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), now: time.Now, DB: db}
 }
 

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
@@ -30,8 +31,18 @@ func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map
 	)
 }
 
+// DebMetadataStore is the part of the database DebMetadataWorker uses needs.
+type DebMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
+	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
+}
+
 type DebMetadataWorker struct {
-	db        sq.Database
+	db        DebMetadataStore
 	blobStore storage.BlobStore
 	signers   gpg.Resolver
 	log       *logger.Logger
@@ -39,7 +50,7 @@ type DebMetadataWorker struct {
 	onStale   func(repoID string)
 }
 
-func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
+func NewDebMetadataWorker(db DebMetadataStore, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
 	w := &DebMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("deb", log, w.regenerate)
 	w.q.setCodec(stringRegenCodec())

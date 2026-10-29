@@ -12,7 +12,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -64,10 +63,17 @@ const unreferencedCacheKeysSQL = `
 	SELECT k FROM unnest($1::text[]) AS k
 	WHERE NOT EXISTS (SELECT 1 FROM proxy_cache_entries WHERE blob_key = k)`
 
+// ProxyCacheStore is the part of the database ProxyCacheWorker uses needs.
+type ProxyCacheStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DeleteExpiredProxyCacheEntries(ctx context.Context) (int64, error)
+	GetDB() *sql.DB
+}
+
 type ProxyCacheWorker struct {
 	*lifecycle
 
-	db        database.Database
+	db        ProxyCacheStore
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	interval  time.Duration
@@ -76,7 +82,7 @@ type ProxyCacheWorker struct {
 
 // NewProxyCacheWorker creates the eviction worker. blobStore may be nil, in
 // which case only database rows are evicted.
-func NewProxyCacheWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger) *ProxyCacheWorker {
+func NewProxyCacheWorker(db ProxyCacheStore, blobStore storage.BlobStore, log *logger.Logger) *ProxyCacheWorker {
 	return &ProxyCacheWorker{
 		lifecycle: newLifecycle(),
 		db:        db,

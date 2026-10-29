@@ -19,7 +19,7 @@ import (
 	"io"
 	"strings"
 
-	db "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/xzutil"
 )
 
@@ -32,12 +32,17 @@ const (
 	CompressionXZ
 )
 
+// StreamPackagesStore is the part of the database StreamPackages uses needs.
+type StreamPackagesStore interface {
+	ListDebPackageEntries(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.DebPackageEntry, error)
+}
+
 // StreamPackages writes a Packages file for the given distribution/component/arch
 // directly to w, applying the requested compression. Returns the number of bytes
 // written and any error.
 func StreamPackages(
 	ctx context.Context,
-	database db.Database,
+	database StreamPackagesStore,
 	repoID, dist, comp, arch string,
 	compression Compression,
 	w io.Writer,
@@ -95,11 +100,18 @@ func StreamPackages(
 	}
 }
 
+// StreamReleaseStore is the part of the database StreamRelease uses needs.
+type StreamReleaseStore interface {
+	GetDebianArchitecturesByDist(ctx context.Context, distID string) ([]models.DebianArchitecture, error)
+	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+}
+
 // StreamRelease writes a Release file for the given distribution directly to w.
 // It queries all components and architectures from the database and generates
 // the Release header. Checksum entries are omitted (no pre-computed blobs);
 // clients that require checksums should use the pre-generated blob path.
-func StreamRelease(ctx context.Context, database db.Database, repoID, dist string, w io.Writer) error {
+func StreamRelease(ctx context.Context, database StreamReleaseStore, repoID, dist string, w io.Writer) error {
 	distributions, err := database.GetDebianDistributionsByRepo(ctx, repoID)
 	if err != nil {
 		return fmt.Errorf("stream release: query distributions: %w", err)

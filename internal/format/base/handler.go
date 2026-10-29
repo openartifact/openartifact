@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/publicurl"
@@ -27,11 +27,21 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// HandlerStore is the part of the database Handler uses needs.
+type HandlerStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // Handler provides shared fields and methods for artifact-level format HTTP handlers.
 // Embed this in format-specific HTTPHandler structs to eliminate duplicated boilerplate.
 type Handler struct {
 	Log       *logger.Logger
-	DB        database.Database
+	DB        HandlerStore
 	BlobStore storage.BlobStore
 	// BaseURL is the configured BASE_URL when the operator set one, "" otherwise.
 	// Read it only through PublicBase.
@@ -48,7 +58,7 @@ type Handler struct {
 var handlerSeq atomic.Uint64 //nolint:gochecknoglobals // numbers handlers for their render cache namespace
 
 // New creates a new base handler with the common dependencies.
-func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *Handler {
+func New(log *logger.Logger, db HandlerStore, blobStore storage.BlobStore, baseURL string) *Handler {
 	return &Handler{
 		Log:       log,
 		DB:        db,

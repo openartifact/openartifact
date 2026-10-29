@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
@@ -37,12 +38,20 @@ func isApkIndexPath(path string) bool {
 	return len(parts) == 4 && parts[3] == formatapk.IndexName
 }
 
+// ApkMetadataStore is the part of the database ApkMetadataWorker uses needs.
+type ApkMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListApkPackages(ctx context.Context, repoID string) ([]*models.ApkPackage, error)
+}
+
 // ApkMetadataWorker regenerates the signed APKINDEX.tar.gz of every
 // branch/repo/arch directory of hosted apk repositories, through the shared
 // coalescing RegenQueue (one running and one pending regeneration per
 // repository).
 type ApkMetadataWorker struct {
-	db        sq.Database
+	db        ApkMetadataStore
 	blobStore storage.BlobStore
 	signers   ApkSignerResolver
 	log       *logger.Logger
@@ -51,7 +60,12 @@ type ApkMetadataWorker struct {
 }
 
 // NewApkMetadataWorker builds the worker. signers may be nil (unsigned indexes).
-func NewApkMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers ApkSignerResolver, log *logger.Logger) *ApkMetadataWorker {
+func NewApkMetadataWorker(
+	db ApkMetadataStore,
+	blobStore storage.BlobStore,
+	signers ApkSignerResolver,
+	log *logger.Logger,
+) *ApkMetadataWorker {
 	w := &ApkMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("apk", log, w.regenerate)
 	w.q.setCodec(stringRegenCodec())

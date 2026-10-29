@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/workq"
@@ -21,14 +20,20 @@ import (
 	"github.com/openartifact/openartifact/pkg/npm"
 )
 
+// NPMMetadataStore is the part of the database NPMMetadataWorker uses needs.
+type NPMMetadataStore interface {
+	GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error)
+	UpdateNPMPackageLatestVersion(ctx context.Context, packageID string, latestVersion string) error
+}
+
 type NPMMetadataWorker struct {
-	db    database.Database
+	db    NPMMetadataStore
 	log   *logger.Logger
 	sqlDB *sql.DB
 	q     *regenQueue[string]
 }
 
-func NewNPMMetadataWorker(db database.Database, log *logger.Logger, sqlDB *sql.DB, reg *metrics.Registry) *NPMMetadataWorker {
+func NewNPMMetadataWorker(db NPMMetadataStore, log *logger.Logger, sqlDB *sql.DB, reg *metrics.Registry) *NPMMetadataWorker {
 	w := &NPMMetadataWorker{db: db, log: log, sqlDB: sqlDB}
 	w.q = newRegenQueue("npm", log, w.regenerate)
 	w.q.setCodec(stringRegenCodec())

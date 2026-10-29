@@ -16,7 +16,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -30,11 +29,19 @@ type Notifier interface {
 	NotifyNPM(packageID string)
 }
 
+// OptionsStore is the part of the database Options uses needs.
+type OptionsStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+}
+
 // Options configures an Engine.
 type Options struct {
 	Store    *Store
 	SQL      *sql.DB
-	DB       database.Database
+	DB       OptionsStore
 	Blobs    storage.BlobStore
 	Log      *logger.Logger
 	Webhooks webhook.Publisher

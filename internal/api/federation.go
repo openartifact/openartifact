@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -112,9 +111,14 @@ type FederationHandler struct {
 	kick func()
 }
 
+// FederationHandlerStore is the part of the database NewFederationHandler uses needs.
+type FederationHandlerStore interface {
+	repoAccessStore
+}
+
 // NewFederationHandler creates the handler.
 func NewFederationHandler(
-	db database.Database,
+	db FederationHandlerStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	store *federation.Store,

@@ -120,7 +120,11 @@ func (p *DependencyTrackStore) GetDependencyTrackPush(ctx context.Context, repoI
 }
 
 // ListDependencyTrackPushes lists the pushes of a repository, most recently updated first.
-func (p *DependencyTrackStore) ListDependencyTrackPushes(ctx context.Context, repoID string, limit int) ([]*models.DependencyTrackPush, error) {
+func (p *DependencyTrackStore) ListDependencyTrackPushes(
+	ctx context.Context,
+	repoID string,
+	limit int,
+) ([]*models.DependencyTrackPush, error) {
 	rows, err := p.q.ListDependencyTrackPushes(ctx, dbsqlc.ListDependencyTrackPushesParams{RepositoryID: repoID, Limit: clampInt32(limit)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Dependency-Track pushes: %w", err)

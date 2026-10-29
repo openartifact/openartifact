@@ -12,11 +12,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -24,16 +25,21 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AdminGPGStore is the part of the database AdminGPGHandler uses needs.
+type AdminGPGStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 // AdminGPGHandler manages the GPG keys that sign deb/rpm metadata and sealed
 // release bundles (docs/security/signing.md). Every route needs an admin.
 type AdminGPGHandler struct {
-	db        database.Database
+	db        AdminGPGStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	keys      *gpgkeys.Service
 }
 
-func NewAdminGPGHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, keys *gpgkeys.Service) *AdminGPGHandler {
+func NewAdminGPGHandler(db AdminGPGStore, log *logger.Logger, evaluator *auth.Evaluator, keys *gpgkeys.Service) *AdminGPGHandler {
 	return &AdminGPGHandler{db: db, log: log, evaluator: evaluator, keys: keys}
 }
 

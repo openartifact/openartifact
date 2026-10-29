@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/importmeta"
@@ -280,9 +279,14 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 	}
 }
 
+// uploadDebWithLicenseStore is the part of the database uploadDebWithLicense uses needs.
+type uploadDebWithLicenseStore interface {
+	DebUploadStore
+}
+
 func uploadDebWithLicense(
 	t *testing.T,
-	db database.Database,
+	db uploadDebWithLicenseStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	license string,

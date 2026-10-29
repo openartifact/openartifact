@@ -9,9 +9,12 @@ import (
 	"errors"
 	"time"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/apkkeys"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 	formatdocker "github.com/openartifact/openartifact/internal/format/docker"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
@@ -329,10 +332,15 @@ func autoGenerateGPGKey(ctx context.Context, svc *gpgkeys.Service, log *logger.L
 	}
 }
 
+// groupRefresherStore is the part of the database groupRefresher uses needs.
+type groupRefresherStore interface {
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+}
+
 // groupRefresher sends a key change to the worker that generates the
 // repository's metadata: the group worker for a group, else the hosted worker.
 type groupRefresher struct {
-	db     database.Database
+	db     groupRefresherStore
 	hosted interface{ NotifyStale(repoID string) }
 	group  *worker.GroupMetadataWorker
 }
@@ -347,10 +355,16 @@ func (g groupRefresher) NotifyStale(repoID string) {
 	g.hosted.NotifyStale(repoID)
 }
 
+// workerSetbuildOSVMirrorStore is the part of the database workerSetbuildOSVMirror uses needs.
+type workerSetbuildOSVMirrorStore interface {
+	GetDB() *sql.DB
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+}
+
 // buildOSVMirror builds the OSV mirror worker; it does something only when
 // osvMirror is enabled. A disabled worker is still built (and does nothing), so
 // shutdown stops it like the others.
-func (w *workerSet) buildOSVMirror(db database.Database, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
+func (w *workerSet) buildOSVMirror(db workerSetbuildOSVMirrorStore, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
 	var importer *osv.Importer
 
 	interval := time.Duration(0)

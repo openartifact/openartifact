@@ -288,9 +288,14 @@ type registry struct {
 	router chi.Router
 }
 
+// registryStore is the part of the database newRegistry uses needs.
+type registryStore interface {
+	testHandlerStore
+}
+
 // newRegistry serves h over a real chi router, so every request goes through
 // the same /v2/* routing production uses.
-func newRegistry(t *testing.T, db database.Database) *registry {
+func newRegistry(t *testing.T, db registryStore) *registry {
 	t.Helper()
 
 	h, _ := newTestHandler(t, db)

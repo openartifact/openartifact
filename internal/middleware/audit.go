@@ -16,7 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func(http.Handler) http.Handler {
@@ -144,11 +144,20 @@ const (
 	maxActorNameLen = 128
 )
 
+// AuthAuditMiddlewareStore is the part of the database AuthAuditMiddleware uses needs.
+type AuthAuditMiddlewareStore interface {
+	actorFromSessionStore
+}
+
 // AuthAuditMiddleware audits auth.login, auth.login_failed, auth.logout and
 // auth.sso_login. Success is decided from what the handler did to the session
 // cookie (a Set-Cookie carrying a fresh oa_session value), not from the status
 // code, because the SSO callbacks redirect on both success and failure.
-func AuthAuditMiddleware(auditLogger *audit.Logger, db database.Database, trusted ...*TrustedProxies) func(http.Handler) http.Handler {
+func AuthAuditMiddleware(
+	auditLogger *audit.Logger,
+	db AuthAuditMiddlewareStore,
+	trusted ...*TrustedProxies,
+) func(http.Handler) http.Handler {
 	var proxies *TrustedProxies
 	if len(trusted) > 0 {
 		proxies = trusted[0]
@@ -252,9 +261,15 @@ func setActor(ev *audit.AuditEvent, a auditActorInfo, actorType string) {
 	}
 }
 
+// actorFromSessionStore is the part of the database actorFromSession uses needs.
+type actorFromSessionStore interface {
+	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+}
+
 // actorFromSession resolves the user behind a raw session cookie value. It
 // returns the zero value when the cookie is not a valid live session.
-func actorFromSession(ctx context.Context, db database.Database, cookieValue string) auditActorInfo {
+func actorFromSession(ctx context.Context, db actorFromSessionStore, cookieValue string) auditActorInfo {
 	if cookieValue == "" || db == nil {
 		return auditActorInfo{}
 	}

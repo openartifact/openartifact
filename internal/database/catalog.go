@@ -27,7 +27,11 @@ type CatalogStore struct{ *core }
 // many repositories it holds. The package count is separate
 // (CountRepoPackageNames), and the newest-package time is optional: both probe
 // every package table, which the list filters do not need.
-func (p *CatalogStore) RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error) {
+func (p *CatalogStore) RepoCatalogStats(
+	ctx context.Context,
+	repoIDs []string,
+	withLastPublished bool,
+) (map[string]models.RepoStats, error) {
 	stats := make(map[string]models.RepoStats, len(repoIDs))
 	if len(repoIDs) == 0 {
 		return stats, nil

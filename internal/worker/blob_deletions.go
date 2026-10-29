@@ -59,6 +59,11 @@ type BlobDeletionStats struct {
 	Pending int64
 }
 
+// BlobDeletionSweeperStore is the part of the database BlobDeletionSweeper uses needs.
+type BlobDeletionSweeperStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+}
+
 // BlobDeletionSweeper removes the bytes of deleted blobs and retired tier
 // copies that SafeDeleteBlob and the tier mover queued (database.BlobDeletion).
 //
@@ -77,7 +82,7 @@ type BlobDeletionStats struct {
 type BlobDeletionSweeper struct {
 	*lifecycle
 
-	db        database.Database
+	db        BlobDeletionSweeperStore
 	queue     database.BlobDeletionStore
 	placement placementReader
 	store     BlobByteStore
@@ -92,7 +97,7 @@ type BlobDeletionSweeper struct {
 // works) and batch the number of deletions claimed at a time. Without a
 // database that implements database.BlobDeletionStore the sweeper does nothing.
 func NewBlobDeletionSweeper(
-	db database.Database,
+	db BlobDeletionSweeperStore,
 	store BlobByteStore,
 	log *logger.Logger,
 	interval time.Duration,

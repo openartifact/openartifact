@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/ai"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -38,10 +37,17 @@ type aiRuntime struct {
 	autoAnalyze bool
 }
 
+// AIAnalysisStore is the part of the database AIAnalysisWorker uses needs.
+type AIAnalysisStore interface {
+	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
+}
+
 // AIAnalysisWorker processes artifact uploads asynchronously and enriches them
 // with AI-generated metadata (tags, summary, license status, security notes).
 type AIAnalysisWorker struct {
-	db    database.Database
+	db    AIAnalysisStore
 	blobs storage.BlobStore
 	log   *logger.Logger
 	rt    atomic.Pointer[aiRuntime]
@@ -62,7 +68,7 @@ type AIAnalysisWorker struct {
 // NewAIAnalysisWorker creates a new worker. Pass nil aiClient to disable AI calls
 // (records will be created with status "pending" for later processing). The
 // client and the auto-analysis switch can be replaced at runtime with Configure.
-func NewAIAnalysisWorker(db database.Database, aiClient *ai.Client, log *logger.Logger) *AIAnalysisWorker {
+func NewAIAnalysisWorker(db AIAnalysisStore, aiClient *ai.Client, log *logger.Logger) *AIAnalysisWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	w := &AIAnalysisWorker{

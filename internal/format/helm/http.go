@@ -39,12 +39,28 @@ import (
 
 const maxHelmUploadBytes = 100 << 20
 
-type HTTPHandler struct {
-	*base.Handler
-	DB database.Database
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateHelmChart(ctx context.Context, chart *models.HelmChart) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteHelmChart(ctx context.Context, repoID string, name string, version string) error
+	GetHelmChart(ctx context.Context, repoID string, name string, version string) (*models.HelmChart, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	HelmIndexStamp(ctx context.Context, repoID string) (string, error)
+	ListHelmCharts(ctx context.Context, repoID string) ([]*models.HelmChart, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+type HTTPHandler struct {
+	*base.Handler
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 

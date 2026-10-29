@@ -26,6 +26,22 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// VulnStore is the part of the database VulnHandler uses needs.
+type VulnStore interface {
+	repoAccessStore
+	CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
+	DeleteVulnScanResult(ctx context.Context, repoID string, id string) error
+	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error)
+	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
+	GetVulnScanResultByID(ctx context.Context, repoID string, id string) (*models.VulnScanResult, error)
+	ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error)
+	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
+	SetVulnScanQuarantine(ctx context.Context, repoID string, id string, quarantined bool) error
+	UpdateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
+	VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error)
+}
+
 // VulnHandler handles vulnerability scanning endpoints.
 type VulnHandler struct {
 	repoAccess
@@ -54,7 +70,7 @@ type VulnHandler struct {
 	// fwd, when set (server.role=web), receives the scans for a worker process
 	// to run (ForwardScansTo).
 	fwd *workq.Store
-	db  database.Database
+	db  VulnStore
 }
 
 // WithExploit sets the enricher that marks findings with the CISA KEV and
@@ -136,7 +152,7 @@ func normalizeVulnScanners(single string, list []string) ([]string, bool) {
 // NewVulnHandler creates a new vulnerability handler. scanners provides the
 // scanner backends and their availability; nil means the defaults (trivy and
 // grype from PATH, no database refresh).
-func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, scanners *vuln.Registry) *VulnHandler {
+func NewVulnHandler(db VulnStore, log *logger.Logger, evaluator *auth.Evaluator, scanners *vuln.Registry) *VulnHandler {
 	if scanners == nil {
 		scanners = vuln.NewRegistry(log, vuln.Options{})
 	}

@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/database"
@@ -36,12 +38,24 @@ import (
 // maxRawUploadBytes bounds a single raw upload.
 const maxRawUploadBytes = 5 << 30
 
-type HTTPHandler struct {
-	*base.Handler
-	DB database.Database
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteRawArtifact(ctx context.Context, repoID string, path string) error
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListRawArtifacts(ctx context.Context, repoID string, prefix string) ([]*models.RawArtifact, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+type HTTPHandler struct {
+	*base.Handler
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 

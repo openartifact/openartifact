@@ -27,7 +27,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -50,16 +51,32 @@ const metadataMaxAge = 60
 // under its content-addressed URL.
 const distMaxAge = 3600
 
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteComposerPackage(ctx context.Context, repoID string, id string) error
+	GetComposerPackage(ctx context.Context, repoID string, name string, versionNormalized string) (*models.ComposerPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListComposerPackageNames(ctx context.Context, repoID string) ([]*models.ComposerPackageName, error)
+	ListComposerPackageVersions(ctx context.Context, repoID string, name string) ([]*models.ComposerPackage, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // HTTPHandler serves hosted Composer repositories.
 type HTTPHandler struct {
 	*base.Handler
 
 	metrics *metrics.Registry
-	DB      database.Database
+	DB      HTTPStore
 }
 
 // NewHTTPHandler creates the handler.
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 

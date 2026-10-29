@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -60,14 +59,24 @@ func (p Principal) IsToken() bool {
 	return p.TokenKind != ""
 }
 
+// EvaluatorStore is the part of the database Evaluator uses needs.
+type EvaluatorStore interface {
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
+	GetProjectByName(ctx context.Context, name string) (*models.Project, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error)
+	ListPublicRepositoryNames(ctx context.Context) ([]string, error)
+}
+
 type Evaluator struct {
-	db                 database.Database
+	db                 EvaluatorStore
 	regexCache         sync.Map
 	allowAnonymousRead bool
 	log                *logger.Logger
 }
 
-func NewEvaluator(db database.Database, log *logger.Logger, allowAnonymousRead bool) *Evaluator {
+func NewEvaluator(db EvaluatorStore, log *logger.Logger, allowAnonymousRead bool) *Evaluator {
 	return &Evaluator{
 		db:                 db,
 		allowAnonymousRead: allowAnonymousRead,

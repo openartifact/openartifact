@@ -11,18 +11,23 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AdminAuditStore is the part of the database AdminAuditHandler uses needs.
+type AdminAuditStore interface {
+	auditExportStore
+	resolveAuditEntriesStore
+}
+
 type AdminAuditHandler struct {
-	db        database.Database
+	db        AdminAuditStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminAuditHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminAuditHandler {
+func NewAdminAuditHandler(db AdminAuditStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminAuditHandler {
 	return &AdminAuditHandler{db: db, log: log, evaluator: evaluator}
 }
 

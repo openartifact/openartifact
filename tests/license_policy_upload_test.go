@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
@@ -269,9 +268,9 @@ func TestNPMPublish_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 }
 
 // newLicensedNPMRouter serves the npm upload handler over the case's policy store.
-func newLicensedNPMRouter(db database.Database, bs *MockBlobStore) chi.Router {
+func newLicensedNPMRouter(db api.NPMUploadStore, bs *MockBlobStore) chi.Router {
 	log, _ := logger.New("info", "json", "stdout")
-	h := api.NewNPMUploadHandler(log, db, bs, "http://localhost:8080", nil)
+	h := api.NewNPMUploadHandler(log, db, bs, nil)
 	router := chi.NewRouter()
 	router.Use(authenticateTestBearer)
 	h.Register(router)
@@ -281,7 +280,7 @@ func newLicensedNPMRouter(db database.Database, bs *MockBlobStore) chi.Router {
 
 func uploadRPMWithLicense(
 	t *testing.T,
-	db database.Database,
+	db api.RPMUploadStore,
 	bs *MockBlobStore,
 	pub *recordingPublisher,
 	license string,
@@ -359,7 +358,7 @@ func mavenPom(license string) []byte {
 		`<groupId>com.example</groupId><artifactId>myapp</artifactId><version>1.0.0</version>` + lic + `</project>`)
 }
 
-func newLicensedMavenRouter(t *testing.T, db database.Database, pub *mavenRecordingPublisher) chi.Router {
+func newLicensedMavenRouter(t *testing.T, db api.MavenUploadStore, pub *mavenRecordingPublisher) chi.Router {
 	t.Helper()
 
 	log, _ := logger.New("info", "json", "stdout")

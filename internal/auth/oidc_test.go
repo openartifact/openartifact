@@ -22,7 +22,6 @@ import (
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -117,7 +116,12 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	return f
 }
 
-func exchangeErr(t *testing.T, db database.Database, code string) error {
+// exchangeErrStore is the part of the database exchangeErr uses needs.
+type exchangeErrStore interface {
+	ExchangeWithRetryStore
+}
+
+func exchangeErr(t *testing.T, db exchangeErrStore, code string) error {
 	t.Helper()
 
 	res, err := ExchangeWithRetry(context.Background(), db, "oidc-retry", "http://localhost", code, "verifier")

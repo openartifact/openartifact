@@ -15,7 +15,6 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/dtrack"
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -37,18 +36,31 @@ type DTrackPusher interface {
 	Enqueue(j dtrack.Job) bool
 }
 
+// DependencyTrackStore is the part of the database DependencyTrackHandler uses needs.
+type DependencyTrackStore interface {
+	repoAccessStore
+	DeleteRepositoryDependencyTrack(ctx context.Context, repoID string) (bool, error)
+	GetDependencyTrackPush(ctx context.Context, repoID string, artifactID string) (*models.DependencyTrackPush, error)
+	GetRepositoryDependencyTrack(ctx context.Context, repoID string) (*models.RepositoryDependencyTrack, error)
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+	ListDependencyTrackPushes(ctx context.Context, repoID string, limit int) ([]*models.DependencyTrackPush, error)
+	SetSystemSetting(ctx context.Context, key string, value string) error
+	UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error
+	UpsertRepositoryDependencyTrack(ctx context.Context, c *models.RepositoryDependencyTrack) error
+}
+
 // DependencyTrackHandler manages the Dependency-Track integration: the global
 // settings, per-repository overrides, connection tests and manual pushes.
 type DependencyTrackHandler struct {
 	repoAccess
 
 	pusher DTrackPusher
-	db     database.Database
+	db     DependencyTrackStore
 }
 
 // NewDependencyTrackHandler creates the handler; pusher may be nil (manual pushes then answer 501).
 func NewDependencyTrackHandler(
-	db database.Database,
+	db DependencyTrackStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	pusher DTrackPusher,
@@ -534,14 +546,19 @@ func (h *DependencyTrackHandler) handleListPushes(w http.ResponseWriter, r *http
 
 // ---- document sources --------------------------------------------------------
 
+// DTrackSourcesStore is the part of the database DTrackSources uses needs.
+type DTrackSourcesStore interface {
+	storedArtifactMetadataStore
+}
+
 // DTrackSources builds the documents pushed to Dependency-Track from stored state.
 type DTrackSources struct {
-	db  database.Database
+	db  DTrackSourcesStore
 	gen *sbom.Generator
 }
 
 // NewDTrackSources creates the sources over db and the SBOM generator.
-func NewDTrackSources(db database.Database, gen *sbom.Generator) *DTrackSources {
+func NewDTrackSources(db DTrackSourcesStore, gen *sbom.Generator) *DTrackSources {
 	return &DTrackSources{db: db, gen: gen}
 }
 

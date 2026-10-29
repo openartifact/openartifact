@@ -91,9 +91,14 @@ func GuardRelease(r *http.Request, repo *models.Repository, format, version stri
 	return ErrImmutableRelease
 }
 
+// GuardReleaseByNameStore is the part of the database GuardReleaseByName uses needs.
+type GuardReleaseByNameStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 // GuardReleaseByName is GuardRelease for handlers that only have the
 // repository name.
-func GuardReleaseByName(r *http.Request, db database.Database, repoName, format, version string) error {
+func GuardReleaseByName(r *http.Request, db GuardReleaseByNameStore, repoName, format, version string) error {
 	repo, err := db.GetRepositoryByName(r.Context(), repoName)
 	if err != nil {
 		return fmt.Errorf("look up repository: %w", err)

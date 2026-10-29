@@ -339,7 +339,7 @@ func TestRecoveryRebuildServedMetadata(t *testing.T) {
 	npm := newREEnv(t, srcDB, dstDB, bs, "npm", reMountServed(
 		func(t *testing.T, r chi.Router, pg *database.PostgresDB, bs storage.BlobStore) {
 			t.Helper()
-			api.NewNPMUploadHandler(newTestLogger(t), pg, bs, "http://localhost", nil).Register(r)
+			api.NewNPMUploadHandler(newTestLogger(t), pg, bs, nil).Register(r)
 		},
 		func(t *testing.T, r chi.Router, pg *database.PostgresDB, bs storage.BlobStore) {
 			t.Helper()

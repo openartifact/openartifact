@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -29,14 +28,24 @@ type CleanupRunner interface {
 	PreviewPolicy(ctx context.Context, policyID string) (*worker.CleanupPreview, error)
 }
 
+// CleanupStore is the part of the database CleanupHandler uses needs.
+type CleanupStore interface {
+	repoAccessStore
+	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
+	DeleteCleanupPolicy(ctx context.Context, id string) error
+	GetCleanupPolicy(ctx context.Context, id string) (*models.CleanupPolicy, error)
+	ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error)
+	UpdateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
+}
+
 type CleanupHandler struct {
 	repoAccess
 
 	runner CleanupRunner
-	db     database.Database
+	db     CleanupStore
 }
 
-func NewCleanupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, runner CleanupRunner) *CleanupHandler {
+func NewCleanupHandler(db CleanupStore, log *logger.Logger, evaluator *auth.Evaluator, runner CleanupRunner) *CleanupHandler {
 	return &CleanupHandler{repoAccess: newRepoAccess(db, log, evaluator), runner: runner, db: db}
 }
 

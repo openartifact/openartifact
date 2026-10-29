@@ -8,8 +8,10 @@ import (
 	"errors"
 	"net/http"
 
+	"context"
+
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -49,13 +51,20 @@ type ssoSessionParams struct {
 	IDToken string
 }
 
+// establishSSOSessionStore is the part of the database establishSSOSession uses needs.
+type establishSSOSessionStore interface {
+	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)
+	DeleteSession(ctx context.Context, tokenHash string) error
+	SetSessionSSO(ctx context.Context, sessionID string, providerSlug string, encryptedIDToken string) error
+}
+
 // establishSSOSession rotates the browser session: any session the request
 // already carries is revoked before a fresh one (new random token, new CSRF
 // token) is created, so an identifier planted or captured before login never
 // becomes an authenticated session. It writes the session and CSRF cookies and
 // reports whether it succeeded; on failure it has written the error response.
 func establishSSOSession(
-	w http.ResponseWriter, r *http.Request, db database.Database, log *logger.Logger,
+	w http.ResponseWriter, r *http.Request, db establishSSOSessionStore, log *logger.Logger,
 	baseURL string, trusted *middleware.TrustedProxies, p ssoSessionParams,
 ) bool {
 	ctx := r.Context()

@@ -25,13 +25,47 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// BundlesStore is the part of the database BundlesHandler uses needs.
+type BundlesStore interface {
+	repoAccessStore
+	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	CreatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error
+	CreateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeletePromotionPipeline(ctx context.Context, id string) error
+	DeleteReleaseBundle(ctx context.Context, id string) error
+	GetBundleItem(ctx context.Context, bundleID string, sha256 string) (*models.ReleaseBundleItem, error)
+	GetPromotionPipelineByID(ctx context.Context, id string) (*models.PromotionPipeline, error)
+	GetPromotionPipelineByName(ctx context.Context, name string) (*models.PromotionPipeline, error)
+	GetReleaseBundle(ctx context.Context, name string, version string) (*models.ReleaseBundle, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error)
+	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListPromotionPipelines(ctx context.Context) ([]*models.PromotionPipeline, error)
+	ListReleaseBundles(
+		ctx context.Context,
+		nameFilter string,
+		stateFilter string,
+		page int,
+		limit int,
+	) ([]*models.ReleaseBundle, int, error)
+	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
+	RemoveBundleItem(ctx context.Context, bundleID string, sha256 string) error
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SealReleaseBundle(ctx context.Context, bundleID string, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error)
+	UpdatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error
+	UpdateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
+}
+
 type BundlesHandler struct {
 	repoAccess
 
 	keys      BundleKeyResolver
 	promoter  *promote.Engine
 	publisher webhook.Publisher
-	db        database.Database
+	db        BundlesStore
 }
 
 const (
@@ -121,7 +155,7 @@ func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.Pip
 	return "", nil
 }
 
-func NewBundlesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
+func NewBundlesHandler(db BundlesStore, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
 	return &BundlesHandler{repoAccess: newRepoAccess(db, log, evaluator), promoter: promote.NewEngine(db, log, nil), db: db}
 }
 

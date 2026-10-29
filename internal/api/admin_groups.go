@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
@@ -22,13 +24,26 @@ import (
 
 var groupNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,64}$`)
 
+// AdminGroupsStore is the part of the database AdminGroupsHandler uses needs.
+type AdminGroupsStore interface {
+	AddUserToGroup(ctx context.Context, userID string, groupID string) error
+	CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error)
+	DeleteGroup(ctx context.Context, id string) error
+	GetGroupByID(ctx context.Context, id string) (*models.Group, error)
+	ListGroups(ctx context.Context) ([]*models.Group, error)
+	ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error)
+	ListUsersByGroup(ctx context.Context, groupID string) ([]*models.User, error)
+	RemoveUserFromGroup(ctx context.Context, userID string, groupID string) error
+	UpdateGroup(ctx context.Context, group *models.Group) error
+}
+
 type AdminGroupsHandler struct {
-	db        database.Database
+	db        AdminGroupsStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminGroupsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminGroupsHandler {
+func NewAdminGroupsHandler(db AdminGroupsStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminGroupsHandler {
 	return &AdminGroupsHandler{db: db, log: log, evaluator: evaluator}
 }
 

@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -55,8 +54,17 @@ const (
 	webhookResponseTruncatedMarker = "\n[response body truncated]"
 )
 
+// DispatcherStore is the part of the database Dispatcher uses needs.
+type DispatcherStore interface {
+	ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error)
+	CreateWebhookDelivery(ctx context.Context, delivery *models.WebhookDelivery) error
+	GetWebhook(ctx context.Context, id string) (*models.Webhook, error)
+	ListWebhooksForEvent(ctx context.Context, repoID string, eventType string) ([]*models.Webhook, error)
+	UpdateWebhookDelivery(ctx context.Context, delivery *models.WebhookDelivery) error
+}
+
 type Dispatcher struct {
-	db     database.Database
+	db     DispatcherStore
 	log    *logger.Logger
 	client *http.Client
 	// insecureClient skips TLS verification for webhooks with ssl_verify=false.
@@ -93,7 +101,7 @@ const (
 	DefaultPollInterval = 30 * time.Second
 )
 
-func NewDispatcher(db database.Database, log *logger.Logger) *Dispatcher {
+func NewDispatcher(db DispatcherStore, log *logger.Logger) *Dispatcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Dispatcher{
 		db:             db,

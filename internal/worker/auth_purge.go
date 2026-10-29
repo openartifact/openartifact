@@ -9,9 +9,13 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// AuthPurgeStore is the part of the database AuthPurgeWorker uses needs.
+type AuthPurgeStore interface {
+	GetDB() *sql.DB
+}
 
 // AuthPurgeWorker periodically deletes expired sessions, long-expired or
 // revoked API tokens (and the service accounts of project tokens) and finished webhook deliveries so those tables do not
@@ -19,7 +23,7 @@ import (
 type AuthPurgeWorker struct {
 	*lifecycle
 
-	db       database.Database
+	db       AuthPurgeStore
 	log      *logger.Logger
 	interval time.Duration
 	started  bool
@@ -29,7 +33,7 @@ type AuthPurgeWorker struct {
 	webhookRetentionDays int
 }
 
-func NewAuthPurgeWorker(db database.Database, log *logger.Logger) *AuthPurgeWorker {
+func NewAuthPurgeWorker(db AuthPurgeStore, log *logger.Logger) *AuthPurgeWorker {
 	return &AuthPurgeWorker{
 		lifecycle: newLifecycle(),
 		db:        db,

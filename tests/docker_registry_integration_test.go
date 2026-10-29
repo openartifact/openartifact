@@ -40,7 +40,7 @@ func newDockerRegistry(t *testing.T) *dockerRegistry {
 	}
 
 	r := chi.NewRouter()
-	formatdocker.NewHTTPHandler(newTestLogger(t), pg, store, "http://localhost").RegisterRoutes(r)
+	formatdocker.NewHTTPHandler(newTestLogger(t), pg, store).RegisterRoutes(r)
 
 	return &dockerRegistry{t: t, pg: pg, router: r}
 }

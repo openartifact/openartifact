@@ -255,7 +255,12 @@ func (f *fakeDB) EnsureBlob(_ context.Context, sha256Hex, _ string, _ int64) (st
 	return sha256Hex, nil
 }
 
-func newTestEngine(t *testing.T, db database.Database) (*Engine, storage.BlobStore) {
+// testEngineStore is the part of the database newTestEngine uses needs.
+type testEngineStore interface {
+	EngineStore
+}
+
+func newTestEngine(t *testing.T, db testEngineStore) (*Engine, storage.BlobStore) {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")

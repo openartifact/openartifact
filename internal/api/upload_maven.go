@@ -43,9 +43,26 @@ import (
 
 const MaxMavenUploadBytes int64 = 1 << 30 // 1 GiB
 
+// MavenUploadStore is the part of the database MavenUploadHandler uses needs.
+type MavenUploadStore interface {
+	inheritedPOMLicensesStore
+	quarantineSiblingsStore
+	recordPOMLicensesStore
+	reevaluateWaitingPOMsStore
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteMavenArtifact(ctx context.Context, id string) error
+	GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error)
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
+}
+
 type MavenUploadHandler struct {
 	log         *logger.Logger
-	db          database.Database
+	db          MavenUploadStore
 	blobStore   storage.BlobStore
 	reg         *metrics.Registry
 	mavenWorker *worker.MavenMetadataWorker
@@ -59,7 +76,7 @@ func (h *MavenUploadHandler) SetPublisher(p webhook.Publisher) {
 
 func NewMavenUploadHandler(
 	log *logger.Logger,
-	db database.Database,
+	db MavenUploadStore,
 	blobStore storage.BlobStore,
 	reg *metrics.Registry,
 ) *MavenUploadHandler {

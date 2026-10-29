@@ -45,12 +45,31 @@ import (
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
 )
 
-type HTTPHandler struct {
-	*base.Handler
-	DB database.Database
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	GetRubyGem(ctx context.Context, repoID string, name string, version string, platform string) (*models.RubyGem, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListRubyGemSpecs(ctx context.Context, repoID string) ([]*models.RubyGem, error)
+	ListRubyGemVersions(ctx context.Context, repoID string, name string) ([]*models.RubyGem, error)
+	ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	RubyGemsSpecsStamp(ctx context.Context, repoID string) (string, error)
+	SearchRubyGems(ctx context.Context, repoID string, query string) ([]*models.RubyGem, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+	YankRubyGem(ctx context.Context, repoID string, name string, version string, platform string, yanked bool) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+type HTTPHandler struct {
+	*base.Handler
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 

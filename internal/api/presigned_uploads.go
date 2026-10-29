@@ -67,6 +67,25 @@ const (
 
 var sha256HexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// PresignedUploadStore is the part of the database PresignedUploadHandler uses needs.
+type PresignedUploadStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	ClaimPresignedUpload(ctx context.Context, repoID string, id string, lease time.Duration) (bool, error)
+	CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeletePresignedUpload(ctx context.Context, id string) error
+	ExtendPresignedUploadExpiry(ctx context.Context, id string, expiresAt time.Time) error
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetPresignedUpload(ctx context.Context, repoID string, id string) (*models.PresignedUpload, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	MarkPresignedUploadCompleted(ctx context.Context, id string, artifactID string) error
+	ReleasePresignedUpload(ctx context.Context, id string) error
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SetPresignedUploadMultipartID(ctx context.Context, id string, multipartID string) error
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // PresignedUploadHandler implements client-direct uploads: the client PUTs the
 // bytes straight to the object store using a short-lived presigned URL, then
 // calls complete so the server can verify size and sha256 and record the
@@ -82,13 +101,13 @@ type PresignedUploadHandler struct {
 	urlTTL     time.Duration
 	maxPending int
 	reg        *metrics.Registry
-	DB         database.Database
+	DB         PresignedUploadStore
 }
 
 // NewPresignedUploadHandler builds the handler. blobStore may or may not
 // support staging uploads; an unsupported backend answers 501 without recording
 // anything. maxPending caps one user's outstanding uploads (0 = unlimited).
-func NewPresignedUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore,
+func NewPresignedUploadHandler(log *logger.Logger, db PresignedUploadStore, blobStore storage.BlobStore,
 	evaluator *auth.Evaluator, urlTTL time.Duration, maxPending int, reg *metrics.Registry,
 ) *PresignedUploadHandler {
 	var staging storage.StagingStore

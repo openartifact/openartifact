@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
@@ -36,10 +35,23 @@ type Authorizer interface {
 	Evaluate(ctx context.Context, principal auth.Principal, repoName, artifactPath, action string) (bool, error)
 }
 
+// DispatcherStore is the part of the database Dispatcher uses needs.
+type DispatcherStore interface {
+	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
+	GetGroupPackageOwner(ctx context.Context, groupID string, path string) (string, bool, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	HasCondaPackageName(ctx context.Context, repoID string, name string) (bool, error)
+	IvyModuleExists(ctx context.Context, repoID string, organisation string, module string) (bool, error)
+	ListCondaPackageNames(ctx context.Context, repoID string) ([]string, error)
+	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	SBTModuleExists(ctx context.Context, repoID string, groupID string, artifactID string) (bool, error)
+}
+
 // Dispatcher serves proxy and group repositories.
 type Dispatcher struct {
 	log   *logger.Logger
-	db    database.Database
+	db    DispatcherStore
 	proxy *proxy.Service
 	group *group.Handler
 	authz Authorizer
@@ -52,7 +64,7 @@ type Dispatcher struct {
 }
 
 // New creates a Dispatcher.
-func New(log *logger.Logger, db database.Database, proxySvc *proxy.Service, authz Authorizer, hosted map[string]http.Handler) *Dispatcher {
+func New(log *logger.Logger, db DispatcherStore, proxySvc *proxy.Service, authz Authorizer, hosted map[string]http.Handler) *Dispatcher {
 	return &Dispatcher{
 		log:    log,
 		db:     db,

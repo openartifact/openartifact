@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
@@ -167,9 +166,14 @@ func nuspecWithLicense(licenseXML string) string {
 </package>`
 }
 
+// pushNuspecStore is the part of the database pushNuspec uses needs.
+type pushNuspecStore interface {
+	HTTPStore
+}
+
 func pushNuspec(
 	t *testing.T,
-	db database.Database,
+	db pushNuspecStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	nuspec string,

@@ -22,7 +22,6 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	oaauth "github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -134,13 +133,32 @@ type Options struct {
 	AITriggerPerMinute int
 }
 
+// ServerStore is the part of the database Server uses needs.
+type ServerStore interface {
+	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit int,
+		offset int,
+	) ([]*models.AIAnalysis, int, error)
+	ListComponentsByRepo(ctx context.Context, repoID string, formatFilter string, page int, limit int) ([]*models.Component, int, error)
+	ListRepositories(ctx context.Context, page int, limit int, formatFilter string) ([]*models.Repository, error)
+	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
+}
+
 // Server wraps the MCP server with OpenArtifact dependencies.
 type Server struct {
 	authorizer Authorizer       // nil denies every repository-scoped call
 	readFilter ReadFilterFunc   // nil hides every repository from listings
 	searcher   ArtifactSearcher // nil disables cross-repository search
 	mcpServer  *sdk.Server
-	db         database.Database
+	db         ServerStore
 	analyzer   AIAnalyzer
 	log        *logger.Logger
 	baseURL    string
@@ -154,7 +172,7 @@ type Server struct {
 }
 
 // NewServer creates a new MCP server with all OpenArtifact tools registered.
-func NewServer(db database.Database, analyzer AIAnalyzer, log *logger.Logger, opts Options) *Server {
+func NewServer(db ServerStore, analyzer AIAnalyzer, log *logger.Logger, opts Options) *Server {
 	version := opts.Version
 	if version == "" {
 		version = "dev"

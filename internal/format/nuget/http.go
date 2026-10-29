@@ -60,6 +60,24 @@ const (
 // would be stored but never retrievable through the URL routes.
 var validPackageID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteNuGetPackage(ctx context.Context, repoID string, packageID string, version string) error
+	GetNuGetPackage(ctx context.Context, repoID string, packageID string, version string) (*models.NuGetPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	IncrementNuGetDownloadCount(ctx context.Context, repoID string, packageID string, version string) error
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ListNuGetPackageVersions(ctx context.Context, repoID string, packageID string) ([]*models.NuGetPackage, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SearchNuGetPackages(ctx context.Context, repoID string, query string, skip int, take int) ([]*models.NuGetPackage, int, error)
+	SetNuGetDependencyGroups(ctx context.Context, repoID string, packageID string, version string, groups []byte) error
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 type HTTPHandler struct {
 	*base.Handler
 
@@ -69,10 +87,10 @@ type HTTPHandler struct {
 	// concurrent nupkg reads behind cache misses.
 	deps       *depCache
 	nuspecGate base.Gate
-	DB         database.Database
+	DB         HTTPStore
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{
 		Handler:    base.New(log, db, blobStore, baseURL),
 		maxPush:    maxNuGetPackageBytes,

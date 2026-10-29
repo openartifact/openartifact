@@ -34,6 +34,17 @@ const (
 	emptyTrashBatch    = 100
 )
 
+// TrashStore is the part of the database TrashHandler uses needs.
+type TrashStore interface {
+	collectOrphansAsyncStore
+	reclaimMetadataBlobsStore
+	repoAccessStore
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	MarkPackumentStale(ctx context.Context, packageID string) error
+	MarkRepoStale(ctx context.Context, repositoryID string) error
+}
+
 // TrashHandler serves the trash API: listing, restoring and purging soft-deleted
 // packages and repositories.
 //
@@ -52,10 +63,10 @@ type TrashHandler struct {
 	// tasks runs the detached orphan-blob collections started by repository
 	// purges; they are cancelled at server shutdown.
 	tasks *bgtask.Runner
-	db    database.Database
+	db    TrashStore
 }
 
-func NewTrashHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
+func NewTrashHandler(db TrashStore, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
 	return &TrashHandler{repoAccess: newRepoAccess(db, log, evaluator), tasks: bgtask.New(context.Background()), db: db}
 }
 

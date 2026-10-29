@@ -25,7 +25,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -40,14 +41,37 @@ const FormatName = "ansible"
 // metadata before revalidating.
 const metadataMaxAge = 60
 
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteAnsibleCollection(ctx context.Context, repoID string, id string) error
+	GetAnsibleCollection(
+		ctx context.Context,
+		repoID string,
+		namespace string,
+		name string,
+		version string,
+	) (*models.AnsibleCollection, error)
+	GetAnsibleCollectionByID(ctx context.Context, repoID string, id string) (*models.AnsibleCollection, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAnsibleCollectionNames(ctx context.Context, repoID string, limit int, offset int) ([]*models.AnsibleCollectionName, int, error)
+	ListAnsibleCollectionVersions(ctx context.Context, repoID string, namespace string, name string) ([]*models.AnsibleCollection, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+}
+
 // HTTPHandler serves hosted Ansible collection repositories.
 type HTTPHandler struct {
 	*base.Handler
-	DB database.Database
+	DB HTTPStore
 }
 
 // NewHTTPHandler creates the handler.
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 

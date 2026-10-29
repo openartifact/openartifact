@@ -129,8 +129,88 @@ func redactedStorageConfig(raw []byte) []byte {
 	return out
 }
 
+// EngineStore is the part of the database Engine uses needs.
+type EngineStore interface {
+	AddBundleItem(ctx context.Context, item *models.ReleaseBundleItem) error
+	AddGroupMember(ctx context.Context, groupRepoID string, memberRepoID string, priority int) error
+	AddProjectMember(ctx context.Context, projectID string, userID string, role string) error
+	AddUserToGroup(ctx context.Context, userID string, groupID string) error
+	BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (database.SnapshotReader, error)
+	CreateAnsibleCollection(ctx context.Context, c *models.AnsibleCollection) error
+	CreateApkPackage(ctx context.Context, p *models.ApkPackage) error
+	CreateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
+	CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error
+	CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error
+	CreateComposerPackage(ctx context.Context, p *models.ComposerPackage) error
+	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
+	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
+	CreateDebPackage(ctx context.Context, pkg *models.Component, distID string, compID string) error
+	CreateDebianArchitecture(ctx context.Context, arch *models.DebianArchitecture) error
+	CreateDebianComponent(ctx context.Context, comp *models.DebianComponent) error
+	CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error
+	CreateDockerBlob(ctx context.Context, blob *models.DockerBlob) error
+	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error
+	CreateGoModule(ctx context.Context, mod *models.GoModule) error
+	CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error)
+	CreateHelmChart(ctx context.Context, chart *models.HelmChart) error
+	CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error
+	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
+	CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error
+	CreateNPMPackage(ctx context.Context, p *models.NPMPackage) (*models.NPMPackage, error)
+	CreateNPMVersion(ctx context.Context, v *models.NPMVersion) (*models.NPMVersion, error)
+	CreateNixPath(ctx context.Context, p *models.NixPath) error
+	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
+	CreatePacmanPackage(ctx context.Context, pkg *models.PacmanPackage) error
+	CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error)
+	CreateProject(ctx context.Context, project *models.Project) error
+	CreatePromotionPipeline(ctx context.Context, p *models.PromotionPipeline) error
+	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
+	CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) error
+	CreateReleaseBundle(ctx context.Context, b *models.ReleaseBundle) error
+	CreateRepository(ctx context.Context, repo *models.Repository) error
+	CreateRpmPackage(ctx context.Context, pkg *models.Component) error
+	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
+	CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error
+	CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error
+	CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
+	CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error
+	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
+	CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error
+	CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error
+	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
+	CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error
+	CreateWebhook(ctx context.Context, wh *models.Webhook) error
+	EnsureBlob(ctx context.Context, sha256 string, mediaType string, size int64) (string, error)
+	GetBackupJob(ctx context.Context, id string) (*models.BackupJob, error)
+	GetOrCreatePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetRPMRepo(ctx context.Context, repositoryID string) (*models.RPMRepo, error)
+	ListMavenArtifactsByRepo(ctx context.Context, repoID string) ([]*models.MavenArtifact, error)
+	MarkRepoStale(ctx context.Context, repositoryID string) error
+	ReconcileAllStorageUsage(ctx context.Context) (int64, error)
+	SetProjectGroup(ctx context.Context, projectID string, groupID string, role string, createdBy *string) error
+	SetProjectQuota(
+		ctx context.Context,
+		projectID string,
+		maxSizeBytes int64,
+		maxArtifactCount int64,
+		warnThresholdPercent int,
+	) (*models.ProjectQuota, error)
+	UpdateBackupJob(ctx context.Context, job *models.BackupJob) error
+	UpdateRepository(ctx context.Context, repo *models.Repository) error
+	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
+	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
+	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
+	UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error
+	UpsertNPMDistTag(ctx context.Context, t *models.NPMDistTag) (*models.NPMDistTag, error)
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
+	UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error
+}
+
 type Engine struct {
-	db        database.Database
+	db        EngineStore
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	backupDir string
@@ -172,7 +252,7 @@ type Regenerator interface {
 // maven and rpm metadata immediately instead of waiting for the next upload.
 func (e *Engine) SetRegenerator(r Regenerator) { e.regen = r }
 
-func NewEngine(db database.Database, blobStore storage.BlobStore, log *logger.Logger, backupDir string) *Engine {
+func NewEngine(db EngineStore, blobStore storage.BlobStore, log *logger.Logger, backupDir string) *Engine {
 	return &Engine{
 		db:        db,
 		blobStore: blobStore,

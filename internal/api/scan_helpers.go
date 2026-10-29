@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/openartifact/openartifact/internal/database"
 )
 
 const (
@@ -77,13 +76,18 @@ func plainTextProblem(label, s string) string {
 	return ""
 }
 
+// storedArtifactMetadataStore is the part of the database storedArtifactMetadata uses needs.
+type storedArtifactMetadataStore interface {
+	ListArtifactProperties(ctx context.Context, repoID string, artifactID string) (map[string]string, error)
+}
+
 // storedArtifactMetadata builds the metadata map used by license detection and
 // SBOM generation from the artifact's stored properties rather than from
 // caller-supplied request data. Recognised properties:
 //
 //	license, licenses (comma separated), spdx_id, spdxId  -> license detection
 //	dependencies (JSON array of {"name","version"})       -> SBOM components
-func storedArtifactMetadata(ctx context.Context, db database.Database, repoID, artifactID string) (map[string]any, error) {
+func storedArtifactMetadata(ctx context.Context, db storedArtifactMetadataStore, repoID, artifactID string) (map[string]any, error) {
 	props, err := db.ListArtifactProperties(ctx, repoID, artifactID)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // caller logs and maps to 500

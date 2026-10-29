@@ -19,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -455,7 +454,7 @@ func (p *recordingPublisher) snapshot() []publishedEvent {
 	return append([]publishedEvent(nil), p.events...)
 }
 
-func newRPMUploadRouter(t *testing.T, db database.Database, blobStore storage.BlobStore, pub *recordingPublisher) chi.Router {
+func newRPMUploadRouter(t *testing.T, db api.RPMUploadStore, blobStore storage.BlobStore, pub *recordingPublisher) chi.Router {
 	t.Helper()
 
 	h := api.NewRPMUploadHandler(newHandlerLogger(t), db, blobStore, nil)

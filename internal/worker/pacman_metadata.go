@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -24,13 +25,24 @@ import (
 	"github.com/openartifact/openartifact/pkg/pacman"
 )
 
+// PacmanMetadataStore is the part of the database PacmanMetadataWorker uses needs.
+type PacmanMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	ListPacmanFileLists(ctx context.Context, repoID string) (map[string]string, error)
+	ListPacmanPackages(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	ListPacmanPackagesWithoutFileList(ctx context.Context, repoID string) ([]*models.PacmanPackage, error)
+	SetPacmanFileList(ctx context.Context, repoID string, id string, fileList string) error
+	SetPacmanSignature(ctx context.Context, repoID string, id string, signature string, source string, key string) error
+}
+
 // PacmanMetadataWorker regenerates the pacman databases of hosted pacman
 // repositories: for each architecture directory the "db" and "files" archives
 // (repo-add layout), signed with the repository key, and the public key. It
 // also signs, with the same key, the packages the uploader did not sign. Runs
 // are coalesced by the regeneration queue.
 type PacmanMetadataWorker struct {
-	db        sq.Database
+	db        PacmanMetadataStore
 	blobStore storage.BlobStore
 	signers   gpg.Resolver
 	log       *logger.Logger
@@ -39,7 +51,12 @@ type PacmanMetadataWorker struct {
 }
 
 // NewPacmanMetadataWorker creates the worker.
-func NewPacmanMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *PacmanMetadataWorker {
+func NewPacmanMetadataWorker(
+	db PacmanMetadataStore,
+	blobStore storage.BlobStore,
+	signers gpg.Resolver,
+	log *logger.Logger,
+) *PacmanMetadataWorker {
 	w := &PacmanMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("pacman", log, w.regenerate)
 	w.q.setCodec(stringRegenCodec())

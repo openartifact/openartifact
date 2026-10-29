@@ -12,8 +12,10 @@ import (
 	"slices"
 	"strings"
 
+	"time"
+
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/pathseg"
@@ -102,7 +104,15 @@ type routeScope struct {
 	bundles bool
 }
 
-func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evaluator, log *logger.Logger) func(http.Handler) http.Handler {
+// RBACMiddlewareStore is the part of the database RBACMiddleware uses needs.
+type RBACMiddlewareStore interface {
+	authorizeProjectRouteStore
+	resolvePrincipalStore
+	serveMCPStore
+	writeAccessDeniedStore
+}
+
+func RBACMiddleware(cfg RBACConfig, db RBACMiddlewareStore, evaluator *auth.Evaluator, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -348,11 +358,16 @@ func passwordChangeBlocked(r *http.Request, principal *auth.Principal) bool {
 		(r.URL.Path != "/api/v1/auth/change-password" && r.URL.Path != "/api/v1/auth/logout")
 }
 
+// writeAccessDeniedStore is the part of the database writeAccessDenied uses needs.
+type writeAccessDeniedStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 func writeAccessDenied(
 	w http.ResponseWriter,
 	r *http.Request,
 	cfg RBACConfig,
-	db database.Database,
+	db writeAccessDeniedStore,
 	log *logger.Logger,
 	principal *auth.Principal,
 	credential string,
@@ -407,8 +422,13 @@ func writeAccessDenied(
 	})
 }
 
+// principalForUserStore is the part of the database principalForUser uses needs.
+type principalForUserStore interface {
+	ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error)
+}
+
 // principalForUser builds the request principal of an authenticated user.
-func principalForUser(ctx context.Context, db database.Database, log *logger.Logger, user principalUser) *auth.Principal {
+func principalForUser(ctx context.Context, db principalForUserStore, log *logger.Logger, user principalUser) *auth.Principal {
 	groups, err := db.ListGroupsByUser(ctx, user.id)
 	if err != nil {
 		// Fewer groups can only mean fewer rights: fail closed.
@@ -439,6 +459,12 @@ type principalUser struct {
 	serviceProject string
 }
 
+// resolvePrincipalStore is the part of the database resolvePrincipal uses needs.
+type resolvePrincipalStore interface {
+	sessionPrincipalStore
+	tokenPrincipalStore
+}
+
 // resolvePrincipal authenticates the request. Credential precedence: session
 // cookie, then token (Authorization: Bearer or Basic password), then the
 // deprecated legacy API key. It returns the principal and the credential kind
@@ -448,7 +474,7 @@ func resolvePrincipal(
 	ctx context.Context,
 	r *http.Request,
 	cfg RBACConfig,
-	db database.Database,
+	db resolvePrincipalStore,
 	log *logger.Logger,
 ) (*auth.Principal, string) {
 	if p := sessionPrincipal(ctx, r, db, log); p != nil {
@@ -490,7 +516,15 @@ func resolvePrincipal(
 	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
 }
 
-func sessionPrincipal(ctx context.Context, r *http.Request, db database.Database, log *logger.Logger) *auth.Principal {
+// sessionPrincipalStore is the part of the database sessionPrincipal uses needs.
+type sessionPrincipalStore interface {
+	principalForUserStore
+	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error
+}
+
+func sessionPrincipal(ctx context.Context, r *http.Request, db sessionPrincipalStore, log *logger.Logger) *auth.Principal {
 	cookie, err := r.Cookie(auth.SessionCookieName)
 	if err != nil || cookie.Value == "" {
 		return nil
@@ -519,7 +553,15 @@ func sessionPrincipal(ctx context.Context, r *http.Request, db database.Database
 	return p
 }
 
-func tokenPrincipal(ctx context.Context, tokenValue, kind string, db database.Database, log *logger.Logger) *auth.Principal {
+// tokenPrincipalStore is the part of the database tokenPrincipal uses needs.
+type tokenPrincipalStore interface {
+	principalForUserStore
+	GetTokenByHash(ctx context.Context, hash string) (*models.Token, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	UpdateTokenLastUsed(ctx context.Context, tokenID string) error
+}
+
+func tokenPrincipal(ctx context.Context, tokenValue, kind string, db tokenPrincipalStore, log *logger.Logger) *auth.Principal {
 	if !strings.HasPrefix(tokenValue, auth.TokenPrefixAccess) && !strings.HasPrefix(tokenValue, auth.TokenPrefixDeploy) {
 		return nil
 	}

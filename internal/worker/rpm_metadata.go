@@ -13,18 +13,30 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
+	"github.com/openartifact/openartifact/pkg/rpm"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
+// RPMetadataStore is the part of the database RPMetadataWorker uses needs.
+type RPMetadataStore interface {
+	metadataBlobsStore
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]rpm.Package, error)
+	UpdateRpmPackageExtra(ctx context.Context, repoID string, sha256 string, extra []byte) error
+}
+
 type RPMetadataWorker struct {
-	db        sq.Database
+	db        RPMetadataStore
 	blobStore storage.BlobStore
 	signers   gpg.Resolver
 	log       *logger.Logger
@@ -33,7 +45,7 @@ type RPMetadataWorker struct {
 }
 
 func NewRPMetadataWorker(
-	db sq.Database,
+	db RPMetadataStore,
 	blobStore storage.BlobStore,
 	signers gpg.Resolver,
 	log *logger.Logger,

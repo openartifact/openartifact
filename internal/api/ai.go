@@ -10,19 +10,35 @@ import (
 	"net/http"
 	"strconv"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AIStore is the part of the database AIHandler uses needs.
+type AIStore interface {
+	GetAIAnalysis(ctx context.Context, repoID string, artifactID string) (*models.AIAnalysis, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListAIAnalyses(
+		ctx context.Context,
+		repoID string,
+		status string,
+		licenseReviewOnly bool,
+		limit int,
+		offset int,
+	) ([]*models.AIAnalysis, int, error)
+}
+
 // AIHandler handles AI analysis REST endpoints.
 type AIHandler struct {
-	db        database.Database
+	db        AIStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	aiWorker  *worker.AIAnalysisWorker
@@ -35,7 +51,7 @@ const (
 )
 
 // NewAIHandler creates a new AI analysis handler.
-func NewAIHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, aiWorker *worker.AIAnalysisWorker) *AIHandler {
+func NewAIHandler(db AIStore, log *logger.Logger, evaluator *auth.Evaluator, aiWorker *worker.AIAnalysisWorker) *AIHandler {
 	return &AIHandler{db: db, log: log, evaluator: evaluator, aiWorker: aiWorker}
 }
 

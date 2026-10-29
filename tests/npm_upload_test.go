@@ -96,7 +96,7 @@ func buildPublishBody(t *testing.T, packageName, version string) []byte {
 
 func setupUploadRouter(db *MockDatabase, bs *MockBlobStore) chi.Router {
 	log, _ := logger.New("info", "json", "stdout")
-	h := api.NewNPMUploadHandler(log, db, bs, "http://localhost:8080", nil)
+	h := api.NewNPMUploadHandler(log, db, bs, nil)
 	router := chi.NewRouter()
 	router.Use(authenticateTestBearer)
 	h.Register(router)
@@ -128,7 +128,7 @@ func TestNPMPublish_BogusBearerWithoutPrincipalIsRejected(t *testing.T) {
 	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
 
 	log, _ := logger.New("info", "json", "stdout")
-	h := api.NewNPMUploadHandler(log, db, bs, "http://localhost:8080", nil)
+	h := api.NewNPMUploadHandler(log, db, bs, nil)
 	router := chi.NewRouter() // deliberately no authenticating middleware
 	h.Register(router)
 

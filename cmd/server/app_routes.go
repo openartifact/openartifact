@@ -270,11 +270,11 @@ func (a *app) newFormatHandlers() {
 	// All repo-scoped format handlers, including the npm publish/unpublish
 	// catch-all, share the /repos/{name} subrouter. A sibling /repos/{x}/*
 	// route outside it is shadowed by the mount and 404s.
-	a.web.uploads.npm = api.NewNPMUploadHandler(log, db, a.store.blobs, baseURL, a.reg)
+	a.web.uploads.npm = api.NewNPMUploadHandler(log, db, a.store.blobs, a.reg)
 	a.web.uploads.npm.SetNPMWorker(a.workers.npm)
 	f.gomod = formatgomod.NewHTTPHandler(log, db, served, baseURL)
 
-	f.docker = formatdocker.NewHTTPHandler(log, db, served, baseURL)
+	f.docker = formatdocker.NewHTTPHandler(log, db, served)
 	f.docker.SetUploadDir(dockerUploadDir(a.cfg))
 	f.docker.SetAuthorizer(a.web.evaluator)
 }

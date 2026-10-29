@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/license"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -25,13 +24,13 @@ type PropertiesHandler struct {
 	repoAccess
 
 	licenses artifactLicenseSource
-	db       database.Database
+	db       LicenseStore
 }
 
 // NewPropertiesHandler returns the artifact properties handler. blobs is the
 // store read to re-evaluate license policies on the artifact's own declared
 // licenses when a license property changes.
-func NewPropertiesHandler(log *logger.Logger, db database.Database, blobs storage.BlobStore) *PropertiesHandler {
+func NewPropertiesHandler(log *logger.Logger, db LicenseStore, blobs storage.BlobStore) *PropertiesHandler {
 	return &PropertiesHandler{
 		repoAccess: newRepoAccess(db, log, nil),
 		licenses:   artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)}, db: db,

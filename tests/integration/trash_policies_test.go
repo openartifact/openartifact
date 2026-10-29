@@ -73,10 +73,7 @@ func tpoNewEnv(t *testing.T) *tpoEnv {
 	t.Helper()
 	harness.Reset(t)
 
-	pg, ok := harness.Database.(*database.PostgresDB)
-	if !ok {
-		t.Fatalf("harness database is %T, want *database.PostgresDB", harness.Database)
-	}
+	pg := harness.Database
 
 	pg.SetTrashRetentionDays(7)
 	t.Cleanup(func() { pg.SetTrashRetentionDays(0) })

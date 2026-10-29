@@ -11,6 +11,8 @@ import (
 	"slices"
 	"time"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -61,6 +63,13 @@ type PurgeStats struct {
 	Capped bool
 }
 
+// TrashPurgeStore is the part of the database TrashPurgeWorker uses needs.
+type TrashPurgeStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetDB() *sql.DB
+}
+
 // TrashPurgeWorker permanently removes soft-deleted items (and repositories)
 // whose retention window has passed: it purges the rows, frees their blobs via
 // storage.SafeDeleteBlob (which keeps blobs other rows or repositories still
@@ -75,7 +84,7 @@ type PurgeStats struct {
 type TrashPurgeWorker struct {
 	*lifecycle
 
-	db        database.Database
+	db        TrashPurgeStore
 	store     database.TrashStore
 	blobStore storage.BlobStore
 	log       *logger.Logger
@@ -92,7 +101,7 @@ type TrashPurgeWorker struct {
 // scheduled passes; a non-positive interval disables the schedule (RunOnce
 // still works). Without a database that implements database.TrashStore the
 // worker does nothing.
-func NewTrashPurgeWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger, interval time.Duration) *TrashPurgeWorker {
+func NewTrashPurgeWorker(db TrashPurgeStore, blobStore storage.BlobStore, log *logger.Logger, interval time.Duration) *TrashPurgeWorker {
 	store, _ := db.(database.TrashStore)
 
 	w := &TrashPurgeWorker{

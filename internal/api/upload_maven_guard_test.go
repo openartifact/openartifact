@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -49,7 +48,12 @@ func (d *mavenGuardDB) GetMavenArtifactByPath(_ context.Context, _, _ string) (*
 	return &models.MavenArtifact{ID: "art-1", GroupID: "com.acme", ArtifactCoord: "app", Version: "1.0.0"}, nil
 }
 
-func deleteMaven(t *testing.T, db database.Database) *httptest.ResponseRecorder {
+// deleteMavenStore is the part of the database deleteMaven uses needs.
+type deleteMavenStore interface {
+	MavenUploadStore
+}
+
+func deleteMaven(t *testing.T, db deleteMavenStore) *httptest.ResponseRecorder {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")

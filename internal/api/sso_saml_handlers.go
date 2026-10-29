@@ -9,19 +9,41 @@ import (
 	"net/http"
 	"strings"
 
+	"context"
+	"time"
+
 	"github.com/crewjam/saml"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/config"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// SAMLStore is the part of the database SAMLHandler uses needs.
+type SAMLStore interface {
+	establishSSOSessionStore
+	ConsumeSAMLAssertion(ctx context.Context, providerSlug string, assertionID string, expiresAt time.Time) (bool, error)
+	CreateSystemSettingIfAbsent(ctx context.Context, key string, value string) (bool, error)
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
+	GetGroupByName(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreatePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByExternalID(ctx context.Context, externalID string, providerSlug string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
+	SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error
+	UpdateUserSSO(ctx context.Context, userID string, externalID string, providerSlug string) error
+	UpdateUserSSOProfile(ctx context.Context, id string, email *string, fullName *string, lastLogin time.Time) error
+}
+
 type SAMLHandler struct {
-	db        database.Database
+	db        SAMLStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	hmacKey   []byte
@@ -32,7 +54,7 @@ type SAMLHandler struct {
 }
 
 func NewSAMLHandler(
-	db database.Database,
+	db SAMLStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	hmacKey []byte,

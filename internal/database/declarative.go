@@ -32,7 +32,10 @@ func (p *DeclarativeStore) ListDeclarativeObjects(ctx context.Context) ([]models
 
 // UpsertDeclarativeObjects stores the markers by (kind, name) in one
 // transaction and returns them as stored.
-func (p *DeclarativeStore) UpsertDeclarativeObjects(ctx context.Context, items []models.DeclarativeObject) ([]models.DeclarativeObject, error) {
+func (p *DeclarativeStore) UpsertDeclarativeObjects(
+	ctx context.Context,
+	items []models.DeclarativeObject,
+) ([]models.DeclarativeObject, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin declarative upsert tx: %w", err)

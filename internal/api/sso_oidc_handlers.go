@@ -13,16 +13,35 @@ import (
 	"errors"
 	"net/http"
 
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// OIDCStore is the part of the database OIDCHandler uses needs.
+type OIDCStore interface {
+	completeLogoutStore
+	establishSSOSessionStore
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
+	GetGroupByName(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error)
+	GetOrCreatePermissionAssignment(ctx context.Context, targetID string, principalType string, principalID string) error
+	GetPermissionTargetByName(ctx context.Context, name string) (*models.PermissionTarget, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByExternalID(ctx context.Context, externalID string, providerSlug string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
+	SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error
+	UpdateUserSSO(ctx context.Context, userID string, externalID string, providerSlug string) error
+	UpdateUserSSOProfile(ctx context.Context, id string, email *string, fullName *string, lastLogin time.Time) error
+}
+
 type OIDCHandler struct {
-	db        database.Database
+	db        OIDCStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	hmacKey   []byte
@@ -31,7 +50,7 @@ type OIDCHandler struct {
 	trustedProxies *middleware.TrustedProxies
 }
 
-func NewOIDCHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string) *OIDCHandler {
+func NewOIDCHandler(db OIDCStore, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string) *OIDCHandler {
 	return &OIDCHandler{db: db, log: log, evaluator: evaluator, hmacKey: hmacKey, baseURL: baseURL}
 }
 
@@ -318,12 +337,18 @@ func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	completeLogout(w, r, h.db, h.log, h.baseURL, urlparams.Vars(r)["slug"])
 }
 
+// completeLogoutStore is the part of the database completeLogout uses needs.
+type completeLogoutStore interface {
+	rpLogoutURLStore
+	DeleteSession(ctx context.Context, tokenHash string) error
+}
+
 // completeLogout deletes the request's session, clears the session cookies and
 // answers 200 {"end_session_url"} when the session belongs to an OIDC provider
 // (restricted to onlySlug when non-empty) whose IdP supports RP-initiated
 // logout, else 204. Any failure to work out the IdP URL degrades to a plain
 // local logout. The caller has already enforced same-origin.
-func completeLogout(w http.ResponseWriter, r *http.Request, db database.Database, log *logger.Logger, baseURL, onlySlug string) {
+func completeLogout(w http.ResponseWriter, r *http.Request, db completeLogoutStore, log *logger.Logger, baseURL, onlySlug string) {
 	ctx := r.Context()
 	endSessionURL := ""
 
@@ -348,10 +373,16 @@ func completeLogout(w http.ResponseWriter, r *http.Request, db database.Database
 	writeNoContent(w)
 }
 
+// rpLogoutURLStore is the part of the database rpLogoutURL uses needs.
+type rpLogoutURLStore interface {
+	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
+	GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error)
+}
+
 // rpLogoutURL returns the IdP end_session URL for the session behind
 // cookieValue, or "" when the session is not an OIDC SSO session (of onlySlug,
 // when set) or the IdP has no end_session_endpoint.
-func rpLogoutURL(ctx context.Context, db database.Database, log *logger.Logger, baseURL, cookieValue, onlySlug string) string {
+func rpLogoutURL(ctx context.Context, db rpLogoutURLStore, log *logger.Logger, baseURL, cookieValue, onlySlug string) string {
 	info, err := auth.LookupSessionSSO(ctx, db, cookieValue)
 	if err != nil {
 		log.Warnw("logout: read session sso record", "error", err)

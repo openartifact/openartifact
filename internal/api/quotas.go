@@ -12,18 +12,28 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-type QuotasHandler struct {
-	repoAccess
-	db database.Database
+// QuotasStore is the part of the database QuotasHandler uses needs.
+type QuotasStore interface {
+	repoAccessStore
+	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
+	GetRepositoryUsage(ctx context.Context, repoID string) (*models.RepositoryUsage, error)
+	ListQuotaOverview(ctx context.Context, params models.QuotaListParams) ([]*models.QuotaOverview, int, error)
+	ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
 }
 
-func NewQuotasHandler(log *logger.Logger, db database.Database, evaluator *auth.Evaluator) *QuotasHandler {
+type QuotasHandler struct {
+	repoAccess
+	db QuotasStore
+}
+
+func NewQuotasHandler(log *logger.Logger, db QuotasStore, evaluator *auth.Evaluator) *QuotasHandler {
 	return &QuotasHandler{repoAccess: newRepoAccess(db, log, evaluator), db: db}
 }
 

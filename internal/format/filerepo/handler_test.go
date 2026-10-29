@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/format/filerepo"
@@ -36,16 +35,16 @@ type store struct {
 	seq  int
 }
 
-func newSpec(format string, kind models.TrashKind, groupKey string, s *store) filerepo.Spec[fileRow] {
+func newSpec(format string, kind models.TrashKind, groupKey string, s *store) filerepo.Spec[fileRow, quotaDB] {
 	key := func(c base.ArtifactPath) string {
 		return strings.Join([]string{c.Group, c.Module, c.Version, c.Filename}, "|")
 	}
 
-	return filerepo.Spec[fileRow]{
+	return filerepo.Spec[fileRow, quotaDB]{
 		Format:    format,
 		TrashKind: kind,
 		GroupKey:  groupKey,
-		Get: func(_ context.Context, _ database.Database, _ string, c base.ArtifactPath) (*fileRow, error) {
+		Get: func(_ context.Context, _ quotaDB, _ string, c base.ArtifactPath) (*fileRow, error) {
 			if row := s.rows[key(c)]; row != nil {
 				cp := *row
 
@@ -57,7 +56,7 @@ func newSpec(format string, kind models.TrashKind, groupKey string, s *store) fi
 		New: func(_ string, c base.ArtifactPath, size int64, sha256Hex string) *fileRow {
 			return &fileRow{Path: key(c), Size: size, SHA256: sha256Hex}
 		},
-		Create: func(_ context.Context, _ database.Database, a *fileRow) error {
+		Create: func(_ context.Context, _ quotaDB, a *fileRow) error {
 			if old := s.rows[a.Path]; old != nil {
 				a.ID = old.ID
 			} else {
@@ -69,7 +68,7 @@ func newSpec(format string, kind models.TrashKind, groupKey string, s *store) fi
 
 			return nil
 		},
-		Delete: func(_ context.Context, _ database.Database, id string) error {
+		Delete: func(_ context.Context, _ quotaDB, id string) error {
 			for k, row := range s.rows {
 				if row.ID == id {
 					delete(s.rows, k)
@@ -114,13 +113,13 @@ const filePath = "org.example/mod/1.0/mod-1.0.jar"
 // rig is one handler over an in-memory table.
 type rig struct {
 	t   *testing.T
-	h   *filerepo.Handler[fileRow]
+	h   *filerepo.Handler[fileRow, quotaDB]
 	tbl *store
 	bs  *metaStore
 	pub *formattest.Publisher
 }
 
-func newRig(t *testing.T, spec func(*store) filerepo.Spec[fileRow]) *rig {
+func newRig(t *testing.T, spec func(*store) filerepo.Spec[fileRow, quotaDB]) *rig {
 	t.Helper()
 
 	r := &rig{
@@ -166,7 +165,7 @@ func TestFormatSpecificsFlowThroughTheSharedHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
-			r := newRig(t, func(s *store) filerepo.Spec[fileRow] { return newSpec(tt.format, tt.kind, tt.groupKey, s) })
+			r := newRig(t, func(s *store) filerepo.Spec[fileRow, quotaDB] { return newSpec(tt.format, tt.kind, tt.groupKey, s) })
 
 			r.expect(http.StatusNotFound, http.MethodGet, filePath, "")
 			r.expect(http.StatusCreated, http.MethodPut, filePath, "data")
@@ -208,7 +207,7 @@ func TestFormatSpecificsFlowThroughTheSharedHandler(t *testing.T) {
 }
 
 func TestInvalidPathsAreRejected(t *testing.T) {
-	r := newRig(t, func(s *store) filerepo.Spec[fileRow] { return newSpec("ivy", models.TrashKindIvy, "org", s) })
+	r := newRig(t, func(s *store) filerepo.Spec[fileRow, quotaDB] { return newSpec("ivy", models.TrashKindIvy, "org", s) })
 
 	r.expect(http.StatusBadRequest, http.MethodPut, "too/short", "x")
 	r.expect(http.StatusNotFound, http.MethodGet, "too/short", "")

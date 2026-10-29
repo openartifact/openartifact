@@ -15,6 +15,8 @@ import (
 	"os"
 	"time"
 
+	"database/sql"
+
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -43,9 +45,25 @@ const (
 	maxCompsSize     = 10 * 1024 * 1024
 )
 
+// RPMUploadStore is the part of the database RPMUploadHandler uses needs.
+type RPMUploadStore interface {
+	DebUploadStore
+	CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) error
+	CreateRpmPackage(ctx context.Context, pkg *models.Component) error
+	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
+	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	GetDB() *sql.DB
+	GetRPMRepo(ctx context.Context, repositoryID string) (*models.RPMRepo, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error)
+	MarkRepoStale(ctx context.Context, repositoryID string) error
+	RpmPackageExists(ctx context.Context, repoID string, name string, version string, release string, epoch int, arch string) (bool, error)
+	UpsertRepoMetadata(ctx context.Context, meta *models.RepoMetadata) error
+}
+
 type RPMUploadHandler struct {
 	log        *logger.Logger
-	db         database.Database
+	db         RPMUploadStore
 	blobStore  storage.BlobStore
 	handler    *formatrpm.RepositoryHandler
 	reg        *metrics.Registry
@@ -57,7 +75,7 @@ type RPMUploadHandler struct {
 	keys           gpg.Resolver
 }
 
-func NewRPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
+func NewRPMUploadHandler(log *logger.Logger, db RPMUploadStore, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
 	return &RPMUploadHandler{
 		log:        log,
 		db:         db,

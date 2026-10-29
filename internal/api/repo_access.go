@@ -9,11 +9,15 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// repoAccessStore is the part of the database repoAccess uses needs.
+type repoAccessStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
 
 // repoAccess is embedded by the handlers whose routes are scoped to the
 // repository named {name} in the URL. It owns the repository resolution and
@@ -26,12 +30,12 @@ import (
 // (a caller probing an unknown repository sees 404 or 403 depending on the
 // route) so they are kept as separate, named variants rather than unified.
 type repoAccess struct {
-	db        database.Database
+	db        repoAccessStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func newRepoAccess(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) repoAccess {
+func newRepoAccess(db repoAccessStore, log *logger.Logger, evaluator *auth.Evaluator) repoAccess {
 	return repoAccess{db: db, log: log, evaluator: evaluator}
 }
 

@@ -25,7 +25,6 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -34,8 +33,20 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
+// AdminSSOStore is the part of the database AdminSSOHandler uses needs.
+type AdminSSOStore interface {
+	CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
+	CreateSystemSettingIfAbsent(ctx context.Context, key string, value string) (bool, error)
+	DeleteSSOProvider(ctx context.Context, id string) error
+	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+	ListAllSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
+	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
+	UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
+}
+
 type AdminSSOHandler struct {
-	db        database.Database
+	db        AdminSSOStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	baseURL   string
@@ -43,7 +54,7 @@ type AdminSSOHandler struct {
 }
 
 func NewAdminSSOHandler(
-	db database.Database,
+	db AdminSSOStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	baseURL string,

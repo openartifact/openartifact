@@ -31,7 +31,7 @@ type scanServices struct {
 // buildWorkerServices builds, on a worker process, the services whose
 // background work it runs, without the routes an API process mounts for them.
 func (a *app) buildWorkerServices() {
-	docker := formatdocker.NewHTTPHandler(a.log, a.db, a.store.served, a.cfg.ClientBaseURL())
+	docker := formatdocker.NewHTTPHandler(a.log, a.db, a.store.served)
 	docker.SetUploadDir(dockerUploadDir(a.cfg))
 
 	a.buildSupplyChain(docker)

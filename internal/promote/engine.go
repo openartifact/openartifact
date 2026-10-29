@@ -30,9 +30,18 @@ type Regenerator interface {
 	NotifyPacmanStale(repoID string)
 }
 
+// EngineStore is the part of the database Engine uses needs.
+type EngineStore interface {
+	BeginTx(ctx context.Context) (database.Transaction, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+}
+
 // Engine promotes a sealed bundle into a repository.
 type Engine struct {
-	db        database.Database
+	db        EngineStore
 	log       *logger.Logger
 	regen     Regenerator
 	promoters map[string]Promoter
@@ -40,7 +49,7 @@ type Engine struct {
 
 // NewEngine returns an Engine with the promoter of every hosted format. regen
 // may be nil (generated metadata is then only refreshed by the periodic sweep).
-func NewEngine(db database.Database, log *logger.Logger, regen Regenerator) *Engine {
+func NewEngine(db EngineStore, log *logger.Logger, regen Regenerator) *Engine {
 	e := &Engine{db: db, log: log, regen: regen, promoters: map[string]Promoter{}}
 	for _, p := range Promoters() {
 		e.promoters[p.Format()] = p

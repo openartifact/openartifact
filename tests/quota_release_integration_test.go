@@ -187,7 +187,7 @@ func qrMountNPM(t *testing.T, pg *database.PostgresDB, bs storage.BlobStore) htt
 
 	router := chi.NewRouter()
 	router.Use(authenticateTestBearer)
-	api.NewNPMUploadHandler(newTestLogger(t), pg, bs, "http://localhost", nil).Register(router)
+	api.NewNPMUploadHandler(newTestLogger(t), pg, bs, nil).Register(router)
 
 	return router
 }

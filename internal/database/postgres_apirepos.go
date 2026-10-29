@@ -51,7 +51,12 @@ func (p *RepositoryStore) CreateRepositoryWithMembers(ctx context.Context, repo 
 // repository cap: with the project row locked it refuses (ErrProjectRepoLimit)
 // when the project already holds maxRepositories live repositories, so
 // concurrent creations cannot overshoot the cap.
-func (p *RepositoryStore) CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+func (p *RepositoryStore) CreateProjectRepository(
+	ctx context.Context,
+	repo *models.Repository,
+	memberIDs []string,
+	maxRepositories int,
+) error {
 	return p.createRepository(ctx, repo, memberIDs, maxRepositories)
 }
 

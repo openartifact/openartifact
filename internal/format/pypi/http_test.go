@@ -184,9 +184,14 @@ func TestDownloadQuarantine(t *testing.T) {
 
 type pypiField struct{ key, value string }
 
+// uploadWithFieldsStore is the part of the database uploadWithFields uses needs.
+type uploadWithFieldsStore interface {
+	uploadFileStore
+}
+
 func uploadWithFields(
 	t *testing.T,
-	db database.Database,
+	db uploadWithFieldsStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	fields ...pypiField,
@@ -200,11 +205,16 @@ func uploadWithFields(
 	return uploadFile(t, db, bs, pub, "demo_pkg-1.0.tar.gz", sdist, fields...)
 }
 
+// uploadFileStore is the part of the database uploadFile uses needs.
+type uploadFileStore interface {
+	HTTPStore
+}
+
 // uploadFile uploads content as filename the way twine does, with the given
 // extra form fields (name and version are always sent).
 func uploadFile(
 	t *testing.T,
-	db database.Database,
+	db uploadFileStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	filename string,

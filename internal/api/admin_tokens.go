@@ -15,19 +15,30 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AdminTokensStore is the part of the database AdminTokensHandler uses needs.
+type AdminTokensStore interface {
+	issueTokenStore
+	GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	ListAllTokens(ctx context.Context, page int, perPage int) ([]*models.Token, int, error)
+	ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error)
+	ListTokensByUser(ctx context.Context, userID string) ([]*models.Token, error)
+	ListUnifiedTokens(ctx context.Context, params models.TokenListParams) ([]*models.TokenListItem, int, error)
+	RevokeToken(ctx context.Context, tokenID string) error
+}
+
 type AdminTokensHandler struct {
-	db        database.Database
+	db        AdminTokensStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminTokensHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminTokensHandler {
+func NewAdminTokensHandler(db AdminTokensStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminTokensHandler {
 	return &AdminTokensHandler{db: db, log: log, evaluator: evaluator}
 }
 
@@ -267,6 +278,12 @@ func (b *tokenCreateBody) validate(now time.Time) string {
 	return ""
 }
 
+// authorizeTokenScopesStore is the part of the database authorizeTokenScopes uses needs.
+type authorizeTokenScopesStore interface {
+	GetPermissionTargetByID(ctx context.Context, id string) (*models.PermissionTarget, error)
+	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
+}
+
 // authorizeTokenScopes verifies the requested scope IDs. Admins may name any
 // existing permission target (the evaluator still intersects a token's scopes
 // with its owner's targets, so a scope can only ever narrow access); everyone
@@ -274,7 +291,7 @@ func (b *tokenCreateBody) validate(now time.Time) string {
 // request must be rejected with that status/code/message.
 func authorizeTokenScopes(
 	ctx context.Context,
-	db database.Database,
+	db authorizeTokenScopesStore,
 	p *auth.Principal,
 	isAdmin bool,
 	scopes []string,
@@ -321,6 +338,12 @@ func authorizeTokenScopes(
 	return 0, "", ""
 }
 
+// issueTokenStore is the part of the database issueToken uses needs.
+type issueTokenStore interface {
+	authorizeTokenScopesStore
+	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)
+}
+
 // issueToken is the single token-minting path for both the self-service and
 // the per-user endpoints. The caller has already established that the
 // principal may manage tokens for ownerID. Minting is refused for
@@ -329,7 +352,7 @@ func authorizeTokenScopes(
 func issueToken(
 	w http.ResponseWriter,
 	r *http.Request,
-	db database.Database,
+	db issueTokenStore,
 	log *logger.Logger,
 	evaluator *auth.Evaluator,
 	ownerID string,

@@ -34,8 +34,21 @@ const storageTestTimeout = 10 * time.Second
 
 var storageBackendNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
+// AdminStorageStore is the part of the database AdminStorageHandler uses needs.
+type AdminStorageStore interface {
+	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
+	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
+	DeleteStorageBackend(ctx context.Context, id string) error
+	GetStorageBackend(ctx context.Context, name string) (*models.StorageBackend, error)
+	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)
+	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
+	StorageTierUsage(ctx context.Context) ([]models.TierUsage, error)
+	UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
+	UpdateStorageBackendStatus(ctx context.Context, id string, status string, message *string) error
+}
+
 type AdminStorageHandler struct {
-	db        database.Database
+	db        AdminStorageStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 
@@ -43,7 +56,7 @@ type AdminStorageHandler struct {
 	primary *primaryStore
 }
 
-func NewAdminStorageHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminStorageHandler {
+func NewAdminStorageHandler(db AdminStorageStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminStorageHandler {
 	return &AdminStorageHandler{db: db, log: log, evaluator: evaluator}
 }
 

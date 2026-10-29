@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"database/sql"
+
 	"github.com/openartifact/openartifact/internal/cron"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -56,10 +58,26 @@ const (
 	quotaReconcileInterval = 6 * time.Hour
 )
 
+// CleanupStore is the part of the database CleanupWorker uses needs.
+type CleanupStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteStaleNixPendingNars(ctx context.Context, before time.Time, limit int) ([]string, error)
+	GetCleanupPolicy(ctx context.Context, id string) (*models.CleanupPolicy, error)
+	GetDB() *sql.DB
+	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
+	ListEnabledCleanupPolicies(ctx context.Context) ([]*models.CleanupPolicy, error)
+	ListProjectCleanupRepositories(ctx context.Context, projectID string) ([]string, error)
+	MarkPackumentStale(ctx context.Context, packageID string) error
+	MarkRepoStale(ctx context.Context, repositoryID string) error
+	ReconcileAllStorageUsage(ctx context.Context) (int64, error)
+	UpdateCleanupPolicyRunResult(ctx context.Context, id string, deletedCount int, runErr error) error
+}
+
 type CleanupWorker struct {
 	*lifecycle
 
-	db        database.Database
+	db        CleanupStore
 	blobStore storage.BlobStore
 	log       *logger.Logger
 
@@ -76,7 +94,7 @@ type CleanupWorker struct {
 	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
 }
 
-func NewCleanupWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger) *CleanupWorker {
+func NewCleanupWorker(db CleanupStore, blobStore storage.BlobStore, log *logger.Logger) *CleanupWorker {
 	return &CleanupWorker{
 		lifecycle: newLifecycle(),
 		db:        db,

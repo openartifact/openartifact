@@ -273,7 +273,11 @@ func (p *WebhookStore) ListWebhookDeliveries(ctx context.Context, webhookID stri
 // concurrent pollers on any number of server instances never receive the same
 // row. A claimed delivery that is never completed becomes claimable again once
 // the lease expires.
-func (p *WebhookStore) ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error) {
+func (p *WebhookStore) ClaimPendingWebhookDeliveries(
+	ctx context.Context,
+	limit int,
+	lease time.Duration,
+) ([]*models.WebhookDelivery, error) {
 	rows, err := p.q.ClaimPendingWebhookDeliveries(ctx, dbsqlc.ClaimPendingWebhookDeliveriesParams{
 		LeaseSeconds: lease.Seconds(),
 		BatchSize:    toInt32(limit),

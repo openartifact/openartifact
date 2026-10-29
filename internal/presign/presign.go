@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -96,6 +95,11 @@ func Try(store storage.BlobStore, w http.ResponseWriter, r *http.Request, blob B
 	return ok && rd.TryRedirect(w, r, blob)
 }
 
+// StoreStore is the part of the database Store uses needs.
+type StoreStore interface {
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 // Store is a blob store that can redirect downloads. It is installed in place
 // of the plain store handed to format handlers, which discover the capability
 // through the Redirector interface; everything else sees an ordinary BlobStore.
@@ -103,7 +107,7 @@ type Store struct {
 	storage.BlobStore
 
 	signer    storage.Presigner
-	db        database.Database
+	db        StoreStore
 	settings  Settings
 	reg       *metrics.Registry
 	log       *logger.Logger
@@ -112,9 +116,14 @@ type Store struct {
 
 var _ Redirector = (*Store)(nil)
 
+// WrapStore is the part of the database Wrap uses needs.
+type WrapStore interface {
+	StoreStore
+}
+
 // Wrap decorates inner with redirect support. Whether inner can sign URLs is
 // probed once, here, without any network traffic.
-func Wrap(inner storage.BlobStore, db database.Database, settings Settings, reg *metrics.Registry, log *logger.Logger) *Store {
+func Wrap(inner storage.BlobStore, db WrapStore, settings Settings, reg *metrics.Registry, log *logger.Logger) *Store {
 	s := &Store{BlobStore: inner, db: db, settings: settings, reg: reg, log: log}
 
 	if signer, ok := inner.(storage.Presigner); ok {

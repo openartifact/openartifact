@@ -16,8 +16,9 @@ import (
 	"net/url"
 	"unicode/utf8"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pathseg"
@@ -42,12 +43,35 @@ const (
 	maxFilenameLen = 512
 )
 
-type HTTPHandler struct {
-	*base.Handler
-	DB database.Database
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
+	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	DeleteConanPackage(ctx context.Context, id string) error
+	FindConanPackageBySHA1(ctx context.Context, repoID string, sha1 string) (*models.ConanPackage, error)
+	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
+	GetRawArtifact(ctx context.Context, repoID string, path string) (*models.RawArtifact, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListConanRecipeFiles(
+		ctx context.Context,
+		repoID string,
+		name string,
+		version string,
+		userChannel string,
+	) ([]*models.ConanPackage, error)
+	ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error)
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	SetConanPackageDigests(ctx context.Context, id string, md5 string, sha1 string) error
+	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error
 }
 
-func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
+type HTTPHandler struct {
+	*base.Handler
+	DB HTTPStore
+}
+
+func NewHTTPHandler(log *logger.Logger, db HTTPStore, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), DB: db}
 }
 

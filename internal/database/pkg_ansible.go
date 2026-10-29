@@ -90,7 +90,10 @@ func nonNilMap(m map[string]string) map[string]string {
 }
 
 // GetAnsibleCollection returns the live version of a collection, or (nil, nil).
-func (p *AnsibleStore) GetAnsibleCollection(ctx context.Context, repoID, namespace, name, version string) (*models.AnsibleCollection, error) {
+func (p *AnsibleStore) GetAnsibleCollection(
+	ctx context.Context,
+	repoID, namespace, name, version string,
+) (*models.AnsibleCollection, error) {
 	row, err := p.q.GetAnsibleCollection(ctx, dbsqlc.GetAnsibleCollectionParams{
 		RepositoryID: repoID, Namespace: namespace, Name: name, Version: version,
 	})

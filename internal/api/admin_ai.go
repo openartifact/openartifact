@@ -16,21 +16,26 @@ import (
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AdminAIStore is the part of the database AdminAIHandler uses needs.
+type AdminAIStore interface {
+	GetSystemSetting(ctx context.Context, key string) (string, error)
+	SetSystemSetting(ctx context.Context, key string, value string) error
+}
+
 type AdminAIHandler struct {
-	db        database.Database
+	db        AdminAIStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	aiWorker  *worker.AIAnalysisWorker
 	envAI     ai.Settings
 }
 
-func NewAdminAIHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminAIHandler {
+func NewAdminAIHandler(db AdminAIStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminAIHandler {
 	return &AdminAIHandler{db: db, log: log, evaluator: evaluator}
 }
 

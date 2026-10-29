@@ -79,7 +79,7 @@ func TestNPMPublishHonorsImportCreatedAt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := &npmPublishDB{DB: formattest.NewDB()}
-			h := NewNPMUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost", nil)
+			h := NewNPMUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
 
 			payload := []byte("tarball-bytes")
 			body := npmBody("demo", "1.0.0", base64.StdEncoding.EncodeToString(payload), len(payload), "data-middle")

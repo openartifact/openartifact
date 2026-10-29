@@ -59,9 +59,14 @@ func NewTokenSecret(kind string) (string, string, error) {
 	return prefix + body, lookupDigest(body), nil
 }
 
+// CreateTokenStore is the part of the database CreateToken uses needs.
+type CreateTokenStore interface {
+	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)
+}
+
 func CreateToken(
 	ctx context.Context,
-	db database.Database,
+	db CreateTokenStore,
 	kind, name, userID string,
 	scopes []string,
 	expiresAt *time.Time,
@@ -93,9 +98,14 @@ func CreateToken(
 	return tokenString, saved, nil
 }
 
+// CreateProjectTokenStore is the part of the database CreateProjectToken uses needs.
+type CreateProjectTokenStore interface {
+	CreateProjectToken(ctx context.Context, spec database.ProjectTokenSpec) (*models.Token, error)
+}
+
 // CreateProjectToken mints a deploy token for a new service account of the
 // project (see database.ProjectTokenSpec); spec.TokenHash is filled here.
-func CreateProjectToken(ctx context.Context, db database.Database, spec database.ProjectTokenSpec) (string, *models.Token, error) {
+func CreateProjectToken(ctx context.Context, db CreateProjectTokenStore, spec database.ProjectTokenSpec) (string, *models.Token, error) {
 	tokenString, tokenHash, err := NewTokenSecret(TokenKindDeploy)
 	if err != nil {
 		return "", nil, err
@@ -111,7 +121,13 @@ func CreateProjectToken(ctx context.Context, db database.Database, spec database
 	return tokenString, saved, nil
 }
 
-func ValidateToken(ctx context.Context, db database.Database, tokenString string) (*models.Token, *models.User, error) {
+// ValidateTokenStore is the part of the database ValidateToken uses needs.
+type ValidateTokenStore interface {
+	GetTokenByHash(ctx context.Context, hash string) (*models.Token, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+}
+
+func ValidateToken(ctx context.Context, db ValidateTokenStore, tokenString string) (*models.Token, *models.User, error) {
 	var body string
 
 	switch {
@@ -157,10 +173,15 @@ func ValidateToken(ctx context.Context, db database.Database, tokenString string
 // tokenTouchInterval throttles last_used_at writes to once per interval per token.
 const tokenTouchInterval = time.Minute
 
+// UpdateLastUsedStore is the part of the database UpdateLastUsed uses needs.
+type UpdateLastUsedStore interface {
+	UpdateTokenLastUsed(ctx context.Context, tokenID string) error
+}
+
 // UpdateLastUsed records token usage synchronously with a short bounded
 // timeout (no per-request goroutines). Failures are ignored: usage bookkeeping
 // must never fail a request.
-func UpdateLastUsed(ctx context.Context, db database.Database, tokenID string) {
+func UpdateLastUsed(ctx context.Context, db UpdateLastUsedStore, tokenID string) {
 	bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 
@@ -172,12 +193,17 @@ func UpdateLastUsed(ctx context.Context, db database.Database, tokenID string) {
 //nolint:gochecknoglobals // process-wide throttle state
 var tokenLastTouch sync.Map
 
+// TouchTokenStore is the part of the database TouchToken uses needs.
+type TouchTokenStore interface {
+	UpdateLastUsedStore
+}
+
 // TouchToken records usage of an authenticated token, at most once per
 // tokenTouchInterval so a busy CI client does not hammer one hot row.
 //
 // The token comes from the auth cache, whose LastUsedAt is stale for the whole
 // cache TTL, so the throttle is tracked per token ID in process memory instead.
-func TouchToken(ctx context.Context, db database.Database, token *models.Token) {
+func TouchToken(ctx context.Context, db TouchTokenStore, token *models.Token) {
 	now := time.Now()
 	if last, ok := tokenLastTouch.Load(token.ID); ok {
 		if t, ok := last.(time.Time); ok && now.Sub(t) < tokenTouchInterval {

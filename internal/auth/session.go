@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/crypto"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -45,7 +44,12 @@ func SessionAbsoluteLifetime() time.Duration {
 	return max(sessionAbsoluteLifetime, SessionDuration)
 }
 
-func CreateSession(ctx context.Context, db database.Database, userID, ip, userAgent string) (string, *models.Session, error) {
+// CreateSessionStore is the part of the database CreateSession uses needs.
+type CreateSessionStore interface {
+	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)
+}
+
+func CreateSession(ctx context.Context, db CreateSessionStore, userID, ip, userAgent string) (string, *models.Session, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", nil, fmt.Errorf("generate session token: %w", err)
@@ -96,7 +100,12 @@ func decodeSessionCookie(cookieValue string) ([]byte, bool) {
 	return raw, err == nil && len(raw) == 32
 }
 
-func ValidateSession(ctx context.Context, db database.Database, cookieValue string) (*models.Session, error) {
+// ValidateSessionStore is the part of the database ValidateSession uses needs.
+type ValidateSessionStore interface {
+	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
+}
+
+func ValidateSession(ctx context.Context, db ValidateSessionStore, cookieValue string) (*models.Session, error) {
 	raw, ok := decodeSessionCookie(cookieValue)
 	if !ok {
 		// A malformed cookie is simply an invalid session, not a request error.
@@ -126,9 +135,14 @@ func ValidateSession(ctx context.Context, db database.Database, cookieValue stri
 	return session, nil
 }
 
+// TouchSessionStore is the part of the database TouchSession uses needs.
+type TouchSessionStore interface {
+	UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error
+}
+
 // TouchSession slides the idle expiry of a session forward, at most once per
 // sessionTouchInterval and never beyond the absolute session lifetime.
-func TouchSession(ctx context.Context, db database.Database, session *models.Session) error {
+func TouchSession(ctx context.Context, db TouchSessionStore, session *models.Session) error {
 	now := time.Now()
 	if now.Sub(session.LastSeenAt) < sessionTouchInterval {
 		return nil
@@ -144,15 +158,26 @@ func TouchSession(ctx context.Context, db database.Database, session *models.Ses
 	return db.UpdateSessionLastSeen(ctx, session.ID, expiresAt)
 }
 
+// RevokeAllSessionsStore is the part of the database RevokeAllSessions uses needs.
+type RevokeAllSessionsStore interface {
+	DeleteSessionsByUser(ctx context.Context, userID string) error
+}
+
 // RevokeAllSessions deletes every session of a user (password change/reset,
 // account disable).
-func RevokeAllSessions(ctx context.Context, db database.Database, userID string) error {
+func RevokeAllSessions(ctx context.Context, db RevokeAllSessionsStore, userID string) error {
 	return db.DeleteSessionsByUser(ctx, userID)
+}
+
+// RevokeOtherSessionsStore is the part of the database RevokeOtherSessions uses needs.
+type RevokeOtherSessionsStore interface {
+	DeleteOtherSessionsByUser(ctx context.Context, userID string, keepTokenHash string) error
+	DeleteSessionsByUser(ctx context.Context, userID string) error
 }
 
 // RevokeOtherSessions deletes every session of a user except the one carried
 // by keepCookie. An unusable cookie keeps nothing.
-func RevokeOtherSessions(ctx context.Context, db database.Database, userID, keepCookie string) error {
+func RevokeOtherSessions(ctx context.Context, db RevokeOtherSessionsStore, userID, keepCookie string) error {
 	raw, ok := decodeSessionCookie(keepCookie)
 	if !ok {
 		return db.DeleteSessionsByUser(ctx, userID)
@@ -163,7 +188,12 @@ func RevokeOtherSessions(ctx context.Context, db database.Database, userID, keep
 	return db.DeleteOtherSessionsByUser(ctx, userID, hex.EncodeToString(hashBytes[:]))
 }
 
-func DeleteSession(ctx context.Context, db database.Database, cookieValue string) error {
+// DeleteSessionStore is the part of the database DeleteSession uses needs.
+type DeleteSessionStore interface {
+	DeleteSession(ctx context.Context, tokenHash string) error
+}
+
+func DeleteSession(ctx context.Context, db DeleteSessionStore, cookieValue string) error {
 	raw, ok := decodeSessionCookie(cookieValue)
 	if !ok {
 		// Nothing to delete for a malformed cookie.
@@ -176,10 +206,15 @@ func DeleteSession(ctx context.Context, db database.Database, cookieValue string
 	return db.DeleteSession(ctx, tokenHash)
 }
 
+// AttachSSOSessionStore is the part of the database AttachSSOSession uses needs.
+type AttachSSOSessionStore interface {
+	SetSessionSSO(ctx context.Context, sessionID string, providerSlug string, encryptedIDToken string) error
+}
+
 // AttachSSOSession records the SSO provider that created the session
 // identified by sessionID together with the (encrypted) ID token, so logout
 // can run RP-initiated logout.
-func AttachSSOSession(ctx context.Context, db database.Database, sessionID, providerSlug, rawIDToken string) error {
+func AttachSSOSession(ctx context.Context, db AttachSSOSessionStore, sessionID, providerSlug, rawIDToken string) error {
 	enc, err := crypto.Encrypt(rawIDToken)
 	if err != nil {
 		return fmt.Errorf("encrypt id token: %w", err)
@@ -194,9 +229,14 @@ type SessionSSOInfo struct {
 	IDToken      string
 }
 
+// LookupSessionSSOStore is the part of the database LookupSessionSSO uses needs.
+type LookupSessionSSOStore interface {
+	GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error)
+}
+
 // LookupSessionSSO returns the SSO provider and ID token behind a session
 // cookie, or nil when the session is not an SSO session (or is unknown).
-func LookupSessionSSO(ctx context.Context, db database.Database, cookieValue string) (*SessionSSOInfo, error) {
+func LookupSessionSSO(ctx context.Context, db LookupSessionSSOStore, cookieValue string) (*SessionSSOInfo, error) {
 	raw, ok := decodeSessionCookie(cookieValue)
 	if !ok {
 		return nil, nil //nolint:nilnil // nil means "not an SSO session"

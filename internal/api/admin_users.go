@@ -14,6 +14,8 @@ import (
 
 	"github.com/openartifact/openartifact/internal/passwd"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -25,13 +27,23 @@ import (
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,64}$`)
 
+// AdminUsersStore is the part of the database AdminUsersHandler uses needs.
+type AdminUsersStore interface {
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
+	DeleteSessionsByUser(ctx context.Context, userID string) error
+	DeleteUser(ctx context.Context, id string) (bool, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	ListUsers(ctx context.Context, page int, perPage int) ([]*models.User, int, error)
+	UpdateUser(ctx context.Context, user *models.User) error
+}
+
 type AdminUsersHandler struct {
-	db        database.Database
+	db        AdminUsersStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewAdminUsersHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminUsersHandler {
+func NewAdminUsersHandler(db AdminUsersStore, log *logger.Logger, evaluator *auth.Evaluator) *AdminUsersHandler {
 	return &AdminUsersHandler{db: db, log: log, evaluator: evaluator}
 }
 

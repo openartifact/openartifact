@@ -47,7 +47,7 @@ func (p *npmRecordingPublisher) snapshot() []npmRecordedEvent {
 
 func setupUploadRouterWithPublisher(db *MockDatabase, bs *MockBlobStore, pub webhook.Publisher) chi.Router {
 	log, _ := logger.New("info", "json", "stdout")
-	h := api.NewNPMUploadHandler(log, db, bs, "http://localhost:8080", nil)
+	h := api.NewNPMUploadHandler(log, db, bs, nil)
 	h.SetPublisher(pub)
 
 	router := chi.NewRouter()

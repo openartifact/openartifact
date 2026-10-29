@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	db "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
@@ -24,13 +23,20 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// HTTPStore is the part of the database HTTPHandler uses needs.
+type HTTPStore interface {
+	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+}
+
 type HTTPHandler struct {
 	log       *logger.Logger
-	db        db.Database
+	db        HTTPStore
 	blobStore storage.BlobStore
 }
 
-func NewHTTPHandler(log *logger.Logger, database db.Database, blobStore storage.BlobStore) *HTTPHandler {
+func NewHTTPHandler(log *logger.Logger, database HTTPStore, blobStore storage.BlobStore) *HTTPHandler {
 	return &HTTPHandler{
 		log:       log,
 		db:        database,

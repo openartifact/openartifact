@@ -8,14 +8,20 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-type VersionResolver struct {
-	db database.Database
+// VersionResolverStore is the part of the database VersionResolver uses needs.
+type VersionResolverStore interface {
+	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
+	GetNPMVersion(ctx context.Context, packageID string, version string) (*models.NPMVersion, error)
 }
 
-func NewVersionResolver(db database.Database) *VersionResolver {
+type VersionResolver struct {
+	db VersionResolverStore
+}
+
+func NewVersionResolver(db VersionResolverStore) *VersionResolver {
 	return &VersionResolver{db: db}
 }
 

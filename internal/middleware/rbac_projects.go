@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -119,6 +118,12 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 	return "", false
 }
 
+// authorizeProjectRouteStore is the part of the database authorizeProjectRoute uses needs.
+type authorizeProjectRouteStore interface {
+	authorizeProjectsRootStore
+	writeAccessDeniedStore
+}
+
 // authorizeProjectRoute gates a project control-plane request. It returns true
 // when the request may proceed; otherwise the response has been written.
 //
@@ -136,7 +141,7 @@ func authorizeProjectRoute(
 	principal *auth.Principal,
 	credential string,
 	scope routeScope,
-	db database.Database,
+	db authorizeProjectRouteStore,
 ) bool {
 	if principal.IsAnonymous || principal.TokenKind == auth.TokenKindDeploy {
 		writeAccessDenied(w, r, cfg, db, log, principal, credential, scope)
@@ -167,6 +172,11 @@ func authorizeProjectRoute(
 	return false
 }
 
+// authorizeProjectsRootStore is the part of the database authorizeProjectsRoot uses needs.
+type authorizeProjectsRootStore interface {
+	writeAccessDeniedStore
+}
+
 // authorizeProjectsRoot gates GET/POST /api/v1/projects.
 func authorizeProjectsRoot(
 	w http.ResponseWriter,
@@ -177,7 +187,7 @@ func authorizeProjectsRoot(
 	principal *auth.Principal,
 	credential string,
 	scope routeScope,
-	db database.Database,
+	db authorizeProjectsRootStore,
 ) bool {
 	if r.Method != http.MethodPost {
 		return true // the handler returns the caller's projects (?all=true is admin-only there)

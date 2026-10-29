@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -40,11 +39,16 @@ type resolvedAudit struct {
 	subject   *responses.AuditSubject
 }
 
+// resolveAuditEntriesStore is the part of the database resolveAuditEntries uses needs.
+type resolveAuditEntriesStore interface {
+	ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error)
+}
+
 // resolveAuditEntries resolves the actor and subject names of a page of audit
 // entries. Names are looked up in one batched query for the whole page; a
 // failed lookup is logged and degrades to the names recorded in the entries
 // (the listing itself must not fail because a display name is missing).
-func resolveAuditEntries(ctx context.Context, db database.Database, log *logger.Logger, logs []*models.AuditLog) []resolvedAudit {
+func resolveAuditEntries(ctx context.Context, db resolveAuditEntriesStore, log *logger.Logger, logs []*models.AuditLog) []resolvedAudit {
 	out := make([]resolvedAudit, len(logs))
 	refs := newAuditRefSet()
 
@@ -266,10 +270,15 @@ func auditSubjectOf(l *models.AuditLog, d auditDetails, names *models.AuditNames
 	return s
 }
 
+// activityEntriesStore is the part of the database activityEntries uses needs.
+type activityEntriesStore interface {
+	resolveAuditEntriesStore
+}
+
 // activityEntries builds the entries of a project or repository activity feed
 // from one page of audit rows: actor and subject resolved in one batch, no
 // client address.
-func activityEntries(ctx context.Context, db database.Database, log *logger.Logger, logs []*models.AuditLog) []responses.ActivityEntry {
+func activityEntries(ctx context.Context, db activityEntriesStore, log *logger.Logger, logs []*models.AuditLog) []responses.ActivityEntry {
 	resolved := resolveAuditEntries(ctx, db, log, logs)
 	out := make([]responses.ActivityEntry, 0, len(logs))
 

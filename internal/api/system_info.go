@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
@@ -28,12 +27,17 @@ const (
 	healthProbeTimeout = 3 * time.Second
 )
 
+// SystemInfoStore is the part of the database SystemInfoHandler uses needs.
+type SystemInfoStore interface {
+	Ping(ctx context.Context) error
+}
+
 type SystemInfoHandler struct {
 	version     string
 	commit      string
 	buildTime   string
 	startTime   time.Time
-	db          database.Database
+	db          SystemInfoStore
 	blobStore   storage.BlobStore
 	storageType string
 	docsURL     string
@@ -47,7 +51,7 @@ type SystemInfoHandler struct {
 
 func NewSystemInfoHandler(
 	version, commit, buildTime string,
-	db database.Database,
+	db SystemInfoStore,
 	blobStore storage.BlobStore,
 	storageType string,
 ) *SystemInfoHandler {

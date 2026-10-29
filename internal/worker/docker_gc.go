@@ -6,6 +6,7 @@ package worker
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -94,10 +95,14 @@ type DockerGCReport struct {
 	Truncated bool
 }
 
-// DockerGCDB is the database a DockerGCWorker needs: the repository and quota
-// queries plus the GC store. *database.PostgresDB implements it.
+// DockerGCDB is the database a DockerGCWorker needs: the repository listing,
+// the advisory lock connection and the GC store. *database.PostgresDB
+// implements it.
 type DockerGCDB interface {
-	database.Database
+	GetDB() *sql.DB
+	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
+	quota.ReleaseNStore
+	storage.SafeDeleteBlobStore
 	database.DockerGCStore
 }
 

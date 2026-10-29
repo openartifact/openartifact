@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
@@ -275,9 +274,14 @@ func TestDownloadQuarantine(t *testing.T) {
 	}
 }
 
+// publishCrateStore is the part of the database publishCrate uses needs.
+type publishCrateStore interface {
+	publishCrateDataStore
+}
+
 func publishCrate(
 	t *testing.T,
-	db database.Database,
+	db publishCrateStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	meta string,
@@ -295,11 +299,16 @@ func plainCrate(t *testing.T) []byte {
 	return crateWith(t, "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n")
 }
 
+// publishCrateDataStore is the part of the database publishCrateData uses needs.
+type publishCrateDataStore interface {
+	HTTPStore
+}
+
 // publishCrateData publishes crate with the given publish metadata JSON, the
 // way cargo (or curl) sends it.
 func publishCrateData(
 	t *testing.T,
-	db database.Database,
+	db publishCrateDataStore,
 	bs *formattest.BlobStore,
 	pub *formattest.Publisher,
 	meta string,

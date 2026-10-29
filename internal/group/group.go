@@ -11,7 +11,8 @@ package group
 import (
 	"net/http"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -35,10 +36,22 @@ type Backend struct {
 	ServeMember func(w http.ResponseWriter, r *http.Request, member *models.Repository, relPath string)
 }
 
+// HandlerStore is the part of the database Handler uses needs.
+type HandlerStore interface {
+	GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error)
+	GetGroupPackageOwner(ctx context.Context, groupID string, path string) (string, bool, error)
+	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
+	HasCondaPackageName(ctx context.Context, repoID string, name string) (bool, error)
+	IvyModuleExists(ctx context.Context, repoID string, organisation string, module string) (bool, error)
+	ListCondaPackageNames(ctx context.Context, repoID string) ([]string, error)
+	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	SBTModuleExists(ctx context.Context, repoID string, groupID string, artifactID string) (bool, error)
+}
+
 // Handler resolves requests for group repositories.
 type Handler struct {
 	log     *logger.Logger
-	db      database.Database
+	db      HandlerStore
 	baseURL string
 
 	// packuments bounds concurrent npm packument merges.
@@ -57,7 +70,7 @@ type Handler struct {
 }
 
 // NewHandler creates the group handler.
-func NewHandler(log *logger.Logger, db database.Database) *Handler {
+func NewHandler(log *logger.Logger, db HandlerStore) *Handler {
 	return &Handler{
 		log: log, db: db,
 		packuments:  base.NewGate(maxConcurrentMerges),

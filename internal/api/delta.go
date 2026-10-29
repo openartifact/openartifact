@@ -28,7 +28,6 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
-	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/httpcache"
@@ -70,6 +69,18 @@ type deltaCall struct {
 	err   error
 }
 
+// DeltaStore is the part of the database DeltaHandler uses needs.
+type DeltaStore interface {
+	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
+	CreatePackageDelta(ctx context.Context, delta *models.PackageDelta) error
+	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	GetComponentBySHA256(ctx context.Context, repoID string, sha256 string) (*models.Component, error)
+	GetPackageDelta(ctx context.Context, repoID string, fromSHA256 string, toSHA256 string) (*models.PackageDelta, error)
+	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
+	ListPackageDeltas(ctx context.Context, repoID string, toSHA256 string) ([]*models.PackageDelta, error)
+	UpsertBlob(ctx context.Context, sha256 string, blobKey string, sizeBytes int64) (string, error)
+}
+
 // DeltaHandler handles package delta requests.
 type DeltaHandler struct {
 	inflightMu sync.Mutex
@@ -77,12 +88,12 @@ type DeltaHandler struct {
 	slots      chan struct{} // bounds concurrent generations
 
 	log       *logger.Logger
-	db        database.Database
+	db        DeltaStore
 	blobStore storage.BlobStore
 }
 
 // NewDeltaHandler creates a new DeltaHandler.
-func NewDeltaHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *DeltaHandler {
+func NewDeltaHandler(log *logger.Logger, db DeltaStore, blobStore storage.BlobStore) *DeltaHandler {
 	return &DeltaHandler{
 		log:       log,
 		db:        db,

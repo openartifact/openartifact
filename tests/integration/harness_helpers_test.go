@@ -22,7 +22,7 @@ import (
 
 type TestHarness struct {
 	DB        *sql.DB
-	Database  database.Database
+	Database  *database.PostgresDB
 	BlobStore storage.BlobStore
 	Container *postgres.PostgresContainer
 	TempDir   string

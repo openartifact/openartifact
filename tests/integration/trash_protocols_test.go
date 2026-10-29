@@ -188,7 +188,7 @@ func (e *tprEnv) buildRouter() http.Handler {
 	mavenUpload := api.NewMavenUploadHandler(log, db, bs, nil)
 	mavenUpload.SetMavenWorker(mavenW)
 
-	npmUpload := api.NewNPMUploadHandler(log, db, bs, tprBaseURL, nil)
+	npmUpload := api.NewNPMUploadHandler(log, db, bs, nil)
 	npmUpload.SetNPMWorker(npmW)
 
 	debUpload := api.NewDebUploadHandler(log, db, bs, nil)

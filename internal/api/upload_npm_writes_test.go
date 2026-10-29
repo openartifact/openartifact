@@ -311,7 +311,7 @@ func newNPMEnv(t *testing.T) *npmEnv {
 	blobs := formattest.NewBlobStore()
 	events := &formattest.Publisher{}
 	db.fail = map[string]error{}
-	h := NewNPMUploadHandler(formattest.NewLogger(t), db, blobs, "http://localhost", nil)
+	h := NewNPMUploadHandler(formattest.NewLogger(t), db, blobs, nil)
 	h.SetPublisher(events)
 
 	return &npmEnv{db: db, h: h, blobs: blobs, events: events}

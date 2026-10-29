@@ -7,20 +7,30 @@ package api
 import (
 	"net/http"
 
+	"context"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// SelfTokensStore is the part of the database SelfTokensHandler uses needs.
+type SelfTokensStore interface {
+	issueTokenStore
+	GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error)
+	ListTokensByUser(ctx context.Context, userID string) ([]*models.Token, error)
+	RevokeToken(ctx context.Context, tokenID string) error
+}
+
 type SelfTokensHandler struct {
-	db        database.Database
+	db        SelfTokensStore
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 }
 
-func NewSelfTokensHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *SelfTokensHandler {
+func NewSelfTokensHandler(db SelfTokensStore, log *logger.Logger, evaluator *auth.Evaluator) *SelfTokensHandler {
 	return &SelfTokensHandler{db: db, log: log, evaluator: evaluator}
 }
 

@@ -635,7 +635,7 @@ func TestCachedPackumentStaysCurrentNPM(t *testing.T) {
 		router.Use(authenticateTestBearer)
 		router.Route("/repos/{name}", func(r chi.Router) {
 			formatnpm.NewHTTPHandler(log, pg, bs, stalenessBaseURL).RegisterRepoRoutes(r)
-			api.NewNPMUploadHandler(log, pg, bs, stalenessBaseURL, nil).RegisterRepoRoutes(r)
+			api.NewNPMUploadHandler(log, pg, bs, nil).RegisterRepoRoutes(r)
 		})
 
 		return router

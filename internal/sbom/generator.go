@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"context"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -21,9 +23,19 @@ import (
 // ErrUnsupportedSpec is returned for a document format or spec version the generator cannot emit.
 var ErrUnsupportedSpec = errors.New("unsupported SBOM spec version")
 
+// GeneratorStore is the part of the database Generator uses needs.
+type GeneratorStore interface {
+	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
+	GetLicenseScanResult(ctx context.Context, repoID string, artifactID string) (*models.LicenseScanResult, error)
+	GetRepoComponentBlob(ctx context.Context, repoID string, id string) (*models.ComponentBlob, error)
+	GetVulnScanResult(ctx context.Context, repoID string, artifactID string) (*models.VulnScanResult, error)
+	ListVEXStatements(ctx context.Context, repoID string, artifactID string) ([]*models.VEXStatement, error)
+	ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error)
+}
+
 // Generator builds SBOM and VEX documents.
 type Generator struct {
-	db          database.Database
+	db          GeneratorStore
 	blobs       storage.BlobStore
 	log         *logger.Logger
 	toolVersion string
@@ -46,7 +58,7 @@ type SBOMResult struct {
 
 // NewGenerator creates a Generator; db may be nil (only the artifact's
 // properties are then used, no scans, hashes or VEX decisions).
-func NewGenerator(db database.Database, log *logger.Logger) *Generator {
+func NewGenerator(db GeneratorStore, log *logger.Logger) *Generator {
 	return &Generator{db: db, log: log, toolVersion: "dev", now: time.Now}
 }
 
