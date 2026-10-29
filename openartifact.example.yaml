@@ -34,7 +34,11 @@ server:
   # apiKey: ""              # legacy write API key
   # instanceId: "node-1"
 
-baseUrl: "http://localhost:8080"
+# Public URL of the server, env BASE_URL. Needed for SSO callbacks, SAML metadata
+# and webhook links; package clients (npm tarballs, Cargo config.json, NuGet,
+# Composer dists, ...) follow the request host when it is unset and use it as an
+# override when set. Helm, PyPI and Terraform use relative URLs and ignore it.
+# baseUrl: "https://artifacts.example.com"
 
 database:
   driver: "postgres"

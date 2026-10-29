@@ -46,8 +46,12 @@ x-openartifact-env: &openartifact-env
   # First admin password; empty generates one and prints it once (24h validity).
   # Prefer a file mount plus OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE for real deployments.
   OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD: ${OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD:-}
-  # Public URL clients and SSO callbacks use (e.g. https://artifacts.example.com).
+  # Public URL SSO callbacks and webhook links use (e.g. https://artifacts.example.com).
+  # Empty: package-client URLs follow the request's host.
   BASE_URL: ${BASE_URL:-}
+  # CIDRs of reverse proxies whose X-Forwarded-For/-Host/-Proto are believed
+  # (comma-separated); empty trusts none.
+  OPENARTIFACT_TRUSTED_PROXIES: ${OPENARTIFACT_TRUSTED_PROXIES:-}
   OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups
   # Vulnerability scanners (bundled with OPENARTIFACT_SCANNERS at build time, or installed at runtime).
   # Offline mode never downloads; mirrors replace ghcr.io / grype.anchore.io.

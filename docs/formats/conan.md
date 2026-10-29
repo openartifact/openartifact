@@ -69,7 +69,7 @@ Earlier releases stored one record per recipe under revision `0`, ignored the re
 
 ## Conan 1.x
 
-A Conan 1.x client (revisions disabled, its default) speaks the `v1` API: it asks for a map of file name to URL (`upload_urls`, `download_urls`, `digest`) and then transfers each file with a plain `GET` or `PUT` on that URL. The URLs are absolute (built from `BASE_URL`, so set it to the address clients use) and point at `v1/files/...` of the same repository.
+A Conan 1.x client (revisions disabled, its default) speaks the `v1` API: it asks for a map of file name to URL (`upload_urls`, `download_urls`, `digest`) and then transfers each file with a plain `GET` or `PUT` on that URL. The URLs are absolute (the request origin, or `BASE_URL` when set; a relative URL would resolve against the remote URL without its trailing slash) and point at `v1/files/...` of the same repository.
 
 ```sh
 conan remote add REPO HOST/repos/REPO
