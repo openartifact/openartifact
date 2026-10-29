@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/klauspost/compress/gzip"
 
@@ -45,19 +46,28 @@ var contentTypes = map[string]string{
 var hashedName = regexp.MustCompile(`-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9.]+$`)
 
 // variant is one encoding of an asset with its own validator: RFC 9110 wants
-// different representations to carry different ETags.
+// different representations to carry different ETags. The bytes are not held
+// here: open streams them (from the embedded FS, or from memory for the small
+// rendered shell), so a built UI is resident in the binary only.
 type variant struct {
-	body []byte
 	etag string
+	size int64
+	open func() (io.ReadCloser, error)
 }
 
 type asset struct {
 	ctyp      string
 	immutable bool
-	plain     variant
-	// gzip is the precompressed representation; nil for content that is
-	// already compressed, binary, or did not shrink.
-	gzip *variant
+	// sum is the hex digest the validators of every variant derive from.
+	sum   string
+	plain variant
+	// gzip is the compressed representation; nil for content that is already
+	// compressed, binary, or did not shrink. A build that ran
+	// scripts/precompress.js embeds it; otherwise it is compressed by the first
+	// request that looks (compressOnce), never at startup.
+	gzip         *variant
+	compressible bool
+	compressOnce sync.Once
 }
 
 // compressible reports whether a media type is text-like and so worth
@@ -86,49 +96,148 @@ func compressible(ctyp string) bool {
 	return false
 }
 
-func etagOf(body []byte, suffix string) string {
-	sum := sha256.Sum256(body)
+func etagOf(sum, suffix string) string { return `"` + sum + suffix + `"` }
 
-	return `"` + hex.EncodeToString(sum[:16]) + suffix + `"`
-}
+// gzipWriters holds the compressors: one Writer allocates over a megabyte of
+// match tables at BestCompression, so each compression reuses one.
+//
+//nolint:gochecknoglobals // pool of reusable compressors
+var gzipWriters = sync.Pool{New: func() any {
+	zw, _ := gzip.NewWriterLevel(io.Discard, gzip.BestCompression) // the level is valid
 
-func gzipBytes(body []byte) []byte {
-	var buf bytes.Buffer
-
-	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if err != nil {
-		return nil
-	}
-
-	if _, err := zw.Write(body); err != nil {
-		return nil
-	}
-
-	if err := zw.Close(); err != nil {
-		return nil
-	}
-
-	return buf.Bytes()
-}
+	return zw
+}}
 
 // precompressedExt marks a file whose content is the gzip of the asset named
 // without it (scripts/precompress.js). The server embeds only that gzip, so a
-// built UI is stored once; the plain bytes are expanded when the assets load.
+// built UI is stored once and streamed: the plain bytes are expanded per
+// request for the clients that do not accept gzip.
 const precompressedExt = ".gz"
 
-func gunzipBytes(gz []byte) ([]byte, error) {
-	zr, err := gzip.NewReader(bytes.NewReader(gz))
+// copyBufSize is the size of the read buffer shared by the startup digests.
+const copyBufSize = 32 << 10
+
+// sniffLen is how many leading bytes http.DetectContentType looks at.
+const sniffLen = 512
+
+// digest streams r once through buf and returns the validator (the first 16
+// bytes of its SHA-256, hex), its length and its first sniffLen bytes.
+func digest(r io.Reader, buf []byte) (sum string, size int64, head []byte, err error) {
+	h := sha256.New()
+	head = make([]byte, 0, sniffLen)
+
+	for {
+		n, rerr := r.Read(buf)
+		if n > 0 {
+			_, _ = h.Write(buf[:n])
+			size += int64(n)
+
+			if room := sniffLen - len(head); room > 0 {
+				head = append(head, buf[:min(n, room)]...)
+			}
+		}
+
+		if rerr == io.EOF {
+			break
+		}
+
+		if rerr != nil {
+			return "", 0, nil, rerr //nolint:wrapcheck // the caller skips the file
+		}
+	}
+
+	return hex.EncodeToString(h.Sum(nil)[:16]), size, head, nil
+}
+
+// readCloser pairs a decompressing reader with the file under it.
+type readCloser struct {
+	io.Reader
+	closers []io.Closer
+}
+
+func (c readCloser) Close() error {
+	var first error
+
+	for _, cl := range c.closers {
+		if err := cl.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+
+	return first
+}
+
+// gunzipFile opens the gzip file p of sub for reading its plain bytes.
+func gunzipFile(sub fs.FS, p string) (io.ReadCloser, error) {
+	f, err := sub.Open(p)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // the caller skips the file
 	}
 
-	defer func() { _ = zr.Close() }()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		_ = f.Close()
 
-	return io.ReadAll(zr)
+		return nil, err //nolint:wrapcheck // the caller skips the file
+	}
+
+	return readCloser{Reader: zr, closers: []io.Closer{zr, f}}, nil
+}
+
+// readPlain loads the plain bytes of a small asset (index.html, which the
+// branding patches); nil when they cannot be read.
+func readPlain(a *asset) []byte {
+	rc, err := a.plain.open()
+	if err != nil {
+		return nil
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	b, err := io.ReadAll(rc)
+	if err != nil {
+		return nil
+	}
+
+	return b
+}
+
+func bytesOpen(b []byte) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
+}
+
+// digestFile digests the plain bytes of file p of sub, expanding it first when
+// it is a precompressed one; zr is the decompressor to reuse (created on first use).
+func digestFile(sub fs.FS, p string, isGz bool, zr **gzip.Reader, buf []byte) (sum string, size int64, head []byte, err error) {
+	f, err := sub.Open(p)
+	if err != nil {
+		return "", 0, nil, err //nolint:wrapcheck // the caller skips the file
+	}
+
+	defer func() { _ = f.Close() }()
+
+	if !isGz {
+		return digest(f, buf)
+	}
+
+	if *zr == nil {
+		*zr, err = gzip.NewReader(f)
+	} else {
+		err = (*zr).Reset(f)
+	}
+
+	if err != nil {
+		return "", 0, nil, err //nolint:wrapcheck // the caller skips the file
+	}
+
+	return digest(*zr, buf)
 }
 
 func loadAssets(sub fs.FS) map[string]*asset {
 	assets := make(map[string]*asset)
+	buf := make([]byte, copyBufSize)
+
+	var zr *gzip.Reader // one decompressor, reset for every precompressed file
 
 	_ = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -138,20 +247,19 @@ func loadAssets(sub fs.FS) map[string]*asset {
 			return nil // placeholder that lets //go:embed compile before the UI is built
 		}
 
-		body, readErr := fs.ReadFile(sub, p)
-		if readErr != nil {
-			return nil //nolint:nilerr // an unreadable embedded file is simply not served
+		name, isGz := strings.CutSuffix(p, precompressedExt)
+		open := func() (io.ReadCloser, error) { return sub.Open(p) }
+
+		if isGz {
+			open = func() (io.ReadCloser, error) { return gunzipFile(sub, p) }
 		}
 
-		name, gz := p, []byte(nil)
+		// One pass over the plain bytes gives the validator, the size and the
+		// head to sniff; nothing is kept.
+		sum, size, head, digestErr := digestFile(sub, p, isGz, &zr, buf)
 
-		if trimmed, ok := strings.CutSuffix(p, precompressedExt); ok {
-			plain, gunzipErr := gunzipBytes(body)
-			if gunzipErr != nil {
-				return nil //nolint:nilerr // a corrupt precompressed file is simply not served
-			}
-
-			name, gz, body = trimmed, body, plain
+		if digestErr != nil {
+			return nil //nolint:nilerr // a corrupt or unreadable embedded file is simply not served
 		}
 
 		ctyp := contentTypes[path.Ext(name)]
@@ -160,12 +268,28 @@ func loadAssets(sub fs.FS) map[string]*asset {
 		}
 
 		if ctyp == "" {
-			ctyp = http.DetectContentType(body)
+			ctyp = http.DetectContentType(head)
 		}
 
-		immutable := strings.HasPrefix(name, "assets/") && hashedName.MatchString(name)
+		a := &asset{
+			ctyp:         ctyp,
+			immutable:    strings.HasPrefix(name, "assets/") && hashedName.MatchString(name),
+			sum:          sum,
+			plain:        variant{etag: etagOf(sum, ""), size: size, open: open},
+			compressible: compressible(ctyp),
+		}
 
-		a := newAsset(ctyp, body, immutable, gz)
+		if isGz {
+			a.compressOnce.Do(func() {}) // the build already compressed it
+
+			if info, infoErr := d.Info(); infoErr == nil && info.Size() < size {
+				a.gzip = &variant{
+					etag: etagOf(sum, "-gzip"), size: info.Size(),
+					open: func() (io.ReadCloser, error) { return sub.Open(p) },
+				}
+			}
+		}
+
 		assets[name] = a
 
 		return nil
@@ -174,24 +298,50 @@ func loadAssets(sub fs.FS) map[string]*asset {
 	return assets
 }
 
-// newAsset hashes body and attaches its gzip representation: gz when the build
-// already compressed it, otherwise a fresh compression when worthwhile.
-func newAsset(ctyp string, body []byte, immutable bool, gz []byte) *asset {
-	a := &asset{
-		ctyp:      ctyp,
-		immutable: immutable,
-		plain:     variant{body: body, etag: etagOf(body, "")},
-	}
+// newAsset hashes an in-memory body (the rendered shell); its gzip is made on
+// first use like any other.
+func newAsset(ctyp string, body []byte, immutable bool) *asset {
+	sum, size, _, _ := digest(bytes.NewReader(body), make([]byte, copyBufSize)) // a bytes.Reader never fails
 
-	if gz == nil && compressible(ctyp) {
-		gz = gzipBytes(body)
+	return &asset{
+		ctyp: ctyp, immutable: immutable, sum: sum, compressible: compressible(ctyp),
+		plain: variant{etag: etagOf(sum, ""), size: size, open: bytesOpen(body)},
 	}
+}
 
-	if gz != nil && len(gz) < len(body) {
-		a.gzip = &variant{body: gz, etag: etagOf(body, "-gzip")}
-	}
+// gzipVariant returns the compressed representation, or nil when the asset has
+// none. A compressible asset the build did not compress is compressed here, once,
+// with a pooled writer, and its compressed bytes are what stays resident.
+func (a *asset) gzipVariant() *variant {
+	a.compressOnce.Do(func() {
+		if !a.compressible {
+			return
+		}
 
-	return a
+		rc, err := a.plain.open()
+		if err != nil {
+			return
+		}
+
+		defer func() { _ = rc.Close() }()
+
+		var buf bytes.Buffer
+
+		zw, _ := gzipWriters.Get().(*gzip.Writer)
+		defer gzipWriters.Put(zw)
+
+		zw.Reset(&buf)
+
+		if _, err := io.Copy(zw, rc); err != nil || zw.Close() != nil || int64(buf.Len()) >= a.plain.size {
+			return
+		}
+
+		gz := bytes.Clone(buf.Bytes()) // drop the buffer's slack
+
+		a.gzip = &variant{etag: etagOf(a.sum, "-gzip"), size: int64(len(gz)), open: bytesOpen(gz)}
+	})
+
+	return a.gzip
 }
 
 // acceptsGzip reports whether an Accept-Encoding header allows gzip: an
@@ -247,15 +397,15 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 		h.Set("Cache-Control", cacheRevalidate)
 	}
 
-	v := &a.plain
+	v, gz := &a.plain, a.gzipVariant()
 
-	if a.gzip != nil {
+	if gz != nil {
 		// Caches must key compressible assets on the request's encoding even
 		// when this particular response is the uncompressed one.
 		h.Add("Vary", "Accept-Encoding")
 
 		if acceptsGzip(r.Header.Get("Accept-Encoding")) {
-			v = a.gzip
+			v = gz
 			h.Set("Content-Encoding", "gzip")
 		}
 	}
@@ -269,11 +419,25 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 		return
 	}
 
-	h.Set("Content-Length", strconv.Itoa(len(v.body)))
+	h.Set("Content-Length", strconv.FormatInt(v.size, 10))
+
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+
+		return
+	}
+
+	body, err := v.open()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	defer func() { _ = body.Close() }()
+
 	w.WriteHeader(http.StatusOK)
 
-	if r.Method != http.MethodHead {
-		//nolint:gosec // G705: embedded build output and the sanitised branded shell, not request data
-		_, _ = w.Write(v.body)
-	}
+	//nolint:gosec // G705: embedded build output and the sanitised branded shell, not request data
+	_, _ = io.Copy(w, body)
 }

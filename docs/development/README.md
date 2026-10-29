@@ -80,7 +80,7 @@ Start the server on `:8080` for the dev server to talk to. Build the server with
 
 Three more rules keep the binaries small:
 
-- `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` serves that gzip as it is and expands it once at startup for clients that do not accept gzip. Source maps are not emitted.
+- `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` streams that gzip from the binary as it is and expands it per request for clients that do not accept gzip. Startup only hashes the files; a build without the script (plain `vite build`) gzips each compressible asset on its first request, once, with a pooled writer, and keeps only that gzip in memory. Source maps are not emitted.
 - `cmd/oa` and `cmd/resetpw` link no server code: no database, storage, telemetry, web or cloud-SDK packages (`internal/passwd` holds the password hashing `resetpw` needs; `internal/auth` pulls in the whole server). `tests/binary_deps_test.go` fails when an import brings one back, and when the server links `golang.org/x/net/trace` again.
 - UPX is not used, and the official binaries and image carry every documented feature; the optional [build tags](#build-tags) below are for self-built slim servers.
 

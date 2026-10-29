@@ -169,7 +169,7 @@ Quota reservation is a single conditional upsert on the repository's `storage_qu
 
 ### HTTP caching
 
-The embedded SPA is gzip-precompressed at startup; hashed `assets/*` get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache` with an ETag. Package metadata endpoints (maven-metadata.xml and checksums, deb Release/Packages, rpm repodata, helm `index.yaml`, PyPI simple, npm packument) send an ETag and answer `If-None-Match` with 304 after authorisation. Only anonymous reads of public repositories are `public`; authenticated responses are `private, no-cache` with `Vary: Authorization`.
+The embedded SPA is gzip-precompressed at build time (or, for a build without `scripts/precompress.js`, on the first request of each asset), never at startup, and is streamed from the binary rather than held in memory; hashed `assets/*` get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache` with an ETag. Package metadata endpoints (maven-metadata.xml and checksums, deb Release/Packages, rpm repodata, helm `index.yaml`, PyPI simple, npm packument) send an ETag and answer `If-None-Match` with 304 after authorisation. Only anonymous reads of public repositories are `public`; authenticated responses are `private, no-cache` with `Vary: Authorization`.
 
 ### Rendered metadata cache and compression
 
