@@ -186,15 +186,97 @@ func tfOpts(repo *models.Repository, target string, o fetchOpts) fetchOpts {
 	return o
 }
 
-// tfReadDoc loads a cached document into memory under the document gate.
-func (s *Service) tfReadDoc(ctx context.Context, entry *models.ProxyCacheEntry, limit int64) ([]byte, error) {
-	if err := s.packuments.Acquire(ctx); err != nil {
-		return nil, err
-	}
-	defer s.packuments.Release()
+// tfFetchAt is the fetchFunc of a document whose URL the upstream's discovery
+// document decides: at picks it from the service roots (nil when the upstream
+// offers no such service, which is a missing document) and opts says how it is
+// checked. The discovery lookup runs inside the fetch, so a cached document
+// never needs it.
+func (s *Service) tfFetchAt(repo *models.Repository, d metaDoc, at func(tfEndpoints) *url.URL, opts func(*url.URL) fetchOpts) fetchFunc {
+	return func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		ep, err := s.tfUpstream(fctx, repo)
+		if err != nil {
+			return nil, err
+		}
 
-	return s.readBlobCapped(ctx, entry.BlobKey, "terraform document", int(limit))
+		u := at(ep)
+		if u == nil {
+			return nil, errNotFound
+		}
+
+		target := u.String()
+		d.url = func(string) (string, error) { return target, nil }
+		d.opts = func(context.Context, string) fetchOpts { return tfOpts(repo, target, opts(u)) }
+
+		return s.fetchDoc(repo, d)(fctx)
+	}
 }
+
+// tfParse resolves the document d through fetch and parses its cached body
+// under the document gate (parseDoc for a document whose fetch is fetch). A
+// cached copy that does not parse is a bug on this side (d.bad).
+func tfParse[T any](
+	ctx context.Context,
+	s *Service,
+	repo *models.Repository,
+	d metaDoc,
+	fetch fetchFunc,
+	parse func(body []byte) (T, error),
+) (T, *resolution, error) {
+	var zero T
+
+	res, err := s.resolveWith(ctx, repo, d.key, fetch)
+	if err != nil {
+		return zero, nil, err
+	}
+
+	res, body, release, err := s.loadCachedBody(ctx, repo, d.key, res, d.limit, d.what, func() (*resolution, error) {
+		return s.resolveWith(ctx, repo, d.key, fetch)
+	})
+	if err != nil {
+		return zero, nil, err
+	}
+
+	v, perr := parse(body)
+
+	release()
+
+	if perr != nil {
+		return zero, nil, s.unusableDoc(ctx, repo, d, perr)
+	}
+
+	return v, res, nil
+}
+
+// serveTFCached answers a request for the cached file key like the generic
+// cached-file answer, with the registry's error shape.
+func (s *Service) serveTFCached(w http.ResponseWriter, r *http.Request, repo *models.Repository, key string, fetch fetchFunc) {
+	resolve := func() (*resolution, error) { return s.resolveWith(r.Context(), repo, key, fetch) }
+
+	res, err := resolve()
+	if err != nil {
+		s.writeTFError(w, err)
+		return
+	}
+
+	s.serveResolved(w, r, repo, key, res, resolve)
+}
+
+// tfFileDoc is a file served untouched whose location the cached package
+// document names (a provider's checksum file or signature); like every
+// download it only gets the repository's credentials from the upstream's own
+// origin.
+func tfFileDoc(repo *models.Repository, key, target, what string, o fetchOpts) metaDoc {
+	return metaDoc{
+		key:   key,
+		url:   func(string) (string, error) { return target, nil },
+		opts:  staticOpts(tfOpts(repo, target, o)),
+		limit: tfMaxSums,
+		what:  what,
+	}
+}
+
+// tfSumsOpts checks a provider's SHA256SUMS file.
+var tfSumsOpts = fetchOpts{contentType: "text/plain; charset=utf-8", verify: verifyTFSums} //nolint:gochecknoglobals // read-only table
 
 var (
 	// errTFBadUpstreamURL marks an upstream_url that is not an http(s) URL.
@@ -230,8 +312,10 @@ func (s *Service) tfUpstream(ctx context.Context, repo *models.Repository) (tfEn
 
 	target := docURL.String()
 
-	res, err := s.resolveWith(ctx, repo, tfDiscoveryKey, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchURL(fctx, repo, tfDiscoveryKey, target, tfOpts(repo, target, fetchOpts{
+	d := metaDoc{
+		key: tfDiscoveryKey,
+		url: func(string) (string, error) { return target, nil },
+		opts: staticOpts(tfOpts(repo, target, fetchOpts{
 			accept:      tfJSON,
 			contentType: tfJSON,
 			verify: func(spool io.ReadSeeker) error {
@@ -244,8 +328,12 @@ func (s *Service) tfUpstream(ctx context.Context, repo *models.Repository) (tfEn
 
 				return perr
 			},
-		}))
-	})
+		})),
+		limit: tfMaxDoc,
+		what:  "terraform discovery document",
+	}
+
+	res, err := s.resolveDoc(ctx, repo, d)
 	if errors.Is(err, errNotFound) {
 		s.log.Warnw("proxy upstream has no terraform discovery document", "repo", repo.Name, "url", target)
 		return tfEndpoints{}, errUpstream
@@ -260,15 +348,17 @@ func (s *Service) tfUpstream(ctx context.Context, repo *models.Repository) (tfEn
 		return ep, nil
 	}
 
-	body, err := s.tfReadDoc(ctx, res.entry, tfMaxDoc)
+	_, body, release, err := s.loadDoc(ctx, repo, d, res)
 	if err != nil {
 		return tfEndpoints{}, err
 	}
 
 	ep, err := parseTerraformDiscovery(body, docURL)
+
+	release()
+
 	if err != nil {
-		s.log.Errorw("cached terraform discovery document is unusable", "repo", repo.Name, "error", err)
-		return tfEndpoints{}, errInternal
+		return tfEndpoints{}, s.unusableDoc(ctx, repo, d, err)
 	}
 
 	s.tfEndpoints.put(memoKey, ep)
@@ -346,71 +436,43 @@ func (s *Service) tfModuleGetTransform(resp *http.Response) error {
 
 // ---- version lists ----
 
-func (s *Service) tfResolveModuleVersions(ctx context.Context, repo *models.Repository, name, system string) (*resolution, error) {
-	key := tfModuleVersionsKey(name, system)
+func (s *Service) tfModuleVersionsDoc(repo *models.Repository, name, system string) (metaDoc, fetchFunc) {
+	d := metaDoc{key: tfModuleVersionsKey(name, system), limit: int(s.maxMeta), what: "terraform module versions"}
 
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		ep, err := s.tfUpstream(fctx, repo)
-		if err != nil {
-			return nil, err
-		}
+	return d, s.tfFetchAt(repo, d,
+		func(ep tfEndpoints) *url.URL {
+			if ep.modules == nil {
+				return nil
+			}
 
-		if ep.modules == nil {
-			return nil, errNotFound
-		}
-
-		target := ep.modules.JoinPath(repo.Name, name, system, "versions").String()
-
-		return s.fetchURL(fctx, repo, key, target, tfOpts(repo, target, fetchOpts{
-			accept:      tfJSON,
-			contentType: tfJSON,
-			transform:   s.tfModuleVersionsTransform,
-		}))
-	})
+			return ep.modules.JoinPath(repo.Name, name, system, "versions")
+		},
+		func(*url.URL) fetchOpts {
+			return fetchOpts{accept: tfJSON, contentType: tfJSON, transform: s.tfModuleVersionsTransform}
+		})
 }
 
-func (s *Service) tfResolveProviderVersions(ctx context.Context, repo *models.Repository, typ string) (*resolution, error) {
-	key := tfProviderVersionsKey(typ)
+func (s *Service) tfProviderVersionsDoc(repo *models.Repository, typ string) (metaDoc, fetchFunc) {
+	d := metaDoc{key: tfProviderVersionsKey(typ), limit: int(s.maxMeta), what: "terraform provider versions"}
 
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		ep, err := s.tfUpstream(fctx, repo)
-		if err != nil {
-			return nil, err
-		}
+	return d, s.tfFetchAt(repo, d,
+		func(ep tfEndpoints) *url.URL {
+			if ep.providers == nil {
+				return nil
+			}
 
-		if ep.providers == nil {
-			return nil, errNotFound
-		}
-
-		target := ep.providers.JoinPath(repo.Name, typ, "versions").String()
-
-		return s.fetchURL(fctx, repo, key, target, tfOpts(repo, target, fetchOpts{
-			accept:      tfJSON,
-			contentType: tfJSON,
-			transform:   s.tfProviderVersionsTransform,
-		}))
-	})
+			return ep.providers.JoinPath(repo.Name, typ, "versions")
+		},
+		func(*url.URL) fetchOpts {
+			return fetchOpts{accept: tfJSON, contentType: tfJSON, transform: s.tfProviderVersionsTransform}
+		})
 }
 
 // tfModuleVersions returns the cached, ascending versions of a module.
 func (s *Service) tfModuleVersions(ctx context.Context, repo *models.Repository, name, system string) ([]string, *resolution, error) {
-	res, err := s.tfResolveModuleVersions(ctx, repo, name, system)
-	if err != nil {
-		return nil, nil, err
-	}
+	d, fetch := s.tfModuleVersionsDoc(repo, name, system)
 
-	data, err := s.tfReadDoc(ctx, res.entry, s.maxMeta)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	versions, err := parseCanonModuleVersions(data)
-	if err != nil {
-		s.log.Errorw("cached terraform module versions are unusable", "repo", repo.Name, "module", name, "error", err)
-		return nil, nil, errInternal
-	}
-
-	return versions, res, nil
+	return tfParse(ctx, s, repo, d, fetch, parseCanonModuleVersions)
 }
 
 // ---- request handlers ----
@@ -441,8 +503,8 @@ func (s *Service) serveTerraform(w http.ResponseWriter, r *http.Request, repo *m
 }
 
 func (s *Service) serveTFProviderVersions(w http.ResponseWriter, r *http.Request, repo *models.Repository, p tfPath) {
-	key := tfProviderVersionsKey(p.name)
-	resolve := func() (*resolution, error) { return s.tfResolveProviderVersions(r.Context(), repo, p.name) }
+	d, fetch := s.tfProviderVersionsDoc(repo, p.name)
+	resolve := func() (*resolution, error) { return s.resolveWith(r.Context(), repo, d.key, fetch) }
 
 	res, err := resolve()
 	if err != nil {
@@ -454,7 +516,7 @@ func (s *Service) serveTFProviderVersions(w http.ResponseWriter, r *http.Request
 	h.Set("Cache-Control", httpcache.CacheControl(base.SharedCacheable(r, repo.Public), tfVersionsMaxAge))
 	h.Add("Vary", "Authorization")
 
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveResolved(w, r, repo, d.key, res, resolve)
 }
 
 // tfModuleVersionsOut is the module version list as clients get it.
@@ -563,49 +625,41 @@ func (s *Service) serveTFModule(w http.ResponseWriter, r *http.Request, repo *mo
 // tfModuleSource returns the archive source of a module version: the cached
 // download answer of the upstream, interpreted by parseModuleGet.
 func (s *Service) tfModuleSource(ctx context.Context, repo *models.Repository, name, system, version string) (tfModuleSource, error) {
-	key := tfModuleDownloadKey(name, system, version)
+	d := metaDoc{key: tfModuleDownloadKey(name, system, version), limit: tfMaxDoc, what: "terraform module download answer"}
 
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		ep, uerr := s.tfUpstream(fctx, repo)
-		if uerr != nil {
-			return nil, uerr
-		}
-
+	downloadURL := func(ep tfEndpoints) *url.URL {
 		if ep.modules == nil {
-			return nil, errNotFound
+			return nil
 		}
 
-		target := ep.modules.JoinPath(repo.Name, name, system, version, "download").String()
-
-		return s.fetchURL(fctx, repo, key, target, tfOpts(repo, target, fetchOpts{
-			accept:      tfJSON,
-			contentType: tfJSON,
-			transform:   s.tfModuleGetTransform,
-		}))
-	})
-	if err != nil {
-		return tfModuleSource{}, err
+		return ep.modules.JoinPath(repo.Name, name, system, version, "download")
 	}
+
+	fetch := s.tfFetchAt(repo, d, downloadURL, func(*url.URL) fetchOpts {
+		return fetchOpts{accept: tfJSON, contentType: tfJSON, transform: s.tfModuleGetTransform}
+	})
 
 	ep, err := s.tfUpstream(ctx, repo)
 	if err != nil {
 		return tfModuleSource{}, err
 	}
 
-	data, err := s.tfReadDoc(ctx, res.entry, tfMaxDoc)
+	if downloadURL(ep) == nil {
+		return tfModuleSource{}, errNotFound
+	}
+
+	doc, _, err := tfParse(ctx, s, repo, d, fetch, func(body []byte) (tfGetDoc, error) {
+		var g tfGetDoc
+
+		return g, json.Unmarshal(body, &g)
+	})
 	if err != nil {
 		return tfModuleSource{}, err
 	}
 
-	var doc tfGetDoc
-	if err = json.Unmarshal(data, &doc); err != nil {
-		s.log.Errorw("cached terraform module download answer is unusable", "repo", repo.Name, "module", name, "error", err)
-		return tfModuleSource{}, errInternal
-	}
-
 	src, err := parseModuleGet(
 		doc.Get,
-		ep.modules.JoinPath(repo.Name, name, system, version, "download"),
+		downloadURL(ep),
 		cmp.Or(s.tfCodeload, tfCodeloadBase),
 	)
 	if err != nil {
@@ -671,26 +725,18 @@ func (s *Service) serveTFModuleDownload(w http.ResponseWriter, r *http.Request, 
 // tfPackage returns a provider package document: the upstream's, as cached,
 // with its URLs absolute.
 func (s *Service) tfPackage(ctx context.Context, repo *models.Repository, typ, version, osName, arch string) (*tfPackageDoc, error) {
-	key := tfPackageKey(typ, version, osName, arch)
-
 	packageURL := func(ep tfEndpoints) *url.URL {
+		if ep.providers == nil {
+			return nil
+		}
+
 		return ep.providers.JoinPath(repo.Name, typ, version, "download", osName, arch)
 	}
 
-	res, err := s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		ep, uerr := s.tfUpstream(fctx, repo)
-		if uerr != nil {
-			return nil, uerr
-		}
+	d := metaDoc{key: tfPackageKey(typ, version, osName, arch), limit: tfMaxDoc, what: "terraform provider package document"}
 
-		if ep.providers == nil {
-			return nil, errNotFound
-		}
-
-		docURL := packageURL(ep)
-		target := docURL.String()
-
-		return s.fetchURL(fctx, repo, key, target, tfOpts(repo, target, fetchOpts{
+	fetch := s.tfFetchAt(repo, d, packageURL, func(docURL *url.URL) fetchOpts {
+		return fetchOpts{
 			accept:      tfJSON,
 			contentType: tfJSON,
 			verify: func(spool io.ReadSeeker) error {
@@ -703,29 +749,23 @@ func (s *Service) tfPackage(ctx context.Context, repo *models.Repository, typ, v
 
 				return perr
 			},
-		}))
+		}
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	ep, err := s.tfUpstream(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := s.tfReadDoc(ctx, res.entry, tfMaxDoc)
-	if err != nil {
-		return nil, err
+	if packageURL(ep) == nil {
+		return nil, errNotFound
 	}
 
-	doc, err := parseProviderPackage(data, packageURL(ep), osName, arch)
-	if err != nil {
-		s.log.Errorw("cached terraform provider package document is unusable", "repo", repo.Name, "provider", typ, "error", err)
-		return nil, errInternal
-	}
+	doc, _, err := tfParse(ctx, s, repo, d, fetch, func(body []byte) (*tfPackageDoc, error) {
+		return parseProviderPackage(body, packageURL(ep), osName, arch)
+	})
 
-	return doc, nil
+	return doc, err
 }
 
 // tfSplitPlatform splits "os_arch" (a validated ticket coordinate).
@@ -848,19 +888,10 @@ func (s *Service) serveTFModuleArchive(w http.ResponseWriter, r *http.Request, r
 	}
 
 	key := tfModuleArchiveKey(d.A, d.B, d.C, d.File)
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchTFModuleArchive(fctx, repo, key, src)
-		})
-	}
 
-	res, err := resolve()
-	if err != nil {
-		s.writeTFError(w, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveTFCached(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchTFModuleArchive(fctx, repo, key, src)
+	})
 }
 
 // fetchTFModuleArchive downloads a module archive from its source host. The
@@ -894,7 +925,7 @@ func (s *Service) fetchTFModuleArchive(
 		o.transform = func(resp *http.Response) error { return s.repackTFModule(repo, key, src, resp) }
 	}
 
-	return s.fetchURL(ctx, repo, key, src.url, tfOpts(repo, src.url, o))
+	return s.fetchDownload(ctx, repo, key, download{url: src.url, opts: o})
 }
 
 // tfSpoolFile is a temporary file that is removed when it is closed.
@@ -1028,19 +1059,10 @@ func (s *Service) serveTFProviderZip(w http.ResponseWriter, r *http.Request, rep
 	}
 
 	key := tfZipKey(d.A, d.B, d.C, d.File)
-	resolve := func() (*resolution, error) {
-		return s.resolveWith(r.Context(), repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-			return s.fetchTFProviderZip(fctx, repo, key, d.A, d.B, doc)
-		})
-	}
 
-	res, err := resolve()
-	if err != nil {
-		s.writeTFError(w, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveTFCached(w, r, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetchTFProviderZip(fctx, repo, key, d.A, d.B, doc)
+	})
 }
 
 // fetchTFProviderZip downloads a provider zip and admits it only when its
@@ -1077,24 +1099,11 @@ func (s *Service) fetchTFProviderZip(
 		return nil, errVerify
 	}
 
-	return s.fetchURL(ctx, repo, key, doc.DownloadURL, tfOpts(repo, doc.DownloadURL, fetchOpts{
+	return s.fetchDownload(ctx, repo, key, download{url: doc.DownloadURL, opts: fetchOpts{
 		wantSHA256:  doc.Shasum,
 		contentType: "application/zip",
 		verify:      func(spool io.ReadSeeker) error { return verifyTFArchive("zip", spool) },
-	}))
-}
-
-// tfResolveProviderFile resolves the cache entry of a provider's checksum file
-// or signature, fetched from target.
-func (s *Service) tfResolveProviderFile(
-	ctx context.Context,
-	repo *models.Repository,
-	key, target, contentType string,
-	verify func(io.ReadSeeker) error,
-) (*resolution, error) {
-	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
-		return s.fetchURL(fctx, repo, key, target, tfOpts(repo, target, fetchOpts{contentType: contentType, verify: verify}))
-	})
+	}})
 }
 
 func verifyTFSums(spool io.ReadSeeker) error {
@@ -1134,25 +1143,13 @@ func (s *Service) tfProviderSums(
 	typ, version string,
 	doc *tfPackageDoc,
 ) (map[string]string, error) {
-	key := tfProviderFileKey(typ, version, urlBase(doc.ShasumsURL))
+	d := tfFileDoc(repo, tfProviderFileKey(typ, version, urlBase(doc.ShasumsURL)), doc.ShasumsURL, "terraform checksum file", tfSumsOpts)
 
-	res, err := s.tfResolveProviderFile(ctx, repo, key, doc.ShasumsURL, "text/plain; charset=utf-8", verifyTFSums)
-	if err != nil {
-		return nil, err
-	}
+	sums, _, err := parseDoc(ctx, s, repo, d, func(body []byte, _ *resolution) (map[string]string, error) {
+		return parseSHA256SUMS(body)
+	})
 
-	data, err := s.tfReadDoc(ctx, res.entry, tfMaxSums)
-	if err != nil {
-		return nil, err
-	}
-
-	sums, err := parseSHA256SUMS(data)
-	if err != nil {
-		s.log.Errorw("cached terraform checksum file is unusable", "repo", repo.Name, "provider", typ, "error", err)
-		return nil, errInternal
-	}
-
-	return sums, nil
+	return sums, err
 }
 
 // serveTFProviderFile serves the SHA256SUMS file or its signature, untouched.
@@ -1171,9 +1168,9 @@ func (s *Service) serveTFProviderFile(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	target, contentType, verify := doc.ShasumsURL, "text/plain; charset=utf-8", verifyTFSums
+	target, o := doc.ShasumsURL, tfSumsOpts
 	if d.Kind == terraform.DownloadProviderSumsSig {
-		target, contentType, verify = doc.ShasumsSignatureURL, "application/pgp-signature", verifyTFSignature
+		target, o = doc.ShasumsSignatureURL, fetchOpts{contentType: "application/pgp-signature", verify: verifyTFSignature}
 	}
 
 	if urlBase(target) != d.File {
@@ -1182,15 +1179,6 @@ func (s *Service) serveTFProviderFile(w http.ResponseWriter, r *http.Request, re
 	}
 
 	key := tfProviderFileKey(d.A, d.B, d.File)
-	resolve := func() (*resolution, error) {
-		return s.tfResolveProviderFile(r.Context(), repo, key, target, contentType, verify)
-	}
 
-	res, err := resolve()
-	if err != nil {
-		s.writeTFError(w, err)
-		return
-	}
-
-	s.serveResolved(w, r, repo, key, res, resolve)
+	s.serveTFCached(w, r, repo, key, s.fetchDoc(repo, tfFileDoc(repo, key, target, "terraform provider file", o)))
 }
