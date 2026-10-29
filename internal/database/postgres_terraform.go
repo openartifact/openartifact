@@ -12,6 +12,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// TerraformStore owns Terraform/OpenTofu modules and providers.
+type TerraformStore struct{ *core }
+
 // terraformModuleMediaType maps the stored archive kind to the media type of
 // its blob.
 func terraformModuleMediaType(ext string) string {
@@ -77,7 +80,7 @@ func terraformProviderFromRow[R terraformProviderRow](in R) *models.TerraformPro
 
 // CreateTerraformModule stores one module version. A live row with the same
 // coordinates is a unique violation (versions are immutable).
-func (p *PostgresDB) CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error {
+func (p *TerraformStore) CreateTerraformModule(ctx context.Context, mod *models.TerraformModule) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, mod.Checksum, mod.BlobKey, terraformModuleMediaType(mod.ArchiveExt), mod.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for terraform module: %w", err)
@@ -97,7 +100,7 @@ func (p *PostgresDB) CreateTerraformModule(ctx context.Context, mod *models.Terr
 }
 
 // GetTerraformModule returns the live module version, or (nil, nil).
-func (p *PostgresDB) GetTerraformModule(ctx context.Context, repoID, name, system, version string) (*models.TerraformModule, error) {
+func (p *TerraformStore) GetTerraformModule(ctx context.Context, repoID, name, system, version string) (*models.TerraformModule, error) {
 	row, err := p.q.GetTerraformModule(ctx, dbsqlc.GetTerraformModuleParams{
 		RepositoryID: repoID, Name: name, System: system, Version: version,
 	})
@@ -107,7 +110,7 @@ func (p *PostgresDB) GetTerraformModule(ctx context.Context, repoID, name, syste
 
 // ListTerraformModuleVersions returns the live versions of one module, oldest
 // first.
-func (p *PostgresDB) ListTerraformModuleVersions(ctx context.Context, repoID, name, system string) ([]*models.TerraformModule, error) {
+func (p *TerraformStore) ListTerraformModuleVersions(ctx context.Context, repoID, name, system string) ([]*models.TerraformModule, error) {
 	rows, err := p.q.ListTerraformModuleVersions(ctx, dbsqlc.ListTerraformModuleVersionsParams{
 		RepositoryID: repoID, Name: name, System: system,
 	})
@@ -116,14 +119,14 @@ func (p *PostgresDB) ListTerraformModuleVersions(ctx context.Context, repoID, na
 }
 
 // ListTerraformModules returns every live module version of the repository.
-func (p *PostgresDB) ListTerraformModules(ctx context.Context, repoID string) ([]*models.TerraformModule, error) {
+func (p *TerraformStore) ListTerraformModules(ctx context.Context, repoID string) ([]*models.TerraformModule, error) {
 	rows, err := p.q.ListTerraformModules(ctx, repoID)
 
 	return mapRows(rows, err, "list terraform modules", terraformModuleFromRow)
 }
 
 // DeleteTerraformModule removes one module version row.
-func (p *PostgresDB) DeleteTerraformModule(ctx context.Context, repoID, id string) error {
+func (p *TerraformStore) DeleteTerraformModule(ctx context.Context, repoID, id string) error {
 	if err := p.q.DeleteTerraformModule(ctx, dbsqlc.DeleteTerraformModuleParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to delete terraform module: %w", err)
 	}
@@ -132,7 +135,7 @@ func (p *PostgresDB) DeleteTerraformModule(ctx context.Context, repoID, id strin
 }
 
 // IncrementTerraformModuleDownloadCount counts one download of a module version.
-func (p *PostgresDB) IncrementTerraformModuleDownloadCount(ctx context.Context, repoID, id string) error {
+func (p *TerraformStore) IncrementTerraformModuleDownloadCount(ctx context.Context, repoID, id string) error {
 	err := p.q.IncrementTerraformModuleDownloadCount(ctx, dbsqlc.IncrementTerraformModuleDownloadCountParams{ID: id, RepositoryID: repoID})
 	if err != nil {
 		return fmt.Errorf("failed to count terraform module download: %w", err)
@@ -142,7 +145,7 @@ func (p *PostgresDB) IncrementTerraformModuleDownloadCount(ctx context.Context, 
 }
 
 // TerraformModuleStamp fingerprints the live versions of one module.
-func (p *PostgresDB) TerraformModuleStamp(ctx context.Context, repoID, name, system string) (string, error) {
+func (p *TerraformStore) TerraformModuleStamp(ctx context.Context, repoID, name, system string) (string, error) {
 	stamp, err := p.q.TerraformModuleStamp(ctx, dbsqlc.TerraformModuleStampParams{RepositoryID: repoID, Name: name, System: system})
 	if err != nil {
 		return "", fmt.Errorf("failed to stamp terraform module: %w", err)
@@ -153,7 +156,7 @@ func (p *PostgresDB) TerraformModuleStamp(ctx context.Context, repoID, name, sys
 
 // CreateTerraformProvider stores one provider platform zip. A live row with the
 // same coordinates is a unique violation.
-func (p *PostgresDB) CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error {
+func (p *TerraformStore) CreateTerraformProvider(ctx context.Context, prov *models.TerraformProvider) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, prov.Checksum, prov.BlobKey, "application/zip", prov.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for terraform provider: %w", err)
@@ -179,7 +182,7 @@ func (p *PostgresDB) CreateTerraformProvider(ctx context.Context, prov *models.T
 }
 
 // GetTerraformProvider returns the live platform zip, or (nil, nil).
-func (p *PostgresDB) GetTerraformProvider(
+func (p *TerraformStore) GetTerraformProvider(
 	ctx context.Context,
 	repoID, typ, version, osName, arch string,
 ) (*models.TerraformProvider, error) {
@@ -192,7 +195,7 @@ func (p *PostgresDB) GetTerraformProvider(
 
 // ListTerraformProviderPlatforms returns every live platform zip of one
 // provider type, ordered by version, os and arch.
-func (p *PostgresDB) ListTerraformProviderPlatforms(ctx context.Context, repoID, typ string) ([]*models.TerraformProvider, error) {
+func (p *TerraformStore) ListTerraformProviderPlatforms(ctx context.Context, repoID, typ string) ([]*models.TerraformProvider, error) {
 	rows, err := p.q.ListTerraformProviderPlatforms(ctx, dbsqlc.ListTerraformProviderPlatformsParams{RepositoryID: repoID, Type: typ})
 
 	return mapRows(rows, err, "list terraform provider platforms", terraformProviderFromRow)
@@ -200,7 +203,7 @@ func (p *PostgresDB) ListTerraformProviderPlatforms(ctx context.Context, repoID,
 
 // ListTerraformProviderVersionPlatforms returns every live platform zip of one
 // provider version, ordered by os and arch.
-func (p *PostgresDB) ListTerraformProviderVersionPlatforms(
+func (p *TerraformStore) ListTerraformProviderVersionPlatforms(
 	ctx context.Context,
 	repoID, typ, version string,
 ) ([]*models.TerraformProvider, error) {
@@ -214,14 +217,14 @@ func (p *PostgresDB) ListTerraformProviderVersionPlatforms(
 
 // ListTerraformProviders returns every live provider platform zip of the
 // repository.
-func (p *PostgresDB) ListTerraformProviders(ctx context.Context, repoID string) ([]*models.TerraformProvider, error) {
+func (p *TerraformStore) ListTerraformProviders(ctx context.Context, repoID string) ([]*models.TerraformProvider, error) {
 	rows, err := p.q.ListTerraformProviders(ctx, repoID)
 
 	return mapRows(rows, err, "list terraform providers", terraformProviderFromRow)
 }
 
 // DeleteTerraformProvider removes one provider platform row.
-func (p *PostgresDB) DeleteTerraformProvider(ctx context.Context, repoID, id string) error {
+func (p *TerraformStore) DeleteTerraformProvider(ctx context.Context, repoID, id string) error {
 	if err := p.q.DeleteTerraformProvider(ctx, dbsqlc.DeleteTerraformProviderParams{ID: id, RepositoryID: repoID}); err != nil {
 		return fmt.Errorf("failed to delete terraform provider: %w", err)
 	}
@@ -230,7 +233,7 @@ func (p *PostgresDB) DeleteTerraformProvider(ctx context.Context, repoID, id str
 }
 
 // IncrementTerraformProviderDownloadCount counts one download of a provider zip.
-func (p *PostgresDB) IncrementTerraformProviderDownloadCount(ctx context.Context, repoID, id string) error {
+func (p *TerraformStore) IncrementTerraformProviderDownloadCount(ctx context.Context, repoID, id string) error {
 	err := p.q.IncrementTerraformProviderDownloadCount(
 		ctx,
 		dbsqlc.IncrementTerraformProviderDownloadCountParams{ID: id, RepositoryID: repoID},
@@ -243,7 +246,7 @@ func (p *PostgresDB) IncrementTerraformProviderDownloadCount(ctx context.Context
 }
 
 // TerraformProviderStamp fingerprints the live platforms of one provider type.
-func (p *PostgresDB) TerraformProviderStamp(ctx context.Context, repoID, typ string) (string, error) {
+func (p *TerraformStore) TerraformProviderStamp(ctx context.Context, repoID, typ string) (string, error) {
 	stamp, err := p.q.TerraformProviderStamp(ctx, dbsqlc.TerraformProviderStampParams{RepositoryID: repoID, Type: typ})
 	if err != nil {
 		return "", fmt.Errorf("failed to stamp terraform provider: %w", err)

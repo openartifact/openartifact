@@ -56,6 +56,7 @@ type PostgresDB struct {
 	*PacmanStore
 	*MavenStore
 	*NPMStore
+	*TerraformStore
 	// STORES-STRUCT
 }
 
@@ -109,6 +110,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		PacmanStore:          &PacmanStore{core: c},
 		MavenStore:           &MavenStore{core: c},
 		NPMStore:             &NPMStore{core: c},
+		TerraformStore:       &TerraformStore{core: c},
 		// STORES-INIT
 	}
 }
