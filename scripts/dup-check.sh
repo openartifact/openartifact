@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Go duplication ratchet. Runs dupl (pinned in tools/go.mod) with -t 100 over
+# Go duplication ratchet. Runs dupl (pinned in tools/go.mod) with -t 75 over
 # non-test, non-generated Go (internal/database/dbsqlc, *_test.go and files with
 # a "Code generated" header are excluded) and compares the clone group count and
 # the number of duplicated lines (union of the reported ranges) with go_groups
@@ -19,15 +19,15 @@ baseline=.github/dup-baseline.json
 report=$(git ls-files '*.go' |
 	grep -v -e '_test\.go$' -e '^internal/database/dbsqlc/' |
 	{ xargs grep -L 'Code generated' || true; } |
-	go tool -modfile=tools/go.mod dupl -files -t 100)
+	go tool -modfile=tools/go.mod dupl -files -t 75)
 
 groups=$(sed -n 's/^Found total \([0-9]*\) clone groups\./\1/p' <<<"$report")
 groups=${groups:-0}
-lines=$(grep -E '^  .+:[0-9]+,[0-9]+$' <<<"$report" | sed -E 's/^  (.+):([0-9]+),([0-9]+)$/\1 \2 \3/' |
+lines=$({ grep -E '^  .+:[0-9]+,[0-9]+$' <<<"$report" || true; } | sed -E 's/^  (.+):([0-9]+),([0-9]+)$/\1 \2 \3/' |
 	sort -k1,1 -k2,2n |
 	awk '{ if ($1 != f || $2 > e) { n += $3 - $2 + 1; f = $1; e = $3 } else if ($3 > e) { n += $3 - e; e = $3 } } END { print n + 0 }')
 
-echo "dupl -t 100: ${groups} clone groups, ${lines} duplicated lines"
+echo "dupl -t 75: ${groups} clone groups, ${lines} duplicated lines"
 
 if [[ ${1:-} == --update ]]; then
 	jq -n --argjson g "$groups" --argjson l "$lines" '{go_groups: $g, go_lines: $l}' >"$baseline"

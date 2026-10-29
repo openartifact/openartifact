@@ -5504,7 +5504,7 @@ func (p *PostgresDB) GetSBTArtifact(
 }
 
 func sbtArtifactFromRow(row dbsqlc.GetSBTArtifactRow) *models.SBTArtifact {
-	art := &models.SBTArtifact{
+	return &models.SBTArtifact{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
 		GroupID:      row.GroupID,
@@ -5514,10 +5514,9 @@ func sbtArtifactFromRow(row dbsqlc.GetSBTArtifactRow) *models.SBTArtifact {
 		BlobKey:      row.BlobKey,
 		SizeBytes:    row.SizeBytes,
 		SHA256:       row.Sha256,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
 	}
-	art.CreatedAt, art.UpdatedAt = row.CreatedAt, row.UpdatedAt
-
-	return art
 }
 
 func (p *PostgresDB) DeleteSBTArtifact(ctx context.Context, id string) error {

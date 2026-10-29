@@ -56,7 +56,7 @@ help:
 	@echo "  generate        - Run sqlc generate (DB codegen) and regenerate web/src/lib/formats.generated.ts"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
 	@echo "  docs-check      - Fail when docs/reference is out of date"
-	@echo "  dup             - Fail when Go duplication (dupl -t 100) grows past .github/dup-baseline.json"
+	@echo "  dup             - Fail when Go duplication (dupl -t 75) grows past .github/dup-baseline.json"
 	@echo "  dup-baseline    - Rewrite .github/dup-baseline.json from the current tree"
 	@echo "  deadcode        - Fail on Go code that no main package reaches (deadcode)"
 	@echo "  deps            - Download and tidy dependencies"
