@@ -9,49 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
-
-// ResolveAuditNames looks up the display names of the entities one audit page
-// refers to, one query for all kinds. Entities that no longer exist are absent
-// from the result.
-func (p *PostgresDB) ResolveAuditNames(ctx context.Context, refs models.AuditNameRefs) (*models.AuditNames, error) {
-	names := models.NewAuditNames()
-
-	if refs.Empty() {
-		return names, nil
-	}
-
-	rows, err := p.q.ResolveAuditNames(ctx, dbsqlc.ResolveAuditNamesParams{
-		UserIds:             nonNil(refs.UserIDs),
-		GroupIds:            nonNil(refs.GroupIDs),
-		RepositoryIds:       nonNil(refs.RepositoryIDs),
-		ProjectIds:          nonNil(refs.ProjectIDs),
-		PermissionTargetIds: nonNil(refs.PermissionTargetIDs),
-		GpgKeyIds:           nonNil(refs.GPGKeyIDs),
-		SsoProviderIds:      nonNil(refs.SSOProviderIDs),
-		BundleIds:           nonNil(refs.BundleIDs),
-		TokenIds:            nonNil(refs.TokenIDs),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve audit names: %w", err)
-	}
-
-	byKind := map[string]map[string]string{
-		"user": names.Users, "group": names.Groups, "repository": names.Repositories, "project": names.Projects,
-		"permission_target": names.PermissionTargets, "gpg_key": names.GPGKeys, "sso_provider": names.SSOProviders,
-		"bundle": names.Bundles, "token": names.Tokens,
-	}
-
-	for _, r := range rows {
-		if m, ok := byKind[r.Kind]; ok {
-			m[r.ID] = r.Name
-		}
-	}
-
-	return names, nil
-}
 
 // nonNil returns s, or an empty slice for nil (a nil slice binds as NULL, and
 // = ANY(NULL) never matches but obscures intent).

@@ -12,6 +12,7 @@ type PostgresDB struct {
 	*core
 	*BlobRefStore
 	*SettingsStore
+	*AuditStore
 	// STORES-STRUCT
 }
 
@@ -21,6 +22,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		core:          c,
 		BlobRefStore:  &BlobRefStore{core: c},
 		SettingsStore: &SettingsStore{core: c},
+		AuditStore:    &AuditStore{core: c},
 		// STORES-INIT
 	}
 }
