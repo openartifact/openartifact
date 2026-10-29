@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/repotype"
 )
 
 // A deb or rpm Package URL carries its vendor namespace, the form the
@@ -41,8 +42,8 @@ func TestGeneratePURLNamespacesDebAndRPM(t *testing.T) {
 }
 
 func TestPurlEncodeEscapesTheColon(t *testing.T) {
-	if got, want := purlEncode("a:b c"), "a%3Ab%20c"; got != want {
-		t.Errorf("purlEncode = %q, want %q", got, want)
+	if got, want := repotype.PURLEscape("a:b c"), "a%3Ab%20c"; got != want {
+		t.Errorf("PURLEscape = %q, want %q", got, want)
 	}
 }
 

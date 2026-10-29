@@ -20,37 +20,11 @@ func purlType(format string) string {
 	return "generic"
 }
 
-// purlEncode percent-encodes one purl component: everything but the
-// unreserved characters (letters, digits, "." "-" "_" "~"), a ':' included
-// ("1:2.0" is "1%3A2.0"), the strictest form, which every purl parser decodes
-// and which the vulnerability side produces too.
-func purlEncode(s string) string {
-	const hexdigits = "0123456789ABCDEF"
-
-	var b strings.Builder
-
-	for i := range len(s) {
-		c := s[i]
-
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
-			c == '.', c == '-', c == '_', c == '~':
-			b.WriteByte(c)
-		default:
-			b.WriteByte('%')
-			b.WriteByte(hexdigits[c>>4])
-			b.WriteByte(hexdigits[c&15])
-		}
-	}
-
-	return b.String()
-}
-
 // purlPath encodes each '/'-separated segment of a purl namespace/name.
 func purlPath(p string) string {
 	segs := strings.Split(p, "/")
 	for i, s := range segs {
-		segs[i] = purlEncode(s)
+		segs[i] = repotype.PURLEscape(s)
 	}
 
 	return strings.Join(segs, "/")
@@ -83,7 +57,7 @@ func generatePURLNS(format, namespace, name, version string) string {
 
 	purl := "pkg:" + typ + "/" + purlPath(name)
 	if version != "" && version != "unknown" {
-		purl += "@" + purlEncode(version)
+		purl += "@" + repotype.PURLEscape(version)
 	}
 
 	return purl
