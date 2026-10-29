@@ -17,6 +17,7 @@ import (
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -41,9 +42,17 @@ type DebMetadataWorker struct {
 func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
 	w := &DebMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("deb", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *DebMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *DebMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 func (w *DebMetadataWorker) WithDebounce(d time.Duration) *DebMetadataWorker {
 	w.q.setDebounce(d)

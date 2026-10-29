@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !noai
+
 package api
 
 import (
@@ -13,7 +15,6 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -30,7 +31,6 @@ type AIHandler struct {
 const (
 	// aiMaxManifestBytes caps manifest_text forwarded to the LLM.
 	aiMaxManifestBytes = 256 * 1024
-	aiMaxNameLen       = 512
 	aiMaxListOffset    = 1_000_000
 )
 
@@ -132,23 +132,6 @@ func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, analysis)
-}
-
-// ValidateAIArtifactIdentity checks the artifact_format, artifact_name and
-// artifact_version a caller supplies when triggering an analysis (REST and MCP
-// share it) and returns a message for the first problem, "" when acceptable.
-// The format is one of the repository formats, which are also the ids package
-// listings report.
-func ValidateAIArtifactIdentity(format, name, version string) string {
-	if format != "" && !repotype.Valid(format) {
-		return "artifact_format must be one of: " + validFormatList()
-	}
-
-	if len(name) > aiMaxNameLen || len(version) > aiMaxNameLen {
-		return "artifact_name/artifact_version too long"
-	}
-
-	return ""
 }
 
 func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {

@@ -647,8 +647,10 @@ func TestValidate_MCPTransport(t *testing.T) {
 			cfg.MCP.Enabled = tt.enabled
 			cfg.MCP.Transport = tt.transport
 
-			if err := cfg.Validate(); (err != nil) != tt.wantErr {
-				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			// validateMCP, not Validate: a -tags nomcp build rejects mcp.enabled
+			// before the MCP checks (buildfeatures.go).
+			if err := cfg.validateMCP(); (err != nil) != tt.wantErr {
+				t.Fatalf("validateMCP() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -1057,8 +1059,8 @@ func TestValidate_MCPLimitsAndOrigins(t *testing.T) {
 			cfg.MCP.Enabled = true
 			tt.mutate(&cfg.MCP)
 
-			if err := cfg.Validate(); (err != nil) != tt.wantErr {
-				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			if err := cfg.validateMCP(); (err != nil) != tt.wantErr {
+				t.Fatalf("validateMCP() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

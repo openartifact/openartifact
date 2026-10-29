@@ -17,6 +17,7 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
@@ -40,10 +41,18 @@ func NewRPMetadataWorker(
 ) *RPMetadataWorker {
 	w := &RPMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("rpm", log, w.Regenerate)
+	w.q.setCodec(stringRegenCodec())
 	w.q.setMetrics(reg)
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *RPMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *RPMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 func (w *RPMetadataWorker) WithDebounce(d time.Duration) *RPMetadataWorker {
 	w.q.setDebounce(d)

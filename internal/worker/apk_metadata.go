@@ -18,6 +18,7 @@ import (
 	formatapk "github.com/openartifact/openartifact/internal/format/apk"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -53,9 +54,17 @@ type ApkMetadataWorker struct {
 func NewApkMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers ApkSignerResolver, log *logger.Logger) *ApkMetadataWorker {
 	w := &ApkMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("apk", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *ApkMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *ApkMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 // WithDebounce sets the quiet period a notification waits for.
 func (w *ApkMetadataWorker) WithDebounce(d time.Duration) *ApkMetadataWorker {

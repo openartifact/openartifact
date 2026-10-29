@@ -162,6 +162,28 @@ func TestDispatchInsertsLeasedDeliveries(t *testing.T) {
 	}
 }
 
+func TestDeferredDispatchRecordsDueDeliveriesForAWorkerProcess(t *testing.T) {
+	db := &claimDB{BaseMockDB: &databasetest.BaseMockDB{}, hooks: []*models.Webhook{{ID: "w1"}, {ID: "w2"}}}
+	d := NewDispatcher(db, newTestLogger(t))
+	d.DeferDeliveries()
+
+	d.Dispatch(context.Background(), "repo", EventRepoCreated, map[string]any{"a": 1})
+
+	if len(db.created) != 2 {
+		t.Fatalf("created %d deliveries, want 2", len(db.created))
+	}
+
+	for _, del := range db.created {
+		if del.Status != "pending" || del.NextRetryAt != nil {
+			t.Errorf("delivery = %+v, want pending and due at once so the worker claims it", del)
+		}
+	}
+
+	if n := len(d.queue); n != 0 {
+		t.Errorf("a deferring dispatcher queued %d deliveries in this process", n)
+	}
+}
+
 func TestPollPendingClaimsWithLeaseAndQueuesEachOnce(t *testing.T) {
 	db := &claimDB{BaseMockDB: &databasetest.BaseMockDB{}, claimed: []*models.WebhookDelivery{{ID: "a"}, {ID: "b"}}}
 	d := NewDispatcher(db, newTestLogger(t))

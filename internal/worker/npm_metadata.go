@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/npm"
 )
@@ -30,10 +31,18 @@ type NPMMetadataWorker struct {
 func NewNPMMetadataWorker(db database.Database, log *logger.Logger, sqlDB *sql.DB, reg *metrics.Registry) *NPMMetadataWorker {
 	w := &NPMMetadataWorker{db: db, log: log, sqlDB: sqlDB}
 	w.q = newRegenQueue("npm", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 	w.q.setMetrics(reg)
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *NPMMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *NPMMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.q.Notify) }
 
 func (w *NPMMetadataWorker) WithDebounce(d time.Duration) *NPMMetadataWorker {
 	w.q.setDebounce(d)

@@ -82,7 +82,7 @@ Three more rules keep the binaries small:
 
 - `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` serves that gzip as it is and expands it once at startup for clients that do not accept gzip. Source maps are not emitted.
 - `cmd/oa` and `cmd/resetpw` link no server code: no database, storage, telemetry, web or cloud-SDK packages (`internal/passwd` holds the password hashing `resetpw` needs; `internal/auth` pulls in the whole server). `tests/binary_deps_test.go` fails when an import brings one back, and when the server links `golang.org/x/net/trace` again.
-- UPX and feature-removing build tags are not used: the official image carries every documented feature.
+- UPX is not used, and the official binaries and image carry every documented feature; the optional [build tags](#build-tags) below are for self-built slim servers.
 
 To see where the bytes go, build the server without `-s -w` and analyse it with [go-size-analyzer](https://github.com/Zxilly/go-size-analyzer) (it needs the symbol table; stripped binaries are not analysed):
 
@@ -90,6 +90,21 @@ To see where the bytes go, build the server without `-s -w` and analyse it with 
 CGO_ENABLED=0 go build -trimpath -tags grpcnotrace -o /tmp/oa-server.sym ./cmd/server
 go install github.com/Zxilly/go-size-analyzer/cmd/gsa@latest && gsa /tmp/oa-server.sym
 ```
+
+### Build tags
+
+Two negative tags compile optional features out of the server; the default build, without either tag, carries both.
+
+| Tag | Removes |
+|---|---|
+| `noai` | AI analysis: the LLM client (`internal/ai`), the AI worker and the admin and per-repository AI handlers. `internal/ai/manifest` stays, it is shared with the dependency, license and SBOM code |
+| `nomcp` | The MCP server (`internal/mcp`) and the `github.com/modelcontextprotocol/go-sdk` dependency tree |
+
+Build with `make build-slim` (both tags on top of `grpcnotrace`, output `bin/openartifact-slim`), by hand with `go build -tags grpcnotrace,noai,nomcp ./cmd/server`, or an image with `docker build --build-arg GO_TAGS=grpcnotrace,noai,nomcp -f docker/Dockerfile .` (the default is `GO_TAGS=grpcnotrace`).
+
+- A binary without a feature refuses to start when the configuration turns it on: `ai.enabled: true` with `noai` or `mcp.enabled: true` with `nomcp` fails validation with an error naming the tag. Leave the setting off (the default) for a slim build.
+- With `noai` the AI routes (`GET /api/v1/repositories/{name}/ai-analysis[...]`, `POST .../ai-analysis/{artifactID}/trigger`, `GET|PUT|POST /api/v1/admin/ai/{config,test,models}`) are still routed and answer `501` with code `feature_unavailable`, so the web UI shows a clear message instead of a 404; the security health page reports AI as off. With `noai` alone the MCP server stays and `trigger_ai_analysis` answers that AI analysis is not enabled.
+- `make vet-tags` (part of `make check`) vets every package with `noai,nomcp`, `noai` and `nomcp`, so tag-only code stays compilable. Code and tests that only make sense with a feature carry the matching `//go:build !noai` / `!nomcp` constraint; `internal/buildtags` exports the compile-time constants `buildtags.AI` and `buildtags.MCP` for code that has to ask. `tests/binary_deps_test.go` checks that the slim server links neither `internal/ai`, `internal/mcp` nor the MCP SDK, and that the default build still does.
 
 If you change the HTTP API, update `internal/api/openapi.json` and run `bun run generate-api`; CI fails when `web/src/api/generated` drifts.
 

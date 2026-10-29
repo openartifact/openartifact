@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	pkgapk "github.com/openartifact/openartifact/pkg/apk"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -103,9 +104,17 @@ func NewGroupMetadataWorker(
 
 		return err
 	})
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale and Refresh write a worker request to s instead of
+// scheduling the regeneration here (server.role=web); see RegenRemote.
+func (w *GroupMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *GroupMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.q.Notify) }
 
 // WithApkSigners enables apk groups' signed indexes: signers resolves the key of
 // each group (an apk key, not a GPG one).

@@ -54,7 +54,9 @@ The `openartifact` service passes only the variables listed in its `environment:
 
 The image has no shell, `wget` or `nc`; its health check is `openartifact-server -healthcheck`, and the server waits for PostgreSQL itself (`DB_CONNECT_TIMEOUT`, default 60s). See the [0.5.0 upgrade notes](upgrading.md#050-unreleased) for debugging and custom CAs.
 
-Released images are published to `ghcr.io/openartifact/openartifact` (`linux/amd64`, `linux/arm64`; tags in [upgrading](upgrading.md#versions-and-image-tags)). To run one instead of building, replace the `build:` block of the `openartifact` service with `image: ghcr.io/openartifact/openartifact:<version>`. Verify signatures as described in [signing](../security/signing.md).
+Released images are published to `ghcr.io/openartifact/openartifact` (`linux/amd64`, `linux/arm64`; tags in [upgrading](upgrading.md#versions-and-image-tags)). To run one instead of building, replace the `build:` and `image:` lines of the `openartifact` service (and of `openartifact-worker`, if you use it) with `image: ghcr.io/openartifact/openartifact:<version>`. Verify signatures as described in [signing](../security/signing.md).
+
+To run the web part and the background work as two processes, set `OPENARTIFACT_ROLE=web` in `docker/.env` and add `--profile worker` to the `docker compose` command; the optional `openartifact-worker` service shares the image, database and volumes. See [scaling and roles](../operations/scaling.md#docker-compose).
 
 ### First login
 

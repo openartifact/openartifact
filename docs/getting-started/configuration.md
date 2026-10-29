@@ -69,6 +69,7 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `SERVER_MAX_BODY_BYTES` | `maxBodyBytes` | `17179869184` | Maximum request body (bytes) accepted by any endpoint; `0` = unlimited. Format handlers enforce lower limits of their own |
 | `SERVER_SHUTDOWN_TIMEOUT` | `shutdownTimeout` | `30` | Seconds allowed for graceful shutdown |
 | `SERVER_SHUTDOWN_DELAY` | `shutdownDelay` | `0` | Seconds to keep serving, with `/ready` answering 503, after a shutdown signal and before the listener closes; a second signal skips it. See [rolling updates](../operations/monitoring.md#graceful-shutdown-and-rolling-updates) |
+| `OPENARTIFACT_ROLE` | `role` | `all` | Process role: `all` (whole server in one process), `web` (HTTP API, UI and formats, no background workers; work is handed over through PostgreSQL) or `worker` (background workers and schedulers only, serves `/health`, `/ready` and `/metrics`). An unknown value fails startup. See [scaling and roles](../operations/scaling.md) |
 | `SERVER_TLS_ENABLED` | `tlsEnabled` | `false` | Serve HTTPS; requires cert and key; sends HSTS |
 | `SERVER_TLS_CERT` | `tlsCert` | empty | TLS certificate file (PEM) |
 | `SERVER_TLS_KEY` | `tlsKey` | empty | TLS private key file (PEM) |

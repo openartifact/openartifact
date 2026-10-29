@@ -10,6 +10,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -61,7 +62,12 @@ type Dispatcher struct {
 	// insecureClient skips TLS verification for webhooks with ssl_verify=false.
 	insecureClient *http.Client
 	// source is the CloudEvents source of cloudevents-format deliveries.
-	source   string
+	source string
+	// deferred makes Dispatch only record the deliveries, for a worker process
+	// to deliver (server.role=web).
+	deferred bool
+	// poll is how often the retry loop claims due deliveries.
+	poll     time.Duration
 	queue    chan *models.WebhookDelivery
 	stopCh   chan struct{}
 	doneCh   chan struct{}
@@ -83,6 +89,8 @@ const (
 	claimLease = 2 * time.Minute
 	// claimBatch bounds the deliveries claimed per retry-loop tick.
 	claimBatch = 100
+	// DefaultPollInterval is how often the retry loop claims due deliveries.
+	DefaultPollInterval = 30 * time.Second
 )
 
 func NewDispatcher(db database.Database, log *logger.Logger) *Dispatcher {
@@ -92,6 +100,7 @@ func NewDispatcher(db database.Database, log *logger.Logger) *Dispatcher {
 		log:            log,
 		client:         newWebhookClient(30 * time.Second),
 		insecureClient: newInsecureClient(30 * time.Second),
+		poll:           DefaultPollInterval,
 		queue:          make(chan *models.WebhookDelivery, 1000),
 		stopCh:         make(chan struct{}),
 		doneCh:         make(chan struct{}),
@@ -104,6 +113,39 @@ func NewDispatcher(db database.Database, log *logger.Logger) *Dispatcher {
 // source of cloudevents-format deliveries. Call it before Start.
 func (d *Dispatcher) SetBaseURL(baseURL string) {
 	d.source = strings.TrimRight(baseURL, "/")
+}
+
+// DeferDeliveries makes Dispatch and DispatchTo only record the deliveries: they
+// are inserted pending and due, and a process that runs the dispatcher claims
+// and delivers them (server.role=web). Call it before the first Dispatch.
+func (d *Dispatcher) DeferDeliveries() { d.deferred = true }
+
+// WithPollInterval sets how often the retry loop claims due deliveries; it is
+// how soon a delivery recorded by another process is delivered. Call it before
+// Start.
+func (d *Dispatcher) WithPollInterval(interval time.Duration) { d.poll = interval }
+
+// record inserts a pending delivery of the event for the webhook and hands it
+// to this process's queue, unless deliveries are deferred to a worker process.
+func (d *Dispatcher) record(ctx context.Context, webhookID, eventType string, payload map[string]any) error {
+	delivery := newPendingDelivery(webhookID, eventType, payload)
+	if !d.deferred {
+		leaseDelivery(delivery)
+	}
+
+	if err := d.db.CreateWebhookDelivery(ctx, delivery); err != nil {
+		return fmt.Errorf("create webhook delivery: %w", err)
+	}
+
+	if d.deferred {
+		return nil
+	}
+
+	if !d.enqueue(delivery) {
+		d.log.Warnw("webhook delivery queue full; delivery left pending for retry loop", "webhook_id", webhookID)
+	}
+
+	return nil
 }
 
 // enqueue claims the delivery (so the retry loop and Dispatch never process the
@@ -121,19 +163,22 @@ func (d *Dispatcher) enqueue(delivery *models.WebhookDelivery) bool {
 	}
 }
 
-// newLeasedDelivery builds a pending delivery that is inserted already leased
-// (next_retry_at = now + claimLease), so pollers on other instances skip it
-// while this instance delivers it from its in-memory queue.
-func newLeasedDelivery(webhookID, eventType string, payload map[string]any) *models.WebhookDelivery {
-	lease := time.Now().Add(claimLease)
-
+// newPendingDelivery builds a pending delivery that is due at once.
+func newPendingDelivery(webhookID, eventType string, payload map[string]any) *models.WebhookDelivery {
 	return &models.WebhookDelivery{
-		WebhookID:   webhookID,
-		EventType:   eventType,
-		Payload:     payload,
-		Status:      "pending",
-		NextRetryAt: &lease,
+		WebhookID: webhookID,
+		EventType: eventType,
+		Payload:   payload,
+		Status:    "pending",
 	}
+}
+
+// leaseDelivery makes the delivery insert already leased (next_retry_at = now +
+// claimLease), so pollers on other instances skip it while this instance
+// delivers it from its in-memory queue.
+func leaseDelivery(delivery *models.WebhookDelivery) {
+	lease := time.Now().Add(claimLease)
+	delivery.NextRetryAt = &lease
 }
 
 // Dispatch queues a webhook event for all matching webhooks.
@@ -146,14 +191,8 @@ func (d *Dispatcher) Dispatch(ctx context.Context, repoID, eventType string, pay
 	}
 
 	for _, wh := range webhooks {
-		delivery := newLeasedDelivery(wh.ID, eventType, payload)
-		if err := d.db.CreateWebhookDelivery(ctx, delivery); err != nil {
-			d.log.Errorw("failed to create webhook delivery", "webhook_id", wh.ID, "error", err)
-			continue
-		}
-
-		if !d.enqueue(delivery) {
-			d.log.Warnw("webhook delivery queue full; delivery left pending for retry loop", "webhook_id", wh.ID)
+		if err := d.record(ctx, wh.ID, eventType, payload); err != nil {
+			d.log.Errorw("failed to record webhook delivery", "webhook_id", wh.ID, "error", err)
 		}
 	}
 }
@@ -226,7 +265,7 @@ func (d *Dispatcher) process(delivery *models.WebhookDelivery) {
 func (d *Dispatcher) retryLoop() {
 	defer d.wg.Done()
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(d.poll)
 	defer ticker.Stop()
 
 	for {

@@ -137,9 +137,9 @@ func (a *app) setupReplication() (storage.BlobStore, error) {
 
 // startGomodRepair repairs Go module zips left behind by the <=0.4.1
 // shared-blob bug. A no-op (one cheap query) when nothing is affected; one
-// replica at a time. It ends with the server.
+// replica at a time. It ends with the server and runs only where the workers do.
 func (a *app) startGomodRepair() {
-	a.tasks.Go(func(ctx context.Context) {
+	a.background(func(ctx context.Context) {
 		if _, err := formatgomod.RepairZipBlobs(ctx, a.db, a.store.blobs, a.log); err != nil && ctx.Err() == nil {
 			a.log.Errorw("gomod repair failed; run `openartifact-server -repair-gomod` to retry", "error", err)
 		}

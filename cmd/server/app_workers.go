@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/tiering"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -65,12 +66,22 @@ type workerSet struct {
 	// journalWorker is nil unless the recovery journal is enabled.
 	journal       *recovery.Journal
 	journalWorker *recovery.Worker
+
+	// queue is where a process hands work to the worker processes (and where
+	// they find it); requests takes it on a process that runs the workers and
+	// is nil on a web one. See role.go.
+	queue    *workq.Store
+	requests *workq.Consumer
+
+	// scan is built with the routes of an API process, or on its own on a worker.
+	scan scanServices
 }
 
-// setupWorkers builds and starts every background worker, and registers their
-// stop for the end of serve.
+// setupWorkers builds every background worker, starts them where server.role
+// runs them, and registers their stop for the end of serve.
 func (a *app) setupWorkers() {
 	a.setupSigning()
+	a.setupWorkRequests()
 	a.startMetadataWorkers()
 	a.startHousekeepingWorkers()
 	a.startStorageWorkers()
@@ -104,7 +115,7 @@ func (a *app) startMetadataWorkers() {
 	regenLimiter := worker.NewRegenLimiter(a.cfg.Workers.MetadataRegenConcurrency)
 
 	w.rpm = worker.NewRPMetadataWorker(db, blobStore, w.gpgKeys, log, reg).WithRegenLimiter(regenLimiter)
-	a.tasks.Go(w.rpm.RegenerateStale)
+	a.background(w.rpm.RegenerateStale)
 
 	w.deb = worker.NewDebMetadataWorker(db, blobStore, w.gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 	w.pacman = worker.NewPacmanMetadataWorker(db, blobStore, w.gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
@@ -115,7 +126,7 @@ func (a *app) startMetadataWorkers() {
 	w.apk = worker.NewApkMetadataWorker(db, blobStore, w.apkKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
 
 	if a.cfg.GPG.AutoGenerate {
-		a.tasks.Go(func(ctx context.Context) { autoGenerateGPGKey(ctx, w.gpgKeys, log) })
+		a.background(func(ctx context.Context) { autoGenerateGPGKey(ctx, w.gpgKeys, log) })
 	}
 
 	// Deb, rpm and pacman group repositories: their merged metadata is regenerated when
@@ -124,10 +135,15 @@ func (a *app) startMetadataWorkers() {
 	w.proxySvc = proxy.NewService(log, db, a.store.served).WithDockerDigestTTL(a.cfg.Workers.ProxyDockerDigestTTL)
 	w.groupMeta = worker.NewGroupMetadataWorker(db, blobStore, w.proxySvc, w.rpm, w.gpgKeys, log).
 		WithApkSigners(w.apkKeys).WithMetrics(reg).WithRegenLimiter(regenLimiter)
-	w.rpm.WithStaleHook(w.groupMeta.NotifyMemberChanged)
-	w.deb.WithStaleHook(w.groupMeta.NotifyMemberChanged)
-	w.pacman.WithStaleHook(w.groupMeta.NotifyMemberChanged)
-	w.apk.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+
+	// A web process hands a hosted regeneration over without running the hook:
+	// the worker that regenerates runs it (NotifyStale) and marks the groups.
+	if a.cfg.Server.RunsWorkers() {
+		w.rpm.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+		w.deb.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+		w.pacman.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+		w.apk.WithStaleHook(w.groupMeta.NotifyMemberChanged)
+	}
 
 	// An apk key change re-signs a group through the group worker too.
 	w.apkKeys.SetRefresher(groupRefresher{db: db, hosted: w.apk, group: w.groupMeta})
@@ -139,10 +155,12 @@ func (a *app) startMetadataWorkers() {
 		groupRefresher{db: db, hosted: w.pacman, group: w.groupMeta},
 	)
 
-	a.tasks.Go(w.groupMeta.RegenerateStale)
+	a.background(w.groupMeta.RegenerateStale)
 
 	w.maven = worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg).WithRegenLimiter(regenLimiter)
 	w.npm = worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(regenLimiter)
+
+	a.linkRegens()
 }
 
 // startHousekeepingWorkers starts the cache, purge, cleanup and webhook
@@ -152,11 +170,11 @@ func (a *app) startHousekeepingWorkers() {
 	cfg, db, blobStore, log, reg := a.cfg, a.db, a.store.blobs, a.log, a.reg
 
 	w.proxyCache = worker.NewProxyCacheWorker(db, blobStore, log)
-	w.proxyCache.Start()
+	a.start(w.proxyCache.Start)
 
 	w.authPurge = worker.NewAuthPurgeWorker(db, log)
 	w.authPurge.SetWebhookDeliveryRetention(cfg.Workers.WebhookDeliveryRetentionDays)
-	w.authPurge.Start()
+	a.start(w.authPurge.Start)
 
 	// Initialize cleanup worker
 	w.cleanup = worker.NewCleanupWorker(db, blobStore, log)
@@ -165,7 +183,7 @@ func (a *app) startHousekeepingWorkers() {
 	w.cleanup.SetApkNotifier(w.apk)
 
 	w.presignedUpload = worker.NewPresignedUploadWorker(db, blobStore, cfg.Storage.PresignUploadTTL, log)
-	w.presignedUpload.Start()
+	a.start(w.presignedUpload.Start)
 
 	// Docker registry GC: untagged manifests past the grace period and the
 	// blobs only they referenced. Also runs on demand from the admin API.
@@ -174,34 +192,42 @@ func (a *app) startHousekeepingWorkers() {
 	// A cleanup run refreshes the maven metadata and npm packuments of what it
 	// removed and collects the docker manifests it left untagged.
 	w.cleanup.SetRegenNotifiers(w.maven, w.npm, w.dockerGC)
-	w.cleanup.Start()
-
-	w.dockerGC.Start()
+	a.start(w.cleanup.Start)
+	a.start(w.dockerGC.Start)
 
 	// Abandoned docker blob uploads: idle sessions and their staged files.
 	w.dockerUploadSweeper = worker.NewDockerUploadSweeper(db, dockerUploadDir(cfg), cfg.Workers.DockerUploadTTL, log)
-	w.dockerUploadSweeper.Start()
+	a.start(w.dockerUploadSweeper.Start)
 
 	// Initialize webhook dispatcher
 	w.webhook = webhook.NewDispatcher(db, log)
 	w.webhook.SetBaseURL(cfg.BaseURL)
 
-	w.webhook.Start()
+	switch {
+	case !cfg.Server.RunsWorkers():
+		// A worker process delivers what this one records.
+		w.webhook.DeferDeliveries()
+	case cfg.Server.Role == config.RoleWorker:
+		w.webhook.WithPollInterval(workerWebhookPoll)
+	}
+
+	a.start(w.webhook.Start)
 
 	// Retention purge: hard-deletes trash items past their window (see
 	// docs/operations/trash.md).
 	w.trashPurge = worker.NewTrashPurgeWorker(db, blobStore, log, cfg.Trash.PurgeInterval).WithMetrics(reg)
 	w.trashPurge.SetPublisher(w.webhook)
-	w.trashPurge.Start()
+	a.start(w.trashPurge.Start)
 
-	w.startOSVMirror(db, cfg, log, reg)
+	w.buildOSVMirror(db, cfg, log, reg)
+	a.start(w.osvMirror.Start)
 
 	// Audit log retention: deletes entries older than audit.retentionDays in
 	// paced batches, one replica at a time (advisory lock). Off by default (see
 	// docs/operations/audit-retention.md).
 	w.auditRetention = worker.NewAuditRetentionWorker(db, log, cfg.Audit.RetentionDays, cfg.Audit.PurgeInterval, cfg.Audit.PurgeBatchSize).
 		WithMetrics(reg)
-	w.auditRetention.Start()
+	a.start(w.auditRetention.Start)
 }
 
 // startStorageWorkers starts the tier mover, the blob deletion sweeper and
@@ -217,17 +243,17 @@ func (a *app) startStorageWorkers() {
 	w.tierEngine = tiering.NewEngine(a.db, s.tiers, tierMover,
 		tiering.EngineConfig{Batch: cfg.Tiering.Batch, Concurrency: cfg.Tiering.Concurrency}, a.reg, a.log)
 	w.tierWorker = worker.NewTierMoverWorker(w.tierEngine, a.db.GetDB(), a.log, cfg.Tiering.Interval, cfg.Tiering.Enabled)
-	w.tierWorker.Start()
+	a.start(w.tierWorker.Start)
 
 	// Blob deletion sweeper: removes the bytes of deleted blobs and retired
 	// tier copies after the grace period and once no running backup can still
 	// need them. Every replica may run one (no global lock).
 	w.blobSweeper = worker.NewBlobDeletionSweeper(a.db, s.sweep, a.log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).
 		WithMetrics(a.reg)
-	w.blobSweeper.Start()
+	a.start(w.blobSweeper.Start)
 
 	if s.replSvc != nil {
-		s.replSvc.Start()
+		a.start(s.replSvc.Start)
 	}
 }
 
@@ -250,7 +276,7 @@ func (a *app) startJournal() {
 
 	if cfg.Recovery.Journal.Enabled {
 		w.journalWorker = recovery.NewWorker(w.journal, a.log, cfg.Recovery.Journal.Interval)
-		w.journalWorker.Start()
+		a.start(w.journalWorker.Start)
 	}
 }
 
@@ -321,10 +347,10 @@ func (g groupRefresher) NotifyStale(repoID string) {
 	g.hosted.NotifyStale(repoID)
 }
 
-// startOSVMirror builds the OSV mirror worker and starts it when osvMirror is
-// enabled. A disabled worker is still built (and does nothing), so shutdown
-// stops it like the others.
-func (w *workerSet) startOSVMirror(db database.Database, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
+// buildOSVMirror builds the OSV mirror worker; it does something only when
+// osvMirror is enabled. A disabled worker is still built (and does nothing), so
+// shutdown stops it like the others.
+func (w *workerSet) buildOSVMirror(db database.Database, cfg *config.Config, log *logger.Logger, reg *metrics.Registry) {
 	var importer *osv.Importer
 
 	interval := time.Duration(0)
@@ -349,5 +375,4 @@ func (w *workerSet) startOSVMirror(db database.Database, cfg *config.Config, log
 
 	w.osvMirror = worker.NewOSVMirrorWorker(db, importer, cfg.OSVMirror.Ecosystems, log, interval).WithMetrics(reg)
 	w.osvMirror.SetPublisher(w.webhook)
-	w.osvMirror.Start()
 }

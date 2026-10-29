@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-.PHONY: help build run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
+.PHONY: help build build-slim vet-tags run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
         docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check deadcode dup dup-baseline bench bench-load
 
 # Variables
@@ -34,11 +34,15 @@ BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_ENV   = CGO_ENABLED=0
 BUILD_FLAGS = -trimpath
 SERVER_TAGS = grpcnotrace
+# Optional features that -tags remove from the server (docs/development/README.md#build-tags):
+# noai = AI analysis, nomcp = the MCP server. build-slim leaves both out.
+SLIM_TAGS   = $(SERVER_TAGS),noai,nomcp
 LDFLAGS   = -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)"
 
 help:
 	@echo "Available targets:"
 	@echo "  build           - Build the application (includes web)"
+	@echo "  build-slim      - Build the server without AI analysis and the MCP server (tags noai,nomcp) as bin/openartifact-slim"
 	@echo "  build-cli       - Build the CLI tool (bin/oa)"
 	@echo "  run             - Build and run the application"
 	@echo "  test            - Run unit tests with race detector"
@@ -51,8 +55,9 @@ help:
 	@echo "  lint            - Run golangci-lint (also fails on unformatted code)"
 	@echo "  fmt             - Format code (golangci-lint fmt: gofmt, goimports, golines at 140 columns)"
 	@echo "  vet             - Run go vet"
+	@echo "  vet-tags        - Run go vet with -tags noai,nomcp, noai and nomcp (the slim builds must compile)"
 	@echo "  sec             - Run gosec security scanner"
-	@echo "  check           - Run fmt + vet + lint (pre-commit gate)"
+	@echo "  check           - Run fmt + vet + vet-tags + lint (pre-commit gate)"
 	@echo "  generate        - Run sqlc generate (DB codegen) and regenerate web/src/lib/formats.generated.ts"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
 	@echo "  docs-check      - Fail when docs/reference is out of date"
@@ -79,6 +84,11 @@ build: web-build
 	@echo "Building $(BINARY_NAME)..."
 	$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) -tags $(SERVER_TAGS) $(LDFLAGS) -o bin/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Build complete: bin/$(BINARY_NAME)"
+
+build-slim: web-build
+	@echo "Building $(BINARY_NAME)-slim (no AI analysis, no MCP server)..."
+	$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) -tags $(SLIM_TAGS) $(LDFLAGS) -o bin/$(BINARY_NAME)-slim $(MAIN_PATH)
+	@echo "Build complete: bin/$(BINARY_NAME)-slim"
 
 build-cli:
 	@echo "Building CLI tool..."
@@ -130,12 +140,18 @@ vet:
 	@echo "Running go vet..."
 	$(GO) vet ./...
 
+vet-tags:
+	@echo "Running go vet for the slim builds..."
+	$(GO) vet -tags noai,nomcp ./...
+	$(GO) vet -tags noai ./...
+	$(GO) vet -tags nomcp ./...
+
 sec:
 	@echo "Running gosec security scanner..."
 	@which gosec > /dev/null || (echo "gosec not found. Install: go install github.com/securego/gosec/v2/cmd/gosec@latest" && exit 1)
 	gosec -quiet ./...
 
-check: fmt vet lint
+check: fmt vet vet-tags lint
 	@echo "All checks passed"
 
 generate:
