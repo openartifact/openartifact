@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatlifecycle "github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/worker"
 )
 
@@ -243,20 +244,23 @@ func (n npmRec) NotifyStale(pkg string) {
 
 type gcRec struct{ r *recordingNotifiers }
 
-func (g gcRec) RunRepo(_ context.Context, _ *models.Repository, _ worker.DockerGCOptions) (*worker.DockerGCReport, error) {
+func (g gcRec) CollectRemoved(context.Context, *models.Repository) error {
 	g.r.mu.Lock()
 	defer g.r.mu.Unlock()
 
 	g.r.gcRuns++
 
-	return &worker.DockerGCReport{}, nil
+	return nil
 }
-
-func (g gcRec) DefaultGrace() time.Duration { return 0 }
 
 func (e *cleanupQuotaEnv) notifiers() *recordingNotifiers {
 	r := &recordingNotifiers{}
-	e.worker.SetRegenNotifiers(mavenRec{r}, npmRec{r}, gcRec{r})
+
+	workers := formatlifecycle.NewWorkers()
+	workers.Bind("maven", mavenRec{r})
+	workers.Bind("npm", npmRec{r})
+	workers.Bind("docker", gcRec{r})
+	e.worker.SetLifecycleWorkers(workers)
 
 	return r
 }

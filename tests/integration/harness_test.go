@@ -10,12 +10,16 @@ import (
 	"context"
 	"os"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/formats"
 )
 
 //nolint:gochecknoglobals // TestMain-shared harness, initialised once for the whole package
 var harness *TestHarness
 
 func TestMain(m *testing.M) {
+	formats.Register()
+
 	ctx := context.Background()
 
 	h, err := NewHarness(ctx)

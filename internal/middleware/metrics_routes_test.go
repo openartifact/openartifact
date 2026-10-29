@@ -147,7 +147,7 @@ func TestEveryFormatHasUploadLabel(t *testing.T) {
 	// directory under internal/format -> upload format label; "" is a support
 	// package without hosted uploads.
 	known := map[string]string{
-		"base": "", "filerepo": "", "formattest": "",
+		"base": "", "filerepo": "", "formattest": "", "lifecycle": "", "plugin": "", "storage": "",
 		"ansible": metrics.FormatAnsible, "apk": metrics.FormatApk, "cargo": metrics.FormatCargo,
 		"composer": metrics.FormatComposer, "conan": metrics.FormatConan, "conda": metrics.FormatConda,
 		"deb": metrics.FormatDeb, "docker": metrics.FormatDocker, "gomod": metrics.FormatGo, "helm": metrics.FormatHelm,

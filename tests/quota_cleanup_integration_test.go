@@ -19,6 +19,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	formatlifecycle "github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/worker"
 )
@@ -306,7 +307,11 @@ func TestCleanupPolicyRefreshesMetadata(t *testing.T) {
 			repoID := e.repo(format)
 
 			rpm, deb := &recordingNotifier{}, &recordingNotifier{}
-			e.worker.SetMetadataNotifiers(rpm, deb)
+
+			workers := formatlifecycle.NewWorkers()
+			workers.Bind("rpm", rpm)
+			workers.Bind("deb", deb)
+			e.worker.SetLifecycleWorkers(workers)
 
 			e.pkg(repoID, format, "pkg", "1.0.0", 100, 30)
 			e.pkg(repoID, format, "pkg", "2.0.0", 100, 10)
