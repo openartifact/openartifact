@@ -57,7 +57,7 @@ bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them b
 | `make docs-gen` | Regenerates the pages under `docs/reference/` (configuration keys, metrics, CLI commands, REST API) from the code; run after changing config keys, metrics, `oa` help or `internal/api/openapi.json`, and commit the result. `make docs-check` fails when they are stale |
 | `make deadcode` | Fails when Go code is unreachable from every `main` package see [Dead-code gate](#dead-code-gate) |
 | `make migrate` | `go run ./cmd/server -migrate` (apply migrations and exit) |
-| `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md) |
+| `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md). `make bench` links every package's benchmark binary under `GOTMPDIR`; Go defaults that to `/tmp`, which on a small or quota-limited tmpfs fails with `link: cannot write /tmp/go-link-...: disk quota exceeded`, so the target uses `$GOTMPDIR` when set and `$XDG_CACHE_HOME/openartifact-bench` (else `~/.cache/openartifact-bench`) otherwise. Running `go test -bench` by hand on such a machine needs `GOTMPDIR` set to a directory on a disk with a few GB free |
 | `make docker-build` | Builds `openartifact:latest` from `docker/Dockerfile`; the runtime base is `RUNTIME=dhi` (default, needs `docker login dhi.io`) or `RUNTIME=distroless` (anonymous) |
 | `make docker-up` | Full stack via `docker compose -f docker/docker-compose.yml up -d --build` with `VERSION`, short SHA and RFC 3339 build time passed as build args; needs `docker/.env` copied from [`docker/.env.example`](../../docker/.env.example); without dhi.io access set `OPENARTIFACT_RUNTIME=distroless` |
 
@@ -80,7 +80,7 @@ Start the server on `:8080` for the dev server to talk to. Build the server with
 
 Three more rules keep the binaries small:
 
-- `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` serves that gzip as it is and expands it once at startup for clients that do not accept gzip. Source maps are not emitted.
+- `web/dist` is embedded once, gzipped: `web/scripts/precompress.js` (run by `bun run build` and the Dockerfile) replaces each compressible file with `name.gz`, `web/assets.go` streams that gzip from the binary as it is and expands it per request for clients that do not accept gzip. Startup only hashes the files; a build without the script (plain `vite build`) gzips each compressible asset on its first request, once, with a pooled writer, and keeps only that gzip in memory. Source maps are not emitted.
 - `cmd/oa` and `cmd/resetpw` link no server code: no database, storage, telemetry, web or cloud-SDK packages (`internal/passwd` holds the password hashing `resetpw` needs; `internal/auth` pulls in the whole server). `tests/binary_deps_test.go` fails when an import brings one back, and when the server links `golang.org/x/net/trace` again.
 - UPX is not used, and the official binaries and image carry every documented feature; the optional [build tags](#build-tags) below are for self-built slim servers.
 

@@ -36,5 +36,5 @@ Search the packages of the repositories the caller can read, and the names of th
 | Status | Description | Body |
 |---|---|---|
 | `200` | Search results (SearchResult), or with checksum the files that carry it | `application/json`: any |
-| `400` | Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters) | - |
+| `400` | Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters). A query_too_broad on q lists the filters the query could add in narrow_by | `application/json`: [SearchError](schemas.md#searcherror) |
 

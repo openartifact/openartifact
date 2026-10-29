@@ -33,7 +33,6 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"go.yaml.in/yaml/v3"
 	"golang.org/x/mod/semver"
 )
 
@@ -140,9 +139,9 @@ func (h *HTTPHandler) renderIndex(ctx context.Context, repoID string) (*base.Ren
 		return nil, fmt.Errorf("list helm charts: %w", err)
 	}
 
-	indexYAML, err := yaml.Marshal(buildHelmIndex(charts))
+	indexYAML, err := renderHelmIndex(charts, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("marshal index.yaml: %w", err)
+		return nil, fmt.Errorf("render index.yaml: %w", err)
 	}
 
 	return &base.Rendered{Body: indexYAML, ContentType: "application/yaml"}, nil
@@ -733,61 +732,4 @@ func validChartIdent(s string) bool {
 	}
 
 	return true
-}
-
-// HelmIndex represents the Helm repository index.yaml structure.
-type HelmIndex struct {
-	APIVersion string                      `yaml:"apiVersion"`
-	Generated  string                      `yaml:"generated"`
-	Entries    map[string][]HelmChartEntry `yaml:"entries"`
-}
-
-type HelmChartEntry struct {
-	Name        string              `yaml:"name"`
-	Version     string              `yaml:"version"`
-	AppVersion  string              `yaml:"appVersion,omitempty"`
-	Description string              `yaml:"description,omitempty"`
-	Digest      string              `yaml:"digest"`
-	URLs        []string            `yaml:"urls"`
-	Created     string              `yaml:"created"`
-	Home        string              `yaml:"home,omitempty"`
-	Sources     []string            `yaml:"sources,omitempty"`
-	Maintainers []map[string]string `yaml:"maintainers,omitempty"`
-	Icon        string              `yaml:"icon,omitempty"`
-	APIVersion  string              `yaml:"apiVersion,omitempty"`
-	Type        string              `yaml:"type,omitempty"`
-	Keywords    []string            `yaml:"keywords,omitempty"`
-}
-
-func buildHelmIndex(charts []*models.HelmChart) *HelmIndex {
-	entries := make(map[string][]HelmChartEntry)
-
-	for _, chart := range charts {
-		entry := HelmChartEntry{
-			Name:        chart.Name,
-			Version:     chart.Version,
-			AppVersion:  chart.AppVersion,
-			Description: chart.Description,
-			Digest:      chart.Digest,
-			URLs: []string{
-				"charts/" + url.PathEscape(chart.Name+"-"+chart.Version) + ".tgz",
-			},
-			Created:     chart.CreatedAt.UTC().Format(time.RFC3339),
-			Home:        chart.Home,
-			Sources:     chart.Sources,
-			Maintainers: chart.Maintainers,
-			Icon:        chart.Icon,
-			APIVersion:  chart.APIVersion,
-			Type:        chart.Type,
-			Keywords:    chart.Keywords,
-		}
-
-		entries[chart.Name] = append(entries[chart.Name], entry)
-	}
-
-	return &HelmIndex{
-		APIVersion: "v1",
-		Generated:  time.Now().UTC().Format(time.RFC3339),
-		Entries:    entries,
-	}
 }

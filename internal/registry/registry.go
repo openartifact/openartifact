@@ -19,12 +19,20 @@ import (
 	"sync/atomic"
 )
 
+// table is one immutable generation of the registry: Register builds a new one
+// and publishes it, so a reader never sees a half-built table and the derived
+// name list is computed once per registration, not once per call.
+type table[V any] struct {
+	m     map[string]*V
+	names []string // sorted, capacity clipped so an append never writes into it
+}
+
 // Registry maps a format name to its hook value. The zero value is an empty
 // registry ready for use. Lookups are lock-free; Register copies the table, so
 // it suits the startup-time registration it is meant for.
 type Registry[V any] struct {
 	mu sync.Mutex
-	m  atomic.Pointer[map[string]V]
+	t  atomic.Pointer[table[V]]
 }
 
 // Register adds v under name. It panics on an empty or a duplicate name: both
@@ -37,44 +45,59 @@ func (r *Registry[V]) Register(name string, v V) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	var cur map[string]V
-	if p := r.m.Load(); p != nil {
-		cur = *p
+	cur := r.t.Load()
+	if cur == nil {
+		cur = &table[V]{}
 	}
 
-	if _, dup := cur[name]; dup {
+	if _, dup := cur.m[name]; dup {
 		panic(fmt.Sprintf("registry: %q registered twice", name))
 	}
 
-	next := make(map[string]V, len(cur)+1)
-	maps.Copy(next, cur)
-	next[name] = v
-	r.m.Store(&next)
+	next := &table[V]{m: make(map[string]*V, len(cur.m)+1)}
+	maps.Copy(next.m, cur.m)
+	next.m[name] = &v
+
+	at, _ := slices.BinarySearch(cur.names, name)
+	next.names = slices.Clip(slices.Insert(slices.Clone(cur.names), at, name))
+
+	r.t.Store(next)
 }
 
-// Lookup returns the value registered under name.
+// Lookup returns a copy of the value registered under name.
 func (r *Registry[V]) Lookup(name string) (V, bool) {
 	var zero V
 
-	p := r.m.Load()
-	if p == nil {
-		return zero, false
-	}
-
-	v, ok := (*p)[name]
+	v, ok := r.LookupRef(name)
 	if !ok {
 		return zero, false
 	}
 
-	return v, true
+	return *v, true
 }
 
-// Names returns the registered names, sorted.
+// LookupRef returns the value registered under name without copying it: the
+// pointer is to the registered value itself, shared by every caller, so it is
+// read-only. Use it for a large V that is only inspected (Lookup copies it).
+func (r *Registry[V]) LookupRef(name string) (*V, bool) {
+	t := r.t.Load()
+	if t == nil {
+		return nil, false
+	}
+
+	v, ok := t.m[name]
+
+	return v, ok
+}
+
+// Names returns the registered names, sorted. The slice is the registry's own,
+// rebuilt by Register: it is shared by every caller and must be treated as
+// read-only (slices.Clone it to modify).
 func (r *Registry[V]) Names() []string {
-	p := r.m.Load()
-	if p == nil {
+	t := r.t.Load()
+	if t == nil {
 		return nil
 	}
 
-	return slices.Sorted(maps.Keys(*p))
+	return t.names
 }

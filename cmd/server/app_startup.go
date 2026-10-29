@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/passwd"
 	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,6 +38,9 @@ func newApp(opts options) (*app, error) {
 	if err := crypto.InitFromEnv(); err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", crypto.EnvKey, err)
 	}
+
+	// Before anything can log in: sizes the Argon2id semaphore once.
+	passwd.SetMaxConcurrent(cfg.Auth.Argon2MaxConcurrent)
 
 	log, err := logger.New(cfg.Logger.Level, cfg.Logger.Format, cfg.Logger.OutputPath)
 	if err != nil {

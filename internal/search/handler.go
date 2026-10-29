@@ -178,7 +178,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if count > MaxSearchResults {
-		httpx.WriteError(w, http.StatusBadRequest, "query_too_broad", "query too broad; add more filters")
+		writeTooBroad(w, filter)
 		return
 	}
 

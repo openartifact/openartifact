@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -46,10 +47,59 @@ const (
 // parameters are outside the accepted bounds.
 var ErrInvalidHashParams = errors.New("argon2id parameters out of bounds")
 
-// argonSemaphore caps concurrent Argon2id operations to prevent OOM under load.
+const (
+	// minConcurrent and maxConcurrent clamp the default number of simultaneous
+	// Argon2id operations: each holds argonMemory KiB (64 MiB) for its whole
+	// run, so the cap bounds the memory a flood of logins can pin at
+	// maxConcurrent*64 MiB (256 MiB), however many CPUs the host has.
+	minConcurrent = 2
+	maxConcurrent = 4
+)
+
+// idKey derives the Argon2id key; tests replace it to observe the concurrency.
 //
-//nolint:gochecknoglobals // rate-limits concurrent Argon2id hashing
-var argonSemaphore = make(chan struct{}, runtime.NumCPU())
+//nolint:gochecknoglobals // test seam
+var idKey = argon2.IDKey
+
+// argonSlots is the semaphore that caps concurrent Argon2id operations, a
+// buffered channel whose capacity is the cap. SetMaxConcurrent replaces it at
+// startup; an operation releases to the channel it acquired from.
+//
+//nolint:gochecknoglobals // process-wide cap on concurrent Argon2id hashing
+var argonSlots atomic.Pointer[chan struct{}]
+
+// DefaultMaxConcurrent is the cap used until SetMaxConcurrent is called: the
+// CPU count clamped to 2..4.
+func DefaultMaxConcurrent() int {
+	return min(max(runtime.NumCPU(), minConcurrent), maxConcurrent)
+}
+
+// SetMaxConcurrent sets how many Argon2id operations may run at once; waiting
+// callers queue behind them. n <= 0 selects DefaultMaxConcurrent. Call it once
+// at startup, before serving: operations already running keep the old cap.
+func SetMaxConcurrent(n int) {
+	if n <= 0 {
+		n = DefaultMaxConcurrent()
+	}
+
+	ch := make(chan struct{}, n)
+	argonSlots.Store(&ch)
+}
+
+// acquire waits for a free Argon2id slot and returns the function that frees it.
+func acquire() func() {
+	p := argonSlots.Load()
+	if p == nil {
+		SetMaxConcurrent(0)
+
+		p = argonSlots.Load()
+	}
+
+	ch := *p
+	ch <- struct{}{}
+
+	return func() { <-ch }
+}
 
 const (
 	// MinPasswordLength is the minimum length of any local password, enforced
@@ -100,6 +150,13 @@ func BurnPasswordVerification(plain string) {
 	}
 }
 
+// deriveLimited runs Argon2id once a slot is free and frees it on every exit.
+func deriveLimited(password, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte {
+	defer acquire()()
+
+	return idKey(password, salt, time, memory, threads, keyLen)
+}
+
 // HashPassword hashes a plaintext password using Argon2id and returns an encoded string.
 // Format: $argon2id$v=19$m=65536,t=1,p=4$<base64-no-padding-salt>$<base64-no-padding-hash>.
 func HashPassword(plain string) (string, error) {
@@ -108,11 +165,7 @@ func HashPassword(plain string) (string, error) {
 		return "", fmt.Errorf("generate salt: %w", err)
 	}
 
-	argonSemaphore <- struct{}{}
-
-	hash := argon2.IDKey([]byte(plain), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
-
-	<-argonSemaphore
+	hash := deriveLimited([]byte(plain), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
 
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
 	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
@@ -160,23 +213,20 @@ func VerifyPassword(plain, encoded string) (bool, error) {
 		return false, fmt.Errorf("%w: hash length %d", ErrInvalidHashParams, len(expectedHash))
 	}
 
-	derivedHash := deriveBounded([]byte(plain), salt, time, memory, threads, uint32(len(expectedHash))) //nolint:gosec // bounded above
+	derivedHash := deriveLimited(
+		[]byte(plain),
+		salt,
+		time,
+		memory,
+		threads,
+		uint32(len(expectedHash)), //nolint:gosec // argon2 requires uint32 for key length
+	)
 
 	if subtle.ConstantTimeCompare(derivedHash, expectedHash) != 1 {
 		return false, nil
 	}
 
 	return true, nil
-}
-
-// deriveBounded runs one Argon2id derivation holding a slot of argonSemaphore;
-// the deferred release keeps the slot even if the derivation panics.
-func deriveBounded(plain, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte {
-	argonSemaphore <- struct{}{}
-
-	defer func() { <-argonSemaphore }()
-
-	return argon2.IDKey(plain, salt, time, memory, threads, keyLen)
 }
 
 // parseArgonParams parses the "m=<KiB>,t=<passes>,p=<lanes>" segment of an

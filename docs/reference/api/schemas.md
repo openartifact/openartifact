@@ -1656,6 +1656,17 @@ Catalog figures of a repository. Only present in the repository list (GET /api/v
 | `id` | string (uuid) | no | - |
 | `status` | string | no | Scan status. Vulnerability scans use pending\|scanning\|completed\|partial\|failed (see VulnScanResult.scan_status). |
 
+### SearchError
+
+400 of the search endpoint. query_too_broad also carries the cap and the filters the query could add.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `code` | string | no | missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum or query_too_broad |
+| `error` | string | yes | Message |
+| `max_results` | integer | no | query_too_broad only: the largest number of matches a search answers |
+| `narrow_by` | array of string | no | query_too_broad only: the filters the query does not use yet (name:`<package>`, format:`<format>`, repo:`<repository>` in q, flagged=true); empty when it already uses all of them |
+
 ### SearchPackageHit
 
 | Field | Type | Required | Description |

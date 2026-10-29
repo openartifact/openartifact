@@ -45,6 +45,7 @@ var (
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
+	errNegativeArgon2Concurrent = errors.New("auth.argon2MaxConcurrent must not be negative")
 	errAuditRetention           = errors.New(
 		"audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive",
 	)
@@ -403,6 +404,10 @@ type AuthConfig struct {
 	// together with the certificate: a self-signed pair is generated (see
 	// samlSpCert). Stored unencrypted while OPENARTIFACT_SECRET_KEY is unset.
 	SAMLSPKeyPEM string `yaml:"samlSpKey"`
+	// Argon2MaxConcurrent caps the password hashes and verifications running at
+	// once, each of which holds 64 MiB until it ends; further logins wait. 0
+	// (default): the CPU count clamped to 2..4 (256 MiB at most).
+	Argon2MaxConcurrent int `yaml:"argon2MaxConcurrent"`
 }
 
 // ServerConfig contains HTTP server configuration.
@@ -704,6 +709,7 @@ func defaultConfig() *Config {
 			HMACKey:              "",
 			SAMLSPCertPEM:        "",
 			SAMLSPKeyPEM:         "",
+			Argon2MaxConcurrent:  0,
 		},
 		Backup: BackupConfig{
 			BackupDir: "/var/lib/openartifact/backups",
@@ -906,6 +912,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideBool(&cfg.Auth.AllowAnonymousRead, "ALLOW_ANONYMOUS_READ")
 	overrideBool(&cfg.Auth.LegacyAPIKeyEnabled, "LEGACY_API_KEY_ENABLED")
 	overrideInt(&cfg.Auth.SessionDurationHours, "SESSION_DURATION_HOURS")
+	overrideInt(&cfg.Auth.Argon2MaxConcurrent, "OPENARTIFACT_ARGON2_MAX_CONCURRENT")
 	overrideString(&cfg.Auth.HMACKey, "AUTH_HMAC_KEY")
 	overrideString(&cfg.Auth.SAMLSPCertPEM, "OPENARTIFACT_SAML_SP_CERT")
 	overrideString(&cfg.Auth.SAMLSPKeyPEM, "OPENARTIFACT_SAML_SP_KEY")
@@ -1161,6 +1168,10 @@ func (c *Config) validateFeatures() error {
 
 	if err := c.Exploit.validate(); err != nil {
 		return err
+	}
+
+	if c.Auth.Argon2MaxConcurrent < 0 {
+		return errNegativeArgon2Concurrent
 	}
 
 	if err := c.validateReplica(); err != nil {

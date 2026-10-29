@@ -85,11 +85,11 @@ func shellFor(ctx context.Context, src ShellSource, cur *atomic.Pointer[shell], 
 
 	c := &shell{
 		etag:     snap.ETag,
-		manifest: newAsset("application/manifest+json", branding.Manifest(snap), false, nil),
+		manifest: newAsset("application/manifest+json", branding.Manifest(snap), false),
 	}
 
 	if rawIndex != nil {
-		c.index = newAsset("text/html; charset=utf-8", branding.PatchIndex(rawIndex, snap), false, nil)
+		c.index = newAsset("text/html; charset=utf-8", branding.PatchIndex(rawIndex, snap), false)
 	}
 
 	cur.Store(c)
@@ -110,7 +110,7 @@ func newSPAHandler(sub fs.FS, src ShellSource) http.Handler {
 	)
 
 	if a, ok := assets["index.html"]; ok {
-		rawIndex = a.plain.body
+		rawIndex = readPlain(a)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -305,6 +305,7 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 | `API_KEY` | `server.apiKey` | empty | Deprecated static write key; authenticates as `system/legacy-api-key` and logs a warning on each use |
 | `LEGACY_API_KEY_ENABLED` | `legacyApiKeyEnabled` | `false` | Accept `API_KEY` at all |
 | `SESSION_DURATION_HOURS` | `sessionDurationHours` | `24` | Web session lifetime |
+| `OPENARTIFACT_ARGON2_MAX_CONCURRENT` | `argon2MaxConcurrent` | `0` | Password hashes and verifications running at once; each holds 64 MiB, so a login flood waits instead of growing the process. `0`: the CPU count clamped to 2..4 (256 MiB at most) |
 | `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE` | `bootstrap.adminPasswordFile` | empty | File with the initial admin password, used only on an empty instance; nothing is printed. Preferred over the plain value (see [first login](installation.md#first-login)) |
 | `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | `bootstrap.adminPassword` | empty | The initial admin password itself (**secret**; compose convenience, prefer the `_FILE` form) |
 | `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE` | `bootstrap.forcePasswordChange` | `false` | Force a password change at the first login of a supplied password (a generated one always forces it) |

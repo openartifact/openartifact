@@ -127,15 +127,19 @@ func TestVerifyPassword_MalformedHashesDoNotLeakSemaphoreSlots(t *testing.T) {
 	salt := base64.RawStdEncoding.EncodeToString(make([]byte, 16))
 	key := base64.RawStdEncoding.EncodeToString(make([]byte, 32))
 
+	SetMaxConcurrent(0)
+
+	slots := *argonSlots.Load()
+
 	for _, params := range []string{"m=65536,t=0,p=4", "m=65536,t=1,p=0", "m=4294967295,t=1,p=4", "m=x"} {
-		for range 4 * cap(argonSemaphore) {
+		for range 4 * cap(slots) {
 			if _, err := VerifyPassword("pw", "$argon2id$v=19$"+params+"$"+salt+"$"+key); err == nil {
 				t.Fatalf("%s: expected an error", params)
 			}
 		}
 	}
 
-	if n := len(argonSemaphore); n != 0 {
+	if n := len(slots); n != 0 {
 		t.Fatalf("%d semaphore slots still held", n)
 	}
 
