@@ -17,6 +17,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// CatalogStore is the format-independent package listing: the unioned view over every per-format package table (see ListRepoComponents), repository size/security aggregates and the package rollups. A new package table needs a branch here (.agents/rules/package-listing.md).
+type CatalogStore struct{ *core }
+
 // RepoCatalogStats returns the catalog figures of the repositories in repoIDs
 // (a repository without any is present with zero values): stored size and quota
 // and the security aggregates, plus the time of the newest package when
@@ -24,7 +27,7 @@ import (
 // many repositories it holds. The package count is separate
 // (CountRepoPackageNames), and the newest-package time is optional: both probe
 // every package table, which the list filters do not need.
-func (p *PostgresDB) RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error) {
+func (p *CatalogStore) RepoCatalogStats(ctx context.Context, repoIDs []string, withLastPublished bool) (map[string]models.RepoStats, error) {
 	stats := make(map[string]models.RepoStats, len(repoIDs))
 	if len(repoIDs) == 0 {
 		return stats, nil
@@ -72,7 +75,7 @@ func (p *PostgresDB) RepoCatalogStats(ctx context.Context, repoIDs []string, wit
 	return stats, nil
 }
 
-func (p *PostgresDB) loadLastPublished(ctx context.Context, repoIDs []string, stats map[string]models.RepoStats) error {
+func (p *CatalogStore) loadLastPublished(ctx context.Context, repoIDs []string, stats map[string]models.RepoStats) error {
 	rows, err := p.pool.Query(ctx, lastPublishedQuery(), repoIDs)
 	if err != nil {
 		return fmt.Errorf("failed to load last published times: %w", err)
@@ -105,7 +108,7 @@ func (p *PostgresDB) loadLastPublished(ctx context.Context, repoIDs []string, st
 // package listing names them) of each repository in repoIDs; a repository with
 // no packages maps to 0. It reads every package row of the repositories, so ask
 // for one page of repositories at a time.
-func (p *PostgresDB) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
+func (p *CatalogStore) CountRepoPackageNames(ctx context.Context, repoIDs []string) (map[string]int64, error) {
 	counts := make(map[string]int64, len(repoIDs))
 	if len(repoIDs) == 0 {
 		return counts, nil
@@ -147,7 +150,7 @@ func (p *PostgresDB) CountRepoPackageNames(ctx context.Context, repoIDs []string
 //
 // The first stage groups the narrow rows of every table, the second reads the
 // sizes of the page's packages only (see rollupQuery).
-func (p *PostgresDB) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
+func (p *CatalogStore) ListRepoPackageRollup(ctx context.Context, opts models.PackageRollupOptions) ([]models.PackageRollup, int, error) {
 	offset := (opts.Page - 1) * opts.Limit
 
 	page, total, err := p.rollupPage(ctx, opts, opts.Limit, offset)
@@ -174,7 +177,7 @@ func (p *PostgresDB) ListRepoPackageRollup(ctx context.Context, opts models.Pack
 }
 
 // rollupPage runs the first stage of the rollup for one page.
-func (p *PostgresDB) rollupPage(
+func (p *CatalogStore) rollupPage(
 	ctx context.Context,
 	opts models.PackageRollupOptions,
 	limit, offset int,
@@ -220,7 +223,7 @@ func (p *PostgresDB) rollupPage(
 }
 
 // loadRollupSizes fills the size, the files and the latest-version rows of page.
-func (p *PostgresDB) loadRollupSizes(ctx context.Context, opts models.PackageRollupOptions, page []models.PackageRollup) error {
+func (p *CatalogStore) loadRollupSizes(ctx context.Context, opts models.PackageRollupOptions, page []models.PackageRollup) error {
 	names := make([]string, 0, len(page))
 	byKey := make(map[[2]string]*models.PackageRollup, len(page))
 
@@ -262,7 +265,7 @@ func (p *PostgresDB) loadRollupSizes(ctx context.Context, opts models.PackageRol
 
 // ArtifactSecurity returns the scan state of the packages of repoID with the
 // given listing row ids. A package that was never scanned has no entry.
-func (p *PostgresDB) ArtifactSecurity(
+func (p *CatalogStore) ArtifactSecurity(
 	ctx context.Context,
 	repoID string,
 	artifactIDs []string,
@@ -300,7 +303,7 @@ const (
 // ListRecentPackages returns the newest package versions across the
 // repositories in repoIDs, newest first, at most limit of them. Multi-file
 // versions appear once.
-func (p *PostgresDB) ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error) {
+func (p *CatalogStore) ListRecentPackages(ctx context.Context, repoIDs []string, limit int) ([]models.RecentPackage, error) {
 	if len(repoIDs) == 0 || limit < 1 {
 		return nil, nil
 	}
@@ -335,7 +338,7 @@ func (p *PostgresDB) ListRecentPackages(ctx context.Context, repoIDs []string, l
 // GetRepoComponentDetail resolves a row id of the package listing (any format)
 // to the row with the metadata its table stores, scoped to repoID. It returns
 // nil, nil when the id is not in that repository or is not a UUID.
-func (p *PostgresDB) GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error) {
+func (p *CatalogStore) GetRepoComponentDetail(ctx context.Context, repoID, id string) (*models.ComponentDetail, error) {
 	if !isUUID(id) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -368,4 +371,139 @@ func (p *PostgresDB) GetRepoComponentDetail(ctx context.Context, repoID, id stri
 	}
 
 	return detail, nil
+}
+
+// ListComponentsByRepo lists the packages of one repository across every
+// format (see ListRepoComponents in queries/components.sql for the per-format
+// mapping). formatFilter, when non-empty, restricts the result to one format.
+func (p *CatalogStore) ListComponentsByRepo(
+	ctx context.Context,
+	repoID, formatFilter string,
+	page, limit int,
+) ([]*models.Component, int, error) {
+	return p.SearchComponents(ctx, repoID, ComponentListOptions{Format: formatFilter, Page: page, Limit: limit})
+}
+
+// SearchComponents is ListComponentsByRepo with the extra filters and the
+// ordering of ComponentListOptions.
+func (p *CatalogStore) SearchComponents(ctx context.Context, repoID string, opts ComponentListOptions) ([]*models.Component, int, error) {
+	rows, err := p.listComponentRows(ctx, repoID, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list packages: %w", err)
+	}
+
+	total, err := p.componentTotal(ctx, repoID, opts, len(rows))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	components := make([]*models.Component, 0, len(rows))
+	for _, r := range rows {
+		components = append(components, &models.Component{
+			ID:            r.ID,
+			RepositoryID:  r.RepositoryID,
+			Name:          r.Name,
+			Version:       r.Version,
+			Format:        r.Format,
+			Arch:          r.Arch,
+			SHA256:        r.Sha256,
+			Release:       r.Release,
+			Epoch:         int(r.Epoch),
+			BuildTime:     r.BuildTime,
+			ArchiveSize:   r.ArchiveSize,
+			PackageSize:   r.PackageSize,
+			InstalledSize: r.InstalledSize,
+			Filename:      r.Filename,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+		})
+	}
+
+	return components, total, nil
+}
+
+// componentTotal is the number of rows the listing matches in total. A page
+// that came back neither full nor (past the first page) empty already ends the
+// listing, so its size gives the total without scanning the repository again;
+// only a full page, or an empty page past the end, needs CountRepoComponents.
+func (p *CatalogStore) componentTotal(ctx context.Context, repoID string, opts ComponentListOptions, pageRows int) (int, error) {
+	offset := (opts.Page - 1) * opts.Limit
+	if opts.Limit > 0 && opts.Page > 0 && pageRows < opts.Limit && (pageRows > 0 || offset == 0) {
+		return offset + pageRows, nil
+	}
+
+	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
+		RepoID:       repoID,
+		FormatFilter: opts.Format,
+		NameFilter:   opts.Name,
+		Q:            opts.Query,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to count packages: %w", err)
+	}
+
+	return int(total), nil
+}
+
+// componentRow is the row shape shared by ListRepoComponents and
+// ListRepoComponentsByName.
+type componentRow = dbsqlc.ListRepoComponentsRow
+
+// listComponentRows runs the newest-first or the by-name variant of the
+// package listing query.
+func (p *CatalogStore) listComponentRows(ctx context.Context, repoID string, opts ComponentListOptions) ([]componentRow, error) {
+	limit := toInt32(opts.Limit)
+	offset := toInt32((opts.Page - 1) * opts.Limit)
+
+	if !opts.SortByName {
+		return p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
+			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+			PageLimit: limit, PageOffset: offset,
+		})
+	}
+
+	rows, err := p.q.ListRepoComponentsByName(ctx, dbsqlc.ListRepoComponentsByNameParams{
+		RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+		PageLimit: limit, PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list components by name: %w", err)
+	}
+
+	out := make([]componentRow, len(rows))
+	for i, r := range rows {
+		out[i] = componentRow(r)
+	}
+
+	return out, nil
+}
+
+// GetRepoComponentBlob resolves a row id of the package listing
+// (ListComponentsByRepo) to its blob, scoped to repoID. It returns nil, nil
+// when no row of any format has that id in the repository, or when id is not
+// a UUID.
+func (p *CatalogStore) GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error) {
+	if !isUUID(id) {
+		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
+	}
+
+	row, err := p.q.GetRepoComponentBlob(ctx, dbsqlc.GetRepoComponentBlobParams{RepoID: repoID, ID: id})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get component blob: %w", err)
+	}
+
+	return &models.ComponentBlob{
+		ID:        row.ID,
+		Format:    row.Format,
+		Filename:  row.Filename,
+		Name:      row.Name,
+		Version:   row.Version,
+		SHA256:    row.Sha256,
+		Size:      row.SizeBytes,
+		MediaType: row.MediaType,
+	}, nil
 }
