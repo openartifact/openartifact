@@ -19,7 +19,11 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
+	"github.com/openartifact/openartifact/internal/database/models"
 )
+
+// BackupStore owns backup jobs and the consistent backup snapshot.
+type BackupStore struct{ *core }
 
 var (
 	errSnapshotTTL    = errors.New("backup lease TTL must be positive")
@@ -76,7 +80,7 @@ var _ SnapshotReader = (*backupSnapshot)(nil)
 // process dies, it simply expires after leaseTTL and deferred blob deletions
 // resume. The caller's ctx must outlive the backup: its cancellation ends the
 // snapshot.
-func (p *PostgresDB) BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (SnapshotReader, error) {
+func (p *BackupStore) BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (SnapshotReader, error) {
 	if leaseTTL <= 0 {
 		return nil, errSnapshotTTL
 	}
@@ -309,3 +313,101 @@ var (
 	_ pgxQuerier             = (*pgxpool.Pool)(nil)
 	_ pgxQuerier             = pgx.Tx(nil)
 )
+
+// CreateBackupJob creates a new backup job.
+func (p *BackupStore) CreateBackupJob(ctx context.Context, job *models.BackupJob) error {
+	sizeBytes := job.SizeBytes
+
+	id, err := p.q.CreateBackupJob(ctx, dbsqlc.CreateBackupJobParams{
+		Status:       job.Status,
+		Type:         job.Type,
+		StoragePath:  strPtr(job.StoragePath),
+		SizeBytes:    &sizeBytes,
+		ErrorMessage: strPtr(job.ErrorMessage),
+		StartedAt:    job.StartedAt,
+		CompletedAt:  job.CompletedAt,
+		CreatedAt:    orNow(job.CreatedAt),
+		UpdatedAt:    orNow(job.UpdatedAt),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create backup job: %w", err)
+	}
+
+	job.ID = id
+
+	return nil
+}
+
+// GetBackupJob retrieves a backup job by ID.
+func (p *BackupStore) GetBackupJob(ctx context.Context, id string) (*models.BackupJob, error) {
+	row, err := p.q.GetBackupJob(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get backup job: %w", err)
+	}
+
+	return &models.BackupJob{
+		ID:           row.ID,
+		Status:       row.Status,
+		Type:         row.Type,
+		StoragePath:  row.StoragePath,
+		SizeBytes:    row.SizeBytes,
+		ErrorMessage: row.ErrorMessage,
+		StartedAt:    row.StartedAt,
+		CompletedAt:  row.CompletedAt,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}, nil
+}
+
+// UpdateBackupJob updates an existing backup job.
+func (p *BackupStore) UpdateBackupJob(ctx context.Context, job *models.BackupJob) error {
+	sizeBytes := job.SizeBytes
+
+	err := p.q.UpdateBackupJob(ctx, dbsqlc.UpdateBackupJobParams{
+		Status:       job.Status,
+		Type:         job.Type,
+		StoragePath:  strPtr(job.StoragePath),
+		SizeBytes:    &sizeBytes,
+		ErrorMessage: strPtr(job.ErrorMessage),
+		StartedAt:    job.StartedAt,
+		CompletedAt:  job.CompletedAt,
+		UpdatedAt:    job.UpdatedAt,
+		ID:           job.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update backup job: %w", err)
+	}
+
+	return nil
+}
+
+// ListBackupJobs lists backup jobs with a limit.
+func (p *BackupStore) ListBackupJobs(ctx context.Context, limit int) ([]*models.BackupJob, error) {
+	rows, err := p.q.ListBackupJobs(ctx, toInt32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list backup jobs: %w", err)
+	}
+
+	jobs := make([]*models.BackupJob, 0, len(rows))
+
+	for _, row := range rows {
+		jobs = append(jobs, &models.BackupJob{
+			ID:           row.ID,
+			Status:       row.Status,
+			Type:         row.Type,
+			StoragePath:  row.StoragePath,
+			SizeBytes:    row.SizeBytes,
+			ErrorMessage: row.ErrorMessage,
+			StartedAt:    row.StartedAt,
+			CompletedAt:  row.CompletedAt,
+			CreatedAt:    row.CreatedAt,
+			UpdatedAt:    row.UpdatedAt,
+		})
+	}
+
+	return jobs, nil
+}
