@@ -58,12 +58,12 @@ func trashCondaPackage(t *testing.T, s *quotaSeeder, name string) {
 	        (SELECT id FROM packages WHERE repository_id = $1 AND lower(name) = $2)`, s.repo, name)
 }
 
-type genericCounts struct{ packages, versions, files int }
+type pypiGenericCounts struct{ packages, versions, files int }
 
-func countGeneric(t *testing.T, s *quotaSeeder) genericCounts {
+func pypiCountGeneric(t *testing.T, s *quotaSeeder) pypiGenericCounts {
 	t.Helper()
 
-	var c genericCounts
+	var c pypiGenericCounts
 
 	err := s.pg.GetDB().QueryRowContext(context.Background(), `SELECT
 	  (SELECT count(*) FROM packages WHERE repository_id = $1),
@@ -123,7 +123,7 @@ func TestPyPIRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read
 		t.Fatalf("ids/timestamps not filled: %+v %+v", sdist, wheel)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{1, 1, 2}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 1, 2}) {
 		t.Fatalf("generic rows = %+v, want 1 package / 1 version / 2 files", got)
 	}
 
@@ -179,7 +179,7 @@ func TestPyPIRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read
 		t.Fatalf("duplicate upload = %v, want ErrDuplicate", err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{1, 1, 2}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 1, 2}) {
 		t.Fatalf("after duplicate = %+v", got)
 	}
 
@@ -194,7 +194,7 @@ func TestPyPIRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read
 		t.Fatal(err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{1, 1, 1}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 1, 1}) {
 		t.Fatalf("after first delete = %+v", got)
 	}
 
@@ -202,7 +202,7 @@ func TestPyPIRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read
 		t.Fatal(err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{}) {
 		t.Fatalf("after last delete = %+v", got)
 	}
 
@@ -239,7 +239,7 @@ func TestCondaRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/rea
 	other := addCondaBuild(t, pg, s.repo, "Numpy", "1.3", "py39_0", "noarch", models.CondaExtConda)
 
 	// One package, two builds, three files: the two extensions of a build are files of one version.
-	if got := countGeneric(t, s); got != (genericCounts{1, 2, 3}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 2, 3}) {
 		t.Fatalf("generic rows = %+v, want 1 / 2 / 3", got)
 	}
 
@@ -319,7 +319,7 @@ func TestCondaRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/rea
 		t.Fatalf("duplicate = %v, want ErrDuplicate", err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{1, 2, 3}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 2, 3}) {
 		t.Fatalf("after duplicate = %+v", got)
 	}
 
@@ -338,7 +338,7 @@ func TestCondaRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/rea
 		t.Fatal(err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{1, 2, 2}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 2, 2}) {
 		t.Fatalf("after deleting one extension = %+v", got)
 	}
 
@@ -346,7 +346,7 @@ func TestCondaRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/rea
 		t.Fatal(err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{1, 1, 1}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{1, 1, 1}) {
 		t.Fatalf("after deleting the build = %+v", got)
 	}
 
@@ -354,7 +354,7 @@ func TestCondaRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/rea
 		t.Fatal(err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{}) {
 		t.Fatalf("after last delete = %+v", got)
 	}
 
@@ -390,7 +390,7 @@ func TestRawRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read/
 	put("other/d.txt", "four")
 	put("docs_x/e.txt", "five") // LIKE wildcard must not widen the prefix
 
-	if got := countGeneric(t, s); got != (genericCounts{5, 5, 5}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{5, 5, 5}) {
 		t.Fatalf("generic rows = %+v", got)
 	}
 
@@ -446,7 +446,7 @@ func TestRawRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read/
 		t.Fatalf("overwrite = %+v (was %+v)", after, got)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{5, 5, 5}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{5, 5, 5}) {
 		t.Fatalf("after overwrite = %+v", got)
 	}
 
@@ -486,7 +486,7 @@ func TestRawRoundTrip(t *testing.T) { //nolint:gocyclo // one linear write/read/
 		t.Fatal(err)
 	}
 
-	if got := countGeneric(t, s); got != (genericCounts{5, 5, 5}) {
+	if got := pypiCountGeneric(t, s); got != (pypiGenericCounts{5, 5, 5}) {
 		t.Fatalf("after delete = %+v", got)
 	}
 

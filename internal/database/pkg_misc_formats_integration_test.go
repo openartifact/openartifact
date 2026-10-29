@@ -48,18 +48,18 @@ func requireGeneric(t *testing.T, pg *PostgresDB, repo string, want genericRows)
 	}
 }
 
-// fileRow is the generic row of the file with the id.
-type fileRow struct {
+// miscFileRow is the generic row of the file with the id.
+type miscFileRow struct {
 	path, filename, arch, part, role, unitKey, attrs, checksums, verMeta, pkgName, pkgKey, pkgAttrs, format, version, versionKey string
 	downloads                                                                                                                    int64
 	listed                                                                                                                       bool
 	blobSHA                                                                                                                      string
 }
 
-func readFile(t *testing.T, pg *PostgresDB, id string) fileRow {
+func readFile(t *testing.T, pg *PostgresDB, id string) miscFileRow {
 	t.Helper()
 
-	var r fileRow
+	var r miscFileRow
 
 	err := pg.GetDB().QueryRowContext(context.Background(), `
 		SELECT f.path, f.filename, f.arch, f.part, f.role, COALESCE(f.unit_key, ''), f.attrs::text, f.checksums::text,

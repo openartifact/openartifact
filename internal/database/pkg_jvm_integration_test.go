@@ -21,7 +21,7 @@ func sha256Of(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func countRows(t *testing.T, s *quotaSeeder, query string, args ...any) int {
+func jvmCountRows(t *testing.T, s *quotaSeeder, query string, args ...any) int {
 	t.Helper()
 
 	var n int
@@ -36,9 +36,9 @@ func countRows(t *testing.T, s *quotaSeeder, query string, args ...any) int {
 func genericCounts(t *testing.T, s *quotaSeeder) (int, int, int) {
 	t.Helper()
 
-	pkgs := countRows(t, s, `SELECT count(*) FROM packages WHERE repository_id = $1`, s.repo)
-	vers := countRows(t, s, `SELECT count(*) FROM package_versions WHERE repository_id = $1 AND deleted_at IS NULL`, s.repo)
-	files := countRows(t, s, `SELECT count(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NULL`, s.repo)
+	pkgs := jvmCountRows(t, s, `SELECT count(*) FROM packages WHERE repository_id = $1`, s.repo)
+	vers := jvmCountRows(t, s, `SELECT count(*) FROM package_versions WHERE repository_id = $1 AND deleted_at IS NULL`, s.repo)
+	files := jvmCountRows(t, s, `SELECT count(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NULL`, s.repo)
 
 	return pkgs, vers, files
 }
@@ -107,7 +107,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 		t.Errorf("package = %q/%q %q %q", name, nameKey, groupID, artifactID)
 	}
 
-	versionKeys := countRows(t, s, `SELECT count(*) FROM package_versions WHERE repository_id = $1
+	versionKeys := jvmCountRows(t, s, `SELECT count(*) FROM package_versions WHERE repository_id = $1
 	    AND version_key IN ('1.0', '2.0-SNAPSHOT#20240101.000000-1', '2.0-SNAPSHOT#20240102.000000-2')`, s.repo)
 	if versionKeys != 3 {
 		t.Errorf("%d version keys match the spec, want 3", versionKeys)
@@ -128,7 +128,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 	}
 
 	// Only the digests that are known are in F.checksums.
-	if n := countRows(
+	if n := jvmCountRows(
 		t,
 		s,
 		`SELECT count(*) FROM package_files WHERE id = $1 AND checksums ? 'md5' OR id = $1 AND checksums ? 'sha512'`,
@@ -209,7 +209,7 @@ func TestMavenRoundTripOnGenericTables(t *testing.T) {
 		t.Errorf("after overwrite = %+v, %v", a, err)
 	}
 
-	if n := countRows(t, s, `SELECT count(*) FROM package_files WHERE id = $1 AND checksums->>'sha1' = 'newsha1'`, snap2.ID); n != 1 {
+	if n := jvmCountRows(t, s, `SELECT count(*) FROM package_files WHERE id = $1 AND checksums->>'sha1' = 'newsha1'`, snap2.ID); n != 1 {
 		t.Error("F.checksums not updated with the maven_files digests")
 	}
 

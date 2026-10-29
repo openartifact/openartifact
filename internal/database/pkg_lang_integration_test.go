@@ -32,7 +32,7 @@ func langSHA(seed string) string {
 }
 
 // genericCounts returns the number of packages, live versions and live files of a repository.
-func genericCounts(tb testing.TB, pg *PostgresDB, repo string) (int, int, int) {
+func langGenericCounts(tb testing.TB, pg *PostgresDB, repo string) (int, int, int) {
 	tb.Helper()
 
 	var pkgs, vers, files int
@@ -147,7 +147,7 @@ func TestGoModStoreRoundTrip(t *testing.T) {
 		t.Fatalf("created ids/times not copied back: %+v", mod)
 	}
 
-	if p, v, f := genericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 2 {
+	if p, v, f := langGenericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 2 {
 		t.Fatalf("P/V/F = %d/%d/%d, want 1/1/2", p, v, f)
 	}
 
@@ -211,7 +211,7 @@ func TestGoModStoreRoundTrip(t *testing.T) {
 		t.Fatalf("duplicate CreateGoModule = %v, want ErrDuplicate", err)
 	}
 
-	if p, v, f := genericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 2 {
+	if p, v, f := langGenericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 2 {
 		t.Fatalf("after duplicate P/V/F = %d/%d/%d, want 1/1/2", p, v, f)
 	}
 
@@ -237,7 +237,7 @@ func TestGoModStoreRoundTrip(t *testing.T) {
 		t.Fatalf("ListGoModuleVersions = %v, %v", versions, err)
 	}
 
-	if p, v, f := genericCounts(t, pg, s.repo); p != 1 || v != 2 || f != 4 {
+	if p, v, f := langGenericCounts(t, pg, s.repo); p != 1 || v != 2 || f != 4 {
 		t.Fatalf("P/V/F = %d/%d/%d, want 1/2/4", p, v, f)
 	}
 
@@ -252,7 +252,7 @@ func TestGoModStoreRoundTrip(t *testing.T) {
 	releaseN(t, pg, s.repo, modSize, 0)
 	requirePending(t, pg, s.repo, 0)
 
-	if p, v, f := genericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 2 {
+	if p, v, f := langGenericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 2 {
 		t.Fatalf("after delete P/V/F = %d/%d/%d, want 1/1/2", p, v, f)
 	}
 
@@ -284,7 +284,7 @@ func TestCargoStoreRoundTrip(t *testing.T) {
 	requirePending(t, pg, s.repo, 0)
 	requireUsage(t, pg, s.repo, 40, 1)
 
-	if p, v, f := genericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 1 {
+	if p, v, f := langGenericCounts(t, pg, s.repo); p != 1 || v != 1 || f != 1 {
 		t.Fatalf("P/V/F = %d/%d/%d, want 1/1/1", p, v, f)
 	}
 
@@ -347,7 +347,7 @@ func TestCargoStoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p, v, fl := genericCounts(t, pg, s.repo); p != 1 || v != 2 || fl != 2 {
+	if p, v, fl := langGenericCounts(t, pg, s.repo); p != 1 || v != 2 || fl != 2 {
 		t.Fatalf("P/V/F = %d/%d/%d, want 1/2/2", p, v, fl)
 	}
 
@@ -498,7 +498,7 @@ func TestComposerStoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p, v, fl := genericCounts(t, pg, s.repo); p != 1 || v != 1 || fl != 1 {
+	if p, v, fl := langGenericCounts(t, pg, s.repo); p != 1 || v != 1 || fl != 1 {
 		t.Fatalf("after delete P/V/F = %d/%d/%d, want 1/1/1", p, v, fl)
 	}
 
@@ -506,7 +506,7 @@ func TestComposerStoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p, v, fl := genericCounts(t, pg, s.repo); p != 0 || v != 0 || fl != 0 {
+	if p, v, fl := langGenericCounts(t, pg, s.repo); p != 0 || v != 0 || fl != 0 {
 		t.Fatalf("after last delete P/V/F = %d/%d/%d, want 0/0/0", p, v, fl)
 	}
 }
@@ -592,7 +592,7 @@ func TestRubyGemsStoreRoundTrip(t *testing.T) {
 		t.Errorf("java file = %+v", jf)
 	}
 
-	if p, v, fl := genericCounts(t, pg, s.repo); p != 1 || v != 2 || fl != 2 {
+	if p, v, fl := langGenericCounts(t, pg, s.repo); p != 1 || v != 2 || fl != 2 {
 		t.Fatalf("P/V/F = %d/%d/%d, want 1/2/2", p, v, fl)
 	}
 
