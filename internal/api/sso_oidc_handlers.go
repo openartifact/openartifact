@@ -61,57 +61,60 @@ func (h *OIDCHandler) WithTrustedProxies(tp *middleware.TrustedProxies) *OIDCHan
 	return h
 }
 
-// ssoProviderUnavailable writes the 404 shared by the OIDC and SAML handlers
-// for an unknown or disabled provider (indistinguishable to the caller) and
-// reports whether it handled err.
-func ssoProviderUnavailable(w http.ResponseWriter, err error) bool {
-	if errors.Is(err, auth.ErrSSOProviderNotFound) || errors.Is(err, auth.ErrSSOProviderDisabled) {
-		writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
-		return true
-	}
-
-	return false
+// ssoProviderUnavailable reports whether err means an unknown or disabled
+// provider (indistinguishable to the caller), shared by the OIDC and SAML
+// handlers.
+func ssoProviderUnavailable(err error) bool {
+	return errors.Is(err, auth.ErrSSOProviderNotFound) || errors.Is(err, auth.ErrSSOProviderDisabled)
 }
 
 // ssoUpstreamFailure is the provider-specific load failure of a SSO flow: the
 // sentinel for an IdP that cannot be reached and the answer it maps to.
 type ssoUpstreamFailure struct {
-	err     error
-	status  int
-	code    string
-	message string
+	err  error
+	code string
 }
 
 func oidcDiscoveryFailure() ssoUpstreamFailure {
 	return ssoUpstreamFailure{
-		err: auth.ErrOIDCDiscoveryFailed, status: http.StatusBadGateway,
-		code: "oidc_discovery_failed", message: "OIDC discovery failed",
+		err:  auth.ErrOIDCDiscoveryFailed,
+		code: "oidc_discovery_failed",
 	}
 }
 
 func samlMetadataFailure() ssoUpstreamFailure {
 	return ssoUpstreamFailure{
-		err: auth.ErrIDPMetadataUnavailable, status: http.StatusServiceUnavailable,
-		code: "idp_metadata_unavailable", message: "IdP metadata unavailable",
+		err:  auth.ErrIDPMetadataUnavailable,
+		code: "idp_metadata_unavailable",
 	}
 }
 
-// writeSSOLoadError maps a provider load failure onto the HTTP response shared
-// by the login and callback/ACS paths: 404 for an unknown or disabled
-// provider, the upstream failure's answer when the IdP is unreachable, else a
-// 500 logged under flow.
-func writeSSOLoadError(w http.ResponseWriter, log *logger.Logger, flow, slug string, err error, upstream ssoUpstreamFailure) {
-	if ssoProviderUnavailable(w, err) {
+// writeSSOLoadError maps a provider load failure onto the login-page redirect
+// shared by the login and callback/ACS paths: provider_not_found for an
+// unknown or disabled provider, the upstream failure's code when the IdP is
+// unreachable, else internal_error logged under flow.
+func writeSSOLoadError(
+	w http.ResponseWriter,
+	r *http.Request,
+	log *logger.Logger,
+	flow, slug string,
+	err error,
+	upstream ssoUpstreamFailure,
+) {
+	if ssoProviderUnavailable(err) {
+		redirectSSOError(w, r, "provider_not_found")
 		return
 	}
 
 	if errors.Is(err, upstream.err) {
-		writeError(w, upstream.status, upstream.code, upstream.message)
+		log.Warnw(flow+": identity provider unreachable", "slug", slug, "error", err)
+		redirectSSOError(w, r, upstream.code)
+
 		return
 	}
 
 	log.Errorw(flow+": load provider", "slug", slug, "error", err)
-	writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
+	redirectSSOError(w, r, "internal_error")
 }
 
 func (h *OIDCHandler) RegisterPublic(public chi.Router) {
@@ -126,13 +129,13 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		writeSSOLoadError(w, h.log, "oidc login", slug, err, oidcDiscoveryFailure())
+		writeSSOLoadError(w, r, h.log, "oidc login", slug, err, oidcDiscoveryFailure())
 		return
 	}
 
 	rawVerifier := make([]byte, 32)
 	if _, err := rand.Read(rawVerifier); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate PKCE")
+		redirectSSOError(w, r, "internal_error")
 		return
 	}
 
@@ -142,7 +145,7 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	rawState := make([]byte, 16)
 	if _, err := rand.Read(rawState); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate state")
+		redirectSSOError(w, r, "internal_error")
 		return
 	}
 
@@ -158,7 +161,7 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !provider.IsOAuth2() {
 		rawNonce := make([]byte, 16)
 		if _, err := rand.Read(rawNonce); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate nonce")
+			redirectSSOError(w, r, "internal_error")
 			return
 		}
 
@@ -175,27 +178,29 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeSSOLoginDenied answers a policy rejection (ErrSSOLoginDenied) with the
-// generic 403 shared by every SSO flow; the reason stays in the server log.
-func writeSSOLoginDenied(w http.ResponseWriter, log *logger.Logger, flow, slug string, err error) {
+// generic sso_login_denied redirect shared by every SSO flow; the reason stays
+// in the server log.
+func writeSSOLoginDenied(w http.ResponseWriter, r *http.Request, log *logger.Logger, flow, slug string, err error) {
 	log.Warnw(flow+": sso login denied", "slug", slug, "reason", err.Error())
-	writeError(w, http.StatusForbidden, "sso_login_denied", ssoLoginDeniedMessage)
+	redirectSSOError(w, r, "sso_login_denied")
 }
 
 // writeExchangeError maps a code-exchange or ID token verification failure.
-func (h *OIDCHandler) writeExchangeError(w http.ResponseWriter, slug string, err error) {
+func (h *OIDCHandler) writeExchangeError(w http.ResponseWriter, r *http.Request, slug string, err error) {
 	switch {
-	case ssoProviderUnavailable(w, err):
+	case ssoProviderUnavailable(err):
+		redirectSSOError(w, r, "provider_not_found")
 	case errors.Is(err, auth.ErrSSOLoginDenied):
-		writeSSOLoginDenied(w, h.log, "oidc callback", slug, err)
+		writeSSOLoginDenied(w, r, h.log, "oidc callback", slug, err)
 	case errors.Is(err, auth.ErrOIDCDiscoveryFailed):
-		writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
+		redirectSSOError(w, r, "oidc_discovery_failed")
 	case errors.Is(err, auth.ErrIDTokenMissing):
-		writeError(w, http.StatusBadGateway, "id_token_missing", "ID token missing from response")
+		redirectSSOError(w, r, "id_token_missing")
 	case errors.Is(err, auth.ErrIDTokenExpired):
-		writeError(w, http.StatusUnauthorized, "id_token_expired", "ID token has expired")
+		redirectSSOError(w, r, "id_token_expired")
 	default:
 		h.log.Errorw("oidc callback: exchange", "slug", slug, "error", err)
-		writeError(w, http.StatusBadGateway, "exchange_failed", "token exchange failed")
+		redirectSSOError(w, r, "exchange_failed")
 	}
 }
 
@@ -205,7 +210,7 @@ type callbackCookies struct {
 }
 
 // readCallbackCookies returns the cookies the callback needs and reports
-// whether all of them are present; on failure it has written the response.
+// whether all of them are present; on failure it has redirected to the login page.
 // The nonce cookie is only required for providers that issue an ID token.
 func readCallbackCookies(w http.ResponseWriter, r *http.Request, slug string, needNonce bool) (callbackCookies, bool) {
 	var c callbackCookies
@@ -225,7 +230,7 @@ func readCallbackCookies(w http.ResponseWriter, r *http.Request, slug string, ne
 
 		cookie, err := r.Cookie(f.name)
 		if err != nil || cookie.Value == "" {
-			writeError(w, http.StatusBadRequest, "missing_session_cookies", "login session cookie missing")
+			redirectSSOError(w, r, "missing_session_cookies")
 			return callbackCookies{}, false
 		}
 
@@ -242,13 +247,15 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	if oidcErr := q.Get("error"); oidcErr != "" {
-		writeError(w, http.StatusBadRequest, "oidc_error", oidcErr)
+		h.log.Warnw("oidc callback: identity provider reported an error", "slug", slug, "error", oidcErr)
+		redirectSSOError(w, r, oidcProviderErrorCode(oidcErr))
+
 		return
 	}
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		writeSSOLoadError(w, h.log, "oidc callback", slug, err, oidcDiscoveryFailure())
+		writeSSOLoadError(w, r, h.log, "oidc callback", slug, err, oidcDiscoveryFailure())
 		return
 	}
 
@@ -258,43 +265,43 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !constTimeEqual(q.Get("state"), cookies.state) {
-		writeError(w, http.StatusBadRequest, "state_mismatch", "state parameter does not match")
+		redirectSSOError(w, r, "state_mismatch")
 		return
 	}
 
 	res, err := auth.ExchangeWithRetry(ctx, h.db, slug, h.baseURL, q.Get("code"), cookies.pkce)
 	if err != nil {
-		h.writeExchangeError(w, slug, err)
+		h.writeExchangeError(w, r, slug, err)
 		return
 	}
 
 	if res.IDToken != nil && !constTimeEqual(res.IDToken.Nonce, cookies.nonce) {
-		writeError(w, http.StatusUnauthorized, "nonce_mismatch", "nonce does not match")
+		redirectSSOError(w, r, "nonce_mismatch")
 		return
 	}
 
 	ssoClaims, err := res.Provider.Identity(ctx, res, h.log)
 	if err != nil {
 		if errors.Is(err, auth.ErrSSOLoginDenied) {
-			writeSSOLoginDenied(w, h.log, "oidc callback", slug, err)
+			writeSSOLoginDenied(w, r, h.log, "oidc callback", slug, err)
 			return
 		}
 
 		h.log.Errorw("oidc callback: resolve identity", "slug", slug, "error", err)
-		writeError(w, http.StatusBadGateway, "exchange_failed", "failed to resolve the user identity")
+		redirectSSOError(w, r, "exchange_failed")
 
 		return
 	}
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil || providerRow == nil || !providerRow.Enabled {
-		writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		redirectSSOError(w, r, "provider_not_found")
 		return
 	}
 
 	user, err := auth.NewProvisioner(h.db, h.log).Provision(ctx, providerRow, ssoClaims)
 	if err != nil {
-		writeSSOProvisionError(w, h.log, "oidc callback", slug, err)
+		writeSSOProvisionError(w, r, h.log, "oidc callback", slug, err)
 		return
 	}
 

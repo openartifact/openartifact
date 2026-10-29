@@ -388,9 +388,7 @@ func TestSAML_ACS_HappyPath_ThenReplayRejected(t *testing.T) {
 
 	// Replaying the very same response (attacker also holds the tracker cookie).
 	rw = env.acs(resp, relay, tracker)
-	if rw.Code != http.StatusUnauthorized {
-		t.Fatalf("replayed assertion must be rejected with 401, got %d (%s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "saml_invalid")
 
 	if hasCookie(rw, auth.SessionCookieName) {
 		t.Error("replayed assertion must not create a session")
@@ -406,9 +404,7 @@ func TestSAML_ACS_InResponseToMismatchRejected(t *testing.T) {
 	resp, relay := env.idpRespond(loc1)
 
 	rw := env.acs(resp, relay, tracker2)
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("response to another request must be rejected with 400, got %d (%s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "saml_invalid")
 
 	if hasCookie(rw, auth.SessionCookieName) || env.db.authUsersByName["alice"] != nil {
 		t.Error("rejected response must not create a session or user")
@@ -426,9 +422,7 @@ func TestSAML_ACS_UnsolicitedResponseRejected(t *testing.T) {
 	resp, relay := env.idpRespond(loc)
 
 	rw := env.acs(resp, relay) // no tracker cookie: IdP-initiated / cross-browser
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for a response without a tracked request, got %d (%s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "saml_invalid")
 
 	if env.db.authUsersByName["alice"] != nil {
 		t.Error("unsolicited response must not provision a user")
@@ -447,9 +441,7 @@ func TestSAML_ACS_ForgedTrackerCookieRejected(t *testing.T) {
 	}
 
 	rw := env.acs(resp, relay, forged)
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for a tampered tracker cookie, got %d", rw.Code)
-	}
+	assertSSOError(t, rw, "saml_invalid")
 }
 
 func TestSAML_ACS_BadRelayState_NoSideEffects(t *testing.T) {
@@ -459,9 +451,7 @@ func TestSAML_ACS_BadRelayState_NoSideEffects(t *testing.T) {
 	resp, _ := env.idpRespond(loc)
 
 	rw := env.acs(resp, "not-a-signed-relay-state", tracker)
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for a bad RelayState, got %d (%s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "invalid_relay_state")
 
 	if hasCookie(rw, auth.SessionCookieName) {
 		t.Error("a rejected RelayState must not set a session cookie")
@@ -484,26 +474,19 @@ func TestSAML_DisabledProvider_Rejected(t *testing.T) {
 
 	env.row.Enabled = false
 
-	for name, req := range map[string]*http.Request{
-		"login":    httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/saml/disabled/login", nil),
-		"metadata": httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/saml/disabled/metadata", nil),
-	} {
-		if rw := env.do(req); rw.Code != http.StatusNotFound {
-			t.Errorf("%s: expected 404 for a disabled provider, got %d", name, rw.Code)
-		}
+	// The browser-facing login and ACS redirect to the login page; the
+	// metadata document is fetched by the IdP and stays a JSON 404.
+	assertSSOError(t, env.do(httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/saml/disabled/login", nil)),
+		"provider_not_found")
+
+	if rw := env.do(
+		httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/saml/disabled/metadata", nil),
+	); rw.Code != http.StatusNotFound {
+		t.Errorf("metadata: expected 404 for a disabled provider, got %d", rw.Code)
 	}
 
-	rw := env.acs(resp, relay, tracker)
-	if rw.Code != http.StatusNotFound {
-		t.Fatalf("acs: expected 404 for a disabled provider, got %d (%s)", rw.Code, rw.Body.String())
-	}
-
-	var body map[string]any
-
-	_ = json.NewDecoder(rw.Body).Decode(&body)
-	if body["code"] != "provider_not_found" {
-		t.Errorf("disabled must be indistinguishable from unknown, got code=%v", body["code"])
-	}
+	// Disabled must be indistinguishable from unknown.
+	assertSSOError(t, env.acs(resp, relay, tracker), "provider_not_found")
 
 	if env.db.authUsersByName["alice"] != nil {
 		t.Error("disabled provider must not provision users")
@@ -543,7 +526,5 @@ func TestSAML_IdPMetadataRotation_NotServedStale(t *testing.T) {
 		t.Fatal("a response signed by a replaced IdP certificate must be rejected")
 	}
 
-	if rw.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d (%s)", rw.Code, rw.Body.String())
-	}
+	assertSSOError(t, rw, "saml_signature_invalid")
 }

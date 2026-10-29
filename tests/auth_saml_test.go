@@ -109,16 +109,7 @@ func TestSAML_Login_ProviderNotFound(t *testing.T) {
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
-	if rw.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d (body: %s)", rw.Code, rw.Body.String())
-	}
-
-	var resp map[string]any
-
-	_ = json.NewDecoder(rw.Body).Decode(&resp)
-	if resp["code"] != "provider_not_found" {
-		t.Errorf("expected code=provider_not_found, got %v", resp["code"])
-	}
+	assertSSOError(t, rw, "provider_not_found")
 }
 
 func TestSAML_Login_InvalidIDPMetadata(t *testing.T) {
@@ -131,9 +122,7 @@ func TestSAML_Login_InvalidIDPMetadata(t *testing.T) {
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
-	if rw.Code < 400 {
-		t.Fatalf("expected 4xx/5xx for invalid metadata, got %d", rw.Code)
-	}
+	assertSSOError(t, rw, "internal_error")
 }
 
 func TestSAML_MetadataXML_ServesSPMetadata(t *testing.T) {

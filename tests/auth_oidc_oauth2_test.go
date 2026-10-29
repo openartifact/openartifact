@@ -362,17 +362,17 @@ func TestGitHub_Callback_OrganizationGateAndGroups(t *testing.T) {
 
 func TestGitHub_Callback_Failures(t *testing.T) {
 	tests := []struct {
-		name     string
-		fixture  githubFixture
-		code     string
-		opts     callbackOpts
-		wantCode int
+		name    string
+		fixture githubFixture
+		code    string
+		opts    callbackOpts
+		wantErr string
 	}{
 		{
-			name:     "token endpoint refuses the code",
-			fixture:  githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}},
-			code:     "bad-code",
-			wantCode: http.StatusBadGateway,
+			name:    "token endpoint refuses the code",
+			fixture: githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}},
+			code:    "bad-code",
+			wantErr: "exchange_failed",
 		},
 		{
 			name: "token endpoint errors",
@@ -383,13 +383,13 @@ func TestGitHub_Callback_Failures(t *testing.T) {
 					http.Error(w, "down", http.StatusInternalServerError)
 				},
 			},
-			wantCode: http.StatusBadGateway,
+			wantErr: "exchange_failed",
 		},
 		{
-			name:     "state mismatch",
-			fixture:  githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}},
-			opts:     callbackOpts{state: "forged-state"},
-			wantCode: http.StatusBadRequest,
+			name:    "state mismatch",
+			fixture: githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}},
+			opts:    callbackOpts{state: "forged-state"},
+			wantErr: "state_mismatch",
 		},
 	}
 
@@ -405,19 +405,17 @@ func TestGitHub_Callback_Failures(t *testing.T) {
 			}
 
 			rw := flowCallback(t, router, "gh", code, tc.opts)
-			if rw.Code != tc.wantCode {
-				t.Fatalf("expected %d, got %d %s", tc.wantCode, rw.Code, rw.Body.String())
-			}
+			assertSSOError(t, rw, tc.wantErr)
 
 			if len(db.authSessions) != 0 || len(db.authUsers) != 0 {
 				t.Error("a failed login must not create a session or a user")
 			}
 
-			if tc.wantCode == http.StatusBadRequest && len(api.hitsOn("/login/oauth/access_token")) != 0 {
+			if tc.wantErr == "state_mismatch" && len(api.hitsOn("/login/oauth/access_token")) != 0 {
 				t.Error("the code must not be redeemed when the state does not match")
 			}
 
-			if strings.Contains(rw.Body.String(), "bad_verification_code") {
+			if strings.Contains(rw.Body.String()+rw.Header().Get("Location"), "bad_verification_code") {
 				t.Errorf("upstream error details must not reach the client: %s", rw.Body.String())
 			}
 		})
@@ -443,8 +441,10 @@ func TestGitHub_Callback_OrganizationAPIFailureFailsClosed(t *testing.T) {
 	router, _ := flowRouter(t, db)
 
 	rw := flowCallback(t, router, "gh", "good-code", callbackOpts{})
-	if rw.Code != http.StatusBadGateway || len(db.authSessions) != 0 {
-		t.Fatalf("an unreadable org list must not let the user in: %d %s", rw.Code, rw.Body.String())
+	assertSSOError(t, rw, "exchange_failed")
+
+	if len(db.authSessions) != 0 {
+		t.Fatal("an unreadable org list must not let the user in")
 	}
 }
 
@@ -532,8 +532,10 @@ func TestOAuth2Generic_Callback(t *testing.T) {
 			case tc.wantDeny:
 				requireDenied(t, db, rw)
 			case tc.wantFail:
-				if rw.Code != http.StatusBadGateway || len(db.authSessions) != 0 {
-					t.Fatalf("expected 502 without a session, got %d %s", rw.Code, rw.Body.String())
+				assertSSOError(t, rw, "exchange_failed")
+
+				if len(db.authSessions) != 0 {
+					t.Fatal("expected no session")
 				}
 			default:
 				if rw.Code != http.StatusFound {

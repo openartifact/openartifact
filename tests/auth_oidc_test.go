@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -190,15 +191,38 @@ func TestOIDC_Callback_StateMismatch(t *testing.T) {
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for state mismatch, got %d", rw.Code)
-	}
+	assertSSOError(t, rw, "state_mismatch")
+}
 
-	var resp map[string]any
+// The IdP's `error` parameter is attacker-controlled (anyone can send the
+// browser to the callback): only access_denied survives as a code, every other
+// value is reported as oidc_error and never echoed into the login-page URL.
+func TestOIDC_Callback_ProviderError(t *testing.T) {
+	oidcSrv := newMockOIDCServer(t)
+	db := newMockDatabase()
+	seedOIDCProvider(t, db, "test", oidcSrv.Server.URL)
 
-	_ = json.NewDecoder(rw.Body).Decode(&resp)
-	if resp["code"] != "state_mismatch" {
-		t.Errorf("expected code=state_mismatch, got %v", resp["code"])
+	router := setupOIDCRouter(t, db, "http://localhost:8080")
+
+	for _, tt := range []struct{ idpError, want string }{
+		{"access_denied", "access_denied"},
+		{"server_error", "oidc_error"},
+		{"temporarily_unavailable", "oidc_error"},
+		{"<script>alert(1)</script>", "oidc_error"},
+		{"sso_login_denied", "oidc_error"},
+	} {
+		t.Run(tt.idpError, func(t *testing.T) {
+			target := "/api/v1/auth/sso/oidc/test/callback?error=" + url.QueryEscape(tt.idpError) + "&error_description=boom"
+			req := httptest.NewRequestWithContext(context.Background(), "GET", target, nil)
+			rw := httptest.NewRecorder()
+			router.ServeHTTP(rw, req)
+
+			assertSSOError(t, rw, tt.want)
+
+			if loc := rw.Header().Get("Location"); loc != "/login?sso_error="+tt.want {
+				t.Errorf("Location = %q, want only the sso_error code", loc)
+			}
+		})
 	}
 }
 
@@ -225,16 +249,7 @@ func TestOIDC_Callback_NonceMismatch(t *testing.T) {
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
-	if rw.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 for nonce mismatch, got %d (body: %s)", rw.Code, rw.Body.String())
-	}
-
-	var resp map[string]any
-
-	_ = json.NewDecoder(rw.Body).Decode(&resp)
-	if resp["code"] != "nonce_mismatch" {
-		t.Errorf("expected code=nonce_mismatch, got %v", resp["code"])
-	}
+	assertSSOError(t, rw, "nonce_mismatch")
 }
 
 func TestOIDC_Callback_ProviderNotFound(t *testing.T) {
@@ -249,16 +264,7 @@ func TestOIDC_Callback_ProviderNotFound(t *testing.T) {
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 
-	if rw.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for missing provider, got %d (body: %s)", rw.Code, rw.Body.String())
-	}
-
-	var resp map[string]any
-
-	_ = json.NewDecoder(rw.Body).Decode(&resp)
-	if resp["code"] != "provider_not_found" {
-		t.Errorf("expected code=provider_not_found, got %v", resp["code"])
-	}
+	assertSSOError(t, rw, "provider_not_found")
 }
 
 func TestOIDC_Logout_ClearsSession(t *testing.T) {
