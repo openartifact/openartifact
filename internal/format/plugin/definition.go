@@ -10,6 +10,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
+	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
 // Definition is the table form of a Format: the registration of a format that
@@ -31,6 +32,8 @@ type Definition struct {
 	Merge Group
 	// Meta is the metadata lifecycle (Format.Lifecycle).
 	Meta lifecycle.Hooks
+	// Store is the storage descriptor (Format.Storage).
+	Store storage.Storage
 }
 
 // Name implements Format.
@@ -62,3 +65,6 @@ func (d Definition) Group() Group { return d.Merge }
 
 // Lifecycle implements Format.
 func (d Definition) Lifecycle() lifecycle.Hooks { return d.Meta }
+
+// Storage implements Format.
+func (d Definition) Storage() storage.Storage { return d.Store }

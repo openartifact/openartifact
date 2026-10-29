@@ -6,8 +6,10 @@ package formats
 
 import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
@@ -40,5 +42,22 @@ func terraformFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.TerraformHooks),
 		Merge:    plugin.GroupOf(&group.TerraformHooks),
 		Meta:     lifecycle.None,
+		Store:    terraformStorage(),
+	}
+}
+
+// terraformStorage describes how the generic engines treat terraform rows: modules
+// and providers share one trash kind, and a provider is told by its platform.
+func terraformStorage() storage.Storage {
+	return storage.Storage{
+		Trash: storage.Trash{
+			Kind:     string(models.TrashKindTerraformModule),
+			NameExpr: "CASE WHEN p.name LIKE 'providers/%' THEN p.name || ' (' || f.arch || ')' ELSE p.name END",
+		},
+		Detail: storage.Detail{Info: []storage.InfoField{
+			entry("kind", fromP("kind")), entry("archive_ext", fromF("archive_ext")),
+			entry("protocols", fromV("protocols")), entry("download_count", fromK("download_count")),
+		}},
+		Promotion: storage.Promotion{SharedVersion: true},
 	}
 }

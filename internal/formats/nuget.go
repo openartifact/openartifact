@@ -7,9 +7,11 @@ package formats
 import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	formatnuget "github.com/openartifact/openartifact/internal/format/nuget"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
@@ -34,5 +36,23 @@ func nugetFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.NuGetHooks),
 		Merge:    plugin.GroupOf(&group.NuGetHooks),
 		Meta:     lifecycle.None,
+		Store:    nugetStorage(),
+	}
+}
+
+// nugetStorage describes how the generic engines treat nuget rows.
+func nugetStorage() storage.Storage {
+	return storage.Storage{
+		Trash:      storage.Trash{Kind: string(models.TrashKindNuGet)},
+		Federation: &storage.Federation{},
+		Detail: storage.Detail{
+			Summary: fromV("summary"), Description: fromV("description"), License: fromV("license_url"), Homepage: fromV("project_url"),
+			Info: []storage.InfoField{
+				entry("title", fromV("title")), entry("authors", fromV("authors")), entry("owners", fromV("owners")),
+				entry("tags", fromV("tags")), entry("min_client_version", fromV("min_client_version")),
+				entry("prerelease", fromV("is_prerelease")), entry("download_count", fromK("download_count")),
+			},
+			Deps: fromV("dependency_groups"), Decoder: "nuget-groups",
+		},
 	}
 }

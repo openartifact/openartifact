@@ -28,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
@@ -70,10 +71,11 @@ type Format interface {
 	// change outside the handler.
 	Lifecycle() lifecycle.Hooks
 
-	// Storage() storage.Storage will be added here when the generic package
-	// engines (trash, cleanup, federation, promotion, backup, recovery) read
-	// the format's rows through internal/format/storage. Register will then
-	// record it in that registry as it does the hooks above.
+	// Storage is how the generic package engines (trash, cleanup, federation,
+	// promotion, backup, recovery, artifact detail) treat the format's rows in
+	// the generic package tables. Register records it in internal/format/storage;
+	// NoStorage (docker, which keeps dedicated tables) records nothing.
+	Storage() storage.Storage
 }
 
 // Analysis lists the supply-chain hooks of a format; a nil field is a stage the
@@ -119,6 +121,11 @@ type Group struct {
 	Hooks *group.Hooks
 }
 
+// NoStorage is the storage of a format with no descriptor: the generic package
+// engines reject it. Only docker has it, because it keeps dedicated tables that
+// the engines handle explicitly.
+var NoStorage = storage.Storage{} //nolint:gochecknoglobals // immutable zero value, named so a registration states the choice
+
 // NoGroup is the group behaviour of a format that has no group repositories.
 var NoGroup = Group{} //nolint:gochecknoglobals // immutable zero value, named so a registration states the choice
 
@@ -150,6 +157,11 @@ func Register(f Format) {
 
 	if f.ClientSetup() == nil {
 		panic(fmt.Sprintf("plugin: format %q has no client setup builder", name))
+	}
+
+	st := f.Storage()
+	if st.Trash.Kind != "" {
+		storage.Register(name, st)
 	}
 
 	formats.Register(name, f)

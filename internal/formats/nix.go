@@ -6,9 +6,11 @@ package formats
 
 import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	formatnix "github.com/openartifact/openartifact/internal/format/nix"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 )
@@ -30,5 +32,17 @@ func nixFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.NixHooks),
 		Merge:    plugin.GroupOf(&group.NixHooks),
 		Meta:     lifecycle.None,
+		Store:    nixStorage(),
+	}
+}
+
+// nixStorage describes how the generic engines treat nix rows.
+func nixStorage() storage.Storage {
+	return storage.Storage{
+		Trash: storage.Trash{Kind: string(models.TrashKindNix)},
+		Detail: storage.Detail{Info: []storage.InfoField{
+			entry("nar_hash", fromV("nar_hash")), entry("nar_size", fromV("nar_size")), entry("nar_file", fromV("nar_file")),
+			entry("compression", fromV("compression")), entry("deriver", fromV("deriver")), entry("ca", fromV("ca")),
+		}},
 	}
 }

@@ -33,5 +33,7 @@ func dockerFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.DockerHooks),
 		Merge:    plugin.FirstHitGroup,
 		Meta:     dockerLifecycle(),
+		// Docker keeps dedicated tables, which the generic engines handle explicitly.
+		Store: plugin.NoStorage,
 	}
 }

@@ -5,6 +5,8 @@
 package formats
 
 import (
+	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/ai/manifest"
@@ -41,5 +43,20 @@ func goFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.GoHooks),
 		Merge:    plugin.GroupOf(&group.GoHooks),
 		Meta:     lifecycle.None,
+		Store:    goStorage(),
+	}
+}
+
+// goStorage describes how the generic engines treat go rows: a module version is
+// the zip and its go.mod, trashed, promoted and replicated together.
+func goStorage() storage.Storage {
+	return storage.Storage{
+		Trash:      storage.Trash{Kind: string(models.TrashKindGoMod), Scope: storage.ScopeVersion},
+		Federation: &storage.Federation{},
+		Detail: storage.Detail{
+			Info: []storage.InfoField{entry("module_path", fromK("name"))},
+			Deps: fromM("go_mod_content"), Decoder: "go-mod",
+		},
+		Promotion: storage.Promotion{WholeVersion: true},
 	}
 }

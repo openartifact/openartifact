@@ -6,9 +6,11 @@ package formats
 
 import (
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatansible "github.com/openartifact/openartifact/internal/format/ansible"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
 )
@@ -25,5 +27,17 @@ func ansibleFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.AnsibleHooks),
 		Merge:    plugin.GroupOf(&group.AnsibleHooks),
 		Meta:     lifecycle.None,
+		Store:    ansibleStorage(),
+	}
+}
+
+// ansibleStorage describes how the generic engines treat ansible rows.
+func ansibleStorage() storage.Storage {
+	return storage.Storage{
+		Trash: storage.Trash{Kind: string(models.TrashKindAnsible)},
+		Detail: storage.Detail{
+			Info: []storage.InfoField{entry("namespace", fromP("namespace")), entry("requires_ansible", fromV("requires_ansible"))},
+			Deps: fromV("dependencies"), Decoder: "ansible-map",
+		},
 	}
 }

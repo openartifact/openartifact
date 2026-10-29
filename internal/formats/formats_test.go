@@ -15,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/proxy"
@@ -200,6 +201,63 @@ func TestKeyChangeResignsStoredSignatures(t *testing.T) {
 		hooks, _ := lifecycle.Lookup(name)
 		if refreshes := hooks.Stale != nil; refreshes == servedSigned[name] {
 			t.Errorf("%s: GPG-signed, Stale hook = %v, signs when served = %v", name, refreshes, servedSigned[name])
+		}
+	}
+}
+
+// dedicatedTables are the formats that keep dedicated tables instead of the
+// generic package tables, and so have no storage descriptor: the generic engines
+// handle them by name.
+var dedicatedTables = []string{"docker"} //nolint:gochecknoglobals // read-only test table
+
+// TestStorageDescriptorsMatchSpecs: every format but the dedicated-table ones
+// registers a storage descriptor with a trash kind, and what the descriptor says
+// agrees with what repotype says about the format.
+func TestStorageDescriptorsMatchSpecs(t *testing.T) {
+	t.Parallel()
+
+	kinds := map[string]string{}
+
+	for _, name := range repotype.Names() {
+		spec, _ := repotype.Lookup(name)
+		st, registered := storage.Lookup(spec.Name)
+
+		if slices.Contains(dedicatedTables, spec.Name) {
+			if registered {
+				t.Errorf("%s keeps dedicated tables and must have no storage descriptor", spec.Name)
+			}
+
+			continue
+		}
+
+		if !registered {
+			t.Errorf("%s: no storage descriptor registered", spec.Name)
+
+			continue
+		}
+
+		if st.Trash.Kind == "" {
+			t.Errorf("%s: the storage descriptor has no trash kind", spec.Name)
+		}
+
+		if first, dup := kinds[st.Trash.Kind]; dup && first != spec.Name {
+			t.Errorf("%s and %s share the trash kind %q", first, spec.Name, st.Trash.Kind)
+		}
+
+		kinds[st.Trash.Kind] = spec.Name
+
+		if federated := st.Federation != nil; federated != spec.Federation {
+			t.Errorf("%s: descriptor federated = %v, Spec.Federation = %v", spec.Name, federated, spec.Federation)
+		}
+
+		if st.Detail.Decoder != "" && st.Detail.Deps == (storage.Field{}) {
+			t.Errorf("%s: the detail names a dependency decoder but no source", spec.Name)
+		}
+	}
+
+	for _, name := range dedicatedTables {
+		if _, ok := repotype.Lookup(name); !ok {
+			t.Errorf("dedicatedTables names %q, which is not a format", name)
 		}
 	}
 }

@@ -7,9 +7,11 @@ package formats
 import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
@@ -34,5 +36,17 @@ func sbtFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.SbtHooks),
 		Merge:    plugin.GroupOf(&group.SBTHooks),
 		Meta:     lifecycle.None,
+		Store:    sbtStorage(),
+	}
+}
+
+// sbtStorage describes how the generic engines treat sbt rows.
+func sbtStorage() storage.Storage {
+	return storage.Storage{
+		Trash: storage.Trash{Kind: string(models.TrashKindSBT), NameExpr: "p.name || '/' || f.filename"},
+		Detail: storage.Detail{Info: []storage.InfoField{
+			entry("group_id", fromP("group_id")), entry("artifact_id", fromP("artifact_id")), entry("scala_version", fromK("arch")),
+		}},
+		Promotion: storage.Promotion{SharedVersion: true},
 	}
 }

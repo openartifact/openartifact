@@ -7,9 +7,11 @@ package formats
 import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatcomposer "github.com/openartifact/openartifact/internal/format/composer"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
@@ -34,5 +36,19 @@ func composerFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.ComposerHooks),
 		Merge:    plugin.GroupOf(&group.ComposerHooks),
 		Meta:     lifecycle.None,
+		Store:    composerStorage(),
+	}
+}
+
+// composerStorage describes how the generic engines treat composer rows.
+func composerStorage() storage.Storage {
+	return storage.Storage{
+		Trash: storage.Trash{Kind: string(models.TrashKindComposer)},
+		Detail: storage.Detail{
+			Description: fromV("composer_json.description"), Homepage: fromV("composer_json.homepage"), SHA1: fromF("sha1"),
+			Info: []storage.InfoField{entry("version_normalized", fromK("version_key"))},
+			Deps: fromV("composer_json.require"), Decoder: "composer-require",
+		},
+		Promotion: storage.Promotion{Licenses: licenseList("sv.metadata->'composer_json'->'license'")},
 	}
 }

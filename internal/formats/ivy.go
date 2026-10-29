@@ -7,9 +7,11 @@ package formats
 import (
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/clientsetup"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formativy "github.com/openartifact/openartifact/internal/format/ivy"
 	"github.com/openartifact/openartifact/internal/format/lifecycle"
 	"github.com/openartifact/openartifact/internal/format/plugin"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/pkgdeps"
@@ -34,5 +36,21 @@ func ivyFormat() plugin.Format {
 		Mirror:   plugin.ProxyOf(proxy.IvyHooks),
 		Merge:    plugin.GroupOf(&group.IvyHooks),
 		Meta:     lifecycle.None,
+		Store:    ivyStorage(),
+	}
+}
+
+// ivyStorage describes how the generic engines treat ivy rows.
+func ivyStorage() storage.Storage {
+	return storage.Storage{
+		Trash: storage.Trash{
+			Kind:     string(models.TrashKindIvy),
+			NameExpr: "p.attrs->>'organisation' || '/' || p.attrs->>'module' || '/' || f.filename",
+		},
+		Detail: storage.Detail{Info: []storage.InfoField{
+			entry("organisation", fromP("organisation")), entry("module", fromP("module")),
+			entry("artifact_type", fromF("artifact_type")), entry("artifact_ext", fromF("artifact_ext")),
+		}},
+		Promotion: storage.Promotion{SharedVersion: true},
 	}
 }
