@@ -732,7 +732,8 @@ func TestNixStoreRoundTrip(t *testing.T) { //nolint:gocyclo,cyclop // one round 
 		t.Helper()
 
 		var n int
-		if err := pg.GetDB().QueryRowContext(ctx, `SELECT count(*) FROM nix_pending_nars WHERE repository_id = $1`, repo).Scan(&n); err != nil {
+		err := pg.GetDB().QueryRowContext(ctx, `SELECT count(*) FROM nix_pending_nars WHERE repository_id = $1`, repo).Scan(&n)
+		if err != nil {
 			t.Fatal(err)
 		}
 
