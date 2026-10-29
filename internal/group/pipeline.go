@@ -218,7 +218,7 @@ func (h *Handler) serveMergedDoc(
 
 	c := h.collect(r, sess, members, md.ask, be)
 
-	if len(c.docs) == 0 && !(md.allowEmpty && !c.partial()) {
+	if len(c.docs) == 0 && (!md.allowEmpty || c.partial()) {
 		writeNoDocument(w, r, c.partial())
 		return
 	}
