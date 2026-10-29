@@ -50,9 +50,17 @@ var PyPIHooks = Hooks{PURLName: pypiPURLName} //nolint:gochecknoglobals // immut
 // PacmanHooks: pkg:alpm/arch/NAME, Arch Linux is the only pacman distro.
 var PacmanHooks = Hooks{PURLName: pacmanPURLName} //nolint:gochecknoglobals // immutable format hook value
 // DebHooks: the distribution is the namespace.
-var DebHooks = Hooks{PURLName: namespacedPURLName, Namespace: pkgdeps.DebVersionNamespace} //nolint:gochecknoglobals // immutable format hook value
+var DebHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	PURLName:  namespacedPURLName,
+	Namespace: pkgdeps.DebVersionNamespace,
+}
+
 // RPMHooks: the vendor is the namespace.
-var RPMHooks = Hooks{PURLName: namespacedPURLName, Namespace: pkgdeps.RPMVersionNamespace} //nolint:gochecknoglobals // immutable format hook value
+var RPMHooks = Hooks{ //nolint:gochecknoglobals // immutable format hook value
+	PURLName:  namespacedPURLName,
+	Namespace: pkgdeps.RPMVersionNamespace,
+}
+
 // DockerHooks: an image is a container.
 var DockerHooks = Hooks{RootType: "container"} //nolint:gochecknoglobals // immutable format hook value
 // RawHooks: a raw artifact is a bare file.

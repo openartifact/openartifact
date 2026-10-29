@@ -210,15 +210,12 @@ func redactValue(value string) string {
 	return value[:n] + "****"
 }
 
-// getLineHint returns up to 100 chars around the match, within its line, with
-// every detected secret (masked: the merged spans of all matches, which include
-// the match itself) replaced by "****". It reads a bounded window around the
-// match, however long the line is.
-func getLineHint(text string, start, end int, masked []span) string {
+// hintWindow is the byte range of the text a line hint is built from: the match
+// plus up to 50 bytes either side, cut at the line boundaries and widened to
+// rune boundaries.
+func hintWindow(text string, start, end int) (int, int) {
 	const contextSize = 50
 
-	// The window is the match plus contextSize bytes either side, cut at the
-	// line boundaries.
 	contextStart := start
 	for contextStart > 0 && start-contextStart < contextSize && text[contextStart-1] != '\n' {
 		contextStart--
@@ -246,6 +243,16 @@ func getLineHint(text string, start, end int, masked []span) string {
 
 		contextEnd++
 	}
+
+	return contextStart, contextEnd
+}
+
+// getLineHint returns up to 100 chars around the match, within its line, with
+// every detected secret (masked: the merged spans of all matches, which include
+// the match itself) replaced by "****". It reads a bounded window around the
+// match, however long the line is.
+func getLineHint(text string, start, end int, masked []span) string {
+	contextStart, contextEnd := hintWindow(text, start, end)
 
 	var b strings.Builder
 

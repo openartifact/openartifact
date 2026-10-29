@@ -129,7 +129,16 @@ func TestSBOMRootOfDebAndRPMHasANamespace(t *testing.T) {
 	t.Run("subject from a listing row id", func(t *testing.T) {
 		const rowID = "0b7e7f64-3a4f-4b43-9d0f-7a3a3a3a3a3a"
 
-		db := &rowDB{blob: &models.ComponentBlob{ID: rowID, Format: "deb", Name: "demo", Version: "1.0-1", Filename: "demo_1.0-1_amd64.deb", SHA256: shaTGZ}}
+		db := &rowDB{
+			blob: &models.ComponentBlob{
+				ID:       rowID,
+				Format:   "deb",
+				Name:     "demo",
+				Version:  "1.0-1",
+				Filename: "demo_1.0-1_amd64.deb",
+				SHA256:   shaTGZ,
+			},
+		}
 		g := newFakeGen(&db.fakeDB)
 		g.db = db
 

@@ -189,6 +189,16 @@ func TestOSVRemoveAdvisoriesDropsOneEcosystemAndOrphans(t *testing.T) {
 		t.Fatalf("GHSA-kept rows = %v, want it untouched", got)
 	}
 
+	checkOSVRemovalAftermath(t, pg)
+}
+
+// checkOSVRemovalAftermath checks what RemoveOSVAdvisories left of the
+// advisories of TestOSVRemoveAdvisoriesDropsOneEcosystemAndOrphans.
+func checkOSVRemovalAftermath(t *testing.T, pg *PostgresDB) {
+	t.Helper()
+
+	ctx := context.Background()
+
 	aliases, err := pg.OSVCVEAliases(ctx, []string{"GHSA-both", "GHSA-npm", "GHSA-kept"})
 	if err != nil {
 		t.Fatal(err)

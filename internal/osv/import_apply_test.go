@@ -305,7 +305,9 @@ func TestImportCapsTheDecompressedTotal(t *testing.T) {
 }
 
 func crc32cHeader(archive []byte) string {
-	return "crc32c=" + base64.StdEncoding.EncodeToString(binary.BigEndian.AppendUint32(nil, crc32.Checksum(archive, crc32.MakeTable(crc32.Castagnoli))))
+	return "crc32c=" + base64.StdEncoding.EncodeToString(
+		binary.BigEndian.AppendUint32(nil, crc32.Checksum(archive, crc32.MakeTable(crc32.Castagnoli))),
+	)
 }
 
 // The checksum Google Cloud Storage sends with an export (X-Goog-Hash) is
@@ -330,7 +332,11 @@ func TestImportVerifiesTheArchiveChecksum(t *testing.T) {
 		}, false},
 		{"corrupted", func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"crc32c=AAAAAA=="}} }, true},
 		{"not a checksum", func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"crc32c=!!"}} }, true},
-		{"only an algorithm it does not know", func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"md5=AAAAAAAAAAAAAAAAAAAAAA=="}} }, false},
+		{
+			"only an algorithm it does not know",
+			func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"md5=AAAAAAAAAAAAAAAAAAAAAA=="}} },
+			false,
+		},
 		{"no checksum", nil, false},
 	}
 
