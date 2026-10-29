@@ -386,8 +386,6 @@ func TestPromoteDebRebuildsTheDistributionGraphInTheDestination(t *testing.T) {
 // TestPromoteExtractsLicensesPerFormat: the licenses a version declares come
 // out of its metadata whichever shape the format stores them in.
 func TestPromoteExtractsLicensesPerFormat(t *testing.T) {
-	t.Parallel()
-
 	cases := []struct {
 		format, meta string
 		want         []string
@@ -403,11 +401,12 @@ func TestPromoteExtractsLicensesPerFormat(t *testing.T) {
 		{"composer", `{"composer_json": {}}`, nil},
 	}
 
+	// One database for all cases: the shared server has a connection limit.
+	h := newHarness(t)
+
 	for _, tc := range cases {
 		t.Run(tc.format+tc.meta, func(t *testing.T) {
-			t.Parallel()
-
-			h := newHarness(t)
+			h.t = t
 			src, dst := h.repo(tc.format, false), h.repo(tc.format, false)
 			blob, sha := h.blob("content " + tc.format + tc.meta)
 			h.file(src.ID, blob, fileSeed{pkg: "shop", version: "1.0", path: "shop-1.0.pkg", versionMeta: tc.meta})
