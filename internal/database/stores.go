@@ -36,6 +36,7 @@ type PostgresDB struct {
 	*QuotaStore
 	*StorageBackendStore
 	*TieringStore
+	*ReplicationStore
 	// STORES-STRUCT
 }
 
@@ -69,6 +70,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		QuotaStore:           &QuotaStore{core: c},
 		StorageBackendStore:  &StorageBackendStore{core: c},
 		TieringStore:         &TieringStore{core: c},
+		ReplicationStore:     &ReplicationStore{core: c},
 		// STORES-INIT
 	}
 }
