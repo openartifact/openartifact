@@ -9,10 +9,13 @@ import (
 	"fmt"
 )
 
+// QuarantineStore owns the quarantine flag of secret-scanned artifacts.
+type QuarantineStore struct{ *core }
+
 // IsArtifactQuarantined reports whether any of keys (artifact_refs.artifact_path
 // values) identifies an artifact of the repository whose vulnerability, secret
 // or license scan result is flagged quarantined.
-func (p *PostgresDB) IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error) {
+func (p *QuarantineStore) IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error) {
 	if len(keys) == 0 {
 		return false, nil
 	}
@@ -37,4 +40,28 @@ func (p *PostgresDB) IsArtifactQuarantined(ctx context.Context, repoID string, k
 	}
 
 	return quarantined, nil
+}
+
+// QuarantineArtifact updates the quarantine status of an artifact.
+func (p *QuarantineStore) QuarantineArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error {
+	_, err := p.db.ExecContext(ctx, `
+		WITH target AS (
+			SELECT sr.id AS result_id, sj.id AS job_id
+			FROM secret_results sr
+			JOIN scan_jobs sj ON sj.id = sr.scan_job_id
+			JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
+			WHERE sj.scan_type = 'secret' AND ref.repository_id = $2 AND ref.artifact_path = $3
+		), upd1 AS (
+			UPDATE secret_results SET quarantined = $1
+			WHERE id = (SELECT result_id FROM target)
+			RETURNING id
+		)
+		UPDATE scan_jobs SET updated_at = now() WHERE id = (SELECT job_id FROM target)`,
+		quarantined, repoID, artifactID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to quarantine artifact: %w", err)
+	}
+
+	return nil
 }

@@ -3295,30 +3295,6 @@ func (p *PostgresDB) ListSecretScanResults(ctx context.Context, repoID string, f
 	return results, rows.Err()
 }
 
-// QuarantineArtifact updates the quarantine status of an artifact.
-func (p *PostgresDB) QuarantineArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error {
-	_, err := p.db.ExecContext(ctx, `
-		WITH target AS (
-			SELECT sr.id AS result_id, sj.id AS job_id
-			FROM secret_results sr
-			JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-			JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-			WHERE sj.scan_type = 'secret' AND ref.repository_id = $2 AND ref.artifact_path = $3
-		), upd1 AS (
-			UPDATE secret_results SET quarantined = $1
-			WHERE id = (SELECT result_id FROM target)
-			RETURNING id
-		)
-		UPDATE scan_jobs SET updated_at = now() WHERE id = (SELECT job_id FROM target)`,
-		quarantined, repoID, artifactID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to quarantine artifact: %w", err)
-	}
-
-	return nil
-}
-
 // CreateVulnScanResult creates or updates a vulnerability scan result.
 func (p *PostgresDB) CreateVulnScanResult(ctx context.Context, result *models.VulnScanResult) error {
 	vulnsJSON, err := json.Marshal(result.Vulnerabilities)
