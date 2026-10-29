@@ -32,7 +32,4 @@ func TestRegistry(t *testing.T) {
 
 	assert.Panics(t, func() { r.Register("a", 3) })
 	assert.Panics(t, func() { r.Register("", 3) })
-
-	r.Reset()
-	assert.Empty(t, r.Names())
 }

@@ -17,6 +17,3 @@ func Lookup(format string) (Storage, bool) { return formats.Lookup(format) }
 
 // Names returns the registered format names, sorted.
 func Names() []string { return formats.Names() }
-
-// Reset empties the registry; tests that register descriptors of their own use it.
-func Reset() { formats.Reset() }

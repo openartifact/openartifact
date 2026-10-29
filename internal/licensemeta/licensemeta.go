@@ -118,13 +118,6 @@ func (h Hooks) supported(format, filename string) bool {
 	return manifest.Supported(h.manifestFormat(format), filename) && (h.Filter == nil || h.Filter(filename))
 }
 
-// Supported reports whether licenses can be read from a file of this format.
-func Supported(format, filename string) bool {
-	h, ok := hooks.Lookup(format)
-
-	return ok && h.supported(format, filename)
-}
-
 // Expected reports whether a file of this format is a package that declares
 // its own license metadata: a wheel or sdist, an npm tarball, a crate, a nupkg,
 // a gem, a .pom or an ivy.xml. For these a failure to read the licenses (an unsupported

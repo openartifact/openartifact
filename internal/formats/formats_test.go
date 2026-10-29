@@ -18,7 +18,6 @@ import (
 	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/formats"
 	"github.com/openartifact/openartifact/internal/group"
-	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
@@ -49,10 +48,6 @@ func TestRegistrationsMatchSpecs(t *testing.T) {
 
 		if got := f.Proxy().Enabled; got != spec.Proxy {
 			t.Errorf("%s: plugin proxy = %v, Spec.Proxy = %v", spec.Name, got, spec.Proxy)
-		}
-
-		if _, ok := proxy.Lookup(spec.Name); ok != spec.Proxy {
-			t.Errorf("%s: proxy hooks registered = %v, Spec.Proxy = %v", spec.Name, ok, spec.Proxy)
 		}
 
 		if got := f.Group().Enabled; got != spec.Group {

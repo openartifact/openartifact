@@ -12,6 +12,7 @@ package recovery
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -66,9 +67,25 @@ type Registry struct {
 	byName map[string]int
 }
 
+// descriptors are the storage descriptors a registry is built from, by format.
+type descriptors map[string]formatstorage.Storage
+
+// registered returns the storage descriptors registered at this moment.
+func registered() descriptors {
+	out := make(descriptors)
+
+	for _, format := range formatstorage.Names() {
+		out[format], _ = formatstorage.Lookup(format)
+	}
+
+	return out
+}
+
 // NewRegistry builds the registry from the storage descriptors registered at
 // this moment. A side table listed by two formats is journaled once.
-func NewRegistry() *Registry {
+func NewRegistry() *Registry { return newRegistry(registered()) }
+
+func newRegistry(descs descriptors) *Registry {
 	head, tail := headTables(), tailTables()
 
 	taken := make(map[string]bool, len(head)+len(tail))
@@ -76,7 +93,7 @@ func NewRegistry() *Registry {
 		taken[t.Name] = true
 	}
 
-	tables := slices.Concat(head, sideTables(taken), tail)
+	tables := slices.Concat(head, sideTables(taken, descs), tail)
 
 	r := &Registry{tables: tables, byName: make(map[string]int, len(tables))}
 	for i := range tables {
@@ -123,17 +140,15 @@ func tailTables() []Table {
 // before it is spliced into SQL.
 var identPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
-// sideTables lists the side tables of the registered storage descriptors in
+// sideTables lists the side tables of the storage descriptors in
 // format order (names sorted), each table once and none that taken already
 // names. Descriptors are compile-time constants; a name that is not a plain
 // identifier is a programming error.
-func sideTables(taken map[string]bool) []Table {
+func sideTables(taken map[string]bool, descs descriptors) []Table {
 	var out []Table
 
-	for _, format := range formatstorage.Names() {
-		desc, _ := formatstorage.Lookup(format)
-
-		for _, st := range desc.SideTables {
+	for _, format := range slices.Sorted(maps.Keys(descs)) {
+		for _, st := range descs[format].SideTables {
 			if taken[st.Name] {
 				continue
 			}

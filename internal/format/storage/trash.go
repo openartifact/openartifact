@@ -81,30 +81,6 @@ func TrashFormatsOfKind(kind string) []string {
 	return out
 }
 
-// TrashKinds returns every registered trash kind in registry order, without
-// duplicates.
-func TrashKinds() []string {
-	seen := map[string]struct{}{}
-
-	var out []string
-
-	for _, name := range Names() {
-		s, ok := Lookup(name)
-		if !ok || s.Trash.Kind == "" {
-			continue
-		}
-
-		if _, dup := seen[s.Trash.Kind]; dup {
-			continue
-		}
-
-		seen[s.Trash.Kind] = struct{}{}
-		out = append(out, s.Trash.Kind)
-	}
-
-	return out
-}
-
 // NameSQL is NameExpr with the generic default applied.
 func (t Trash) NameSQL() string {
 	if t.NameExpr != "" {

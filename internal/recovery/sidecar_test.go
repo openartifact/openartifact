@@ -162,13 +162,10 @@ func TestSplitKey(t *testing.T) {
 }
 
 func TestRegistryShape(t *testing.T) {
-	formatstorage.Reset()
-	t.Cleanup(formatstorage.Reset)
-	formatstorage.Register("pacman", formatstorage.Storage{SideTables: []formatstorage.SideTable{{Name: "pacman_files"}}})
-
+	pacman := descriptors{"pacman": {SideTables: []formatstorage.SideTable{{Name: "pacman_files"}}}}
 	seen := map[string]bool{}
 
-	for _, tbl := range NewRegistry().Tables() {
+	for _, tbl := range newRegistry(pacman).Tables() {
 		if seen[tbl.Name] {
 			t.Errorf("table %s listed twice", tbl.Name)
 		}
@@ -195,21 +192,18 @@ func TestRegistryShape(t *testing.T) {
 // descriptors, right after their parent package_files and before the docker
 // tables, once each, with the excluded columns of the descriptor.
 func TestRegistryFollowsDescriptors(t *testing.T) {
-	formatstorage.Reset()
-	t.Cleanup(formatstorage.Reset)
-
-	bare := NewRegistry()
+	bare := newRegistry(nil)
 	if _, ok := bare.Lookup("rpm_files"); ok {
 		t.Fatal("rpm_files is journaled without a registered format")
 	}
 
-	formatstorage.Register("rpm", formatstorage.Storage{SideTables: []formatstorage.SideTable{
-		{Name: "rpm_files", Exclude: []string{"rpm_extra"}},
-		{Name: "package_files"}, // a core table: ignored
-	}})
-	formatstorage.Register("rpm2", formatstorage.Storage{SideTables: []formatstorage.SideTable{{Name: "rpm_files"}}}) // shared: once
-
-	reg := NewRegistry()
+	reg := newRegistry(descriptors{
+		"rpm": {SideTables: []formatstorage.SideTable{
+			{Name: "rpm_files", Exclude: []string{"rpm_extra"}},
+			{Name: "package_files"}, // a core table: ignored
+		}},
+		"rpm2": {SideTables: []formatstorage.SideTable{{Name: "rpm_files"}}}, // shared: once
+	})
 	names := reg.Names()
 
 	if reg.Len() != bare.Len()+1 {
@@ -240,17 +234,13 @@ func TestRegistryRejectsOddIdentifiers(t *testing.T) {
 		"excluded field": {Name: "x_files", Exclude: []string{`a"b`}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			formatstorage.Reset()
-			t.Cleanup(formatstorage.Reset)
-			formatstorage.Register("bad", formatstorage.Storage{SideTables: []formatstorage.SideTable{st}})
-
 			defer func() {
 				if recover() == nil {
 					t.Fatal("NewRegistry accepted a descriptor with a non-identifier name")
 				}
 			}()
 
-			NewRegistry()
+			newRegistry(descriptors{"bad": {SideTables: []formatstorage.SideTable{st}}})
 		})
 	}
 }

@@ -27,7 +27,7 @@ func TestListPackageDeltasHidesTrashedSources(t *testing.T) {
 		{"deb", (*quotaSeeder).deb, models.TrashKindDeb},
 	} {
 		t.Run(tc.format, func(t *testing.T) {
-			registerTrashFixtures(t)
+			registerFixtures(t)
 
 			pg := newQuotaTestDB(t, 8)
 			pg.SetTrashRetentionDays(7)

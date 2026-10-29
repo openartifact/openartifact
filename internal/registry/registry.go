@@ -78,12 +78,3 @@ func (r *Registry[V]) Names() []string {
 
 	return slices.Sorted(maps.Keys(*p))
 }
-
-// Reset empties the registry. It exists for tests that register a hook table of
-// their own; production code never calls it.
-func (r *Registry[V]) Reset() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.m.Store(nil)
-}

@@ -96,9 +96,6 @@ func Register(format string, h Hooks) {
 	}
 }
 
-// Lookup returns the hooks registered for format.
-func Lookup(format string) (Hooks, bool) { return hooks.Lookup(format) }
-
 // Immutable reports whether the file at key never changes once published, so a
 // cached copy never needs revalidation. Formats whose bodies are verified
 // against a published digest (see fetchOpts) pin by name alone; the ones that
@@ -137,14 +134,6 @@ func Immutable(format, key string) bool {
 	h, ok := hooks.Lookup(format)
 
 	return ok && h.Immutable != nil && h.Immutable(key)
-}
-
-// isMetadataKey reports whether key names an index or metadata file of format
-// (small by nature, capped at DefaultMaxMetadata) rather than a package file.
-func isMetadataKey(format, key string) bool {
-	h, ok := hooks.Lookup(format)
-
-	return ok && h.IsMetadata != nil && h.IsMetadata(key)
 }
 
 // isHTMLForPackage reports whether the upstream answered a package file's path

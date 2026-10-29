@@ -7,28 +7,54 @@
 package database
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
-// registerTrashFixtures registers the storage descriptors the trash, cleanup and
-// blob-reference tests rely on, with the values the format plugins register
-// (the mapping the plugin layer must reproduce is documented on
-// storage.Trash/storage.Cleanup), and resets the registry when the test ends.
-func registerTrashFixtures(tb testing.TB) {
+var fixturesOnce sync.Once //nolint:gochecknoglobals // the descriptors are registered once per test binary
+
+// registerFixtures registers the storage descriptors the trash, cleanup,
+// blob-reference and detail tests rely on, with the values the format plugins
+// register (the mapping the plugin layer must reproduce is documented on
+// storage.Trash/storage.Cleanup/storage.Detail). The registry has no reset, so
+// they are registered once and shared by every test of the binary.
+func registerFixtures(tb testing.TB) {
 	tb.Helper()
 
-	storage.Reset()
-	tb.Cleanup(storage.Reset)
+	fixturesOnce.Do(registerAll)
+}
+
+func registerAll() {
+	v := func(path string) storage.Field { return storage.Field{Source: storage.FromVersion, Path: path} }
 
 	storage.Register("maven", storage.Storage{
 		Trash: storage.Trash{
 			Kind: "maven_artifact", NameExpr: "f.path",
 			RegenKeys: "p.attrs->>'group_id', p.attrs->>'artifact_id'",
 		},
+		Detail: storage.Detail{
+			MD5: storage.Field{Source: storage.FromChecksums, Path: "md5"},
+			Info: []storage.InfoField{
+				{Key: "group_id", From: storage.Field{Source: storage.FromPackage, Path: "group_id"}},
+				{Key: "classifier", From: storage.Field{Source: storage.FromSide, Path: "classifier"}},
+				{Key: "snapshot", From: storage.Field{Source: storage.FromSide, Path: "is_snapshot"}},
+			},
+		},
 	})
 	storage.Register("npm", storage.Storage{
+		Detail: storage.Detail{
+			Description: v("manifest_json.description"),
+			License:     v("manifest_json.license"),
+			SHA1:        storage.Field{Source: storage.FromChecksums, Path: "shasum"},
+			Info: []storage.InfoField{
+				{Key: "integrity", From: storage.Field{Source: storage.FromChecksums, Path: "integrity"}},
+				{Key: "scope", From: storage.Field{Source: storage.FromPackage, Path: "scope"}},
+			},
+			Deps:    v("manifest_json"),
+			Decoder: "npm-manifest",
+		},
 		Trash: storage.Trash{
 			Kind:      "npm_version",
 			RegenKeys: "p.id::text, ''::text",
@@ -43,7 +69,14 @@ func registerTrashFixtures(tb testing.TB) {
 			},
 		},
 	})
-	storage.Register("go", storage.Storage{Trash: storage.Trash{Kind: "go_module", Scope: storage.ScopeVersion}})
+	storage.Register("go", storage.Storage{
+		Trash: storage.Trash{Kind: "go_module", Scope: storage.ScopeVersion},
+		Detail: storage.Detail{
+			Info:    []storage.InfoField{{Key: "module_path", From: storage.Field{Source: storage.FromColumns, Path: "name"}}},
+			Deps:    storage.Field{Source: storage.FromSibling, Path: "go_mod_content"},
+			Decoder: "go-mod",
+		},
+	})
 	storage.Register("helm", storage.Storage{Trash: storage.Trash{Kind: "helm_chart"}})
 	storage.Register("rubygems", storage.Storage{Trash: storage.Trash{Kind: "rubygems_gem"}})
 	storage.Register("raw", storage.Storage{

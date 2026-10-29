@@ -19,14 +19,16 @@ import (
 // formats registered (plus docker and repository), every registered kind lists
 // and resolves without error, and an unregistered kind is refused.
 func TestTrashKindsComeFromDescriptors(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
 
 	kinds := []models.TrashKind{models.TrashKindDockerManifest, models.TrashKindDockerTag}
-	for _, k := range storage.TrashKinds() {
-		kinds = append(kinds, models.TrashKind(k))
+	for _, name := range storage.Names() {
+		if st, _ := storage.Lookup(name); st.Trash.Kind != "" {
+			kinds = append(kinds, models.TrashKind(st.Trash.Kind))
+		}
 	}
 
 	for _, kind := range kinds {
@@ -99,7 +101,7 @@ func checkTrashedMavenItem(t *testing.T, pg *PostgresDB, repoID, id, path string
 }
 
 func TestTrashRowsLifecycle(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -149,7 +151,7 @@ func TestTrashRowsLifecycle(t *testing.T) {
 }
 
 func TestTrashRestoreConflictsWithReusedPath(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -199,7 +201,7 @@ func TestTrashRestoreConflictsWithReusedPath(t *testing.T) {
 // A file of a multi-file version that is trashed alone leaves the version live;
 // the version is stamped only with its last live file.
 func TestTrashVersionStampFollowsLastFile(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -248,7 +250,7 @@ func TestTrashVersionStampFollowsLastFile(t *testing.T) {
 }
 
 func TestTrashPurgeReportsBlobsAndQuota(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -299,7 +301,7 @@ func TestTrashPurgeReportsBlobsAndQuota(t *testing.T) {
 // Trashing, restoring and purging a go module acts on the zip and the go.mod
 // together: one item, one artifact, both blobs.
 func TestTrashVersionScopeTakesCompanionFiles(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -360,7 +362,7 @@ func TestTrashVersionScopeTakesCompanionFiles(t *testing.T) {
 // The npm descriptor hooks keep the packument validator and the dist-tags in
 // step with trash, restore, purge and the retention worker's hard delete.
 func TestTrashNPMHooks(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -440,7 +442,7 @@ func newKeysOf(pg *PostgresDB, ctx context.Context, id string) (string, error) {
 
 // HardDeleteFiles removes live files for good and reports what the caller frees.
 func TestHardDeleteFilesReportsUsage(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 
@@ -474,7 +476,7 @@ func TestHardDeleteFilesReportsUsage(t *testing.T) {
 }
 
 func TestTrashRetentionResolution(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
@@ -536,7 +538,7 @@ func TestTrashRetentionResolution(t *testing.T) {
 }
 
 func TestTrashRepositoryHidesAndRestores(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)

@@ -91,7 +91,7 @@ func TestBlobReferencesCoverMetadataAndDeltas(t *testing.T) {
 // (the purge frees the bytes); ArtifactExists only counts live files of the
 // repository, whatever the format.
 func TestBlobReferencesCountPackageFiles(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)

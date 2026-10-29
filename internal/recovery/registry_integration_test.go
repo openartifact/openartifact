@@ -12,7 +12,6 @@ import (
 	"slices"
 	"testing"
 
-	formatstorage "github.com/openartifact/openartifact/internal/format/storage"
 )
 
 func queryStrings(t *testing.T, db *sql.DB, q string, args ...any) []string {
@@ -197,9 +196,10 @@ func TestUnregisteredTablesAreReported(t *testing.T) {
 		t.Fatalf("with every format registered: %v, %v; want none", got, err)
 	}
 
-	formatstorage.Reset()
+	bare := newTestJournal(t, db, store)
+	bare.reg = newRegistry(nil)
 
-	got, err = newTestJournal(t, db, store).UnregisteredTables(ctx)
+	got, err = bare.UnregisteredTables(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

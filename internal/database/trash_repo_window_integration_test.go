@@ -15,7 +15,7 @@ import (
 )
 
 func TestTrashRepositoryRestoreKeepsRemainingWindow(t *testing.T) {
-	registerTrashFixtures(t)
+	registerFixtures(t)
 
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
