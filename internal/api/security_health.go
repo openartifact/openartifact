@@ -7,7 +7,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/dtrack"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -52,7 +51,7 @@ func (h *SecurityHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
 		ScansPending:          stats.ScansPending,
 		ScansFailed24h:        stats.ScansFailed24h,
 		DependencyTrack:       responses.SecurityHealthDependencyTrackResponse{Enabled: dt.Enabled},
-		AI:                    responses.SecurityHealthAIResponse{Enabled: ai.LoadSettings(ctx, h.db, h.envAI).Enabled},
+		AI:                    responses.SecurityHealthAIResponse{Enabled: h.aiEnabled != nil && h.aiEnabled(ctx)},
 		UnscannedRepositories: stats.UnscannedRepositories,
 	}
 

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !nomcp
+
 package mcp
 
 import (
@@ -11,16 +13,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
-	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
-	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -144,14 +143,12 @@ func newStack(t *testing.T, mutate func(*stackOptions)) *stack {
 		opts.server.ResourceMetadataURL = middleware.ProtectedResourceMetadataURL(opts.baseURL, "/mcp")
 	}
 
-	var aiWorker *worker.AIAnalysisWorker
+	var analyzer AIAnalyzer
 	if opts.aiEnabled {
-		aiWorker = worker.NewAIAnalysisWorker(db, ai.NewClient(ai.Config{Provider: "custom", BaseURL: "http://127.0.0.1:1"}), log).
-			WithDebounce(time.Hour)
-		t.Cleanup(aiWorker.Stop)
+		analyzer = newTestAnalyzer(t, db, log)
 	}
 
-	s := NewServer(db, aiWorker, log, opts.server)
+	s := NewServer(db, analyzer, log, opts.server)
 	evaluator := auth.NewEvaluator(db, log, false)
 
 	s.SetAuthorizer(func(ctx context.Context, repoName, action string) bool {

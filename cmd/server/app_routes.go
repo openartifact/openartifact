@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
-	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/dtrack"
@@ -38,16 +37,13 @@ import (
 	formatterraform "github.com/openartifact/openartifact/internal/format/terraform"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/license"
-	aimcp "github.com/openartifact/openartifact/internal/mcp"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/repodispatch"
 	"github.com/openartifact/openartifact/internal/repotype"
-	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
 	"github.com/openartifact/openartifact/internal/storage"
-	"github.com/openartifact/openartifact/internal/vuln"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -134,11 +130,7 @@ func (a *app) registerPublicRoutes() error {
 
 	// RFC 9728 protected-resource metadata of the MCP endpoint: public, outside
 	// the authenticated router so clients can discover how to authenticate.
-	if a.feat.mcpServer != nil {
-		metadata := aimcp.NewMetadataHandler(db, log, cfg.BaseURL, cfg.MCP.HTTPPath)
-		router.Handle("/.well-known/oauth-protected-resource", metadata)
-		router.Handle("/.well-known/oauth-protected-resource"+cfg.MCP.HTTPPath, metadata)
-	}
+	a.registerMCPMetadata(router)
 
 	return nil
 }
@@ -192,8 +184,6 @@ func (a *app) registerAdminRoutes() {
 		registerPprof(authedAPI)
 		log.Warnw("pprof enabled at /api/v1/admin/pprof/ (admin only); disable outside diagnostics")
 	}
-
-	api.NewAdminAIHandler(db, log, evaluator).WithRuntime(a.feat.aiWorker, a.feat.envAI).Register(authedAPI)
 
 	projectsAPI := api.NewProjectsHandler(db, log, evaluator, w.projectSettings)
 	projectsAPI.SetCleanupPreviewer(a.workers.cleanup)
@@ -474,39 +464,29 @@ func (a *app) registerRepositoryRoutes() {
 
 // registerSupplyChainRoutes registers SBOM, VEX and attestation routes.
 func (a *app) registerSupplyChainRoutes() {
-	cfg, db, log, authedAPI, evaluator := a.cfg, a.db, a.log, a.web.authed, a.web.evaluator
+	db, log, authedAPI, evaluator := a.db, a.log, a.web.authed, a.web.evaluator
 
-	sbomGen := sbom.NewGenerator(db, log).WithBlobStore(a.store.blobs).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
-	a.feat.sbomGen = sbomGen
+	a.buildSupplyChain(a.web.formats.docker)
 
-	// SBOM / VEX attestations: signed with a configured or generated key; the
-	// public half is served unauthenticated so anyone can verify.
-	attestSvc := attest.NewService(cfg.Attest.KeyPath, db)
+	sbomGen, attestSvc := a.feat.sbomGen, a.workers.scan.attest
 	attestHandler := api.NewAttestationHandler(attestSvc, log, evaluator)
 	attestHandler.RegisterPublic(a.web.router)
 	attestHandler.RegisterAuthed(authedAPI)
 
 	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, a.store.blobs).WithAttestation(attestSvc)
-	a.feat.attacher = api.NewAttestationAttacher(db, log, sbomGen, attestSvc, a.web.formats.docker)
 	sbomHandler.WithAttacher(a.feat.attacher).RegisterAuthed(authedAPI)
 	api.NewAttestationAttachHandler(db, log, evaluator, a.feat.attacher, a.store.blobs).RegisterAuthed(authedAPI)
 	api.NewVEXHandler(db, log, evaluator, sbomGen).WithAttestation(attestSvc).RegisterAuthed(authedAPI)
 }
 
-// registerDependencyTrack starts the Dependency-Track pusher, which pushes the
-// BOM on upload and scan, then the VEX decisions, and registers its API.
+// registerDependencyTrack builds the Dependency-Track pusher
+// (buildDependencyTrack) and registers its API.
 func (a *app) registerDependencyTrack() {
-	db, log := a.db, a.log
+	a.buildDependencyTrack()
 
-	dtPusher := dtrack.NewPusher(db, api.NewDTrackSources(db, a.feat.sbomGen), log)
-	dtPusher.Start(context.Background())
+	api.NewDependencyTrackHandler(a.db, a.log, a.web.evaluator, a.feat.dtPusher).RegisterAuthed(a.web.authed)
 
-	a.extraStops = append(a.extraStops, dtPusher.Stop)
-
-	api.NewDependencyTrackHandler(db, log, a.web.evaluator, dtPusher).RegisterAuthed(a.web.authed)
-
-	a.feat.dtPusher = dtPusher
-	a.feat.dtPublisher = dtrack.NewUploadPublisher(a.feat.uploadPublisher, dtPusher)
+	a.feat.dtPublisher = dtrack.NewUploadPublisher(a.feat.uploadPublisher, a.feat.dtPusher)
 }
 
 // registerWebhooksAndBackup registers the webhooks and backup APIs.
@@ -545,8 +525,7 @@ func (a *app) registerScanningRoutes() {
 	propertiesHandler := api.NewPropertiesHandler(log, db, blobStore)
 	propertiesHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
-	aiHandler := api.NewAIHandler(db, log, evaluator, a.feat.aiWorker)
-	aiHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
+	a.registerAIRoutes(authedAPI)
 	deltaHandler := api.NewDeltaHandler(log, db, blobStore)
 	deltaHandler.Register(authedAPI)
 
@@ -555,31 +534,14 @@ func (a *app) registerScanningRoutes() {
 	a.web.uploads.maven.Register(authedAPI)
 }
 
-// registerVulnRoutes starts the scanner registry and registers the
-// vulnerability scanning routes. The scan hook and the scans themselves run
-// under the server lifecycle.
+// registerVulnRoutes builds the vulnerability scanning services
+// (buildVulnScanning) and registers their routes.
 func (a *app) registerVulnRoutes() {
-	// Trivy and grype are external binaries; the registry downloads and
-	// refreshes their databases in the background (docs/security/scanning.md).
-	scannerRegistry := vuln.NewRegistry(a.log, a.cfg.Scanners.VulnOptions()).WithMetrics(a.reg)
-	if a.cfg.OSVMirror.Enabled {
-		scannerRegistry = scannerRegistry.WithOSVMirror(vuln.NewMirror(a.db))
-	}
-
-	scannerRegistry.LogStatus()
-	scannerRegistry.Start(context.Background())
-
-	a.extraStops = append(a.extraStops, scannerRegistry.Stop)
-
-	vulnHandler := api.NewVulnHandler(a.db, a.log, a.web.evaluator, scannerRegistry).
-		WithTasks(a.tasks).
-		WithScanHook(a.onScanned).
-		WithExploit(a.workers.exploit).
-		WithOSVMirror(a.cfg.OSVMirror)
+	vulnHandler := a.buildVulnScanning()
 	vulnHandler.RegisterRoutes(a.web.authed, "/api/v1/repositories/{name}")
 	vulnHandler.RegisterOverviewRoutes(a.web.authed)
 
-	api.NewSecurityHandler(a.db, a.log, a.web.evaluator, scannerRegistry, a.feat.sbomGen, a.feat.envAI).
+	api.NewSecurityHandler(a.db, a.log, a.web.evaluator, a.workers.scan.scanners, a.feat.sbomGen, a.aiEnabled()).
 		WithExploit(a.workers.exploit).RegisterRoutes(a.web.authed)
 }
 
@@ -595,7 +557,7 @@ func (a *app) onScanned(repoID, artifactID string) {
 // endpoint, the SPA fallback, the blob relay and federation endpoints, and the
 // mount of the authenticated router.
 func (a *app) finishRoutes() {
-	cfg, w := a.cfg, &a.web
+	w := &a.web
 	router, authedAPI, f, u := w.router, w.authed, &w.formats, &w.uploads
 
 	// Every handler that stores or removes artifacts announces artifact.uploaded /
@@ -609,14 +571,8 @@ func (a *app) finishRoutes() {
 		h.SetPublisher(a.feat.dtPublisher)
 	}
 
-	// Mount the MCP server if enabled (HTTP is the only transport). Mounted under authedAPI
-	// (not the bare router) so it inherits the RBAC and audit chain: RBAC accepts
-	// only bearer credentials here (never the session cookie) and refuses
-	// anonymous callers; each tool then checks the caller's own permissions.
-	if a.feat.mcpServer != nil {
-		authedAPI.Mount(cfg.MCP.HTTPPath, a.feat.mcpServer.HTTPHandler())
-		a.log.Infow("MCP HTTP endpoint registered", "path", cfg.MCP.HTTPPath)
-	}
+	// The MCP server, when enabled and built in (feature_mcp.go).
+	a.mountMCP(authedAPI)
 
 	// SPA fallback on the authed sub-router: paths not matched by any API or
 	// repo route serve the Vue SPA (client-side routing). RBAC is bypassed for

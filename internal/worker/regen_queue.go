@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -108,17 +109,31 @@ type regenQueue[K comparable] struct {
 	drainTimeout time.Duration
 	limiter      *RegenLimiter
 
+	// codec maps keys to worker requests and back; set by the workers that can
+	// hand their regenerations to another process (forwardTo, serveFrom).
+	codec regenCodec[K]
+	// fwd is set on a web process: Notify writes a worker request instead of
+	// scheduling a regeneration here.
+	fwd *workq.Store
+	// settle is set on a process that serves worker requests: it reports a key
+	// whose regeneration finished (done) or gave up on a busy lock (not done).
+	// It is called with q.mu held and must not block.
+	settle func(key K, done bool)
+
 	baseCtx context.Context //nolint:containedctx // queue-lifetime context, canceled by Stop
 	cancel  context.CancelFunc
 
 	mu      sync.Mutex
 	entries map[K]*regenEntry
-	ready   []K
-	workers int
-	closing bool // Stop called: new notifications are rejected, pending work drains
-	stopped bool // drain finished: no more runners may start
-	drained chan struct{}
-	wg      sync.WaitGroup
+	// forwarded is when notifyIfIdle last wrote a request for a key, in
+	// forwarding mode.
+	forwarded map[K]time.Time
+	ready     []K
+	workers   int
+	closing   bool // Stop called: new notifications are rejected, pending work drains
+	stopped   bool // drain finished: no more runners may start
+	drained   chan struct{}
+	wg        sync.WaitGroup
 
 	stopOnce sync.Once
 }
@@ -157,7 +172,13 @@ func (q *regenQueue[K]) setMetrics(reg *metrics.Registry) { q.reg = reg }
 
 // Notify marks key stale. The data is read when the run executes, so a
 // notification that arrives before the run starts is already covered by it.
+// On a forwarding queue (a web process) it writes a worker request instead.
 func (q *regenQueue[K]) Notify(key K) {
+	if q.fwd != nil {
+		q.forward(key, false)
+		return
+	}
+
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -193,8 +214,14 @@ func (q *regenQueue[K]) Notify(key K) {
 // notifyIfIdle is Notify for a trigger that fires on every read (a cache that
 // may have expired): it does nothing while key already has a regeneration
 // waiting, queued or running, so steady traffic cannot keep re-arming a run
-// that is already about to refresh the data.
+// that is already about to refresh the data. A forwarding queue writes at most
+// one request per key and forwardIdleWindow, and none while one is queued.
 func (q *regenQueue[K]) notifyIfIdle(key K) {
+	if q.fwd != nil {
+		q.forward(key, true)
+		return
+	}
+
 	q.mu.Lock()
 	_, busy := q.entries[key]
 	q.mu.Unlock()
@@ -345,6 +372,13 @@ func (q *regenQueue[K]) execute(key K) {
 	}
 
 	delete(q.entries, key)
+
+	if q.settle != nil {
+		// A key that gave up on a busy lock is not done: its request stays for
+		// a later claim.
+		q.settle(key, !busy)
+	}
+
 	q.maybeDrainedLocked()
 }
 

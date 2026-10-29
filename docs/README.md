@@ -71,6 +71,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Disaster recovery](operations/disaster-recovery.md) | Runbook: database lost, storage lost, one repository deleted; RPO and RTO per option, verification commands |
 | [PostgreSQL point-in-time recovery](operations/postgres-pitr.md) | WAL archiving, base backups and restore to a chosen time with CloudNativePG and the Helm chart |
 | [Rebuild from storage](operations/rebuild-from-storage.md) | Row journal sidecars in the blob store and `openartifact rebuild`: re-index an empty database from storage |
+| [Scaling and roles](operations/scaling.md) | Split into `web` and `worker` processes with `server.role`: what each runs, how work is handed over through PostgreSQL, deployment shapes |
 | [Monitoring](operations/monitoring.md) | Health, Prometheus metrics, audit log, logging |
 | [Audit log retention](operations/audit-retention.md) | Delete audit entries older than N days in paced batches, one replica at a time; export first |
 | [White-label branding](operations/branding.md) | Product name, logos, favicon, accent colour, login message and support link: configuration, admin UI, API, SVG sanitising, the source-code attribution that stays |

@@ -396,6 +396,12 @@ type ServerConfig struct {
 	Host string `yaml:"host"`
 	// Port is the listen port.
 	Port int `yaml:"port"`
+	// Role selects what this process does: "all" (the default) serves HTTP and
+	// runs every background worker; "web" only serves HTTP, handing metadata
+	// regeneration, scans and the like to a "worker" process through the
+	// database; "worker" runs the background workers and serves only /health,
+	// /ready and /metrics. See docs/operations/scaling.md.
+	Role string `yaml:"role"`
 	// ReadTimeout bounds an entire request (headers + body), in seconds. 0
 	// (the default) means no limit so large artifact uploads are never
 	// truncated; slowloris protection instead comes from readHeaderTimeout.
@@ -593,6 +599,7 @@ func defaultConfig() *Config {
 		Server: ServerConfig{
 			Host:              "0.0.0.0",
 			Port:              8080,
+			Role:              RoleAll,
 			ReadTimeout:       0,
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20,
@@ -776,6 +783,7 @@ func applyEnvOverrides(cfg *Config) {
 	// Server config
 	overrideString(&cfg.Server.Host, "SERVER_HOST")
 	overrideInt(&cfg.Server.Port, "SERVER_PORT")
+	overrideString(&cfg.Server.Role, "OPENARTIFACT_ROLE")
 	overrideInt(&cfg.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
 	overrideInt(&cfg.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
 	overrideInt(&cfg.Server.ReadHeaderTimeout, "SERVER_READ_HEADER_TIMEOUT")
@@ -1031,8 +1039,8 @@ func (c *Config) validateProxyWorkers() error {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		return fmt.Errorf("%w: %d", errInvalidPort, c.Server.Port)
+	if err := c.Server.validateListen(); err != nil {
+		return err
 	}
 
 	if c.Database.Driver == "" {
@@ -1051,7 +1059,7 @@ func (c *Config) Validate() error {
 		return errTLSFilesRequired
 	}
 
-	if err := c.validateMCP(); err != nil {
+	if err := c.validateAIAndMCP(); err != nil {
 		return err
 	}
 

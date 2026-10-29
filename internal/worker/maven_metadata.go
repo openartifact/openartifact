@@ -7,7 +7,10 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -20,6 +23,7 @@ import (
 	fmtmaven "github.com/openartifact/openartifact/internal/format/maven"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
@@ -50,10 +54,47 @@ func NewMavenMetadataWorker(
 	w.q = newRegenQueue("maven", log, func(ctx context.Context, k mavenKey) error {
 		return w.regenerate(ctx, k.repoID, k.groupID, k.artifactID)
 	})
+	w.q.setCodec(mavenRegenCodec())
 	w.q.setMetrics(reg)
 
 	return w
 }
+
+// mavenRegenCodec is the codec of the maven queue. The three parts of a key are
+// the payload of the request; its key is their hash, which keeps the key short
+// however long a group or artifact id is.
+func mavenRegenCodec() regenCodec[mavenKey] {
+	return regenCodec[mavenKey]{
+		encode: func(k mavenKey) (string, []byte) {
+			sum := sha256.Sum256([]byte(k.repoID + "\x00" + k.groupID + "\x00" + k.artifactID))
+			payload, _ := json.Marshal(mavenRequest{RepoID: k.repoID, GroupID: k.groupID, ArtifactID: k.artifactID})
+
+			return hex.EncodeToString(sum[:]), payload
+		},
+		decode: func(r workq.Request) (mavenKey, error) {
+			var p mavenRequest
+			if err := json.Unmarshal(r.Payload, &p); err != nil {
+				return mavenKey{}, fmt.Errorf("maven regeneration request payload: %w", err)
+			}
+
+			return mavenKey{repoID: p.RepoID, groupID: p.GroupID, artifactID: p.ArtifactID}, nil
+		},
+	}
+}
+
+// mavenRequest is the payload of a maven regeneration request.
+type mavenRequest struct {
+	RepoID     string `json:"repo_id"`
+	GroupID    string `json:"group_id"`
+	ArtifactID string `json:"artifact_id"`
+}
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *MavenMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *MavenMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.q.Notify) }
 
 func (w *MavenMetadataWorker) WithDebounce(d time.Duration) *MavenMetadataWorker {
 	w.q.setDebounce(d)

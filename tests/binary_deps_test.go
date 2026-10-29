@@ -6,6 +6,7 @@ package integration_test
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -70,26 +71,71 @@ func TestBinaryImportGraphs(t *testing.T) {
 		"github.com/crewjam/saml",
 	}
 
+	// slimTags leave AI analysis and the MCP server out (docs/development/README.md#build-tags).
+	const slimTags = releaseTags + ",noai,nomcp"
+
+	// aiPkg is the LLM client package; internal/ai/manifest next to it is
+	// shared with the always-built pkgdeps, licensemeta and sbom, so only this
+	// exact path is forbidden in the slim server.
+	const aiPkg = module + "internal/ai"
+
 	tests := []struct {
 		name      string
 		pkg       string
 		tags      string
 		forbidden []string
+		// forbiddenExact are import paths forbidden without their subpackages.
+		forbiddenExact []string
+		// required are import paths that must be linked, so a guard on a
+		// feature cannot pass because the feature moved elsewhere.
+		required []string
 	}{
-		{"oa", "./cmd/oa", "", append([]string{"github.com/jackc/pgx"}, serverOnly...)},
-		{"resetpw", "./cmd/resetpw", "", serverOnly},
-		{"server", "./cmd/server", releaseTags, []string{"golang.org/x/net/trace"}},
+		{name: "oa", pkg: "./cmd/oa", forbidden: append([]string{"github.com/jackc/pgx"}, serverOnly...)},
+		{name: "resetpw", pkg: "./cmd/resetpw", forbidden: serverOnly},
+		{
+			name: "server", pkg: "./cmd/server", tags: releaseTags,
+			forbidden: []string{"golang.org/x/net/trace"},
+			required:  []string{aiPkg, module + "internal/mcp", "github.com/modelcontextprotocol/go-sdk/mcp"},
+		},
+		{
+			name: "server-slim", pkg: "./cmd/server", tags: slimTags,
+			forbidden: []string{
+				"golang.org/x/net/trace",
+				module + "internal/mcp",
+				"github.com/modelcontextprotocol",
+				// Only the MCP SDK imports these.
+				"github.com/google/jsonschema-go",
+				"github.com/segmentio",
+				"github.com/yosida95/uritemplate",
+			},
+			forbiddenExact: []string{aiPkg},
+			required:       []string{aiPkg + "/manifest"},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			linked := map[string]bool{}
+
 			for _, dep := range goListDeps(t, tc.tags, tc.pkg) {
+				linked[dep] = true
+
 				for _, prefix := range tc.forbidden {
 					if dep == prefix || strings.HasPrefix(dep, prefix+"/") {
 						t.Errorf("%s links %s (forbidden prefix %q)", tc.pkg, dep, prefix)
 					}
+				}
+
+				if slices.Contains(tc.forbiddenExact, dep) {
+					t.Errorf("%s links %s (forbidden)", tc.pkg, dep)
+				}
+			}
+
+			for _, dep := range tc.required {
+				if !linked[dep] {
+					t.Errorf("%s (tags %q) does not link %s", tc.pkg, tc.tags, dep)
 				}
 			}
 		})

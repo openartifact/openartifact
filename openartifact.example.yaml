@@ -10,6 +10,7 @@
 server:
   host: "0.0.0.0"
   port: 8080
+  # role: all             # all (HTTP + every background worker), web (HTTP only) or worker (workers; serves only /health, /ready, /metrics); env OPENARTIFACT_ROLE
   # 0 (default) = unlimited so large uploads are never truncated
   # readTimeout: 0       # seconds
   # writeTimeout: 0      # seconds

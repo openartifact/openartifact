@@ -19,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -28,11 +27,10 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/dtrack"
-	aimcp "github.com/openartifact/openartifact/internal/mcp"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
-	"github.com/openartifact/openartifact/internal/worker"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -161,6 +159,8 @@ func serve(opts options) error {
 		return err
 	}
 
+	a.startWorkRequests()
+
 	if err := srv.Start(context.Background()); err != nil {
 		return a.fail("failed to start server", err)
 	}
@@ -283,6 +283,9 @@ func (a *app) stopWorkers() {
 	a.stopOnce.Do(func() {
 		w := &a.workers
 
+		// No new request is taken once the workers are stopping.
+		a.stopWorkRequests()
+
 		for _, stop := range []func(){
 			w.webhook.Stop, w.cleanup.Stop, w.presignedUpload.Stop, w.dockerGC.Stop, w.dockerUploadSweeper.Stop,
 			w.trashPurge.Stop, w.osvMirror.Stop, w.auditRetention.Stop, w.exploitFeeds.Stop, w.authPurge.Stop, w.proxyCache.Stop,
@@ -304,18 +307,24 @@ func (a *app) stopWorkers() {
 		for _, stop := range a.extraStops {
 			stop()
 		}
+
+		a.flushWorkRequests()
 	})
 }
 
 // features are the optional services built after the workers: federation, AI
 // analysis, MCP, Dependency-Track and the attestation attacher.
 type features struct {
+	// aiFeature and mcpFeature hold what -tags noai / nomcp leave out
+	// (feature_ai*.go, feature_mcp*.go).
+	aiFeature
+	mcpFeature
+
 	fed *federationRuntime
 
-	envAI           ai.Settings
-	aiWorker        *worker.AIAnalysisWorker
-	uploadPublisher *worker.AIAutoAnalyzePublisher
-	mcpServer       *aimcp.Server
+	// uploadPublisher announces every upload: the webhook dispatcher, wrapped
+	// to feed the AI worker when AI analysis is built in.
+	uploadPublisher webhook.Publisher
 
 	dtPusher    *dtrack.Pusher
 	dtPublisher *dtrack.UploadPublisher

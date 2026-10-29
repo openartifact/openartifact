@@ -22,11 +22,21 @@ const (
 // action by the RBAC middleware (deploy tokens and anonymous callers are
 // refused), so only administrators can reach it. Mutex and block profiling,
 // which cost a little on every contended lock, are switched on only here.
-func registerPprof(r chi.Router) {
+func registerPprof(r chi.Router) { mountPprof(r, "/api/v1/admin/pprof") }
+
+// registerWorkerPprof mounts the profiler of a worker process, which has no
+// authenticated API: under /debug/pprof/, behind the bearer token of /metrics
+// (so it answers 401 until METRICS_AUTH_TOKEN is set).
+func registerWorkerPprof(r chi.Router, auth func(http.Handler) http.Handler) {
+	r.Group(func(g chi.Router) {
+		g.Use(auth)
+		mountPprof(g, "/debug/pprof")
+	})
+}
+
+func mountPprof(r chi.Router, base string) {
 	runtime.SetMutexProfileFraction(pprofMutexFraction)
 	runtime.SetBlockProfileRate(pprofBlockRateNs)
-
-	const base = "/api/v1/admin/pprof"
 
 	r.Get(base+"/cmdline", pprof.Cmdline)
 	r.Get(base+"/profile", pprof.Profile)

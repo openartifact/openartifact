@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !nomcp
+
 // Package mcp exposes OpenArtifact to AI agents through the Model Context
 // Protocol (specification 2026-07-28, older revisions negotiated down by the
 // SDK). The endpoint is a stateless Streamable HTTP server: every request
@@ -25,9 +27,30 @@ import (
 	"github.com/openartifact/openartifact/internal/exploit"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
-	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// AIAnalysisRequest is one artifact the trigger_ai_analysis tool queues.
+type AIAnalysisRequest struct {
+	RepositoryID    string
+	ArtifactID      string
+	ArtifactFormat  string
+	ArtifactName    string
+	ArtifactVersion string
+	// ManifestText is caller-supplied manifest content; empty makes the
+	// analyzer read it from the stored artifact.
+	ManifestText string
+}
+
+// AIAnalyzer is the AI analysis worker as the MCP server sees it. A nil
+// AIAnalyzer (a binary built with -tags noai, or the feature off) makes
+// trigger_ai_analysis answer that AI analysis is not enabled.
+type AIAnalyzer interface {
+	// Enabled reports whether the analysis currently has an LLM configured.
+	Enabled() bool
+	// Queue schedules one asynchronous analysis.
+	Queue(req AIAnalysisRequest)
+}
 
 // Authorizer reports whether the caller identified by ctx may perform action
 // ("read", "write", ...) on the named repository.
@@ -116,7 +139,7 @@ type Server struct {
 	searcher   ArtifactSearcher // nil disables cross-repository search
 	mcpServer  *sdk.Server
 	db         database.Database
-	aiWorker   *worker.AIAnalysisWorker
+	analyzer   AIAnalyzer
 	log        *logger.Logger
 	baseURL    string
 	// exploit annotates vulnerabilities with KEV/EPSS signals; never nil.
@@ -129,7 +152,7 @@ type Server struct {
 }
 
 // NewServer creates a new MCP server with all OpenArtifact tools registered.
-func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *logger.Logger, opts Options) *Server {
+func NewServer(db database.Database, analyzer AIAnalyzer, log *logger.Logger, opts Options) *Server {
 	version := opts.Version
 	if version == "" {
 		version = "dev"
@@ -142,7 +165,7 @@ func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *log
 
 	s := &Server{
 		db:                  db,
-		aiWorker:            aiWorker,
+		analyzer:            analyzer,
 		log:                 log,
 		baseURL:             strings.TrimRight(opts.BaseURL, "/"),
 		exploit:             exploit.NewEnricher(nil, exploit.DefaultEPSSThreshold),

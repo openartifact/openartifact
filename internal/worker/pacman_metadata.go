@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/pacman"
@@ -41,9 +42,17 @@ type PacmanMetadataWorker struct {
 func NewPacmanMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *PacmanMetadataWorker {
 	w := &PacmanMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("pacman", log, w.regenerate)
+	w.q.setCodec(stringRegenCodec())
 
 	return w
 }
+
+// ForwardTo makes NotifyStale write a worker request to s instead of scheduling
+// the regeneration here (server.role=web); see RegenRemote.
+func (w *PacmanMetadataWorker) ForwardTo(s *workq.Store) { w.q.forwardTo(s) }
+
+// ServeFrom makes the worker regenerate what the requests claimed by c ask for.
+func (w *PacmanMetadataWorker) ServeFrom(c *workq.Consumer) { w.q.serveFrom(c, w.NotifyStale) }
 
 // WithDebounce sets how long a burst of uploads is coalesced.
 func (w *PacmanMetadataWorker) WithDebounce(d time.Duration) *PacmanMetadataWorker {

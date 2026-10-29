@@ -7,7 +7,6 @@ package webhook
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -91,15 +90,5 @@ func (d *Dispatcher) clientFor(wh *models.Webhook) *http.Client {
 // DispatchTo creates a delivery for exactly one webhook and queues it,
 // regardless of the webhook's event subscriptions or enabled flag.
 func (d *Dispatcher) DispatchTo(ctx context.Context, wh *models.Webhook, eventType string, payload map[string]any) error {
-	delivery := newLeasedDelivery(wh.ID, eventType, payload)
-
-	if err := d.db.CreateWebhookDelivery(ctx, delivery); err != nil {
-		return fmt.Errorf("create webhook delivery: %w", err)
-	}
-
-	if !d.enqueue(delivery) {
-		d.log.Warnw("webhook delivery queue full; delivery left pending for retry loop", "webhook_id", wh.ID)
-	}
-
-	return nil
+	return d.record(ctx, wh.ID, eventType, payload)
 }

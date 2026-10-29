@@ -14,6 +14,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/sbom"
+	"github.com/openartifact/openartifact/internal/workq"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -53,9 +54,9 @@ const (
 
 // Job is one artifact to push.
 type Job struct {
-	RepoID     string
-	ArtifactID string
-	Trigger    Trigger
+	RepoID     string  `json:"repo_id"`
+	ArtifactID string  `json:"artifact_id"`
+	Trigger    Trigger `json:"trigger"`
 }
 
 func (j Job) key() string { return j.RepoID + "\x00" + j.ArtifactID }
@@ -71,6 +72,9 @@ type Pusher struct {
 	maxWait time.Duration
 
 	jobs chan Job
+	// fwd is set on a web process (server.role=web): Enqueue writes a worker
+	// request for a worker process to push instead of queueing the job here.
+	fwd *workq.Store
 
 	mu      sync.Mutex
 	waiting map[string]struct{}
@@ -149,6 +153,10 @@ func (p *Pusher) finish(ctx context.Context, j Job) {
 // Enqueue schedules a push without checking the configuration (use
 // EnqueueIfEnabled for events). It reports false when the queue is full.
 func (p *Pusher) Enqueue(j Job) bool {
+	if p.fwd != nil {
+		return p.forward(j)
+	}
+
 	k := j.key()
 
 	p.mu.Lock()

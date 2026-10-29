@@ -19,7 +19,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/databasetest"
@@ -207,7 +206,11 @@ func serveSecurity(t *testing.T, db *securityMockDB, principal *auth.Principal, 
 
 	t.Cleanup(func() { _ = log.Sync() })
 
-	h := NewSecurityHandler(db, log, auth.NewEvaluator(db, log, false), nil, sbom.NewGenerator(db, log), ai.Settings{})
+	h := NewSecurityHandler(db, log, auth.NewEvaluator(db, log, false), nil, sbom.NewGenerator(db, log),
+		func(ctx context.Context) bool {
+			v, _ := db.GetSystemSetting(ctx, "ai.enabled")
+			return v == "true"
+		})
 
 	router := chi.NewRouter()
 	router.Use(func(next http.Handler) http.Handler {

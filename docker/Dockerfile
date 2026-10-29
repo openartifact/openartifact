@@ -55,6 +55,10 @@ ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 ARG TARGETOS=linux
 ARG TARGETARCH
+# GO_TAGS are the server build tags: grpcnotrace for the release binary, add
+# noai and/or nomcp to leave AI analysis and the MCP server out
+# (--build-arg GO_TAGS=grpcnotrace,noai,nomcp; docs/development/README.md#build-tags).
+ARG GO_TAGS=grpcnotrace
 # grpcnotrace drops gRPC's net/trace debug pages (unused: EnableTracing is
 # never set), which keeps html/template out of the server and lets the linker
 # discard unreachable methods (about 9 MB).
@@ -64,7 +68,7 @@ ARG TARGETARCH
 RUN COMMIT_SHORT="$(printf '%.7s' "${COMMIT}")"; \
     BUILD_TIME_RFC3339="${BUILD_TIME}"; \
     case "${BUILD_TIME}" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z) BUILD_TIME_RFC3339="$(printf '%.19sZ' "${BUILD_TIME}")" ;; esac; \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -tags grpcnotrace \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -tags "${GO_TAGS}" \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_SHORT} -X main.buildTime=${BUILD_TIME_RFC3339}" \
     -o openartifact ./cmd/server
 
