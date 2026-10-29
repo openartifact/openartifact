@@ -102,7 +102,7 @@ func TestReconcileCountsDeleteInFlight(t *testing.T) {
 	mustReconcile(t, pg, s.repo)
 	requireUsage(t, pg, s.repo, 35, 2)
 
-	s.exec(`DELETE FROM helm_charts WHERE repository_id = $1 AND name = 'chart-1'`, s.repo)
+	s.exec(`DELETE FROM package_files WHERE repository_id = $1 AND path LIKE 'chart-1-%'`, s.repo)
 
 	mustReconcile(t, pg, s.repo) // row gone, quota not released yet
 	requireUsage(t, pg, s.repo, 35, 2)
@@ -127,7 +127,7 @@ func TestReconcileCountsReplaceInFlight(t *testing.T) {
 	mustReconcile(t, pg, s.repo)
 
 	reserveN(t, pg, s.repo, 15, 1)
-	s.exec(`UPDATE helm_charts SET blob_id = $2 WHERE repository_id = $1`, s.repo, s.blob(15))
+	s.exec(`UPDATE package_files SET blob_id = $2 WHERE repository_id = $1`, s.repo, s.blob(15))
 
 	mustReconcile(t, pg, s.repo) // new row content in place, the old usage not returned yet
 	requireUsage(t, pg, s.repo, 25, 2)
@@ -152,7 +152,7 @@ func TestReleaseBatchConsumesPendingEntries(t *testing.T) {
 	mustReconcile(t, pg, s.repo)
 	requireUsage(t, pg, s.repo, 60, 3)
 
-	s.exec(`DELETE FROM helm_charts WHERE repository_id = $1`, s.repo)
+	s.exec(`DELETE FROM package_files WHERE repository_id = $1`, s.repo)
 
 	if n := pendingEntries(t, pg, s.repo); n != 3 {
 		t.Fatalf("%d pending entries after deleting 3 rows, want 3", n)
@@ -257,17 +257,24 @@ func TestReconcileKeepsConcurrentReservation(t *testing.T) {
 	requireUsage(t, pg, s.repo, 17, 2)
 }
 
-// A Go module is one artifact reserved as zip plus go.mod; its row consumes
-// that single entry.
-func TestGomodRowConsumesOneEntry(t *testing.T) {
+// A Go module is one artifact stored as two files (the zip primary, the go.mod
+// with role mod): each file consumes the entry reserved for it (the pending
+// entries match by exact size and count, so the module is reserved per file).
+func TestGomodFilesConsumeTheirEntries(t *testing.T) {
 	pg := newQuotaTestDB(t, 10)
 	s := newQuotaSeeder(t, pg, "gomod", "go")
 
-	reserveN(t, pg, s.repo, 100+7, 1)
+	reserveN(t, pg, s.repo, 100, 1)
+	reserveN(t, pg, s.repo, 7, 0)
 
 	zip, mod := s.blob(100), s.blob(7)
-	s.exec(`INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id)
-	        VALUES ($1, 'example.com/m', 'v1.0.0', 'module example.com/m', $2, $3)`, s.repo, zip, mod)
+	s.writeFiles(&PackageWrite{
+		RepoID: s.repo, Format: "go", Name: "example.com/m", NameKey: "example.com/m", Version: "v1.0.0", VersionKey: "v1.0.0",
+		Files: []FileWrite{
+			{Path: "example.com/m/@v/v1.0.0.zip", Filename: "v1.0.0.zip", Blob: s.blobs[zip]},
+			{Path: "example.com/m/@v/v1.0.0.mod", Filename: "v1.0.0.mod", Role: "mod", Unlisted: true, Blob: s.blobs[mod]},
+		},
+	})
 
 	if n := pendingEntries(t, pg, s.repo); n != 0 {
 		t.Fatalf("%d pending entries after the module row, want 0", n)

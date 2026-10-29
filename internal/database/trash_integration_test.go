@@ -9,67 +9,42 @@ package database
 import (
 	"context"
 	"errors"
-	"slices"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
-// TestTrashSpecsCoverEveryDeletedAtTable keeps the kind registry in step with
-// the schema: every table with a deleted_at column (but repositories) needs a
-// spec, and every spec's SQL fragments must be valid against the schema.
-func TestTrashSpecsCoverEveryDeletedAtTable(t *testing.T) {
+// TestTrashKindsComeFromDescriptors: the kinds the trash accepts are the ones
+// formats registered (plus docker and repository), every registered kind lists
+// and resolves without error, and an unregistered kind is refused.
+func TestTrashKindsComeFromDescriptors(t *testing.T) {
+	registerTrashFixtures(t)
+
 	pg := newQuotaTestDB(t, 4)
 	ctx := context.Background()
 
-	rows, err := pg.GetDB().QueryContext(ctx,
-		`SELECT table_name FROM information_schema.columns
-		 WHERE table_schema = 'public' AND column_name = 'deleted_at' AND table_name <> 'repositories'`)
-	if err != nil {
-		t.Fatal(err)
+	kinds := []models.TrashKind{models.TrashKindDockerManifest, models.TrashKindDockerTag}
+	for _, k := range storage.TrashKinds() {
+		kinds = append(kinds, models.TrashKind(k))
 	}
 
-	defer func() { _ = rows.Close() }()
-
-	var withColumn []string
-
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatal(err)
+	for _, kind := range kinds {
+		if _, _, err := pg.ListTrash(ctx, models.TrashFilter{Kind: kind}); err != nil {
+			t.Errorf("ListTrash(%s): %v", kind, err)
 		}
 
-		withColumn = append(withColumn, name)
-	}
-
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-
-	var inSpecs []string
-	for _, s := range trashSpecs {
-		inSpecs = append(inSpecs, s.table)
-	}
-
-	slices.Sort(withColumn)
-	slices.Sort(inSpecs)
-
-	if !slices.Equal(withColumn, inSpecs) {
-		t.Fatalf("tables with deleted_at = %v, trashSpecs tables = %v", withColumn, inSpecs)
-	}
-
-	for _, s := range trashSpecs {
-		if _, _, err := pg.ListTrash(ctx, models.TrashFilter{Kind: s.kind}); err != nil {
-			t.Errorf("ListTrash(%s): %v", s.kind, err)
+		if _, err := pg.GetTrashItem(ctx, kind, "00000000-0000-0000-0000-000000000000"); !errors.Is(err, ErrTrashNotFound) {
+			t.Errorf("GetTrashItem(%s) = %v, want ErrTrashNotFound", kind, err)
 		}
+	}
 
-		if _, err := pg.GetTrashItem(ctx, s.kind, "00000000-0000-0000-0000-000000000000"); !errors.Is(err, ErrTrashNotFound) {
-			t.Errorf("GetTrashItem(%s) = %v, want ErrTrashNotFound", s.kind, err)
-		}
+	if _, err := pg.GetTrashItem(ctx, "no_such_kind", "00000000-0000-0000-0000-000000000000"); !errors.Is(err, ErrTrashUnknownKind) {
+		t.Errorf("GetTrashItem(no_such_kind) = %v, want ErrTrashUnknownKind", err)
+	}
 
-		if _, err := pg.ListExpiredTrash(ctx, 10); err != nil {
-			t.Errorf("ListExpiredTrash: %v", err)
-		}
+	if _, err := pg.ListExpiredTrash(ctx, 10); err != nil {
+		t.Errorf("ListExpiredTrash: %v", err)
 	}
 
 	if _, _, err := pg.ListTrash(ctx, models.TrashFilter{IncludeRepositories: true}); err != nil {
@@ -77,13 +52,55 @@ func TestTrashSpecsCoverEveryDeletedAtTable(t *testing.T) {
 	}
 }
 
+// fileID returns the live package_files id at path.
+func fileID(t *testing.T, s *quotaSeeder, path string) string {
+	t.Helper()
+
+	return s.queryID(`SELECT id FROM package_files WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, s.repo, path)
+}
+
 func mavenArtifactID(t *testing.T, s *quotaSeeder, path string) string {
 	t.Helper()
 
-	return s.queryID(`SELECT id FROM maven_artifacts WHERE repository_id = $1 AND repo_path = $2 AND deleted_at IS NULL`, s.repo, path)
+	return fileID(t, s, path)
+}
+
+func countRows(t *testing.T, pg *PostgresDB, query string, args ...any) int {
+	t.Helper()
+
+	var n int
+	if err := pg.GetDB().QueryRowContext(context.Background(), query, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+
+	return n
+}
+
+// checkTrashedMavenItem asserts the single trash item of repoID: the maven
+// descriptor names it by path, the version comes from the version row and the
+// purge date is the retention window after the delete.
+func checkTrashedMavenItem(t *testing.T, pg *PostgresDB, repoID, id, path string) {
+	t.Helper()
+
+	items, total, err := pg.ListTrash(context.Background(), models.TrashFilter{RepositoryID: repoID})
+	if err != nil || total != 1 || len(items) != 1 {
+		t.Fatalf("ListTrash = %d items, total %d, err %v; want 1", len(items), total, err)
+	}
+
+	it := items[0]
+	if it.Kind != models.TrashKindMaven || it.ID != id || it.Name != path || it.Version != "1.0" ||
+		it.SizeBytes != 100 || it.DeletedBy != "alice" || it.RepositoryName != "trash-maven" || it.Format != "maven" {
+		t.Fatalf("unexpected item %+v", it)
+	}
+
+	if d := it.PurgeAt.Sub(it.DeletedAt).Hours(); d < 7*24-1 || d > 7*24+1 {
+		t.Fatalf("purge_at - deleted_at = %vh, want 168h", d)
+	}
 }
 
 func TestTrashRowsLifecycle(t *testing.T) {
+	registerTrashFixtures(t)
+
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
 
@@ -99,28 +116,41 @@ func TestTrashRowsLifecycle(t *testing.T) {
 		t.Fatalf("TrashRows = %v, %v; want soft delete", soft, err)
 	}
 
+	// The file and its version are stamped together; nothing else is touched.
+	if n := countRows(
+		t,
+		pg,
+		`SELECT COUNT(*) FROM package_files WHERE id = $1 AND deleted_at IS NOT NULL AND deleted_by = 'alice'`,
+		id,
+	); n != 1 {
+		t.Fatalf("file not stamped: %d", n)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_versions WHERE repository_id = $1 AND deleted_at IS NOT NULL`, s.repo); n != 1 {
+		t.Fatalf("version of the last file not stamped: %d", n)
+	}
+
 	// Trashing twice finds no live row.
 	if _, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{id}, "alice"); !errors.Is(err, ErrTrashNotFound) {
 		t.Fatalf("second TrashRows = %v, want ErrTrashNotFound", err)
 	}
 
-	items, total, err := pg.ListTrash(ctx, models.TrashFilter{RepositoryID: s.repo})
-	if err != nil || total != 1 || len(items) != 1 {
-		t.Fatalf("ListTrash = %d items, total %d, err %v; want 1", len(items), total, err)
+	checkTrashedMavenItem(t, pg, s.repo, id, path)
+
+	// Restoring un-stamps the file and its version.
+	if _, err := pg.RestoreTrash(ctx, models.TrashKindMaven, id); err != nil {
+		t.Fatalf("RestoreTrash: %v", err)
 	}
 
-	it := items[0]
-	if it.Kind != models.TrashKindMaven || it.ID != id || it.Name != path || it.Version != "1.0" ||
-		it.SizeBytes != 100 || it.DeletedBy != "alice" || it.RepositoryName != "trash-maven" {
-		t.Fatalf("unexpected item %+v", it)
-	}
-
-	if d := it.PurgeAt.Sub(it.DeletedAt).Hours(); d < 7*24-1 || d > 7*24+1 {
-		t.Fatalf("purge_at - deleted_at = %vh, want 168h", d)
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_files f JOIN package_versions v ON v.id = f.version_id
+	                          WHERE f.id = $1 AND f.deleted_at IS NULL AND v.deleted_at IS NULL`, id); n != 1 {
+		t.Fatalf("file or version still trashed after the restore: %d", n)
 	}
 }
 
 func TestTrashRestoreConflictsWithReusedPath(t *testing.T) {
+	registerTrashFixtures(t)
+
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
 
@@ -135,17 +165,19 @@ func TestTrashRestoreConflictsWithReusedPath(t *testing.T) {
 		t.Fatalf("TrashRows = %v, %v", soft, err)
 	}
 
-	// Reusing the path while the old row sits in the trash is allowed...
-	s.exec(`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id)
-	        VALUES ($1, 'g', 'a1', '1.0', 'jar', $2, $3)`, s.repo, path, s.blob(5))
+	// Reusing the path while the old row sits in the trash is allowed (same
+	// package and version: a new live version incarnation)...
+	s.write("maven", "g:a1", "1.0", path, s.blob(5))
 
 	// ...and makes the restore a conflict.
 	if _, err := pg.RestoreTrash(ctx, models.TrashKindMaven, id); !errors.Is(err, ErrTrashConflict) {
 		t.Fatalf("RestoreTrash with reused path = %v, want ErrTrashConflict", err)
 	}
 
-	s.exec(`DELETE FROM maven_artifacts WHERE repository_id = $1 AND repo_path = $2 AND deleted_at IS NULL`, s.repo, path)
+	s.exec(`DELETE FROM package_files WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL`, s.repo, path)
 
+	// The re-published version is live and empty: the restored file joins it
+	// and the stale incarnation is pruned.
 	got, err := pg.RestoreTrash(ctx, models.TrashKindMaven, id)
 	if err != nil || got.RepositoryID != s.repo {
 		t.Fatalf("RestoreTrash = %+v, %v", got, err)
@@ -155,12 +187,69 @@ func TestTrashRestoreConflictsWithReusedPath(t *testing.T) {
 		t.Fatal("restored row is not the original")
 	}
 
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_versions WHERE repository_id = $1`, s.repo); n != 1 {
+		t.Fatalf("%d versions after the restore, want the single live one", n)
+	}
+
 	if _, err := pg.RestoreTrash(ctx, models.TrashKindMaven, id); !errors.Is(err, ErrTrashNotFound) {
 		t.Fatalf("restoring a live row = %v, want ErrTrashNotFound", err)
 	}
 }
 
+// A file of a multi-file version that is trashed alone leaves the version live;
+// the version is stamped only with its last live file.
+func TestTrashVersionStampFollowsLastFile(t *testing.T) {
+	registerTrashFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "trash-lastfile", "maven")
+
+	s.writeFiles(&PackageWrite{
+		RepoID: s.repo, Format: "maven", Name: "g:a", NameKey: "g:a", Version: "1.0", VersionKey: "1.0",
+		Files: []FileWrite{
+			{Path: "g/a/1.0/a-1.0.jar", Filename: "a-1.0.jar", Blob: s.blobs[s.blob(10)]},
+			{Path: "g/a/1.0/a-1.0.pom", Filename: "a-1.0.pom", Blob: s.blobs[s.blob(3)]},
+		},
+	})
+
+	jar, pom := fileID(t, s, "g/a/1.0/a-1.0.jar"), fileID(t, s, "g/a/1.0/a-1.0.pom")
+	liveVersions := func() int {
+		return countRows(t, pg, `SELECT COUNT(*) FROM package_versions WHERE repository_id = $1 AND deleted_at IS NULL`, s.repo)
+	}
+
+	if _, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{jar}, "x"); err != nil || liveVersions() != 1 {
+		t.Fatalf("trashing the jar: err %v, live versions %d; want the version live", err, liveVersions())
+	}
+
+	if _, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{pom}, "x"); err != nil || liveVersions() != 0 {
+		t.Fatalf("trashing the pom: err %v, live versions %d; want the version stamped", err, liveVersions())
+	}
+
+	if _, err := pg.RestoreTrash(ctx, models.TrashKindMaven, jar); err != nil || liveVersions() != 1 {
+		t.Fatalf("restoring the jar: err %v, live versions %d; want the version live again", err, liveVersions())
+	}
+
+	// The pom restores into the version the jar revived, not into a new one.
+	if _, err := pg.RestoreTrash(ctx, models.TrashKindMaven, pom); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := countRows(
+		t,
+		pg,
+		`SELECT COUNT(DISTINCT version_id) FROM package_files WHERE repository_id = $1 AND deleted_at IS NULL`,
+		s.repo,
+	); n != 1 {
+		t.Fatalf("files spread over %d versions after the restores, want 1", n)
+	}
+}
+
 func TestTrashPurgeReportsBlobsAndQuota(t *testing.T) {
+	registerTrashFixtures(t)
+
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
 
@@ -188,13 +277,205 @@ func TestTrashPurgeReportsBlobsAndQuota(t *testing.T) {
 		t.Fatalf("purge result = %+v", res)
 	}
 
-	var n int
-	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM maven_artifacts WHERE id = $1`, id).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("row still present after purge: %d, %v", n, err)
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_files WHERE id = $1`, id); n != 0 {
+		t.Fatalf("file still present after purge: %d", n)
+	}
+
+	// The emptied version and package go with the last file.
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_versions WHERE repository_id = $1`, s.repo); n != 0 {
+		t.Fatalf("%d versions left after the purge", n)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM packages WHERE repository_id = $1`, s.repo); n != 0 {
+		t.Fatalf("%d packages left after the purge", n)
+	}
+
+	// The hard delete queued the release the purge worker takes back.
+	if n := pendingEntries(t, pg, s.repo); n != 1 {
+		t.Fatalf("%d pending quota releases after the purge, want 1", n)
+	}
+}
+
+// Trashing, restoring and purging a go module acts on the zip and the go.mod
+// together: one item, one artifact, both blobs.
+func TestTrashVersionScopeTakesCompanionFiles(t *testing.T) {
+	registerTrashFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "trash-gomod", "go")
+
+	zip, mod := s.blob(100), s.blob(7)
+	s.writeFiles(&PackageWrite{
+		RepoID: s.repo, Format: "go", Name: "example.com/m", NameKey: "example.com/m", Version: "v1.0.0", VersionKey: "v1.0.0",
+		Files: []FileWrite{
+			{Path: "example.com/m/@v/v1.0.0.zip", Filename: "v1.0.0.zip", Blob: s.blobs[zip]},
+			{Path: "example.com/m/@v/v1.0.0.mod", Filename: "v1.0.0.mod", Role: "mod", Unlisted: true, Blob: s.blobs[mod]},
+		},
+	})
+
+	zipID := fileID(t, s, "example.com/m/@v/v1.0.0.zip")
+
+	if soft, err := pg.TrashRows(ctx, s.repo, models.TrashKindGoMod, []string{zipID}, "dan"); err != nil || !soft {
+		t.Fatalf("TrashRows = %v, %v", soft, err)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NOT NULL`, s.repo); n != 2 {
+		t.Fatalf("%d files stamped, want zip and go.mod", n)
+	}
+
+	items, total, err := pg.ListTrash(ctx, models.TrashFilter{RepositoryID: s.repo})
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != zipID || items[0].SizeBytes != 107 {
+		t.Fatalf("ListTrash = %+v, total %d, %v; want the zip item sized 107", items, total, err)
+	}
+
+	if _, err := pg.RestoreTrash(ctx, models.TrashKindGoMod, zipID); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1 AND deleted_at IS NULL`, s.repo); n != 2 {
+		t.Fatalf("%d files live after the restore, want 2", n)
+	}
+
+	if _, err := pg.TrashRows(ctx, s.repo, models.TrashKindGoMod, []string{zipID}, "dan"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := pg.PurgeTrash(ctx, models.TrashKindGoMod, zipID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(res.BlobSHA256) != 2 || res.QuotaArtifacts != 1 || res.QuotaBytes != 107 {
+		t.Fatalf("purge result = %+v, want 2 blobs, 1 artifact, 107 bytes", res)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, s.repo); n != 0 {
+		t.Fatalf("%d files left after the purge", n)
+	}
+}
+
+// The npm descriptor hooks keep the packument validator and the dist-tags in
+// step with trash, restore, purge and the retention worker's hard delete.
+func TestTrashNPMHooks(t *testing.T) {
+	registerTrashFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "trash-npm", "npm")
+
+	s.npm(s.blob(10))
+
+	pkgID := s.queryID(`SELECT id FROM packages WHERE repository_id = $1`, s.repo)
+	s.exec(`INSERT INTO package_tags (package_id, tag, version) VALUES ($1, 'latest', '1.0.0')`, pkgID)
+
+	id := s.queryID(`SELECT id FROM package_files WHERE repository_id = $1`, s.repo)
+
+	rewind := func() {
+		s.exec(`UPDATE packages SET updated_at = now() - interval '1 hour' WHERE id = $1`, pkgID)
+	}
+	bumped := func(what string) {
+		t.Helper()
+
+		if n := countRows(
+			t,
+			pg,
+			`SELECT COUNT(*) FROM packages WHERE id = $1 AND updated_at > now() - interval '1 minute'`,
+			pkgID,
+		); n != 1 {
+			t.Fatalf("%s did not bump the packument validator", what)
+		}
+	}
+
+	rewind()
+
+	if _, err := pg.TrashRows(ctx, s.repo, models.TrashKindNPM, []string{id}, "eve"); err != nil {
+		t.Fatal(err)
+	}
+
+	bumped("trash")
+	rewind()
+
+	if _, err := pg.RestoreTrash(ctx, models.TrashKindNPM, id); err != nil {
+		t.Fatal(err)
+	}
+
+	bumped("restore")
+
+	keys, err := newKeysOf(pg, ctx, id)
+	if err != nil || keys != pkgID {
+		t.Fatalf("RegenKeys = %q, %v; want the package id", keys, err)
+	}
+
+	// A purge drops the tags of the purged version, unless a live one remains.
+	if _, err := pg.TrashRows(ctx, s.repo, models.TrashKindNPM, []string{id}, "eve"); err != nil {
+		t.Fatal(err)
+	}
+
+	rewind()
+
+	if _, err := pg.PurgeTrash(ctx, models.TrashKindNPM, id); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_tags WHERE package_id = $1`, pkgID); n != 0 {
+		t.Fatalf("%d dist-tags survived the purge of their version", n)
+	}
+
+	// The package row went with its last version, so there is no packument to bump.
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM packages WHERE id = $1`, pkgID); n != 0 {
+		t.Fatalf("package row survived its last version: %d", n)
+	}
+}
+
+func newKeysOf(pg *PostgresDB, ctx context.Context, id string) (string, error) {
+	a, _, err := pg.RegenKeys(ctx, models.TrashKindNPM, id)
+
+	return a, err
+}
+
+// HardDeleteFiles removes live files for good and reports what the caller frees.
+func TestHardDeleteFilesReportsUsage(t *testing.T) {
+	registerTrashFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "hard-delete", "maven")
+
+	s.maven(s.blob(40))
+	s.maven(s.blob(60))
+
+	a, b := fileID(t, s, "g/a1/1.0/a-1.0.jar"), fileID(t, s, "g/a2/1.0/a-1.0.jar")
+
+	// A trashed file is not live: the hard delete skips it.
+	pg.SetTrashRetentionDays(7)
+
+	if soft, err := pg.TrashRows(ctx, s.repo, models.TrashKindMaven, []string{b}, "x"); err != nil || !soft {
+		t.Fatalf("TrashRows = %v, %v", soft, err)
+	}
+
+	got, err := pg.HardDeleteFiles(ctx, s.repo, []string{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 1 || got[0].ID != a || got[0].QuotaArtifacts != 1 || got[0].QuotaBytes != 40 || len(got[0].BlobSHA256) != 1 {
+		t.Fatalf("HardDeleteFiles = %+v, want only the live file with 1 artifact, 40 bytes, 1 blob", got)
+	}
+
+	if n := countRows(t, pg, `SELECT COUNT(*) FROM package_files WHERE id = $1`, a); n != 0 {
+		t.Fatal("file survived the hard delete")
 	}
 }
 
 func TestTrashRetentionResolution(t *testing.T) {
+	registerTrashFixtures(t)
+
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
 
@@ -246,7 +527,7 @@ func TestTrashRetentionResolution(t *testing.T) {
 		t.Fatalf("fresh item expired early: %v, %v", refs, err)
 	}
 
-	s.exec(`UPDATE maven_artifacts SET deleted_at = now() - interval '25 hours' WHERE id = $1`, id)
+	s.exec(`UPDATE package_files SET deleted_at = now() - interval '25 hours' WHERE id = $1`, id)
 
 	refs, err = pg.ListExpiredTrash(ctx, 10)
 	if err != nil || len(refs) != 1 || refs[0].ID != id || refs[0].Kind != models.TrashKindMaven {
@@ -255,6 +536,8 @@ func TestTrashRetentionResolution(t *testing.T) {
 }
 
 func TestTrashRepositoryHidesAndRestores(t *testing.T) {
+	registerTrashFixtures(t)
+
 	pg := newQuotaTestDB(t, 8)
 	pg.SetTrashRetentionDays(7)
 
@@ -309,7 +592,7 @@ func TestTrashRepositoryHidesAndRestores(t *testing.T) {
 
 	var n int
 	if err := pg.GetDB().
-		QueryRowContext(ctx, `SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, s.repo).
+		QueryRowContext(ctx, `SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, s.repo).
 		Scan(&n); err != nil ||
 		n != 0 {
 		t.Fatalf("repository contents survived the purge: %d, %v", n, err)
