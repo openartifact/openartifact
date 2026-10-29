@@ -63,6 +63,7 @@ type PostgresDB struct {
 	*GoModStore
 	*DockerStore
 	*HelmStore
+	*PyPIStore
 	// STORES-STRUCT
 }
 
@@ -123,6 +124,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		GoModStore:           &GoModStore{core: c},
 		DockerStore:          &DockerStore{core: c},
 		HelmStore:            &HelmStore{core: c},
+		PyPIStore:            &PyPIStore{core: c},
 		// STORES-INIT
 	}
 }
