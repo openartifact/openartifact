@@ -111,9 +111,13 @@ func (s *purgeSeed) commitUpload(ctx context.Context, store storage.BlobStore, r
 			n := rand.Text()
 
 			_, err = s.pg.GetDB().ExecContext(ctx,
-				`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id)
-				 VALUES ($1, 'g', $2, '1.0', 'jar', $3, $4)`,
-				repoID, "c"+n, fmt.Sprintf("g/c%[1]s/1.0/c%[1]s-1.0.jar", n), blobID)
+				`WITH p AS (INSERT INTO packages (repository_id, format, name, name_key)
+				            VALUES ($1, 'maven', $2::text, $2::text) RETURNING id),
+				      v AS (INSERT INTO package_versions (package_id, repository_id, version, version_key)
+				            SELECT p.id, $1, '1.0', '1.0' FROM p RETURNING id)
+				 INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, part)
+				 SELECT v.id, $1, $3::text, $3::text, $4, 'false' FROM v`,
+				repoID, "g:c"+n, fmt.Sprintf("g/c%[1]s/1.0/c%[1]s-1.0.jar", n), blobID)
 			if err != nil {
 				return fmt.Errorf("insert row: %w", err)
 			}
@@ -127,7 +131,7 @@ func (s *purgeSeed) commitUpload(ctx context.Context, store storage.BlobStore, r
 func (s *purgeSeed) unpublishRows(ctx context.Context, store storage.BlobStore, sha string) {
 	s.t.Helper()
 
-	s.exec(`DELETE FROM maven_artifacts WHERE blob_id IN (SELECT id FROM blobs WHERE sha256 = $1)`, sha)
+	s.exec(`DELETE FROM package_files WHERE blob_id IN (SELECT id FROM blobs WHERE sha256 = $1)`, sha)
 
 	if err := storage.SafeDeleteBlob(ctx, s.pg, store, sha); err != nil {
 		s.t.Fatalf("SafeDeleteBlob: %v", err)
@@ -137,7 +141,7 @@ func (s *purgeSeed) unpublishRows(ctx context.Context, store storage.BlobStore, 
 func (s *purgeSeed) rowsOf(sha string) int {
 	s.t.Helper()
 
-	return s.count(`SELECT COUNT(*) FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha)
+	return s.count(`SELECT COUNT(*) FROM package_files m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha)
 }
 
 func (s *purgeSeed) hasObject(sha string) bool {
@@ -333,7 +337,7 @@ func TestCommitBlobDoesNotHoldADatabaseConnectionDuringThePut(t *testing.T) {
 		}
 	}
 
-	if n := s.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, repo); n != uploads {
+	if n := s.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, repo); n != uploads {
 		t.Errorf("rows = %d, want %d", n, uploads)
 	}
 }
@@ -394,8 +398,8 @@ func TestCommitBlobVersusDeleteAndSweepStress(t *testing.T) {
 				sha := shas[(d+r)%len(shas)]
 
 				if _, err := s.pg.GetDB().ExecContext(ctx,
-					`DELETE FROM maven_artifacts WHERE id = (
-						SELECT m.id FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1 LIMIT 1)`, sha); err != nil {
+					`DELETE FROM package_files WHERE id = (
+						SELECT m.id FROM package_files m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1 LIMIT 1)`, sha); err != nil {
 					fail("delete row: %v", err)
 
 					return
@@ -482,7 +486,7 @@ func (s *purgeSeed) checkInvariantUntil(ctx context.Context, stop <-chan struct{
 			err := storage.WithBlobLock(ctx, s.pg, sha, func(ctx context.Context) error {
 				var refs int
 				if err := s.pg.GetDB().QueryRowContext(ctx,
-					`SELECT COUNT(*) FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha).
+					`SELECT COUNT(*) FROM package_files m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha).
 					Scan(&refs); err != nil {
 					return err
 				}

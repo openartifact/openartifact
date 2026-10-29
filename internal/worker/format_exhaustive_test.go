@@ -10,60 +10,34 @@ import (
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/repotype/repotypetest"
 )
 
-// TestCleanupFormatTablesCoverEveryFormat: every format has cleanup tables, and
-// they are the format's package tables from the registry. Docker's manifests
-// are not ranked: they are reclaimed by registry garbage collection once their
-// tags are gone.
-func TestCleanupFormatTablesCoverEveryFormat(t *testing.T) {
-	t.Parallel()
+// TestCleanupFormatSupported: a format is supported when it has a storage
+// descriptor (what the plugin layer registers for every package format) or is
+// docker, the one special case with dedicated tables.
+func TestCleanupFormatSupported(t *testing.T) {
+	storage.Reset()
+	t.Cleanup(storage.Reset)
 
-	repotypetest.Classified(t, "worker.cleanupFormatTables", repotype.Names(), nil)
+	storage.Register("fixture", storage.Storage{Trash: storage.Trash{Kind: "fixture_item"}})
 
-	repotypetest.Each(t, func(t *testing.T, format string) {
-		t.Helper()
-
-		t.Parallel()
-
-		if !CleanupFormatSupported(format) {
-			t.Fatalf("CleanupFormatSupported(%s) = false: add cleanup tables for the format", format)
+	for format, want := range map[string]bool{"fixture": true, "docker": true, "no-such-format": false} {
+		if got := CleanupFormatSupported(format); got != want {
+			t.Errorf("CleanupFormatSupported(%s) = %v, want %v", format, got, want)
 		}
+	}
 
-		spec, _ := repotype.Lookup(format)
+	tbl, ok := cleanupTableFor("fixture")
+	if !ok || tbl.kind != "fixture_item" || tbl.docker {
+		t.Errorf("cleanupTableFor(fixture) = %+v, %v", tbl, ok)
+	}
 
-		var got []string
-
-		for _, tbl := range cleanupFormatTables(format) {
-			got = append(got, tbl.table)
-
-			if tbl.kind == "" || len(tbl.partitionCols) == 0 || tbl.versionExpr == "" {
-				t.Errorf("%s: table %s has no trash kind, partition or version expression", format, tbl.table)
-			}
-		}
-
-		want := slices.Clone(spec.PackageTables)
-		switch format {
-		case "docker":
-			want = []string{"docker_tags"}
-		case "npm":
-			// Versions are ranked; a package row goes with its last version (refreshNPM).
-			want = []string{"npm_versions"}
-		}
-
-		slices.Sort(got)
-		slices.Sort(want)
-
-		if !slices.Equal(got, want) {
-			t.Errorf("cleanup tables of %s = %v, want %v", format, got, want)
-		}
-	})
-
-	if CleanupFormatSupported("no-such-format") {
-		t.Error("CleanupFormatSupported accepted an unregistered format")
+	if tbl, _ := cleanupTableFor("docker"); !tbl.docker || tbl.kind != models.TrashKindDockerTag {
+		t.Errorf("cleanupTableFor(docker) = %+v", tbl)
 	}
 }
 

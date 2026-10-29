@@ -713,7 +713,7 @@ func (p *TieringStore) ListPromotionCandidates(
 	return scanBlobFacts(rows)
 }
 
-// blobRefScopeSpec describes how one package table names the repository entry
+// blobRefScopeSpec describes how one referrer table names the repository entry
 // that references a blob: the SQL for the repository id, the blob join
 // condition and the artifact path policies match with path_glob.
 type blobRefScopeSpec struct {
@@ -723,56 +723,16 @@ type blobRefScopeSpec struct {
 	path     string
 }
 
-// blobRefScopeSpecs lists, per package table, where a blob's repository, format
-// and path come from. It parallels blobRefSpecs (which only counts references);
-// a table missing here still blocks deletion but is invisible to repo/format/path
-// conditions of tiering policies.
+// blobRefScopeSpecs lists where a blob's repository, format and path come from.
+// It parallels blobRefSpecs (which only counts references); a table missing
+// here still blocks deletion but is invisible to repo/format/path conditions of
+// tiering policies. Every package format except docker shares package_files,
+// whose path is the artifact path of the format (maven repo path, npm
+// name/-/tarball, pypi and rpm file names, ...).
 var blobRefScopeSpecs = []blobRefScopeSpec{ //nolint:gochecknoglobals // built once, read-only
-	{"rpm_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
-	{"deb_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
-	{
-		"npm_versions t JOIN npm_packages np ON np.id = t.package_id",
-		"np.repository_id",
-		"t.blob_id = b.id",
-		"np.full_name || '/' || t.tarball_filename",
-	},
-	{"maven_artifacts t", "t.repository_id", "t.blob_id = b.id", "t.repo_path"},
+	{"package_files t", "t.repository_id", "t.blob_id = b.id", "t.path"},
 	{"docker_blobs t", "t.repository_id", "t.blob_id = b.id", "t.digest"},
 	{"docker_manifests t", "t.repository_id", "t.blob_id = b.id", "t.digest"},
-	{"pypi_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
-	{"nuget_packages t", "t.repository_id", "t.blob_id = b.id", "t.package_id || '/' || t.version"},
-	{"gomod_modules t", "t.repository_id", "t.zip_blob_id = b.id", "t.module_path || '/@v/' || t.version || '.zip'"},
-	{"gomod_modules t", "t.repository_id", "t.mod_blob_id = b.id", "t.module_path || '/@v/' || t.version || '.mod'"},
-	{"cargo_crates t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
-	{"composer_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
-	{"rubygems_gems t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
-	{"ansible_collections t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
-	{"pacman_packages t", "t.repository_id", "t.blob_id = b.id", "t.filename"},
-	{"nix_paths t", "t.repository_id", "t.blob_id = b.id", "t.store_hash || '-' || t.name"},
-	{"conda_packages t", "t.repository_id", "t.blob_id = b.id", "t.platform || '/' || t.name || '-' || t.version || '-' || t.build_string"},
-	{"conan_packages t", "t.repository_id", "t.blob_id = b.id", "t.name || '/' || t.version"},
-	{"terraform_modules t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.system || '-' || t.version"},
-	{"terraform_providers t", "t.repository_id", "t.blob_id = b.id", "t.type || '_' || t.version || '_' || t.os || '_' || t.arch"},
-	{
-		"apk_packages t",
-		"t.repository_id",
-		"t.blob_id = b.id",
-		"t.branch || '/' || t.repo || '/' || t.arch || '/' || t.name || '-' || t.version",
-	},
-	{
-		"ivy_artifacts t",
-		"t.repository_id",
-		"t.blob_id = b.id",
-		"t.organisation || '/' || t.module || '/' || t.revision || '/' || t.artifact_name",
-	},
-	{
-		"sbt_artifacts t",
-		"t.repository_id",
-		"t.blob_id = b.id",
-		"t.group_id || '/' || t.artifact_id || '/' || t.version || '/' || t.filename",
-	},
-	{"helm_charts t", "t.repository_id", "t.blob_id = b.id", "t.name || '-' || t.version"},
-	{"raw_artifacts t", "t.repository_id", "t.blob_id = b.id", "t.path"},
 	{"proxy_cache_entries t", "t.repository_id", "t.blob_key = b.sha256", "t.cache_key"},
 }
 

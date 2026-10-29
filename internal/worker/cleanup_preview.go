@@ -125,20 +125,14 @@ func (w *CleanupWorker) previewRepository(ctx context.Context, policy *models.Cl
 		return nil, ErrRepositoryNotFound
 	}
 
-	tables := cleanupFormatTables(repo.Format)
-	if len(tables) == 0 {
+	t, ok := cleanupTableFor(repo.Format)
+	if !ok {
 		return nil, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
-	var eligible []cleanupCandidate
-
-	for _, t := range tables {
-		part, err := w.planCandidates(ctx, policy, repo, t)
-		if err != nil {
-			return nil, err
-		}
-
-		eligible = append(eligible, part...)
+	eligible, err := w.planCandidates(ctx, policy, repo, t)
+	if err != nil {
+		return nil, err
 	}
 
 	prev := &CleanupPreview{Repository: repo.Name, Format: repo.Format, Rows: len(eligible)}
@@ -158,7 +152,7 @@ func (w *CleanupWorker) planCandidates(
 	ctx context.Context,
 	policy *models.CleanupPolicy,
 	repo *models.Repository,
-	t formatTable,
+	t cleanupTable,
 ) ([]cleanupCandidate, error) {
 	selected, err := w.selectCandidates(ctx, policy, t)
 	if err != nil {

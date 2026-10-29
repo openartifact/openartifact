@@ -86,3 +86,55 @@ func TestBlobReferencesCoverMetadataAndDeltas(t *testing.T) {
 		t.Fatalf("queued deletions = %d (err %v), want the ghost's bytes queued", n, err)
 	}
 }
+
+// A package file references its blob while live and while it sits in the trash
+// (the purge frees the bytes); ArtifactExists only counts live files of the
+// repository, whatever the format.
+func TestBlobReferencesCountPackageFiles(t *testing.T) {
+	registerTrashFixtures(t)
+
+	pg := newQuotaTestDB(t, 8)
+	pg.SetTrashRetentionDays(7)
+
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "blob-refs-files", "helm")
+	other := newQuotaSeeder(t, pg, "blob-refs-other", "helm")
+
+	blob := s.blob(11)
+	s.helm(blob)
+
+	sha := s.queryID(`SELECT sha256 FROM blobs WHERE id = $1`, blob)
+
+	if n, err := pg.BlobReferenceCount(ctx, sha); err != nil || n != 1 {
+		t.Fatalf("live file: BlobReferenceCount = %d, %v; want 1", n, err)
+	}
+
+	if ok, err := pg.ArtifactExists(ctx, sha, s.repo); err != nil || !ok {
+		t.Fatalf("ArtifactExists(own repo) = %v, %v; want true", ok, err)
+	}
+
+	if ok, err := pg.ArtifactExists(ctx, sha, other.repo); err != nil || ok {
+		t.Fatalf("ArtifactExists(other repo) = %v, %v; want false", ok, err)
+	}
+
+	id := s.queryID(`SELECT id FROM package_files WHERE repository_id = $1`, s.repo)
+	if soft, err := pg.TrashRows(ctx, s.repo, "helm_chart", []string{id}, "x"); err != nil || !soft {
+		t.Fatalf("TrashRows = %v, %v", soft, err)
+	}
+
+	if n, err := pg.BlobReferenceCount(ctx, sha); err != nil || n != 1 {
+		t.Fatalf("trashed file: BlobReferenceCount = %d, %v; want 1 (the purge frees it)", n, err)
+	}
+
+	if ok, err := pg.ArtifactExists(ctx, sha, s.repo); err != nil || ok {
+		t.Fatalf("ArtifactExists(trashed) = %v, %v; want false", ok, err)
+	}
+
+	if _, err := pg.PurgeTrash(ctx, "helm_chart", id); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := pg.BlobReferenceCount(ctx, sha); err != nil || n != 0 {
+		t.Fatalf("purged file: BlobReferenceCount = %d, %v; want 0", n, err)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
 // cleanupSeed is a purgeSeed whose server keeps no trash, so a policy run
@@ -35,16 +36,7 @@ func newCleanupSeed(t *testing.T) *cleanupSeed {
 	return &cleanupSeed{purgeSeed: s, w: NewCleanupWorker(s.pg, s.blobs, testLogger(t))}
 }
 
-// mvnRow describes one maven row: artifact, version, file extension, age in
-// days and, for a snapshot build, its timestamp and build number.
-type mvnRow struct {
-	artifact, version, ext string
-	ageDays                int
-	snapTS                 string
-	snapBuild              int
-}
-
-// mvn inserts the row (with a blob of its own) into repoID and returns its id
+// mvn writes the row (with a blob of its own) into repoID and returns its id
 // and the blob's sha256.
 func (s *cleanupSeed) mvn(repoID string, r mvnRow) (string, string) {
 	s.t.Helper()
@@ -53,27 +45,7 @@ func (s *cleanupSeed) mvn(repoID string, r mvnRow) (string, string) {
 
 	blobID, sha := s.blob(fmt.Sprintf("content %d %v", s.seq, r), 2*time.Hour)
 
-	path := fmt.Sprintf("g/%s/%s/%s-%s.%s", r.artifact, r.version, r.artifact, r.version, r.ext)
-	if r.snapTS != "" {
-		path = fmt.Sprintf("g/%s/%s/%s-%s-%d.%s", r.artifact, r.version, r.artifact, r.snapTS, r.snapBuild, r.ext)
-	}
-
-	var ts any
-	if r.snapTS != "" {
-		ts = r.snapTS
-	}
-
-	var id string
-	if err := s.pg.GetDB().QueryRowContext(context.Background(),
-		`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path,
-			blob_id, is_snapshot, snapshot_timestamp, snapshot_build_number, created_at, updated_at)
-		 VALUES ($1, 'g', $2, $3, $4, $5, $6, $7, $8, $9,
-			now() - make_interval(days => $10), now() - make_interval(days => $10)) RETURNING id`,
-		repoID, r.artifact, r.version, r.ext, path, blobID, r.snapTS != "", ts, r.snapBuild, r.ageDays).Scan(&id); err != nil {
-		s.t.Fatalf("insert maven row %+v: %v", r, err)
-	}
-
-	return id, sha
+	return s.mavenFile(repoID, blobID, r), sha
 }
 
 func (s *cleanupSeed) policy(repoID string, keepLast, keepSince *int, pattern string) *models.CleanupPolicy {
@@ -195,7 +167,7 @@ func TestCleanupPolicySelection(t *testing.T) {
 			}
 
 			// The preview removed nothing.
-			if n := s.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, repoID); n != len(rows) {
+			if n := s.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, repoID); n != len(rows) {
 				t.Fatalf("preview changed the table: %d rows, want %d", n, len(rows))
 			}
 
@@ -224,6 +196,11 @@ func TestCleanupPolicySelection(t *testing.T) {
 func TestCleanupPolicyRanksArchitecturesSeparately(t *testing.T) {
 	s := newCleanupSeed(t)
 
+	storage.Register("rpm", storage.Storage{
+		Trash:   storage.Trash{Kind: "rpm_package"},
+		Cleanup: storage.Cleanup{VersionExpr: "split_part(v.version_key, '|', 1)"},
+	})
+
 	repo := &models.Repository{Name: "rpms", Format: "rpm", RepoType: "hosted", ProjectID: new(trashTestOrgID)}
 	if err := s.pg.CreateRepository(context.Background(), repo); err != nil {
 		t.Fatal(err)
@@ -235,8 +212,13 @@ func TestCleanupPolicyRanksArchitecturesSeparately(t *testing.T) {
 
 		var id string
 		if err := s.pg.GetDB().QueryRowContext(context.Background(),
-			`INSERT INTO rpm_packages (repository_id, blob_id, name, version, arch, created_at)
-			 VALUES ($1, $2, 'tool', $3, $4, now() - make_interval(days => $5)) RETURNING id`,
+			`WITH p AS (INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, 'rpm', 'tool', 'tool')
+			            ON CONFLICT (repository_id, name_key) DO UPDATE SET name = EXCLUDED.name RETURNING id),
+			      v AS (INSERT INTO package_versions (package_id, repository_id, version, version_key, created_at)
+			            SELECT p.id, $1, $3::text, $3::text || '|' || $4::text, now() - make_interval(days => $5) FROM p RETURNING id)
+			 INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, arch, created_at)
+			 SELECT v.id, $1, 'tool-' || $3::text || '.' || $4::text || '.rpm', 'tool-' || $3::text || '.' || $4::text || '.rpm', $2, $4::text,
+			        now() - make_interval(days => $5) FROM v RETURNING id`,
 			repo.ID, blobID, version, arch, ageDays).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
@@ -252,7 +234,7 @@ func TestCleanupPolicyRanksArchitecturesSeparately(t *testing.T) {
 	}
 
 	live := func(id string) bool {
-		return s.count(`SELECT COUNT(*) FROM rpm_packages WHERE id = $1`, id) == 1
+		return s.rowExists(id)
 	}
 
 	if live(oldAMD) || !live(oldARM) || !live(newAMD) {
@@ -271,11 +253,10 @@ func TestCleanupPolicyRefcountsSharedBlobs(t *testing.T) {
 	sharedID, sharedSHA := s.blob("shared by both repositories", 2*time.Hour)
 	ownID, ownSHA := s.blob("only the old row uses it", 2*time.Hour)
 
-	oldA, newA, sharedB := s.maven(repoA, ownID), s.maven(repoA, sharedID), s.maven(repoB, sharedID)
-
 	// Distinct coordinates and ages: keep the newest of repo A's two rows.
-	s.exec(`UPDATE maven_artifacts SET artifact_id_coord = 'x', version = '1', created_at = now() - interval '30 days' WHERE id = $1`, oldA)
-	s.exec(`UPDATE maven_artifacts SET artifact_id_coord = 'x', version = '2' WHERE id = $1`, newA)
+	oldA := s.mavenFile(repoA, ownID, mvnRow{artifact: "x", version: "1", ext: "jar", ageDays: 30})
+	newA := s.mavenFile(repoA, sharedID, mvnRow{artifact: "x", version: "2", ext: "jar"})
+	sharedB := s.mavenFile(repoB, sharedID, mvnRow{artifact: "x", version: "3", ext: "jar", ageDays: 30})
 
 	deleted, err := s.w.runPolicy(ctx, s.policy(repoA, new(1), nil, ""))
 	if err != nil || deleted != 1 {
@@ -291,11 +272,6 @@ func TestCleanupPolicyRefcountsSharedBlobs(t *testing.T) {
 	}
 
 	// Now the shared blob's rows go, one repository at a time.
-	s.exec(
-		`UPDATE maven_artifacts SET artifact_id_coord = 'x', version = '3', created_at = now() - interval '30 days' WHERE id = $1`,
-		sharedB,
-	)
-
 	if _, err := s.w.runPolicy(ctx, s.policy(repoB, nil, new(1), "")); err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +280,7 @@ func TestCleanupPolicyRefcountsSharedBlobs(t *testing.T) {
 		t.Error("shared blob freed while repository A still references it")
 	}
 
-	s.exec(`UPDATE maven_artifacts SET created_at = now() - interval '30 days' WHERE id = $1`, newA)
+	s.exec(`UPDATE package_files SET created_at = now() - interval '30 days' WHERE id = $1`, newA)
 
 	if _, err := s.w.runPolicy(ctx, s.policy(repoA, nil, new(1), "")); err != nil {
 		t.Fatal(err)
@@ -412,9 +388,14 @@ func TestCleanupPolicyPreviewIsBounded(t *testing.T) {
 	extra := 5
 	total := CleanupPreviewLimit + extra
 
-	s.exec(`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id, created_at)
-		SELECT $1, 'g', 'bulk', 'v' || n, 'jar', 'g/bulk/v' || n || '.jar', $2, now() - make_interval(days => 100 + n)
-		FROM generate_series(1, $3::int) n`, repoID, blobID, total)
+	s.exec(`WITH p AS (INSERT INTO packages (repository_id, format, name, name_key)
+	                   VALUES ($1, 'maven', 'g:bulk', 'g:bulk') RETURNING id),
+	             v AS (INSERT INTO package_versions (package_id, repository_id, version, version_key, created_at)
+	                   SELECT p.id, $1, 'v' || n, 'v' || n, now() - make_interval(days => 100 + n)
+	                   FROM p, generate_series(1, $3::int) n RETURNING id, version, created_at)
+	       INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, part, created_at)
+	       SELECT v.id, $1, 'g/bulk/' || v.version || '.jar', 'g/bulk/' || v.version || '.jar', $2, 'false', v.created_at FROM v`,
+		repoID, blobID, total)
 
 	prev := s.preview(s.policy(repoID, new(1), nil, ""))
 	if prev.Rows != total-1 || len(prev.Items) != CleanupPreviewLimit || !prev.Truncated {
@@ -490,7 +471,7 @@ func TestCleanupTriggerPolicy(t *testing.T) {
 		t.Fatalf("invalid policy outcome = %+v, want an error and 0 deleted", got)
 	}
 
-	if n := s.count(`SELECT COUNT(*) FROM maven_artifacts WHERE repository_id = $1`, repoID); n != 1 {
+	if n := s.count(`SELECT COUNT(*) FROM package_files WHERE repository_id = $1`, repoID); n != 1 {
 		t.Fatalf("%d rows left, an invalid policy must not delete", n)
 	}
 }
@@ -563,5 +544,170 @@ func TestCleanupCycleRunsOnlyDuePolicies(t *testing.T) {
 
 	if !s.rowExists(again) {
 		t.Error("a policy that just ran a second time")
+	}
+}
+
+// registerNPMFixture registers the npm descriptor values the plugin registers:
+// the dist-tag protection of the cleanup and the dist-tag drop on purge.
+func registerNPMFixture() {
+	storage.Register("npm", storage.Storage{
+		Trash: storage.Trash{
+			Kind: "npm_version",
+			OnPurge: []string{
+				`DELETE FROM package_tags t USING package_files f, package_versions v
+				  WHERE f.id = $1::uuid AND v.id = f.version_id AND t.package_id = v.package_id AND t.version = v.version`,
+			},
+		},
+		Cleanup: storage.Cleanup{
+			ProtectExpr: `EXISTS (SELECT 1 FROM package_tags t WHERE t.package_id = v.package_id AND t.version = v.version)`,
+		},
+	})
+}
+
+// npmVersion writes one version (with one tarball) of the package pkg of repoID.
+func (s *cleanupSeed) npmVersion(repoID, pkg, version string, ageDays int) string {
+	s.t.Helper()
+
+	s.seq++
+
+	blobID, _ := s.blob(fmt.Sprintf("npm %d", s.seq), time.Hour)
+
+	var id string
+	if err := s.pg.GetDB().QueryRowContext(context.Background(),
+		`WITH p AS (INSERT INTO packages (repository_id, format, name, name_key) VALUES ($1, 'npm', $2::text, $2::text)
+		            ON CONFLICT (repository_id, name_key) DO UPDATE SET name = EXCLUDED.name RETURNING id),
+		      v AS (INSERT INTO package_versions (package_id, repository_id, version, version_key, created_at)
+		            SELECT p.id, $1, $3::text, $3::text, now() - make_interval(days => $5) FROM p RETURNING id)
+		 INSERT INTO package_files (version_id, repository_id, path, filename, blob_id, created_at)
+		 SELECT v.id, $1, $2::text || '/-/' || $3::text || '.tgz', $3::text || '.tgz', $4, now() - make_interval(days => $5) FROM v RETURNING id`,
+		repoID, pkg, version, blobID, ageDays).Scan(&id); err != nil {
+		s.t.Fatalf("insert npm version: %v", err)
+	}
+
+	return id
+}
+
+func (s *cleanupSeed) formatRepo(name, format string) *models.Repository {
+	s.t.Helper()
+
+	repo := &models.Repository{Name: name, Format: format, RepoType: "hosted", ProjectID: new(trashTestOrgID)}
+	if err := s.pg.CreateRepository(context.Background(), repo); err != nil {
+		s.t.Fatalf("CreateRepository(%s): %v", name, err)
+	}
+
+	return repo
+}
+
+// A version a dist-tag points at is never removed by a policy, however old.
+func TestCleanupPolicyNPMProtectsTaggedVersions(t *testing.T) {
+	s := newCleanupSeed(t)
+	registerNPMFixture()
+
+	repo := s.formatRepo("npm-protect", "npm")
+	tagged := s.npmVersion(repo.ID, "left-pad", "1.0.0", 30)
+	older := s.npmVersion(repo.ID, "left-pad", "1.1.0", 20)
+	newest := s.npmVersion(repo.ID, "left-pad", "1.2.0", 10)
+
+	s.exec(
+		`INSERT INTO package_tags (package_id, tag, version) SELECT id, 'stable', '1.0.0' FROM packages WHERE repository_id = $1`,
+		repo.ID,
+	)
+
+	p := s.policy(repo.ID, new(1), nil, "")
+	if got, want := previewIDs(s.preview(p)), []string{older}; !slices.Equal(got, want) {
+		t.Fatalf("preview = %v, want only the untagged old version %v", got, want)
+	}
+
+	if deleted, err := s.w.runPolicy(context.Background(), p); err != nil || deleted != 1 {
+		t.Fatalf("runPolicy = %d, %v; want 1", deleted, err)
+	}
+
+	if s.rowExists(older) || !s.rowExists(tagged) || !s.rowExists(newest) {
+		t.Errorf(
+			"rows: older live %v (want false), tagged %v, newest %v (want true)",
+			s.rowExists(older),
+			s.rowExists(tagged),
+			s.rowExists(newest),
+		)
+	}
+}
+
+// An explicit delete of an npm version drops the dist-tags that pointed at it
+// (the descriptor's OnPurge statement), because the repository keeps no trash.
+func TestDeletePackageDropsNPMTags(t *testing.T) {
+	s := newCleanupSeed(t)
+	registerNPMFixture()
+
+	repo := s.formatRepo("npm-delete", "npm")
+	gone := s.npmVersion(repo.ID, "left-pad", "1.0.0", 5)
+	kept := s.npmVersion(repo.ID, "left-pad", "2.0.0", 1)
+
+	s.exec(`INSERT INTO package_tags (package_id, tag, version) SELECT id, 'old', '1.0.0' FROM packages WHERE repository_id = $1`, repo.ID)
+	s.exec(
+		`INSERT INTO package_tags (package_id, tag, version) SELECT id, 'latest', '2.0.0' FROM packages WHERE repository_id = $1`,
+		repo.ID,
+	)
+
+	res, err := s.w.DeletePackage(context.Background(), repo, gone, nil, "alice")
+	if err != nil || res.Trashed || res.Rows != 1 || res.Name != "left-pad" || res.Version != "1.0.0" {
+		t.Fatalf("DeletePackage = %+v, %v; want one row removed for good", res, err)
+	}
+
+	if s.rowExists(gone) || !s.rowExists(kept) {
+		t.Fatal("wrong version removed")
+	}
+
+	if n := s.count(`SELECT COUNT(*) FROM package_tags WHERE tag = 'old'`); n != 0 {
+		t.Errorf("the dist-tag of the deleted version survived")
+	}
+
+	if n := s.count(`SELECT COUNT(*) FROM package_tags WHERE tag = 'latest'`); n != 1 {
+		t.Errorf("the dist-tag of the kept version was dropped")
+	}
+
+	if _, err := s.w.DeletePackage(context.Background(), repo, gone, nil, "alice"); !errors.Is(err, ErrPackageNotFound) {
+		t.Errorf("deleting a removed row = %v, want ErrPackageNotFound", err)
+	}
+}
+
+// Docker is the one special case of the engine: tags of an image rank by their
+// last update, per image, and a tag removal leaves the other images alone.
+func TestCleanupPolicyDockerTags(t *testing.T) {
+	s := newCleanupSeed(t)
+
+	repo := s.formatRepo("docker-clean", "docker")
+	blobID, _ := s.blob("manifest", time.Hour)
+
+	tag := func(image, name string, ageDays int) string {
+		s.t.Helper()
+
+		digest := fmt.Sprintf("sha256:%s-%s", image, name)
+		s.exec(`INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id)
+		        VALUES ($1, $2, $3, 'application/vnd.oci.image.manifest.v1+json', $4) ON CONFLICT DO NOTHING`, repo.ID, image, digest, blobID)
+
+		var id string
+		if err := s.pg.GetDB().QueryRowContext(context.Background(),
+			`INSERT INTO docker_tags (repository_id, image, name, manifest_digest, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, now() - make_interval(days => $5), now() - make_interval(days => $5)) RETURNING id`,
+			repo.ID, image, name, digest, ageDays).Scan(&id); err != nil {
+			s.t.Fatalf("insert tag: %v", err)
+		}
+
+		return id
+	}
+
+	appOld, appNew, otherOnly := tag("app", "v1", 30), tag("app", "v2", 1), tag("other", "v1", 60)
+
+	deleted, err := s.w.runPolicy(context.Background(), s.policy(repo.ID, new(1), nil, ""))
+	if err != nil || deleted != 1 {
+		t.Fatalf("runPolicy = %d, %v; want 1", deleted, err)
+	}
+
+	live := func(id string) bool {
+		return s.count(`SELECT COUNT(*) FROM docker_tags WHERE id = $1`, id) == 1
+	}
+
+	if live(appOld) || !live(appNew) || !live(otherOnly) {
+		t.Errorf("tags live: old app %v (want false), new app %v, other %v (want true)", live(appOld), live(appNew), live(otherOnly))
 	}
 }

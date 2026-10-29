@@ -5,243 +5,177 @@
 package database
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 )
 
-// The packument's ETag and render-cache key are npm_packages.updated_at, so
-// trashing or restoring a version bumps it in the same transaction. $1 is the
-// version id; the trash cascade also binds the actor as $2, which the trash
-// variant has to reference.
-const (
-	npmTouchPackumentOnTrash = `UPDATE npm_packages SET updated_at = now()
-		WHERE id = (SELECT package_id FROM npm_versions WHERE id = $1::uuid) AND $2::text IS NOT NULL`
-	npmTouchPackumentOnRestore = `UPDATE npm_packages SET updated_at = now()
-		WHERE id = (SELECT package_id FROM npm_versions WHERE id = $1::uuid)`
-)
-
-// trashSpec describes one soft-deletable row kind: the table that holds it and
-// the SQL fragments the generic trash operations (soft delete, listing,
-// restore, purge) need. Every fragment is a compile-time constant of this file;
-// nothing user-controlled is ever interpolated into the generated SQL.
+// dockerSpec describes one of the two soft-deletable docker row kinds. Docker
+// is the only format that keeps dedicated tables, so it is the one explicit
+// special case of the trash engine; every other format is described by its
+// storage.Trash descriptor and lives in package_files (trash_files.go).
 //
-// All fragments are written against the table alias "t".
-type trashSpec struct {
-	kind   models.TrashKind
-	table  string
-	format string
-	// repoID is a scalar expression yielding the owning repository id.
-	repoID string
+// All fragments are compile-time constants; nothing user-controlled is ever
+// interpolated into the generated SQL. They are written against the alias "t".
+type dockerSpec struct {
+	kind  models.TrashKind
+	table string
 	// name and version are text expressions for the trash listing.
 	name    string
 	version string
-	// blobCols are the uuid columns referencing blobs(id).
-	blobCols []string
-	// quota marks formats whose uploads reserve storage_quotas usage per row
-	// (every hosted format except docker tags); a purge gives it back.
+	// quota marks rows whose upload reserved storage_quotas usage; a purge
+	// gives it back.
 	quota bool
+	// hasBlob marks rows with a blob_id column.
+	hasBlob bool
 	// listWhere is an extra predicate applied to the trash listing (to hide rows
 	// that are listed under another item), "" for none.
 	listWhere string
-	// cascade statements run in the soft-delete transaction after the row is
-	// stamped. $1 is the row id, $2 the actor. They share the row's deleted_at.
-	cascade []string
 }
 
-// blobSizeExpr is the total size of the blobs the row references.
-func (s *trashSpec) blobSizeExpr() string {
-	if len(s.blobCols) == 0 {
-		return "0::bigint"
-	}
+// dockerFormat is the one format name the trash engine special-cases.
+const dockerFormat = "docker"
 
-	return "(SELECT COALESCE(SUM(bb.size_bytes), 0)::bigint FROM blobs bb WHERE bb.id IN (" + strings.Join(s.blobCols, ", ") + "))"
-}
-
-// blobSHAExpr aggregates the sha256 of the referenced blobs, comma separated.
-func (s *trashSpec) blobSHAExpr() string {
-	if len(s.blobCols) == 0 {
-		return "''::text"
-	}
-
-	return "COALESCE((SELECT string_agg(DISTINCT bb.sha256, ',') FROM blobs bb WHERE bb.id IN (" + strings.Join(
-		s.blobCols,
-		", ",
-	) + ")), '')"
-}
-
-// trashSpecs lists every soft-deletable package kind, in the order the trash
-// listing and the purge worker visit them. Adding a package table with a
-// deleted_at column means adding it here; TestTrashSpecsCoverEveryDeletedAtTable
-// fails otherwise.
+// dockerSpecs lists the docker kinds in the order the trash listing and the
+// purge worker visit them.
 //
 //nolint:gochecknoglobals // immutable registry
-var trashSpecs = []*trashSpec{
+var dockerSpecs = []*dockerSpec{
 	{
-		kind: models.TrashKindMaven, table: "maven_artifacts", format: "maven", quota: true,
-		repoID: "t.repository_id", name: "t.repo_path", version: "t.version",
-		blobCols: []string{"t.blob_id"},
+		kind: models.TrashKindDockerManifest, table: "docker_manifests", quota: true, hasBlob: true,
+		name: "t.image", version: "t.digest",
 	},
 	{
-		kind: models.TrashKindIvy, table: "ivy_artifacts", format: "ivy", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.organisation || '/' || t.module || '/' || t.artifact_name || '.' || t.artifact_ext",
-		version:  "t.revision",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindSBT, table: "sbt_artifacts", format: "sbt", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.group_id || ':' || t.artifact_id || '/' || t.filename",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindNPM, table: "npm_versions", format: "npm", quota: true,
-		repoID:   "(SELECT np.repository_id FROM npm_packages np WHERE np.id = t.package_id)",
-		name:     "(SELECT np.full_name FROM npm_packages np WHERE np.id = t.package_id)",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-		// A trashed version leaves the packument: move its validator.
-		cascade: []string{npmTouchPackumentOnTrash},
-	},
-	{
-		kind: models.TrashKindPyPI, table: "pypi_packages", format: "pypi", quota: true,
-		repoID: "t.repository_id", name: "t.filename", version: "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindNuGet, table: "nuget_packages", format: "nuget", quota: true,
-		repoID: "t.repository_id", name: "t.package_id", version: "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindGoMod, table: "gomod_modules", format: "go", quota: true,
-		repoID: "t.repository_id", name: "t.module_path", version: "t.version",
-		blobCols: []string{"t.zip_blob_id", "t.mod_blob_id"},
-	},
-	{
-		kind: models.TrashKindCargo, table: "cargo_crates", format: "cargo", quota: true,
-		repoID: "t.repository_id", name: "t.name", version: "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindComposer, table: "composer_packages", format: "composer", quota: true,
-		repoID: "t.repository_id", name: "t.name", version: "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindRubyGems, table: "rubygems_gems", format: "rubygems", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.name || CASE WHEN t.platform IN ('', 'ruby') THEN '' ELSE ' (' || t.platform || ')' END",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindConda, table: "conda_packages", format: "conda", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.platform || '/' || t.name",
-		version:  "t.version || '-' || t.build_string",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindAnsible, table: "ansible_collections", format: "ansible", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.namespace || '.' || t.name",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindPacman, table: "pacman_packages", format: "pacman", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.name",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindConan, table: "conan_packages", format: "conan", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.name",
-		version:  "t.version || '@' || t.user_channel",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindApk, table: "apk_packages", format: "apk", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.branch || '/' || t.repo || '/' || t.name || ' (' || t.arch || ')'",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindNix, table: "nix_paths", format: "nix", quota: true,
-		repoID:   "t.repository_id",
-		name:     "t.name",
-		version:  "t.store_hash",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindTerraformModule, table: "terraform_modules", format: "terraform", quota: true,
-		repoID:   "t.repository_id",
-		name:     "'modules/' || t.name || '/' || t.system",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		// One trash entry per platform zip, so the platform is part of the name.
-		kind: models.TrashKindTerraformProvider, table: "terraform_providers", format: "terraform", quota: true,
-		repoID:   "t.repository_id",
-		name:     "'providers/' || t.type || ' (' || t.os || '_' || t.arch || ')'",
-		version:  "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindHelm, table: "helm_charts", format: "helm", quota: true,
-		repoID: "t.repository_id", name: "t.name", version: "t.version",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindRaw, table: "raw_artifacts", format: "raw", quota: true,
-		repoID: "t.repository_id", name: "t.path", version: "''",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindDockerManifest, table: "docker_manifests", format: "docker", quota: true,
-		repoID: "t.repository_id", name: "t.image", version: "t.digest",
-		blobCols: []string{"t.blob_id"},
-		// Deleting a manifest by digest also removes the tags that pointed at it.
-		// They are trashed with the manifest (same deleted_at) and restored with it.
-		cascade: []string{`UPDATE docker_tags dt SET deleted_at = m.deleted_at, deleted_by = $2
-			FROM docker_manifests m
-			WHERE m.id = $1 AND dt.repository_id = m.repository_id AND dt.image = m.image
-			  AND dt.manifest_digest = m.digest AND dt.deleted_at IS NULL`},
-	},
-	{
-		kind: models.TrashKindDockerTag, table: "docker_tags", format: "docker",
-		repoID: "t.repository_id", name: "t.image", version: "t.name",
+		kind: models.TrashKindDockerTag, table: "docker_tags",
+		name: "t.image", version: "t.name",
 		// A tag trashed together with its manifest is listed under the manifest.
 		listWhere: `NOT EXISTS (SELECT 1 FROM docker_manifests m
 			WHERE m.repository_id = t.repository_id AND m.image = t.image
 			  AND m.digest = t.manifest_digest AND m.deleted_at = t.deleted_at)`,
 	},
-	{
-		kind: models.TrashKindRPM, table: "rpm_packages", format: "rpm", quota: true,
-		repoID: "t.repository_id", name: "t.name", version: "t.version || '-' || t.release || '.' || t.arch",
-		blobCols: []string{"t.blob_id"},
-	},
-	{
-		kind: models.TrashKindDeb, table: "deb_packages", format: "deb", quota: true,
-		repoID: "t.repository_id", name: "t.name", version: "t.version || '_' || t.arch",
-		blobCols: []string{"t.blob_id"},
-	},
 }
 
-// trashSpecByKind returns the spec registered for kind.
-func trashSpecByKind(kind models.TrashKind) (*trashSpec, bool) {
-	for _, s := range trashSpecs {
+// dockerSpecByKind returns the docker spec registered for kind.
+func dockerSpecByKind(kind models.TrashKind) (*dockerSpec, bool) {
+	for _, s := range dockerSpecs {
 		if s.kind == kind {
 			return s, true
 		}
 	}
 
 	return nil, false
+}
+
+// blobSizeExpr is the size of the blob the row references.
+func (s *dockerSpec) blobSizeExpr() string {
+	if !s.hasBlob {
+		return "0::bigint"
+	}
+
+	return "(SELECT COALESCE(SUM(bb.size_bytes), 0)::bigint FROM blobs bb WHERE bb.id = t.blob_id)"
+}
+
+// blobSHAExpr aggregates the sha256 of the referenced blob, comma separated.
+func (s *dockerSpec) blobSHAExpr() string {
+	if !s.hasBlob {
+		return "''::text"
+	}
+
+	return "COALESCE((SELECT string_agg(DISTINCT bb.sha256, ',') FROM blobs bb WHERE bb.id = t.blob_id), '')"
+}
+
+// sqlLiteral quotes s as a SQL string literal. It is only fed registry
+// constants (format names, kinds); the quoting keeps a fixture value with an
+// apostrophe from breaking the statement.
+func sqlLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// trashFormatsSQL renders formats as a SQL list for "r.format IN (...)".
+func trashFormatsSQL(formats []string) string {
+	lits := make([]string, len(formats))
+	for i, f := range formats {
+		lits[i] = sqlLiteral(f)
+	}
+
+	return strings.Join(lits, ", ")
+}
+
+// trashDescriptor returns the storage.Trash descriptor of a package format.
+func trashDescriptor(format string) (storage.Trash, error) {
+	s, ok := storage.Lookup(format)
+	if !ok {
+		return storage.Trash{}, fmt.Errorf("%w: format %q has no storage descriptor", ErrTrashUnknownKind, format)
+	}
+
+	return s.Trash, nil
+}
+
+// trashKindOf is the kind the API shows for the trash items of a generic
+// package format.
+func trashKindOf(format string) models.TrashKind {
+	kind, _ := storage.TrashKindOf(format)
+
+	return models.TrashKind(kind)
+}
+
+// genericFormats returns the registered package formats the generic trash
+// engine handles, optionally limited to one kind. Docker has no descriptor, so
+// it never appears.
+func genericFormats(kind models.TrashKind) []string {
+	if kind == "" {
+		names := storage.Names()
+		out := make([]string, 0, len(names))
+
+		for _, n := range names {
+			if s, ok := storage.Lookup(n); ok && s.Trash.Kind != "" {
+				out = append(out, n)
+			}
+		}
+
+		return out
+	}
+
+	return storage.TrashFormatsOfKind(string(kind))
+}
+
+// itemCase renders "CASE r.format WHEN 'f' THEN COALESCE((expr), ”) ... ELSE def
+// END" over the formats whose expression differs from def, or def alone when
+// none does. A descriptor expression concatenates optional attributes, which
+// yields NULL when one is absent; the list shows an empty text then.
+func itemCase(formats []string, def string, expr func(storage.Trash) string) string {
+	var b strings.Builder
+
+	for _, f := range formats {
+		s, ok := storage.Lookup(f)
+		if !ok {
+			continue
+		}
+
+		if e := expr(s.Trash); e != "" && e != def {
+			fmt.Fprintf(&b, " WHEN %s THEN COALESCE((%s), '')", sqlLiteral(f), e)
+		}
+	}
+
+	if b.Len() == 0 {
+		return def
+	}
+
+	return "CASE r.format" + b.String() + " ELSE " + def + " END"
+}
+
+// versionScopeFormats returns the registered formats whose trash item is the
+// whole version.
+func versionScopeFormats() []string {
+	var out []string
+
+	for _, n := range genericFormats("") {
+		if s, ok := storage.Lookup(n); ok && s.Trash.Scope == storage.ScopeVersion {
+			out = append(out, n)
+		}
+	}
+
+	return out
 }

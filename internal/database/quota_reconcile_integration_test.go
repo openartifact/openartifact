@@ -16,9 +16,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// quotaSeeder inserts package rows straight into the format tables, the way an
-// upload leaves them (blob row + package row), without going through a
-// handler: the point is what the counters should be for given rows.
+// quotaSeeder writes package rows through the generic package writer, the way
+// an upload leaves them (blob row + package, version and file rows), without
+// going through a handler: the point is what the counters should be for given
+// rows.
 type quotaSeeder struct {
 	tb   testing.TB
 	pg   *PostgresDB
@@ -26,6 +27,9 @@ type quotaSeeder struct {
 	seq  int
 
 	blobSeq int
+	// blobs remembers what blob() stored, by blob row id: the writer finds a
+	// blob by its digest.
+	blobs map[string]BlobWrite
 }
 
 func newQuotaSeeder(tb testing.TB, pg *PostgresDB, name, format string) *quotaSeeder {
@@ -38,7 +42,7 @@ func newQuotaSeeder(tb testing.TB, pg *PostgresDB, name, format string) *quotaSe
 		tb.Fatalf("CreateRepository(%s): %v", name, err)
 	}
 
-	return &quotaSeeder{tb: tb, pg: pg, repo: repo.ID}
+	return &quotaSeeder{tb: tb, pg: pg, repo: repo.ID, blobs: map[string]BlobWrite{}}
 }
 
 func (s *quotaSeeder) exec(query string, args ...any) {
@@ -66,50 +70,81 @@ func (s *quotaSeeder) blob(size int64) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%d", s.repo, s.blobSeq)))
 	sha := hex.EncodeToString(sum[:])
 
-	return s.queryID(`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1, $2, $3) RETURNING id`, sha, size, sha)
+	id := s.queryID(`INSERT INTO blobs (sha256, size_bytes, blob_key) VALUES ($1, $2, $3) RETURNING id`, sha, size, sha)
+	if s.blobs == nil {
+		s.blobs = map[string]BlobWrite{}
+	}
+
+	s.blobs[id] = BlobWrite{SHA256: sha, Key: sha, Size: size}
+
+	return id
+}
+
+// write stores one package of the given format through the generic writer: one
+// primary file at path holding blobID. It returns what was written.
+func (s *quotaSeeder) write(format, name, version, path, blobID string) *PackageWritten {
+	s.tb.Helper()
+
+	return s.writeFiles(&PackageWrite{
+		RepoID: s.repo, Format: format, Name: name, NameKey: name, Version: version, VersionKey: version,
+		Files: []FileWrite{{Path: path, Filename: path, Blob: s.blobs[blobID]}},
+	})
+}
+
+func (s *quotaSeeder) writeFiles(w *PackageWrite) *PackageWritten {
+	s.tb.Helper()
+
+	got, err := s.pg.writePackage(context.Background(), w)
+	if err != nil {
+		s.tb.Fatalf("seed package %s %s: %v", w.Name, w.Version, err)
+	}
+
+	return got
 }
 
 func (s *quotaSeeder) helm(blobID string) {
 	s.seq++
-	s.exec(`INSERT INTO helm_charts (repository_id, name, version, blob_id) VALUES ($1, $2, '1.0.0', $3)`,
-		s.repo, fmt.Sprintf("chart-%d", s.seq), blobID)
+	name := fmt.Sprintf("chart-%d", s.seq)
+	s.write("helm", name, "1.0.0", name+"-1.0.0.tgz", blobID)
 }
 
 func (s *quotaSeeder) maven(blobID string) {
 	s.seq++
-	s.exec(`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id)
-	        VALUES ($1, 'g', $2, '1.0', 'jar', $3, $4)`,
-		s.repo, fmt.Sprintf("a%d", s.seq), fmt.Sprintf("g/a%d/1.0/a-1.0.jar", s.seq), blobID)
+	name := fmt.Sprintf("g:a%d", s.seq)
+	s.write("maven", name, "1.0", fmt.Sprintf("g/a%d/1.0/a-1.0.jar", s.seq), blobID)
 }
 
 func (s *quotaSeeder) rubygem(blobID string) {
 	s.seq++
-	s.exec(`INSERT INTO rubygems_gems (repository_id, name, version, blob_id) VALUES ($1, $2, '1.0.0', $3)`,
-		s.repo, fmt.Sprintf("gem-%d", s.seq), blobID)
+	name := fmt.Sprintf("gem-%d", s.seq)
+	s.write("rubygems", name, "1.0.0", name+"-1.0.0.gem", blobID)
 }
 
 func (s *quotaSeeder) rpm(blobID string) {
 	s.seq++
-	s.exec(`INSERT INTO rpm_packages (repository_id, blob_id, name, version, arch) VALUES ($1, $2, $3, '1.0', 'x86_64')`,
-		s.repo, blobID, fmt.Sprintf("rpm-%d", s.seq))
+	name := fmt.Sprintf("rpm-%d", s.seq)
+	s.writeFiles(&PackageWrite{
+		RepoID: s.repo, Format: "rpm", Name: name, NameKey: name, Version: "1.0", VersionKey: "1.0|x86_64",
+		Files: []FileWrite{{Path: name + "-1.0.x86_64.rpm", Filename: name + "-1.0.x86_64.rpm", Arch: "x86_64", Blob: s.blobs[blobID]}},
+	})
 }
 
 func (s *quotaSeeder) deb(blobID string) {
 	s.seq++
-	dist := s.queryID(`INSERT INTO debian_distributions (repository_id, name) VALUES ($1, $2) RETURNING id`,
-		s.repo, fmt.Sprintf("dist-%d", s.seq))
-	comp := s.queryID(`INSERT INTO debian_components (distribution_id, name) VALUES ($1, 'main') RETURNING id`, dist)
-	s.exec(`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch)
-	        VALUES ($1, $2, $3, $4, $5, '1.0', 'amd64')`,
-		s.repo, dist, comp, blobID, fmt.Sprintf("deb-%d", s.seq))
+	name := fmt.Sprintf("deb-%d", s.seq)
+	s.writeFiles(&PackageWrite{
+		RepoID: s.repo, Format: "deb", Name: name, NameKey: name, Version: "1.0", VersionKey: "1.0|amd64",
+		Files: []FileWrite{{
+			Path: fmt.Sprintf("pool/main/%s_1.0_amd64.deb", name), Filename: name + "_1.0_amd64.deb",
+			Arch: "amd64", Part: "dist", Blob: s.blobs[blobID],
+		}},
+	})
 }
 
 func (s *quotaSeeder) npm(blobID string) {
 	s.seq++
 	name := fmt.Sprintf("pkg-%d", s.seq)
-	pkg := s.queryID(`INSERT INTO npm_packages (repository_id, name, full_name) VALUES ($1, $2, $2) RETURNING id`, s.repo, name)
-	s.exec(`INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
-	        VALUES ($1, '1.0.0', '{}', 'sha512-x', 'x', $2, $3)`, pkg, name+"-1.0.0.tgz", blobID)
+	s.write("npm", name, "1.0.0", name+"/-/"+name+"-1.0.0.tgz", blobID)
 }
 
 // corrupt overwrites the repository's counters the way a crash with

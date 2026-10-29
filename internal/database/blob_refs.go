@@ -247,9 +247,8 @@ func (p *BlobRefStore) ArtifactExists(ctx context.Context, sha256 string, reposi
 	var exists bool
 	err := p.db.QueryRowContext(
 		ctx,
-		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id =
-			$2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1
-			AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
+		`SELECT EXISTS(SELECT 1 FROM package_files f JOIN blobs b ON b.id = f.blob_id
+			WHERE b.sha256 = $1 AND f.repository_id = $2 AND f.deleted_at IS NULL)`,
 		sha256,
 		repositoryID,
 	).Scan(&exists)
@@ -260,8 +259,8 @@ func (p *BlobRefStore) ArtifactExists(ctx context.Context, sha256 string, reposi
 	return exists, nil
 }
 
-// BlobReferenceCount returns the number of rows, across every package table
-// that stores a blob_id FK into the global blobs table, referencing the blob
+// BlobReferenceCount returns the number of rows, across package_files and the
+// other tables that store a blob_id FK into the global blobs table, referencing the blob
 // identified by sha256. A count of 0 means the blob is safe to delete from
 // storage (see SafeDeleteBlob in internal/storage/refcount.go). A blob that
 // does not exist in the blobs table is still checked against the tables that

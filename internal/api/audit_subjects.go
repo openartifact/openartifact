@@ -10,6 +10,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -176,31 +177,17 @@ func auditActorName(l *models.AuditLog, d auditDetails, names *models.AuditNames
 	return ""
 }
 
-// auditPackageKinds are the resource types of trash-able package rows.
-//
-//nolint:gochecknoglobals // immutable lookup table
-var auditPackageKinds = map[string]bool{
-	string(models.TrashKindMaven):          true,
-	string(models.TrashKindIvy):            true,
-	string(models.TrashKindSBT):            true,
-	string(models.TrashKindNPM):            true,
-	string(models.TrashKindPyPI):           true,
-	string(models.TrashKindNuGet):          true,
-	string(models.TrashKindGoMod):          true,
-	string(models.TrashKindCargo):          true,
-	string(models.TrashKindComposer):       true,
-	string(models.TrashKindRubyGems):       true,
-	string(models.TrashKindConda):          true,
-	string(models.TrashKindPacman):         true,
-	string(models.TrashKindAnsible):        true,
-	string(models.TrashKindConan):          true,
-	string(models.TrashKindHelm):           true,
-	string(models.TrashKindRaw):            true,
-	string(models.TrashKindDockerManifest): true,
-	string(models.TrashKindDockerTag):      true,
-	string(models.TrashKindApk):            true, string(models.TrashKindRPM): true,
-	string(models.TrashKindDeb):             true,
-	string(models.TrashKindTerraformModule): true, string(models.TrashKindTerraformProvider): true,
+// isAuditPackageKind reports whether rt is the resource type of a trash-able
+// package row: a kind a format registered in its storage descriptor, one of the
+// docker kinds (docker keeps dedicated tables, no descriptor) or the terraform
+// provider kind that delete handlers still audit under.
+func isAuditPackageKind(rt string) bool {
+	switch models.TrashKind(rt) { //nolint:exhaustive // only the non-descriptor kinds are listed
+	case models.TrashKindDockerManifest, models.TrashKindDockerTag, models.TrashKindTerraformProvider:
+		return true
+	default:
+		return len(storage.TrashFormatsOfKind(rt)) > 0
+	}
 }
 
 func derefOr(p *string) string {
@@ -234,7 +221,7 @@ func auditSubjectOf(l *models.AuditLog, d auditDetails, names *models.AuditNames
 	switch {
 	case rt == "repository":
 		s.Kind, s.Name = "repository", namePtr(names.Repositories[rid], repoName, d.Subject)
-	case auditPackageKinds[rt]:
+	case isAuditPackageKind(rt):
 		s.Kind, s.Name, s.Version = "package", namePtr(d.Package, d.Subject), d.Version
 	case rt == "project":
 		s.Kind, s.Name = "project", namePtr(names.Projects[rid], projectName, d.Subject)

@@ -22,12 +22,13 @@ func TestListPackageDeltasHidesTrashedSources(t *testing.T) {
 		format string
 		seed   func(s *quotaSeeder, blobID string)
 		kind   models.TrashKind
-		table  string
 	}{
-		{"rpm", (*quotaSeeder).rpm, models.TrashKindRPM, "rpm_packages"},
-		{"deb", (*quotaSeeder).deb, models.TrashKindDeb, "deb_packages"},
+		{"rpm", (*quotaSeeder).rpm, models.TrashKindRPM},
+		{"deb", (*quotaSeeder).deb, models.TrashKindDeb},
 	} {
 		t.Run(tc.format, func(t *testing.T) {
+			registerTrashFixtures(t)
+
 			pg := newQuotaTestDB(t, 8)
 			pg.SetTrashRetentionDays(7)
 
@@ -76,7 +77,7 @@ func TestListPackageDeltasHidesTrashedSources(t *testing.T) {
 				t.Fatalf("sources before the delete = %v, want %v", got, want)
 			}
 
-			id := s.queryID(`SELECT id FROM `+tc.table+` WHERE blob_id = $1`, fromTrashed)
+			id := s.queryID(`SELECT id FROM package_files WHERE blob_id = $1`, fromTrashed)
 
 			if soft, err := pg.TrashRows(ctx, s.repo, tc.kind, []string{id}, "alice"); err != nil || !soft {
 				t.Fatalf("TrashRows = %v, %v; want soft delete", soft, err)
