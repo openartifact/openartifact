@@ -21,7 +21,7 @@ const (
 	ExtConda  = ".conda"
 )
 
-// Column widths of the hosted format's conda_packages table, also the limits
+// Column widths of the hosted format's conda package rows, also the limits
 // a package file name must respect.
 const (
 	MaxNameLen     = 255

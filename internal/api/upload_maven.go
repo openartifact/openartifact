@@ -372,7 +372,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	})
 
 	lockErr := storage.CommitBlob(r.Context(), h.db, h.blobStore, blob, func(ctx context.Context, blobKey string) error {
-		// maven_artifacts.blob_id references blobs(id); register the blob row.
+		// package_files.blob_id references blobs(id); register the blob row.
 		blobID, upsertErr := h.db.UpsertBlob(ctx, sha256Hex, blobKey, size)
 		if upsertErr != nil {
 			stage = "upsert blob"

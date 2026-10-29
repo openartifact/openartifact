@@ -697,7 +697,7 @@ func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID st
 	})
 
 	err = storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
-		// Upsert into blobs table to get UUID for npm_versions.blob_id FK.
+		// Upsert into blobs table to get the UUID package_files.blob_id references.
 		blobUUID, err := h.db.UpsertBlob(ctx, pv.sha256Hex, pv.sha256Hex, size)
 		if err != nil {
 			return fmt.Errorf("failed to upsert npm blob: %w", err)
