@@ -230,6 +230,25 @@ func TestAPIReferenceDisabled(t *testing.T) {
 	}
 }
 
+func TestSystemInfoAdvertisesAIAvailable(t *testing.T) {
+	t.Parallel()
+
+	for _, built := range []bool{true, false} {
+		h := NewSystemInfoHandler("1.0.0", "", "", nil, nil, "").WithAIAvailable(built)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/system/info", nil))
+
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+
+		if body["ai_available"] != built {
+			t.Errorf("ai_available = %v, want %v", body["ai_available"], built)
+		}
+	}
+}
+
 func TestSystemInfoAdvertisesAPIReference(t *testing.T) {
 	t.Parallel()
 
