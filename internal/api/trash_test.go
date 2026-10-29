@@ -474,20 +474,22 @@ func TestTrashRestoreRegenByFormat(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		kind      models.TrashKind
+		format    string
 		wantRegen []regenCall
 		wantRepo  int
 		wantPack  []string
 	}{
-		{"deb", models.TrashKindDeb, []regenCall{{"deb", trashRepoID, "", ""}}, 0, nil},
-		{"rpm", models.TrashKindRPM, []regenCall{{"rpm", trashRepoID, "", ""}}, 1, nil},
-		{"maven", models.TrashKindMaven, []regenCall{{"maven", trashRepoID, "pkg-a", "pkg-b"}}, 0, nil},
-		{"npm", models.TrashKindNPM, []regenCall{{"npm", "", "pkg-a", ""}}, 0, []string{"pkg-a"}},
-		{"raw has no generated metadata", models.TrashKindRaw, nil, 0, nil},
+		{"deb", models.TrashKindDeb, "deb", []regenCall{{"deb", trashRepoID, "", ""}}, 0, nil},
+		{"rpm", models.TrashKindRPM, "rpm", []regenCall{{"rpm", trashRepoID, "", ""}}, 1, nil},
+		{"maven", models.TrashKindMaven, "maven", []regenCall{{"maven", trashRepoID, "pkg-a", "pkg-b"}}, 0, nil},
+		{"npm", models.TrashKindNPM, "npm", []regenCall{{"npm", "", "pkg-a", ""}}, 0, []string{"pkg-a"}},
+		{"raw has no generated metadata", models.TrashKindRaw, "raw", nil, 0, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, regen, _, r := newTrashFixture(t, adminOnlyTargets())
 			it := mavenItem(trashRepoID, "app")
 			it.Kind = tc.kind
+			it.Format = tc.format
 			db.items[string(tc.kind)+"/"+trashItemID] = it
 			db.regenA, db.regenB = "pkg-a", "pkg-b"
 

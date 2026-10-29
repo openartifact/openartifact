@@ -83,33 +83,36 @@ func (w *workerRegenerator) NotifyNPMStale(packageID string) {
 }
 
 // regenerateRestored refreshes the generated metadata of the repository an
-// item was restored into, by format: rpm marks the repository stale and
-// notifies the worker, deb, apk and pacman only notify it, npm marks the packument stale and
+// item was restored into. It is the ONE place that maps a format to the
+// metadata worker to notify: rpm marks the repository stale and notifies the
+// worker, deb, apk and pacman only notify it, npm marks the packument stale and
 // notifies, maven notifies per artifact, and every other format computes its
 // indexes live from the tables. Failures are logged: the restore itself
 // already succeeded.
 func (h *TrashHandler) regenerateRestored(ctx context.Context, item *models.TrashItem) {
-	if h.regen == nil {
+	// A restored repository brings its content back through its own group
+	// metadata refresh (notifyRestoredRepository), not per package.
+	if h.regen == nil || item.Kind == models.TrashKindRepository {
 		return
 	}
 
-	switch item.Kind { //nolint:exhaustive // only these kinds have generated metadata
-	case models.TrashKindDeb:
+	switch item.Format {
+	case "deb":
 		// No stale flag exists for deb: the worker refresh is the whole job.
 		h.regen.NotifyDebStale(item.RepositoryID)
-	case models.TrashKindPacman:
+	case "pacman":
 		h.regen.NotifyPacmanStale(item.RepositoryID)
-	case models.TrashKindApk:
+	case "apk":
 		h.regen.NotifyApkStale(item.RepositoryID)
-	case models.TrashKindRPM:
+	case "rpm":
 		h.markRepoStale(ctx, item)
 		h.regen.NotifyRPMStale(item.RepositoryID)
-	case models.TrashKindMaven:
+	case "maven":
 		groupID, artifactID, ok := h.regenKeys(ctx, item)
 		if ok {
 			h.regen.NotifyMavenStale(item.RepositoryID, groupID, artifactID)
 		}
-	case models.TrashKindNPM:
+	case "npm":
 		packageID, _, ok := h.regenKeys(ctx, item)
 		if ok {
 			// Flip the packument's stale marker first so its ETag changes at once.
