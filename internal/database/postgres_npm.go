@@ -14,7 +14,7 @@ import (
 // fillNPMBlobSHA256 populates BlobSHA256 (the blob store key) and BlobSizeBytes
 // on versions.
 // npm_versions.blob_id is a blobs.id UUID, which is not a valid storage key.
-func (p *PostgresDB) fillNPMBlobSHA256(ctx context.Context, packageID string, versions ...*models.NPMVersion) error {
+func (p *NPMStore) fillNPMBlobSHA256(ctx context.Context, packageID string, versions ...*models.NPMVersion) error {
 	if len(versions) == 0 {
 		return nil
 	}

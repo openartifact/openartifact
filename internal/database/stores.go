@@ -55,6 +55,7 @@ type PostgresDB struct {
 	*APKStore
 	*PacmanStore
 	*MavenStore
+	*NPMStore
 	// STORES-STRUCT
 }
 
@@ -107,6 +108,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		APKStore:             &APKStore{core: c},
 		PacmanStore:          &PacmanStore{core: c},
 		MavenStore:           &MavenStore{core: c},
+		NPMStore:             &NPMStore{core: c},
 		// STORES-INIT
 	}
 }
