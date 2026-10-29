@@ -438,7 +438,8 @@ func TestPackageDetail(t *testing.T) {
 		detail: &models.ComponentDetail{
 			ID: "p1", Format: "npm", Name: "widget", Version: "1.0.0", Filename: "widget-1.0.0.tgz",
 			Info: map[string]string{"main": "index.js", "author": "me"},
-			Deps: []byte(`{"dependencies":{"left-pad":"^1.0.0"}}`),
+			Deps:        []byte(`{"dependencies":{"left-pad":"^1.0.0"}}`),
+			DepsDecoder: "npm-manifest",
 		},
 		rows: []*models.Component{
 			{ID: "p1", Name: "widget", Version: "1.0.0", Format: "npm", Filename: "widget-1.0.0.tgz"},
