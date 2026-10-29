@@ -61,7 +61,11 @@ type Report struct {
 	// SidecarsUnsupported are valid-looking sidecars of a newer format or for a
 	// table this release does not know; they are skipped, not failed.
 	SidecarsUnsupported int `json:"sidecars_unsupported"`
-	SidecarsInvalid     int `json:"sidecars_invalid"`
+	// SidecarsLegacy is the part of SidecarsUnsupported written by a release
+	// before 0.15 (ErrSidecarLegacy): it journaled per-format tables that no
+	// longer exist, so those sidecars cannot be applied.
+	SidecarsLegacy  int `json:"sidecars_legacy"`
+	SidecarsInvalid int `json:"sidecars_invalid"`
 	// Superseded are older sidecars of a row that has a newer one.
 	Superseded int `json:"superseded_sidecars"`
 	Pruned     int `json:"pruned_sidecars"`

@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/pglock"
@@ -37,6 +38,9 @@ type Worker struct {
 
 	// lock takes the cluster-wide lock; tests replace it to simulate another replica.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
+
+	// registryChecked is set once the registry-vs-schema check has run.
+	registryChecked atomic.Bool
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -119,6 +123,8 @@ func (w *Worker) RunPass(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, passTimeout)
 	defer cancel()
 
+	w.checkRegistry(ctx)
+
 	if _, failed, err := w.j.Drain(ctx); err != nil {
 		if ctx.Err() == nil {
 			w.log.Errorw("recovery journal: drain", "error", err)
@@ -154,6 +160,32 @@ func (w *Worker) RunPass(ctx context.Context) bool {
 	}
 
 	return true
+}
+
+// checkRegistry reports once per process the tables that carry the journal
+// trigger but are not in the registry: a format's descriptor
+// (storage.Storage.SideTables) was not registered before the journal was
+// built, so rows of that table are queued but never mirrored.
+func (w *Worker) checkRegistry(ctx context.Context) {
+	if w.registryChecked.Load() {
+		return
+	}
+
+	missing, err := w.j.UnregisteredTables(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			w.log.Warnw("recovery journal: registry check", "error", err)
+		}
+
+		return
+	}
+
+	w.registryChecked.Store(true)
+
+	if len(missing) > 0 {
+		w.log.Errorw("recovery journal: tables with a journal trigger are not registered, their rows are not mirrored",
+			"tables", missing)
+	}
 }
 
 func (w *Worker) runPass() {
