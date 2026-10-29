@@ -8,10 +8,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -79,6 +83,14 @@ func recordJSON(id, summary string) string {
 func archiveServer(t *testing.T, files map[string]string) *httptest.Server {
 	t.Helper()
 
+	return archiveServerWithHeader(t, files, nil)
+}
+
+// archiveServerWithHeader is archiveServer with extra response headers, which
+// may depend on the bytes of the archive.
+func archiveServerWithHeader(t *testing.T, files map[string]string, header func(archive []byte) http.Header) *httptest.Server {
+	t.Helper()
+
 	var buf bytes.Buffer
 
 	zw := zip.NewWriter(&buf)
@@ -105,7 +117,17 @@ func archiveServer(t *testing.T, files map[string]string) *httptest.Server {
 		t.Fatal(err)
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(buf.Bytes()) }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if header != nil {
+			for k, vs := range header(buf.Bytes()) {
+				for _, v := range vs {
+					w.Header().Add(k, v)
+				}
+			}
+		}
+
+		_, _ = w.Write(buf.Bytes())
+	}))
 	t.Cleanup(srv.Close)
 
 	return srv
@@ -279,5 +301,69 @@ func TestImportCapsTheDecompressedTotal(t *testing.T) {
 	// The same archive with room for it imports.
 	if _, err := importerWith(t, srv, &fakeStore{}, 1<<20).Import(context.Background(), "npm", &models.OSVMirrorState{}); err != nil {
 		t.Fatalf("an archive within the budget must import: %v", err)
+	}
+}
+
+func crc32cHeader(archive []byte) string {
+	return "crc32c=" + base64.StdEncoding.EncodeToString(binary.BigEndian.AppendUint32(nil, crc32.Checksum(archive, crc32.MakeTable(crc32.Castagnoli))))
+}
+
+// The checksum Google Cloud Storage sends with an export (X-Goog-Hash) is
+// checked against the bytes received: a corrupted download is refused and
+// nothing of it is applied. A source without the header is accepted as before.
+func TestImportVerifiesTheArchiveChecksum(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{"A.json": recordJSON("A", "kept")}
+
+	tests := []struct {
+		name    string
+		header  func(archive []byte) http.Header
+		wantErr bool
+	}{
+		{"matching", func(a []byte) http.Header { return http.Header{"X-Goog-Hash": {crc32cHeader(a)}} }, false},
+		{"matching with md5 first", func(a []byte) http.Header {
+			return http.Header{"X-Goog-Hash": {"md5=AAAAAAAAAAAAAAAAAAAAAA==", crc32cHeader(a)}}
+		}, false},
+		{"matching in one list", func(a []byte) http.Header {
+			return http.Header{"X-Goog-Hash": {"md5=AAAAAAAAAAAAAAAAAAAAAA==, " + crc32cHeader(a)}}
+		}, false},
+		{"corrupted", func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"crc32c=AAAAAA=="}} }, true},
+		{"not a checksum", func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"crc32c=!!"}} }, true},
+		{"only an algorithm it does not know", func([]byte) http.Header { return http.Header{"X-Goog-Hash": {"md5=AAAAAAAAAAAAAAAAAAAAAA=="}} }, false},
+		{"no checksum", nil, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := archiveServerWithHeader(t, files, tt.header)
+			store := &fakeStore{}
+			imp := importerWith(t, srv, store, 1<<20)
+			st := &models.OSVMirrorState{Ecosystem: "npm"}
+
+			_, err := imp.Import(context.Background(), "npm", st)
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("Import: %v", err)
+				}
+
+				return
+			}
+
+			if !errors.Is(err, ErrChecksumMismatch) {
+				t.Fatalf("Import error = %v, want ErrChecksumMismatch", err)
+			}
+
+			if len(store.applied) != 0 || st.HighWater != nil || st.ETag != "" {
+				t.Fatalf("a refused archive must change nothing: applied %v, state %+v", store.applied, st)
+			}
+
+			if left, _ := os.ReadDir(imp.opts.TempDir); len(left) != 0 {
+				t.Fatalf("the refused archive is left in the temp dir: %v", left)
+			}
+		})
 	}
 }

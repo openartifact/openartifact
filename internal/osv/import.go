@@ -7,8 +7,10 @@ package osv
 import (
 	"archive/zip"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"maps"
 	"math"
@@ -57,6 +59,10 @@ var ErrArchiveTooLarge = errors.New("osv archive exceeds the size limit")
 
 // ErrUnsupportedEcosystem means an ecosystem the local mirror cannot match.
 var ErrUnsupportedEcosystem = errors.New("osv ecosystem is not supported by the local mirror")
+
+// ErrChecksumMismatch means the downloaded archive does not match the checksum
+// the source sent with it.
+var ErrChecksumMismatch = errors.New("osv archive does not match its checksum")
 
 // ErrBadStatus means the source answered with an unexpected HTTP status.
 var ErrBadStatus = errors.New("osv source returned an unexpected status")
@@ -317,9 +323,22 @@ func (i *Importer) download(ctx context.Context, archive string, st *models.OSVM
 		return nil, h, fmt.Errorf("create osv temp file: %w", err)
 	}
 
-	n, err := io.Copy(file, io.LimitReader(resp.Body, i.opts.MaxArchiveBytes+1))
+	// Google Cloud Storage sends the CRC32C of the stored object. A decoded
+	// body (the transport undid a gzip) is not the stored object.
+	var want string
+	if !resp.Uncompressed {
+		want = googHashes(resp.Header)["crc32c"]
+	}
+
+	sum := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+
+	n, err := io.Copy(io.MultiWriter(file, sum), io.LimitReader(resp.Body, i.opts.MaxArchiveBytes+1))
 	if err == nil && n > i.opts.MaxArchiveBytes {
 		err = ErrArchiveTooLarge
+	}
+
+	if err == nil && want != "" && want != base64.StdEncoding.EncodeToString(sum.Sum(nil)) {
+		err = ErrChecksumMismatch
 	}
 
 	if err != nil {
@@ -330,6 +349,24 @@ func (i *Importer) download(ctx context.Context, archive string, st *models.OSVM
 	}
 
 	return file, archiveHeader{etag: resp.Header.Get("ETag"), lastModified: resp.Header.Get("Last-Modified"), size: n}, nil
+}
+
+// googHashes parses the X-Goog-Hash headers, "crc32c=<base64>" and
+// "md5=<base64>" in separate headers or one comma-separated list, into
+// algorithm → base64 digest. It is an integrity check of the transfer: the
+// digest comes from the same server as the data, it authenticates nothing.
+func googHashes(h http.Header) map[string]string {
+	out := map[string]string{}
+
+	for _, v := range h.Values("X-Goog-Hash") {
+		for part := range strings.SplitSeq(v, ",") {
+			if alg, digest, ok := strings.Cut(strings.TrimSpace(part), "="); ok {
+				out[alg] = digest
+			}
+		}
+	}
+
+	return out
 }
 
 // storedIDs returns the ids of the advisories stored for an ecosystem as a set.
