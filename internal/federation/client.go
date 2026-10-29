@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 // maxJSONResponse bounds the JSON bodies read from a peer (log pages, units).
@@ -101,7 +102,9 @@ func NewClient(ctx context.Context, p *Peer, secrets PeerSecrets, timeout time.D
 	// A peer never redirects: following one would carry the token elsewhere.
 	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-	return &Client{base: base, token: secrets.Token, http: hc}, nil
+	// Traced like the other outbound clients: method, host and status only,
+	// never the path, and no baggage.
+	return &Client{base: base, token: secrets.Token, http: telemetry.WrapClient(hc)}, nil
 }
 
 // ValidatePeerTLS checks the optional TLS settings of a peer: a CA bundle, and

@@ -16,6 +16,9 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/openartifact/openartifact/internal/telemetry"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 const (
@@ -132,5 +135,40 @@ func TestGCSPromoteRefusesChangedAndMissingSource(t *testing.T) {
 	err = s.copyStaging(context.Background(), "staging/other", gcsTestDstKey, gcsTestETag, nil)
 	if !errors.Is(err, ErrStagingNotFound) {
 		t.Fatalf("missing source err = %v", err)
+	}
+}
+
+// TestGCSComposerIsTraced: the compose calls are client spans and carry the
+// caller's traceparent.
+func TestGCSComposerIsTraced(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	t.Cleanup(telemetry.Install(tp))
+
+	var traceparent string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparent = r.Header.Get("traceparent")
+		w.Header().Set("ETag", gcsTestETag)
+		w.Header().Set(gcsGenerationHeader, gcsTestGeneration)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newGCSComposer(gcsTestBucket, credentials.NewStaticCredentialsProvider("HMACKEY", "secret", ""))
+	c.base = srv.URL
+
+	ctx, span := tp.Tracer("t").Start(t.Context(), "parent")
+	defer span.End()
+
+	if _, err := c.generationOf(ctx, gcsTestSrcKey, gcsTestETag); err != nil {
+		t.Fatal(err)
+	}
+
+	if traceparent == "" {
+		t.Error("GCS request carried no traceparent")
+	}
+
+	if n := len(rec.Ended()); n != 1 {
+		t.Errorf("%d client spans recorded, want 1", n)
 	}
 }
