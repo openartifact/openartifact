@@ -22,6 +22,12 @@ const (
 	hashC = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
+// memberPage is a member's canned reply to a simple page request.
+type memberPage struct {
+	body        []byte
+	contentType string
+}
+
 // pypiMembers fakes the member side of a pypi group: simple pages by member
 // name and path, plus the paths each member was asked for.
 type pypiMembers struct {

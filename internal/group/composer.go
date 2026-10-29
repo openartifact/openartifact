@@ -100,35 +100,27 @@ func (h *Handler) serveComposerRoot(
 // packages.json, sorted. It is only known when there are members, every one of
 // them is hosted and each answered with such a list.
 func (h *Handler) composerAvailable(r *http.Request, members []*models.Repository, be Backend) ([]string, bool) {
-	if len(members) == 0 {
+	if len(members) == 0 || slices.ContainsFunc(members, func(m *models.Repository) bool { return m.RepoType == repotype.Proxy }) {
 		return nil, false
 	}
-
-	mr := memberGetRequest(r)
 
 	sess := h.newSession(r.Context())
 	defer sess.release()
 
+	c := h.collect(r, sess, members, memberAsk{path: samePath("packages.json"), limit: composerMaxDoc}, be)
+	if c.partial() || len(c.docs) != len(members) {
+		return nil, false
+	}
+
 	seen := map[string]bool{}
 	names := []string{}
 
-	for _, m := range members {
-		if m.RepoType == repotype.Proxy {
-			return nil, false
-		}
-
-		cw := sess.capture(composerMaxDoc)
-		be.ServeMember(cw, mr, m, "packages.json")
-
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
-
+	for _, d := range c.docs {
 		var doc struct {
 			Available *[]string `json:"available-packages"` //nolint:tagliatelle // Composer wire format
 		}
 
-		if cw.status != http.StatusOK || cw.overflow || json.Unmarshal(cw.body.Bytes(), &doc) != nil || doc.Available == nil {
+		if json.Unmarshal(d.body, &doc) != nil || doc.Available == nil {
 			return nil, false
 		}
 
@@ -155,65 +147,43 @@ func (h *Handler) serveComposerMetadata(
 	members []*models.Repository,
 	be Backend,
 ) {
-	mr := memberGetRequest(r)
+	h.serveMergedDoc(w, r, grp, members, be, mergedDoc{
+		ask:         memberAsk{path: samePath(relPath), limit: composerMaxDoc},
+		what:        "composer metadata",
+		maxAge:      composerMetaMaxAge,
+		contentType: "application/json",
+		merge: func(c *collection) ([]byte, error) {
+			var (
+				merged []pkgcomposer.Version
+				seen   = map[string]bool{}
+			)
 
-	sess := h.newSession(r.Context())
-	defer sess.release()
+			for _, d := range c.docs {
+				versions, err := pkgcomposer.ParseDocument(d.body, p.Name)
+				if err != nil {
+					c.fail(d.member)
+					continue
+				}
 
-	var (
-		merged []pkgcomposer.Version
-		seen   = map[string]bool{}
-		failed bool
-	)
+				pkgcomposer.RelinkMember(versions, p.Name, root)
 
-	for _, m := range members {
-		cw := sess.capture(composerMaxDoc)
-		be.ServeMember(cw, mr, m, relPath)
+				for _, v := range versions {
+					if key := v.MergeKey(); !seen[key] {
+						seen[key] = true
 
-		if cw.status == 0 {
-			cw.status = http.StatusOK
-		}
-
-		if cw.status == http.StatusNotFound {
-			continue
-		}
-
-		versions, err := pkgcomposer.ParseDocument(cw.body.Bytes(), p.Name)
-		if cw.status != http.StatusOK || cw.overflow || err != nil {
-			failed = true
-			continue
-		}
-
-		pkgcomposer.RelinkMember(versions, p.Name, root)
-
-		for _, v := range versions {
-			if key := v.MergeKey(); !seen[key] {
-				seen[key] = true
-
-				merged = append(merged, v)
+						merged = append(merged, v)
+					}
+				}
 			}
-		}
-	}
 
-	sess.release()
+			if len(merged) == 0 {
+				return nil, errNoDocument
+			}
 
-	if len(merged) == 0 {
-		if failed {
-			http.Error(w, "member repository error", http.StatusBadGateway)
-		} else {
-			http.NotFound(w, r)
-		}
-
-		return
-	}
-
-	body, err := pkgcomposer.EncodeDocument(map[string][]pkgcomposer.Version{p.Name: merged}, true)
-	if err != nil {
-		h.log.Errorw("failed to encode composer metadata", "group", grp.Name, "package", p.Name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	writeMerged(w, r, grp.Public, body, "application/json", base.ContentETag(body), composerMetaMaxAge, failed)
+			return pkgcomposer.EncodeDocument(
+				map[string][]pkgcomposer.Version{p.Name: merged},
+				true,
+			) //nolint:wrapcheck // logged by serveMergedDoc
+		},
+	})
 }
