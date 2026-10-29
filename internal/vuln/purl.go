@@ -37,76 +37,25 @@ func buildPURL(p Package) (string, error) {
 		return "", errUnsupportedEcosystem
 	}
 
-	purlType := spec.PURLType
+	parts := PURLParts{Name: p.Name, Version: p.Version}
 
-	var (
-		namespace  []string
-		qualifiers string
-	)
+	if h, ok := hooks.Lookup(eco); ok && h.PURL != nil {
+		var err error
 
-	pkg, version := p.Name, p.Version
-
-	switch eco {
-	case "npm":
-		// "@scope/name": the scope is the namespace, "@" encoded.
-		pkg = strings.ToLower(p.Name)
-		if scope, rest, found := strings.Cut(pkg, "/"); found {
-			namespace, pkg = []string{scope}, rest
-		}
-	case "pypi":
-		pkg = strings.ReplaceAll(strings.ToLower(p.Name), "_", "-")
-	case "maven":
-		// "group:artifact" (the form the maven scanner manifest uses); a bare
-		// name is its own group, as in the trivy manifest.
-		group, artifact, found := strings.Cut(p.Name, ":")
-		if !found {
-			group, artifact = p.Name, p.Name
-		}
-
-		namespace, pkg = []string{group}, artifact
-	case "go":
-		// The module path "github.com/org/mod": everything before the last
-		// element is the namespace.
-		if mod, last, found := strings.CutLast(p.Name, "/"); found {
-			namespace, pkg = strings.Split(mod, "/"), last
-		}
-	case "composer":
-		// "vendor/name": the vendor is the namespace; a leading "v" of a tag
-		// ("v1.2.3") is not part of the version advisories are written against.
-		if vendor, name, found := strings.Cut(p.Name, "/"); found {
-			namespace, pkg = []string{vendor}, name
-		}
-
-		version = composerVersion(version)
-	case "deb", "rpm":
-		if !validDistro(p.Distro) {
-			return "", errDistroRequired
-		}
-
-		namespace = []string{distroVendor(p.Distro)}
-
-		// Qualifiers are sorted by key: distro, then epoch.
-		qualifiers = "?distro=" + purlEscape(p.Distro)
-
-		if eco == "rpm" {
-			var epoch int
-
-			epoch, version = rpmEVR(p)
-			if epoch > 0 {
-				qualifiers += "&epoch=" + strconv.Itoa(epoch)
-			}
+		if parts, err = h.PURL(p); err != nil {
+			return "", err
 		}
 	}
 
-	if pkg == "" || version == "" {
+	if parts.Name == "" || parts.Version == "" {
 		return "", errNoPURL
 	}
 
 	var b strings.Builder
 
-	b.WriteString("pkg:" + purlType + "/")
+	b.WriteString("pkg:" + spec.PURLType + "/")
 
-	for _, ns := range namespace {
+	for _, ns := range parts.Namespace {
 		if ns == "" {
 			return "", errNoPURL
 		}
@@ -114,7 +63,7 @@ func buildPURL(p Package) (string, error) {
 		b.WriteString(purlEscape(ns) + "/")
 	}
 
-	b.WriteString(purlEscape(pkg) + "@" + purlEscape(version) + qualifiers)
+	b.WriteString(purlEscape(parts.Name) + "@" + purlEscape(parts.Version) + parts.Qualifiers)
 
 	return b.String(), nil
 }

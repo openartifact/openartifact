@@ -36,6 +36,8 @@ func main() {
 	root := flag.String("root", ".", "repository root")
 	flag.Parse()
 
+	registerClientSetup()
+
 	if err := run(*root, *check); err != nil {
 		fmt.Fprintln(os.Stderr, "genformats:", err)
 		os.Exit(1)
