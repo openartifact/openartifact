@@ -29,6 +29,7 @@ type PostgresDB struct {
 	*SBOMStore
 	*VEXStore
 	*VulnStore
+	*ExploitDB
 	// STORES-STRUCT
 }
 
@@ -55,6 +56,7 @@ func newPostgresDB(c *core) *PostgresDB {
 		SBOMStore:            &SBOMStore{core: c},
 		VEXStore:             &VEXStore{core: c},
 		VulnStore:            &VulnStore{core: c},
+		ExploitDB:            &ExploitDB{core: c},
 		// STORES-INIT
 	}
 }
