@@ -177,11 +177,6 @@ type Spec struct {
 	// GrypeScan reports whether grype can scan the format's packages through
 	// their Package URL.
 	GrypeScan bool
-	// PackageTables are the tables holding the format's package rows. The
-	// exhaustiveness tests check that every query that unions the package
-	// tables (component listing, counts, catalog detail, usage, security,
-	// quota, tiering, trash, recovery) names them all.
-	PackageTables []string
 	// DistroScoped formats (deb, rpm) are only meaningful inside a distribution
 	// release: scanners need it to match advisories.
 	DistroScoped bool
@@ -193,104 +188,104 @@ type Spec struct {
 //nolint:gochecknoglobals // immutable registry
 var specs = [...]Spec{
 	{
-		Name: "ansible", Uploads: ansibleUploads, PackageTables: []string{"ansible_collections"},
+		Name: "ansible", Uploads: ansibleUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://galaxy.ansible.com", Versioning: VersionSemver,
 	},
 	{
-		Name: "apk", Mount: MountDispatcher, Uploads: apkUploads, PackageTables: []string{"apk_packages"},
+		Name: "apk", Mount: MountDispatcher, Uploads: apkUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningRSA, PURLType: "apk",
 	},
 	{
-		Name: "cargo", Uploads: cargoUploads, PackageTables: []string{"cargo_crates"},
+		Name: "cargo", Uploads: cargoUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://index.crates.io",
 		Versioning: VersionSemver, PURLType: "cargo", OSVEcosystem: "crates.io", GrypeScan: true,
 	},
 	{
-		Name: "composer", Mount: MountGuarded, PackageTables: []string{"composer_packages"},
+		Name: "composer", Mount: MountGuarded,
 		Proxy: true, Group: true, DefaultUpstream: "https://repo.packagist.org",
 		Versioning: VersionSemver, PURLType: "composer", OSVEcosystem: "Packagist", GrypeScan: true,
 	},
 	{
-		Name: "conan", Uploads: conanUploads, PackageTables: []string{"conan_packages"},
+		Name: "conan", Uploads: conanUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://center2.conan.io", PURLType: "conan",
 	},
 	{
-		Name: "conda", Uploads: condaUploads, PackageTables: []string{"conda_packages"},
+		Name: "conda", Uploads: condaUploads,
 		Proxy: true, Group: true, PURLType: "conda",
 	},
 	{
-		Name: "deb", RestUploadEndpoint: "debs", Uploads: debUploads, PackageTables: []string{"deb_packages"},
+		Name: "deb", RestUploadEndpoint: "debs", Uploads: debUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
 		PURLType: "deb", OSVEcosystem: "Debian", GrypeScan: true, DistroScoped: true,
 	},
 	{
-		Name: "docker", Mount: MountOCI, Uploads: dockerUploads, PackageTables: []string{"docker_manifests", "docker_tags"},
+		Name: "docker", Mount: MountOCI, Uploads: dockerUploads,
 		Proxy: true, Group: true, Federation: true,
 		DefaultUpstream: DockerHubUpstream, PURLType: "docker",
 	},
 	{
-		Name: "go", Uploads: goUploads, PackageTables: []string{"gomod_modules"},
+		Name: "go", Uploads: goUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://proxy.golang.org",
 		Versioning: VersionSemver, PURLType: "golang", OSVEcosystem: "Go", GrypeScan: true,
 	},
 	{
-		Name: "helm", Uploads: helmUploads, PackageTables: []string{"helm_charts"},
+		Name: "helm", Uploads: helmUploads,
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "helm", OSVEcosystem: "Helm",
 	},
 	{
-		Name: "ivy", Uploads: ivyUploads, PackageTables: []string{"ivy_artifacts"},
+		Name: "ivy", Uploads: ivyUploads,
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
-		Name: "maven", Uploads: mavenUploads, PackageTables: []string{"maven_artifacts"},
+		Name: "maven", Uploads: mavenUploads,
 		Proxy: true, Group: true, Federation: true, Mount: MountIsolated,
 		Versioning: VersionMaven, PURLType: "maven", OSVEcosystem: "Maven", GrypeScan: true,
 	},
 	{
-		Name: "nix", Mount: MountGuarded, PackageTables: []string{"nix_paths"}, Signing: SigningEd25519,
+		Name: "nix", Mount: MountGuarded, Signing: SigningEd25519,
 		Proxy: true, Group: true, DefaultUpstream: "https://cache.nixos.org",
 	},
 	{
-		Name: "npm", Uploads: npmUploads, PackageTables: []string{"npm_packages", "npm_versions"},
+		Name: "npm", Uploads: npmUploads,
 		Proxy: true, Group: true, Federation: true,
 		Versioning: VersionSemver, PURLType: "npm", OSVEcosystem: "npm", GrypeScan: true,
 	},
 	{
-		Name: "nuget", Uploads: nugetUploads, PackageTables: []string{"nuget_packages"},
+		Name: "nuget", Uploads: nugetUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://api.nuget.org/v3/index.json",
 		Versioning: VersionSemver, PURLType: "nuget", OSVEcosystem: "NuGet", GrypeScan: true,
 	},
 	{
-		Name: "pacman", Uploads: pacmanUploads, PackageTables: []string{"pacman_packages"},
+		Name: "pacman", Uploads: pacmanUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, DefaultUpstream: "https://geo.mirror.pkgbuild.com",
 		Signing: SigningGPG, PURLType: "alpm",
 	},
 	{
-		Name: "pypi", Uploads: pypiUploads, PackageTables: []string{"pypi_packages"},
+		Name: "pypi", Uploads: pypiUploads,
 		Proxy: true, Group: true, Federation: true, DefaultUpstream: "https://pypi.org/simple",
 		Versioning: VersionPEP440, PURLType: "pypi", OSVEcosystem: "PyPI", GrypeScan: true,
 	},
 	{
-		Name: "raw", Uploads: rawUploads, PackageTables: []string{"raw_artifacts"},
+		Name: "raw", Uploads: rawUploads,
 		Proxy: true, Group: true, Federation: true, Mount: MountIsolated,
 	},
 	{
-		Name: "rpm", RestUploadEndpoint: "packages", PackageSigning: true, Uploads: rpmUploads, PackageTables: []string{"rpm_packages"},
+		Name: "rpm", RestUploadEndpoint: "packages", PackageSigning: true, Uploads: rpmUploads,
 		Proxy: true, Group: true, GeneratedGroupMetadata: true, Signing: SigningGPG,
 		PURLType: "rpm", OSVEcosystem: "Red Hat", GrypeScan: true, DistroScoped: true,
 	},
 	{
-		Name: "rubygems", Uploads: rubygemsUploads, PackageTables: []string{"rubygems_gems"},
+		Name: "rubygems", Uploads: rubygemsUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://rubygems.org",
 		Versioning: VersionGem, PURLType: "gem", OSVEcosystem: "RubyGems", GrypeScan: true,
 	},
 	{
-		Name: "sbt", Uploads: sbtUploads, PackageTables: []string{"sbt_artifacts"},
+		Name: "sbt", Uploads: sbtUploads,
 		Proxy: true, Group: true, Mount: MountIsolated, Versioning: VersionMaven, PURLType: "maven",
 	},
 	{
-		Name: "terraform", Uploads: terraformUploads, PackageTables: []string{"terraform_modules", "terraform_providers"},
+		Name: "terraform", Uploads: terraformUploads,
 		Proxy: true, Group: true, DefaultUpstream: "https://registry.terraform.io",
 		Signing: SigningGPG, Versioning: VersionSemver,
 	},

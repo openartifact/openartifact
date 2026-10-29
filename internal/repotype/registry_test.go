@@ -59,10 +59,6 @@ func TestRegistryShape(t *testing.T) {
 
 		seen[s.Name] = true
 
-		if len(s.PackageTables) == 0 {
-			t.Errorf("%s: no package tables", s.Name)
-		}
-
 		if s.DefaultUpstream != "" && !s.Proxy {
 			t.Errorf("%s: has a default upstream but cannot be proxied", s.Name)
 		}
