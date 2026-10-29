@@ -145,6 +145,10 @@ func (d *benchPackagesDB) ListComponentsByRepo(_ context.Context, _, _ string, _
 	return d.components[:min(limit, len(d.components))], len(d.components), nil
 }
 
+func (*benchPackagesDB) ArtifactSecurity(context.Context, string, []string) (map[string]models.ArtifactSecurity, error) {
+	return map[string]models.ArtifactSecurity{}, nil
+}
+
 // BenchmarkHandlePackages runs the real handler (anonymous principal, so no
 // permission check) through chi at its maximum page size.
 func BenchmarkHandlePackages(b *testing.B) {

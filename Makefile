@@ -175,9 +175,14 @@ dup:
 dup-baseline:
 	scripts/dup-check.sh --update
 
+# The benchmark binaries are linked under GOTMPDIR, which defaults to /tmp. On a
+# small or quota-limited tmpfs /tmp the link fails with "link: cannot write
+# /tmp/go-link-...: disk quota exceeded", so unless GOTMPDIR is already set the
+# target points it at a directory under $XDG_CACHE_HOME (or ~/.cache).
 bench:
 	@echo "Running benchmarks..."
-	$(GO) test -bench=. -benchmem -run=^$$ ./...
+	@dir="$${GOTMPDIR:-$${XDG_CACHE_HOME:-$$HOME/.cache}/openartifact-bench}"; \
+		mkdir -p "$$dir" && GOTMPDIR="$$dir" $(GO) test -bench=. -benchmem -run=^$$ ./...
 
 bench-load:
 	@echo "Running HTTP load scenarios (see docs/operations/performance.md)..."

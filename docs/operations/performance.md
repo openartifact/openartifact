@@ -20,6 +20,8 @@ make bench    # go test -bench=. -benchmem -run=^$ ./...
 
 Runs every `Benchmark*` function with allocation reporting: package parsers (`pkg/deb`, `pkg/maven`, `pkg/npm`, `pkg/rpm`), metadata builders (`internal/format/{deb,helm,maven,npm,pypi,rpm}`), auth, RBAC middleware, JSON encoding, search and workers. Narrow it with a package path, for example `go test -bench=. -benchmem -run='^$' ./internal/auth/`.
 
+The benchmark binaries are linked under `GOTMPDIR` (Go's default is `/tmp`). `make bench` sets it to `$XDG_CACHE_HOME/openartifact-bench` (else `~/.cache/openartifact-bench`) unless you already exported it; when you run `go test -bench` yourself on a machine with a small or quota-limited `/tmp`, export `GOTMPDIR` first, or the link fails with `link: cannot write /tmp/go-link-...: disk quota exceeded`.
+
 ### HTTP load scenarios
 
 ```sh

@@ -57,7 +57,7 @@ bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them b
 | `make docs-gen` | Regenerates the pages under `docs/reference/` (configuration keys, metrics, CLI commands, REST API) from the code; run after changing config keys, metrics, `oa` help or `internal/api/openapi.json`, and commit the result. `make docs-check` fails when they are stale |
 | `make deadcode` | Fails when Go code is unreachable from every `main` package see [Dead-code gate](#dead-code-gate) |
 | `make migrate` | `go run ./cmd/server -migrate` (apply migrations and exit) |
-| `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md) |
+| `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md). `make bench` links every package's benchmark binary under `GOTMPDIR`; Go defaults that to `/tmp`, which on a small or quota-limited tmpfs fails with `link: cannot write /tmp/go-link-...: disk quota exceeded`, so the target uses `$GOTMPDIR` when set and `$XDG_CACHE_HOME/openartifact-bench` (else `~/.cache/openartifact-bench`) otherwise. Running `go test -bench` by hand on such a machine needs `GOTMPDIR` set to a directory on a disk with a few GB free |
 | `make docker-build` | Builds `openartifact:latest` from `docker/Dockerfile`; the runtime base is `RUNTIME=dhi` (default, needs `docker login dhi.io`) or `RUNTIME=distroless` (anonymous) |
 | `make docker-up` | Full stack via `docker compose -f docker/docker-compose.yml up -d --build` with `VERSION`, short SHA and RFC 3339 build time passed as build args; needs `docker/.env` copied from [`docker/.env.example`](../../docker/.env.example); without dhi.io access set `OPENARTIFACT_RUNTIME=distroless` |
 
